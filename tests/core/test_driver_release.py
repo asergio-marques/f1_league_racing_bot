@@ -205,11 +205,13 @@ async def test_a_driver_release_is_refused_at_the_ask(tmp_path, setup, division,
     where that seat is unconfirmed; or from Am, where he holds no seat. They are refused at once,
     in today's words: "That is the driver's only seat. Sack them with `/driver sack`, or move them
     with `/driver move`.", "That placement is not yet confirmed. Remove it with `/driver
-    unassign`." or "Driver holds no seat in that division.". Nothing is asked of the queue, Lewis
-    sits where he sat, no audit entry is written and no role touched."""
+    unassign`." or "Driver holds no seat in that division.", and the log channel takes the
+    refusal as its one line. Nothing is asked of the queue, Lewis sits where he sat, no audit
+    entry is written and no role touched. Takes the place too of `test_driver_cog_refusals.py`'s
+    "release refused by the service" case, which mocked the service."""
     from tests.support.change_queue import change_rows
     from tests.support.season_league import LEWIS
-    from tests.support.settings_league import audit_rows, last_said
+    from tests.support.settings_league import audit_rows, last_said, log_lines
 
     league = await _ongoing(tmp_path)
     if setup is not None:
@@ -218,6 +220,7 @@ async def test_a_driver_release_is_refused_at_the_ask(tmp_path, setup, division,
     asked = await _ask_release(league, LEWIS, division)
 
     assert last_said(asked) == reply
+    assert await log_lines(league) == [_release_refusal(reply)]
     assert await change_rows(league.db_path) == []
     assert await _lewis_seats(league) == seats
     assert await audit_rows(league.db_path) == []

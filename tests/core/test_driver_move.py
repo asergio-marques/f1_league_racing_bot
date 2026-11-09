@@ -703,6 +703,60 @@ async def test_a_driver_move_is_judged_again_as_it_starts(tmp_path, meanwhile, r
     assert await stopped_job(league.db_path) is None
 
 
+@pytest.mark.parametrize(
+    "setup, mover, team, to_division, reply",
+    [
+        pytest.param(
+            _unconfirm_lewis, 101, "McLaren", "Am",
+            "⛔ That placement is not yet confirmed. Change it with `/driver unassign` and "
+            "`/driver assign`.",
+            id="an-unconfirmed-placement",
+        ),
+        pytest.param(
+            _seat_lewis_in_am, 101, "McLaren", "Am",
+            "⛔ Driver already holds a seat in the division they would move into.",
+            id="a-seat-held-in-the-division-moved-into",
+        ),
+        pytest.param(
+            None, 101, "Ferrari", None, "⛔ Driver already sits in **Ferrari** in this division.",
+            id="the-team-already-sat-in",
+        ),
+        pytest.param(
+            None, 103, "Ferrari", "Pro", "⛔ **Ferrari** in this division has no available seats.",
+            id="a-full-team",
+        ),
+    ],
+)
+async def test_a_driver_move_is_refused_at_the_ask(
+    tmp_path, setup, mover, team, to_division, reply
+):
+    """The core specification's placements. The season is ongoing; Lewis and Max sit at Ferrari
+    in Pro, its two seats, and Charles at McLaren in Am. The league admin runs `/driver move` that
+    cannot be done: of Lewis from Pro into McLaren in Am, his Pro placement unconfirmed, or while
+    he holds a seat in Am as well; of Lewis from Pro into Ferrari, where he sits; or of Charles
+    from Am into Ferrari in Pro, which is full. They are refused at once, in today's words, and
+    the log channel takes the refusal as its one line. Nothing is asked of the queue, every
+    driver sits where they sat, no audit entry is written and no role touched. Takes the place of
+    `test_driver_cog_refusals.py`'s "move refused by the service" case, which mocked the
+    service."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import audit_rows, last_said, log_lines
+
+    league = await _ongoing(tmp_path)
+    if setup is not None:
+        await setup(league)
+    before = await _seated(league)
+    from_division = "Am" if mover == 103 else "Pro"
+    asked = await _ask_move(league, mover, from_division, team, to_division)
+
+    assert last_said(asked) == reply
+    assert await log_lines(league) == [_refusal(reply)]
+    assert await change_rows(league.db_path) == []
+    assert await _seated(league) == before
+    assert await audit_rows(league.db_path) == []
+    assert league.revoked == {} and league.granted == {}
+
+
 @pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED)
 async def test_a_driver_move_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The core specification's "How a change is carried out": a request repeating a change that

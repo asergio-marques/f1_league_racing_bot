@@ -894,6 +894,38 @@ async def test_a_driver_sack_is_judged_again_as_it_starts(tmp_path, meanwhile, r
     assert await stopped_job(league.db_path) is None
 
 
+async def test_a_driver_sack_is_refused_at_the_ask(tmp_path):
+    """The core specification's sacking. The season is ongoing; Lewis sits at Ferrari in Pro,
+    his placement unconfirmed. The league admin runs `/driver sack` of Lewis. They are refused at
+    once, in today's words: "Only a driver whose placement is confirmed can be sacked. Remove an
+    unconfirmed placement with `/driver unassign`, and turn down an Unassigned driver with
+    `/driver reject`.", and the log channel takes the refusal as its one line. Nothing is asked
+    of the queue, Lewis keeps his seat and is still Assigned, no audit entry is written and no
+    role touched. Takes the place of `test_driver_cog_refusals.py`'s "sack refused by the
+    service" case, which mocked the service."""
+    from tests.core.test_driver_move import _seated, _unconfirm_lewis
+    from tests.support.change_queue import change_rows
+    from tests.support.season_league import LEWIS
+    from tests.support.settings_league import audit_rows, last_said, log_lines
+
+    reply = (
+        "⛔ Only a driver whose placement is confirmed can be sacked. Remove an unconfirmed "
+        "placement with `/driver unassign`, and turn down an Unassigned driver with "
+        "`/driver reject`."
+    )
+    league = await _ongoing_sack(tmp_path)
+    await _unconfirm_lewis(league)
+    asked = await _ask_sack(league, LEWIS)
+
+    assert last_said(asked) == reply
+    assert await log_lines(league) == [_sack_refusal(reply)]
+    assert await change_rows(league.db_path) == []
+    assert (await _seated(league))[LEWIS] == ("Pro", "Ferrari", False)
+    assert await _state(league, LEWIS) == DriverState.ASSIGNED.value
+    assert await audit_rows(league.db_path) == []
+    assert league.revoked == {} and league.granted == {}
+
+
 @pytest.mark.xfail(strict=True, reason=_SACK_NOT_QUEUED)
 async def test_a_driver_sack_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The core specification's "How a change is carried out": a request repeating a change that

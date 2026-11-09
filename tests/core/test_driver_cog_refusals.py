@@ -4,7 +4,10 @@ The rule is the core specification's "The record of what changed": a refusal is 
 line naming the member, what was refused and why. Each case below turns a league manager away at
 one of the driver cog's own checks, and expects today's reply, seen by them alone, and exactly one
 standard refusal line. `/driver reassign`'s stage refusal goes through the shared season gate,
-which already records it, and is not a case here.
+which already records it, and is not a case here. `/driver move`, `release` and `sack` are
+changes on the queue (#283), whose refusals beyond the cog's own are the change's, pinned with
+their lines against a real database in `test_driver_move.py`, `test_driver_release.py` and
+`test_sack_driver.py`.
 """
 from __future__ import annotations
 
@@ -263,12 +266,6 @@ _CASES = {
         _no_profile,
         "No driver profile found for **Racer**",
     ),
-    "move refused by the service": (
-        "driver move",
-        lambda cog, i: undecorate(DriverCog.move)(cog, i, _driver(), "Pro", "Reserve", None),
-        _service_refuses("move_driver", "**Reserve** in this division has no available seats."),
-        "**Reserve** in this division has no available seats.",
-    ),
     "release not ongoing": (
         "driver release",
         lambda cog, i: undecorate(DriverCog.release)(cog, i, _driver(), "Pro"),
@@ -286,12 +283,6 @@ _CASES = {
         lambda cog, i: undecorate(DriverCog.release)(cog, i, _driver(), "Pro"),
         _no_profile,
         "No driver profile found for **Racer**",
-    ),
-    "release refused by the service": (
-        "driver release",
-        lambda cog, i: undecorate(DriverCog.release)(cog, i, _driver(), "Pro"),
-        _service_refuses("release_driver", "That is the driver's only seat."),
-        "That is the driver's only seat.",
     ),
     "reject not placing": (
         "driver reject",
@@ -317,18 +308,6 @@ _CASES = {
         _no_profile,
         "No driver profile found for **Racer**",
     ),
-    "sack refused by the service": (
-        "driver sack",
-        lambda cog, i: undecorate(DriverCog.sack)(cog, i, _driver()),
-        _service_refuses("sack_driver", "Racer has no seat to sack them from."),
-        "Racer has no seat to sack them from.",
-    ),
-}
-
-#: The whole of today's reply, where a case pins it word for word, mark included.
-_EXACT_REPLIES = {
-    "move refused by the service": "⛔ **Reserve** in this division has no available seats.",
-    "release refused by the service": "⛔ That is the driver's only seat.",
 }
 
 
@@ -351,7 +330,5 @@ async def test_a_refusal_of_the_driver_cog_is_recorded_in_the_log_channel(case):
     assert len(sent) == 1 and sent[0].kwargs.get("ephemeral") is True
     reply = sent[0].args[0]
     assert phrase in reply
-    if case in _EXACT_REPLIES:
-        assert reply == _EXACT_REPLIES[case]
     lines = [call.args[0] for call in cog.bot.output_router.post_log.await_args_list]
     assert lines == [f"⛔ `/{command}` refused for Alex (<@{MANAGER_ID}>) — {_reason(reply)}"]
