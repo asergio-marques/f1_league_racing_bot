@@ -160,12 +160,12 @@ async def test_the_stage_the_signup_settings_the_audit_entry_and_the_line_are_on
 
 
 @pytest.mark.xfail(strict=True, reason=_XFAIL)
-async def test_the_manager_is_told_at_once_and_the_reply_is_updated_when_confirmed(
+async def test_the_manager_is_told_at_once_naming_the_confirmation_s_first_job(
     tmp_path, monkeypatch,
 ):
     """Admin's press is answered at once with the queue's acknowledgement, naming the
-    confirmation's first job; once the queue runs, the reply says the configuration is
-    confirmed and what comes next."""
+    confirmation's first job. The reply the queue then updates it to is pinned beside the save,
+    by test_the_stage_the_signup_settings_the_audit_entry_and_the_line_are_one_change."""
     league = await configuring_league(tmp_path, monkeypatch=monkeypatch)
     press = await _pressed(league)
     [confirmation] = await _confirmations(league)
@@ -175,10 +175,6 @@ async def test_the_manager_is_told_at_once_and_the_reply_is_updated_when_confirm
         "⏳ Confirming season 3's configuration. This message will be updated when it is done; "
         f"if it takes longer, the log channel will say so. It begins with job #{first_job}."
     )
-
-    await run_queue(league.bot)
-
-    assert PLACEMENTS in reply(press)
 
 
 @pytest.mark.xfail(strict=True, reason=_XFAIL)
