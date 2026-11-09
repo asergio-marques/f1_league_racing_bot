@@ -466,9 +466,9 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   the queue goes on; what the member and the log channel are told is the core specification's, which
   gains this exception with the work that builds it. The move of a held signup channel's
   permissions after a driver's account changes is the same: work the save does not need and
-  nothing later on the lane waits on, so signup's step carries `Step.on_fault` and a refusal of
-  the permissions is reported in its result. Every other job, and a bot's own change whose check
-  raises, keeps the rule. *Rejected:* stopping the lane on a refused role, as other jobs do,
+  nothing later on the lane waits on, so signup's step reports a refusal of the permissions in its
+  result and the queue goes on. Every other job, and a bot's own change whose check raises, keeps
+  the rule. *Rejected:* stopping the lane on a refused role, as other jobs do,
   which would hold every change behind one lost permission until Retry or Discard was pressed.
 
   **A fourth exception: the settings a league repairs itself with overtake a stopped head on the
@@ -691,8 +691,8 @@ delete on any table but those. The queue's own tables are always allowed (`QUEUE
 mark, its audit records, its log lines and the changes it asks for), so the mark, the lines and a
 follow-on pass, and an empty `writes` allows those alone. A write the authoriser refuses raises in
 the step, rolls its save back whole and stops the lane at that job, so it never lands; in a
-league's setting, `/bot init`'s save, a role move or a held signup channel's move, whose steps
-end on a fault (see "A job that fails stops its lane"), it ends the job instead and the lane goes on. A change type whose `writes`
+league's setting, `/bot init`'s save or a role move, whose steps end on a fault (see "A job that
+fails stops its lane"), it ends the job instead and the lane goes on. A change type whose `writes`
 is `None`, the default, is not restricted; most league change types leave it so, and a league
 change type may declare the tables it writes and be confined to them likewise, as replacing a
 round's results with its resubmission drafts does. What a conversation hands the league, it asks
@@ -1134,8 +1134,8 @@ to it would switch off the one failure path for every command.
    the job runs again, so that its failure is recorded then; beside it, the dispatcher's own
    catch-all (`ChangeQueue._work`) puts a fault in starting the lanes in the host's log and pauses
    before it looks again. The queue's catch of a step that raises is a failure path as well: it
-   stops the lane, or, for a step of a league's setting, `/bot init`'s save, a role move or a held
-   signup channel's move that gives `Step.on_fault`, and for a check that raises as a member's change of a type that gives
+   stops the lane, or, for a step of a league's setting, `/bot init`'s save or a role move that
+   gives `Step.on_fault`, and for a check that raises as a member's change of a type that gives
    `ChangeType.on_check_fault`, ends the job instead and the lane goes on (see "A job that fails
    stops its lane"). Either way the fault is logged on the host and recorded in the log channel as a
    failure, once — save a fault in `/bot init`'s save, which writes no line, and a fault in its
