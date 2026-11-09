@@ -27,6 +27,7 @@ so a manager can see which.
 from __future__ import annotations
 
 import os
+
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
@@ -245,7 +246,7 @@ async def test_the_next_driver_takes_the_next_seat(tmp_path):
 @pytest.mark.xfail(strict=True, reason=_NO_ASSIGN_ON)
 async def test_a_full_race_team_refuses_the_next_driver(tmp_path):
     """The seats are finite and were created when the division was seeded; there is no
-    seat to make. The guards run before anything is written, so a refusal has to leave the
+    seat to make. The save refuses before it writes anything, so a refusal has to leave the
     division exactly as it stood — a half-placed driver has no command to finish or undo it."""
     db_path = await _make_db(tmp_path, team_seats=1)
     service = _service(db_path)

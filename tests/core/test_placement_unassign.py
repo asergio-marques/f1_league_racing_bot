@@ -2,8 +2,9 @@
 
 Issue #208, the companion to `test_placement_assign.py`. It is the save of `/driver unassign` and
 `/driver release`, each a change on the league's lane (#283): it writes on the connection handed,
-commits nothing, and names the roles to take back and the audit entry for the change to act on. Unassigning is where a driver racing
-in more than one division gets complicated, and every rule in it turns on that.
+commits nothing, and names the roles to take back and the audit entry for the change to act on.
+Unassigning is where a driver racing in more than one division gets complicated, and every rule in
+it turns on that.
 
 **A driver may hold a seat in several divisions at once**, so removing one seat does not
 necessarily mean they stop being a driver. The state only falls back to `UNASSIGNED` when the
@@ -26,6 +27,7 @@ to know which one the bot looked in.
 from __future__ import annotations
 
 import os
+
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
