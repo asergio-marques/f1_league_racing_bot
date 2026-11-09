@@ -661,7 +661,6 @@ _START_UP_STEPS = [
     "amendment sweep", "portrait refresh job", "signup close timer", "orphaned amend channels",
     "orphaned submission channels", "expired review prompts", "missed phases",
     "missed check-in calls", "RSVP views and deadlines", "missed clean-ups", "hub", "wizards",
-    "pending setups",
 ]
 
 
@@ -675,10 +674,10 @@ _RECOVERIES_IN_THE_ENTRY_POINT = {
     "missed check-in calls": "_recover_missed_check_in_calls",
     "RSVP views and deadlines": "_recover_rsvp_views_and_deadlines",
     "missed clean-ups": "_recover_missed_cleanups",
-    "pending setups": "_recover_pending_setups",
 }
 
 
+@pytest.mark.xfail(strict=True, reason="#283: start-up still recovers the pending setups")
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     """`build` on paths under `tmp_path` gives the start-up's steps by name, in today's order
     (architecture.md, "Start-up runs once, in one function"), so the order is read from the list

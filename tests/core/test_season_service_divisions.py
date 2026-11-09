@@ -1,9 +1,9 @@
 """The division and season writes in `SeasonService` that nothing else exercised.
 
-Issue #208. `duplicate_division` and `load_all_setup_seasons` were uncovered at the service
-level — the cogs that call them are tested with the service stubbed, which is the right shape for
-the cogs and left the SQL itself unread. The divisions and rounds they copy and read are laid down
-by SQL, as the setup commands' saves write them.
+Issue #208. `duplicate_division` was uncovered at the service level — the cogs that call it are
+tested with the service stubbed, which is the right shape for the cogs and left the SQL itself
+unread. The divisions and rounds it copies are laid down by SQL, as the setup commands' saves
+write them.
 
 **A tier is unique within a season.** `duplicate_division` refuses a tier another division of the
 season holds and a negative one.
@@ -13,10 +13,6 @@ copied with the same format and track and its time moved by the offset; the phas
 at zero, because a copy of a round whose phase 1 has run is a new round nobody has forecast.
 The copy is then renumbered by date, which matters when a negative offset moves rounds past
 each other's positions in a copy that also drops the source's numbering.
-
-**Setup seasons are rebuilt from the database on start-up.** `load_all_setup_seasons` is what
-turns the tables back into the in-memory pending configuration after a restart, and only
-seasons still in SETUP are read — an active season has no pending configuration to rebuild.
 """
 from __future__ import annotations
 
@@ -246,42 +242,3 @@ async def test_a_division_with_no_rounds_duplicates_empty(tmp_path):
     copy = await service.duplicate_division(source, "Am", 556, tier=2)
 
     assert await service.get_division_rounds(copy.id) == []
-
-
-# ---------------------------------------------------------------------------
-# Rebuilding setup seasons on start-up
-# ---------------------------------------------------------------------------
-
-
-async def test_a_setup_season_is_rebuilt_with_its_divisions_and_rounds(tmp_path):
-    db_path = await _make_db(tmp_path, name="load_setup")
-    service = SeasonService(db_path)
-    await _source(db_path)
-
-    [season] = await service.load_all_setup_seasons()
-
-    assert season["season_id"] == SEASON_ID
-    assert season["season_number"] == 5
-    assert season["game_edition"] == 25
-    assert season["start_date"] == date(2026, 1, 1)
-    [division] = season["divisions"]
-    assert (division["name"], division["role_id"], division["channel_id"], division["tier"]) == (
-        "Pro", 555, 600, 1
-    )
-    assert [r["round_number"] for r in division["rounds"]] == [1, 2]
-    assert division["rounds"][1]["format"] == RoundFormat.SPRINT
-
-
-async def test_an_active_season_is_not_rebuilt(tmp_path):
-    """It has no pending configuration to rebuild."""
-    service = SeasonService(await _make_db(tmp_path, name="load_active", status="ACTIVE"))
-
-    assert await service.load_all_setup_seasons() == []
-
-
-async def test_a_setup_season_with_no_divisions_rebuilds_empty(tmp_path):
-    service = SeasonService(await _make_db(tmp_path, name="load_empty"))
-
-    [season] = await service.load_all_setup_seasons()
-
-    assert season["divisions"] == []

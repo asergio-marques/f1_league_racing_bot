@@ -30,6 +30,7 @@ them in one assertion so a newly added child table shows up as a failure here.
 from __future__ import annotations
 
 import os
+from datetime import date
 
 import pytest
 
@@ -176,13 +177,22 @@ async def test_a_league_between_seasons_has_no_active_season(tmp_path):
     assert await SeasonService(db_path).get_confirmed_season() is None
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the setup season is read without its game edition")
 async def test_the_setup_season_is_the_one_being_built(tmp_path):
+    """Season 3, F1 25, is being set up behind two archived seasons. The read every setup command
+    makes of it (#283: the setup is read from the database, never held in memory) gives that
+    season, with its number, game edition and start date."""
     db_path = await _history_plus_live(tmp_path, "SETUP")
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE seasons SET game_edition = 25 WHERE id = 3")
+        await db.commit()
 
     season = await SeasonService(db_path).get_setup_season()
 
     assert season is not None
-    assert season.id == 3
+    assert (season.id, season.season_number, season.game_edition, season.start_date) == (
+        3, 3, 25, date(2026, 1, 1)
+    )
 
 
 async def test_a_league_mid_season_has_no_setup_season(tmp_path):
