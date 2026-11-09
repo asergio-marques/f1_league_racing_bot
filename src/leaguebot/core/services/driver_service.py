@@ -469,74 +469,9 @@ class DriverService:
         async with get_connection(self._db_path) as db:
             return await current_account_of(db, discord_user_id)
 
-    async def _create_profile(
-        self,
-        discord_user_id: str,
-        initial_state: DriverState,
-    ) -> DriverProfile:
-        """Insert a new driver profile and return it."""
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "INSERT INTO driver_profiles "
-                "(discord_user_id, current_state, former_driver) "
-                "VALUES (?, ?, 0)",
-                (discord_user_id, initial_state.value),
-            )
-            await db.commit()
-            profile_id = inserted_id(cursor)
-        return DriverProfile(
-            id=profile_id,
-            discord_user_id=discord_user_id,
-            current_state=initial_state,
-            former_driver=False,
-        )
-
     # ------------------------------------------------------------------
     # State machine
     # ------------------------------------------------------------------
-
-    async def transition(
-        self,
-        discord_user_id: str,
-        new_state: DriverState,
-        *,
-        test_mode_active: bool = False,
-    ) -> DriverProfile | None:
-        """Transition a driver to *new_state*.
-
-        Returns the updated DriverProfile. No transition deletes a profile (issue #220): a
-        driver without the former-driver flag who reaches NOT_SIGNED_UP is pending deletion,
-        and is deleted by the driver pass that ends the season.
-
-        Raises ValueError for disallowed transitions.
-        """
-        profile = await self.get_profile(discord_user_id)
-
-        if profile is None:
-            # Absent profile = implicitly NOT_SIGNED_UP (Principle VIII).
-            # Allow any transition valid from NOT_SIGNED_UP; create a fresh profile.
-            valid = set(ALLOWED_TRANSITIONS.get(DriverState.NOT_SIGNED_UP, set()))
-            if test_mode_active:
-                valid |= _TEST_MODE_EXTRA_FROM_NOT_SIGNED_UP
-            if new_state not in valid:
-                raise ValueError(
-                    f"No driver profile found for user {discord_user_id}; "
-                    f"transition from NOT_SIGNED_UP to {new_state.value} is not allowed. "
-                    f"Allowed targets: {sorted(s.value for s in valid) or 'none'}."
-                )
-            return await self._create_profile(discord_user_id, new_state)
-
-        # Reaching Not Signed Up deletes nothing and clears nothing (issue #220). A driver
-        # without the former-driver flag is pending deletion, deleted by the season's end;
-        # a former driver's signups are season history and are kept whole.
-        async with get_connection(self._db_path) as db:
-            await write_transition(
-                db, profile.id, profile.current_state, new_state,
-                test_mode_active=test_mode_active,
-            )
-            await db.commit()
-        profile.current_state = new_state
-        return profile
 
     async def transition_on(
         self,
@@ -548,9 +483,12 @@ class DriverService:
     ) -> DriverProfile:
         """Transition a driver to *new_state* on the connection handed, committing nothing.
 
-        As `transition`, for a change that moves the driver in a save of its own with what else
-        it writes: a driver with no profile is given one at *new_state*, where the state machine
-        allows it from Not Signed Up. Raises ValueError for a disallowed transition.
+        For a change that moves the driver in a save of its own with what else it writes: the
+        state is written through `write_transition`, and a driver with no profile is given one at
+        *new_state*, where the state machine allows it from Not Signed Up. Returns the updated
+        DriverProfile. No transition deletes a profile: a driver without the former-driver flag
+        who reaches NOT_SIGNED_UP is pending deletion, and is deleted by the driver pass that ends
+        the season. Raises ValueError for a disallowed transition.
         """
         cursor = await db.execute(
             "SELECT id, discord_user_id, current_state, former_driver "
