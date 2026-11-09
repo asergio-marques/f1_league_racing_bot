@@ -277,6 +277,42 @@ async def test_a_round_add_is_judged_again_as_it_starts(tmp_path, monkeypatch, m
 
 
 @pytest.mark.xfail(strict=True, reason=QUEUED)
+async def test_a_calendar_guard_that_cannot_run_lets_the_round_through(tmp_path, monkeypatch, caplog):
+    """architecture.md, "A catch-all error handler": a capacity check that cannot run must not
+    block a round. Season #1 is being set up, in Placements, Pro holding its rounds of 14 and 28
+    June. The image module's drawing fails whenever it is asked how many rounds the calendar
+    draws, at the ask and again as the change starts. The manager runs `/round add` for Pro, a
+    mystery round on 21 June at 18:00, and the queue runs it. The round is added all the same, as
+    round 2, with its audit entry and its success line, the reply is today's, and the host's log
+    holds the error in full."""
+    import logging
+    from unittest.mock import AsyncMock
+
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.settings_league import audit_rows, last_said, log_lines
+
+    league = await setup_league(tmp_path, divisions=_HELD)
+    at = datetime(2026, 6, 21, 18, 0)
+    failing = AsyncMock(side_effect=RuntimeError("drawing down"))
+    monkeypatch.setattr(league.bot.image_drawing, "round_capacity_problem", failing)
+    with caplog.at_level(logging.ERROR):
+        asked = await _ask(league)
+        await run_queue(league.bot)
+
+    rows = await round_rows(league.db_path, "Pro")
+    assert [row[3] for row in rows] == [
+        "2026-06-14T18:00:00", "2026-06-21T18:00:00", "2026-06-28T18:00:00"
+    ]
+    assert failing.await_count == 2
+    assert len(await audit_rows(league.db_path)) == 1
+    assert await log_lines(league) == [_success_line(2, "Pro", "MYSTERY", None, at)]
+    assert last_said(asked) == _added(2, "Pro", "MYSTERY", None, at, rows)
+    assert "capacity check could not run" in caplog.text
+    assert "drawing down" in caplog.text
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason=QUEUED)
 async def test_a_round_add_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. Season #1

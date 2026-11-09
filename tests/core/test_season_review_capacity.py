@@ -3,11 +3,13 @@ declares (#283).
 
 `SeasonCog` measures no template. It counts what the season holds, from its own tables, and asks
 the drawing on the bot whether the image module could draw that: each division's race teams and
-the drivers seated in them for the lineup, the rounds a division would hold for `/round add` and
-the bulk import, and for the review's warnings the division holding the most rounds, the most
+the drivers seated in them for the lineup, and for the review's warnings the division holding the most rounds, the most
 drivers and the most race teams, with the most sessions any round is run over. The image module
 answers its own words: the lineup's problems as sentences, and every other answer as a
-`CapacityProblem`. Core keeps its own words around them: the round's refusal opens with ❌ and
+`CapacityProblem`. The rounds a division would hold, for `/round add` and the round imports, are
+counted by their change type, which asks the drawing through
+`leaguebot.core.services.round_add_changes.calendar_round_refusal`, at the ask and again as the
+change starts (#283). Core keeps its own words around them: the round's refusal opens with ❌ and
 says that the round was **not** added before the remedy, and each warning is a ⚠️ line, the
 warnings of one check followed by a blank line. A check that cannot run, whether its counts or
 the drawing fault, lets the season and the round through with the full error in the host's log,
@@ -164,6 +166,22 @@ SEASON = [
 ]
 
 
+#: Why a test of the round guard fails until the build.
+ROUND_GUARD = (
+    "#283: the round guard is not yet round_add_changes.calendar_round_refusal, the change "
+    "type's own"
+)
+
+
+def _round_refusal(cog, would_hold):
+    """The round guard, asking the drawing on *cog*'s bot of *would_hold* rounds: the
+    change type's own, which `/round add` and the round imports judge at the ask and again as the
+    change starts."""
+    from leaguebot.core.services.round_add_changes import calendar_round_refusal
+
+    return calendar_round_refusal(cog.bot.image_drawing, would_hold)
+
+
 def _cog(db_path, drawing):
     bot = MagicMock()
     bot.db_path = db_path
@@ -208,13 +226,15 @@ async def test_the_lineup_check_asks_of_each_division_s_race_teams_in_tier_order
     ),
     pytest.param(False, None, id="within the calendar"),
 ])
+@pytest.mark.xfail(strict=True, reason=ROUND_GUARD)
 async def test_a_round_past_the_calendar_is_refused_in_core_s_words(tmp_path, found, refusal):
-    """`/round add` and the bulk import ask of the rounds the division would hold. Core says the
-    round was **not** added; the problem and its remedy are the image module's."""
+    """`/round add` and the round imports ask, through their change type's guard, of the rounds
+    the division would hold. Core says the round was **not** added; the problem and its remedy
+    are the image module's."""
     drawing = _Drawing({"round_capacity_problem": _problem() if found else None})
     cog = _cog(await _seed(tmp_path, SEASON), drawing)
 
-    assert await cog._calendar_round_overflow(25) == refusal
+    assert await _round_refusal(cog, 25) == refusal
     assert drawing.asked == [("round_capacity_problem", 25)]
 
 
@@ -332,7 +352,7 @@ def _counts_fail(cog, monkeypatch):
 #: Each check, the question it asks, how it is called, and what it answers where it cannot run.
 CHECKS = [
     ("lineup", "lineup_review_problems", lambda cog: cog._lineup_problems(SEASON_ID), []),
-    ("round", "round_capacity_problem", lambda cog: cog._calendar_round_overflow(25), None),
+    ("round", "round_capacity_problem", lambda cog: _round_refusal(cog, 25), None),
     ("calendar", "calendar_review_problem",
      lambda cog: cog._calendar_capacity_warning(SEASON_ID), []),
     ("check-in", "checkin_review_problem",
@@ -342,7 +362,10 @@ CHECKS = [
 #: Each fault a check can meet: the drawing's, for every check, and the season's own counts, for
 #: every check but the round's, whose count it is handed rather than reads.
 FAULTS = [
-    pytest.param(fault, *case[1:], id=f"{fault}-{case[0]}")
+    pytest.param(
+        fault, *case[1:], id=f"{fault}-{case[0]}",
+        marks=[pytest.mark.xfail(strict=True, reason=ROUND_GUARD)] if case[0] == "round" else [],
+    )
     for fault in ("drawing", "counts")
     for case in CHECKS
     if not (fault == "counts" and case[0] == "round")
