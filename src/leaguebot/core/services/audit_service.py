@@ -13,11 +13,11 @@ which command, or which release, wrote the row.
 **The time is handed in** (architecture.md, "The time is always passed in"), keyword-only and
 with no default, so no caller can leave it to read the clock.
 
-**Every row is written on the connection of the change it records**, by `record_change_on`: the
-row joins the caller's transaction and is not committed here, so a fault before the caller commits
-takes the change and its record back together. The points writers — a bulk paste, an XML import
-and a bulk amendment — record each position they change so. A change run on the change queue
-records through the queue's own save instead.
+**Every row this service writes is written on the connection of the change it records**, by
+`record_change_on`: the row joins the caller's transaction and is not committed here, so a fault
+before the caller commits takes the change and its record back together. The change queue's save
+writes each change's entries through it, and so do the points writers — a bulk paste, an XML
+import and a bulk amendment — for each position they change.
 """
 from __future__ import annotations
 
@@ -42,8 +42,11 @@ async def record_change_on(
 ) -> None:
     """Write the row of a member's change, on *db*, inside the caller's transaction.
 
-    Nothing is committed here: the caller commits the change and its record together, or
-    rolls both back (see the module docstring).
+    *actor_name* is the member as Discord renders them (``str(member)``), kept beside the id so
+    the record still reads once they have left the server. *division_id* is the division the
+    change belongs to, None for a change to the server as a whole. *now* is when it was made, and
+    must be aware. Nothing is committed here: the caller commits the change and its record
+    together, or rolls both back (see the module docstring).
     """
     await db.execute(
         "INSERT INTO audit_entries "
