@@ -489,10 +489,11 @@ class ChangeType:
     held in. The lane is fixed by what asked for the change, so the same payload always gives the
     same lane; a follow-on a step asks takes its own kind's lane, not its asker's.
 
-    *overtakes_a_stop*, set on a kind marked `Setting.repairs_the_bot` (through `setting_change`),
-    lets a queued change of this kind run ahead of its lane's own head while that head is stopped
-    on a failure: the stopped job stays stopped and everything else on the lane still waits behind
-    it, but a repair asked meanwhile need not. See `_heads` and "A job that fails stops its lane".
+    *overtakes_a_stop*, set on a kind marked `Setting.repairs_the_bot` (through `setting_change`,
+    which says which settings are), lets a queued change of this kind run ahead of its lane's own
+    head while that head is stopped on a failure: the stopped job stays stopped and everything
+    else on the lane still waits behind it, but a repair asked meanwhile need not. See `_heads`
+    and "A job that fails stops its lane".
 
     *conversation_open*, on a change type of a conversation's lane, says from the payload whether
     that conversation still stands: a job of the change whose conversation has ended is found no

@@ -3,8 +3,9 @@
 `/division lineup-channel` and `/division calendar-channel` each ask one change built from a
 `Setting` below by `setting_change` (`core/services/setting_change.py`, which holds what every
 settings change does with a fault). Both are every season's, whatever modules are on, so they are
-core's and wait their turn on the league lane like any other change; the division's other
-channels are its modules' own.
+core's; the division's other channels are its modules'. Each overtakes a stopped job on the league
+lane (`Setting.repairs_the_bot`, which `setting_change` says the meaning of), as every setting that
+points the bot at a channel does.
 
 **The division is identified by its id**, which the command finds from the name a manager typed
 and carries in the payload with that name and the channel's. The change is for the division asked

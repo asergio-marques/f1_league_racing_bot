@@ -1,26 +1,28 @@
-"""The four `/bot` repair settings, and the league's base and driver roles, as core `Setting`s
-on the change queue.
+"""The `/bot` settings that point the bot at a channel or give it a role, as core `Setting`s on
+the change queue: the four a league repairs itself with, the hub channel, and the league's base and
+driver roles.
 
-`/bot log-channel`, `interaction-channel`, `interaction-role` and `admin-role` each ask one
-change built from a `Setting` below by `setting_change` (`core/services/setting_change.py`,
-which holds what every settings change does with a value already held and with a fault):
-weather's switch (`weather/services/module_switch_settings.py`) is the model. Each writes a
-single column of `server_configs`, so nothing else in the row — test mode, the module flags, the
-other three settings — can be carried over stale from a half-built model. `/bot base-role` and
-`/bot driver-role` (issue #276) are `Setting`s too, built by `_league_role_setting`
-below: unlike the four, they are a league manager's ordinary commands, so they wait their turn
-on the league lane like any other change rather than overtaking a stop. The command judges, once,
-before ever asking the queue, a driver role Discord will not let the bot grant, which has nothing
-to do with a value already held or the season; the season's configuration being fixed is judged
-there too, for the member's prompt reply, and again by the setting's own `check` as the change
-starts, since a confirmation queued ahead of it may have fixed the season since it was asked.
+`/bot log-channel`, `interaction-channel`, `interaction-role` and `admin-role` each ask one change
+built from a `Setting` below by `setting_change` (`core/services/setting_change.py`, which holds
+what every settings change does with a value already held and with a fault): weather's switch
+(`weather/services/module_switch_settings.py`) is the model. Each writes a single column of
+`server_configs`, so nothing else in the row — test mode, the module flags, the other three settings
+— can be carried over stale from a half-built model. `/bot base-role` and `/bot driver-role` are
+`Setting`s too, built by `_league_role_setting` below: unlike the four, they are a league manager's
+ordinary commands, and, being no channel, they wait their turn on the league lane like any other
+change rather than overtaking a stop. The command judges, once, before ever asking the queue, a
+driver role Discord will not let the bot grant, which has nothing to do with a value already held or
+the season; the season's configuration being fixed is judged there too, for the member's prompt
+reply, and again by the setting's own `check` as the change starts, since a confirmation queued
+ahead of it may have fixed the season since it was asked.
 
-**Each of the four repair settings overtakes a stop on the league lane, instead of waiting behind
-it** (`Setting.repairs_the_bot`, read by `setting_change`, which says what else it marks): these are
-a league's way back in when one of the four is wrong or gone, so a stop on an unrelated job cannot
+**Each of the four repair settings, and the hub channel, overtakes a stop on the league lane,
+instead of waiting behind it** (`Setting.repairs_the_bot`, read by `setting_change`, which says
+which settings it marks): the four are a league's way back in when one of them is wrong or gone,
+and the hub channel is a channel setting, as every one is, so a stop on an unrelated job cannot
 hold one up. The lane still runs one change at a time — the queue runs an overtaking change to its
 own end before its lane's stopped head is tried again, never beside it — so nothing else writes
-`server_configs` while one of these four does.
+`server_configs` while one of these does.
 
 **The two channels refuse a collision at the ask; the four roles judge "already held" in the save
 alone.** A channel already doing another job is refused outright, and one already holding this
@@ -39,7 +41,7 @@ base role (`hub_service.apply_hub_permissions`), so changing any of the three se
 once the role is saved, from an `After` step the save plans, never from the command.
 
 **`/bot hub-channel` is a `Setting` too, built by `hub_channel_setting`
-below, but not a repair setting: it waits its turn on the league lane like the two roles.** The
+below. It overtakes a stop on the league lane like the four, being a channel setting.** The
 cog judges all four of its refusals at the ask, before the change is even asked for: the channel
 already doing another job, the channel already the hub, the bot's missing Manage Channel or
 Manage Permissions, and the server not yet configured. The missing-permission refusal has
@@ -542,7 +544,7 @@ def driver_role_setting(*, config: "ConfigService", placement: "PlacementService
 
 
 # ----------------------------------------------------------------------------
-# The hub channel — not a repair setting
+# The hub channel
 # ----------------------------------------------------------------------------
 
 #: The name of the step, after the hub channel's save, that stands the old hub down and sets

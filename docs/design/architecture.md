@@ -421,7 +421,7 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   stopped; one that overtakes a stop says it runs past it, the stop standing (`held_behind_text`).
 
   **Four exceptions: a league's settings, `/bot init`, roles moved after a driver's or team's
-  change, and the four settings a league repairs itself with.** A change to one of a league's
+  change, and the settings a league repairs itself with.** A change to one of a league's
   settings is one atomic save of its value and its audit record (its line with them, or in the
   save of the step after it that carries the line — the arming of the daily portrait job, a
   role's grant to every driver where it replaces one gone from the server while the season's
@@ -467,26 +467,29 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   check raises, keeps the rule. *Rejected:* stopping the lane on a refused role, as other jobs do,
   which would hold every change behind one lost permission until Retry or Discard was pressed.
 
-  **A fourth exception: the four settings a league repairs itself with overtake a stopped head on
-  the league lane.** `/bot log-channel`, `interaction-channel`, `interaction-role` and
-  `admin-role` are the repair the core specification's "How a change is carried out" and "Setting
-  the bot up" name as a league's way back in when one of the four is wrong or gone, and that rule
-  is why a stop on an unrelated job must not be able to hold such a repair up. Each change type
-  gives `overtakes_a_stop=True` (`Setting.repairs_the_bot`, read once by `setting_change`, never a
-  list of kinds kept by the queue). Where a lane's head is stopped and not yet due for a try, and a
-  queued change behind it is of such a kind, `_heads` and `_choose` take that change instead: the
-  lane still works one change at a time, and the choice is still deterministic, but a repair jumps
-  the queue behind a stop rather than wait with everything else — the stopped head itself stays
-  stopped, and every
-  ordinary change still waits its turn behind it. Every other setting, the module switches and
-  `/bot base-role`, `driver-role` and `hub-channel` among them, keeps the plain rule, one change at
-  a time in the order asked.
+  **A fourth exception: the settings a league repairs itself with overtake a stopped head on the
+  league lane.** They are of two kinds. The first is the four that let a league back into the
+  bot: the log channel, the interaction channel, the interaction role and the league admin role,
+  which the core specification's "How a change is carried out" and "Setting the bot up" name as a
+  league's way back in when one of them is wrong or gone. The second is every setting that points
+  the bot at a channel, the hub, a division's lineup, calendar, verdicts, results and attendance
+  channels and the weather forecast channel among them: a stop notice for a channel gone tells
+  the league to set a channel and press Retry, and a stop that cannot be discarded would hold
+  the lane for good if that setting waited behind it. A stop on an unrelated job must not be able
+  to hold either kind up. Each change type gives `overtakes_a_stop=True` (`Setting.repairs_the_bot`,
+  set on each such setting and read once by `setting_change`, never a list of kinds kept by the
+  queue). Where a lane's head is stopped and not yet due for a try, and a queued change behind it
+  is of such a kind, `_heads` and `_choose` take that change instead: the lane still works one
+  change at a time, and the choice is still deterministic, but a repair jumps the queue behind a
+  stop rather than wait with everything else. The stopped head itself stays stopped, and every
+  ordinary change still waits its turn behind it. Every other setting, the module switches and the
+  base and driver roles among them, keeps the plain rule, one change at a time in the order asked.
 
   An overtaking change and its lane's stopped head are both RUNNING at once, which the schema's
   one-RUNNING-per-lane rule (`queued_changes_one_running`) would otherwise refuse: `queued_changes`
   marks every change of such a kind `overtook_a_stop` as it starts, and the index excludes it, so
   the rule still holds between every other pair of changes on a lane. *Rejected:* a lane of the
-  four settings' own, beside the
+  repair settings' own, beside the
   league's — it would let two lanes write the league's configuration at once, each save
   re-judging the other's collisions, for no gain once overtaking a stop does the same job on the
   one lane. A channel setting's save re-checks nothing even though an overtaking change runs ahead
@@ -562,10 +565,12 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   or on another conversation's, only because its work is its own, and what a conversation hands
   the league goes to the league lane's back. The first three exceptions (above) are not a job
   stepping aside either: the job is ended, not stopped, and nothing it leaves undone is waited on.
-  The fourth exception is the one true overtake: the four settings a league repairs itself with run
+  The fourth exception is the one true overtake: the settings a league repairs itself with run
   ahead of their own lane's stopped head, by design, because a league locked out of the bot has no
-  other lane to wait apart on. It is kept narrow: `ChangeType.overtakes_a_stop` is read once from `Setting.repairs_the_bot` for four kinds
-  alone, the stopped head stays stopped, and everything else on the lane still waits behind it.
+  other lane to wait apart on, and a channel stop's remedy has to be able to run. It is kept
+  narrow: `ChangeType.overtakes_a_stop` is read once from `Setting.repairs_the_bot` for those
+  settings alone, the stopped head stays stopped, and everything else on the lane still waits
+  behind it.
   *Rejected:* a queue for each module, which leaves the conversations of one module waiting on each
   other and the league's work split across queues with no one order; and the league dropping a
   stopped conversation's job when it ends the conversation, which would let a change overtake a

@@ -152,7 +152,7 @@ def stop_line(
 
 def held_behind_text(job_id: int, lane: str = LEAGUE_LANE, *, overtaking: bool = False) -> str:
     """What a member's acknowledgement adds where *lane* is stopped at job *job_id*: their request
-    runs once that job is cleared, or, where *overtaking* (a repair setting,
+    runs once that job is cleared, or, where *overtaking* (a setting a league repairs itself with,
     `ChangeType.overtakes_a_stop`), that it runs past the stop instead, which stays as it was. A
     sentence for the end of the acknowledgement, not a log line."""
     who = _Lane(lane)
