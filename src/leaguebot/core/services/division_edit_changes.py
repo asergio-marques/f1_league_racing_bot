@@ -51,6 +51,7 @@ from leaguebot.core.services.change_queue import (
     Step,
     StepContext,
 )
+from leaguebot.core.services.round_add_changes import saved_result
 from leaguebot.core.services.season_service import (
     division_amendment_changes_nothing,
     validate_division_name,
@@ -172,13 +173,6 @@ def listed(saved: dict[str, Any]) -> str:
             )
             for d in saved["divisions"]
         ]
-    )
-
-
-def saved_result(ctx: OutcomeContext) -> dict[str, Any]:
-    """What the save recorded, or nothing where it did not run to its end."""
-    return next(
-        (view.result for view in ctx.steps if view.name == SAVE and view.result is not None), {}
     )
 
 
