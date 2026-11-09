@@ -265,7 +265,7 @@ async def test_a_setup_begun_before_a_restart_is_found_by_the_next_setup_command
     from tests.support.undecorate import undecorate
 
     bot = await _bot_on(tmp_path)
-    await _seed_season(bot.db_path, status="SETUP", number=0, stage="PLACEMENTS", edition=25)
+    await _seed_season(bot.db_path, status="SETUP", number=1, stage="PLACEMENTS", edition=25)
     [season] = await _setup_rows(bot.db_path)
     role = MagicMock()
     role.id = 10
@@ -373,14 +373,15 @@ async def test_season_setup_begins_the_season_in_configuration(tmp_path):
     the queue's date; one audit entry, `SEASON_SETUP_STARTED`, by Admin and stamped with the
     queue's clock, records the season as replacing nothing; the log channel holds the success line
     alone; and the acknowledgement is updated to today's reply, word for word."""
-    from tests.support.change_queue import run_queue
+    from tests.support.change_queue import run_queue, step_rows
     from tests.support.settings_league import audit_rows, last_said, log_lines, said
 
     league = await _league(tmp_path)
     await _seed_season(league.db_path, status="COMPLETED", number=3, stage="COMPLETED")
     asked = await _ask_setup(league, 25)
 
-    assert said(asked)[0].startswith(ACKNOWLEDGED)
+    first_job = (await step_rows(league.db_path))[0]["id"]
+    assert said(asked)[0] == f"{ACKNOWLEDGED} It begins with job #{first_job}."
     assert await _setup_rows(league.db_path) == []
     await run_queue(league.bot)
 
@@ -440,7 +441,7 @@ async def test_a_failed_first_setup_save_leaves_no_setup_behind(tmp_path):
     season afresh: the database holds that one season being set up, and its acknowledgement is
     updated to today's reply."""
     from tests.support.change_queue import discard_job, run_queue, stopped_job
-    from tests.support.settings_league import audit_rows, fault_in, last_said, said
+    from tests.support.settings_league import audit_rows, fault_in, last_said, log_lines, said
 
     league = await _league(tmp_path)
     first = await _ask_setup(league, 25)
@@ -449,6 +450,7 @@ async def test_a_failed_first_setup_save_leaves_no_setup_behind(tmp_path):
 
     assert await _setup_rows(league.db_path) == []
     assert await audit_rows(league.db_path) == []
+    assert _success_line(1, 25) not in await log_lines(league)
     assert await stopped_job(league.db_path) is not None
 
     again = await _ask_setup(league, 26)
