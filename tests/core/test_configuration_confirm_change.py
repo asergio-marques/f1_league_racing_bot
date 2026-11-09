@@ -26,6 +26,7 @@ from tests.support.change_queue import change_rows, retry_job, run_queue, step_r
 from tests.support.season_league import (
     ADMIN_ID,
     CONFIGURATION_CONFIRM_KIND as KIND,
+    DRIVER_ROLE,
     SEASON_ID,
     configuring_league,
     post_config_review,
@@ -44,9 +45,10 @@ PLACEMENTS = (
     "divisions and calendar, place its drivers, then run `/season placements-review`."
 )
 NO_LONGER = "⛔ The season is no longer in configuration. **Nothing has been confirmed.**"
-NO_SIGNUP_CHANNEL = (
+DRIVER_ROLE_GONE = (
     "⛔ The configuration cannot be confirmed:\n"
-    "• The signup module has no **signup channel** — `/signup channel`.\n"
+    "• The league's **driver role** is no longer on the server — replace it with "
+    "`/bot driver-role`.\n"
     "**Nothing has been confirmed.**"
 )
 ALREADY = (
@@ -230,8 +232,10 @@ async def _leave_configuration(league: Any) -> None:
     await league.write("UPDATE seasons SET stage = 'WAITING' WHERE id = ?", SEASON_ID)
 
 
-async def _clear_the_signup_channel(league: Any) -> None:
-    await league.write("UPDATE signup_module_config SET signup_channel_id = NULL")
+async def _delete_the_driver_role(league: Any) -> None:
+    """Delete the league's driver role (820) from the server; the stored setting, which the
+    review's evidence holds, is untouched."""
+    league.roles_gone.add(DRIVER_ROLE)
 
 
 @pytest.mark.xfail(strict=True, reason=_XFAIL)
@@ -240,8 +244,8 @@ async def _clear_the_signup_channel(league: Any) -> None:
     [
         pytest.param(_leave_configuration, NO_LONGER, "The season is no longer in configuration.",
                      "WAITING", id="the_season_moved_on"),
-        pytest.param(_clear_the_signup_channel, NO_SIGNUP_CHANNEL,
-                     "The signup module has no **signup channel**", "CONFIGURATION",
+        pytest.param(_delete_the_driver_role, DRIVER_ROLE_GONE,
+                     "The league's **driver role** is no longer on the server", "CONFIGURATION",
                      id="a_fault_found_afresh"),
     ],
 )
@@ -249,8 +253,9 @@ async def test_a_refusal_found_as_the_confirmation_starts_confirms_nothing(
     tmp_path, monkeypatch, meanwhile, refusal, why, stage,
 ):
     """The signup module is on. Admin presses ✅ Confirm configuration and the confirmation is
-    accepted; before the queue runs it, the season moves on to Waiting, or the signup channel is
-    cleared. As it starts it is refused in the words the press uses: the season is left at
+    accepted; before the queue runs it, the season moves on to Waiting, or the league's driver
+    role (820) is deleted from the server, which the review's evidence does not hold. As it
+    starts it is refused in the words the press uses: the season is left at
     *stage*, no signup settings are kept, nothing is audited, Admin's reply becomes the refusal,
     one refusal line names Admin, the button and why, and the queue is not stopped."""
     league = await configuring_league(tmp_path, signup=True, monkeypatch=monkeypatch)
