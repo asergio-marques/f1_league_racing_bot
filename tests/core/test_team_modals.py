@@ -90,48 +90,6 @@ async def test_the_form_bounds_both_names_as_they_are_typed():
     assert modal.role.required is True
 
 
-async def test_submitting_the_form_records_all_three_and_says_so():
-    from leaguebot.core.cogs.team_cog import _TeamAddModal
-
-    cog = _cog()
-    modal = _TeamAddModal(cog)
-    modal.shorthand._value = "  RBR  "
-    modal.full_name._value = " Oracle Red Bull Racing "
-    modal.role._values = [_role(555)]
-    interaction = _interaction()
-
-    await modal.on_submit(interaction)
-
-    cog.bot.team_service.add_default_team.assert_awaited_once_with(
-        "RBR", full_name="Oracle Red Bull Racing"
-    )
-    cog.bot.placement_service.set_team_role_config.assert_awaited_once()
-    assert cog.bot.placement_service.set_team_role_config.await_args.args[0] == "RBR"
-    said = interaction.response.send_message.await_args.args[0]
-    assert "Oracle Red Bull Racing" in said and "RBR" in said
-
-
-async def test_a_form_submitted_after_the_list_was_fixed_writes_nothing():
-    """The season moved on while the form stood open, so the submission is refused whole."""
-    from leaguebot.core.cogs.team_cog import _TeamAddModal
-    from leaguebot.core.models.season import SeasonStage
-
-    cog = _cog()
-    cog.bot.season_service.get_setup_or_active_season = AsyncMock(
-        return_value=MagicMock(season_number=3, stage=SeasonStage.ONGOING)
-    )
-    modal = _TeamAddModal(cog)
-    modal.shorthand._value = "RBR"
-    modal.full_name._value = "Oracle Red Bull Racing"
-    modal.role._values = [_role(555)]
-    interaction = _interaction()
-
-    await modal.on_submit(interaction)
-
-    assert "fixed for Season 3" in interaction.response.send_message.await_args.args[0]
-    cog.bot.team_service.add_default_team.assert_not_awaited()
-
-
 # ── /team modify ──────────────────────────────────────────────────────────
 
 

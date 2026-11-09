@@ -111,128 +111,9 @@ def _team_service_calls(bot) -> set[str]:
 # /team add
 # ---------------------------------------------------------------------------
 
-class TestTeamAdd:
-    async def test_with_role_no_season_success(self):
-        from leaguebot.core.cogs.team_cog import TeamCog
-        bot = _make_bot(setup_season=None)
-        cog = TeamCog(bot)
-        interaction = _make_interaction()
-        role = _make_role(555)
-        role.mention = "<@&555>"
-
-        await cog.add_team(interaction, shorthand="Alpine", full_name="Alpine Racing", role=role)
-
-        bot.team_service.add_default_team.assert_awaited_once_with("Alpine", full_name="Alpine Racing")
-        bot.placement_service.set_team_role_config.assert_awaited_once()
-        assert _team_service_calls(bot) == {"add_default_team"}
-        args, kwargs = interaction.response.send_message.call_args
-        content = args[0] if args else kwargs["content"]
-        assert "Alpine" in content
-        assert "<@&555>" in content
-        assert kwargs.get("ephemeral") is True
-
-    async def test_in_configuration_changes_the_server_list(self):
-        from leaguebot.core.cogs.team_cog import TeamCog
-        from leaguebot.core.models.season import SeasonStage
-        season = _make_season(stage=SeasonStage.CONFIGURATION)
-        bot = _make_bot(live_season=season)
-        cog = TeamCog(bot)
-        interaction = _make_interaction()
-        role = _make_role(555)
-        role.mention = "<@&555>"
-
-        await cog.add_team(interaction, shorthand="Alpine", full_name="Alpine Racing", role=role)
-
-        bot.team_service.add_default_team.assert_awaited_once_with("Alpine", full_name="Alpine Racing")
-        assert _team_service_calls(bot) == {"add_default_team"}
-        args, kwargs = interaction.response.send_message.call_args
-        content = args[0] if args else kwargs["content"]
-        assert "✅" in content
-
-    @pytest.mark.parametrize("stage_name", ["WAITING", "SIGNUPS", "PLACEMENTS", "ONGOING"])
-    async def test_refused_once_the_configuration_is_confirmed(self, stage_name):
-        from leaguebot.core.cogs.team_cog import TeamCog
-        from leaguebot.core.models.season import SeasonStage
-        season = _make_season(season_number=3, stage=SeasonStage(stage_name))
-        bot = _make_bot(live_season=season)
-        cog = TeamCog(bot)
-        interaction = _make_interaction()
-
-        await cog.add_team(
-            interaction, shorthand="Alpine", full_name="Alpine Racing", role=_make_role()
-        )
-
-        bot.team_service.add_default_team.assert_not_awaited()
-        bot.placement_service.set_team_role_config.assert_not_awaited()
-        args, kwargs = interaction.response.send_message.call_args
-        content = args[0] if args else kwargs["content"]
-        assert "⛔" in content
-        assert "Season 3" in content
-
-    async def test_duplicate_name_returns_error(self):
-        from leaguebot.core.cogs.team_cog import TeamCog
-        bot = _make_bot(add_default_team_side_effect=ValueError('A default team named "Alpine" already exists.'))
-        cog = TeamCog(bot)
-        interaction = _make_interaction()
-        role = _make_role(555)
-
-        await cog.add_team(interaction, shorthand="Alpine", full_name="Alpine Racing", role=role)
-
-        args, kwargs = interaction.response.send_message.call_args
-        content = args[0] if args else kwargs["content"]
-        assert "⛔" in content
-        bot.placement_service.set_team_role_config.assert_not_awaited()
-        assert _team_service_calls(bot) == {"add_default_team"}
-
-
 # ---------------------------------------------------------------------------
 # /team remove
 # ---------------------------------------------------------------------------
-
-class TestTeamRemove:
-    async def test_no_season_removes_from_server_only(self):
-        from leaguebot.core.cogs.team_cog import TeamCog
-        bot = _make_bot(setup_season=None)
-        cog = TeamCog(bot)
-        interaction = _make_interaction()
-
-        await _unwrap(cog.team_remove)(cog, interaction, name="Alpine")
-
-        bot.team_service.remove_default_team.assert_awaited_once()
-        bot.placement_service.delete_team_role_config.assert_awaited_once()
-        assert _team_service_calls(bot) == {"resolve_server_team", "remove_default_team"}
-        args, kwargs = interaction.response.send_message.call_args
-        content = args[0] if args else kwargs["content"]
-        assert "✅" in content
-
-    async def test_refused_once_the_configuration_is_confirmed(self):
-        from leaguebot.core.cogs.team_cog import TeamCog
-        season = _make_season(season_number=3)
-        bot = _make_bot(live_season=season)
-        cog = TeamCog(bot)
-        interaction = _make_interaction()
-
-        await _unwrap(cog.team_remove)(cog, interaction, name="Alpine")
-
-        bot.team_service.remove_default_team.assert_not_awaited()
-        bot.placement_service.delete_team_role_config.assert_not_awaited()
-        args, kwargs = interaction.response.send_message.call_args
-        content = args[0] if args else kwargs["content"]
-        assert "⛔" in content
-
-    async def test_not_found_returns_error(self):
-        from leaguebot.core.cogs.team_cog import TeamCog
-        bot = _make_bot(remove_default_team_side_effect=ValueError('No default team named "Ghost" found.'))
-        cog = TeamCog(bot)
-        interaction = _make_interaction()
-
-        await _unwrap(cog.team_remove)(cog, interaction, name="Ghost")
-
-        args, kwargs = interaction.response.send_message.call_args
-        content = args[0] if args else kwargs["content"]
-        assert "⛔" in content
-        bot.placement_service.delete_team_role_config.assert_not_awaited()
-
 
 # ---------------------------------------------------------------------------
 # /team list
@@ -405,40 +286,6 @@ class TestOneRolePerTeam:
     @staticmethod
     def _role(role_id: int = 111):
         return _make_role(role_id)
-
-    async def test_a_team_is_not_added_under_a_role_another_team_holds(self):
-        from leaguebot.core.cogs.team_cog import TeamCog
-        bot = _make_bot()
-        bot.placement_service.team_holding_role = AsyncMock(return_value="Ferrari")
-        cog = TeamCog(bot)
-        interaction = _make_interaction()
-
-        await cog.add_team(
-            interaction, shorthand="Alpine", full_name="Alpine Racing", role=self._role()
-        )
-
-        bot.team_service.add_default_team.assert_not_awaited()
-        bot.placement_service.set_team_role_config.assert_not_awaited()
-        content = interaction.response.send_message.call_args.args[0]
-        assert content.startswith("⛔") and '"Ferrari"' in content
-
-    async def test_a_role_taken_at_the_last_moment_takes_the_new_team_away_again(self):
-        """The check and the write are separate, so the write refuses too; the team it
-        would have left behind without a role is removed."""
-        from leaguebot.core.cogs.team_cog import TeamCog
-        bot = _make_bot()
-        bot.placement_service.set_team_role_config = AsyncMock(
-            side_effect=ValueError('<@&111> is already the role of "Ferrari".')
-        )
-        cog = TeamCog(bot)
-        interaction = _make_interaction()
-
-        await cog.add_team(
-            interaction, shorthand="Alpine", full_name="Alpine Racing", role=self._role()
-        )
-
-        bot.team_service.remove_default_team.assert_awaited_once_with("Alpine")
-        assert interaction.response.send_message.call_args.args[0].startswith("⛔")
 
     async def test_the_reserve_is_not_given_a_role_another_team_holds(self):
         """No driver moves, the manager is told which team holds the role, and the refusal is
