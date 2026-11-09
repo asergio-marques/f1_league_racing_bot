@@ -2035,7 +2035,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/placement_service.py", "PlacementService.sack_driver"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.set_team_role_config"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.unassign_driver"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.set_stage"): (1, PASS["core"]),
     ("core/services/team_service.py", "TeamService.add_default_team"): (1, PASS["core"]),
     ("core/services/team_service.py", "TeamService.get_default_teams"): (1, PASS["core"]),
     ("core/services/team_service.py", "TeamService.get_teams_with_roles"): (1, PASS["core"]),
@@ -2068,7 +2067,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/services/signup_module_service.py", "SignupModuleService.save_config"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.save_settings"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.set_close_at"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.snapshot_season_config"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.withdraw_approval"): (1, PASS["signup"]),
     # Image's pass
     ("image/services/driver_portrait_service.py", "_disown"): (1, PASS["image"]),
@@ -2805,8 +2803,6 @@ KNOWN_SQL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
         (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.set_window_closed_on"):
         (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.snapshot_season_config"):
-        (1, PASS["signup"]),
 }
 
 #: The schema's columns that default to SQLite's clock, keyed by ``("schema", "table.column")``: a
@@ -2814,7 +2810,6 @@ KNOWN_SQL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
 #: exception for it. `tests/core/test_schema_rules.py` checks them against the schema the
 #: migrations build.
 KNOWN_CLOCK_DEFAULTS: dict[tuple[str, str], tuple[int, str]] = {
-    ("schema", "season_signup_config.captured_at"): (1, PASS["signup"]),
     ("schema", "signup_records.created_at"): (1, PASS["signup"]),
     ("schema", "signup_records.updated_at"): (1, PASS["signup"]),
     ("schema", "signup_windows.opened_at"): (1, PASS["signup"]),

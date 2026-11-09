@@ -396,40 +396,6 @@ class SignupModuleService:
             (close_at_iso,),
         )
 
-    async def snapshot_season_config(self, season_id: int) -> None:
-        """Keep the signup configuration *season_id* is confirmed with (issue #220).
-
-        Taken when the season's configuration is confirmed, from which point the module's
-        settings are fixed until the season ends, so the snapshot is exactly what every
-        signup of the season answered. Taken again only if called again — replaced, not
-        duplicated.
-        """
-        settings = await self.get_settings()
-        slots = await self.get_slots()
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "INSERT INTO season_signup_config "
-                "(season_id, nationality_required, time_type, time_image_required, slots_json) "
-                "VALUES (?, ?, ?, ?, ?) "
-                "ON CONFLICT(season_id) DO UPDATE SET "
-                "nationality_required = excluded.nationality_required, "
-                "time_type = excluded.time_type, "
-                "time_image_required = excluded.time_image_required, "
-                "slots_json = excluded.slots_json, captured_at = datetime('now')",
-                (
-                    season_id,
-                    int(settings.nationality_required),
-                    settings.time_type,
-                    int(settings.time_image_required),
-                    json.dumps([
-                        {"slot_id": slot.slot_id, "day_of_week": slot.day_of_week,
-                         "time_hhmm": slot.time_hhmm}
-                        for slot in slots
-                    ]),
-                ),
-            )
-            await db.commit()
-
     async def get_season_config(self, season_id: int) -> dict | None:
         """The signup configuration *season_id* was confirmed with, or None."""
         async with get_connection(self._db_path) as db:

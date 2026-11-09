@@ -21,12 +21,9 @@ from leaguebot.core.models.round import (
     RoundStatus,
 )
 from leaguebot.core.models.season import (
-    ALLOWED_STAGE_TRANSITIONS,
-    InvalidStageTransition,
     Season,
     SeasonStage,
     SeasonStatus,
-    status_of_stage,
 )
 from leaguebot.core.models.session import Session, SessionType, SESSIONS_BY_FORMAT
 from leaguebot.core.services.image_drawing import Held
@@ -328,35 +325,6 @@ class SeasonService:
         if row is None or row["stage"] is None:
             return None
         return SeasonStage(row["stage"])
-
-    async def set_stage(self, season_id: int, stage: SeasonStage) -> None:
-        """Move *season_id* to *stage*, carrying its coarse status with it.
-
-        The move must be one ``ALLOWED_STAGE_TRANSITIONS`` permits from the stage the season
-        stands in; anything else raises :class:`InvalidStageTransition` and writes nothing.
-        The write is conditioned on the stage that was read, so two callers racing to move
-        the same season cannot both succeed from a stage the first of them has already left.
-        """
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute("SELECT stage FROM seasons WHERE id = ?", (season_id,))
-            row = await cursor.fetchone()
-            if row is None or row["stage"] is None:
-                raise InvalidStageTransition(f"season {season_id} does not exist")
-            current = SeasonStage(row["stage"])
-            if stage not in ALLOWED_STAGE_TRANSITIONS[current]:
-                raise InvalidStageTransition(
-                    f"season {season_id} cannot move from {current.value} to {stage.value}"
-                )
-            cursor = await db.execute(
-                "UPDATE seasons SET status = ?, stage = ? WHERE id = ? AND stage = ?",
-                (status_of_stage(stage).value, stage.value, season_id, current.value),
-            )
-            await db.commit()
-            if cursor.rowcount == 0:
-                raise InvalidStageTransition(
-                    f"season {season_id} left {current.value} before it could move to "
-                    f"{stage.value}"
-                )
 
     async def assert_season_mutable(self, season: "Season") -> None:
         """Raise SeasonImmutableError if *season* is COMPLETED or CANCELLED."""

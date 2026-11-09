@@ -490,7 +490,7 @@ CREATE TABLE season_signup_config (
     time_image_required  INTEGER NOT NULL,
     -- JSON array of {"slot_id": "Mon_19_00", "day_of_week": 1, "time_hhmm": "19:00"}
     slots_json           TEXT    NOT NULL DEFAULT '[]',
-    captured_at          TEXT    NOT NULL DEFAULT (datetime('now'))
+    captured_at          TEXT    NOT NULL
 );
 
 -- driver_division_memberships
