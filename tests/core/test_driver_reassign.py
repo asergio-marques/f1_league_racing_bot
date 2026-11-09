@@ -247,6 +247,8 @@ _ON_THE_QUEUE = "#283: /driver reassign is not yet a change on the queue"
 _NEW, _KIMI_NEW = 9001, 9003
 #: The current account of a driver of past seasons, Not Signed Up, whom Valtteri is merged with.
 _OTHER = 9002
+#: That driver's past account.
+_OTHER_PAST = 9006
 
 
 async def _queue_league(tmp_path, *others):
@@ -448,15 +450,16 @@ async def test_a_driver_reassign_named_by_a_past_account_audits_the_account_repl
 async def test_a_driver_merge_is_one_save_with_the_profiles_merged_hook(tmp_path, monkeypatch):
     """A merge, the core specification's joining of two drivers into one, with the modules' part in
     the same save. The season is in Placements; Valtteri (106) is Unassigned; a driver of past
-    seasons, Not Signed Up and a former driver, has 9002 as his current account. The league
+    seasons, Not Signed Up and a former driver, has 9002 as his current account and 9006 as a past
+    one. The league
     manager runs `/driver reassign` of Valtteri onto 9002, and the queue runs it. Valtteri, holding
-    the live season, is the driver kept: his current account is 9002 and he holds 106 and 9002,
-    a former driver now; the other profile is gone. The profiles-merged hook is called once, with
+    the live season, is the driver kept: his current account is 9002 and he holds 106, 9002 and
+    9006, a former driver now; the other profile is gone. The profiles-merged hook is called once, with
     Valtteri's profile and the other's, inside the save's transaction. Two audit entries, both by
     Admin and stamped with the queue's clock: `DRIVER_PROFILES_MERGED`, the other profile's id
     before and Valtteri's after, and `DRIVER_USER_ID_REASSIGN`, 106 before and 9002 after. The
-    reply is today's, "✅ Driver merged with the driver on <@9002>, and given that account.", with
-    106 his one past account. Takes the place of `test_driver_cog.py`'s "a merge is reported as
+    reply is today's, "✅ Driver merged with the driver on <@9002>, <@9006>, and given that
+    account.", naming every account the other held, with 106 and 9006 his past accounts. Takes the place of `test_driver_cog.py`'s "a merge is reported as
     one"."""
     from tests.support.change_queue import run_queue
     from tests.support.season_league import UNASSIGNED, profile_id
@@ -466,7 +469,11 @@ async def test_a_driver_merge_is_one_save_with_the_profiles_merged_hook(tmp_path
     await league.write(
         "INSERT INTO driver_profiles (discord_user_id, current_state, former_driver) "
         "VALUES (?, 'NOT_SIGNED_UP', 1)",
-        str(_OTHER),
+        str(_OTHER_PAST),
+    )
+    await league.write(
+        "UPDATE driver_profiles SET discord_user_id = ? WHERE discord_user_id = ?",
+        str(_OTHER), str(_OTHER_PAST),
     )
     [other] = await league.rows(
         "SELECT id FROM driver_profiles WHERE discord_user_id = ?", str(_OTHER)
@@ -484,7 +491,7 @@ async def test_a_driver_merge_is_one_save_with_the_profiles_merged_hook(tmp_path
     kept = profile_id(UNASSIGNED)
     accounts = await _accounts(league)
     assert other["id"] not in accounts
-    assert accounts[kept] == (str(_OTHER), "UNASSIGNED", 1, f"106,{_OTHER}")
+    assert accounts[kept] == (str(_OTHER), "UNASSIGNED", 1, f"106,{_OTHER},{_OTHER_PAST}")
     assert merged == [(kept, other["id"], True)]
     audits = {row["change_type"]: row for row in await _reassign_audits(league)}
     assert sorted(audits) == ["DRIVER_PROFILES_MERGED", "DRIVER_USER_ID_REASSIGN"]
@@ -494,8 +501,8 @@ async def test_a_driver_merge_is_one_save_with_the_profiles_merged_hook(tmp_path
     assert {row["actor_id"] for row in audits.values()} == {77}
     assert {row["timestamp"] for row in audits.values()} == {league.clock.now.isoformat()}
     assert last_said(asked) == _reassigned(
-        f"merged with the driver on <@{_OTHER}>, and given that account", _OTHER, "<@106>",
-        former="Yes",
+        f"merged with the driver on <@{_OTHER}>, <@{_OTHER_PAST}>, and given that account", _OTHER,
+        f"<@106>, <@{_OTHER_PAST}>", former="Yes",
     )
 
 
@@ -711,6 +718,8 @@ async def test_a_refusal_found_inside_the_save_ends_the_reassign_and_the_lane_go
     discarded = _portraits_discarded(league, monkeypatch)
     valtteri = await _ask_reassign(league, UNASSIGNED, _NEW)
     await _ask_reassign(league, SIGNING_UP, _KIMI_NEW)
+    # The asks are made: from here the type's check runs only as each change starts, and the
+    # signup begins once Valtteri's has passed, between it and the save.
     queue = league.bot.change_queue
     [reassign] = [each for each in queue.types if each.kind == "core.driver_reassign"]
     begun: list[bool] = []
@@ -718,8 +727,6 @@ async def test_a_refusal_found_inside_the_save_ends_the_reassign_and_the_lane_go
     async def _then_a_signup(ctx):
         verdict = await reassign.check(ctx)
         if not begun and str(ctx.payload.get("old_user_id")) == str(UNASSIGNED):
-    # The asks are made: from here the type's check runs only as each change starts, and the
-    # signup begins once Valtteri's has passed, between it and the save.
             begun.append(True)
             await _valtteri_begins_a_signup(league)
         return verdict
