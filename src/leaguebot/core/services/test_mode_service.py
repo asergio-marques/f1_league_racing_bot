@@ -2,7 +2,6 @@
 
 Provides async functions consumed by TestModeCog, among them:
   - turn_test_mode_off:           switch the test_mode_active flag off in server_configs
-  - toggle_test_mode_nationality: flip whether mock drivers carry a nationality
   - count_live_real_drivers:      how many real drivers stand in the way of enabling test mode
   - get_next_pending_phase:       find the earliest un-executed phase across all rounds
   - register_advance, advance_next_step: the step `/test-mode advance` runs for each kind of a
@@ -286,36 +285,6 @@ async def switch_test_mode_off_on(
     removed = await clear_all_test_drivers_on(db, profiles_deleted=profiles_deleted)
     await db.execute("UPDATE server_configs SET test_mode_active = 0")
     return removed
-
-
-async def toggle_test_mode_nationality(db_path: str) -> bool:
-    """Flip test_mode_nationality_required and return the NEW value.
-
-    The test-mode counterpart of the signup nationality switch: while test mode is active
-    it stands in for it, so the graphics of a server under test may be seen with flags and
-    without them without the real signup setting being touched.
-
-    One atomic relative UPDATE, so no read-modify-write race can occur. Returns False if the
-    server has no config row (bot not initialised).
-    """
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE server_configs "
-            "SET test_mode_nationality_required = 1 - test_mode_nationality_required "
-            "",
-        )
-        await db.commit()
-        cursor = await db.execute(
-            "SELECT test_mode_nationality_required FROM server_configs",
-        )
-        row = await cursor.fetchone()
-
-    if row is None:
-        log.error(
-            "toggle_test_mode_nationality: no server_config row"
-        )
-        return False
-    return bool(row["test_mode_nationality_required"])
 
 
 async def count_live_real_drivers(db_path: str) -> int:
