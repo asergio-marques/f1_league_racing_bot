@@ -1015,13 +1015,14 @@ class PlacementService:
         ).fetchone()
         return row["full_name"] if row else team_name
 
-    async def _free_seat(self, db, division_id: int, team_name: str) -> tuple[int, bool]:
-        """The first free seat of *team_name* in *division_id*, and whether it is Reserve.
+    @staticmethod
+    async def _find_free_seat(db, division_id: int, team_name: str) -> tuple[int | None, bool]:
+        """The first free seat of *team_name* in *division_id*, and whether it is Reserve, read
+        only: None for the seat where the reserve team has none free and would make another.
 
-        A race team's seats are finite and fill in number order; the reserve team makes
-        another seat rather than refusing. Raises ValueError for a team the division does
-        not hold, or a race team with no seat free. Shared by placing a driver and moving
-        one, so the two cannot disagree about where a driver may sit.
+        A race team's seats are finite and fill in number order; the reserve team makes another
+        seat rather than refusing. Raises ValueError for a team the division does not hold, or a
+        race team with no seat free.
         """
         cursor = await db.execute(
             """
@@ -1050,6 +1051,18 @@ class PlacementService:
             return seat_row["id"], is_reserve
         if not is_reserve:
             raise ValueError(f"**{team_name}** in this division has no available seats.")
+        return None, is_reserve
+
+    async def _free_seat(self, db, division_id: int, team_name: str) -> tuple[int, bool]:
+        """The first free seat of *team_name* in *division_id*, and whether it is Reserve,
+        making the reserve team another seat where it has none free.
+
+        Shared by placing a driver and moving one, so the two cannot disagree about where a
+        driver may sit. Raises ValueError as `_find_free_seat` does.
+        """
+        found, is_reserve = await self._find_free_seat(db, division_id, team_name)
+        if found is not None:
+            return found, is_reserve
 
         # Reserve has unlimited seats; create a new one
         cursor = await db.execute(
@@ -1072,7 +1085,7 @@ class PlacementService:
         )
         return cursor.lastrowid, is_reserve
 
-    async def move_on(
+    async def judge_move_on(
         self,
         db,
         *,
@@ -1081,32 +1094,23 @@ class PlacementService:
         from_division_id: int,
         to_division_id: int,
         team_name: str,
-        acting_user_id: int,
-        acting_user_name: str,
     ) -> dict:
-        """Move a committed driver from their seat to a team of the same or another division, on *db*.
-
-        Everything `move_driver` writes, written on the connection handed and committed by no
-        one here, so a sanction's save carries the move with the rest of its writes (#439). It
-        awaits nothing but *db*: no member is fetched, no role asked of Discord, no lineup
-        posted, no capacity guarded (`guard_move`, an ACT's, reads templates off the loop).
+        """Judge a move of a driver on *db*, writing nothing: what `move_seat_on` would refuse,
+        in its words, and the rows it then moves by.
 
         Refused (ValueError) where the driver holds no committed placement in the division
         left, where they already hold a seat in a different division moved into, where the team
-        is the one they already sit in, and where the team has no seat free.
-
-        Returns the summary (from_division, to_division, from_team, to_team, lineups) and what
-        is left for the roles: *revoke* and *grant*, the role ids to take back and give, empty
-        for a test driver, and *is_test_driver*.
+        is the one they already sit in, and where the team has no seat free. Returns the profile's
+        account (*user_id*), whether it is a test driver and the placement left (*source*).
         """
         cursor = await db.execute(
-            "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ?",
+            "SELECT discord_user_id, current_state, is_test_driver FROM driver_profiles "
+            "WHERE id = ?",
             (driver_profile_id,),
         )
         row = await cursor.fetchone()
         if row is None:
             raise ValueError("Driver profile not found.")
-        is_test_driver = bool(row["is_test_driver"])
 
         cursor = await db.execute(
             """
@@ -1140,6 +1144,45 @@ class PlacementService:
                     "Driver already holds a seat in the division they would move into."
                 )
 
+        await self._find_free_seat(db, to_division_id, team_name)
+        return {
+            "user_id": int(row["discord_user_id"]),
+            "is_test_driver": bool(row["is_test_driver"]),
+            "source": source,
+        }
+
+    async def move_seat_on(
+        self,
+        db,
+        *,
+        driver_profile_id: int,
+        season_id: int,
+        from_division_id: int,
+        to_division_id: int,
+        team_name: str,
+    ) -> dict:
+        """Move a committed driver from their seat to a team of the same or another division, on
+        *db*, leaving the audit entry to the caller.
+
+        Everything `move_on` writes but the audit entry, written on the connection handed and
+        committed by no one here, so that a change on the queue writes the entry with the queue's
+        clock (`audit`). It awaits nothing but *db*: no member is fetched, no role asked of
+        Discord, no lineup posted, no capacity guarded (`guard_move`, an ACT's, reads templates
+        off the loop). Refused as `judge_move_on` refuses.
+
+        Returns the summary (from_division, to_division, from_team, to_team, lineups), the audit
+        entry's *audit* (its old and new values and the division), what is left for the roles:
+        *revoke* and *grant*, the role ids to take back and give, empty for a test driver, the
+        driver's account *user_id*, and *is_test_driver*.
+        """
+        judged = await self.judge_move_on(
+            db, driver_profile_id=driver_profile_id, season_id=season_id,
+            from_division_id=from_division_id, to_division_id=to_division_id,
+            team_name=team_name,
+        )
+        source = judged["source"]
+        is_test_driver = judged["is_test_driver"]
+
         new_seat_id, _ = await self._free_seat(db, to_division_id, team_name)
         to_team_full_name = await self._team_full_name(db, to_division_id, team_name)
 
@@ -1171,19 +1214,12 @@ class PlacementService:
                 "WHERE id = ?",
                 (to_division_id, new_seat_id, source["id"]),
             )
-        await db.execute(
-            "INSERT INTO audit_entries "
-            "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-            "VALUES (?, ?, ?, 'DRIVER_MOVE', ?, ?, ?)",
-            (
-                acting_user_id, acting_user_name, to_division_id,
-                json.dumps({"division": divisions[from_division_id]["name"],
-                            "team": source["team_name"]}),
-                json.dumps({"division": divisions[to_division_id]["name"],
-                            "team": team_name}),
-                datetime.now(timezone.utc).isoformat(),
-            ),
-        )
+        audit = {
+            "old_value": {"division": divisions[from_division_id]["name"],
+                          "team": source["team_name"]},
+            "new_value": {"division": divisions[to_division_id]["name"], "team": team_name},
+            "division_id": to_division_id,
+        }
 
         revoke: list[int] = []
         grant: list[int] = []
@@ -1222,12 +1258,51 @@ class PlacementService:
             "to_division": divisions[to_division_id]["name"],
             "from_team": source["team_full_name"] or source["team_name"],
             "to_team": to_team_full_name,
-            # The lineups the move touched, for the caller to ask the change queue for (#439).
+            # The lineups the move touched, for the caller to post (#439).
             "lineups": list(dict.fromkeys((from_division_id, to_division_id))),
+            "audit": audit,
             "revoke": revoke,
             "grant": grant,
+            "user_id": judged["user_id"],
             "is_test_driver": is_test_driver,
         }
+
+    async def move_on(
+        self,
+        db,
+        *,
+        driver_profile_id: int,
+        season_id: int,
+        from_division_id: int,
+        to_division_id: int,
+        team_name: str,
+        acting_user_id: int,
+        acting_user_name: str,
+    ) -> dict:
+        """Move a committed driver from their seat to a team of the same or another division, on *db*.
+
+        `move_seat_on`, and the `DRIVER_MOVE` audit entry written with it on the same
+        connection, stamped with the wall clock and committed by no one here, so that a
+        sanction's save carries the move with the rest of its writes (#439). Refused and
+        returned as `move_seat_on` refuses and returns.
+        """
+        summary = await self.move_seat_on(
+            db, driver_profile_id=driver_profile_id, season_id=season_id,
+            from_division_id=from_division_id, to_division_id=to_division_id,
+            team_name=team_name,
+        )
+        audit = summary["audit"]
+        await db.execute(
+            "INSERT INTO audit_entries "
+            "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
+            "VALUES (?, ?, ?, 'DRIVER_MOVE', ?, ?, ?)",
+            (
+                acting_user_id, acting_user_name, audit["division_id"],
+                json.dumps(audit["old_value"]), json.dumps(audit["new_value"]),
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        return summary
 
     @staticmethod
     async def _team_role_on(db, team_name: str) -> int | None:

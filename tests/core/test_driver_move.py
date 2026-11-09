@@ -577,7 +577,6 @@ async def test_a_driver_move_and_its_audit_entry_and_line_are_one_save_then_role
     assert last_said(asked) == _moved("Lewis")
 
 
-@pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED)
 async def test_a_refused_role_move_is_reported_and_the_queue_goes_on(tmp_path):
     """architecture.md, "A job that fails stops its lane": a member's roles moved after their
     driver's change end on a fault rather than stopping the lane. The season is ongoing; Lewis and
@@ -625,7 +624,6 @@ async def test_a_refused_role_move_is_reported_and_the_queue_goes_on(tmp_path):
     assert last_said(max_) == _moved("Max")
 
 
-@pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED)
 async def test_a_failed_driver_move_moves_nothing(tmp_path):
     """The season is ongoing; Lewis sits at Ferrari in Pro. The league admin runs `/driver move`
     of Lewis into McLaren in Am, and as the queue runs it the database fails writing the audit
@@ -758,26 +756,22 @@ async def _fill_mclaren(league):
         pytest.param(
             _end_the_races, "⛔ `/driver move` is available only while the season is ongoing.",
             [("Pro", "Ferrari", True)], id="the-races-ended",
-            marks=pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED),
         ),
         pytest.param(
             _unconfirm_lewis,
             "⛔ That placement is not yet confirmed. Change it with `/driver unassign` and "
             "`/driver assign`.",
             [("Pro", "Ferrari", False)], id="the-placement-unconfirmed",
-            marks=pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED),
         ),
         pytest.param(
             _seat_lewis_in_am,
             "⛔ Driver already holds a seat in the division they would move into.",
             [("Pro", "Ferrari", True), ("Am", "McLaren", True)],
             id="a-seat-taken-in-the-division-moved-into",
-            marks=pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED),
         ),
         pytest.param(
             _fill_mclaren, "⛔ **McLaren** in this division has no available seats.",
             [("Pro", "Ferrari", True)], id="the-team-moved-into-filled",
-            marks=pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED),
         ),
     ],
 )
@@ -892,7 +886,6 @@ async def test_a_driver_move_asked_again_while_it_waits_is_refused_as_a_repeat(t
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED)
 async def test_a_driver_who_left_the_server_before_the_move_runs_is_moved_without_roles(
     tmp_path,
 ):

@@ -83,9 +83,6 @@ def _reply(interaction: MagicMock) -> str:
     return interaction.followup.send.await_args.args[0]
 
 
-#: Why a test below fails until `/driver move` is a change on the queue.
-_MOVE_NOT_QUEUED = "#283: /driver move is not yet a change on the queue"
-
 #: Why a test below fails until `/driver release` is a change on the queue.
 _RELEASE_NOT_QUEUED = "#283: /driver release is not yet a change on the queue"
 
@@ -151,7 +148,6 @@ async def test_a_move_of_a_member_with_no_profile_is_refused():
     assert cog.bot.change_queue.method_calls == []
 
 
-@pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED)
 async def test_a_move_names_the_team_in_the_division_moved_into():
     """The team is resolved by its shorthand in the division the driver goes to (#381): Racer is
     moved from Pro into `alp` of Academy, which resolves to its team ALP; the move asked of the
@@ -185,7 +181,6 @@ async def test_a_move_into_a_team_the_division_does_not_have_is_refused():
     assert cog.bot.change_queue.method_calls == []
 
 
-@pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED)
 async def test_a_move_within_one_division_passes_that_division_both_ways():
     """Racer (profile 55) is moved to Reserve with no division to move into named: the move asked
     of the queue is from Pro into Pro, in the confirmed season, of Racer's profile and account."""
@@ -201,7 +196,6 @@ async def test_a_move_within_one_division_passes_that_division_both_ways():
     assert payload["discord_user_id"] == str(USER_ID)
 
 
-@pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED)
 @pytest.mark.parametrize(
     "stage", [SeasonStage.ONGOING, SeasonStage.ONGOING_SIGNUPS, SeasonStage.ONGOING_PLACEMENTS]
 )

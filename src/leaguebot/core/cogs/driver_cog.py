@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
+from leaguebot.core.services.driver_changes import DRIVER_MOVE
 from leaguebot.core.services.lineup_posting import ask_lineup_posts
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
@@ -527,36 +528,23 @@ class DriverCog(commands.Cog):
             )
             return
 
-        try:
-            result = await self.bot.placement_service.move_driver(
-                driver_profile_id=profile.id,
-                season_id=season.id,
-                from_division_id=resolved_from[0],
-                to_division_id=resolved_to[0],
-                team_name=reference.team["name"],
-                acting_user_id=interaction.user.id,
-                acting_user_name=str(interaction.user),
-                guild=interaction.guild,
-                discord_user_id=str(user.id),
-            )
-        except ValueError as exc:
-            await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
-            return
-
-        # The change is made; the lineups it touched follow on the change queue (#439).
-        await ask_lineup_posts(self.bot.change_queue, self.bot.db_path, result["lineups"])
-
-        await interaction.followup.send(
-            f"✅ Moved **{user.display_name}** from **{result['from_team']}** in "
-            f"**{result['from_division']}** to **{result['to_team']}** in "
-            f"**{result['to_division']}**.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver move | Success\n"
-            f"  user: {user.display_name} (<@{user.id}>)\n"
-            f"  from: {result['from_team']}, {result['from_division']}\n"
-            f"  to: {result['to_team']}, {result['to_division']}",
+        # The move, its roles and its lineups are a change on the queue, which refuses again
+        # as it starts what is refused here (`core/services/driver_changes.py`).
+        await self.bot.change_queue.ask(
+            DRIVER_MOVE,
+            {
+                "driver_profile_id": profile.id,
+                "discord_user_id": str(user.id),
+                "driver_name": user.display_name,
+                "season_id": season.id,
+                "from_division_id": resolved_from[0],
+                "from_division": resolved_from[1],
+                "to_division_id": resolved_to[0],
+                "to_division": resolved_to[1],
+                "team_name": reference.team["name"],
+                "team_full_name": reference.team["full_name"],
+            },
+            interaction=interaction, what=describe(interaction),
         )
 
     # ------------------------------------------------------------------
