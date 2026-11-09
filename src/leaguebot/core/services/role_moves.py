@@ -87,7 +87,7 @@ def role_move_step(
     placement: "PlacementService", name: str = MOVE_ROLES, *, reason: str = PLACEMENT_REASON
 ) -> Step:
     """The job that takes a member's roles and then gives theirs; see the module. *reason* is what
-    Discord's audit log is given for taking them.
+    Discord's audit log is given for taking them and for giving them.
 
     It raises where Discord will not (`PlacementService.revoke_roles`, `grant_roles`), and
     `on_fault` ends the job on it with the problem named, so the queue goes on.
@@ -110,7 +110,7 @@ def role_move_step(
                 return StepResult(result={"gone": True})
         if grant:
             try:
-                found = await placement.grant_roles(guild, user_id, *grant)
+                found = await placement.grant_roles(guild, user_id, *grant, reason=reason)
             except Exception as error:
                 raise _RoleMoveFault(taken=True) from error
             if not found:

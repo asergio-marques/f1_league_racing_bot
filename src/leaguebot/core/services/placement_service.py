@@ -159,7 +159,11 @@ class PlacementService:
                 log.warning("_grant_roles: failed to add role %s to %s: %s", role_id, member.id, exc)
 
     async def grant_roles(
-        self, guild: discord.Guild, user_id: int, *role_ids: int
+        self,
+        guild: discord.Guild,
+        user_id: int,
+        *role_ids: int,
+        reason: str = "Driver placement",
     ) -> bool:
         """Grant *role_ids* to the member *user_id*, **raising** where it could not be done.
 
@@ -170,7 +174,8 @@ class PlacementService:
         `StepFailedOnDiscord`, raised from the Discord fault where there is one: the member
         could not be fetched for another reason, a role is no longer on the server (checked
         before any is given, so no driver is left with half), or Discord refuses the grant.
-        Granting is idempotent, so a retry gives again what is already held.
+        *reason* is what Discord's audit log is given for the grant. Granting is idempotent, so a
+        retry gives again what is already held.
         """
         try:
             member = await guild.fetch_member(user_id)
@@ -187,7 +192,7 @@ class PlacementService:
                 raise StepFailedOnDiscord("a role is no longer on the server")
             roles.append(role)
         try:
-            await member.add_roles(*roles, reason="Driver placement")
+            await member.add_roles(*roles, reason=reason)
         except discord.HTTPException as exc:
             raise StepFailedOnDiscord(
                 f"member {user_id} could not be given their roles: {exc}"
