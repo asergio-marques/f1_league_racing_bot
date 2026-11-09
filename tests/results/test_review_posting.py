@@ -524,14 +524,17 @@ async def _set_results_channel(league: _League, channel_id: int) -> Any:
     from leaguebot.core.services.season_service import SeasonService
     from leaguebot.results.cogs.results_cog import ResultsCog
 
+    await set_module_flag(league.db_path, "results", True)
+    league.bot.module_service.is_results_enabled = AsyncMock(return_value=True)
+    league.bot.season_service = SeasonService(league.db_path)
     builder = MagicMock()
+    builder.module_service = league.bot.module_service
+    builder.season_service = league.bot.season_service
+    builder.get_channel = league.bot.get_channel
     register_change_types(builder)
     built = {call.args[0].kind: call.args[0]
              for call in builder.change_queue.register.call_args_list}
     register(league.bot, built["results.setting.results_channel"])
-    await set_module_flag(league.db_path, "results", True)
-    league.bot.module_service.is_results_enabled = AsyncMock(return_value=True)
-    league.bot.season_service = SeasonService(league.db_path)
     cog = ResultsCog.__new__(ResultsCog)
     cog.bot = league.bot
     interaction = member_interaction(league.bot)
@@ -550,10 +553,6 @@ async def _results_channel(db_path: str) -> int | None:
     return None if row is None or row[0] is None else int(row[0])
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: /results channel results is not yet a results setting that overtakes a stopped job",
-)
 async def test_a_stopped_post_lands_once_the_channel_is_set_and_retried(tmp_path):
     """Set the channel, then Retry: the remedy the stop notice leads a manager to, end to end.
 
