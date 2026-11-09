@@ -699,8 +699,10 @@ async def test_a_refusal_found_inside_the_save_ends_the_reassign_and_the_lane_go
     words, "⛔ This driver has a signup in progress. …", its acknowledgement updated to them, and
     the log channel takes that refusal as a line: nothing of it is saved, no audit entry, no role
     moved, no portrait discarded. The lane is not stopped, and Kimi's reassign, asked after, goes
-    through: 9003 is his current account and his success line follows Valtteri's refusal."""
-    from leaguebot.core.services.change_queue import ChangeQueue
+    through: 9003 is his current account and his success line follows Valtteri's refusal. The
+    signup is begun from the change type's own check as the queue runs it, once it has passed."""
+    import dataclasses
+
     from tests.support.change_queue import run_queue, stopped_job
     from tests.support.season_league import SIGNING_UP, UNASSIGNED, profile_id
     from tests.support.settings_league import last_said, log_lines
@@ -710,17 +712,19 @@ async def test_a_refusal_found_inside_the_save_ends_the_reassign_and_the_lane_go
     valtteri = await _ask_reassign(league, UNASSIGNED, _NEW)
     await _ask_reassign(league, SIGNING_UP, _KIMI_NEW)
     queue = league.bot.change_queue
-    checked = ChangeQueue.check
+    [reassign] = [each for each in queue.types if each.kind == "core.driver_reassign"]
     begun: list[bool] = []
 
-    async def _then_a_signup(kind, payload, **kwargs):
-        verdict = await checked(queue, kind, payload, **kwargs)
-        if not begun and str(payload.get("old_user_id")) == str(UNASSIGNED):
+    async def _then_a_signup(ctx):
+        verdict = await reassign.check(ctx)
+        if not begun and str(ctx.payload.get("old_user_id")) == str(UNASSIGNED):
+    # The asks are made: from here the type's check runs only as each change starts, and the
+    # signup begins once Valtteri's has passed, between it and the save.
             begun.append(True)
             await _valtteri_begins_a_signup(league)
         return verdict
 
-    monkeypatch.setattr(queue, "check", _then_a_signup)
+    queue.register(dataclasses.replace(reassign, check=_then_a_signup))
     await run_queue(league.bot)
 
     assert begun == [True]
