@@ -209,6 +209,57 @@ async def test_each_turned_down_driver_has_a_job_of_their_own(tmp_path):
     assert not any("Signups closed" in line for line in lines)
 
 
+async def _approved(league: Any, user_id: int) -> int:
+    """How many of driver *user_id*'s signups are approved."""
+    rows = await league.rows(
+        "SELECT COUNT(*) AS n FROM signup_records WHERE discord_user_id = ? AND approved = 1",
+        str(user_id),
+    )
+    return rows[0]["n"]
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#283: the wind-down does not yet call core's driver-turned-down hook"
+)
+async def test_the_wind_down_withdraws_the_approval_of_each_approved_driver_it_turns_down(tmp_path):
+    """The core specification: the wind-down turns each pending placement down as the reject
+    command would; and the signup specification: a signup ceases to be approved when the approved
+    driver is turned down. The signup module is on; every division is done with Max's and
+    Charles's placements pending (Assigned, uncommitted), Lewis's committed, Valtteri (106)
+    approved and never placed, and Kimi (105) in review, his signup for an earlier season (2)
+    approved. Lewis's, Max's and Valtteri's signups for this season are approved. The wind-down
+    runs. Max and Valtteri, approved drivers turned down, no longer have an approved signup, each
+    withdrawn through core's driver-turned-down hook in the wind-down's save; Kimi, turned down
+    while his signup was still in review, keeps his earlier season's approval; and Lewis, whose
+    placement stands, keeps his."""
+    league = await _league(tmp_path)
+    await league.switch("signup", True)
+    await signing_up(league)
+    await approved_unplaced(league)
+    await league.write(
+        "INSERT INTO seasons (id, season_number, start_date, status) "
+        "VALUES (6, 2, '2026-01-01', 'COMPLETED')"
+    )
+    await league.write(
+        "INSERT INTO signup_records (season_id, discord_user_id, server_display_name, approved) "
+        "VALUES (6, ?, 'Kimi', 1)",
+        str(SIGNING_UP),
+    )
+    await league.write(
+        "UPDATE signup_records SET approved = 1 WHERE season_id = ? AND discord_user_id IN "
+        "(?, ?, ?)",
+        SEASON_ID, str(LEWIS), str(MAX), str(UNASSIGNED),
+    )
+    await _ask(league)
+    await run_queue(league.bot)
+
+    assert await _stage(league) == "PENDING_COMPLETION"
+    for user_id in (MAX, UNASSIGNED, SIGNING_UP):
+        assert await driver_state(league, user_id) == "NOT_SIGNED_UP"
+    assert [await _approved(league, user_id) for user_id in (MAX, UNASSIGNED, SIGNING_UP, LEWIS)] \
+        == [0, 0, 1, 1]
+
+
 async def test_a_plain_ongoing_season_is_moved_on_with_no_driver_job(tmp_path):
     """A season Ongoing, every division done and signups shut: signup's close of the window finds
     nothing to close, the season is moved on to Pending completion, and no driver has a job."""
