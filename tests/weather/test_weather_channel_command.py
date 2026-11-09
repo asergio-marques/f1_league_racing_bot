@@ -310,13 +310,19 @@ async def test_an_unknown_division_is_recorded_as_a_refusal(tmp_path):
 
 async def test_a_division_is_matched_regardless_of_case(tmp_path):
     """A manager typing `dIvIsIoN 1` means Division 1: once the queue has run, Division 1 (id 11)
-    has #forecasts as its forecast channel."""
+    has #forecasts as its forecast channel, and the reply and the log line name the division as
+    the manager typed it."""
     db_path = await _make_db(tmp_path)
     cog = await _make_cog(db_path)
+    interaction = _interaction(cog)
 
-    await _run(cog, _interaction(cog), name="dIvIsIoN 1")
+    await _run(cog, interaction, name="dIvIsIoN 1")
 
     assert await _forecast_channel(db_path) == CHANNEL_ID
+    assert _replied(interaction) == (
+        f"✅ Weather forecast channel for **dIvIsIoN 1** set to <#{CHANNEL_ID}>."
+    )
+    assert any("\n  division: dIvIsIoN 1\n" in line for line in _lines(cog)), _lines(cog)
 
 
 # ---------------------------------------------------------------------------
@@ -545,9 +551,9 @@ async def test_two_changes_waiting_for_one_division_each_record_the_channel_they
 ):
     """Season 1 is being set up, and its Division 1 has no forecast channel. The manager asks for
     #forecasts, then, before the queue runs, for #weather, and is acknowledged for each. Each
-    change reads the channel it replaces as it saves: the first is told its channel was set and records none replaced, the
-    second is told its channel was updated and records #forecasts replaced, and Division 1 is
-    left with #weather."""
+    change reads the channel it replaces as it saves: the first is told its channel was set and
+    records none replaced, the second is told its channel was updated and records #forecasts
+    replaced, and Division 1 is left with #weather."""
     db_path = await _make_db(tmp_path)
     cog = await _make_cog(db_path)
     first, second = _interaction(cog), _interaction(cog)
