@@ -470,14 +470,6 @@ async def _delete_round_2(db) -> None:
     )
 
 
-async def _delete_round_2_and_renumber(db) -> None:
-    await _delete_round_2(db)
-    await db.execute(
-        "UPDATE rounds SET round_number = 2 WHERE round_number = 3 "
-        "AND division_id = (SELECT id FROM divisions WHERE name = 'Pro')"
-    )
-
-
 @pytest.mark.xfail(strict=True, reason=_XFAIL_DELETE)
 async def test_a_round_delete_its_hook_renumbering_audit_entry_and_line_are_one_save(tmp_path):
     """The core specification's Rounds and its record of what changed. Season #1 is being set up,
@@ -583,22 +575,17 @@ async def test_a_failed_round_delete_deletes_nothing(tmp_path):
             _delete_round_2, _not_found(2, "Pro"),
             [_PRO_STANDING[0], _PRO_STANDING[2]], id="the-round-deleted",
         ),
-        pytest.param(
-            _delete_round_2_and_renumber, _not_found(2, "Pro"), _PRO_AFTER,
-            id="the-round-deleted-and-another-given-its-number",
-        ),
     ],
 )
 async def test_a_round_delete_is_judged_again_as_it_starts(tmp_path, meanwhile, reply, pro_after):
     """Season #1 is being set up, in Placements, holding Pro with rounds 1, 2 and 3 and Am with
     round 1. The league admin runs `/round delete` of round 2 of Pro and is acknowledged; before
-    the queue runs it, the season is approved and under way, Pro is deleted with its rounds, round
-    2 is deleted, or round 2 is deleted and Pro renumbered so that the 28 June round is now round
-    2. The queue runs. The delete is refused as it starts, in the words it would meet at the ask,
-    its acknowledgement updated to them; the round judged is the one named at the ask, by its id,
-    so that the round now bearing its number is never deleted in its place. Pro's rounds stand as
-    the meanwhile left them and Am's are untouched, no audit entry is written, the log channel
-    holds the refusal alone, and the queue is not stopped."""
+    the queue runs it, the season is approved and under way, Pro is deleted with its rounds, or
+    round 2 is deleted. The queue runs. The delete is refused as it starts, in the words it would
+    meet at the ask, its acknowledgement updated to them. Pro's rounds stand as the meanwhile left
+    them and Am's are untouched, no audit entry is written, the log channel holds the refusal
+    alone, and the queue is not stopped. A round given the deleted round's number meanwhile is
+    test_a_second_round_delete_asked_after_another_change_spares_the_renumbered_round's case."""
     from tests.support.change_queue import run_queue, stopped_job
     from tests.support.settings_league import audit_rows, last_said, log_lines
 
@@ -656,9 +643,9 @@ async def test_a_second_round_delete_asked_after_another_change_spares_the_renum
     deletes Pro's round 2 and renumbers the 28 June round to 2; the second deletes Am's round; the
     third, which named at its ask the round deleted by the first, is refused as it starts,
     "❌ Round 2 not found in division `Pro`.", so that the round now bearing that number survives.
-    Pro holds rounds 1 and 2 (14 and 28 June), two audit entries are written, and the log channel
-    holds the two success lines and then the refusal."""
-    from tests.support.change_queue import run_queue
+    Pro holds rounds 1 and 2 (14 and 28 June), two audit entries are written, the log channel
+    holds the two success lines and then the refusal, and the queue is not stopped."""
+    from tests.support.change_queue import run_queue, stopped_job
     from tests.support.settings_league import audit_rows, last_said, log_lines
 
     league = await _league(tmp_path)
@@ -675,6 +662,7 @@ async def test_a_second_round_delete_asked_after_another_change_spares_the_renum
         _delete_line(2, "Pro"), _delete_line(1, "Am"),
         refusal_line(_DELETE, _not_found(2, "Pro")),
     ]
+    assert await stopped_job(league.db_path) is None
 
 
 @pytest.mark.parametrize(
