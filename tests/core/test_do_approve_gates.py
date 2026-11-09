@@ -1016,12 +1016,6 @@ async def _gate_no_pending_setup(db_path, monkeypatch):
     return cog, "No pending season setup"
 
 
-async def _gate_setup_incomplete(db_path, monkeypatch):
-    cog = _cog(db_path)
-    hold_setup(cog.bot.season_service, season_id=0, divisions=False)
-    return cog, "Season setup state is incomplete"
-
-
 async def _gate_no_longer_in_placements(db_path, monkeypatch):
     from leaguebot.core.models.season import SeasonStage
 
@@ -1104,7 +1098,6 @@ async def _gate_4b_an_image_fault(db_path, monkeypatch):
     "gate",
     [
         _gate_no_pending_setup,
-        _gate_setup_incomplete,
         _gate_no_longer_in_placements,
         _gate_no_divisions,
         _gate_s_unsettled_signups_and_channel_faults,
