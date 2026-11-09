@@ -657,6 +657,71 @@ async def _the_new_account_signing_up(league):
     )
 
 
+#: Pro of Season 1, a season gone by.
+_PAST_PRO = 11
+
+
+async def _valtteri_in_a_past_seasons_pro(league):
+    """Season 1 is complete, and Valtteri took part in its Pro division."""
+    from tests.support.season_league import UNASSIGNED, profile_id
+
+    await league.write(
+        "INSERT INTO seasons (id, season_number, start_date, status) "
+        "VALUES (1, 1, '2026-01-01', 'COMPLETED')"
+    )
+    await league.write(
+        "INSERT INTO divisions (id, season_id, name, mention_role_id, tier) "
+        "VALUES (?, 1, 'Pro', 1001, 1)",
+        _PAST_PRO,
+    )
+    await league.write(
+        "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at) "
+        "VALUES (?, ?, 1, 'NORMAL', '2026-01-20T18:00:00')",
+        _PAST_PRO, _PAST_PRO,
+    )
+    await league.write(
+        "INSERT INTO driver_division_memberships (season_id, division_id, driver_profile_id) "
+        "VALUES (1, ?, ?)",
+        _PAST_PRO, profile_id(UNASSIGNED),
+    )
+
+
+async def _the_new_account_s_driver_in_that_pro_too(league):
+    """9001 is the current account of a driver of past seasons, Not Signed Up, who took part in
+    Season 1 Pro as Valtteri did."""
+    await _valtteri_in_a_past_seasons_pro(league)
+    await league.write(
+        "INSERT INTO driver_profiles (discord_user_id, current_state) VALUES (?, 'NOT_SIGNED_UP')",
+        str(_NEW),
+    )
+    (row,) = await league.rows(
+        "SELECT id FROM driver_profiles WHERE discord_user_id = ?", str(_NEW)
+    )
+    await league.write(
+        "INSERT INTO driver_division_memberships (season_id, division_id, driver_profile_id) "
+        "VALUES (1, ?, ?)",
+        _PAST_PRO, row["id"],
+    )
+
+
+async def _the_new_account_s_leftover_standing_in_that_pro(league):
+    """No driver holds 9001, but it stands in Season 1 Pro's standings, where Valtteri took
+    part."""
+    await _valtteri_in_a_past_seasons_pro(league)
+    await league.write(
+        "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
+        "standing_position) VALUES (?, ?, ?, 1)",
+        _PAST_PRO, _PAST_PRO, _NEW,
+    )
+
+
+#: The refusal of joining two who took part in one division of one season.
+_SHARED_PRO = (
+    f"⛔ This driver and <@{_NEW}> both took part in Season 1 Pro. One person cannot stand twice "
+    "in one season's standings, so the accounts cannot be joined."
+)
+
+
 @pytest.mark.parametrize(
     "before, old, new, reply",
     [
@@ -699,6 +764,14 @@ async def _the_new_account_signing_up(league):
             "withdrawn first.",
             id="a-signup-in-progress-on-the-new-account",
         ),
+        pytest.param(
+            _the_new_account_s_driver_in_that_pro_too, 106, _NEW, _SHARED_PRO,
+            id="a-merge-of-two-who-took-part-in-one-division",
+        ),
+        pytest.param(
+            _the_new_account_s_leftover_standing_in_that_pro, 106, _NEW, _SHARED_PRO,
+            id="leftover-results-in-a-division-the-driver-took-part-in",
+        ),
     ],
 )
 async def test_a_driver_reassign_is_refused_at_the_ask(
@@ -711,14 +784,19 @@ async def test_a_driver_reassign_is_refused_at_the_ask(
     Valtteri onto 105, a merge of two drivers both in the live season; or of Valtteri onto 9001
     where 9001 is a past account of another driver, where Valtteri is a test-mode driver, where
     9001 is a test-mode driver's account, or where 9001 is a driver's whose signup awaits
-    approval. They are refused at once, in today's words for each ("⛔ No driver profile found
-    for user 9999 on this server.", "⛔ <@106> is already this driver's current account.", "⛔
-    This driver has a signup in progress. …", "⛔ This driver and <@105> both hold a seat or a
-    signup in the live season, so they cannot be merged into one driver.", "⛔ <@9001> is a past
-    account of another driver in this league, …", "⛔ That driver was created by test mode. …",
-    "⛔ <@9001> is a test-mode driver. …", "⛔ <@9001> has a signup in progress. …"), and the log
-    channel takes the refusal as its one line. Nothing is asked of the queue, no account changes, no audit
-    entry is written, no role is moved and no portrait discarded. Takes the place of
+    approval; or, Valtteri having taken part in Pro of Season 1, a season gone by, of Valtteri
+    onto 9001 where 9001 is the account of a driver of past seasons who took part in it too, or
+    an account no driver holds that stands in its standings. They are refused at once, in
+    today's words for each ("⛔ No driver profile found for user 9999 on this server.", "⛔ <@106>
+    is already this driver's current account.", "⛔ This driver has a signup in progress. …", "⛔
+    This driver and <@105> both hold a seat or a signup in the live season, so they cannot be
+    merged into one driver.", "⛔ <@9001> is a past account of another driver in this league,
+    …", "⛔ That driver was created by test mode. …", "⛔ <@9001> is a test-mode driver. …", "⛔
+    <@9001> has a signup in progress. …", "⛔ This driver and <@9001> both took part in Season 1
+    Pro. One person cannot stand twice in one season's standings, so the accounts cannot be
+    joined."), and the log channel takes the refusal as its one line. Nothing is asked of the
+    queue, no account changes, no audit entry is written, no role is moved and no portrait
+    discarded. Takes the place of
     `test_driver_cog_refusals.py`'s "reassign refused by the service" case and
     `test_driver_cog.py`'s `test_a_refused_reassignment_is_reported_not_raised`, which mocked the
     service."""
