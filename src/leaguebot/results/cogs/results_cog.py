@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 
 import discord
 from discord import app_commands
@@ -33,14 +32,16 @@ from leaguebot.results.services.points_settings import (
     RESERVES,
 )
 from leaguebot.results.services.points_config_service import ConfigNotFoundError
-from leaguebot.results.services.division_channels import (
-    set_division_penalty_channel,
-    set_division_results_channel,
-    set_division_standings_channel,
+from leaguebot.results.services.channel_settings import (
+    NO_ACCESS,
+    NOT_ENABLED,
+    RESULTS_CHANNEL,
+    STANDINGS_CHANNEL,
+    VERDICTS_CHANNEL,
+    verdicts_division_not_found,
 )
 from leaguebot.results.services.results_post_service import reserves_in_standings
-from leaguebot.core.services import audit_service
-from leaguebot.core.services.channel_registry_service import channel_refusal
+from leaguebot.core.services.division_settings import NO_SEASON_REFUSAL, division_not_found
 from leaguebot.core.utils.channel_guard import (
     league_admin_only,
     league_manager_only,
@@ -171,6 +172,13 @@ _AMEND_REVIEW_LAPSED = (
 
 #: What a `/results rounds amend` left at its session picker leaves beneath its line.
 _PICKER_ENDED = "Nothing was amended. Run `/results rounds amend` again to amend a round."
+
+#: The kind of change each `/results channel` command asks of the queue.
+_CHANNEL_KINDS = {
+    "results": RESULTS_CHANNEL,
+    "standings": STANDINGS_CHANNEL,
+    "verdicts": VERDICTS_CHANNEL,
+}
 
 #: A form's refusal when the results module has been switched off since it was shown.
 _MODULE_OFF = "\u274c The Results & Standings module is not enabled on this server."
@@ -1843,80 +1851,65 @@ class ResultsCog(commands.Cog):
         interaction: discord.Interaction,
         name: str,
         channel: discord.TextChannel,
-        channel_type: str,  # "results" | "standings"
+        channel_type: str,  # "results" | "standings" | "verdicts"
     ) -> None:
-        """Set a division's results or standings channel, for the two commands below.
+        """Ask the change queue to set a division's results, standings or verdicts channel, for
+        the three commands below.
 
-        Results' own commands, under results' own group: they sat under core's `/division`
-        until #462 moved them, and only their names changed. Each checks its module first in
-        its own words, not `_module_gate`'s, as it was worded before it moved.
+        Results' own commands, under results' own group. Each checks its module first in its own
+        words, not `_module_gate`'s.
 
-        **The live season's division** (#220): a division's channels belong to the season being
-        built or raced, and an archived one's no longer matter. Pending completion is live,
-        so a channel lost before the season completes may be repaired.
+        **The live season's division**: a division's channels belong to the season being built or
+        raced, and an archived one's no longer matter. Pending completion is live, so a channel
+        lost before the season completes may be repaired. The command finds the division from
+        the name typed, since the change is for it by its id (`results_channel_settings`).
 
-        **A channel does one job** (`channel_refusal`), checked before the write, so a
-        refusal leaves the configuration exactly as it stood — the value the setting already
-        holds included. The change is recorded by core's `audit_service`, as it was when core
-        wrote it: `DIVISION_CHANNEL_SET`, with its `channel_type`.
+        **A channel does one job** (`channel_registry_service`, judged by the setting's `check`),
+        as the queue is asked and again as the change starts, so a refusal leaves the
+        configuration exactly as it stood — the value the setting already holds included. The
+        queue's acknowledgement is the command's response, so nothing is deferred; the queue
+        writes the channel and its audit entry in one save and answers and logs after it.
 
-        Every refusal is recorded (#482): `refuse` answers as before and writes one line naming
-        the command, which is read from the interaction.
+        **Verdicts' channel is one the bot must be able to post in**, refused before the season
+        is read, and its division is refused in words of its own.
+
+        Every refusal is recorded (#482): `refuse` answers and writes one line naming the
+        command, which is read from the interaction.
         """
+        if not await self.bot.module_service.is_results_enabled():
+            await refuse(interaction, NOT_ENABLED, what=describe(interaction))
+            return
+
+        if channel_type == "verdicts":
+            guild = interaction.guild
+            if guild is None or not channel.permissions_for(guild.me).send_messages:
+                await refuse(interaction, NO_ACCESS, what=describe(interaction))
+                return
+
         season = await self.bot.season_service.get_setup_or_active_season()
         if season is None:
-            await refuse(
-                interaction,
-                "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
-                what=describe(interaction),
-            )
+            await refuse(interaction, NO_SEASON_REFUSAL, what=describe(interaction))
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == name.lower()), None)
         if div is None:
-            await refuse(
-                interaction,
-                f"\u274c Division **{name}** not found in the current season.",
-                what=describe(interaction),
+            not_found = (
+                verdicts_division_not_found if channel_type == "verdicts" else division_not_found
             )
+            await refuse(interaction, not_found(name), what=describe(interaction))
             return
 
-        refused = await channel_refusal(
-            self.bot.db_path, channel, channel_type, division_name=div.name
-        )
-        if refused is not None:
-            await refuse(interaction, refused, what=describe(interaction))
-            return
-
-        if channel_type == "results":
-            old_id = await set_division_results_channel(self.bot.db_path, div.id, channel.id)
-            type_label = "Results"
-        else:
-            old_id = await set_division_standings_channel(self.bot.db_path, div.id, channel.id)
-            type_label = "Standings"
-
-        await audit_service.record_change(
-            self.bot.db_path,
-            actor_id=interaction.user.id,
-            actor_name=str(interaction.user),
-            change_type="DIVISION_CHANNEL_SET",
-            old_value={"channel_type": channel_type, "channel_id": old_id},
-            new_value={"channel_type": channel_type, "channel_id": channel.id},
-            now=datetime.now(timezone.utc),
-            division_id=div.id,
-        )
-
-        # "Updated" says a channel was moved rather than assigned afresh (issue #212).
-        verb = "set" if old_id is None else "updated"
-        await interaction.response.send_message(
-            f"\u2705 {type_label} channel for **{name}** {verb} to {channel.mention}.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results channel {channel_type} | Success\n"
-            f"  division: {name}\n"
-            f"  channel: #{channel.name}",
+        await self.bot.change_queue.ask(
+            _CHANNEL_KINDS[channel_type],
+            {
+                "division_id": div.id,
+                "division_name": name,
+                "value": channel.id,
+                "channel_name": channel.name,
+            },
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     @channel_group.command(
@@ -1931,13 +1924,6 @@ class ResultsCog(commands.Cog):
         name: str,
         channel: discord.TextChannel,
     ) -> None:
-        if not await self.bot.module_service.is_results_enabled():
-            await refuse(
-                interaction,
-                "\u274c The Results & Standings module is not enabled.",
-                what=describe(interaction),
-            )
-            return
         await self._set_division_channel(interaction, name, channel, "results")
 
     @channel_group.command(
@@ -1952,13 +1938,6 @@ class ResultsCog(commands.Cog):
         name: str,
         channel: discord.TextChannel,
     ) -> None:
-        if not await self.bot.module_service.is_results_enabled():
-            await refuse(
-                interaction,
-                "\u274c The Results & Standings module is not enabled.",
-                what=describe(interaction),
-            )
-            return
         await self._set_division_channel(interaction, name, channel, "standings")
 
     @channel_group.command(
@@ -1973,77 +1952,5 @@ class ResultsCog(commands.Cog):
         name: str,
         channel: discord.TextChannel,
     ) -> None:
-        """Set the channel a division's verdicts are announced in (#462).
-
-        A body of its own rather than `_set_division_channel`'s, as it had under core's
-        `/division`: it defers, and refuses a channel the bot cannot post in before anything
-        else is read, so the refusal of a channel in use follows up rather than responds. The
-        change is recorded by core's `audit_service` as `VERDICTS_CHANNEL_SET`.
-        """
-        if not await self.bot.module_service.is_results_enabled():
-            await refuse(
-                interaction,
-                "\u274c The Results & Standings module is not enabled.",
-                what=describe(interaction),
-            )
-            return
-        await interaction.response.defer(ephemeral=True)
-
-        guild = interaction.guild
-
-        # Validate bot access
-        if guild is None or not channel.permissions_for(guild.me).send_messages:
-            await refuse(
-                interaction,
-                "\u274c Cannot access that channel. Ensure the bot has permission to post there.",
-                what=describe(interaction),
-            )
-            return
-
-        season = await self.bot.season_service.get_setup_or_active_season()
-        if season is None:
-            await refuse(
-                interaction,
-                "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
-                what=describe(interaction),
-            )
-            return
-
-        divisions = await self.bot.season_service.get_divisions(season.id)
-        div = next((d for d in divisions if d.name.lower() == name.lower()), None)
-        if div is None:
-            await refuse(
-                interaction, f"\u274c Division \"{name}\" not found.", what=describe(interaction)
-            )
-            return
-
-        refused = await channel_refusal(
-            self.bot.db_path, channel, "verdicts", division_name=div.name
-        )
-        if refused is not None:
-            await refuse(interaction, refused, what=describe(interaction))
-            return
-
-        old_id = await set_division_penalty_channel(self.bot.db_path, div.id, channel.id)
-
-        await audit_service.record_change(
-            self.bot.db_path,
-            actor_id=interaction.user.id,
-            actor_name=str(interaction.user),
-            change_type="VERDICTS_CHANNEL_SET",
-            old_value={"channel_id": old_id},
-            new_value={"channel_id": channel.id},
-            now=datetime.now(timezone.utc),
-            division_id=div.id,
-        )
-
-        if old_id is None:
-            msg = f"\u2705 Verdicts channel for {name} set to #{channel.name}."
-        else:
-            msg = f"\u2705 Verdicts channel for {name} updated to #{channel.name}."
-        await interaction.followup.send(msg, ephemeral=True)
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /results channel verdicts | Success\n"
-            f"  division: {name}\n"
-            f"  channel: #{channel.name}",
-        )
+        """Set the channel a division's verdicts are announced in, by `_set_division_channel`."""
+        await self._set_division_channel(interaction, name, channel, "verdicts")

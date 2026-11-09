@@ -448,20 +448,8 @@ QUEUED_CHANNELS = {
     ),
 }
 
-_RESULTS_NOT_QUEUED = (
-    "#283: /results channel results, standings and verdicts are not yet results settings on the "
-    "change queue"
-)
 
-
-@pytest.mark.parametrize(
-    "which",
-    [
-        pytest.param(which, marks=pytest.mark.xfail(strict=True, reason=_RESULTS_NOT_QUEUED))
-        if which in ("results", "standings", "verdicts") else which
-        for which in sorted(MODULE_CHANNEL_COMMANDS)
-    ],
-)
+@pytest.mark.parametrize("which", sorted(MODULE_CHANNEL_COMMANDS))
 async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_path, which):
     """Completing posts the final classification and the final attendance sheet to those
     channels, so one deleted before completion has to be repointed. Each of the six is run

@@ -80,8 +80,6 @@ NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 #: notifies nobody.
 NAMED = f"Manager (`<@{ACTOR_ID}>`)"
 
-#: Why each marked test fails until the build.
-_NOT_YET = "#283: /results channel results, standings and verdicts are not yet results settings on the change queue"
 
 #: Each command: its method on the cog, the kind of change it asks of the queue, the column of
 #: `division_results_config` it sets, and the label its reply opens with.
@@ -485,7 +483,6 @@ async def test_each_channel_type_writes_its_own_column(tmp_path, channel_type):
     assert _replied(interaction) == _reply(channel_type, "set")
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize("channel_type", ["results", "standings"])
 async def test_each_assignment_is_audited_against_its_division(tmp_path, channel_type):
     """Season 1 is being set up, and its Division 1 has none of its results channels. The manager
@@ -600,7 +597,6 @@ async def test_a_verdicts_channel_already_doing_another_job_is_refused(tmp_path)
     assert await _audit(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_the_verdicts_channel_is_set_and_audited(tmp_path):
     """Season 1 is being set up, and its Division 1 has no verdicts channel. The manager (id 77)
     runs `/results channel verdicts` for #verdicts (770001). The change is asked of the queue as
@@ -624,7 +620,6 @@ async def test_the_verdicts_channel_is_set_and_audited(tmp_path):
     assert entry["timestamp"] == NOW.isoformat()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_moving_the_verdicts_channel_says_it_was_updated(tmp_path):
     """Division 1's verdicts already go to channel 111. The reply reads that the channel was
     updated, and the audit entry records channel 111 replaced, as an integer, which is what makes
@@ -733,7 +728,6 @@ async def test_every_channel_refusal_is_recorded(tmp_path, monkeypatch, command,
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize("which", sorted(COMMANDS))
 async def test_the_manager_is_acknowledged_before_anything_is_written(tmp_path, which):
     """Season 1 is being set up, and its Division 1 has none of its results channels. The manager
@@ -754,7 +748,6 @@ async def test_the_manager_is_acknowledged_before_anything_is_written(tmp_path, 
     assert await _audit(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize("which", sorted(COMMANDS))
 async def test_a_fault_in_the_save_saves_neither_the_channel_nor_its_audit(
     tmp_path, monkeypatch, which
@@ -791,7 +784,6 @@ async def test_a_fault_in_the_save_saves_neither_the_channel_nor_its_audit(
     assert await stopped_job(db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize("which", sorted(COMMANDS))
 async def test_two_changes_waiting_for_one_division_each_record_the_channel_they_replace(
     tmp_path, which
@@ -824,7 +816,6 @@ async def test_two_changes_waiting_for_one_division_each_record_the_channel_they
     assert (await _channels(db_path))[which] == OTHER_CHANNEL_ID
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize("which", sorted(COMMANDS))
 async def test_the_same_change_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path, which):
     """Season 1 is being set up, and its Division 1 has none of its results channels. The manager
@@ -856,7 +847,6 @@ async def test_the_same_change_asked_again_while_it_waits_is_refused_as_a_repeat
     assert _lines(cog) == [_refusal_line(which, repeated), _success_line(which)]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize("which", sorted(COMMANDS))
 async def test_the_channel_is_set_while_the_queue_is_stopped_on_another_job(tmp_path, which):
     """Season 1 is being set up, and its Division 1 has none of its results channels. The league's
@@ -966,7 +956,6 @@ def _meanwhile_cases():
     return cases
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize("which,meanwhile,refused", _meanwhile_cases())
 async def test_a_change_is_refused_as_it_starts_where_its_ask_no_longer_holds(
     tmp_path, which, meanwhile, refused
@@ -996,7 +985,6 @@ async def test_a_change_is_refused_as_it_starts_where_its_ask_no_longer_holds(
     assert await stopped_job(db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize("which", sorted(COMMANDS))
 async def test_a_division_renamed_while_its_change_waits_still_gets_its_channel(tmp_path, which):
     """Season 1 is being set up, and its Division 1 has none of its results channels. The manager

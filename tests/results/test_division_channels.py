@@ -55,10 +55,6 @@ async def _make_db(tmp_path) -> str:
     return db_path
 
 
-#: Why each marked test fails until the build.
-_NOT_YET = "#283: the results channel setters do not yet write on the save's connection"
-
-
 def _on_a_connection(setter) -> None:
     """Fail at once where *setter* still opens a database by the path it is given: handed a
     connection, it would open one it never closes, at a file named for that connection in the
@@ -84,7 +80,6 @@ def _as_text(value) -> str | None:
     return None if value is None else str(value)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize("setter,column", CHANNEL_SETTERS)
 async def test_each_results_channel_setter_writes_its_own_column(tmp_path, setter, column):
     db_path = await _make_db(tmp_path)
@@ -98,7 +93,6 @@ async def test_each_results_channel_setter_writes_its_own_column(tmp_path, sette
         assert _as_text((await cursor.fetchone())[column]) == "700001"
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_the_three_results_channels_share_a_row_without_blanking_each_other(tmp_path):
     """Three separate upserts naming one column each — the shape where a copy-paste error
     silently clears the neighbouring channel."""
@@ -119,7 +113,6 @@ async def test_the_three_results_channels_share_a_row_without_blanking_each_othe
     assert _as_text(row["penalty_channel_id"]) == "700003"
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize("setter,column", CHANNEL_SETTERS)
 async def test_a_results_channel_setter_reports_what_it_replaced(tmp_path, setter, column):
     db_path = await _make_db(tmp_path)
@@ -131,7 +124,6 @@ async def test_a_results_channel_setter_reports_what_it_replaced(tmp_path, sette
     assert _as_text(second) == "700001"
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize("setter,column", CHANNEL_SETTERS)
 async def test_a_results_channel_can_be_cleared(tmp_path, setter, column):
     """A league that stops posting one of the three has no other way to unset it."""
@@ -147,7 +139,6 @@ async def test_a_results_channel_can_be_cleared(tmp_path, setter, column):
         assert (await cursor.fetchone())[column] is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_setting_a_channel_twice_does_not_make_a_second_row(tmp_path):
     db_path = await _make_db(tmp_path)
 
@@ -161,7 +152,6 @@ async def test_setting_a_channel_twice_does_not_make_a_second_row(tmp_path):
         assert (await cursor.fetchone())[0] == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize("setter,column", CHANNEL_SETTERS)
 async def test_a_results_channel_setter_leaves_the_commit_to_its_save(tmp_path, setter, column):
     """Division 11 has none of its results channels. Its results (standings, verdicts) channel
@@ -183,7 +173,6 @@ async def test_a_results_channel_setter_leaves_the_commit_to_its_save(tmp_path, 
     assert row is None or row[column] is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize("setter,column", CHANNEL_SETTERS)
 async def test_a_results_channel_already_held_is_left_unwritten(tmp_path, setter, column):
     """Division 11's results (standings, verdicts) channel is already 700001, and the setter is

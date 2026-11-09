@@ -556,6 +556,7 @@ def register_change_types(bot: LeagueBot) -> None:
         module_on_images,
     )
     from leaguebot.results.services.amendment_settings import amendment_settings
+    from leaguebot.results.services.channel_settings import results_channel_settings
     from leaguebot.results.services.module_switch_settings import module_on_results
     from leaguebot.results.services.points_settings import points_settings
     from leaguebot.weather.services.weather_settings import (
@@ -1087,6 +1088,10 @@ def register_change_types(bot: LeagueBot) -> None:
         test_mode_nationality_setting(config=bot.config_service),
         *points_settings(modules=bot.module_service, seasons=bot.season_service),
         *amendment_settings(modules=bot.module_service, seasons=bot.season_service),
+        *results_channel_settings(
+            modules=bot.module_service, seasons=bot.season_service,
+            channel_of=lambda channel_id: bot.get_channel(channel_id),
+        ),
         *image_settings(
             modules=bot.module_service,
             config=bot.image_config_service,

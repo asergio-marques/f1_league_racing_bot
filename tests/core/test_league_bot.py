@@ -165,10 +165,6 @@ SETTING_KINDS = (
 )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: the builder does not yet register results' three division-channel settings",
-)
 def test_the_settings_changes_are_registered():
     """The builder registers the thirty-eight settings changes of core, results, weather and
     images, once each, and no other kind carrying ".setting." (#439, slice 7; #283): the
