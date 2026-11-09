@@ -368,6 +368,14 @@ _FINAL_ROUND_PARTS = (
      "results' last round with results"),
 )
 
+#: Each module's part of a season's configuration confirmed, as the module names it: the module,
+#: the subscriber, and what the test calls it, in the order the builder signs them up. Each keeps
+#: what the module fixes for the season, on the connection of the confirmation's save.
+_CONFIGURATION_CONFIRMED_PARTS = (
+    ("leaguebot.signup.services.signup_module_service", "configuration_confirmed_on",
+     "signup's season settings"),
+)
+
 #: The steps of an amendment attendance defines, by name, as the amendment names them today.
 _ATTENDANCE_AMENDMENT_STEPS = [
     "announce", "clean_up_check_in", "close_without_call", "delete_message", "distribute",
@@ -375,6 +383,7 @@ _ATTENDANCE_AMENDMENT_STEPS = [
 ]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the configuration confirmed hook is not yet declared")
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The
@@ -416,7 +425,9 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     results' reading of its last round with results. A season completed, handed the completion's
     save's connection, a division's id and name and that round's id: the jobs results plans for its
     final standings, then attendance's for its final sheet; and the steps each defines, results'
-    final standings, then attendance's final sheet."""
+    final standings, then attendance's final sheet. A season's configuration confirmed, handed the
+    confirmation's save's connection, the season's id and the queue's clock: signup's keeping of
+    its settings for the season."""
     import importlib
 
     import leaguebot.__main__ as entry_point
@@ -468,6 +479,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
         *_PLACEMENTS_PARTS,
         *_FINAL_ROUND_PARTS,
         *_SEASON_COMPLETED_PARTS,
+        *_CONFIGURATION_CONFIRMED_PARTS,
     ):
         async def delete_spy(*args, part=part, **_kwargs):
             called.append(part)
@@ -590,6 +602,12 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     assert [sorted(steps) for steps in bot.season_completed_steps.call()] == [
         ["final_standings"], ["final_sheet"]
     ]
+    called.clear()
+    handed.clear()
+    await bot.configuration_confirmed.call(None, 0, _NOW)
+    assert called == [part for _module, _name, part in _CONFIGURATION_CONFIRMED_PARTS]
+    # Each part is handed the save's connection, then the season's id and the queue's clock.
+    assert handed == [(None, 0, _NOW)] * len(called)
 
 
 #: The windows the league configures in the pair test: attendance's three lead times, and
