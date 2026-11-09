@@ -775,8 +775,9 @@ async def test_the_roles_go_after_the_sack_is_saved_and_a_refused_one_is_reporte
     then of Max, before the queue runs; Discord refuses to take any role from Lewis (403 Missing
     Permissions). The queue runs both. Lewis's sack stands, saved before his roles were asked of
     Discord: he holds no seat and is at Not Signed Up, and he still holds every role. His reply
-    is today's, then "⚠️ Done, but on Discord:" and a bullet naming the roles refused, then the
-    kind of fault in plain words: "the roles <@&801>, <@&811> and <@&820> could not be taken from
+    drops today's claim that every role went, reading "✅ **Lewis** has been sacked. Season
+    assignments removed.", then "⚠️ Done, but on Discord:" and a bullet naming the roles refused,
+    then the kind of fault in plain words: "the roles <@&801>, <@&811> and <@&820> could not be taken from
     <@101>: Discord refused or failed a request from the bot"; his success line carries a "not
     done:" line in the same words, its mentions written in code as the log channel writes every
     mention. The lane is not stopped, and Max's sack, asked after, is made
@@ -804,7 +805,10 @@ async def test_the_roles_go_after_the_sack_is_saved_and_a_refused_one_is_reporte
     assert LEWIS not in seated and MAX not in seated
     assert await _state(league, LEWIS) == DriverState.NOT_SIGNED_UP.value
     assert league.roles_held[LEWIS] == {PRO_ROLE, FERRARI_ROLE, LEAGUE_DRIVER_ROLE}
-    assert last_said(lewis) == f"{_sacked('Lewis')}\n⚠️ Done, but on Discord:\n• {problem}"
+    assert last_said(lewis) == (
+        "✅ **Lewis** has been sacked. Season assignments removed.\n"
+        f"⚠️ Done, but on Discord:\n• {problem}"
+    )
     assert _sack_lines(await log_lines(league)) == [
         f"{_sack_line('Lewis', LEWIS)}\n  not done: {_as_logged(problem)}", _sack_line("Max", MAX),
     ]
