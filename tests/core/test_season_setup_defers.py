@@ -314,6 +314,10 @@ REPEATED = (
     "not asked for again."
 )
 
+#: `/season setup`'s reply once a league admin discards its save, stopped on a fault, word for
+#: word.
+SETUP_DISCARDED = "Nothing was set up: no season was begun. Run `/season setup` again."
+
 #: The log channel's name for the member asking: `member()`'s Admin (4242).
 NAMED = "Admin (`<@4242>`)"
 
@@ -431,14 +435,15 @@ async def test_a_failed_first_setup_save_leaves_no_setup_behind(tmp_path):
     it the database fails writing the audit entry. Nothing of the setup is saved, the season and
     its audit entry being one save, and the league's lane stops at the job, as any failed job stops
     it. The manager's next `/season setup`, for F1 26, is not refused as a setup in progress: it is
-    acknowledged, behind the stop. Once a league admin discards the stopped job, it runs and starts
-    the season afresh: the database then holds that one season being set up, and its
-    acknowledgement is updated to today's reply."""
+    acknowledged, behind the stop. Once a league admin discards the stopped job, the first's reply
+    says that nothing was set up and to run the command again; the second then runs and starts the
+    season afresh: the database holds that one season being set up, and its acknowledgement is
+    updated to today's reply."""
     from tests.support.change_queue import discard_job, run_queue, stopped_job
     from tests.support.settings_league import audit_rows, fault_in, last_said, said
 
     league = await _league(tmp_path)
-    await _ask_setup(league, 25)
+    first = await _ask_setup(league, 25)
     with fault_in("leaguebot.core.services.change_queue.record_change_on"):
         await run_queue(league.bot)
 
@@ -450,6 +455,7 @@ async def test_a_failed_first_setup_save_leaves_no_setup_behind(tmp_path):
     assert said(again)[0].startswith(ACKNOWLEDGED)
     await discard_job(league.bot)
 
+    assert last_said(first) == SETUP_DISCARDED
     assert [(s["season_number"], s["game_edition"]) for s in await _setup_rows(league.db_path)] == [
         (1, 26)
     ]
