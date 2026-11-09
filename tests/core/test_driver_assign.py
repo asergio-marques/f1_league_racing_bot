@@ -127,6 +127,25 @@ async def _turn_test_mode_on(league):
     await league.set_test_mode(True)
 
 
+_STANDINGS_FULL = (
+    "⛔ The driver standings template draws too few rows. The driver was **not** assigned. "
+    "Enlarge the driver standings template."
+)
+
+
+async def _fill_the_standings(league):
+    """The image module's drawing answers that the driver standings template cannot draw
+    another driver, as a league's template one row short of the division would."""
+    from unittest.mock import AsyncMock
+
+    from leaguebot.core.services.image_drawing import CapacityProblem
+
+    league.bot.image_drawing.standings_capacity_problem = AsyncMock(return_value=CapacityProblem(
+        problem="The driver standings template draws too few rows",
+        remedy="Enlarge the driver standings template.",
+    ))
+
+
 @pytest.mark.xfail(strict=True, reason=_REASON)
 async def test_a_driver_assignment_and_its_audit_entry_and_line_are_one_save(tmp_path):
     """The core specification's placement and its record of what changed. The season is in
@@ -223,18 +242,25 @@ async def test_a_failed_driver_assignment_places_nothing(tmp_path):
             _turn_test_mode_on, _TEST_MODE, id="test-mode-turned-on",
             marks=pytest.mark.xfail(strict=True, reason=_REASON),
         ),
+        pytest.param(
+            _fill_the_standings, _STANDINGS_FULL, id="the-standings-template-full",
+            marks=pytest.mark.xfail(strict=True, reason=_REASON),
+        ),
     ],
 )
 async def test_a_driver_assignment_is_judged_again_as_it_starts(tmp_path, meanwhile, reply):
     """The season is in Placements; Valtteri was approved and never placed, and McLaren's second
     seat in Am is free. The league admin runs `/driver assign` of Valtteri to McLaren in Am and is
     acknowledged; before the queue runs it, the season's placements are approved (Ongoing), Max is
-    placed in McLaren's last free seat, or test mode is turned on. The queue runs. The assignment
-    is refused as it starts, in the words it would meet at the ask, its acknowledgement updated to
-    them: "`/driver assign` is available only while the season is in placements, or mid-season
-    while the drivers of a closed signup window are being placed.", "**McLaren** in this division
-    has no available seats." or "Test mode is active — a real driver cannot be assigned to a team.
-    Turn it off with `/test-mode toggle` first.". Valtteri sits nowhere and is still Unassigned,
+    placed in McLaren's last free seat, test mode is turned on, or the image module comes to
+    answer that the driver standings template cannot draw another driver. The queue runs. The
+    assignment is refused as it starts, in the words it would meet at the ask, its acknowledgement
+    updated to them: "`/driver assign` is available only while the season is in placements, or
+    mid-season while the drivers of a closed signup window are being placed.", "**McLaren** in
+    this division has no available seats.", "Test mode is active — a real driver cannot be
+    assigned to a team. Turn it off with `/test-mode toggle` first." or the image module's own
+    words for the template's problem and its remedy, between them "The driver was **not**
+    assigned.". Valtteri sits nowhere and is still Unassigned,
     no audit entry is written, the log channel holds the refusal alone, and the queue is not
     stopped."""
     from tests.support.change_queue import run_queue, stopped_job
@@ -267,6 +293,14 @@ async def _placing_mclaren_full(tmp_path):
     return league
 
 
+async def _placing_standings_full(tmp_path):
+    """`_placing`'s season, the image module answering that the driver standings template cannot
+    draw another driver."""
+    league = await _placing(tmp_path)
+    await _fill_the_standings(league)
+    return league
+
+
 async def _placing_mid_season(tmp_path):
     """`placing_league`'s season, placing mid-season: Lewis confirmed at Ferrari in Pro."""
     from tests.support.season_league import placing_league
@@ -279,16 +313,23 @@ async def _placing_mid_season(tmp_path):
     [
         pytest.param(_placing_mclaren_full, 106, _NO_SEAT, id="no-free-seat"),
         pytest.param(_placing_mid_season, 101, _CONFIRMED_ELSEWHERE, id="a-confirmed-driver"),
+        pytest.param(
+            _placing_standings_full, 106, _STANDINGS_FULL, id="the-standings-template-full"
+        ),
     ],
 )
 async def test_a_driver_assignment_is_refused_at_the_ask(tmp_path, build, user_id, reply):
     """The core specification's placement. Either the season is in Placements and McLaren's two
     seats in Am are both taken, and the league admin runs `/driver assign` of Valtteri to McLaren
     in Am; or the season is placing drivers mid-season, Lewis holds a confirmed seat at Ferrari in
-    Pro, and the league admin runs `/driver assign` of Lewis to McLaren in Am. They are refused at
-    once, in today's words: "**McLaren** in this division has no available seats." or "Driver
-    already holds a confirmed placement this season. Move them with `/driver move`, or release
-    them from a division with `/driver release`.", and the log channel takes the refusal as its
+    Pro, and the league admin runs `/driver assign` of Lewis to McLaren in Am; or the season is in
+    Placements with McLaren's second seat free, the image module answers that the driver standings
+    template cannot draw another driver, and the league admin runs `/driver assign` of Valtteri to
+    McLaren in Am (#140 as a league met it). They are refused at once, in today's words:
+    "**McLaren** in this division has no available seats.", "Driver already holds a confirmed
+    placement this season. Move them with `/driver move`, or release them from a division with
+    `/driver release`." or the image module's own words for the template's problem and its
+    remedy, between them "The driver was **not** assigned.", and the log channel takes the refusal as its
     one line. Nothing is asked of the queue, nobody is placed, no audit entry is written and no
     role touched. Takes the place of `test_driver_cog_refusals.py`'s "assign refused by the
     service" case and `test_driver_cog.py`'s `test_a_refused_assignment_is_reported_not_raised`,
