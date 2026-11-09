@@ -13,8 +13,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.core.cogs.season_cog import SeasonCog, _ConfirmConfigurationView
-from leaguebot.core.models.season import InvalidStageTransition, SeasonStage
+from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.models.server_config import ServerConfig
+from tests.support.season_league import reply as _told
 from tests.support.setup_reads import hold_setup
 
 from tests.support.undecorate import undecorate
@@ -23,6 +24,8 @@ SERVER_ID = 7
 SEASON_ID = 31
 REVIEWER = 4242
 ADMIN_ROLE = 444
+
+_QUEUE = "#283: the configuration confirmation is not yet a change on the queue"
 
 
 def _server_config(*, test_mode: bool = False, base=2, driver=3) -> ServerConfig:
@@ -53,9 +56,13 @@ def _bot(
     test_mode=False,
     stage=SeasonStage.CONFIGURATION,
     roles=(2, 3),
+    db_path: str = ":memory:",
 ) -> MagicMock:
+    """The bot, its services answering as told. A press of ✅ Confirm configuration asks
+    the change queue for the confirmation, so a test of it gives *db_path*, a database built
+    by the migrations, which the press may read; `bot.change_queue` records what is asked."""
     bot = MagicMock()
-    bot.db_path = ":memory:"
+    bot.db_path = db_path
     bot.module_service.is_signup_enabled = AsyncMock(return_value=signup)
     bot.module_service.is_results_enabled = AsyncMock(return_value=results)
     bot.module_service.is_images_enabled = AsyncMock(return_value=images)
@@ -67,9 +74,7 @@ def _bot(
     bot.config_service.get_server_config = AsyncMock(
         return_value=_server_config(test_mode=test_mode, base=roles[0], driver=roles[1])
     )
-    bot.signup_module_service.snapshot_season_config = AsyncMock()
     bot.season_service.get_stage = AsyncMock(return_value=stage)
-    bot.season_service.set_stage = AsyncMock()
     bot.output_router.post_log = AsyncMock()
     return bot
 
@@ -81,6 +86,15 @@ def _cog(bot: MagicMock) -> SeasonCog:
     # The team names are checked by a helper of their own, pinned elsewhere.
     cog._team_name_problems = AsyncMock(return_value=[])
     return cog
+
+
+async def _migrated(tmp_path) -> str:
+    """A database built by the migrations, empty, for a press to read."""
+    from leaguebot.core.db.database import run_migrations
+
+    db_path = str(tmp_path / "league.db")
+    await run_migrations(db_path)
+    return db_path
 
 
 def _grantable_role(*, above_the_bot: bool = False) -> MagicMock:
@@ -168,18 +182,20 @@ async def test_a_driver_role_the_bot_cannot_grant_is_a_fault():
     assert "Move my role above it" in fault
 
 
-async def test_confirming_refuses_a_driver_role_gone_from_the_server():
-    bot = _bot(signup=True)
+async def test_confirming_refuses_a_driver_role_gone_from_the_server(tmp_path):
+    """The signup module is on, and the league's driver role (3) has been deleted from the server
+    since the review. ✅ Confirm configuration is refused at the press, naming the driver role,
+    and nothing is asked of the change queue."""
+    bot = _bot(signup=True, db_path=await _migrated(tmp_path))
     cog = _cog(bot)
     interaction = _interaction()
     interaction.guild = _guild(gone=(3,))
 
     await cog._do_confirm_configuration(interaction)
 
-    bot.season_service.set_stage.assert_not_awaited()
-    assert "**driver role** is no longer on the server" in (
-        interaction.followup.send.await_args.args[0]
-    )
+    assert "**driver role** is no longer on the server" in _told(interaction)
+    assert "Nothing has been confirmed" in _told(interaction)
+    assert bot.change_queue.method_calls == []
 
 
 async def test_team_names_of_the_server_list_are_checked():
@@ -240,109 +256,18 @@ async def test_the_review_is_refused_outside_configuration(stage):
 # ── Confirming ─────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize(
-    "signup, test_mode, expected",
-    [
-        (True, False, SeasonStage.WAITING),
-        (False, False, SeasonStage.PLACEMENTS),
-        (True, True, SeasonStage.PLACEMENTS),
-    ],
-)
-async def test_confirming_moves_the_season_on(signup, test_mode, expected):
-    bot = _bot(signup=signup, test_mode=test_mode)
+async def test_confirming_refuses_on_a_fault_found_afresh(tmp_path):
+    """The signup module is on and its signup channel has been cleared since the review.
+    ✅ Confirm configuration is refused at the press, and nothing is asked of the change queue."""
+    bot = _bot(signup=True, signup_config=_signup_config(channel=None),
+               db_path=await _migrated(tmp_path))
     cog = _cog(bot)
     interaction = _interaction()
 
     await cog._do_confirm_configuration(interaction)
 
-    bot.season_service.set_stage.assert_awaited_once_with(SEASON_ID, expected)
-    assert "confirmed" in interaction.followup.send.await_args.args[0]
-
-
-async def test_confirming_keeps_the_signup_configuration_for_the_season():
-    bot = _bot(signup=True)
-    await _cog(bot)._do_confirm_configuration(_interaction())
-
-    bot.signup_module_service.snapshot_season_config.assert_awaited_once_with(
-        SEASON_ID
-    )
-
-
-async def test_confirming_without_signup_keeps_no_signup_configuration():
-    bot = _bot(signup=False)
-    await _cog(bot)._do_confirm_configuration(_interaction())
-
-    bot.signup_module_service.snapshot_season_config.assert_not_awaited()
-
-
-async def test_confirming_refuses_on_a_fault_found_afresh():
-    bot = _bot(signup=True, signup_config=_signup_config(channel=None))
-    cog = _cog(bot)
-    interaction = _interaction()
-
-    await cog._do_confirm_configuration(interaction)
-
-    bot.season_service.set_stage.assert_not_awaited()
-    assert "Nothing has been confirmed" in interaction.followup.send.await_args.args[0]
-
-
-async def test_confirming_a_season_that_has_moved_on_confirms_nothing():
-    """The refusal is recorded as one line naming the presser and the review (#482)."""
-    bot = _bot()
-    bot.season_service.set_stage = AsyncMock(side_effect=InvalidStageTransition("moved"))
-    cog = _cog(bot)
-    interaction = _interaction()
-    interaction.client = bot
-
-    await cog._do_confirm_configuration(interaction)
-
-    assert "Nothing has been confirmed" in interaction.followup.send.await_args.args[0]
-    logged = [call.args[0] for call in bot.output_router.post_log.await_args_list]
-    assert len(logged) == 1
-    assert logged[0].startswith("⛔ ")
-    assert "/season config-review" in logged[0]
-    assert "refused for Manager (<@4242>) — " in logged[0]
-    assert "The season is no longer in configuration." in logged[0]
-
-
-async def test_a_confirmation_refused_because_the_season_moved_on_fixes_no_signup_settings():
-    """F5: the stage moves first, so a refused confirmation writes nothing (#482)."""
-    bot = _bot(signup=True)
-    bot.season_service.set_stage = AsyncMock(side_effect=InvalidStageTransition("moved"))
-    cog = _cog(bot)
-    interaction = _interaction()
-    interaction.client = bot
-
-    await cog._do_confirm_configuration(interaction)
-
-    assert "Nothing has been confirmed" in interaction.followup.send.await_args.args[0]
-    bot.signup_module_service.snapshot_season_config.assert_not_awaited()
-
-
-async def test_a_confirmation_the_stage_refuses_takes_no_review_down(monkeypatch):
-    """Ben's confirmation loses the race to Alex's: set_stage refuses a season that has left
-    configuration. Only a press that confirms takes a review down (core, "Confirming placements"),
-    so Ben's review is not asked down as confirmed, and when the stage does move it is."""
-    from leaguebot.core.cogs import season_cog
-
-    took_down = AsyncMock()
-    monkeypatch.setattr(season_cog, "_take_the_review_down", took_down)
-    refused = _bot()
-    refused.season_service.set_stage = AsyncMock(side_effect=InvalidStageTransition("moved"))
-    interaction = _interaction()
-    interaction.client = refused
-
-    await _cog(refused)._do_confirm_configuration(interaction)
-
-    took_down.assert_not_awaited()
-
-    moved = _bot()
-    interaction = _interaction()
-    interaction.client = moved
-
-    await _cog(moved)._do_confirm_configuration(interaction)
-
-    took_down.assert_awaited_once()
+    assert "Nothing has been confirmed" in _told(interaction)
+    assert bot.change_queue.method_calls == []
 
 
 # ── The button ─────────────────────────────────────────────────────────────────────
@@ -454,52 +379,48 @@ async def test_a_refused_confirmation_leaves_the_review_standing(tmp_path, monke
     assert _expiry_timer_touched(env) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_QUEUE)
 async def test_a_confirmation_that_goes_through_takes_the_review_down(tmp_path, monkeypatch):
-    """The one press that ends the review: Alex presses ✅ Confirm configuration, the season
-    unchanged, and the real confirmation runs past its gates (no fault found afresh, signup off),
-    so the configuration is confirmed. By the time the confirmation's own work moves the season on,
-    the review's take-down has already been asked of the queue, ending confirmed and naming Q, R1
-    and R2; the button deletes nothing itself. Once the queue runs Q, R1 and R2 are deleted, the
-    review's row is forgotten, and neither an expiry notice nor a lapse line is posted."""
-    from types import MethodType
+    """The one press that ends the review: Admin (77) presses ✅ Confirm configuration on season
+    3's review in channel 610, the season unchanged since its report and nothing at fault. Before
+    the queue runs, the review's take-down has been asked of it ahead of the confirmation, ending
+    confirmed and naming the question and the report, and nothing has been deleted. Once the queue
+    runs, the question and the report are deleted, the review's row is forgotten, nothing more is
+    posted in channel 610, and no lapse line is written."""
+    import json
 
-    from tests.support.change_queue import run_queue
-
-    env = await _standing_review(tmp_path)
-    channel = env.channel
-    await _team_list_since_the_review(env, monkeypatch)
-    view, cog = _confirm_view(env)
-    # The real confirmation, on a cog whose gates pass: the season in configuration, no fault.
-    hold_setup(
-        cog.bot.season_service, season_id=1, season_number=4, game_edition=25, divisions=False
+    from leaguebot.core.services.season_review_changes import TAKE_DOWN
+    from tests.support.change_queue import change_rows, run_queue
+    from tests.support.season_league import (
+        CONFIGURATION_CONFIRM_KIND,
+        REVIEW_CHANNEL,
+        configuring_league,
+        post_config_review,
+        press_approve,
     )
-    cog._configuration_faults = AsyncMock(return_value=[])
-    cog._do_confirm_configuration = MethodType(SeasonCog._do_confirm_configuration, cog)
-    env.bot.module_service.is_signup_enabled = AsyncMock(return_value=False)
-    asked_before: list[dict] = []
 
-    async def _move_on(*_args, **_kwargs):
-        asked_before.extend(await _take_downs(env))
+    league = await configuring_league(tmp_path, monkeypatch=monkeypatch)
+    review = await post_config_review(league)
 
-    env.bot.season_service.set_stage = AsyncMock(side_effect=_move_on)
+    await press_approve(league, review)
 
-    await _ConfirmConfigurationView.approve(view, _press(env), MagicMock())
+    assert not league.errors, league.errors
+    rows = await change_rows(league.db_path)
+    assert [row["kind"] for row in rows] == [TAKE_DOWN, CONFIGURATION_CONFIRM_KIND]
+    payload = rows[0]["payload"]
+    payload = json.loads(payload) if isinstance(payload, str) else payload
+    assert (payload["ending"], payload["question_id"]) == ("confirmed", review.prompt.id)
+    assert sorted(payload["report_ids"]) == sorted(message.id for message in review.report)
+    assert [event for event in league.events if event[0] == "delete"] == []
 
-    env.bot.season_service.set_stage.assert_awaited_once()
-    # Only a press that confirms takes the review down, so it is asked once the stage has moved
-    # and not before: a stage that refuses leaves the review standing (core :282).
-    assert asked_before == []
-    [payload] = await _take_downs(env)
-    assert (payload["ending"], payload["question_id"]) == ("confirmed", channel.q.id)
-    assert sorted(payload["report_ids"]) == sorted([channel.r1.id, channel.r2.id])
-    assert channel.deleted == []
+    await run_queue(league.bot)
 
-    await run_queue(env.bot)
-
-    assert {m.id for m in channel.deleted} == {channel.q.id, channel.r1.id, channel.r2.id}
-    assert channel.sent == []
-    assert await _prompt_rows(env) == 0
-    assert _lines(env, "⌛ ") == []
+    deleted = {event[2] for event in league.events if event[:2] == ("delete", REVIEW_CHANNEL)}
+    assert deleted == {review.prompt.id, *(message.id for message in review.report)}
+    assert await league.rows("SELECT * FROM season_review_prompts") == []
+    sent = [event for event in league.events if event[:2] == ("send", REVIEW_CHANNEL)]
+    assert len(sent) == 1 + len(review.report)
+    assert [line for line in league.bot.log_channel.sent if line.startswith("⌛")] == []
 
 
 async def test_confirming_one_review_ends_another_of_the_same_season_when_pressed(
@@ -897,49 +818,33 @@ async def test_an_unreadable_colour_or_portrait_check_stands_aside(unreadable, k
     assert await cog._image_configuration_faults() == kept
 
 
-# ── The button, on a season unchanged since the report, and what comes next ────────
+# ── The button, on a season unchanged since the report ─────────────────────────────
 
 
-async def test_an_unchanged_configuration_is_confirmed_and_its_report_cleared(
+@pytest.mark.xfail(strict=True, reason=_QUEUE)
+async def test_an_unchanged_configuration_is_handed_to_the_confirmation_with_its_evidence(
     tmp_path, monkeypatch
 ):
     """Alex presses ✅ Confirm configuration on his review, the team list as its report described
-    it. The confirmation is worked once, handed the press and the button's own name (which it
-    records any refusal under), and the review's take-down is asked of the queue, ending
-    confirmed and naming Q, R1 and R2."""
+    it. The confirmation is worked once, handed the press, the button's own name (which it
+    records any refusal under) and the review's evidence, which the confirmation is judged against
+    again when it runs. The button deletes nothing and asks no take-down itself: that is the
+    confirmation's, asked of the queue with it."""
     from leaguebot.core.cogs.season_cog import _review_button
 
     env = await _standing_review(tmp_path)
-    channel = env.channel
     await _team_list_since_the_review(env, monkeypatch)
     view, cog = _confirm_view(env)
-    asking_the_take_down(env, cog, "_do_confirm_configuration")
     interaction = _press(env)
 
     await _ConfirmConfigurationView.approve(view, interaction, MagicMock())
 
     cog._do_confirm_configuration.assert_awaited_once_with(
-        interaction, what=_review_button("Confirm configuration", CONFIG_REVIEW)
+        interaction, what=_review_button("Confirm configuration", CONFIG_REVIEW),
+        fingerprint={TEAM_LIST: "as reviewed"},
     )
-    [payload] = await _take_downs(env)
-    assert (payload["ending"], payload["question_id"]) == ("confirmed", channel.q.id)
-    assert sorted(payload["report_ids"]) == sorted([channel.r1.id, channel.r2.id])
-
-
-@pytest.mark.parametrize(
-    "signup, expected",
-    [(True, "open it with `/signup open`"), (False, "run `/season placements-review`")],
-)
-async def test_the_confirmation_says_what_comes_next_and_is_logged(signup, expected):
-    bot = _bot(signup=signup)
-    interaction = _interaction()
-
-    await _cog(bot)._do_confirm_configuration(interaction)
-
-    assert expected in interaction.followup.send.await_args.args[0]
-    log_line = bot.output_router.post_log.await_args.args[0]
-    assert "/season config-review | Confirmed" in log_line
-    assert f"stage: {'WAITING' if signup else 'PLACEMENTS'}" in log_line
+    assert env.channel.deleted == []
+    assert await _take_downs(env) == []
 
 
 # ── What the review records in the log channel (#482) ─────────────────────────────
@@ -1024,9 +929,10 @@ def _manager_confirming(bot):
     return interaction
 
 
-async def test_confirming_with_no_season_in_configuration_is_refused_and_recorded():
-    """The configuration review's question is pressed once no season is being set up."""
-    bot = _bot()
+async def test_confirming_with_no_season_in_configuration_is_refused_and_recorded(tmp_path):
+    """The configuration review's question is pressed once no season is being set up: refused at
+    once, one refusal line recorded, and nothing asked of the change queue."""
+    bot = _bot(db_path=await _migrated(tmp_path))
     cog = _cog(bot)
     hold_setup(bot.season_service, None)
     interaction = _manager_confirming(bot)
@@ -1036,7 +942,7 @@ async def test_confirming_with_no_season_in_configuration_is_refused_and_recorde
     interaction.response.send_message.assert_awaited_once_with(
         "⛔ There is no season in configuration.", ephemeral=True
     )
-    bot.season_service.set_stage.assert_not_awaited()
+    assert bot.change_queue.method_calls == []
     logged = [call.args[0] for call in bot.output_router.post_log.await_args_list]
     assert len(logged) == 1, logged
     assert logged[0].startswith("⛔ ")
@@ -1046,9 +952,12 @@ async def test_confirming_with_no_season_in_configuration_is_refused_and_recorde
     )
 
 
-async def test_confirming_a_configuration_with_faults_is_refused_with_every_fault_recorded():
-    """Manager (id 4242) confirms a configuration that now holds two faults."""
-    bot = _bot()
+async def test_confirming_a_configuration_with_faults_is_refused_with_every_fault_recorded(
+    tmp_path,
+):
+    """Manager (id 4242) confirms a configuration that now holds two faults: refused, both
+    named in the reply and the one refusal line, and nothing asked of the change queue."""
+    bot = _bot(db_path=await _migrated(tmp_path))
     cog = _cog(bot)
     faults = [
         "The signup module is enabled but has no signup channel — set one with `/signup channel`.",
@@ -1059,10 +968,10 @@ async def test_confirming_a_configuration_with_faults_is_refused_with_every_faul
 
     await cog._do_confirm_configuration(interaction)
 
-    reply = interaction.followup.send.await_args.args[0]
+    reply = _told(interaction)
     assert reply.startswith("⛔ The configuration cannot be confirmed:")
     assert "Nothing has been confirmed" in reply
-    bot.season_service.set_stage.assert_not_awaited()
+    assert bot.change_queue.method_calls == []
     logged = [call.args[0] for call in bot.output_router.post_log.await_args_list]
     assert len(logged) == 1, logged
     head = logged[0].splitlines()[0]

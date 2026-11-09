@@ -236,21 +236,23 @@ async def _clear_the_signup_channel(league: Any) -> None:
 
 @pytest.mark.xfail(strict=True, reason=_XFAIL)
 @pytest.mark.parametrize(
-    "meanwhile, refusal, stage",
+    "meanwhile, refusal, why, stage",
     [
-        pytest.param(_leave_configuration, NO_LONGER, "WAITING", id="the_season_moved_on"),
-        pytest.param(_clear_the_signup_channel, NO_SIGNUP_CHANNEL, "CONFIGURATION",
+        pytest.param(_leave_configuration, NO_LONGER, "The season is no longer in configuration.",
+                     "WAITING", id="the_season_moved_on"),
+        pytest.param(_clear_the_signup_channel, NO_SIGNUP_CHANNEL,
+                     "The signup module has no **signup channel**", "CONFIGURATION",
                      id="a_fault_found_afresh"),
     ],
 )
 async def test_a_refusal_found_as_the_confirmation_starts_confirms_nothing(
-    tmp_path, monkeypatch, meanwhile, refusal, stage,
+    tmp_path, monkeypatch, meanwhile, refusal, why, stage,
 ):
     """The signup module is on. Admin presses ✅ Confirm configuration and the confirmation is
     accepted; before the queue runs it, the season moves on to Waiting, or the signup channel is
     cleared. As it starts it is refused in the words the press uses: the season is left at
     *stage*, no signup settings are kept, nothing is audited, Admin's reply becomes the refusal,
-    one refusal line names Admin and the button, and the queue is not stopped."""
+    one refusal line names Admin, the button and why, and the queue is not stopped."""
     league = await configuring_league(tmp_path, signup=True, monkeypatch=monkeypatch)
     press = await _pressed(league)
     assert len(await _confirmations(league)) == 1
@@ -265,6 +267,7 @@ async def test_a_refusal_found_as_the_confirmation_starts_confirms_nothing(
     assert refusal in reply(press)
     [line] = _refusal_lines(league)
     assert "refused for Admin (" in line and str(ADMIN_ID) in line
+    assert why in line
     assert await stopped_job(league.db_path) is None
 
 
