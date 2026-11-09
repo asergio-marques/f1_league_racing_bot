@@ -1,8 +1,8 @@
 """`core.round_amend`: `/round amend` of a round of the season being set up, on the change queue.
 
 A change type of its own on the league lane, registered by the builder, beside the amendment of a
-round of a season being raced (`round_amend_change`), which it shares nothing with: a setup round
-has no timed work, no results and no confirmation. One SAVE step changes the round's track, moment
+round of a season being raced (`round_amend_change`), which it shares nothing with but the Discard
+reply (`NOTHING_AMENDED`): a setup round has no timed work, no results and no confirmation. One SAVE step changes the round's track, moment
 or format, clearing the track of a mystery round, renumbers its division by moment, and writes a
 `ROUND_AMENDED` audit entry (the round as it stood and as it stands) and the log channel's line,
 stamped with the queue's clock, all on the save's own connection. No other division's rounds are
@@ -238,7 +238,8 @@ def _save(
 ) -> Callable[[aiosqlite.Connection, StepContext], Awaitable[StepResult]]:
     async def save(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """Change the round, renumber its division, and write its audit entry and its line; or,
-        where it already holds what was asked, record that nothing was changed."""
+        where the round would stand as it does once a mystery round's track is cleared, record
+        that nothing was changed."""
         payload = ctx.payload
         season = await seasons.get_setup_season_on(db)
         if season is None:
