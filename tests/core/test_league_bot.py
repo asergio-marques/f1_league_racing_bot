@@ -181,6 +181,55 @@ def test_the_settings_changes_are_registered():
     assert len(SETTING_KINDS) == 40
 
 
+#: Each channel the channel registry knows, by its key, and the setting that points the bot at it.
+#: The signup channel is the registry's but has none: `/signup channel` is not asked of the queue,
+#: so it never waits behind a stop.
+CHANNEL_SETTING_KINDS = {
+    "calendar": "core.setting.calendar_channel_id",
+    "lineup": "core.setting.lineup_channel_id",
+    "results": "results.setting.results_channel",
+    "standings": "results.setting.standings_channel",
+    "verdicts": "results.setting.verdicts_channel",
+    "rsvp": "attendance.setting.rsvp_channel",
+    "attendance": "attendance.setting.attendance_channel",
+    "weather": "weather.setting.forecast_channel",
+    "interaction": "core.setting.interaction_channel",
+    "log": "core.setting.log_channel",
+    "hub": "core.setting.hub_channel_id",
+}
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the hub, lineup, calendar and forecast channel settings wait behind a stop",
+)
+def test_every_channel_setting_overtakes_a_stopped_job():
+    """A stop notice for a channel tells the league to set the channel, then press Retry: a
+    setting waiting behind the stop it is meant to clear could never do it. Every channel the
+    channel registry knows, the signup channel aside, has its setting registered, and each runs
+    past a stopped job; so do the interaction role and the league admin role, the league's way
+    back in, and no other change. A channel added to the registry fails here until its setting is
+    named and overtakes."""
+    from leaguebot.__main__ import register_change_types
+    from leaguebot.core.services.channel_registry_service import SETTING_LABELS
+
+    bot = MagicMock()
+    register_change_types(bot)
+
+    overtaking = {
+        call.args[0].kind: call.args[0].overtakes_a_stop
+        for call in bot.change_queue.register.call_args_list
+    }
+    assert set(SETTING_LABELS) - {"signup"} == set(CHANNEL_SETTING_KINDS)
+    assert {key: overtaking.get(kind) for key, kind in CHANNEL_SETTING_KINDS.items()} == {
+        key: True for key in CHANNEL_SETTING_KINDS
+    }
+    assert sorted(kind for kind, overtakes in overtaking.items() if overtakes) == sorted(
+        [*CHANNEL_SETTING_KINDS.values(), "core.setting.interaction_role",
+         "core.setting.admin_role"]
+    )
+
+
 @pytest.mark.parametrize(
     ("module", "package", "on_writes", "off_writes"),
     [

@@ -48,12 +48,15 @@ from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     Clock,
+    PAST_THE_STOP,
     acknowledgement,
     league_bot,
     league_queue,
     member,
     run_queue,
     seed_server,
+    step_rows,
+    stop_the_league_lane,
     stopped_job,
 )
 from tests.support.settings_league import interaction as member_asks
@@ -372,6 +375,41 @@ async def test_a_fault_in_the_save_saves_neither_the_channel_nor_its_audit(
         f"❌ `{command}` failed for {NAMED} — OperationalError. The details are in the host's log."
     ]
     assert await stopped_job(db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason="#283: a division's lineup and calendar channels wait behind a stopped job")
+@pytest.mark.parametrize("which", ALL)
+async def test_the_channel_is_set_while_the_queue_is_stopped_on_another_job(tmp_path, which):
+    """Season 1 is being set up, and its Division 1 has no channel. The league's queue is stopped
+    on another job, which failed on a fault in the bot. The manager (id 77) runs
+    `/division lineup-channel`, or `/division calendar-channel`, for #notices (780001), the remedy
+    a stop notice names for a division with no lineup channel. They are acknowledged at once and
+    told the change runs at once, past the stop, and that the stopped job stays stopped; nothing
+    is written as they ask. Once the queue runs, Division 1 has 780001, the manager is told the
+    channel was set, and the other job is still stopped where it was."""
+    db_path = await _make_db(tmp_path)
+    cog = await _make_cog(db_path)
+    stopped = await stop_the_league_lane(cog.bot, db_path)
+    interaction = _interaction(cog, which)
+
+    await _ask(cog, which, interaction)
+
+    first_job = min(
+        row["id"] for row in await step_rows(db_path) if row["change_id"] != stopped["change_id"]
+    )
+    assert acknowledgement(interaction) == (
+        f"⏳ Setting the {LABELS[which].lower()} for **Division 1** to <#{CHANNEL_ID}>. This "
+        f"message will be updated when it is done; if it takes longer, the log channel will say "
+        f"so. It begins with job #{first_job}." + PAST_THE_STOP.format(job=stopped["id"])
+    )
+    assert await _channel_column(db_path, CORE_COLUMNS[which]) is None
+    await run_queue(cog.bot)
+
+    assert await _channel_column(db_path, CORE_COLUMNS[which]) == CHANNEL_ID
+    assert _replied(interaction) == f"✅ {LABELS[which]} for **Division 1** set to <#{CHANNEL_ID}>."
+    still = await stopped_job(db_path)
+    assert still is not None
+    assert (still["id"], still["change_id"]) == (stopped["id"], stopped["change_id"])
 
 
 # ---------------------------------------------------------------------------

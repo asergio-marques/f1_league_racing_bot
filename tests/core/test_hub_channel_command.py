@@ -41,8 +41,11 @@ from tests.support.change_queue import (
     http_error,
     league_bot,
     league_queue,
+    PAST_THE_STOP,
     member,
     run_queue,
+    step_rows,
+    stop_the_league_lane,
     stopped_job,
 )
 from tests.support.settings_league import interaction as member_asks
@@ -587,6 +590,42 @@ async def test_a_refused_deletion_of_the_old_panel_stops_the_queue(db_path):
     new.send.assert_awaited_once()
     assert await _stored(db_path) == {"hub_channel_id": HUB, "hub_message_id": NEW_PANEL}
     assert await stopped_job(db_path) is not None
+
+
+@pytest.mark.xfail(strict=True, reason="#283: /bot hub-channel waits behind a stopped job")
+async def test_the_hub_is_set_while_the_queue_is_stopped_on_another_job(db_path):
+    """The league's server is set up with no hub, and the league's queue is stopped on another
+    job, which failed on a fault in the bot. The manager (77) points the hub at 7920 with
+    `/bot hub-channel`, the remedy the hub panel's stop notice names. They are acknowledged at once
+    and told the change runs at once, past the stop, and that the stopped job stays stopped;
+    nothing is written as they ask. Once the queue runs, 7920 is the hub, its permissions are set
+    and the manager is told it was set and its panel follows on the queue; the panel's refresh
+    waits behind the stop, so no panel is posted yet, and the other job is still stopped where it
+    was."""
+    channel = _channel(HUB)
+    cog, interaction = await _setup(db_path, channel)
+    stopped = await stop_the_league_lane(cog.bot, db_path)
+
+    await undecorate(BotCog.handle_hub_channel)(cog, interaction, channel)
+
+    first_job = min(
+        row["id"] for row in await step_rows(db_path) if row["change_id"] != stopped["change_id"]
+    )
+    assert acknowledgement(interaction) == (
+        f"⏳ Setting **Hub channel** to <#{HUB}>. This message will be updated when it is done; "
+        f"if it takes longer, the log channel will say so. It begins with job #{first_job}."
+        + PAST_THE_STOP.format(job=stopped["id"])
+    )
+    assert await _stored(db_path) == {"hub_channel_id": None, "hub_message_id": None}
+    await run_queue(cog.bot)
+
+    assert await _stored(db_path) == {"hub_channel_id": HUB, "hub_message_id": None}
+    assert _replied(interaction) == SET
+    channel.edit.assert_awaited()
+    channel.send.assert_not_awaited()
+    still = await stopped_job(db_path)
+    assert still is not None
+    assert (still["id"], still["change_id"]) == (stopped["id"], stopped["change_id"])
 
 
 # ── Its tier ──────────────────────────────────────────────────────────────

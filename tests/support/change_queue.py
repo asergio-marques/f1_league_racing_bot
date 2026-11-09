@@ -698,6 +698,41 @@ async def stopped_job(db_path: str, lane: str | None = None) -> dict[str, Any] |
     return stopped[0] if stopped else None
 
 
+#: The words a change that overtakes a stop adds to its acknowledgement, after the queue's own.
+PAST_THE_STOP = (
+    " The queue is stopped at job #{job}, so this request runs at once, past the stop; that job "
+    "stays stopped."
+)
+
+
+async def stop_the_league_lane(bot: Any, db_path: str) -> dict[str, Any]:
+    """Stop the league's lane on another job: a change whose one job fails on a fault in the bot
+    is asked and run. Gives the job it stopped at."""
+    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+    from leaguebot.core.services.change_queue import ChangeType, Step
+
+    async def fails(_ctx: Any) -> StepResult:
+        raise RuntimeError("a fault in the bot")
+
+    async def go(_ctx: Any) -> Verdict:
+        return Verdict.go()
+
+    register(bot, ChangeType(
+        kind="test.stopping",
+        opening=(PlannedStep("fail"),),
+        steps={"fail": Step("fail", StepKind.ACT, fails)},
+        check=go,
+        key=lambda _payload: "test.stopping",
+        doing=lambda _payload: "Doing another job",
+        outcome=lambda _ctx: "Done.",
+    ))
+    other = await bot.change_queue.ask("test.stopping", {}, actor=member(), what="another job")
+    await run_queue(bot)
+    stopped = await stopped_job(db_path)
+    assert stopped is not None and stopped["change_id"] == other
+    return stopped
+
+
 async def refuse_the_job(db_path: str, kind: str, job: str, refusing: bool) -> None:
     """While *refusing*, a fault of the database refuses to save the job *job* of any change of
     *kind* as done, so that its save fails and is rolled back and the queue stops at it; otherwise

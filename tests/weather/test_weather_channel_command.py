@@ -45,6 +45,7 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.weather.cogs.weather_cog import WeatherCog
 from tests.support.change_queue import (
     Clock,
+    PAST_THE_STOP,
     acknowledgement,
     change_rows,
     league_bot,
@@ -53,6 +54,7 @@ from tests.support.change_queue import (
     run_queue,
     seed_server,
     step_rows,
+    stop_the_league_lane,
     stopped_job,
 )
 from tests.support.season_league import set_module_flag
@@ -504,6 +506,42 @@ async def test_the_manager_is_acknowledged_before_anything_is_written(tmp_path):
     )
     assert await _forecast_channel(db_path) is None
     assert await _audit(db_path) == []
+
+
+@pytest.mark.xfail(strict=True, reason="#283: /weather channel waits behind a stopped job")
+async def test_the_channel_is_set_while_the_queue_is_stopped_on_another_job(tmp_path):
+    """Season 1 is being set up, and its Division 1 has no forecast channel. The league's queue
+    is stopped on another job, which failed on a fault in the bot. The manager (id 77) runs
+    `/weather channel` for #forecasts (770001), the remedy the forecast's stop notice names. They
+    are acknowledged at once and told the change runs at once, past the stop, and that the stopped
+    job stays stopped; nothing is written as they ask. Once the queue runs, Division 1's forecast
+    channel is 770001, the manager is told it was set, and the other job is still stopped where it
+    was."""
+    db_path = await _make_db(tmp_path)
+    cog = await _make_cog(db_path)
+    stopped = await stop_the_league_lane(cog.bot, db_path)
+    interaction = _interaction(cog)
+
+    await _ask(cog, interaction)
+
+    first_job = min(
+        row["id"] for row in await step_rows(db_path) if row["change_id"] != stopped["change_id"]
+    )
+    assert acknowledgement(interaction) == (
+        f"⏳ Setting the weather forecast channel for **Division 1** to <#{CHANNEL_ID}>. This "
+        f"message will be updated when it is done; if it takes longer, the log channel will say "
+        f"so. It begins with job #{first_job}." + PAST_THE_STOP.format(job=stopped["id"])
+    )
+    assert await _forecast_channel(db_path) is None
+    await run_queue(cog.bot)
+
+    assert await _forecast_channel(db_path) == CHANNEL_ID
+    assert _replied(interaction) == (
+        f"✅ Weather forecast channel for **Division 1** set to <#{CHANNEL_ID}>."
+    )
+    still = await stopped_job(db_path)
+    assert still is not None
+    assert (still["id"], still["change_id"]) == (stopped["id"], stopped["change_id"])
 
 
 async def test_a_fault_in_the_save_saves_neither_the_channel_nor_its_audit(tmp_path, monkeypatch):
