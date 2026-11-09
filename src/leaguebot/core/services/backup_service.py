@@ -300,9 +300,7 @@ def save(db_path: str | Path, jobstore_path: str | Path) -> None:
     log.info("backup: saved %s and %s", league_target, jobs_target)
 
 
-def discard(
-    db_path: str | Path, jobstore_path: str | Path, *, raise_on_failure: bool = False
-) -> bool:
+def discard(db_path: str | Path, jobstore_path: str | Path) -> bool:
     """Delete the saved backup, its scheduler half and the lock, and say whether one was there.
 
     A saved state belongs to the test season it was taken in: nothing restores it once that
@@ -314,10 +312,9 @@ def discard(
     maintainer means to keep for the run they are in; it is not a reason to keep a state past
     the run itself. The lock file goes too, so the next test season saves freely.
 
-    Every file is tried whatever becomes of the others. By default a fault on one is logged and
-    passed over. With *raise_on_failure*, as the toggle and a season's completion ask of it as a
-    job on the change queue, the first fault met is raised once all
-    three have been tried, so the queue stops at it and a Retry finishes what is left.
+    Every file is tried whatever becomes of the others, each fault logged; the first fault met is
+    then raised once all three have been tried, so that the change-queue job asking it stops and
+    a Retry finishes what is left.
     """
     removed = False
     fault: OSError | None = None
@@ -331,7 +328,7 @@ def discard(
             fault = fault or err
     if removed:
         log.info("backup: discarded the saved state beside %s", db_path)
-    if fault is not None and raise_on_failure:
+    if fault is not None:
         raise fault
     return removed
 

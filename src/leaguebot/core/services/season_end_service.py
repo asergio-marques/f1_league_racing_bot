@@ -279,9 +279,7 @@ def discard_backup_step(scheduler: "SchedulerService") -> Step:
     deleted, for the queue to stop on."""
 
     async def discard_backup(ctx: StepContext) -> StepResult:
-        removed = backup_service.discard(
-            ctx.db_path, scheduler.jobstore_path, raise_on_failure=True
-        )
+        removed = backup_service.discard(ctx.db_path, scheduler.jobstore_path)
         return StepResult(result={"deleted": removed})
 
     async def describe_backup(_ctx: StepContext) -> str:

@@ -762,16 +762,13 @@ def test_discard_deletes_both_backups_and_the_lock(tmp_path):
     assert live.is_file(), "the live database is untouched"
 
 
-@pytest.mark.parametrize(
-    "raise_on_failure", [False, True], ids=["told", "asked to raise"]
-)
-def test_discard_with_nothing_saved_says_so(tmp_path, raise_on_failure):
-    """Nothing was saved: the discard says there was nothing. Asked to raise, it still raises
-    nothing, so a Retry after a part-done discard finishes quietly."""
+def test_discard_with_nothing_saved_says_so(tmp_path):
+    """Nothing was saved: the discard says there was nothing, and raises nothing, so a Retry
+    after a part-done discard finishes quietly."""
     live, jobs = tmp_path / "bot.db", tmp_path / "scheduler.db"
     _database(live)
 
-    assert bs.discard(live, jobs, raise_on_failure=raise_on_failure) is False
+    assert bs.discard(live, jobs) is False
 
 
 def test_discard_leaves_a_pre_restore_copy_alone(tmp_path):
@@ -786,9 +783,8 @@ def test_discard_leaves_a_pre_restore_copy_alone(tmp_path):
     assert bs.prerestore_path(live).read_bytes() == b"kept"
 
 
-# A season's completion deletes the saved state as a job of its own on the change queue (#439,
-# slice 5), and a job that fails must say so: asked to raise, the discard still tries every file,
-# then raises the fault it met, so the queue stops at it and a Retry finishes what is left.
+# The discard is a job on the change queue, and a job that fails must say so: it still tries every
+# file, then raises the fault it met, so the queue stops at it and a Retry finishes what is left.
 
 
 def test_a_raising_discard_raises_after_trying_every_file(tmp_path, monkeypatch):
@@ -810,7 +806,7 @@ def test_a_raising_discard_raises_after_trying_every_file(tmp_path, monkeypatch)
     monkeypatch.setattr(Path, "unlink", _refusing)
 
     with pytest.raises(OSError, match="in use"):
-        bs.discard(live, jobs, raise_on_failure=True)
+        bs.discard(live, jobs)
 
     assert Path(stuck).exists()
     assert not bs.backup_path(jobs).exists()
