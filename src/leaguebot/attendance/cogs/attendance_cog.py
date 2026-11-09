@@ -798,8 +798,8 @@ class AttendanceCog(commands.Cog):
         """Ask the change queue to set a division's RSVP or attendance channel, for the two
         commands below.
 
-        Each checks the module first in its own words, not `_module_gate`'s, as it was worded
-        before it moved, then refuses a channel the bot cannot post in.
+        Each checks the module first in its own words, not `_module_gate`'s, then refuses a
+        channel the bot cannot post in.
 
         **The live season's division**: a division's channels belong to the season being built or
         raced, and an archived one's no longer matter. Pending completion is live, so a channel
