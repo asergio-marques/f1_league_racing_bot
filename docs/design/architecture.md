@@ -273,8 +273,9 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   A change type may ask, for a member's change its check refuses as it starts, a change of its own
   in the refusal's save (`ChangeType.on_refused`), as a step asks a follow-on: a season's
   approval and a mid-season placements confirmation use it to tell the review's channel of a
-  refusal its member can no longer be told of. It may likewise ask one where a league admin discards a member's change stopped at its check
-  before any job of it started (`ChangeType.on_discarded`), saved with the Discard. A refusal
+  refusal its member can no longer be told of. It may likewise ask one where a league admin
+  discards a member's change stopped at its check before any job of it started
+  (`ChangeType.on_discarded`), saved with the Discard. A refusal
   callback that raises stops its lane at the change's first job, as a check that raises does (save
   in a member's settings change or `/bot init`, described below), and the change is checked again
   at each try; a discard callback that raises is logged on the host and the Discard goes ahead

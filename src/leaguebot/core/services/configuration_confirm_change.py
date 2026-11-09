@@ -22,8 +22,8 @@ the queue stops at it to retry. The season moves to Waiting where the signup mod
 mode is off, test mode never opening a signup window, and to Placements otherwise; the
 "configuration confirmed" hook then hands each subscriber the save's connection, the season and the
 queue's clock, each checking its own module's switch, so that signup keeps its settings for the
-season with the stage that fixes them. A retry judges the confirmation again before it saves (`judge`), the
-configuration being open meanwhile.
+season with the stage that fixes them. A retry judges the confirmation again before it saves
+(`judge`), the configuration being open meanwhile.
 
 **A discarded save leaves the season in Configuration**, and the manager reviews it again.
 """
