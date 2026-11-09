@@ -77,9 +77,10 @@ def _channel_setting(
     channel_of: Callable[[int], object],
 ) -> Setting:
     """The setting of the *key* channel (the channel registry's key, which is also the word of the
-    command), *called* the name the acknowledgement gives it (its reply capitalises it), *write* its column's upsert and *change_type*
-    the audit entry of the channel moving from one to another in a division. *channel_of* finds a
-    channel by its id, for the bot's access to it to be judged."""
+    command), *called* the name the acknowledgement gives it (its reply capitalises it), *write*
+    its column's upsert and *change_type* the audit entry of the channel moving from one to
+    another in a division. *channel_of* finds a channel by its id, for the bot's access to it to
+    be judged."""
 
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
