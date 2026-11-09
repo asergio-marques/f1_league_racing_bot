@@ -113,3 +113,43 @@ def no_room(problem: str, remedy: str) -> Any:
     from leaguebot.core.services.image_drawing import CapacityProblem
 
     return AsyncMock(return_value=CapacityProblem(problem=problem, remedy=remedy))
+
+
+#: How the log channel names each import form, as `describe_form` names it.
+FORMS = {"bulk": "the “Add rounds in bulk” form", "xml": "the “Add rounds from XML” form"}
+
+
+async def import_rounds(league: Any, form: str, value: str, division: str = "Pro") -> Any:
+    """Admin (4242) submitting an import form with *value*: `/round add-bulk`'s for *division*
+    (*form* "bulk") or `/round add-xml`'s (*form* "xml"). Gives the form's interaction."""
+    from unittest.mock import MagicMock
+
+    from leaguebot.core.cogs.season_cog import BulkRoundModal, SeasonCog, XmlRoundModal
+    from tests.support.settings_league import interaction
+
+    cog = SeasonCog(league.bot)
+    league.bot.get_cog = MagicMock(side_effect=lambda name: cog if name == "SeasonCog" else None)
+    modal: Any
+    if form == "bulk":
+        modal = BulkRoundModal(division)
+        modal.entries._value = value
+    else:
+        modal = XmlRoundModal()
+        modal.payload._value = value
+    asked = interaction(league.bot)
+    await modal.on_submit(asked)
+    return asked
+
+
+def calendar_xml(*divisions: tuple[str, tuple[tuple[str, str, str, str | None], ...]]) -> str:
+    """An XML calendar of *divisions*, each (name, its rounds), each round (local datetime,
+    zone, format, track or None)."""
+    def round_(at: str, zone: str, fmt: str, track: str | None) -> str:
+        tracked = f"<track>{track}</track>" if track is not None else ""
+        return (f"<round><datetime>{at}</datetime><timezone>{zone}</timezone>"
+                f"<format>{fmt}</format>{tracked}</round>")
+
+    return "<config>" + "".join(
+        f'<division name="{name}">' + "".join(round_(*r) for r in rounds) + "</division>"
+        for name, rounds in divisions
+    ) + "</config>"
