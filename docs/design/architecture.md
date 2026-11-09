@@ -149,15 +149,14 @@ opening rules). Stewarding adds a second [STW-MOD-007].
 **Core reaches a module only through hooks, and the image module through a protocol it declares
 (below).** Where something in core has to let the modules act (the bot starting, a timed event
 falling due, a round amended or its timed work armed again, a round's timing windows read, a round,
-a division or a season cancelled, a round's results made final, placements confirmed, a
+a division or a season cancelled, a round's results made final, placements confirmed, a season's
 configuration confirmed, a review gathering its lines, a season ending, a season, division, round
 or driver deleted, a driver merged into another or turned down, a base role changed, the bot
 packed, test mode turned on, the bot's in-memory state cleared, the hub's panel gathering its
-options), core declares a hook. The builder
-signs each module up to it before the bot connects. Core calls whoever signed up, and never imports
-a module, the bot's type aside (see "How the code is laid out"). A module turned on or off is not a
-hook but a change of the module's own, which core asks for by its kind (see "Each module turns
-itself on and off").
+options), core declares a hook. The builder signs each module up to it before the bot connects.
+Core calls whoever signed up, and never imports a module, the bot's type aside (see "How the code
+is laid out"). A module turned on or off is not a hook but a change of the module's own, which core
+asks for by its kind (see "Each module turns itself on and off").
 
 **A hook core declares is a list of subscribers.** Core declares the moment and what it hands over:
 what the moment concerns, where it concerns anything (the rows, the round), and, where core holds
@@ -272,9 +271,9 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   current stage): once when it is asked for, and again when the worker takes it up, since changes
   ahead of it may have moved the season on. A request a person made that fails is refused, and the queue goes on.
   A change type may ask, for a member's change its check refuses as it starts, a change of its own
-  in the refusal's save (`ChangeType.on_refused`), as a step asks a follow-on: the season's
-  confirmation uses it to tell the review's channel of a refusal its member can no longer be told
-  of. It may likewise ask one where a league admin discards a member's change stopped at its check
+  in the refusal's save (`ChangeType.on_refused`), as a step asks a follow-on: a season's
+  approval and a mid-season placements confirmation use it to tell the review's channel of a
+  refusal its member can no longer be told of. It may likewise ask one where a league admin discards a member's change stopped at its check
   before any job of it started (`ChangeType.on_discarded`), saved with the Discard. A refusal
   callback that raises stops its lane at the change's first job, as a check that raises does (save
   in a member's settings change or `/bot init`, described below), and the change is checked again
