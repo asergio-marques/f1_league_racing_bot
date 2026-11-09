@@ -213,11 +213,10 @@ async def switch_test_mode_off_on(
 
     `/test-mode toggle` does it in its save, with the flag's audit entry. A season's end does it
     inside the save that records its end, just before the season itself is written, so the test
-    drivers, the flag and the season's archive land together or not at all (decided 2026-10-09).
-    The forecasts posted under test mode are not flushed here: that is a job of its own, before
-    the save at a season's end and after it at the toggle, and the saved backup's deletion one
-    after it. Every
-    fake driver is deleted and their history kept. A server not in test mode is left as it is.
+    drivers, the flag and the season's archive land together or not at all. The forecasts posted
+    under test mode are not flushed here: that is a job of its own, before the save at a season's
+    end and after it at the toggle, and the saved backup's deletion one after it. Every fake driver
+    is deleted and their history kept. A server not in test mode is left as it is.
 
     Returns the count of fake drivers removed.
     """
