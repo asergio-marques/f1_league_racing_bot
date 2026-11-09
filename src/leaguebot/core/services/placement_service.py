@@ -184,7 +184,7 @@ class PlacementService:
         for role_id in role_ids:
             role = guild.get_role(role_id)
             if role is None:
-                raise StepFailedOnDiscord(f"role {role_id} is no longer on the server")
+                raise StepFailedOnDiscord("a role is no longer on the server")
             roles.append(role)
         try:
             await member.add_roles(*roles, reason="Driver placement")
@@ -1260,7 +1260,7 @@ class PlacementService:
             "to_division": divisions[to_division_id]["name"],
             "from_team": source["team_full_name"] or source["team_name"],
             "to_team": to_team_full_name,
-            # The lineups the move touched, for the caller to post (#439).
+            # The lineups the move touched, for the caller to post.
             "lineups": list(dict.fromkeys((from_division_id, to_division_id))),
             "audit": audit,
             "revoke": revoke,
@@ -1285,7 +1285,7 @@ class PlacementService:
 
         `move_seat_on`, and the `DRIVER_MOVE` audit entry written with it on the same
         connection, stamped with the wall clock and committed by no one here, so that a
-        sanction's save carries the move with the rest of its writes (#439). Refused and
+        sanction's save carries the move with the rest of its writes. Refused and
         returned as `move_seat_on` refuses and returns.
         """
         summary = await self.move_seat_on(
@@ -1675,8 +1675,8 @@ class PlacementService:
         Everything `unassign_driver` writes but the audit entry, written on the connection
         handed and committed by no one here, so that a change on the queue writes the entry with
         the queue's clock (*audit*). It awaits nothing but *db*: no member is fetched and no role
-        asked of Discord. Roles and the lineup are owed only where the placement was committed
-        (issue #220), and a test driver holds no roles. Refused as `judge_unassign_on` refuses.
+        asked of Discord. Roles and the lineup are owed only where the placement was committed,
+        and a test driver holds no roles. Refused as `judge_unassign_on` refuses.
 
         Returns the summary (division_name, has_remaining_assignments, team_name, lineups), the
         audit entry's *audit* (its old and new values and the division), the driver's account
@@ -1759,7 +1759,7 @@ class PlacementService:
         return {
             "division_name": div_name,
             "has_remaining_assignments": has_remaining,
-            # The name a reply shows is the full one; the shorthand stays a key (#381).
+            # The name a reply shows is the full one; the shorthand stays a key.
             "team_name": team_full_name,
             # The lineup to post, for the caller to post: none while the placement was
             # uncommitted.
@@ -1796,9 +1796,9 @@ class PlacementService:
         `unassign_on`, and the `DRIVER_UNASSIGN` audit entry written with it, stamped with the
         wall clock and committed here, then the roles it names revoked, swallowing Discord's
         refusals. Roles are revoked and the lineup posted again only where the placement was
-        committed; an uncommitted one held neither (issue #220). *uncommitted_only* refuses a
+        committed; an uncommitted one held neither. *uncommitted_only* refuses a
         committed placement, which `/driver move` and `/driver release` change instead.
-        *season_state* is no longer read.
+        *season_state* is not read.
 
         Returns a summary dict: division_name, has_remaining_assignments.
         Raises ValueError for blocking conditions.
@@ -2116,7 +2116,7 @@ class PlacementService:
 
         `sack_seats_on`, and the `DRIVER_SACK` audit entry written with it on the same
         connection, stamped with the wall clock and committed by no one here, so that a
-        sanction's save carries the sack with the rest of its writes (#439). Refused and
+        sanction's save carries the sack with the rest of its writes. Refused and
         returned as `sack_seats_on` refuses and returns.
         """
         saved = await self.sack_seats_on(
