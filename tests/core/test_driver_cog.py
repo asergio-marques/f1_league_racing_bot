@@ -20,7 +20,9 @@ An assign, unassign or sack that clears the ladder asks the change queue for a
 `core.driver_assign`, `core.driver_unassign` or `core.driver_sack` (#283), whose save, roles,
 lineups, reply and line are tested against a real database in `test_driver_assign.py`,
 `test_driver_unassign.py` and `test_sack_driver.py`, with the refusals it makes at the ask and as
-it starts; here, only what the command asks of the queue.
+it starts; here, only what the command asks of the queue. So with a reassign, asked of the queue
+as a `core.driver_reassign` whose save, roles, portrait, reply and line are tested in
+`test_driver_reassign.py`, and its stage and parameter refusals in `test_reassign_stage_gate.py`.
 
 The archived-season refusal is pinned for all three mutating commands together, because
 `SeasonImmutableError` is what stops a completed season being edited after the fact — the
@@ -73,18 +75,6 @@ def _season(status: str = "ACTIVE", stage: str = "PLACEMENTS") -> SimpleNamespac
     )
 
 
-class _Portraits:
-    """The portrait part of core's drawing protocol: keeps each list of accounts it is asked to
-    discard the portraits of, and answers that it removed none."""
-
-    def __init__(self) -> None:
-        self.asked: list[list[str]] = []
-
-    async def discard_portraits(self, user_ids) -> int:
-        self.asked.append([str(u) for u in user_ids])
-        return 0
-
-
 def _make_cog(
     *,
     season: object | None = None,
@@ -115,30 +105,13 @@ def _make_cog(
     bot.placement_service = MagicMock()
     bot.placement_service.resolve_division = AsyncMock(return_value=division)
     bot.change_queue.ask = AsyncMock()
-    bot.placement_service.move_driver_roles = AsyncMock(return_value=[])
-    bot.wizard_service.move_held_channel = AsyncMock(return_value=[])
 
     bot.driver_service = MagicMock()
     bot.driver_service.current_account = AsyncMock(side_effect=lambda a: str(a))
     bot.driver_service.get_profile = AsyncMock(return_value=profile)
-    # The account named as old is taken to be the driver's current one, which it replaces.
-    bot.driver_service.reassign_user_id = AsyncMock(
-        side_effect=lambda old, new, *_a, **_k: SimpleNamespace(
-            profile=SimpleNamespace(
-                id=PROFILE_ID,
-                current_state=SimpleNamespace(value="ACTIVE"),
-                former_driver=False,
-            ),
-            replaced_account=old,
-            accounts=sorted([old, new]),
-            switched_back=False,
-            merged_accounts=None,
-        )
-    )
 
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
-    bot.image_drawing = _Portraits()
     return DriverCog(bot)
 
 
@@ -200,57 +173,28 @@ MUTATING = [
 # ---------------------------------------------------------------------------
 
 
-async def test_reassign_accepts_a_mentioned_old_user(tmp_path):
-    """The reply names the current and past accounts, and the roles and any held signup channel
-    move from the account replaced to the one made current (#243). The bot's own merge hook is
-    handed to the service, so each module re-points its own rows of a merged driver (#283)."""
-    cog = _make_cog(season=_season())
-    interaction = _interaction()
-
-    await undecorate(DriverCog.reassign)(
-        cog, interaction, _member(2, "New"), _member(1, "Old"), None
-    )
-
-    cog.bot.driver_service.reassign_user_id.assert_awaited_once()
-    assert cog.bot.driver_service.reassign_user_id.await_args.args[0] == "1"
-    assert (
-        cog.bot.driver_service.reassign_user_id.await_args.kwargs["profiles_merged"]
-        is cog.bot.profiles_merged
-    )
-    assert "given a new account" in _replied(interaction)
-    assert "Current account : <@2>" in _replied(interaction)
-    assert "Past accounts   : <@1>" in _replied(interaction)
-    assert cog.bot.placement_service.move_driver_roles.await_args.args == (
-        interaction.guild, PROFILE_ID, "1", "2"
-    )
-    cog.bot.wizard_service.move_held_channel.assert_awaited_once_with(
-        "1", "2", interaction.guild
-    )
-
-
-async def test_reassign_accepts_a_raw_snowflake_for_the_old_user(tmp_path):
-    """The account being replaced has often left the server, so it cannot be mentioned —
-    the raw id is the only way to name it, and is the reason the parameter exists."""
-    cog = _make_cog(season=_season())
-    interaction = _interaction()
-
-    await undecorate(DriverCog.reassign)(cog, interaction, _member(2, "New"), None, " 4242 ")
-
-    assert cog.bot.driver_service.reassign_user_id.await_args.args[0] == "4242"
+_ON_THE_QUEUE = "#283: /driver reassign is not yet asked of the change queue"
 
 
 async def test_reassign_with_neither_old_user_nor_id_is_refused(tmp_path):
+    """The season is in Placements. The league manager runs `/driver reassign` onto account 2,
+    naming no old account, neither by mention nor by id. They are told they must supply one, and
+    nothing is asked of the queue."""
     cog = _make_cog(season=_season())
     interaction = _interaction()
 
     await undecorate(DriverCog.reassign)(cog, interaction, _member(2, "New"), None, None)
 
     assert "must supply either" in _replied(interaction)
-    cog.bot.driver_service.reassign_user_id.assert_not_awaited()
+    cog.bot.change_queue.ask.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_mentioned_old_user_wins_over_a_raw_id(tmp_path):
-    """Both may be given. The mention is the more specific of the two and is taken."""
+    """Both may be given. The mention is the more specific of the two and is taken: the season is
+    in Placements, the league manager runs `/driver reassign` onto account 2 mentioning account 1
+    and typing 4242, and the queue is asked for one `core.driver_reassign` of account 1's driver
+    onto account 2."""
     cog = _make_cog(season=_season())
     interaction = _interaction()
 
@@ -258,46 +202,10 @@ async def test_a_mentioned_old_user_wins_over_a_raw_id(tmp_path):
         cog, interaction, _member(2, "New"), _member(1, "Old"), "4242"
     )
 
-    assert cog.bot.driver_service.reassign_user_id.await_args.args[0] == "1"
-
-
-async def test_a_refused_reassignment_is_reported_not_raised(tmp_path):
-    cog = _make_cog(season=_season())
-    cog.bot.driver_service.reassign_user_id = AsyncMock(
-        side_effect=ValueError("No profile for that account.")
-    )
-    interaction = _interaction()
-
-    await undecorate(DriverCog.reassign)(
-        cog, interaction, _member(2, "New"), _member(1, "Old"), None
-    )
-
-    assert "No profile for that account." in _replied(interaction)
-
-
-# ---------------------------------------------------------------------------
-# The portrait of the account left behind (issue #222)
-# ---------------------------------------------------------------------------
-#
-# A portrait is a cache of one account's own profile picture, so nothing of it is carried by a
-# re-key — the new account has a picture of its own. The old one is discarded through the image
-# module's drawing, the one the builder hands the bot. What the discard removes, and that it
-# never raises, is the image module's, tested under `tests/image/test_driver_portrait_service.py`.
-
-
-async def test_reassign_removes_the_portrait_of_the_account_left_behind():
-    """Account 4242 is replaced by the new account 2 in a season whose drivers are being placed.
-    The command asks the image module's drawing to discard 4242's portrait, once and for 4242
-    alone, tells the manager the driver was given a new account, and posts its success line to
-    the log channel."""
-    cog = _make_cog(season=_season())
-    interaction = _interaction()
-
-    await undecorate(DriverCog.reassign)(cog, interaction, _member(2, "New"), None, "4242")
-
-    assert cog.bot.image_drawing.asked == [["4242"]]
-    assert "given a new account" in _replied(interaction)
-    assert "/driver reassign | Success" in cog.bot.output_router.post_log.await_args.args[0]
+    cog.bot.change_queue.ask.assert_awaited_once()
+    kind, payload = cog.bot.change_queue.ask.await_args.args[:2]
+    assert kind == "core.driver_reassign"
+    assert (str(payload["old_user_id"]), str(payload["new_user_id"])) == ("1", "2")
 
 
 # ---------------------------------------------------------------------------
@@ -477,48 +385,3 @@ async def test_a_sack_is_refused_outside_the_ongoing_stages(tmp_path, stage):
 
     assert "only while the season is ongoing" in _replied(interaction)
     assert cog.bot.change_queue.method_calls == []
-
-
-async def test_a_switch_back_is_reported_as_one(tmp_path):
-    cog = _make_cog(season=_season())
-    outcome = await cog.bot.driver_service.reassign_user_id("1", "2")
-    outcome.switched_back = True
-    cog.bot.driver_service.reassign_user_id = AsyncMock(return_value=outcome)
-    interaction = _interaction()
-
-    await undecorate(DriverCog.reassign)(
-        cog, interaction, _member(2, "New"), _member(1, "Old"), None
-    )
-
-    assert "switched back to a past account" in _replied(interaction)
-
-
-async def test_roles_discord_would_not_move_are_reported_and_the_reassign_stands(tmp_path):
-    """E44."""
-    cog = _make_cog(season=_season())
-    cog.bot.placement_service.move_driver_roles = AsyncMock(
-        return_value=["the roles could not be given to <@2>: Missing Permissions"]
-    )
-    interaction = _interaction()
-
-    await undecorate(DriverCog.reassign)(
-        cog, interaction, _member(2, "New"), _member(1, "Old"), None
-    )
-
-    assert "given a new account" in _replied(interaction)
-    assert "Missing Permissions" in _replied(interaction)
-    assert "not done: the roles could not be given" in cog.bot.output_router.post_log.await_args.args[0]
-
-
-async def test_a_merge_is_reported_as_one(tmp_path):
-    cog = _make_cog(season=_season())
-    outcome = await cog.bot.driver_service.reassign_user_id("1", "2")
-    outcome.merged_accounts = ["2", "3"]
-    cog.bot.driver_service.reassign_user_id = AsyncMock(return_value=outcome)
-    interaction = _interaction()
-
-    await undecorate(DriverCog.reassign)(
-        cog, interaction, _member(2, "New"), _member(1, "Old"), None
-    )
-
-    assert "merged with the driver on <@2>, <@3>" in _replied(interaction)

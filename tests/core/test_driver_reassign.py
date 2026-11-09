@@ -617,6 +617,76 @@ async def test_a_driver_reassign_is_judged_again_as_it_starts(
     assert await stopped_job(league.db_path) is None
 
 
+@pytest.mark.parametrize(
+    "before, old, new, reply",
+    [
+        pytest.param(
+            None, 9999, _NEW, "⛔ No driver profile found for user 9999 on this server.",
+            id="an-account-no-driver-holds",
+        ),
+        pytest.param(
+            None, 106, 106, "⛔ <@106> is already this driver's current account.",
+            id="the-account-already-current",
+        ),
+        pytest.param(_valtteri_begins_a_signup, 106, _NEW, _IN_PROGRESS, id="a-signup-in-progress"),
+    ],
+)
+async def test_a_driver_reassign_is_refused_at_the_ask(
+    tmp_path, monkeypatch, before, old, new, reply,
+):
+    """The core specification's change of a driver's account. The season is in Placements;
+    Valtteri (106) is Unassigned. The league manager Admin runs `/driver reassign` naming 9999,
+    an account no driver holds, onto 9001; or of Valtteri onto 106, his own current account; or,
+    Valtteri having begun a signup, of Valtteri onto 9001. They are refused at once, in today's
+    words: "⛔ No driver profile found for user 9999 on this server.", "⛔ <@106> is already this
+    driver's current account." or "⛔ This driver has a signup in progress. …", and the log channel
+    takes the refusal as its one line. Nothing is asked of the queue, no account changes, no audit
+    entry is written, no role is moved and no portrait discarded. Takes the place of
+    `test_driver_cog_refusals.py`'s "reassign refused by the service" case and
+    `test_driver_cog.py`'s `test_a_refused_reassignment_is_reported_not_raised`, which mocked the
+    service."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import audit_rows, last_said, log_lines
+
+    league = await _queue_league(tmp_path)
+    discarded = _portraits_discarded(league, monkeypatch)
+    if before is not None:
+        await before(league)
+    standing = await _accounts(league)
+    asked = await _ask_reassign(league, old, new)
+
+    assert last_said(asked) == reply
+    assert _reassign_lines(await log_lines(league)) == [_reassign_refusal(reply)]
+    assert await change_rows(league.db_path) == []
+    assert await _accounts(league) == standing
+    assert await audit_rows(league.db_path) == []
+    assert league.revoked == {} and league.granted == {} and discarded == []
+
+
+async def test_a_driver_switched_back_to_a_past_account_is_told_so(tmp_path, monkeypatch):
+    """The core specification's change of a driver's account, back to one the driver held. The
+    season is in Placements; Valtteri (106) is Unassigned. The league manager runs `/driver
+    reassign` of Valtteri onto 9001, and the queue runs it; then runs it again naming Valtteri by
+    9001 onto 106, his past account, and the queue runs that. Valtteri's current account is 106
+    again and he holds 106 and 9001, and the second reply is today's, "✅ Driver switched back to a
+    past account." with 9001 as his past account. Takes the place of `test_driver_cog.py`'s mocked
+    `test_a_switch_back_is_reported_as_one`."""
+    from tests.support.change_queue import run_queue
+    from tests.support.season_league import UNASSIGNED, profile_id
+    from tests.support.settings_league import last_said
+
+    league = await _queue_league(tmp_path)
+    _portraits_discarded(league, monkeypatch)
+    await _ask_reassign(league, UNASSIGNED, _NEW)
+    await run_queue(league.bot)
+    back = await _ask_reassign(league, _NEW, UNASSIGNED)
+    await run_queue(league.bot)
+
+    current, _state, _former, held = (await _accounts(league))[profile_id(UNASSIGNED)]
+    assert (current, held) == ("106", f"106,{_NEW}")
+    assert last_said(back) == _reassigned("switched back to a past account", 106, f"<@{_NEW}>")
+
+
 @pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_refusal_found_inside_the_save_ends_the_reassign_and_the_lane_goes_on(
     tmp_path, monkeypatch,

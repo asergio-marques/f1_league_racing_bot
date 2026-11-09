@@ -4,11 +4,11 @@ The rule is the core specification's "The record of what changed": a refusal is 
 line naming the member, what was refused and why. Each case below turns a league manager away at
 one of the driver cog's own checks, and expects today's reply, seen by them alone, and exactly one
 standard refusal line. `/driver reassign`'s stage refusal goes through the shared season gate,
-which already records it, and is not a case here. `/driver assign`, `unassign`, `move`, `release`
-and `sack` are changes on the queue (#283), whose refusals beyond the cog's own are the change's,
-pinned with their lines against a real database in `test_driver_assign.py`,
-`test_driver_unassign.py`, `test_driver_move.py`, `test_driver_release.py` and
-`test_sack_driver.py`.
+which already records it, and is not a case here. `/driver assign`, `unassign`, `move`, `release`,
+`sack` and `reassign` are changes on the queue (#283), whose refusals beyond the cog's own are the
+change's, pinned with their lines against a real database in `test_driver_assign.py`,
+`test_driver_unassign.py`, `test_driver_move.py`, `test_driver_release.py`, `test_sack_driver.py`
+and `test_driver_reassign.py`.
 """
 from __future__ import annotations
 
@@ -129,13 +129,6 @@ def _placed(bot):
     )
 
 
-def _service_refuses(name: str, reason: str):
-    def setup(bot):
-        service = bot.driver_service if name == "reassign_user_id" else bot.placement_service
-        setattr(service, name, AsyncMock(side_effect=ValueError(reason)))
-    return setup
-
-
 def _past_account_gone(bot):
     """Racer's account is a past one, and the driver's current account has left the server."""
     bot.driver_service.current_account = AsyncMock(return_value="9999")
@@ -158,12 +151,6 @@ _CASES = {
         lambda cog, i: undecorate(DriverCog.reassign)(cog, i, _driver(), None, None),
         None,
         "You must supply either `old_user`",
-    ),
-    "reassign refused by the service": (
-        "driver reassign",
-        lambda cog, i: undecorate(DriverCog.reassign)(cog, i, _driver(), _driver(), None),
-        _service_refuses("reassign_user_id", "That account is already a driver's."),
-        "That account is already a driver's.",
     ),
     "assign past account gone": (
         "driver assign",
