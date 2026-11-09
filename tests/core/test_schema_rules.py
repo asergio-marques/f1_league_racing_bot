@@ -247,9 +247,6 @@ async def test_a_team_name_is_unique_in_the_league(db_path):
     db.close()
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: divisions does not yet hold a name once per season, without regard to case"
-)
 async def test_a_second_division_of_the_same_name_is_refused_by_the_schema(db_path):
     """The core specification's divisions: a division's name is unique within its season, without
     regard to case. Season 1 holds Pro. An insert of a second Pro into season 1, or of PRO, is
