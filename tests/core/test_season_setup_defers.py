@@ -33,8 +33,6 @@ from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.models.season import SeasonStage
 from tests.support.setup_reads import hold_setup
 
-SETUP_FROM_DB = "#283: the setup is read from the cog's memory, not the database"
-
 CHANNEL = 111
 MANAGER_ROLE = 222
 
@@ -129,7 +127,6 @@ async def _call(coro_method, interaction, **kwargs):
     await coro_method.callback(*coro_method.binding_args, interaction, **kwargs)
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_round_add_defers_before_touching_the_database(monkeypatch):
     """The reported bug: the round was written, then the reply hit an expired token."""
     cog = _cog(_pending())
@@ -232,7 +229,6 @@ async def test_season_setup_begins_the_season_in_configuration():
             "\u274c A season setup is already in progress for this server. Use "
             "`/season placements-review` to approve, or `/season abort` to cancel it first.",
             id="setup-while-one-is-in-progress",
-            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
         pytest.param(
             "raced",
@@ -300,7 +296,6 @@ async def _setup_seasons(db_path: str) -> list[int]:
         return [row["id"] for row in await cursor.fetchall()]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: a failed first save leaves the setup held in memory")
 async def test_a_failed_first_setup_save_leaves_no_setup_behind(tmp_path):
     """The manager runs `/season setup` for F1 25 on a league with no season, and the save fails
     (the database is locked). Nothing of the setup is left: the manager's next `/season setup`
@@ -323,7 +318,6 @@ async def test_a_failed_first_setup_save_leaves_no_setup_behind(tmp_path):
     assert len(await _setup_seasons(bot.db_path)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#283: a setup command reads the setup held in memory")
 async def test_a_setup_begun_before_a_restart_is_found_by_the_next_setup_command(tmp_path):
     """The manager runs `/season setup` for F1 25 and the season is taken to placements. The bot
     then restarts, and nothing recovers the setup at start-up. The manager's `/division add` of

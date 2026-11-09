@@ -22,7 +22,6 @@ from leaguebot.core.models.server_config import ServerConfig
 from tests.support.setup_reads import hold_setup
 
 from tests.support.undecorate import undecorate
-SETUP_FROM_DB = "#283: the setup is read from the cog's memory, not the database"
 
 SERVER_ID = 7
 SEASON_ID = 31
@@ -175,7 +174,6 @@ async def test_a_driver_role_the_bot_cannot_grant_is_a_fault():
     assert "Move my role above it" in fault
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_confirming_refuses_a_driver_role_gone_from_the_server():
     bot = _bot(signup=True)
     cog = _cog(bot)
@@ -256,7 +254,6 @@ async def test_the_review_is_refused_outside_configuration(stage):
         (True, True, SeasonStage.PLACEMENTS),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_confirming_moves_the_season_on(signup, test_mode, expected):
     bot = _bot(signup=signup, test_mode=test_mode)
     cog = _cog(bot)
@@ -268,7 +265,6 @@ async def test_confirming_moves_the_season_on(signup, test_mode, expected):
     assert "confirmed" in interaction.followup.send.await_args.args[0]
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_confirming_keeps_the_signup_configuration_for_the_season():
     bot = _bot(signup=True)
     await _cog(bot)._do_confirm_configuration(_interaction())
@@ -285,7 +281,6 @@ async def test_confirming_without_signup_keeps_no_signup_configuration():
     bot.signup_module_service.snapshot_season_config.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_confirming_refuses_on_a_fault_found_afresh():
     bot = _bot(signup=True, signup_config=_signup_config(channel=None))
     cog = _cog(bot)
@@ -297,7 +292,6 @@ async def test_confirming_refuses_on_a_fault_found_afresh():
     assert "Nothing has been confirmed" in interaction.followup.send.await_args.args[0]
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_confirming_a_season_that_has_moved_on_confirms_nothing():
     """The refusal is recorded as one line naming the presser and the review (#482)."""
     bot = _bot()
@@ -317,7 +311,6 @@ async def test_confirming_a_season_that_has_moved_on_confirms_nothing():
     assert "The season is no longer in configuration." in logged[0]
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_confirmation_refused_because_the_season_moved_on_fixes_no_signup_settings():
     """F5: the stage moves first, so a refused confirmation writes nothing (#482)."""
     bot = _bot(signup=True)
@@ -332,7 +325,6 @@ async def test_a_confirmation_refused_because_the_season_moved_on_fixes_no_signu
     bot.signup_module_service.snapshot_season_config.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_confirmation_the_stage_refuses_takes_no_review_down(monkeypatch):
     """Ben's confirmation loses the race to Alex's: set_stage refuses a season that has left
     configuration. Only a press that confirms takes a review down (core, "Confirming placements"),
@@ -468,7 +460,6 @@ async def test_a_refused_confirmation_leaves_the_review_standing(tmp_path, monke
     assert _expiry_timer_touched(env) == []
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_confirmation_that_goes_through_takes_the_review_down(tmp_path, monkeypatch):
     """The one press that ends the review: Alex presses ✅ Confirm configuration, the season
     unchanged, and the real confirmation runs past its gates (no fault found afresh, signup off),
@@ -653,7 +644,6 @@ async def _report(cog, interaction, monkeypatch) -> list[str]:
     return _texts(await _review_asked(cog, interaction, monkeypatch))
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(monkeypatch):
     """Manager runs `/season config-review` in channel 111 on a sound configuration of season 31
     (test mode on, signup on, results off; teams Alpha with its role, Reserve with none). The
@@ -688,7 +678,6 @@ async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(mo
     assert not any(line.startswith("⛔") for line in _logged(bot))
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
     tmp_path, monkeypatch
 ):
@@ -717,7 +706,6 @@ async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
 
 
 @pytest.mark.parametrize("signup", [True, False])
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_configuration_review_reports_the_league_s_roles(monkeypatch, signup):
     """The one review that reports them (issue #276). They are the league's, so the review asked
     of the queue shows them whether or not signup is on, and confirming the configuration fixes
@@ -730,7 +718,6 @@ async def test_the_configuration_review_reports_the_league_s_roles(monkeypatch, 
     assert "Driver role: <@&3>" in messages[0]
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     """The placements review's subsections, save the divisions, in the same words (#220): with
     signup, results, attendance and weather on, the review asked of the queue carries each
@@ -768,7 +755,6 @@ async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     assert "**Weather Config**" in text and "Phase 3 deadline: 2h before race" in text
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_disabled_modules_configuration_is_not_reported(monkeypatch):
     """With every module off, the review asked of the queue carries no module's configuration."""
     cog = _cog(_report_bot())
@@ -779,7 +765,6 @@ async def test_a_disabled_modules_configuration_is_not_reported(monkeypatch):
         assert heading not in text
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_image_outputs_are_reported_when_the_module_is_on(monkeypatch):
     """With the image module on, the review asked of the queue carries its outputs."""
     bot = _report_bot(images=True)
@@ -792,7 +777,6 @@ async def test_the_image_outputs_are_reported_when_the_module_is_on(monkeypatch)
     assert any("**Image outputs**" in m and "lineup: on" in m for m in messages)
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_faulty_configuration_is_reported_without_a_button(monkeypatch):
     """Signup is on and the league's base role is unset. The review asked of the queue ends in
     the faults, naming the base role and `/bot base-role`, and saying to run
@@ -956,7 +940,6 @@ async def test_an_unchanged_configuration_is_confirmed_and_its_report_cleared(
     "signup, expected",
     [(True, "open it with `/signup open`"), (False, "run `/season placements-review`")],
 )
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_confirmation_says_what_comes_next_and_is_logged(signup, expected):
     bot = _bot(signup=signup)
     interaction = _interaction()
@@ -1073,7 +1056,6 @@ async def test_confirming_with_no_season_in_configuration_is_refused_and_recorde
     )
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_confirming_a_configuration_with_faults_is_refused_with_every_fault_recorded():
     """Manager (id 4242) confirms a configuration that now holds two faults."""
     bot = _bot()

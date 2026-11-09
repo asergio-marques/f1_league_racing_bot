@@ -220,10 +220,10 @@ class SeasonService:
         return int(row["highest"])
 
     async def get_setup_season(self) -> Season | None:
-        """Return the SETUP season, or None."""
+        """Return the SETUP season, with its game edition, or None."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, start_date, status, season_number, stage FROM seasons "
+                "SELECT id, start_date, status, season_number, game_edition, stage FROM seasons "
                 "WHERE status = 'SETUP' LIMIT 1",
             )
             row = await cursor.fetchone()

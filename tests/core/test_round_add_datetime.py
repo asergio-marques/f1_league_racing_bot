@@ -19,8 +19,6 @@ from leaguebot.core.models.round import RoundFormat
 from tests.support.setup_reads import hold_setup
 from tests.support.undecorate import undecorate
 
-SETUP_FROM_DB = "#283: the setup is read from the cog's memory, not the database"
-
 ACTOR_ID = 77
 
 
@@ -67,7 +65,6 @@ async def _add(division: PendingDivision, scheduled_at: str):
     return interaction, cog
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_round_add_stores_a_zoned_time_as_utc():
     division = PendingDivision(name="Pro", role_id=1, tier=1)
 
@@ -78,7 +75,6 @@ async def test_round_add_stores_a_zoned_time_as_utc():
     assert stored.tzinfo is None
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_zoned_time_clashes_with_the_same_instant_given_without_one():
     """Stored alike, the two are seen to be one moment and the second is refused."""
     division = PendingDivision(
@@ -101,7 +97,6 @@ async def test_a_zoned_time_clashes_with_the_same_instant_given_without_one():
     assert "cannot share a moment" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_an_unreadable_time_is_refused():
     division = PendingDivision(name="Pro", role_id=1, tier=1)
 
@@ -137,33 +132,28 @@ _OVERFLOW = (
             {}, {"format": "WET"},
             "❌ Invalid format `WET`. Choose from: NORMAL, SPRINT, MYSTERY, ENDURANCE.",
             id="an_invalid_format",
-            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
         pytest.param(
             {}, {"format": "NORMAL"},
             "❌ A track is required for `NORMAL` rounds. Leave track blank only for "
             "`MYSTERY` rounds.",
             id="a_track_required",
-            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
         pytest.param(
             {}, {"format": "NORMAL", "track": "Atlantis"},
             "❌ Unknown track `Atlantis`.\n"
             "Use `/round add` and type a number or name — autocomplete will guide you.",
             id="an_unknown_track",
-            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
         pytest.param(
             {}, {"scheduled_at": "14/06/2026 18:00"},
             "❌ Invalid datetime. Use ISO format: `YYYY-MM-DDTHH:MM:SS`",
             id="an_invalid_datetime",
-            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
         pytest.param(
             {}, {"division_name": "Am"},
             "❌ Division `Am` not found in pending setup.",
             id="an_unknown_division",
-            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
         pytest.param(
             {}, {"scheduled_at": "2026-06-14T18:00:00"},
@@ -171,13 +161,11 @@ _OVERFLOW = (
             "division cannot share a moment — the season could not be approved. The round "
             "was **not** added.",
             id="a_round_clash",
-            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
         pytest.param(
             {"overflow": _OVERFLOW}, {},
             _OVERFLOW,
             id="a_calendar_overflow",
-            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
     ],
 )

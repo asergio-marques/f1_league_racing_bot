@@ -18,8 +18,6 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import change_rows, league_bot, league_queue, run_queue
 from tests.support.setup_reads import hold_setup
 
-SETUP_FROM_DB = "#283: the setup is read from the cog's memory, not the database"
-
 SERVER_ID = 4400
 USER_ID = 88
 DIVISION = "Div A"
@@ -415,19 +413,16 @@ ROUND_AMEND_REFUSALS = [
     pytest.param("command", {"format": "DRAG"}, "Invalid format", id="bad-format"),
     pytest.param("started", {"track": NEW_TRACK}, "already started", id="the-rules-refuse"),
     pytest.param("pending", {"division": "Nowhere", "track": NEW_TRACK}, "pending setup",
-                 id="pending-unknown-division",
-                 marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)),
+                 id="pending-unknown-division"),
     pytest.param("pending", {"round_number": 9, "track": NEW_TRACK}, "pending setup",
-                 id="pending-unknown-round",
-                 marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)),
+                 id="pending-unknown-round"),
     pytest.param("pending", {"track": "Nowhere Ring"}, "Unknown track",
                  id="pending-unknown-track"),
     pytest.param("pending", {"scheduled_at": "soon"}, "Invalid datetime",
                  id="pending-bad-datetime"),
     pytest.param("pending", {"format": "DRAG"}, "Invalid format", id="pending-bad-format"),
     pytest.param("pending no track", {"format": "NORMAL"}, "requires a track",
-                 id="pending-format-needs-a-track",
-                 marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)),
+                 id="pending-format-needs-a-track"),
     pytest.param("confirm by another", {}, "Not your action", id="confirm-not-your-action"),
     pytest.param("confirm round gone", {}, "no longer exists", id="confirm-round-gone"),
     pytest.param("confirm window passed", {}, "can no longer be amended",
@@ -567,7 +562,6 @@ async def test_a_confirmed_round_amend_whose_reply_fails_still_records_what_chan
     assert f"  track: Bahrain International Circuit \u2192 {NEW_TRACK}" in success.splitlines()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_pending_round_amend_logs_the_values_it_set(tmp_path):
     """On a season still being set up, the success line likewise names the member and
     `/round amend`, and states beneath it each field changed, from its old value to its new

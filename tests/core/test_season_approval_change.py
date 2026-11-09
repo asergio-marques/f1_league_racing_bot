@@ -999,7 +999,6 @@ async def test_the_calendar_is_posted_with_the_season_number_and_its_rounds_as_t
     assert "Monza" in league.texts(PRO_CH.calendar)[-1]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the approval reads the season number held in memory")
 async def test_a_season_numbered_zero_is_drawn_as_zero_and_logged(tmp_path, monkeypatch, caplog):
     """A season number of 0 is a malformed row, `seasons.season_number` counting from one. The
     calendar is drawn with 0, never hidden, and the bot logs that it will draw "SEASON 0" (#213).

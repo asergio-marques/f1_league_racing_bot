@@ -27,8 +27,6 @@ from leaguebot.core.cogs.season_cog import (
 from tests.support.setup_reads import hold_setup
 from tests.support.undecorate import undecorate
 
-SETUP_FROM_DB = "#283: the setup is read from the cog's memory, not the database"
-
 
 def _interaction() -> MagicMock:
     interaction = MagicMock()
@@ -176,7 +174,6 @@ async def test_no_pending_setup_refuses_without_writing():
 # ── The season is written once, not once per round ────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_twenty_round_import_snapshots_exactly_once(monkeypatch):
     """One write for the whole paste. Once per round would be twenty transactions, and
     a failure part-way would leave half a calendar written."""
@@ -210,7 +207,6 @@ def _round(day: int) -> dict:
     }
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_successful_import_reaches_the_log(monkeypatch):
     interaction = _interaction()
     cog = _cog_with(_pending())
@@ -245,7 +241,6 @@ async def test_the_xml_modal_reports_a_parse_failure():
     cog._snapshot_pending.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_xml_modal_applies_a_sound_payload(monkeypatch):
     interaction = _interaction()
     cog = _cog_with(_pending())
@@ -294,7 +289,6 @@ async def _run_round_add(interaction, cog, **kwargs):
     await body(cog, interaction, **kwargs)
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_round_add_refuses_a_datetime_the_division_already_holds(monkeypatch):
     cfg = _pending()
     cfg.divisions[0].rounds = [_round(14)]
@@ -321,7 +315,6 @@ async def test_round_add_refuses_a_datetime_the_division_already_holds(monkeypat
     cog._snapshot_pending.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_round_add_still_accepts_a_free_moment(monkeypatch):
     cfg = _pending()
     cfg.divisions[0].rounds = [_round(14)]
@@ -454,7 +447,6 @@ def _submitted(form: str, value: str):
             "bulk", "Add rounds in bulk", _SOUND_PASTE, True, _SEASON_REFUSES,
             "Import rejected — 2 problem(s)", _SEASON_REFUSES,
             id="bulk_refused_by_the_season",
-            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
         pytest.param(
             "xml", "Add rounds from XML", _BAD_XML, True, None, "Import rejected — 3 problem(s)",
@@ -475,7 +467,6 @@ def _submitted(form: str, value: str):
             "xml", "Add rounds from XML", _SOUND_XML, True, _SEASON_REFUSES,
             "Import rejected — 2 problem(s)", _SEASON_REFUSES,
             id="xml_refused_by_the_season",
-            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
     ],
 )

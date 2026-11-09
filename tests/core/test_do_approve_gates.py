@@ -50,8 +50,6 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.season_points import snapshot_points
 from tests.support.setup_reads import hold_setup
 
-SETUP_FROM_DB = "#283: the setup is read from the cog's memory, not the database"
-
 SERVER_ID = 3300
 SEASON_ID = 11
 USER_ID = 77
@@ -194,7 +192,6 @@ def _replies(interaction) -> str:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_no_pending_setup_refuses_without_reaching_a_gate(db_path):
     cog = _cog(db_path)
     hold_setup(cog.bot.season_service, None, divisions=False)
@@ -206,7 +203,6 @@ async def test_no_pending_setup_refuses_without_reaching_a_gate(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_bad_tier_sequence_refuses_ephemerally(db_path):
     cog = _cog(db_path)
     cog.bot.season_service.validate_division_tiers = AsyncMock(
@@ -260,7 +256,6 @@ def _images_on(cog, *, rasteriser=None, templates=(), colours=()):
     return cog
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_sound_image_configuration_still_approves(db_path):
     cog = _images_on(_cog(db_path))
 
@@ -270,7 +265,6 @@ async def test_a_sound_image_configuration_still_approves(db_path):
     cog.bot.image_drawing.template_faults.assert_awaited_once_with()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_missing_rasteriser_refuses_and_commits_nothing(db_path):
     cog = _images_on(_cog(db_path), rasteriser=_RASTERISER)
     interaction = _interaction()
@@ -283,7 +277,6 @@ async def test_a_missing_rasteriser_refuses_and_commits_nothing(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_broken_template_of_a_switched_on_output_refuses_and_commits_nothing(db_path):
     """Which templates a switched-on output draws, and so which break the season, is the image
     module's to say (`test_image_drawing_review.py`); the approval refuses on each it names."""
@@ -297,7 +290,6 @@ async def test_a_broken_template_of_a_switched_on_output_refuses_and_commits_not
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_tier_colour_shortfall_refuses_and_commits_nothing(db_path):
     cog = _images_on(
         _cog(db_path), colours=["`calendar_template` — `accent` is not set for **Pro**"]
@@ -312,7 +304,6 @@ async def test_a_tier_colour_shortfall_refuses_and_commits_nothing(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_image_checks_are_not_read_with_the_module_off(db_path):
     """A league not drawing has no template, rasteriser or colour to be wrong about."""
     cog = _cog(
@@ -381,7 +372,6 @@ def _cog_with_rounds(db_path, rounds, *, attendance=True, weather=False):
     return cog
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_an_overdue_check_in_window_refuses_and_commits_nothing(db_path):
     """#121: round 1 three days out against a five-day notice.
 
@@ -400,7 +390,6 @@ async def test_an_overdue_check_in_window_refuses_and_commits_nothing(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_overdue_refusal_is_private(db_path):
     cog = _cog_with_rounds(db_path, [_round_in(3)])
     interaction = _interaction()
@@ -413,7 +402,6 @@ async def test_the_overdue_refusal_is_private(db_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_an_overdue_weather_phase_refuses_on_its_own(db_path):
     """#122: the weather half, with attendance off, so the gate is not carried by #121."""
     cog = _cog_with_rounds(db_path, [_round_in(3)], attendance=False, weather=True)
@@ -425,7 +413,6 @@ async def test_an_overdue_weather_phase_refuses_on_its_own(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_season_clear_of_its_windows_still_approves(db_path):
     """The gate must not stand in the way of an ordinary season."""
     cog = _cog_with_rounds(db_path, [_round_in(30)])
@@ -435,7 +422,6 @@ async def test_a_season_clear_of_its_windows_still_approves(db_path):
     _assert_asked(cog)
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_gate_does_no_arithmetic_without_rounds(db_path):
     """No rounds, no windows — and so no reason to read the configs at all.
 
@@ -479,7 +465,6 @@ async def test_the_gate_does_no_arithmetic_without_rounds(db_path):
 _NO_ATTENDANCE_CHANNEL = ([], ["**Pro** has no attendance channel — `/attendance channel attendance`."])
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_missing_attendance_channel_refuses_before_the_window_gate(db_path):
     """The channel gate is the earlier one, and a manager hears about it first."""
     cog = _cog_with_rounds(db_path, [_round_in(3)])
@@ -495,7 +480,6 @@ async def test_a_missing_attendance_channel_refuses_before_the_window_gate(db_pa
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_window_gate_is_not_consulted_once_a_channel_is_missing(db_path):
     """The proof of the order, rather than of the wording.
 
@@ -516,7 +500,6 @@ async def test_the_window_gate_is_not_consulted_once_a_channel_is_missing(db_pat
 # stuck at *not run* for good, with no submission channel, no results and no standings.
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_season_in_the_past_is_refused_with_both_modules_off(db_path):
     """#181 exactly. Before this the approval succeeded and said nothing."""
     cog = _cog_with_rounds(db_path, [_round_in(-90)], attendance=False, weather=False)
@@ -530,7 +513,6 @@ async def test_a_season_in_the_past_is_refused_with_both_modules_off(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_past_round_is_refused_with_the_modules_on_too(db_path):
     """The rule does not turn on which modules a league happens to run.
 
@@ -544,7 +526,6 @@ async def test_a_past_round_is_refused_with_the_modules_on_too(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_latest_past_round_is_the_one_named(db_path):
     """Naming round 1 would understate what the manager has to move."""
     rounds = [_round_in(-30, number=1), _round_in(-20, number=2), _round_in(-10, number=3)]
@@ -556,7 +537,6 @@ async def test_the_latest_past_round_is_the_one_named(db_path):
     assert "Round 3 has already run" in _replies(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_past_round_refusal_is_private(db_path):
     cog = _cog_with_rounds(db_path, [_round_in(-90)], attendance=False, weather=False)
     interaction = _interaction()
@@ -569,7 +549,6 @@ async def test_the_past_round_refusal_is_private(db_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_future_season_still_approves_with_both_modules_off(db_path):
     """The gate must not stand in the way of an ordinary season."""
     cog = _cog_with_rounds(db_path, [_round_in(30)], attendance=False, weather=False)
@@ -579,7 +558,6 @@ async def test_a_future_season_still_approves_with_both_modules_off(db_path):
     _assert_asked(cog)
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_cancelled_past_round_does_not_refuse_the_season(db_path):
     """Refusing over one would leave a league unable to approve until they deleted it."""
     from leaguebot.core.models.round import RoundStatus
@@ -653,7 +631,6 @@ async def _attach(db_path, config_name: str, points: list[tuple[int, int]]) -> N
     )
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_wrongly_ordered_points_table_refuses_a_first_approval(db_path):
     """The regression. Before the fix this season was approved without a word."""
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
@@ -668,7 +645,6 @@ async def test_a_wrongly_ordered_points_table_refuses_a_first_approval(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_refused_season_takes_no_copy_of_the_points_it_was_refused_for(db_path):
     """Refusing must leave nothing behind, or the next approval inherits the bad table."""
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
@@ -687,7 +663,6 @@ async def test_a_refused_season_takes_no_copy_of_the_points_it_was_refused_for(d
     pytest.param("GOOD", [(1, 25), (2, 18), (3, 15)], id="well ordered"),
     pytest.param("ZEROS", [(1, 25), (2, 18), (3, 0), (4, 0)], id="trailing zeros"),
 ])
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_well_ordered_points_table_still_approves(db_path, name, points):
     """The other half: a gate that refuses everything is no better than one that refuses nothing.
     Trailing zeros are the ordinary shape of a points table, not a fault."""
@@ -701,7 +676,6 @@ async def test_a_well_ordered_points_table_still_approves(db_path, name, points)
     _assert_asked(cog)
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_test_season_with_nothing_attached_is_refused_as_any_other(db_path):
     """Test mode attaches Standard and Half Points when it is enabled and at no other moment
     (decided 2026-09-23, #409). The approval once attached them itself where a test season had
@@ -722,7 +696,6 @@ async def test_a_test_season_with_nothing_attached_is_refused_as_any_other(db_pa
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_entries_left_by_an_earlier_approval_are_still_caught(db_path):
     """The case the old check did cover, and which the new one must not displace.
 
@@ -748,7 +721,6 @@ async def test_entries_left_by_an_earlier_approval_are_still_caught(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_one_broken_position_is_named_once_however_many_checks_saw_it(db_path):
     """A re-approval is looked at from both sides; the manager reads one line, not two."""
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
@@ -779,7 +751,6 @@ async def _attach_phantom(db_path, config_name: str) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_approve_refuses_and_names_a_phantom_points_config(db_path):
     """The regression for #132, and the whole of what a league saw: nothing at all.
 
@@ -801,7 +772,6 @@ async def test_approve_refuses_and_names_a_phantom_points_config(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_phantom_alongside_a_real_config_is_still_refused(db_path):
     """One good configuration does not excuse the one that is not there."""
     await _attach(db_path, "GOOD", [(1, 25), (2, 18)])
@@ -815,7 +785,6 @@ async def test_a_phantom_alongside_a_real_config_is_still_refused(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_season_refused_for_a_phantom_config_takes_no_snapshot(db_path):
     """The snapshot is what used to raise; it must not run at all now."""
     await _attach(db_path, "GOOD", [(1, 25), (2, 18)])
@@ -831,7 +800,6 @@ async def test_a_season_refused_for_a_phantom_config_takes_no_snapshot(db_path):
         assert (await cursor.fetchone())["n"] == 0
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_refusal_names_every_phantom_at_once(db_path):
     """Two typos are two lines, so a manager does not approve once per mistake."""
     await _attach_phantom(db_path, "Standrad")
@@ -964,7 +932,6 @@ async def _a_review_expired_at_the_backup_question(db_path, monkeypatch):
     ],
     ids=lambda f: f.__name__.lstrip("_"),
 )
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_refused_approval_writes_no_sessions(db_path, monkeypatch, refusal):
     cog, refused_for, deadline = await refusal(db_path, monkeypatch)
     rnd = await _seed_round(db_path, days_out=-1 if refusal is _a_past_round else 30)
@@ -1114,7 +1081,6 @@ async def _gate_4b_an_image_fault(db_path, monkeypatch):
     ],
     ids=lambda f: f.__name__.removeprefix("_gate_"),
 )
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_every_approval_gate_refusal_is_recorded(db_path, monkeypatch, gate):
     """Manager (id 77) presses ✅ Approve and one gate refuses: the reply is today's, nothing is
     approved, and the log channel gets exactly one refusal line naming the button and its

@@ -18,7 +18,6 @@ from leaguebot.core.models.season import SeasonStage
 from tests.support.setup_reads import hold_setup
 
 from tests.support.undecorate import undecorate
-SETUP_FROM_DB = "#283: the setup is read from the cog's memory, not the database"
 
 SERVER_ID = 22070
 SEASON_ID = 7
@@ -246,7 +245,6 @@ async def test_a_settled_season_with_its_channels_has_no_faults(db_path):
 
 
 @pytest.mark.parametrize("stage", [SeasonStage.CONFIGURATION, SeasonStage.SIGNUPS])
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_review_is_refused_outside_placements(db_path, stage):
     cog = _cog(db_path)
     hold_setup(cog.bot.season_service, SimpleNamespace(season_id=SEASON_ID))
@@ -267,7 +265,6 @@ async def test_the_review_is_refused_outside_placements(db_path, stage):
     interaction.response.defer.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_confirmation_refuses_an_unsettled_signup_and_commits_nothing(db_path):
     await _driver(db_path, "1", "UNASSIGNED", "Alice")
     cog = _cog(db_path)
@@ -290,7 +287,6 @@ async def test_the_confirmation_refuses_an_unsettled_signup_and_commits_nothing(
     cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_confirmation_names_every_missing_channel_at_once_and_commits_nothing(db_path):
     """Four channels wrong is one refusal, not four attempts at starting a season. The
     results module's channels are judged here with every other division channel (#374); the
@@ -327,7 +323,6 @@ async def test_the_confirmation_names_every_missing_channel_at_once_and_commits_
 
 
 @pytest.mark.parametrize("divisions", [[], [SimpleNamespace(status="CANCELLED")]])
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_confirmation_refuses_a_season_with_no_division(db_path, divisions):
     """A season with nothing to race would never reach Pending completion (issue #220)."""
     cog = _cog(db_path)
@@ -348,7 +343,6 @@ async def test_the_confirmation_refuses_a_season_with_no_division(db_path, divis
     cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_confirmation_refuses_a_season_no_longer_in_placements(db_path):
     cog = _cog(db_path)
     hold_setup(cog.bot.season_service, SimpleNamespace(season_id=SEASON_ID))

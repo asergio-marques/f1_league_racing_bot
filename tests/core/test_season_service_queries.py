@@ -177,7 +177,6 @@ async def test_a_league_between_seasons_has_no_active_season(tmp_path):
     assert await SeasonService(db_path).get_confirmed_season() is None
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the setup season is read without its game edition")
 async def test_the_setup_season_is_the_one_being_built(tmp_path):
     """Season 3, F1 25, is being set up behind two archived seasons. The read every setup command
     makes of it (#283: the setup is read from the database, never held in memory) gives that
