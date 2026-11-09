@@ -95,9 +95,6 @@ async def test_a_driver_holds_the_roles_their_standing_entitles_them_to(
     assert await PlacementService(db_path).driver_role_ids(pid) == expected
 
 
-_ON_THE_QUEUE = "#283: /driver reassign is not yet a change on the queue"
-
-
 async def _lewis_reassigned(tmp_path, *, left: bool = False):
     """The season in Placements; Lewis (101), Assigned, his seat in Pro at Ferrari confirmed, holds
     the driver, Pro and Ferrari roles. The league manager runs `/driver reassign` of Lewis onto
