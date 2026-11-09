@@ -3996,14 +3996,10 @@ class SeasonCog(commands.Cog):
         """
         return await self._get_pending()
 
-    async def _snapshot_pending(
-        self, cfg: PendingConfig, *, initial_stage: SeasonStage | None = None
-    ) -> None:
+    async def _snapshot_pending(self, cfg: PendingConfig) -> None:
         """Write the current PendingConfig to DB (status=SETUP) and update cfg.season_id.
 
         Only what changed is written, in place; see ``SeasonService.sync_pending_config``.
-        *initial_stage* is the stage a season created by this call begins in, and is passed
-        only by `/season setup`.
         """
         divisions_data = [
             {
@@ -4021,7 +4017,6 @@ class SeasonCog(commands.Cog):
                 cfg.season_id,
                 divisions_data,
                 cfg.game_edition,
-                initial_stage=initial_stage,
             )
         )
         cfg.season_id = season_id
