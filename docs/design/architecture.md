@@ -569,9 +569,9 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   ahead of their own lane's stopped head, by design, because a league locked out of the bot has no
   other lane to wait apart on, and a channel stop's remedy has to be able to run. It is kept
   narrow: `ChangeType.overtakes_a_stop` is read once from `Setting.repairs_the_bot` for those
-  settings alone (`test_every_channel_setting_overtakes_a_stopped_job` holds the set to every
-  channel the registry knows and the two roles), the stopped head stays stopped, and everything
-  else on the lane still waits behind it.
+  settings alone (`test_every_channel_setting_overtakes_a_stopped_job` holds the set to the
+  channel settings and the two roles, and fails on a channel the registry gains without one), the
+  stopped head stays stopped, and everything else on the lane still waits behind it.
   *Rejected:* a queue for each module, which leaves the conversations of one module waiting on each
   other and the league's work split across queues with no one order; and the league dropping a
   stopped conversation's job when it ends the conversation, which would let a change overtake a
