@@ -1,6 +1,6 @@
 """The season-setup commands defer before they do their work.
 
-Each of `/division add`, `/round add` and `/round amend` writes the SETUP season through
+Each of `/round add` and `/round amend` writes the SETUP season through
 `_snapshot_pending`, and `/round add` and `/round amend` also load and parse
 the calendar template to check its capacity. Until issue #147 the write rebuilt the whole
 season, and on a season holding more than one division that work outlasted Discord's
@@ -13,9 +13,10 @@ Deferring first buys fifteen minutes, so these pin two things: that the deferral
 before any of that work, and that every reply thereafter goes to `followup` — a
 `response.send_message` after a defer is itself a 404.
 
-**`/season setup` is not in this list** (#283): it asks the change queue for the season, and the
-queue's acknowledgement is its response, as every command on the queue has it. Its own tests,
-through the queue, are at the end of this file.
+**`/season setup` and `/division add` are not in this list** (#283): each asks the change queue
+for its change, and the queue's acknowledgement is its response, as every command on the queue
+has it. `/season setup`'s own tests, through the queue, are at the end of this file;
+`/division add`'s are in `tests/core/test_division_add_duplicate.py`.
 
 **`/round add-bulk` and `/round add-xml` are deliberately not in this list.** They open a
 modal, and `send_modal` must be an interaction's *first* response — a deferred interaction
@@ -172,7 +173,6 @@ async def test_round_add_defers_before_touching_the_database(monkeypatch):
 @pytest.mark.parametrize(
     "command, kwargs",
     [
-        ("division_add", {}),
         ("round_add", {}),
         ("round_amend", {}),
     ],
@@ -180,7 +180,7 @@ async def test_round_add_defers_before_touching_the_database(monkeypatch):
 def test_every_setup_command_defers_first(command, kwargs):
     """A source-level check: the defer is the first statement that awaits anything.
 
-    Driving all three through their real bodies would need three different sets of
+    Driving both through their real bodies would need two different sets of
     stubs; what actually regresses is someone adding a query above the defer, and
     that is visible here without pretending to exercise the command.
     """
@@ -197,7 +197,7 @@ def test_every_setup_command_defers_first(command, kwargs):
 
 
 @pytest.mark.parametrize(
-    "command", ["division_add", "round_add", "round_amend"]
+    "command", ["round_add", "round_amend"]
 )
 def test_no_setup_command_replies_through_response(command):
     """After a defer the only valid reply is a followup; send_message would 404."""
@@ -210,22 +210,8 @@ def test_no_setup_command_replies_through_response(command):
 
 
 # ---------------------------------------------------------------------------
-# The setup is read from the database whenever a command asks for it (#283, S14a)
+# Seasons as the database holds them
 # ---------------------------------------------------------------------------
-
-
-async def _bot_on(tmp_path) -> MagicMock:
-    """`_bot()` with the real season service on a migrated database under *tmp_path*, which holds
-    no season yet."""
-    from leaguebot.core.db.database import run_migrations
-    from leaguebot.core.services.season_service import SeasonService
-
-    db_path = str(tmp_path / "league.db")
-    await run_migrations(db_path)
-    bot = _bot()
-    bot.db_path = db_path
-    bot.season_service = SeasonService(db_path)
-    return bot
 
 
 async def _seed_season(db_path: str, *, status: str, number: int, stage: str | None,
@@ -253,33 +239,6 @@ async def _setup_rows(db_path: str) -> list[dict]:
             "WHERE status = 'SETUP' ORDER BY id"
         )
         return [dict(row) for row in await cursor.fetchall()]
-
-
-async def test_a_setup_begun_before_a_restart_is_found_by_the_next_setup_command(tmp_path):
-    """A season is being set up for F1 25, taken to placements, as `/season setup` and the
-    confirmation of its configuration leave it in the database. The bot then restarts, and nothing
-    recovers the setup at start-up. The manager's `/division add` of Pro, tier 1, finds the season
-    being set up in the database: it is not refused for want of a setup, and Pro is saved on that
-    season."""
-    from leaguebot.core.db.database import get_connection
-    from tests.support.undecorate import undecorate
-
-    bot = await _bot_on(tmp_path)
-    await _seed_season(bot.db_path, status="SETUP", number=1, stage="PLACEMENTS", edition=25)
-    [season] = await _setup_rows(bot.db_path)
-    role = MagicMock()
-    role.id = 10
-    role.mention = "<@&10>"
-
-    restarted = SeasonCog(bot)
-    interaction = _interaction()
-    await undecorate(SeasonCog.division_add)(restarted, interaction, name="Pro", role=role, tier=1)
-
-    assert "Division **Pro** (Tier 1) added" in interaction.followup.send.await_args.args[0]
-    async with get_connection(bot.db_path) as db:
-        cursor = await db.execute("SELECT name, tier FROM divisions WHERE season_id = ?",
-                                  (season["id"],))
-        assert [tuple(row) for row in await cursor.fetchall()] == [("Pro", 1)]
 
 
 # ---------------------------------------------------------------------------
