@@ -61,15 +61,15 @@ async def test_the_role_step_takes_then_gives_and_a_refusal_ends_the_job(
     service) is run, to take some of his roles and give him others, while Discord answers as each
     case says.
 
-    Moved in full: Pro's and Ferrari's roles are taken, then Am's and McLaren's given, and the
-    step completes. A grant Discord refuses (403 Missing Permissions): the old roles are already
-    taken, since taking comes first, nothing is given, and the job ends on the fault, its result
-    naming the roles not given and the kind of fault in plain words, never Discord's own. A revoke
-    Discord refuses, as a sack's: nothing is taken and the job ends likewise, naming the roles not
-    taken. A revoke Discord refuses with roles still to give, as a move's: nothing is taken or
-    given, and the problem names both the roles not taken and those not given. A member Discord cannot find (he left the server): the step completes, nothing taken
-    or given, as his roles went with him. The step is never undiscardable, the queue refusing a
-    step that is both."""
+    Moved in full: Pro's and Ferrari's roles are taken, then Am's and McLaren's given, and the step
+    completes. A grant Discord refuses (403 Missing Permissions): the old roles are already taken,
+    since taking comes first, nothing is given, and the job ends on the fault, its result naming the
+    roles not given and the kind of fault in plain words, never Discord's own. A revoke Discord
+    refuses, as a sack's: nothing is taken and the job ends likewise, naming the roles not taken. A
+    revoke Discord refuses with roles still to give, as a move's: nothing is taken or given, and the
+    problem names both the roles not taken and those not given. A member Discord cannot find (he
+    left the server): the step completes, nothing taken or given, as his roles went with him. The
+    step is never undiscardable, the queue refusing a step that is both."""
     import discord
 
     from leaguebot.core.services.role_moves import role_move_step

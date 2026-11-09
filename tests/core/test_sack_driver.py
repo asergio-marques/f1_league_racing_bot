@@ -777,11 +777,11 @@ async def test_the_roles_go_after_the_sack_is_saved_and_a_refused_one_is_reporte
     Discord: he holds no seat and is at Not Signed Up, and he still holds every role. His reply
     drops today's claim that every role went, reading "✅ **Lewis** has been sacked. Season
     assignments removed.", then "⚠️ Done, but on Discord:" and a bullet naming the roles refused,
-    then the kind of fault in plain words: "the roles <@&801>, <@&811> and <@&820> could not be taken from
-    <@101>: Discord refused or failed a request from the bot"; his success line carries a "not
-    done:" line in the same words, its mentions written in code as the log channel writes every
-    mention. The lane is not stopped, and Max's sack, asked after, is made
-    in full: his three roles taken, his reply today's alone."""
+    then the kind of fault in plain words: "the roles <@&801>, <@&811> and <@&820> could not be
+    taken from <@101>: Discord refused or failed a request from the bot"; his success line carries a
+    "not done:" line in the same words, its mentions written in code as the log channel writes every
+    mention. The lane is not stopped, and Max's sack, asked after, is made in full: his three roles
+    taken, his reply today's alone."""
     import discord
 
     from tests.core.test_driver_move import _as_logged, _seated

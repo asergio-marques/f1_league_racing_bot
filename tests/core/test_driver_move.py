@@ -782,13 +782,14 @@ async def _fill_mclaren(league):
     ],
 )
 async def test_a_driver_move_is_judged_again_as_it_starts(tmp_path, meanwhile, reply, lewis_after):
-    """The season is ongoing; Lewis sits at Ferrari in Pro. The league admin runs `/driver move`
-    of Lewis into McLaren in Am and is acknowledged; before the queue runs it, the season's races
-    end (Pending completion), Lewis's placement in Pro is made unconfirmed, Lewis takes a seat
-    in Am as well, or two other drivers take McLaren's two free seats in Am. The queue runs. The move is refused as it starts, in the words it would meet
-    at the ask, its acknowledgement updated to them. Lewis's seats, in division order, stand as
-    the meanwhile left them, no audit entry is written, the log channel holds the refusal alone,
-    no role is touched, no lineup posted, and the queue is not stopped."""
+    """The season is ongoing; Lewis sits at Ferrari in Pro. The league admin runs `/driver move` of
+    Lewis into McLaren in Am and is acknowledged; before the queue runs it, the season's races end
+    (Pending completion), Lewis's placement in Pro is made unconfirmed, Lewis takes a seat in Am as
+    well, or two other drivers take McLaren's two free seats in Am. The queue runs. The move is
+    refused as it starts, in the words it would meet at the ask, its acknowledgement updated to
+    them. Lewis's seats, in division order, stand as the meanwhile left them, no audit entry is
+    written, the log channel holds the refusal alone, no role is touched, no lineup posted, and the
+    queue is not stopped."""
     from tests.support.change_queue import run_queue, stopped_job
     from tests.support.season_league import AM, DIVISIONS, LEWIS, PRO
     from tests.support.settings_league import audit_rows, last_said, log_lines
