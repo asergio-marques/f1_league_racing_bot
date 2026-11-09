@@ -424,14 +424,7 @@ MODULE_CHANNEL_COMMANDS = {
 }
 
 
-#: The channel commands, weather's case failing until it is asked of the change queue.
-_CHANNEL_PARAMS = [
-    pytest.param(which) if which == "weather" else which
-    for which in sorted(MODULE_CHANNEL_COMMANDS)
-]
-
-
-@pytest.mark.parametrize("which", _CHANNEL_PARAMS)
+@pytest.mark.parametrize("which", sorted(MODULE_CHANNEL_COMMANDS))
 async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_path, which):
     """Completing posts the final classification and the final attendance sheet to those
     channels, so one deleted before completion has to be repointed. Each of the six is run
