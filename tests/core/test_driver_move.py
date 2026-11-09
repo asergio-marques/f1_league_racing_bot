@@ -795,3 +795,31 @@ async def test_a_driver_move_asked_again_while_it_waits_is_refused_as_a_repeat(t
         _refusal(repeated(_moving("Lewis"))), _move_line("Lewis", LEWIS),
     ]
 
+
+@pytest.mark.xfail(strict=True, reason=_MOVE_NOT_QUEUED)
+async def test_a_driver_who_left_the_server_before_the_move_runs_is_moved_without_roles(
+    tmp_path,
+):
+    """The move is the league's record; a member Discord cannot find has no roles to move. The
+    season is ongoing; Lewis sits at Ferrari in Pro. The league admin runs `/driver move` of Lewis
+    into McLaren in Am, and Lewis leaves the server before the queue runs it. The move is saved:
+    Lewis sits at McLaren in Am, still confirmed, and the log channel holds today's success line
+    alone. No role is taken from him or given him, and nothing is reported of his roles: his
+    reply is today's, word for word. The lineups of Pro and of Am are each posted once, and the
+    lane is not stopped."""
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.season_league import AM, DIVISIONS, LEWIS, PRO
+    from tests.support.settings_league import last_said, log_lines
+
+    league = await _ongoing(tmp_path)
+    asked = await _ask_move(league, LEWIS)
+    league.absent.add(LEWIS)
+    await run_queue(league.bot)
+
+    assert await _seated(league) == {**_STANDING, LEWIS: ("Am", "McLaren", True)}
+    assert _move_lines(await log_lines(league)) == [_move_line("Lewis", LEWIS)]
+    assert LEWIS not in league.revoked and LEWIS not in league.granted
+    assert last_said(asked) == _moved("Lewis")
+    assert len(league.texts(DIVISIONS[PRO][3].lineup)) == 1
+    assert len(league.texts(DIVISIONS[AM][3].lineup)) == 1
+    assert await stopped_job(league.db_path) is None
