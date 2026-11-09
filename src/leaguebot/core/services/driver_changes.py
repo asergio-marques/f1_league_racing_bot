@@ -1,6 +1,6 @@
 """`core.driver_move`, `core.driver_sack`, `core.driver_release`, `core.driver_assign`,
-`core.driver_unassign` and `core.driver_reject`: `/driver move`, `sack`, `release`, `assign`,
-`unassign` and `reject`, on the change queue.
+`core.driver_unassign`, `core.driver_reject` and `core.driver_reassign`: `/driver move`, `sack`,
+`release`, `assign`, `unassign`, `reject` and `reassign`, on the change queue.
 
 Each is a change type of its own on the league lane, registered by the builder. Move, sack and
 release are for a committed driver while the season is ongoing: moved to a team of the same
@@ -30,6 +30,18 @@ each module signs up to (signup withdraws the approval of their signup), and wri
 is judged again as it starts for the stage, a driver no longer Unassigned, and a driver whose
 current account is not the one asked for and has left the server.
 
+A reassignment makes another account the driver's current one, for a driver being placed, and is a
+change of its own shape (`driver_reassign_change`): the accounts are named at the ask, by id, and
+the one save makes the new account current, or merges the two drivers where the new one is
+another's, writing the `DRIVER_USER_ID_REASSIGN` audit entry and the line, and judges every
+refusal again on the save's own connection, so that a signup begun or a second reassignment
+between the check and the write cannot slip past. A refusal found there ends the change in its
+words, changing nothing and planning nothing, and does not stop the lane. After the save come the
+roles, given to the new account and taken from the replaced one, the jobs each module plans for
+a driver's account changed (signup's held channel), and the replaced account's portrait, discarded.
+The roles and the modules' jobs end on a fault as a role does for a move, and are reported with the
+line.
+
 An assignment and an unassignment have no job after the save: the placement they write or remove
 is never confirmed, so it holds no role and posts no lineup, which follow when placements are
 confirmed. Both are refused a driver holding a confirmed placement, whom `/driver move` and
@@ -53,7 +65,8 @@ from __future__ import annotations
 import json
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 import discord
@@ -78,13 +91,17 @@ from leaguebot.core.services.change_queue import (
     StepContext,
     StepView,
 )
-from leaguebot.core.services.driver_service import write_transition
+from leaguebot.core.services.driver_service import DriverService, write_transition
 from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.core.services.role_moves import MOVE_ROLES, PLACEMENT_REASON, role_move_step
 from leaguebot.core.services.season_approval_change import unposted_lineup_line
-from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.utils.league_server import league_guild
+from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 from leaguebot.core.utils.season_gate import PLACEMENT_STAGES
+
+if TYPE_CHECKING:
+    from leaguebot.core.services.image_drawing import ImageDrawing
 
 DRIVER_MOVE = "core.driver_move"
 DRIVER_SACK = "core.driver_sack"
@@ -92,6 +109,7 @@ DRIVER_RELEASE = "core.driver_release"
 DRIVER_ASSIGN = "core.driver_assign"
 DRIVER_UNASSIGN = "core.driver_unassign"
 DRIVER_REJECT = "core.driver_reject"
+DRIVER_REASSIGN = "core.driver_reassign"
 
 #: The names of the jobs, as the stop notice, the outcome and the tests know them.
 SAVE = "save"
@@ -870,11 +888,204 @@ def driver_reject_change(
     )
 
 
+# ── /driver reassign ──────────────────────────────────────────────────────────────────
+
+#: `/driver reassign` as the line names it.
+REASSIGN_COMMAND = "/driver reassign"
+
+#: The step that discards the replaced account's portrait.
+DISCARD_PORTRAIT = "discard_portrait"
+
+#: What Discord's audit log is given for the roles a reassignment takes.
+REASSIGN_REASON = "Driver's current account changed"
+
+#: The reply once a league admin has discarded the stopped save: no account was changed.
+NO_ACCOUNT_CHANGED = (
+    "No account was changed: <@{new_user_id}> is not the driver's current account. "
+    "Run `/driver reassign` again."
+)
+
+
+def _reassign_reply(saved: dict[str, Any]) -> str:
+    """The reply of a reassignment made: how the driver was changed, and the driver as they stand."""
+    past = ", ".join(f"<@{each}>" for each in saved["past"]) or "—"
+    return (
+        f"✅ Driver {saved['how']}.\n"
+        f"   Current account : <@{saved['current']}>\n"
+        f"   Past accounts   : {past}\n"
+        f"   State           : {saved['state']}\n"
+        f"   Former driver   : {'Yes' if saved['former'] else 'No'}"
+    )
+
+
+def driver_reassign_change(
+    *,
+    driver: DriverService,
+    placement: PlacementService,
+    profiles_merged: AwaitedHook,
+    driver_account_changed: AwaitedHook,
+    driver_account_changed_steps: Hook,
+    drawing: "ImageDrawing",
+    now: Callable[[], datetime],
+) -> ChangeType:
+    """The `core.driver_reassign` change type, for the builder to register: *driver* is what the
+    check judges the reassignment through and the save writes it through, *placement* what the
+    roles are read and given through, *profiles_merged* the hook a merge of two drivers calls
+    inside the save, *driver_account_changed* the hook each module's part of the change is
+    planned through, called inside the save with the save's connection and the account replaced
+    and the new one, handing back the jobs it plans, *driver_account_changed_steps* the step
+    definitions of those jobs, by name, *drawing* the image module's drawing, which discards the
+    portrait, and *now* the queue's clock.
+
+    The payload names the accounts (`old_user_id`, any account of the driver's, and `new_user_id`,
+    both as strings) and the new member (`new_name`, as the line names them). The roles are read
+    inside the save, from what the driver's standing entitles them to.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        """The refusals of the service, each in its words, read from the database."""
+        try:
+            async with get_connection(ctx.db_path) as db:
+                await driver.judge_reassign_on(
+                    db, str(ctx.payload["old_user_id"]), str(ctx.payload["new_user_id"])
+                )
+        except ValueError as refusal:
+            return Verdict.refuse(f"⛔ {refusal}")
+        return Verdict.go()
+
+    async def save(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """The one save; see the module."""
+        if ctx.actor_id is None or ctx.actor_name is None:
+            raise RuntimeError("reassigning a driver is the act of a member, and none is recorded")
+        old_user_id, new_user_id = str(ctx.payload["old_user_id"]), str(ctx.payload["new_user_id"])
+        try:
+            outcome = await driver.reassign_user_id_on(
+                db, old_user_id, new_user_id, ctx.actor_id, ctx.actor_name,
+                profiles_merged=profiles_merged, now=now(),
+            )
+        except ValueError as refusal:
+            reply = f"⛔ {refusal}"
+            return StepResult(
+                result={"refused": reply},
+                lines=(refusal_line(ctx.named, ctx.what, reply_reason(reply)),),
+            )
+        replaced = outcome.replaced_account
+        profile = outcome.profile
+        how = "switched back to a past account" if outcome.switched_back else "given a new account"
+        if outcome.merged_accounts:
+            how = (
+                "merged with the driver on "
+                + ", ".join(f"<@{each}>" for each in outcome.merged_accounts)
+                + ", and given that account"
+            )
+        steps: list[PlannedStep] = []
+        roles = sorted(await placement.driver_role_ids_on(db, profile.id))
+        if roles:
+            steps.append(PlannedStep(MOVE_ROLES, {"user_id": int(new_user_id), "grant": roles}))
+            steps.append(PlannedStep(MOVE_ROLES, {"user_id": int(replaced), "revoke": roles}))
+        steps.extend(
+            job
+            for planned in await driver_account_changed.call(db, replaced, new_user_id)
+            for job in planned
+        )
+        steps.append(PlannedStep(DISCARD_PORTRAIT, {"user_id": replaced}))
+        return StepResult(
+            result={
+                "saved": True,
+                "how": how,
+                "current": new_user_id,
+                "past": [each for each in outcome.accounts if each != new_user_id],
+                "state": profile.current_state.value,
+                "former": bool(profile.former_driver),
+                "replaced": replaced,
+                "accounts": list(outcome.accounts),
+            },
+            audits=(AuditRecord("DRIVER_USER_ID_REASSIGN", replaced, new_user_id, None),),
+            then=tuple(steps),
+        )
+
+    async def close(_db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """Write the line that records the change, with what was not done."""
+        saved = _saved_result(ctx)
+        if saved is None:
+            return StepResult(result={"closed": True})
+        line = (
+            f"{ctx.named} | {REASSIGN_COMMAND} | Success\n"
+            f"  replaced: <@{saved['replaced']}>\n"
+            f"  current: {ctx.payload['new_name']} (<@{ctx.payload['new_user_id']}>)\n"
+            f"  accounts: {', '.join(saved['accounts'])}"
+            + "".join(f"\n  not done: {each}" for each in _problems(ctx))
+        )
+        return StepResult(result={"closed": True}, lines=(line,))
+
+    async def discard_portrait(ctx: StepContext) -> StepResult:
+        await drawing.discard_portraits([str(ctx.step_payload["user_id"])])
+        return StepResult(result={})
+
+    async def describe_close(ctx: StepContext) -> str:
+        return f"recording `{REASSIGN_COMMAND}` of the driver on <@{ctx.payload['old_user_id']}>"
+
+    async def describe_discard(ctx: StepContext) -> str:
+        return f"discarding the portrait of <@{ctx.step_payload['user_id']}>"
+
+    def doing(payload: dict[str, Any]) -> str:
+        return (
+            f"Making <@{payload['new_user_id']}> the current account of the driver on "
+            f"<@{payload['old_user_id']}>"
+        )
+
+    def outcome(ctx: OutcomeContext) -> str:
+        view = _view(ctx, SAVE)
+        refused = (view.result or {}).get("refused") if view is not None else None
+        if refused:
+            return str(refused)
+        saved = _saved_result(ctx)
+        if saved is None:
+            return NO_ACCOUNT_CHANGED.format(**ctx.payload)
+        reply = _reassign_reply(saved)
+        problems = _problems(ctx)
+        if problems:
+            reply += "\n⚠️ Done, but on Discord:\n" + "\n".join(f"• {each}" for each in problems)
+        return reply
+
+    steps = {
+        SAVE: Step(SAVE, StepKind.SAVE, save),
+        CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
+        MOVE_ROLES: role_move_step(placement, reason=REASSIGN_REASON),
+        DISCARD_PORTRAIT: Step(
+            DISCARD_PORTRAIT, StepKind.ACT, discard_portrait, describe=describe_discard
+        ),
+        **{
+            name: step
+            for defined in driver_account_changed_steps.call()
+            for name, step in defined.items()
+        },
+    }
+    return ChangeType(
+        kind=DRIVER_REASSIGN,
+        opening=(PlannedStep(SAVE), PlannedStep(CLOSE)),
+        steps=steps,
+        check=check,
+        key=lambda payload: f"{DRIVER_REASSIGN}|{json.dumps(payload, sort_keys=True)}",
+        doing=doing,
+        outcome=outcome,
+        lane=lambda _payload: LEAGUE_LANE,
+    )
+
+
+def _problems(ctx: OutcomeContext) -> list[str]:
+    """What the jobs after a reassignment's save left undone, in the order they ran: each role
+    Discord refused and each module's job that ended on a fault, which named its problem."""
+    return [
+        str(view.result["problem"]) for view in ctx.steps if view.result and view.result.get("problem")
+    ]
+
+
 __all__ = [
-    "DRIVER_ASSIGN", "DRIVER_MOVE", "DRIVER_REJECT", "DRIVER_RELEASE", "DRIVER_SACK",
-    "DRIVER_UNASSIGN", "NOBODY_SACKED", "NOBODY_TURNED_DOWN", "NOT_PLACING_REFUSAL",
-    "NOT_UNASSIGNED_REFUSAL", "PAST_ACCOUNT_REFUSAL", "NOTHING_ASSIGNED", "NOTHING_MOVED",
-    "NOTHING_RELEASED", "NOTHING_UNASSIGNED", "driver_assign_change", "driver_move_change",
-    "driver_reject_change", "driver_release_change", "driver_sack_change",
-    "driver_unassign_change",
+    "DRIVER_ASSIGN", "DRIVER_MOVE", "DRIVER_REASSIGN", "DRIVER_REJECT", "DRIVER_RELEASE",
+    "DRIVER_SACK", "DRIVER_UNASSIGN", "NO_ACCOUNT_CHANGED", "NOBODY_SACKED", "NOBODY_TURNED_DOWN",
+    "NOT_PLACING_REFUSAL", "NOT_UNASSIGNED_REFUSAL", "PAST_ACCOUNT_REFUSAL", "NOTHING_ASSIGNED",
+    "NOTHING_MOVED", "NOTHING_RELEASED", "NOTHING_UNASSIGNED", "driver_assign_change",
+    "driver_move_change", "driver_reassign_change", "driver_reject_change",
+    "driver_release_change", "driver_sack_change", "driver_unassign_change",
 ]

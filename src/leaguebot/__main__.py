@@ -577,6 +577,7 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.core.services.driver_changes import (
         driver_assign_change,
         driver_move_change,
+        driver_reassign_change,
         driver_reject_change,
         driver_release_change,
         driver_sack_change,
@@ -978,6 +979,17 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         driver_reject_change(
             placement=bot.placement_service, driver_turned_down=bot.driver_turned_down
+        )
+    )
+    bot.change_queue.register(
+        driver_reassign_change(
+            driver=bot.driver_service,
+            placement=bot.placement_service,
+            profiles_merged=bot.profiles_merged,
+            driver_account_changed=bot.driver_account_changed,
+            driver_account_changed_steps=bot.driver_account_changed_steps,
+            drawing=bot.image_drawing,
+            now=lambda: bot.change_queue.now(),
         )
     )
     bot.change_queue.register(sheet_post_change())

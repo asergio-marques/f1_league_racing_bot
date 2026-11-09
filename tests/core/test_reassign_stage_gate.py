@@ -32,8 +32,6 @@ from leaguebot.core.utils.season_gate import LIVE_STAGES, PLACEMENT_STAGES
 #: stages rather than listed, so a stage added to the lifecycle is covered without an edit.
 REFUSED_STAGES = sorted(LIVE_STAGES - PLACEMENT_STAGES, key=lambda s: s.value)
 
-_ON_THE_QUEUE = "#283: /driver reassign is not yet asked of the change queue"
-
 
 def _bot(stage: SeasonStage | None) -> MagicMock:
     season = (
@@ -98,7 +96,6 @@ def _asked(bot) -> tuple[str, str]:
 # Permitted
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 @pytest.mark.parametrize("stage", sorted(PLACEMENT_STAGES, key=lambda s: s.value))
 async def test_a_reassign_runs_while_drivers_are_being_placed(stage):
     """In each placing stage the reassign of 111's driver onto 222 is asked of the queue."""
@@ -183,7 +180,6 @@ async def test_reassign_refuses_a_non_numeric_old_user_id(typed):
     assert "numeric Discord user ID" in _said(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_reassign_still_takes_a_numeric_old_user_id_with_space_around_it():
     bot = _bot(SeasonStage.PLACEMENTS)
     interaction = _interaction()

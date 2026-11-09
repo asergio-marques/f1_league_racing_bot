@@ -11,6 +11,7 @@ from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
 from leaguebot.core.services.driver_changes import (
     DRIVER_ASSIGN,
     DRIVER_MOVE,
+    DRIVER_REASSIGN,
     DRIVER_REJECT,
     DRIVER_RELEASE,
     DRIVER_SACK,
@@ -150,77 +151,17 @@ class DriverCog(commands.Cog):
             )
             return
 
-        new_user_id = str(new_user.id)
-        actor_id = interaction.user.id
-        actor_name = str(interaction.user)
-
-        # Deferred: moving roles and a signup channel talks to Discord several times over.
-        await interaction.response.defer(ephemeral=True)
-        try:
-            outcome = await self.bot.driver_service.reassign_user_id(
-                resolved_old_id, new_user_id, actor_id, actor_name,
-                profiles_merged=self.bot.profiles_merged,
-            )
-        except ValueError as exc:
-            await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
-            return
-
-        profile = outcome.profile
-        replaced = outcome.replaced_account
-
-        # The account change is committed. What follows is Discord's side of it, and a failure
-        # there is reported rather than undoing it.
-        problems: list[str] = []
-        if interaction.guild is not None:
-            try:
-                problems += await self.bot.placement_service.move_driver_roles(
-                    interaction.guild, profile.id, replaced, new_user_id
-                )
-            except Exception as exc:  # noqa: BLE001 — the reassign stands whatever Discord says
-                log.exception("reassign: could not move the roles of driver %s", profile.id)
-                problems.append(f"the roles could not be moved: {exc}")
-            try:
-                problems += await self.bot.wizard_service.move_held_channel(
-                    replaced, new_user_id, interaction.guild
-                )
-            except Exception as exc:  # noqa: BLE001 — as the roles
-                log.exception("reassign: could not move the signup channel of %s", replaced)
-                problems.append(f"the signup channel could not be moved: {exc}")
-
-        former = "Yes" if profile.former_driver else "No"
-        past = [a for a in outcome.accounts if a != new_user_id]
-        how = "switched back to a past account" if outcome.switched_back else "given a new account"
-        if outcome.merged_accounts:
-            how = (
-                "merged with the driver on "
-                + ", ".join(f"<@{a}>" for a in outcome.merged_accounts)
-                + ", and given that account"
-            )
-        reply = (
-            f"✅ Driver {how}.\n"
-            f"   Current account : <@{new_user_id}>\n"
-            f"   Past accounts   : {', '.join(f'<@{a}>' for a in past) or '—'}\n"
-            f"   State           : {profile.current_state.value}\n"
-            f"   Former driver   : {former}"
-        )
-        if problems:
-            reply += "\n⚠️ Done, but on Discord:\n" + "\n".join(f"• {p}" for p in problems)
-        await interaction.followup.send(reply, ephemeral=True)
-        # After the reply, so that reading the image configuration and touching the league's
-        # directory can never eat into Discord's three seconds. The replaced account is drawn
-        # by nothing now, so the portrait obtained for it goes, asked of the image
-        # module through the drawing the builder hands the bot rather than imported directly.
-        await self.bot.image_drawing.discard_portraits([replaced])
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver reassign | Success\n"
-            f"  replaced: <@{replaced}>\n"
-            f"  current: {new_user.display_name} (<@{new_user_id}>)\n"
-            f"  accounts: {', '.join(outcome.accounts)}"
-            + "".join(f"\n  not done: {p}" for p in problems),
-        )
-        log.info(
-            "Driver account changed: %s → %s by %s",
-            replaced, new_user_id, actor_name,
+        # The reassignment, its roles, the held signup channel and the portrait are a change on
+        # the queue, which refuses again as it starts what the service refuses
+        # (`core/services/driver_changes.py`).
+        await self.bot.change_queue.ask(
+            DRIVER_REASSIGN,
+            {
+                "old_user_id": resolved_old_id,
+                "new_user_id": str(new_user.id),
+                "new_name": new_user.display_name,
+            },
+            interaction=interaction, what=describe(interaction),
         )
 
     # ------------------------------------------------------------------

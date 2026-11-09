@@ -173,9 +173,6 @@ MUTATING = [
 # ---------------------------------------------------------------------------
 
 
-_ON_THE_QUEUE = "#283: /driver reassign is not yet asked of the change queue"
-
-
 async def test_reassign_with_neither_old_user_nor_id_is_refused(tmp_path):
     """The season is in Placements. The league manager runs `/driver reassign` onto account 2,
     naming no old account, neither by mention nor by id. They are told they must supply one, and
@@ -189,7 +186,6 @@ async def test_reassign_with_neither_old_user_nor_id_is_refused(tmp_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_mentioned_old_user_wins_over_a_raw_id(tmp_path):
     """Both may be given. The mention is the more specific of the two and is taken: the season is
     in Placements, the league manager runs `/driver reassign` onto account 2 mentioning account 1

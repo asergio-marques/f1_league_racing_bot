@@ -489,7 +489,6 @@ async def test_a_driver_merge_is_one_save_with_the_profiles_merged_hook(tmp_path
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_failed_driver_reassign_changes_nothing(tmp_path, monkeypatch):
     """The season is in Placements; Valtteri (106) is Unassigned. The league manager runs `/driver
     reassign` of Valtteri onto 9001, and as the queue runs it the database fails writing the audit
@@ -560,7 +559,6 @@ async def _the_new_account_a_past_one_of_another(league):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 @pytest.mark.parametrize(
     "meanwhile, reply",
     [

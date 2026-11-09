@@ -117,7 +117,6 @@ async def _reassign(tmp_path, monkeypatch, *, held=True, theirs=False, draft=Fal
     return league, asked, valtteri, other
 
 
-@pytest.mark.xfail(strict=True, reason=_THROUGH_THE_HOOK)
 async def test_a_held_channel_moves_with_its_deletion_still_due_when_it_was(
     tmp_path, monkeypatch,
 ):
@@ -180,7 +179,6 @@ async def test_a_held_channel_on_the_new_account_is_kept_and_the_other_deleted(
     assert _edits(held) == [] and _edits(theirs) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_THROUGH_THE_HOOK)
 async def test_a_deletion_job_already_gone_is_armed_again(tmp_path, monkeypatch):
     """E42: the channel is never left with nothing to delete it. Valtteri (106) holds his held
     channel, its deletion timer gone. After `/driver reassign` of Valtteri onto 9001 has run, one
@@ -224,7 +222,6 @@ async def test_a_draft_the_new_account_abandoned_goes_in_the_same_save_as_the_mo
     assert await _channel_of(league, UNASSIGNED) == "no record"
 
 
-@pytest.mark.xfail(strict=True, reason=_THROUGH_THE_HOOK)
 async def test_the_held_channel_s_record_moves_in_the_reassign_s_own_save(tmp_path, monkeypatch):
     """Takes the place of E43's crash order: the record is re-keyed in the reassign's save, so it
     moves with the reassign or not at all. Valtteri (106) holds his held channel. The league
@@ -244,7 +241,6 @@ async def test_the_held_channel_s_record_moves_in_the_reassign_s_own_save(tmp_pa
     assert _armed(league) == [] and _disarmed(league) == [] and _edits(held) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_THROUGH_THE_HOOK)
 async def test_a_held_channel_stays_while_the_signup_module_is_off(tmp_path, monkeypatch):
     """Signup's part does nothing while the module is off, the hook being called whatever the
     switches say. Valtteri (106) holds his held channel and the signup module is turned off. After

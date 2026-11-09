@@ -1799,6 +1799,13 @@ class PlacementService:
     # ------------------------------------------------------------------
 
     async def driver_role_ids(self, driver_profile_id: int) -> set[int]:
+        """`driver_role_ids_on` on a connection of its own."""
+        async with get_connection(self._db_path) as db:
+            return await self.driver_role_ids_on(db, driver_profile_id)
+
+    async def driver_role_ids_on(
+        self, db: aiosqlite.Connection, driver_profile_id: int
+    ) -> set[int]:
         """The roles the driver's standing entitles them to, read from state, not from Discord.
 
         The driver role while they are Unassigned or Assigned, and the division and team
@@ -1806,40 +1813,39 @@ class PlacementService:
         confirming placements grant. A test-mode driver holds no roles. Read from the league's
         own record so that it answers even when the account holding the roles has left.
         """
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ?",
-                (driver_profile_id,),
-            )
-            profile = await cursor.fetchone()
-            if profile is None or profile["is_test_driver"]:
-                return set()
-            roles: set[int] = set()
-            if profile["current_state"] in (
-                DriverState.UNASSIGNED.value, DriverState.ASSIGNED.value
-            ):
-                cursor = await db.execute("SELECT driver_role_id FROM server_configs")
-                row = await cursor.fetchone()
-                if row is not None and row["driver_role_id"]:
-                    roles.add(int(row["driver_role_id"]))
-            cursor = await db.execute(
-                """
-                SELECT d.mention_role_id AS division_role, trc.role_id AS team_role
-                FROM driver_season_assignments dsa
-                JOIN seasons s ON s.id = dsa.season_id
-                JOIN divisions d ON d.id = dsa.division_id
-                LEFT JOIN team_seats ts ON ts.id = dsa.team_seat_id
-                LEFT JOIN team_instances ti ON ti.id = ts.team_instance_id
-                LEFT JOIN team_role_configs trc
-                    ON trc.team_name = ti.name
-                WHERE dsa.driver_profile_id = ? AND dsa.committed = 1 AND s.status IN ('SETUP', 'ACTIVE')
-                """,
-                (driver_profile_id,),
-            )
-            for row in await cursor.fetchall():
-                for role_id in (row["division_role"], row["team_role"]):
-                    if role_id:
-                        roles.add(int(role_id))
+        cursor = await db.execute(
+            "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ?",
+            (driver_profile_id,),
+        )
+        profile = await cursor.fetchone()
+        if profile is None or profile["is_test_driver"]:
+            return set()
+        roles: set[int] = set()
+        if profile["current_state"] in (
+            DriverState.UNASSIGNED.value, DriverState.ASSIGNED.value
+        ):
+            cursor = await db.execute("SELECT driver_role_id FROM server_configs")
+            row = await cursor.fetchone()
+            if row is not None and row["driver_role_id"]:
+                roles.add(int(row["driver_role_id"]))
+        cursor = await db.execute(
+            """
+            SELECT d.mention_role_id AS division_role, trc.role_id AS team_role
+            FROM driver_season_assignments dsa
+            JOIN seasons s ON s.id = dsa.season_id
+            JOIN divisions d ON d.id = dsa.division_id
+            LEFT JOIN team_seats ts ON ts.id = dsa.team_seat_id
+            LEFT JOIN team_instances ti ON ti.id = ts.team_instance_id
+            LEFT JOIN team_role_configs trc
+                ON trc.team_name = ti.name
+            WHERE dsa.driver_profile_id = ? AND dsa.committed = 1 AND s.status IN ('SETUP', 'ACTIVE')
+            """,
+            (driver_profile_id,),
+        )
+        for row in await cursor.fetchall():
+            for role_id in (row["division_role"], row["team_role"]):
+                if role_id:
+                    roles.add(int(role_id))
         return roles
 
     async def move_driver_roles(
