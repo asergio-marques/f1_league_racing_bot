@@ -130,8 +130,14 @@ async def test_a_setup_round_amendment_its_renumbering_audit_entry_and_line_are_
     stood and as it stands; the log channel holds the success line alone, naming round 3 and the
     moment from what to what; and the acknowledgement is updated to today's reply, word for word,
     naming round 3 — the number the round bears once renumbered, where it used to name round 1 —
-    with Pro's rounds listed."""
-    from tests.support.change_queue import run_queue, step_rows
+    with Pro's rounds listed. The change queued is of a kind the builder registers as one whose
+    save may write the rounds alone, besides the queue's own tables, the audit entries among them,
+    so that no setup round amendment can touch a division's settings, its channels, its points
+    configurations, its seats or a driver's placement."""
+    from unittest.mock import MagicMock
+
+    from leaguebot.__main__ import register_change_types
+    from tests.support.change_queue import change_rows, run_queue, step_rows
     from tests.support.settings_league import audit_rows, last_said, log_lines, said
 
     league = await setup_league(tmp_path, divisions=_HELD)
@@ -142,6 +148,14 @@ async def test_a_setup_round_amendment_its_renumbering_audit_entry_and_line_are_
 
     first_job = (await step_rows(league.db_path))[0]["id"]
     assert said(asked)[0] == f"{acknowledged(_doing(1, 'Pro'))} It begins with job #{first_job}."
+    [queued] = await change_rows(league.db_path)
+    builder = MagicMock()
+    register_change_types(builder)
+    [change_type] = [
+        call.args[0] for call in builder.change_queue.register.call_args_list
+        if call.args[0].kind == queued["kind"]
+    ]
+    assert change_type.writes == ("rounds",)
     assert await round_rows(league.db_path, "Pro") == pro_before
     await run_queue(league.bot)
 

@@ -118,6 +118,26 @@ def test_the_round_amendment_is_registered():
     assert kinds.count(ROUND_AMEND) == 1
 
 
+def test_a_setup_round_change_may_write_the_rounds_alone():
+    """The builder registers `/round add`'s change, "core.round_add", and the imports',
+    "core.round_import", once each, and each declares that its save may write the rounds alone,
+    besides the queue's own tables, the audit entries among them (#283, S14d): the queue then
+    refuses any other write, so that adding rounds to the season being set up can never touch the
+    season, a division's settings, its channels, its points configurations, its seats or a
+    driver's placement."""
+    from leaguebot.__main__ import register_change_types
+    from leaguebot.core.services.round_add_changes import ADD, IMPORT
+
+    bot = MagicMock()
+    register_change_types(bot)
+
+    registered = [call.args[0] for call in bot.change_queue.register.call_args_list]
+    assert (ADD, IMPORT) == ("core.round_add", "core.round_import")
+    for kind in (ADD, IMPORT):
+        [change_type] = [each for each in registered if each.kind == kind]
+        assert change_type.writes == ("rounds",), kind
+
+
 def test_the_season_s_end_is_registered():
     """The builder registers the completion of a season, its cancellation and its abort, as
     "season.complete", "season.cancel" and "season.abort", and the wind-down, once each (#439,
