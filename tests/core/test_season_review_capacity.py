@@ -166,13 +166,6 @@ SEASON = [
 ]
 
 
-#: Why a test of the round guard fails until the build.
-ROUND_GUARD = (
-    "#283: the round guard is not yet round_add_changes.calendar_round_refusal, the change "
-    "type's own"
-)
-
-
 def _round_refusal(cog, would_hold):
     """The round guard, asking the drawing on *cog*'s bot of *would_hold* rounds: the
     change type's own, which `/round add` and the round imports judge at the ask and again as the
@@ -226,7 +219,6 @@ async def test_the_lineup_check_asks_of_each_division_s_race_teams_in_tier_order
     ),
     pytest.param(False, None, id="within the calendar"),
 ])
-@pytest.mark.xfail(strict=True, reason=ROUND_GUARD)
 async def test_a_round_past_the_calendar_is_refused_in_core_s_words(tmp_path, found, refusal):
     """`/round add` and the round imports ask, through their change type's guard, of the rounds
     the division would hold. Core says the round was **not** added; the problem and its remedy
@@ -362,10 +354,7 @@ CHECKS = [
 #: Each fault a check can meet: the drawing's, for every check, and the season's own counts, for
 #: every check but the round's, whose count it is handed rather than reads.
 FAULTS = [
-    pytest.param(
-        fault, *case[1:], id=f"{fault}-{case[0]}",
-        marks=[pytest.mark.xfail(strict=True, reason=ROUND_GUARD)] if case[0] == "round" else [],
-    )
+    pytest.param(fault, *case[1:], id=f"{fault}-{case[0]}")
     for fault in ("drawing", "counts")
     for case in CHECKS
     if not (fault == "counts" and case[0] == "round")

@@ -37,9 +37,6 @@ from tests.support.setup_rounds import (
 )
 from tests.support.undecorate import undecorate
 
-#: Why a test of `/round add` on the change queue fails until the build.
-QUEUED = "#283: /round add is not yet the change core.round_add on the change queue"
-
 #: The command as the log channel names it.
 WHAT = "`/round add`"
 
@@ -102,7 +99,6 @@ def _success_line(number: int, division: str, fmt: str, track: str | None, at: d
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUED)
 async def test_a_round_its_renumbering_audit_entry_and_line_are_one_save(tmp_path):
     """The core specification's record of what changed. Season #1 is being set up, in Placements,
     as the database alone holds it after a restart: Pro holds mystery rounds on 14 and 28 June
@@ -155,7 +151,6 @@ async def test_a_round_its_renumbering_audit_entry_and_line_are_one_save(tmp_pat
     assert last_said(asked) == _added(2, "Pro", "MYSTERY", None, at, rows)
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUED)
 async def test_a_failed_round_save_adds_nothing(tmp_path):
     """Season #1 is being set up, in Placements, Pro holding its rounds of 14 and 28 June. The
     manager runs `/round add` for Pro, a mystery round on 21 June at 18:00, and as the queue runs
@@ -213,7 +208,6 @@ async def test_a_failed_round_save_adds_nothing(tmp_path):
         ),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=QUEUED)
 async def test_a_round_add_is_judged_again_as_it_starts(tmp_path, monkeypatch, meanwhile, reply):
     """Season #1 is being set up, in Placements, Pro holding its rounds of 14 and 28 June. The
     manager runs `/round add` for Pro, a mystery round on 21 June at 18:00, and nothing is saved
@@ -276,7 +270,6 @@ async def test_a_round_add_is_judged_again_as_it_starts(tmp_path, monkeypatch, m
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUED)
 async def test_a_calendar_guard_that_cannot_run_lets_the_round_through(tmp_path, monkeypatch, caplog):
     """architecture.md, "A catch-all error handler": a capacity check that cannot run must not
     block a round. Season #1 is being set up, in Placements, Pro holding its rounds of 14 and 28
@@ -312,7 +305,6 @@ async def test_a_calendar_guard_that_cannot_run_lets_the_round_through(tmp_path,
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=QUEUED)
 async def test_a_round_add_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. Season #1

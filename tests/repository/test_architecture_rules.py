@@ -183,7 +183,6 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/season_cog.py", "SeasonCog._team_name_problems"): (3, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._track_autocomplete"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.division_amend"): (3, PASS["core"]),
-    ("core/cogs/season_cog.py", "SeasonCog.round_add"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.round_amend"): (2, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.season_review"): (2, PASS["core"]),
     ("core/cogs/season_cog.py", "_get_setup_season_id"): (2, PASS["core"]),
@@ -3195,11 +3194,6 @@ def test_a_catch_all_handler_sits_in_one_of_the_five_places():
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: core/services/round_add_changes.py's calendar_round_refusal, the round guard's "
-    "catch, is not yet written",
-)
 def test_every_catch_all_allowed_for_good_still_exists():
     """Each function named in `CATCH_ALLS_ALLOWED` still holds a catch-all, with its reason: a
     rename cannot leave the exception pointing at nothing."""

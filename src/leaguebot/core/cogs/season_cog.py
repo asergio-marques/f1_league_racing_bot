@@ -61,6 +61,7 @@ from leaguebot.core.services.mid_season_confirm_change import (
 from leaguebot.core.services.round_amend_change import ROUND_AMEND, payload_changes
 from leaguebot.core.services.round_moments import read_round_windows
 from leaguebot.core.services.division_add_change import KIND as DIVISION_ADD
+from leaguebot.core.services.round_add_changes import ADD as ROUND_ADD, add_payload
 from leaguebot.core.services.season_setup_change import KIND as SEASON_SETUP
 from leaguebot.core.services.season_review_changes import (
     CONFIRMED,
@@ -3156,143 +3157,18 @@ class SeasonCog(commands.Cog):
         scheduled_at: str,
         track: str = "",
     ) -> None:
-        # Deferred before any work: the calendar capacity guard below loads and parses
-        # the calendar template, which can outlast Discord's three-second window, and the
-        # reply then lands on an expired token (404 Unknown interaction) while the round
-        # itself has already been written.
+        """Add a round: ask the change queue for it, which refuses what the command has always
+        refused at the ask and again as the change starts, and adds the round, renumbers its
+        division and records it in one save (`core/services/round_add_changes.py`).
+
+        Deferred before anything else: the check loads and parses the calendar template, which
+        can outlast Discord's three-second window, and the queue's acknowledgement then lands on
+        an expired token (404 Unknown interaction).
+        """
         await interaction.response.defer(ephemeral=True)
-
-        cfg = await self._get_pending()
-        if cfg is None:
-            await refuse(
-                interaction,
-                "\u274c No pending season setup. Run `/season setup` first.",
-                what=describe(interaction),
-            )
-            return
-
-        try:
-            fmt = RoundFormat(format.upper())
-        except ValueError:
-            await refuse(
-                interaction,
-                f"\u274c Invalid format `{format}`. Choose from: NORMAL, SPRINT, MYSTERY, ENDURANCE.",
-                what=describe(interaction),
-            )
-            return
-
-        track_name = track.strip() or None
-
-        if fmt != RoundFormat.MYSTERY and not track_name:
-            await refuse(
-                interaction,
-                f"\u274c A track is required for `{fmt.value}` rounds. "
-                "Leave track blank only for `MYSTERY` rounds.",
-                what=describe(interaction),
-            )
-            return
-
-        if track_name:
-            async with get_connection(self.bot.db_path) as _tdb:
-                _resolved = await track_service.resolve_track_name(_tdb, track_name)
-            if _resolved is None:
-                await refuse(
-                    interaction,
-                    f"\u274c Unknown track `{track_name}`.\n"
-                    "Use `/round add` and type a number or name \u2014 autocomplete will guide you.",
-                    what=describe(interaction),
-                )
-                return
-            track_name = _resolved
-
-        sched = parse_datetime(scheduled_at)
-        if sched is None:
-            await refuse(
-                interaction,
-                "\u274c Invalid datetime. Use ISO format: `YYYY-MM-DDTHH:MM:SS`",
-                what=describe(interaction),
-            )
-            return
-
-        div = next((d for d in cfg.divisions if d.name.lower() == division_name.lower()), None)
-        if div is None:
-            await refuse(
-                interaction,
-                f"\u274c Division `{division_name}` not found in pending setup.",
-                what=describe(interaction),
-            )
-            return
-
-        # Two rounds of one division may not share a moment. The confirmation of placements refuses a
-        # season that holds such a pair (Gate 0b), and on the same reasoning as the
-        # overflow guard below it is refused here instead — at the command that would
-        # cause it, rather than at an approval days later, with a calendar possibly
-        # already posted.
-        _clash = next(
-            (r for r in div.rounds if r["scheduled_at"] == sched), None
-        )
-        if _clash is not None:
-            await refuse(
-                interaction,
-                f"❌ **{div.name}** already holds round {_clash['round_number']} at "
-                f"{discord_ts(sched)}. Two rounds of one division cannot share a moment "
-                f"— the season could not be approved. The round was **not** added.",
-                what=describe(interaction),
-            )
-            return
-
-        # XIV.12: overflow is rejected at the earliest moment it can be detected, which
-        # for rounds is the command that would cause it — not a render days later. The
-        # change is refused with nothing applied.
-        _overflow = await self._calendar_round_overflow(
-            len(div.rounds) + 1
-        )
-        if _overflow is not None:
-            await refuse(
-                interaction,
-                _overflow,
-                what=describe(interaction),
-            )
-            return
-
-        new_round: dict[str, Any] = {
-            "round_number": 0,
-            "format": fmt,
-            "track_name": track_name,
-            "scheduled_at": sched,
-        }
-        div.rounds.append(new_round)
-        div.rounds.sort(key=lambda r: r["scheduled_at"])
-        for i, r in enumerate(div.rounds, start=1):
-            r["round_number"] = i
-
-        await self._snapshot_pending(cfg)
-
-        assigned_number = new_round["round_number"]
-        from leaguebot.core.models.round import Round as RoundModel
-        round_models = [
-            RoundModel(
-                id=0,
-                division_id=0,
-                round_number=r["round_number"],
-                format=r["format"],
-                track_name=r["track_name"],
-                scheduled_at=r["scheduled_at"],
-            )
-            for r in div.rounds
-        ]
-        await interaction.followup.send(
-            f"\u2705 Round **{assigned_number}** added to **{div.name}**.\n"
-            f"Format: {fmt.value} | Track: {track_name or 'Mystery'} | {discord_ts(sched)}\n\n"
-            + format_round_list(round_models),
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /round add | Success\n"
-            f"  division: {div.name}\n"
-            f"  round: {assigned_number}, format: {fmt.value}\n"
-            f"  track: {track_name or 'Mystery'}\n"
-            f"  scheduled_at: {sched.isoformat()} UTC",
+        await self.bot.change_queue.ask(
+            ROUND_ADD, add_payload(division_name, format, scheduled_at, track),
+            interaction=interaction, what=describe(interaction),
         )
 
     # ── /round add-bulk and /round add-xml ────────────────────────────────

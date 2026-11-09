@@ -277,11 +277,15 @@ class SeasonService:
     async def get_setup_season(self) -> Season | None:
         """Return the SETUP season, with its game edition, or None."""
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT id, start_date, status, season_number, game_edition, stage FROM seasons "
-                "WHERE status = 'SETUP' LIMIT 1",
-            )
-            row = await cursor.fetchone()
+            return await self.get_setup_season_on(db)
+
+    async def get_setup_season_on(self, db: aiosqlite.Connection) -> Season | None:
+        """`get_setup_season` on *db*, a connection the caller holds."""
+        cursor = await db.execute(
+            "SELECT id, start_date, status, season_number, game_edition, stage FROM seasons "
+            "WHERE status = 'SETUP' LIMIT 1",
+        )
+        row = await cursor.fetchone()
         if row is None:
             return None
         return _row_to_season(row)
@@ -977,14 +981,39 @@ class SeasonService:
     async def get_division_rounds(self, division_id: int) -> list[Round]:
         """Return all rounds for *division_id* ordered by round_number."""
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT id, division_id, round_number, format, track_name, scheduled_at, "
-                "phase1_done, phase2_done, phase3_done, status FROM rounds "
-                "WHERE division_id = ? ORDER BY round_number",
-                (division_id,),
-            )
-            rows = await cursor.fetchall()
-        return [_row_to_round(r) for r in rows]
+            return await self.get_division_rounds_on(db, division_id)
+
+    async def get_division_rounds_on(
+        self, db: aiosqlite.Connection, division_id: int
+    ) -> list[Round]:
+        """`get_division_rounds` on *db*, a connection the caller holds: what a save has written
+        there is read back with the rest."""
+        cursor = await db.execute(
+            "SELECT id, division_id, round_number, format, track_name, scheduled_at, "
+            "phase1_done, phase2_done, phase3_done, status FROM rounds "
+            "WHERE division_id = ? ORDER BY round_number",
+            (division_id,),
+        )
+        return [_row_to_round(r) for r in await cursor.fetchall()]
+
+    async def add_round_on(
+        self,
+        db: aiosqlite.Connection,
+        division_id: int,
+        *,
+        fmt: RoundFormat,
+        track_name: str | None,
+        scheduled_at: datetime,
+    ) -> int:
+        """Insert a round into *division_id* on *db*, a connection the caller holds, and return
+        its id. Commits nothing, and leaves the division's numbering to `renumber_rounds_on`:
+        the round is numbered 0 until the caller renumbers."""
+        cursor = await db.execute(
+            "INSERT INTO rounds (division_id, round_number, format, track_name, scheduled_at) "
+            "VALUES (?, 0, ?, ?, ?)",
+            (division_id, fmt.value, track_name, scheduled_at.isoformat()),
+        )
+        return inserted_id(cursor)
 
     async def delete_round(self, round_id: int, *, rounds_deleted: AwaitedHook) -> None:
         """Delete a round and renumber siblings.

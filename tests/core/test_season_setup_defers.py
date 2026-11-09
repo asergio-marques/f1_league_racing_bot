@@ -132,9 +132,6 @@ async def _call(coro_method, interaction, **kwargs):
     await coro_method.callback(*coro_method.binding_args, interaction, **kwargs)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: /round add does not yet ask the change queue for core.round_add"
-)
 async def test_round_add_defers_before_touching_the_database(monkeypatch):
     """The reported bug: the round was written, then the reply hit an expired token. The manager
     runs `/round add` for Pro, a NORMAL round at "14 – Hungaroring" on 22 October 2026 at 18:00:
