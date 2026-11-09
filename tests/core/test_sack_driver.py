@@ -767,7 +767,6 @@ async def test_a_driver_sack_and_its_audit_entry_and_line_are_one_save_then_role
     assert last_said(asked) == _sacked("Lewis")
 
 
-@pytest.mark.xfail(strict=True, reason=_SACK_NOT_QUEUED)
 async def test_the_roles_go_after_the_sack_is_saved_and_a_refused_one_is_reported(tmp_path):
     """The sack is saved before any role is taken, and a role Discord refuses ends its own step
     rather than stopping the lane (architecture.md, "A job that fails stops its lane"). The season
@@ -817,7 +816,6 @@ async def test_the_roles_go_after_the_sack_is_saved_and_a_refused_one_is_reporte
     assert last_said(max_) == _sacked("Max")
 
 
-@pytest.mark.xfail(strict=True, reason=_SACK_NOT_QUEUED)
 async def test_a_failed_driver_sack_sacks_nothing(tmp_path):
     """The season is ongoing; Lewis sits at Ferrari in Pro. The league admin runs `/driver sack`
     of Lewis, and as the queue runs it the database fails writing the audit entry. Nothing of the
@@ -859,7 +857,6 @@ async def test_a_failed_driver_sack_sacks_nothing(tmp_path):
             _end_the_races,
             "⛔ `/driver sack` is available only while the season is ongoing.",
             ("Pro", "Ferrari", True), id="the-races-ended",
-            marks=pytest.mark.xfail(strict=True, reason=_SACK_NOT_QUEUED),
         ),
         pytest.param(
             _unconfirm_lewis,
@@ -867,7 +864,6 @@ async def test_a_failed_driver_sack_sacks_nothing(tmp_path):
             "placement with `/driver unassign`, and turn down an Unassigned driver with "
             "`/driver reject`.",
             ("Pro", "Ferrari", False), id="the-placement-unconfirmed",
-            marks=pytest.mark.xfail(strict=True, reason=_SACK_NOT_QUEUED),
         ),
     ],
 )

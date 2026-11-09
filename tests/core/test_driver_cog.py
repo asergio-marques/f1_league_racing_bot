@@ -501,7 +501,6 @@ async def test_a_refused_unassignment_is_reported_not_raised(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#283: /driver sack is not yet a change on the queue")
 async def test_a_sack_is_asked_of_the_queue(tmp_path):
     """The season (3) is ongoing. A league admin sacks Driver (account 1, profile 55). The
     command asks the queue for one `core.driver_sack` of Driver's profile and account, named

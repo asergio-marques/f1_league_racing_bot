@@ -8,7 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
-from leaguebot.core.services.driver_changes import DRIVER_MOVE
+from leaguebot.core.services.driver_changes import DRIVER_MOVE, DRIVER_SACK
 from leaguebot.core.services.lineup_posting import ask_lineup_posts
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
@@ -724,8 +724,6 @@ class DriverCog(commands.Cog):
         if current is None:
             return
         user = current
-        actor_id = interaction.user.id
-        actor_name = str(interaction.user)
 
         # Sacking is available only while the season is ongoing (issue #220). Between seasons
         # every driver has already been returned to Not Signed Up by the season's end, and a
@@ -750,33 +748,17 @@ class DriverCog(commands.Cog):
             )
             return
 
-        try:
-            lineups = await self.bot.placement_service.sack_driver(
-                driver_profile_id=profile.id,
-                season_id=season.id,
-                acting_user_id=actor_id,
-                acting_user_name=actor_name,
-                guild=guild_of(interaction),
-                discord_user_id=str(user.id),
-            )
-        except ValueError as exc:
-            await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
-            return
-
-        # The change is made; the lineups it touched follow on the change queue (#439).
-        await ask_lineup_posts(self.bot.change_queue, self.bot.db_path, lineups)
-
-        await interaction.followup.send(
-            f"✅ **{user.display_name}** has been sacked. All roles and season assignments removed.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver sack | Success\n"
-            f"  user: {user.display_name} (<@{user.id}>)",
-        )
-        log.info(
-            "sack: user=%s by %s",
-            user.id, actor_name,
+        # The sack, its roles and its lineups are a change on the queue, which refuses again as
+        # it starts what is refused here (`core/services/driver_changes.py`).
+        await self.bot.change_queue.ask(
+            DRIVER_SACK,
+            {
+                "driver_profile_id": profile.id,
+                "discord_user_id": str(user.id),
+                "driver_name": user.display_name,
+                "season_id": season.id,
+            },
+            interaction=interaction, what=describe(interaction),
         )
 
     # ------------------------------------------------------------------

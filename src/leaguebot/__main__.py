@@ -542,7 +542,7 @@ def register_change_types(bot: LeagueBot) -> None:
         division_amend_change,
         division_rename_change,
     )
-    from leaguebot.core.services.driver_changes import driver_move_change
+    from leaguebot.core.services.driver_changes import driver_move_change, driver_sack_change
     from leaguebot.core.services.round_add_changes import round_add_change, round_import_change
     from leaguebot.core.services.round_delete_change import round_delete_change
     from leaguebot.core.services.season_setup_change import season_setup_change
@@ -932,6 +932,7 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(calendar_sync_change(bot.season_service, bot.image_drawing))
     bot.change_queue.register(lineup_post_change(bot.placement_service))
     bot.change_queue.register(driver_move_change(placement=bot.placement_service))
+    bot.change_queue.register(driver_sack_change(placement=bot.placement_service))
     bot.change_queue.register(sheet_post_change())
     bot.change_queue.register(rounds_sync_change(bot.season_service, bot.module_service))
     bot.change_queue.register(standings_sync_change(bot.season_service, bot.module_service))

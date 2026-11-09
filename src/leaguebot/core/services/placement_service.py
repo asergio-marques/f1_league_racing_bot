@@ -45,13 +45,15 @@ class SackSaved:
     *divisions* are those the driver left, whose lineups the caller asks for. *revoke_role_ids*
     are every role the driver's placements entitled them to, read before the placements were
     removed (the driver role included), for the job that takes them back; empty for a test
-    driver, who holds none. *user_id* is the driver's Discord account.
+    driver, who holds none. *user_id* is the driver's Discord account. *audit* is the old and new
+    value of the `DRIVER_SACK` audit entry, for the caller to write.
     """
 
     divisions: list[int]
     revoke_role_ids: list[int]
     user_id: int
     is_test_driver: bool
+    audit: dict
 
 
 @dataclass
@@ -1949,25 +1951,14 @@ class PlacementService:
     # Sack driver (T015)
     # ------------------------------------------------------------------
 
-    async def sack_on(
-        self,
-        db,
-        *,
-        driver_profile_id: int,
-        season_id: int,
-        acting_user_id: int,
-        acting_user_name: str,
-    ) -> SackSaved:
-        """Sack a committed driver on *db*: free every seat, return to Not Signed Up, audit it.
-
-        Everything `sack_driver` writes, written on the connection handed and committed by no
-        one here, so a sanction's save carries the sack with the rest of its writes (#439). It
-        awaits nothing but *db*: no member is fetched and no role asked of Discord. The roles to
-        take back are read **before** the placements go, since the placements are what they are
-        computed from, and handed back in the result for a job of its own to take.
+    async def judge_sack_on(self, db, *, driver_profile_id: int, season_id: int) -> dict:
+        """Judge a sack of a driver on *db*, writing nothing: what `sack_seats_on` would refuse,
+        in its words, and what it would then sack by.
 
         Raises ValueError where the profile is not found, is neither Unassigned nor Assigned, or
-        holds no confirmed placement in the season.
+        holds no confirmed placement in the season. Returns the profile's account (*user_id*), its
+        state, whether it is a former driver and a test driver, and the divisions it is placed in
+        (*division_ids*).
         """
         cursor = await db.execute(
             "SELECT discord_user_id, current_state, former_driver, is_test_driver "
@@ -1978,8 +1969,6 @@ class PlacementService:
         if row is None:
             raise ValueError("Driver profile not found.")
         current_state = DriverState(row["current_state"])
-        former_driver = bool(row["former_driver"])
-        is_test_driver: bool = bool(row["is_test_driver"])
         if current_state not in (DriverState.UNASSIGNED, DriverState.ASSIGNED):
             raise ValueError(
                 f"Driver must be Unassigned or Assigned to be sacked "
@@ -1998,7 +1987,35 @@ class PlacementService:
                 "unconfirmed placement with `/driver unassign`, and turn down an "
                 "Unassigned driver with `/driver reject`."
             )
-        division_ids = [r["division_id"] for r in asgn_rows]
+        return {
+            "user_id": int(row["discord_user_id"]),
+            "state": current_state,
+            "former_driver": bool(row["former_driver"]),
+            "is_test_driver": bool(row["is_test_driver"]),
+            "division_ids": [r["division_id"] for r in asgn_rows],
+        }
+
+    async def sack_seats_on(
+        self, db, *, driver_profile_id: int, season_id: int
+    ) -> SackSaved:
+        """Sack a committed driver on *db*: free every seat, return to Not Signed Up, leaving the
+        audit entry to the caller.
+
+        Everything `sack_on` writes but the audit entry, written on the connection handed and
+        committed by no one here, so that a change on the queue writes the entry with the queue's
+        clock (*audit* of the result). It awaits nothing but *db*: no member is fetched and no
+        role asked of Discord. The roles to take back are read **before** the placements go,
+        since the placements are what they are computed from, and handed back in the result for a
+        job of its own to take.
+
+        Refused as `judge_sack_on` refuses.
+        """
+        judged = await self.judge_sack_on(
+            db, driver_profile_id=driver_profile_id, season_id=season_id
+        )
+        current_state = judged["state"]
+        is_test_driver = judged["is_test_driver"]
+        division_ids = judged["division_ids"]
 
         revoke: set[int] = set()
         if not is_test_driver:
@@ -2024,6 +2041,39 @@ class PlacementService:
             (driver_profile_id, season_id),
         )
         await write_transition(db, driver_profile_id, current_state, DriverState.NOT_SIGNED_UP)
+        return SackSaved(
+            divisions=list(division_ids),
+            revoke_role_ids=sorted(revoke),
+            user_id=judged["user_id"],
+            is_test_driver=is_test_driver,
+            audit={
+                "old_value": {"state": current_state.value, "divisions": division_ids},
+                "new_value": {
+                    "new_state": DriverState.NOT_SIGNED_UP.value,
+                    "former_driver": judged["former_driver"],
+                },
+            },
+        )
+
+    async def sack_on(
+        self,
+        db,
+        *,
+        driver_profile_id: int,
+        season_id: int,
+        acting_user_id: int,
+        acting_user_name: str,
+    ) -> SackSaved:
+        """Sack a committed driver on *db*: free every seat, return to Not Signed Up, audit it.
+
+        `sack_seats_on`, and the `DRIVER_SACK` audit entry written with it on the same
+        connection, stamped with the wall clock and committed by no one here, so that a
+        sanction's save carries the sack with the rest of its writes (#439). Refused and
+        returned as `sack_seats_on` refuses and returns.
+        """
+        saved = await self.sack_seats_on(
+            db, driver_profile_id=driver_profile_id, season_id=season_id
+        )
         await db.execute(
             "INSERT INTO audit_entries "
             "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
@@ -2031,20 +2081,12 @@ class PlacementService:
             (
                 acting_user_id,
                 acting_user_name,
-                json.dumps({"state": current_state.value, "divisions": division_ids}),
-                json.dumps({
-                    "new_state": DriverState.NOT_SIGNED_UP.value,
-                    "former_driver": former_driver,
-                }),
+                json.dumps(saved.audit["old_value"]),
+                json.dumps(saved.audit["new_value"]),
                 datetime.now(timezone.utc).isoformat(),
             ),
         )
-        return SackSaved(
-            divisions=list(division_ids),
-            revoke_role_ids=sorted(revoke),
-            user_id=int(row["discord_user_id"]),
-            is_test_driver=is_test_driver,
-        )
+        return saved
 
     async def sack_driver(
         self,

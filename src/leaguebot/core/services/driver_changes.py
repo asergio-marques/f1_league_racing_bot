@@ -59,6 +59,7 @@ from leaguebot.core.services.role_moves import MOVE_ROLES, role_move_step
 from leaguebot.core.services.season_approval_change import unposted_lineup_line
 
 DRIVER_MOVE = "core.driver_move"
+DRIVER_SACK = "core.driver_sack"
 
 #: The names of the jobs, as the stop notice, the outcome and the tests know them.
 SAVE = "save"
@@ -68,9 +69,17 @@ POST_LINEUP = lineup_posting.POST_LINEUP
 #: `/driver move` as the line names it.
 MOVE_COMMAND = "/driver move"
 
+#: `/driver sack` as the line names it.
+SACK_COMMAND = "/driver sack"
+
 #: The reply once a league admin has discarded the stopped save: nothing was moved.
 NOTHING_MOVED = (
     "Nothing was moved: **{driver_name}** stays where they were. Run `/driver move` again."
+)
+
+#: The same for a sack: nobody was sacked.
+NOBODY_SACKED = (
+    "Nobody was sacked: **{driver_name}** keeps their seats. Run `/driver sack` again."
 )
 
 _NOT_ONGOING = "⛔ `{command}` is available only while the season is ongoing."
@@ -101,7 +110,7 @@ class _Kind:
     command: str
     doing: Callable[[dict[str, Any]], str]
     nothing_done: str
-    done: Callable[[dict[str, Any], dict[str, Any]], str]
+    done: Callable[[dict[str, Any], dict[str, Any], bool], str]
     details: Callable[[dict[str, Any], dict[str, Any]], str]
     check: Callable[[CheckContext], Awaitable[Verdict]]
     apply: Callable[[aiosqlite.Connection, StepContext], Awaitable[_Saved]]
@@ -155,6 +164,11 @@ def _saved_result(ctx: OutcomeContext) -> dict[str, Any] | None:
     if view is None or not view.done or not view.result or not view.result.get("saved"):
         return None
     return view.result
+
+
+def _roles_refused(ctx: OutcomeContext) -> bool:
+    """Whether Discord refused the member's roles, which the role step ended on."""
+    return any(view.name == MOVE_ROLES and (view.result or {}).get("problem") for view in ctx.steps)
 
 
 def _not_done(ctx: OutcomeContext) -> list[str]:
@@ -232,7 +246,7 @@ def _change(kind: _Kind, placement: PlacementService) -> ChangeType:
         if result is None:
             return kind.nothing_done.format(**ctx.payload)
         problems = _not_done(ctx)
-        reply = kind.done(ctx.payload, result)
+        reply = kind.done(ctx.payload, result, _roles_refused(ctx))
         if problems:
             reply += "\n⚠️ Done, but on Discord:\n" + "\n".join(f"• {each}" for each in problems)
         return reply
@@ -325,7 +339,7 @@ def driver_move_change(*, placement: PlacementService) -> ChangeType:
             f"**{payload['to_division']}**"
         )
 
-    def done(payload: dict[str, Any], saved: dict[str, Any]) -> str:
+    def done(payload: dict[str, Any], saved: dict[str, Any], _roles_refused: bool) -> str:
         return (
             f"✅ Moved **{payload['driver_name']}** from **{saved['from_team']}** in "
             f"**{saved['from_division']}** to **{saved['to_team']}** in **{saved['to_division']}**."
@@ -347,4 +361,70 @@ def driver_move_change(*, placement: PlacementService) -> ChangeType:
     )
 
 
-__all__ = ["DRIVER_MOVE", "NOTHING_MOVED", "driver_move_change"]
+# ── /driver sack ──────────────────────────────────────────────────────────────────────
+
+
+def driver_sack_change(*, placement: PlacementService) -> ChangeType:
+    """The `core.driver_sack` change type, for the builder to register: *placement* is what the
+    check judges the sack through, the save sacks the driver through, and the jobs after it take
+    the roles and post the lineups through.
+
+    The payload names the driver (`driver_profile_id`, `discord_user_id`, `driver_name`) and the
+    season (`season_id`). The roles come after the save, which reads them as it frees the seats.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        """The refusals, in the order they come, each read from the database."""
+        payload = ctx.payload
+        refused = await ongoing_refusal(
+            ctx.db_path, int(payload["season_id"]), SACK_COMMAND
+        ) or await profile_refusal(ctx.db_path, payload)
+        if refused is not None:
+            return refused
+        try:
+            async with get_connection(ctx.db_path) as db:
+                await placement.judge_sack_on(
+                    db, driver_profile_id=int(payload["driver_profile_id"]),
+                    season_id=int(payload["season_id"]),
+                )
+        except ValueError as refusal:
+            return Verdict.refuse(f"⛔ {refusal}")
+        return Verdict.go()
+
+    async def apply(db: aiosqlite.Connection, ctx: StepContext) -> _Saved:
+        payload = ctx.payload
+        sacked = await placement.sack_seats_on(
+            db, driver_profile_id=int(payload["driver_profile_id"]),
+            season_id=int(payload["season_id"]),
+        )
+        return _Saved(
+            result={},
+            audit=AuditRecord(
+                "DRIVER_SACK", sacked.audit["old_value"], sacked.audit["new_value"], None
+            ),
+            user_id=sacked.user_id, revoke=sacked.revoke_role_ids, lineups=sacked.divisions,
+        )
+
+    def doing(payload: dict[str, Any]) -> str:
+        return f"Sacking **{payload['driver_name']}**"
+
+    def done(payload: dict[str, Any], _saved: dict[str, Any], roles_refused: bool) -> str:
+        removed = "Season assignments" if roles_refused else "All roles and season assignments"
+        return f"✅ **{payload['driver_name']}** has been sacked. {removed} removed."
+
+    def details(payload: dict[str, Any], _saved: dict[str, Any]) -> str:
+        return f"\n  user: {payload['driver_name']} (<@{payload['discord_user_id']}>)"
+
+    return _change(
+        _Kind(
+            kind=DRIVER_SACK, command=SACK_COMMAND, doing=doing, nothing_done=NOBODY_SACKED,
+            done=done, details=details, check=check, apply=apply,
+        ),
+        placement,
+    )
+
+
+__all__ = [
+    "DRIVER_MOVE", "DRIVER_SACK", "NOBODY_SACKED", "NOTHING_MOVED",
+    "driver_move_change", "driver_sack_change",
+]
