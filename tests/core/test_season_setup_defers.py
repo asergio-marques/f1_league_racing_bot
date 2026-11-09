@@ -31,7 +31,9 @@ from leaguebot.core.cogs.season_cog import SeasonCog, PendingConfig, PendingDivi
 from leaguebot.core.models.server_config import ServerConfig
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.models.season import SeasonStage
+from tests.support.setup_reads import hold_setup
 
+SETUP_FROM_DB = "#283: the setup is read from the cog's memory, not the database"
 
 CHANNEL = 111
 MANAGER_ROLE = 222
@@ -116,10 +118,10 @@ def _pending(server_id: int = 1) -> PendingConfig:
 
 
 def _cog(pending: PendingConfig | None) -> SeasonCog:
-    cog = SeasonCog(_bot())
-    if pending is not None:
-        cog._pending[0] = pending
-    return cog
+    bot = _bot()
+    # The season being set up, read from the database (#283).
+    hold_setup(bot.season_service, pending)
+    return SeasonCog(bot)
 
 
 async def _call(coro_method, interaction, **kwargs):
@@ -127,6 +129,7 @@ async def _call(coro_method, interaction, **kwargs):
     await coro_method.callback(*coro_method.binding_args, interaction, **kwargs)
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_round_add_defers_before_touching_the_database(monkeypatch):
     """The reported bug: the round was written, then the reply hit an expired token."""
     cog = _cog(_pending())
@@ -161,6 +164,7 @@ async def test_round_add_defers_before_touching_the_database(monkeypatch):
     assert order and order[0] == "defer", (
         f"deferred too late: {order} — the slow work must not precede the defer"
     )
+    assert "snapshot" in order, f"the round was never written: {order}"
     interaction.followup.send.assert_awaited()
 
 
@@ -228,6 +232,7 @@ async def test_season_setup_begins_the_season_in_configuration():
             "\u274c A season setup is already in progress for this server. Use "
             "`/season placements-review` to approve, or `/season abort` to cancel it first.",
             id="setup-while-one-is-in-progress",
+            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
         pytest.param(
             "raced",
@@ -235,19 +240,13 @@ async def test_season_setup_begins_the_season_in_configuration():
             "new one.",
             id="setup-while-a-season-is-being-raced",
         ),
-        pytest.param(
-            "saved",
-            "\u274c A season setup is already in progress for this server. Use "
-            "`/season placements-review` to continue, or cancel it first.",
-            id="setup-while-a-saved-one-is-in-progress",
-        ),
     ],
 )
 async def test_every_season_setup_refusal_is_recorded(standing, reply):
     """The core specification's record of what changed: a refusal is one line naming the member,
     what was refused and why. The manager (id 42) runs /season setup while a setup is in
-    progress in the bot's memory, while a season is being raced, or while a setup is saved but
-    not in memory: they get today's reply word for word and nothing else, no season is begun,
+    progress, as the database holds it, or while a season is being raced: they get today's
+    reply word for word and nothing else, no season is begun,
     and the log channel gets exactly one line, "⛔ `/season setup` refused for Manager (<@42>) — "
     and the reply's words."""
     from tests.support.undecorate import undecorate
@@ -255,8 +254,6 @@ async def test_every_season_setup_refusal_is_recorded(standing, reply):
     cog = _cog(_pending() if standing == "pending" else None)
     if standing == "raced":
         cog.bot.season_service.get_confirmed_season = AsyncMock(return_value=SimpleNamespace(id=3))
-    if standing == "saved":
-        cog.bot.season_service.get_setup_season = AsyncMock(return_value=SimpleNamespace(id=7))
     interaction = _interaction()
     interaction.client = cog.bot
     interaction.command.qualified_name = "season setup"

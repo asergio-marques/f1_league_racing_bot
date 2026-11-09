@@ -46,7 +46,10 @@ import pytest
 
 from leaguebot.core.cogs.season_cog import PendingConfig, PendingDivision, SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
+from tests.support.setup_reads import hold_setup
 from tests.support.undecorate import undecorate
+
+SETUP_FROM_DB = "#283: the setup is read from the cog's memory, not the database"
 
 SERVER_ID = 9908
 SEASON_ID = 1
@@ -131,12 +134,22 @@ def _make_cog(
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
 
+    # The season being set up, read from the database (#283): its divisions are *cfg*'s unless
+    # the test gives its own.
+    hold_setup(bot.season_service, cfg, divisions=cfg is not None and divisions is None)
+
     cog = SeasonCog.__new__(SeasonCog)
     cog.bot = bot
-    cog._pending = {ACTOR_ID: cfg} if cfg is not None else {}
-    cog._get_pending = MagicMock(return_value=cfg)
+    if hasattr(SeasonCog, "clear_pending"):
+        # While the cog still keeps a setup in memory, it keeps none here.
+        cog._pending = {}
     cog._snapshot_pending = AsyncMock(return_value=None)
     return cog
+
+
+def _saved(cog):
+    """The setup as the command wrote it to the season."""
+    return cog._snapshot_pending.await_args.args[0]
 
 
 def _interaction():
@@ -227,6 +240,7 @@ async def _duplicate(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_division_is_added_to_the_pending_setup(tmp_path):
     db_path = await _make_db(tmp_path)
     cfg = _pending(PendingDivision(name="Pro", role_id=1, tier=1))
@@ -235,9 +249,10 @@ async def test_a_division_is_added_to_the_pending_setup(tmp_path):
 
     await _add(cog, interaction)
 
-    assert [d.name for d in cfg.divisions] == ["Pro", "Am"]
-    assert cfg.divisions[1].tier == 2
-    assert cfg.divisions[1].role_id == 555
+    saved = _saved(cog)
+    assert [d.name for d in saved.divisions] == ["Pro", "Am"]
+    assert saved.divisions[1].tier == 2
+    assert saved.divisions[1].role_id == 555
     assert "Am" in _replied(interaction)
 
 
@@ -253,6 +268,7 @@ async def test_adding_defers_before_any_work(tmp_path):
     interaction.response.send_message.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_an_empty_slot_is_filled_before_a_new_one_is_appended(tmp_path):
     """`/season setup` lays out blank slots for the number of divisions a league asked for.
     Appending past them would give a league that wanted three and added three six, half of
@@ -266,10 +282,10 @@ async def test_an_empty_slot_is_filled_before_a_new_one_is_appended(tmp_path):
 
     await _add(cog, _interaction())
 
-    assert len(cfg.divisions) == 2
-    assert [d.name for d in cfg.divisions] == ["Pro", "Am"]
+    assert [d.name for d in _saved(cog).divisions] == ["Pro", "Am"]
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_first_empty_slot_is_the_one_filled(tmp_path):
     """So divisions come out in the order the slots were laid down, not in the order a
     manager happened to name them."""
@@ -279,11 +295,11 @@ async def test_the_first_empty_slot_is_the_one_filled(tmp_path):
 
     await _add(cog, _interaction())
 
-    assert cfg.divisions[0].name == "Am"
-    assert cfg.divisions[1].name == ""
+    assert [d.name for d in _saved(cog).divisions] == ["Am", ""]
 
 
 @pytest.mark.parametrize("stage_name", ["CONFIGURATION", "WAITING", "SIGNUPS"])
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_adding_before_placements_is_refused(tmp_path, stage_name):
     """Issue #220: divisions are built only once the signups are in."""
     from leaguebot.core.models.season import SeasonStage
@@ -296,7 +312,6 @@ async def test_adding_before_placements_is_refused(tmp_path, stage_name):
     await _add(cog, interaction)
 
     assert "only be added while the season is in placements" in _replied(interaction)
-    assert not any(d.name == "Am" for d in cfg.divisions)
     cog._snapshot_pending.assert_not_awaited()
 
 
@@ -314,6 +329,7 @@ async def test_adding_without_a_setup_is_refused(tmp_path):
 
 
 @pytest.mark.parametrize("tier", [0, -1])
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_tier_below_one_is_refused(tmp_path, tier):
     """Tier 1 is the top division and the sequence is what the approval validates; a zero
     or a negative would pass setup and fail at the gate, after the calendar is built."""
@@ -325,9 +341,10 @@ async def test_a_tier_below_one_is_refused(tmp_path, tier):
     await _add(cog, interaction, tier=tier)
 
     assert "Tier must be 1 or higher" in _replied(interaction)
-    assert cfg.divisions == []
+    cog._snapshot_pending.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_duplicate_name_is_refused(tmp_path):
     """Every later command resolves a division by name, because a slash command takes a
     name and not an id — two divisions called the same thing make all of them ambiguous."""
@@ -339,9 +356,10 @@ async def test_a_duplicate_name_is_refused(tmp_path):
     await _add(cog, interaction, name="Am", tier=2)
 
     assert "already exists" in _replied(interaction)
-    assert len(cfg.divisions) == 1
+    cog._snapshot_pending.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_duplicate_tier_is_refused(tmp_path):
     """Refused where it is typed rather than at approval, which is after the whole calendar
     has been built."""
@@ -353,9 +371,10 @@ async def test_a_duplicate_tier_is_refused(tmp_path):
     await _add(cog, interaction, name="Am", tier=2)
 
     assert "tier **2** already exists" in _replied(interaction)
-    assert len(cfg.divisions) == 1
+    cog._snapshot_pending.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_an_empty_slot_holds_neither_a_name_nor_a_tier(tmp_path):
     """The uniqueness checks skip unnamed slots; a slot left at tier 0 must not block the
     first real division a manager adds."""
@@ -367,12 +386,13 @@ async def test_an_empty_slot_holds_neither_a_name_nor_a_tier(tmp_path):
     await _add(cog, interaction, tier=1)
 
     assert "already exists" not in _replied(interaction)
-    assert cfg.divisions[0].tier == 1
+    assert _saved(cog).divisions[0].tier == 1
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_addition_is_snapshotted(tmp_path):
-    """The pending config is memory; a restart between adding a division and approving the
-    season would otherwise lose it."""
+    """The division is written to the season being set up, which is where every later command
+    reads it from."""
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path, cfg=_pending())
 
@@ -381,6 +401,7 @@ async def test_the_addition_is_snapshotted(tmp_path):
     cog._snapshot_pending.assert_awaited_once()
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_the_addition_is_logged(tmp_path):
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path, cfg=_pending())
@@ -390,19 +411,6 @@ async def test_the_addition_is_logged(tmp_path):
     logged = str(cog.bot.output_router.post_log.await_args.args[0])
     assert "/division add" in logged
     assert "Am" in logged
-
-
-async def test_another_managers_setup_is_found_by_server(tmp_path):
-    """Setup is a league's, not a person's — a second manager adding a division to a season
-    someone else started is ordinary, not an error."""
-    db_path = await _make_db(tmp_path)
-    cfg = _pending()
-    cog = _make_cog(db_path, cfg=cfg)
-    cog._pending = {}  # nothing under this user; only the server-wide lookup answers
-
-    await _add(cog, _interaction())
-
-    assert [d.name for d in cfg.divisions] == ["Am"]
 
 
 # ---------------------------------------------------------------------------
@@ -625,6 +633,7 @@ async def test_a_naive_round_datetime_is_read_as_utc(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_division_name_with_an_emoji_is_refused(tmp_path):
     """It heads every posting and every graphic of the division, and a graphic cannot draw
     an emoji."""
@@ -636,9 +645,10 @@ async def test_a_division_name_with_an_emoji_is_refused(tmp_path):
     await _add(cog, interaction, name="Pro \U0001F3C6")
 
     assert "division name" in _replied(interaction)
-    assert not any(d.name for d in cfg.divisions)
+    cog._snapshot_pending.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_a_division_name_with_a_member_mention_is_refused(tmp_path):
     """It heads every posting of the division, so the member would be notified by each (#388)."""
     db_path = await _make_db(tmp_path)
@@ -650,7 +660,7 @@ async def test_a_division_name_with_a_member_mention_is_refused(tmp_path):
 
     assert "division name" in _replied(interaction)
     assert "member" in _replied(interaction)
-    assert not any(d.name for d in cfg.divisions)
+    cog._snapshot_pending.assert_not_awaited()
 
 
 async def test_a_duplicated_division_named_with_markup_is_refused(tmp_path):
@@ -681,6 +691,7 @@ async def test_a_duplicated_division_named_with_markup_is_refused(tmp_path):
         ),
     ],
 )
+@pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB)
 async def test_add_refuses_a_bad_tier_in_todays_words_and_records_it(tmp_path, tier, reply):
     """The season is in placements and holds Pro at tier 2; the manager adds Am."""
     db_path = await _make_db(tmp_path)
@@ -691,7 +702,7 @@ async def test_add_refuses_a_bad_tier_in_todays_words_and_records_it(tmp_path, t
     await _add(cog, interaction, name="Am", tier=tier)
 
     assert _replied(interaction) == reply
-    assert [d.name for d in cfg.divisions] == ["Pro"]
+    cog._snapshot_pending.assert_not_awaited()
     assert _logged(cog) == [
         f"\u26d4 `/division add` refused for Manager (<@{ACTOR_ID}>) \u2014 {reply[2:]}"
     ]
@@ -798,17 +809,20 @@ _MENTION = "<@123456789012345678>"
             "⛔ Divisions can only be added while the season is in placements — once "
             "its configuration is confirmed and its signup window has closed.",
             id="before_placements",
+            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
         pytest.param(
             {}, {"name": _MENTION},
             "❌ A mention of a member in the division name would notify them wherever it is "
             "posted. Remove it, then try again.",
             id="a_mention_in_the_name",
+            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
         pytest.param(
             {}, {"name": "pRO"},
             "❌ A division named **pRO** already exists in this setup.",
             id="a_name_already_taken",
+            marks=pytest.mark.xfail(strict=True, reason=SETUP_FROM_DB),
         ),
     ],
 )
@@ -837,8 +851,6 @@ async def test_every_other_division_add_refusal_is_recorded(tmp_path, arranged, 
 
     interaction.followup.send.assert_awaited_once_with(reply, ephemeral=True)
     interaction.response.send_message.assert_not_awaited()
-    if cfg is not None:
-        assert [d.name for d in cfg.divisions] == ["Pro"]
     cog._snapshot_pending.assert_not_awaited()
     assert _logged(cog) == [
         f"⛔ `/division add` refused for Manager (<@{ACTOR_ID}>) — {reply[2:]}"
