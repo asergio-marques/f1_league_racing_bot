@@ -2060,7 +2060,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/services/signup_module_service.py", "SignupModuleService.save_config"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.save_settings"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.set_close_at"): (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.withdraw_approval"): (1, PASS["signup"]),
     # Image's pass
     ("image/services/driver_portrait_service.py", "_disown"): (1, PASS["image"]),
     ("image/services/driver_portrait_service.py", "_record"): (1, PASS["image"]),
@@ -2499,8 +2498,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("signup/services/signup_module_service.py", "SignupModuleService._live_season_id"):
         (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.drivers_mid_signup"):
-        (1, PASS["signup"]),
-    ("signup/services/signup_module_service.py", "SignupModuleService.withdraw_approval"):
         (1, PASS["signup"]),
     ("signup/services/window_changes.py", "return_drivers_step.return_drivers"):
         (1, PASS["signup"]),

@@ -672,23 +672,6 @@ class SignupModuleService:
             (total_ms, discord_user_id),
         )
 
-    async def withdraw_approval(self, driver_profile_id: int) -> None:
-        """Clear the approval of the driver's latest approved signup, under any of their accounts.
-
-        For an approved driver the league turns down afterwards: the signup was rejected in
-        the end, and no longer outranks the driver's others.
-        """
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE signup_records SET approved = 0 WHERE id = ("
-                "  SELECT id FROM signup_records WHERE approved = 1"
-                "  AND discord_user_id IN ("
-                "    SELECT discord_user_id FROM driver_accounts WHERE driver_profile_id = ?)"
-                "  ORDER BY id DESC LIMIT 1)",
-                (driver_profile_id,),
-            )
-            await db.commit()
-
     async def rekey_wizard(self, from_account: str, to_account: str) -> None:
         """Move a wizard record to another account of the same driver (issue #243).
 

@@ -8,6 +8,11 @@ Provides helpers consumed by TestModeCog:
   - clear_all_test_drivers_on: remove all fake drivers from every division, on a save's
                             connection (toggle-off)
 
+A synthetic driver is inserted straight into `driver_profiles` at ASSIGNED, flagged as a test
+driver, and not through `write_transition`: the core specification's test-mode transition (Not
+Signed Up to Assigned, under test mode alone) is this seeding, and the state machine has no route
+a seeded driver could have taken to reach it.
+
 Synthetic user IDs are guaranteed to be outside real Discord snowflake space by
 using a base of 9_000_000_000_000_000_000, well above any real snowflake value
 reachable in the foreseeable future (current IDs are ~1.3×10^18 as of 2026).
