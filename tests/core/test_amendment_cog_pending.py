@@ -197,6 +197,12 @@ async def test_a_setup_round_amendment_its_renumbering_audit_entry_and_line_are_
             ("format: MYSTERY → NORMAL",),
             id="a-round-leaving-mystery-keeps-the-track-it-holds",
         ),
+        pytest.param(
+            2, {"track": "Silverstone Circuit", "scheduled_at": "2026-06-21T18:00:00"},
+            (2, "NORMAL", "Silverstone Circuit", "2026-06-21T18:00:00"),
+            ("track: Hungaroring → Silverstone Circuit",),
+            id="its-own-moment-restated-which-am-also-holds",
+        ),
     ],
 )
 async def test_each_field_of_a_setup_round_is_amended_as_asked(
@@ -206,8 +212,10 @@ async def test_each_field_of_a_setup_round_is_amended_as_asked(
     round 2 a normal round at the Hungaroring, round 3 a mystery round that holds the Hungaroring
     as its track. The manager runs `/round amend` for one of Pro's rounds and the queue runs it:
     round 2 given Silverstone Circuit as its track; round 2 made a mystery round, which clears its
-    track; or round 3 made a normal round with no track given, which keeps the track it holds. The
-    round holds what was asked, and nothing else of Pro changes; one audit entry is written; the
+    track; round 3 made a normal round with no track given, which keeps the track it holds; or
+    round 2 given Silverstone Circuit with its moment restated, 21 June at 18:00, which Am's round
+    holds too: neither the round's own moment nor another division's is a clash. The round holds
+    what was asked, and nothing else of Pro changes; one audit entry is written; the
     success line names the round and each field changed, from what to what, and the reply is
     today's, word for word."""
     from tests.support.change_queue import run_queue
