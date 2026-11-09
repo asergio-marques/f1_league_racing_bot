@@ -234,11 +234,6 @@ async def test_a_call_whose_rsvp_channel_is_unset_stops_the_queue_naming_the_com
     assert await _call_record(league) == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: /attendance channel rsvp is not yet an attendance setting on the change queue "
-    "that runs past a stopped job",
-)
 async def test_a_stopped_call_lands_once_the_rsvp_channel_is_set_and_retried(tmp_path):
     """Set the channel, then Retry: the remedy the stop notice leads a manager to, end to end.
 

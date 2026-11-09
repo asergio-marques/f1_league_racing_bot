@@ -95,10 +95,6 @@ BOTH = sorted(COMMANDS)
 #: The word a refusal gives each command's own setting, as a league reads it.
 REFUSAL_LABELS = {"rsvp": "check-in call", "attendance": "attendance"}
 
-#: Why each test still fails before the build.
-_ON_THE_QUEUE = "#283: /attendance channel rsvp and attendance are not yet attendance settings on the change queue"
-_OVERTAKES = "#283: /attendance channel rsvp and attendance do not yet overtake a stopped job"
-
 _OFF = "❌ The Attendance module is not enabled."
 _NO_SEASON = (
     "❌ No season is live. A division's channels belong to the season being built or raced — "
@@ -381,7 +377,6 @@ async def test_each_command_writes_its_own_column(tmp_path, which):
     assert await _channels(db_path) == {**_none_set(), which: CHANNEL_ID}
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 @pytest.mark.parametrize("which", BOTH)
 async def test_the_assignment_is_audited(tmp_path, which):
     """Season 1 is being set up, and its Division 1 has neither attendance channel. The manager
@@ -519,7 +514,6 @@ async def test_every_refusal_of_a_channel_command_is_recorded(tmp_path, which, c
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 @pytest.mark.parametrize("which", BOTH)
 async def test_the_manager_is_acknowledged_before_anything_is_written(tmp_path, which):
     """Season 1 is being set up, and its Division 1 has neither attendance channel. The manager
@@ -540,7 +534,6 @@ async def test_the_manager_is_acknowledged_before_anything_is_written(tmp_path, 
     assert await _audit(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 @pytest.mark.parametrize("which", BOTH)
 async def test_a_fault_in_the_save_saves_neither_the_channel_nor_its_audit(
     tmp_path, monkeypatch, which
@@ -579,7 +572,6 @@ async def test_a_fault_in_the_save_saves_neither_the_channel_nor_its_audit(
     assert await stopped_job(db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 @pytest.mark.parametrize("which", BOTH)
 async def test_two_changes_waiting_for_one_division_each_record_the_channel_they_replace(
     tmp_path, which
@@ -610,7 +602,6 @@ async def test_two_changes_waiting_for_one_division_each_record_the_channel_they
     assert (await _channels(db_path))[which] == OTHER_CHANNEL_ID
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 @pytest.mark.parametrize("which", BOTH)
 async def test_the_same_change_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path, which):
     """Season 1 is being set up, and its Division 1 has neither attendance channel. The manager
@@ -642,7 +633,6 @@ async def test_the_same_change_asked_again_while_it_waits_is_refused_as_a_repeat
     assert _lines(cog) == [_refusal_line(which, repeated), _success_line(which)]
 
 
-@pytest.mark.xfail(strict=True, reason=_OVERTAKES)
 @pytest.mark.parametrize("which", BOTH)
 async def test_the_channel_is_set_while_the_queue_is_stopped_on_another_job(tmp_path, which):
     """Season 1 is being set up, and its Division 1 has neither attendance channel. The league's
@@ -750,7 +740,6 @@ def _meanwhile_cases():
     return cases
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 @pytest.mark.parametrize("which,meanwhile,refused", _meanwhile_cases())
 async def test_a_change_is_refused_as_it_starts_where_its_ask_no_longer_holds(
     tmp_path, which, meanwhile, refused
@@ -780,7 +769,6 @@ async def test_a_change_is_refused_as_it_starts_where_its_ask_no_longer_holds(
     assert await stopped_job(db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 @pytest.mark.parametrize("which", BOTH)
 async def test_a_division_renamed_while_its_change_waits_still_gets_its_channel(tmp_path, which):
     """Season 1 is being set up, and its Division 1 has neither attendance channel. The manager

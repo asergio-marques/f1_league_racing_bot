@@ -258,32 +258,6 @@ class AttendanceService:
             attendance_message_id=row["attendance_message_id"],
         )
 
-    async def set_rsvp_channel(self, division_id: int, channel_id: int) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                """
-                INSERT INTO attendance_division_config (division_id, rsvp_channel_id)
-                VALUES (?, ?)
-                ON CONFLICT(division_id)
-                DO UPDATE SET rsvp_channel_id = excluded.rsvp_channel_id
-                """,
-                (division_id, str(channel_id)),
-            )
-            await db.commit()
-
-    async def set_attendance_channel(self, division_id: int, channel_id: int) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                """
-                INSERT INTO attendance_division_config (division_id, attendance_channel_id)
-                VALUES (?, ?)
-                ON CONFLICT(division_id)
-                DO UPDATE SET attendance_channel_id = excluded.attendance_channel_id
-                """,
-                (division_id, str(channel_id)),
-            )
-            await db.commit()
-
     # ── Field updates ──────────────────────────────────────────────────────
 
     async def set_setting(

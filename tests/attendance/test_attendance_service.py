@@ -80,11 +80,6 @@ async def test_attendance_switches_off_on_a_handed_connection(db_path):
 
 
 class TestSetAttendanceChannel:
-    @pytest.mark.xfail(
-        strict=True,
-        reason="#283: set_attendance_channel is not yet a function of "
-        "attendance/services/division_channels.py writing on the save's connection",
-    )
     async def test_set_attendance_channel(self, db_path):
         """Division 10 (Pro) has no channels set. Its attendance channel is set to 888 on a
         connection, then committed: the division's config reads it back as the text "888", its

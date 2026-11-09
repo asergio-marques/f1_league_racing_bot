@@ -493,6 +493,7 @@ def register_change_types(bot: LeagueBot) -> None:
     so that core's queue and cogs import none of them. The tests' support module calls this to get
     the real set.
     """
+    from leaguebot.attendance.services.channel_settings import attendance_channel_settings
     from leaguebot.attendance.services.check_in_answer_changes import check_in_answer_change
     from leaguebot.attendance.services.check_in_changes import (
         check_in_call_change,
@@ -1089,6 +1090,10 @@ def register_change_types(bot: LeagueBot) -> None:
         *points_settings(modules=bot.module_service, seasons=bot.season_service),
         *amendment_settings(modules=bot.module_service, seasons=bot.season_service),
         *results_channel_settings(
+            modules=bot.module_service, seasons=bot.season_service,
+            channel_of=lambda channel_id: bot.get_channel(channel_id),
+        ),
+        *attendance_channel_settings(
             modules=bot.module_service, seasons=bot.season_service,
             channel_of=lambda channel_id: bot.get_channel(channel_id),
         ),

@@ -456,20 +456,8 @@ QUEUED_CHANNELS = {
     ),
 }
 
-#: The commands not yet asked of the change queue, each failing until it is.
-_NOT_YET_QUEUED = {
-    "rsvp": "#283: /attendance channel rsvp is not yet an attendance setting on the change queue",
-    "attendance": (
-        "#283: /attendance channel attendance is not yet an attendance setting on the change queue"
-    ),
-}
-
-#: Each module channel command as a case, those not yet asked of the change queue marked.
-_CHANNEL_CASES = [
-    pytest.param(which, marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_QUEUED[which]))
-    if which in _NOT_YET_QUEUED else which
-    for which in sorted(MODULE_CHANNEL_COMMANDS)
-]
+#: Each module channel command as a case.
+_CHANNEL_CASES = sorted(MODULE_CHANNEL_COMMANDS)
 
 
 @pytest.mark.parametrize("which", _CHANNEL_CASES)

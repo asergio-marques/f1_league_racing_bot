@@ -167,10 +167,6 @@ SETTING_KINDS = (
 )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: the builder does not yet register attendance's two division-channel settings",
-)
 def test_the_settings_changes_are_registered():
     """The builder registers the forty settings changes of core, results, weather, images and
     attendance, once each, and no other kind carrying ".setting." (#439, slice 7; #283)."""

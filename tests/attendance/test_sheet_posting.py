@@ -190,11 +190,6 @@ async def test_a_sheet_for_a_division_with_no_attendance_channel_stops_the_queue
     assert len(league.texts(SHEET)) == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: /attendance channel attendance is not yet an attendance setting on the change "
-    "queue that runs past a stopped job",
-)
 async def test_a_stopped_sheet_lands_once_the_attendance_channel_is_set_and_retried(tmp_path):
     """Set the channel, then Retry: the remedy the stop notice leads a manager to, end to end.
 
