@@ -40,9 +40,6 @@ DIVISION_ID = 11
 ACTOR_ID = 77
 PROFILE_ID = 101
 
-#: Why every test here fails until the build.
-_NO_ASSIGN_ON = "#283: PlacementService.assign_on, /driver assign's save, is not yet written"
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -154,7 +151,6 @@ async def _add_driver(db_path: str, profile_id: int, state: str = "UNASSIGNED") 
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_ASSIGN_ON)
 async def test_an_unassigned_driver_is_placed(tmp_path):
     db_path = await _make_db(tmp_path, state="UNASSIGNED")
 
@@ -165,7 +161,6 @@ async def test_an_unassigned_driver_is_placed(tmp_path):
     assert result["was_unassigned"] is True
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_ASSIGN_ON)
 async def test_an_already_assigned_driver_may_take_a_second_division(tmp_path):
     """A driver can race in more than one division, so being Assigned is not a refusal —
     and `was_unassigned` is what tells the caller which of the two happened."""
@@ -176,7 +171,6 @@ async def test_an_already_assigned_driver_may_take_a_second_division(tmp_path):
     assert result["was_unassigned"] is False
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_ASSIGN_ON)
 @pytest.mark.parametrize(
     "state",
     [
@@ -195,7 +189,6 @@ async def test_a_driver_not_yet_through_signup_cannot_be_placed(tmp_path, state)
         await _assign(_service(db_path))
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_ASSIGN_ON)
 async def test_a_driver_who_does_not_exist_is_refused(tmp_path):
     db_path = await _make_db(tmp_path)
 
@@ -203,7 +196,6 @@ async def test_a_driver_who_does_not_exist_is_refused(tmp_path):
         await _assign(_service(db_path), profile_id=9999)
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_ASSIGN_ON)
 async def test_a_driver_may_hold_only_one_seat_per_division(tmp_path):
     """The refusal names the division rather than the team, because a manager placing
     somebody twice has usually forgotten *where* they already are."""
@@ -220,7 +212,6 @@ async def test_a_driver_may_hold_only_one_seat_per_division(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_ASSIGN_ON)
 async def test_the_lowest_numbered_free_seat_is_taken(tmp_path):
     """A driver in seat 2 with seat 1 empty would draw a hole in the lineup graphic,
     which addresses a seat by its ordinal."""
@@ -231,7 +222,6 @@ async def test_the_lowest_numbered_free_seat_is_taken(tmp_path):
     assert await _seat_of(db_path) == (1, "Alpha")
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_ASSIGN_ON)
 async def test_the_next_driver_takes_the_next_seat(tmp_path):
     db_path = await _make_db(tmp_path, team_seats=3)
     service = _service(db_path)
@@ -243,7 +233,6 @@ async def test_the_next_driver_takes_the_next_seat(tmp_path):
     assert await _seat_of(db_path, 102) == (2, "Alpha")
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_ASSIGN_ON)
 async def test_a_full_race_team_refuses_the_next_driver(tmp_path):
     """The seats are finite and were created when the division was seeded; there is no
     seat to make. The save refuses before it writes anything, so a refusal has to leave the
@@ -263,7 +252,6 @@ async def test_a_full_race_team_refuses_the_next_driver(tmp_path):
         assert (await cursor.fetchone())["n"] == 0
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_ASSIGN_ON)
 async def test_a_team_that_does_not_exist_is_refused_by_name(tmp_path):
     db_path = await _make_db(tmp_path)
 
@@ -276,7 +264,6 @@ async def test_a_team_that_does_not_exist_is_refused_by_name(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_ASSIGN_ON)
 async def test_a_reserve_takes_a_free_reserve_seat(tmp_path):
     db_path = await _make_db(tmp_path, reserve_seats=2)
 
@@ -285,7 +272,6 @@ async def test_a_reserve_takes_a_free_reserve_seat(tmp_path):
     assert await _seat_of(db_path) == (1, "Reserve")
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_ASSIGN_ON)
 async def test_the_reserve_team_makes_another_seat_rather_than_refusing(tmp_path):
     """A division can carry as many reserves as turn up, so running out is not a refusal —
     it is a seat to create. The near-identical SQL either side of this branch is why the
@@ -300,7 +286,6 @@ async def test_the_reserve_team_makes_another_seat_rather_than_refusing(tmp_path
     assert await _seat_of(db_path, 102) == (2, "Reserve")
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_ASSIGN_ON)
 async def test_a_created_reserve_seat_continues_the_numbering(tmp_path):
     """Taken from the highest existing number rather than the count, so a seat removed
     earlier does not cause a collision."""
@@ -321,7 +306,6 @@ async def test_a_created_reserve_seat_continues_the_numbering(tmp_path):
     assert await _seat_of(db_path) == (8, "Reserve")
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_ASSIGN_ON)
 async def test_a_reserve_team_with_no_seats_at_all_still_takes_a_driver(tmp_path):
     """A division seeded before the reserve team existed, or one whose seats were cleared."""
     db_path = await _make_db(tmp_path, reserve_seats=0)
@@ -336,7 +320,6 @@ async def test_a_reserve_team_with_no_seats_at_all_still_takes_a_driver(tmp_path
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_ASSIGN_ON)
 async def test_the_seat_is_occupied_and_the_assignment_recorded(tmp_path):
     """Both, atomically — a seat held by a driver with no season assignment would draw on
     the lineup but score for nobody. The assignment points at the seat that was taken:
@@ -364,7 +347,6 @@ async def test_the_seat_is_occupied_and_the_assignment_recorded(tmp_path):
     assert await _seat_of(db_path) is not None
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_ASSIGN_ON)
 async def test_a_placed_driver_becomes_assigned(tmp_path):
     db_path = await _make_db(tmp_path, state="UNASSIGNED")
 

@@ -1,16 +1,18 @@
-"""`core.driver_move`, `core.driver_sack` and `core.driver_release`: `/driver move`, `sack` and
-`release`, on the change queue.
+"""`core.driver_move`, `core.driver_sack`, `core.driver_release` and `core.driver_assign`:
+`/driver move`, `sack`, `release` and `assign`, on the change queue.
 
-Each is a change type of its own on the league lane, registered by the builder, for a committed
-driver while the season is ongoing: moved to a team of the same division or another, sacked from
-every seat, or released from one division and keeping the rest. The driver, the season and the
-divisions are named by their ids at the ask, a team by its shorthand. A change is four kinds of
-job, in this order:
+Each is a change type of its own on the league lane, registered by the builder. Move, sack and
+release are for a committed driver while the season is ongoing: moved to a team of the same
+division or another, sacked from every seat, or released from one division and keeping the rest.
+Assign is for a driver not yet placed, while drivers are being placed. The driver, the season and
+the divisions are named by their ids at the ask, a team by its shorthand. A change is four kinds
+of job, in this order:
 
 1. **One save** changes the seats (`PlacementService.move_seat_on`, `sack_seats_on`,
-   `unassign_on`) and writes the audit entry (`DRIVER_MOVE`, `DRIVER_SACK`, `DRIVER_UNASSIGN`),
-   stamped with the queue's clock, and plans what follows from what it read inside it: the roles
-   to take and give, and the lineup of each division touched.
+   `unassign_on`, `assign_on`) and writes the audit entry (`DRIVER_MOVE`, `DRIVER_SACK`,
+   `DRIVER_UNASSIGN`, `DRIVER_ASSIGN`), stamped with the queue's clock, and plans what follows
+   from what it read inside it: the roles to take and give, and the lineup of each division
+   touched.
 2. **The member's roles** (`role_moves.role_move_step`), which end on a fault rather than stop the
    lane, since the seat is the league's record and a role Discord refuses is the member's to be
    given or taken by hand: it is reported in the reply and the line. They come after the save,
@@ -19,15 +21,19 @@ job, in this order:
    as every post does, and says what it left undone where a league admin discards it.
 4. **The line** that records the change, written last so that it carries what was not done.
 
+An assignment has no job after the save: the placement it writes is never confirmed, so it holds
+no role and posts no lineup, which follow when placements are confirmed. It is refused a driver
+holding a confirmed placement, whom `/driver move` and `/driver release` change instead.
+
 **A fault in the save stops the lane**, as a failed job does, for the reason `/division delete`'s
 does: a league admin exists to discard the job and clear the stop, and nothing of the change is
 kept. The roles and the lineups are planned by the save and so never follow a discarded one.
 
 **The change is judged by its ids** and every refusal is the check's, at the ask and again as the
-change starts, in the league's log channel either time: the season no longer ongoing, a division
+change starts, in the league's log channel either time: the season no longer in the stage the command is made in, a division
 not in the season, the driver without a profile, and what the placement service refuses
-(`PlacementService.judge_move_on`, `guard_move`, `judge_sack_on`, `judge_release_on`). The roles
-go to the account the save read from the driver's profile, so a driver given another account
+(`PlacementService.judge_move_on`, `guard_move`, `judge_sack_on`, `judge_release_on`,
+`guard_assign`, `judge_assign_on`). The roles go to the account the save read from the driver's profile, so a driver given another account
 meanwhile is not left with the old one's.
 """
 
@@ -62,10 +68,12 @@ from leaguebot.core.services.change_queue import (
 from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.core.services.role_moves import MOVE_ROLES, role_move_step
 from leaguebot.core.services.season_approval_change import unposted_lineup_line
+from leaguebot.core.utils.season_gate import PLACEMENT_STAGES
 
 DRIVER_MOVE = "core.driver_move"
 DRIVER_SACK = "core.driver_sack"
 DRIVER_RELEASE = "core.driver_release"
+DRIVER_ASSIGN = "core.driver_assign"
 
 #: The names of the jobs, as the stop notice, the outcome and the tests know them.
 SAVE = "save"
@@ -97,7 +105,22 @@ NOTHING_RELEASED = (
     "Run `/driver release` again."
 )
 
+#: `/driver assign` as the line names it.
+ASSIGN_COMMAND = "/driver assign"
+
+#: The reply once a league admin has discarded the stopped save: nobody was placed.
+NOTHING_ASSIGNED = (
+    "Nothing was assigned: **{driver_name}** is not placed in **{division}**. "
+    "Run `/driver assign` again."
+)
+
 _NOT_ONGOING = "⛔ `{command}` is available only while the season is ongoing."
+
+#: What a command that places drivers answers outside the stages it is made in.
+NOT_PLACING_REFUSAL = (
+    "⛔ `{command}` is available only while the season is in placements, or mid-season "
+    "while the drivers of a closed signup window are being placed."
+)
 
 
 @dataclass(frozen=True)
@@ -129,6 +152,9 @@ class _Kind:
     details: Callable[[dict[str, Any], dict[str, Any]], str]
     check: Callable[[CheckContext], Awaitable[Verdict]]
     apply: Callable[[aiosqlite.Connection, StepContext], Awaitable[_Saved]]
+    #: Whether the roles and lineups the save plans have jobs of their own: not for a change
+    #: that writes only an unconfirmed placement.
+    afterwards: bool = True
 
 
 async def ongoing_refusal(db_path: str, season_id: int, command: str) -> Verdict | None:
@@ -138,6 +164,17 @@ async def ongoing_refusal(db_path: str, season_id: int, command: str) -> Verdict
         row = await cursor.fetchone()
     if row is None or SeasonStage(row["stage"]) not in ONGOING_STAGES:
         return Verdict.refuse(_NOT_ONGOING.format(command=command))
+    return None
+
+
+async def placing_refusal(db_path: str, season_id: int, command: str) -> Verdict | None:
+    """The refusal of *command* where season *season_id* is not in a stage drivers are placed in,
+    else None."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT stage FROM seasons WHERE id = ?", (season_id,))
+        row = await cursor.fetchone()
+    if row is None or SeasonStage(row["stage"]) not in PLACEMENT_STAGES:
+        return Verdict.refuse(NOT_PLACING_REFUSAL.format(command=command))
     return None
 
 
@@ -266,16 +303,18 @@ def _change(kind: _Kind, placement: PlacementService) -> ChangeType:
             reply += "\n⚠️ Done, but on Discord:\n" + "\n".join(f"• {each}" for each in problems)
         return reply
 
+    steps = {
+        SAVE: Step(SAVE, StepKind.SAVE, save),
+        CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
+    }
+    if kind.afterwards:
+        steps[MOVE_ROLES] = role_move_step(placement)
+        steps[POST_LINEUP] = lineup_posting.lineup_step(placement)
+        steps[standing_posts.DELETE_REPLACED] = standing_posts.delete_replaced_step()
     return ChangeType(
         kind=kind.kind,
         opening=(PlannedStep(SAVE), PlannedStep(CLOSE)),
-        steps={
-            SAVE: Step(SAVE, StepKind.SAVE, save),
-            MOVE_ROLES: role_move_step(placement),
-            POST_LINEUP: lineup_posting.lineup_step(placement),
-            standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
-            CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
-        },
+        steps=steps,
         check=kind.check,
         key=lambda payload: f"{kind.kind}|{json.dumps(payload, sort_keys=True)}",
         doing=kind.doing,
@@ -511,7 +550,95 @@ def driver_release_change(*, placement: PlacementService) -> ChangeType:
     )
 
 
+# ── /driver assign ────────────────────────────────────────────────────────────────────
+
+
+def driver_assign_change(*, placement: PlacementService) -> ChangeType:
+    """The `core.driver_assign` change type, for the builder to register: *placement* is what the
+    check judges the assignment through and the save assigns the driver through.
+
+    The payload names the driver (`driver_profile_id`, `discord_user_id`, `driver_name`), the
+    season (`season_id`), the division (`division_id`, with its name as typed, `division`) and
+    the team (`team_name`, the shorthand, and `team_full_name`). The placement is written
+    unconfirmed, so the save plans no role and no lineup.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        """The refusals, in the order they come, each read from the database."""
+        payload = ctx.payload
+        season_id = int(payload["season_id"])
+        division_id = int(payload["division_id"])
+        refused = (
+            await placing_refusal(ctx.db_path, season_id, ASSIGN_COMMAND)
+            or await division_refusal(
+                ctx.db_path, season_id, [(division_id, payload["division"])]
+            )
+            or await profile_refusal(ctx.db_path, payload)
+        )
+        if refused is not None:
+            return refused
+        try:
+            await placement.guard_assign(
+                division_id, season_id, str(payload["team_name"]),
+                int(payload["driver_profile_id"]),
+            )
+            async with get_connection(ctx.db_path) as db:
+                await placement.judge_assign_on(
+                    db, driver_profile_id=int(payload["driver_profile_id"]),
+                    division_id=division_id, team_name=str(payload["team_name"]),
+                    season_id=season_id, uncommitted_only=True,
+                )
+        except ValueError as refusal:
+            return Verdict.refuse(f"⛔ {refusal}")
+        return Verdict.go()
+
+    async def apply(db: aiosqlite.Connection, ctx: StepContext) -> _Saved:
+        payload = ctx.payload
+        assigned = await placement.assign_on(
+            db, driver_profile_id=int(payload["driver_profile_id"]),
+            division_id=int(payload["division_id"]), team_name=str(payload["team_name"]),
+            season_id=int(payload["season_id"]), uncommitted_only=True,
+        )
+        audit = assigned["audit"]
+        return _Saved(
+            result={key: assigned[key] for key in ("team_name", "division_name")},
+            audit=AuditRecord(
+                "DRIVER_ASSIGN", audit["old_value"], audit["new_value"], audit["division_id"]
+            ),
+            user_id=int(payload["discord_user_id"]),
+        )
+
+    def doing(payload: dict[str, Any]) -> str:
+        return (
+            f"Assigning **{payload['driver_name']}** to **{payload['team_full_name']}** in "
+            f"**{payload['division']}**"
+        )
+
+    def done(payload: dict[str, Any], saved: dict[str, Any], _roles_refused: bool) -> str:
+        return (
+            f"✅ Assigned **{payload['driver_name']}** to **{saved['team_name']}** in "
+            f"**{saved['division_name']}**."
+        )
+
+    def details(payload: dict[str, Any], saved: dict[str, Any]) -> str:
+        return (
+            f"\n  user: {payload['driver_name']} (<@{payload['discord_user_id']}>)"
+            f"\n  team: {saved['team_name']}"
+            f"\n  division: {saved['division_name']}"
+        )
+
+    return _change(
+        _Kind(
+            kind=DRIVER_ASSIGN, command=ASSIGN_COMMAND, doing=doing,
+            nothing_done=NOTHING_ASSIGNED, done=done, details=details, check=check, apply=apply,
+            afterwards=False,
+        ),
+        placement,
+    )
+
+
 __all__ = [
-    "DRIVER_MOVE", "DRIVER_RELEASE", "DRIVER_SACK", "NOBODY_SACKED", "NOTHING_MOVED",
-    "NOTHING_RELEASED", "driver_move_change", "driver_release_change", "driver_sack_change",
+    "DRIVER_ASSIGN", "DRIVER_MOVE", "DRIVER_RELEASE", "DRIVER_SACK", "NOBODY_SACKED",
+    "NOT_PLACING_REFUSAL", "NOTHING_ASSIGNED", "NOTHING_MOVED", "NOTHING_RELEASED",
+    "driver_assign_change", "driver_move_change", "driver_release_change", "driver_sack_change",
 ]

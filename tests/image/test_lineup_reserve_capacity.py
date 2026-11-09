@@ -166,9 +166,6 @@ def _report(path):
     return MagicMock(valid=True, resolved_path=str(path), template_key=LINEUP)
 
 
-_NO_GUARD_ASSIGN = "#283: PlacementService.guard_assign is not yet written"
-
-
 async def _assign(db_path, season_id, division_id, team, drawing):
     """Ask the guards `/driver assign` asks whether the unplaced driver 9999 may join *team*."""
     from leaguebot.core.services.placement_service import PlacementService
@@ -235,7 +232,6 @@ async def test_no_lineup_drawn_means_no_problem(tmp_path, toggle, images):
 # ── As a league meets it, through the choke point ─────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_GUARD_ASSIGN)
 async def test_a_reserve_overflow_reaches_the_caller_through_guard_assign(tmp_path):
     db_path, season_id, division_id = await _seed(tmp_path, reserves=3)
     template = _template_file(tmp_path, reserve_slots=3)
@@ -252,7 +248,6 @@ async def test_a_reserve_overflow_reaches_the_caller_through_guard_assign(tmp_pa
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_GUARD_ASSIGN)
 async def test_an_ordinary_placement_survives_a_full_reserve_block_through_guard_assign(
     tmp_path,
 ):

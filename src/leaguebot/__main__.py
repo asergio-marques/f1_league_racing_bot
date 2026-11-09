@@ -543,6 +543,7 @@ def register_change_types(bot: LeagueBot) -> None:
         division_rename_change,
     )
     from leaguebot.core.services.driver_changes import (
+        driver_assign_change,
         driver_move_change,
         driver_release_change,
         driver_sack_change,
@@ -938,6 +939,7 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(driver_move_change(placement=bot.placement_service))
     bot.change_queue.register(driver_sack_change(placement=bot.placement_service))
     bot.change_queue.register(driver_release_change(placement=bot.placement_service))
+    bot.change_queue.register(driver_assign_change(placement=bot.placement_service))
     bot.change_queue.register(sheet_post_change())
     bot.change_queue.register(rounds_sync_change(bot.season_service, bot.module_service))
     bot.change_queue.register(standings_sync_change(bot.season_service, bot.module_service))

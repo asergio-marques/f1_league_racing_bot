@@ -15,7 +15,6 @@ import pytest
 
 from tests.core.test_driver_move import _ADMIN
 
-_REASON = "#283: /driver assign is not yet a change on the queue"
 
 _NOT_PLACING = (
     "⛔ `/driver assign` is available only while the season is in placements, or mid-season "
@@ -146,7 +145,6 @@ async def _fill_the_standings(league):
     ))
 
 
-@pytest.mark.xfail(strict=True, reason=_REASON)
 async def test_a_driver_assignment_and_its_audit_entry_and_line_are_one_save(tmp_path):
     """The core specification's placement and its record of what changed. The season is in
     Placements; Valtteri was approved and never placed, and McLaren's second seat in Am is free.
@@ -192,7 +190,6 @@ async def test_a_driver_assignment_and_its_audit_entry_and_line_are_one_save(tmp
     assert last_said(asked) == "✅ Assigned **Valtteri** to **McLaren F1 Team** in **Am**."
 
 
-@pytest.mark.xfail(strict=True, reason=_REASON)
 async def test_a_failed_driver_assignment_places_nothing(tmp_path):
     """The season is in Placements; Valtteri was approved and never placed. The league admin runs
     `/driver assign` of Valtteri to McLaren in Am, and as the queue runs it the database fails
@@ -230,22 +227,10 @@ async def test_a_failed_driver_assignment_places_nothing(tmp_path):
 @pytest.mark.parametrize(
     "meanwhile, reply",
     [
-        pytest.param(
-            _approve_placements, _NOT_PLACING, id="the-placements-approved",
-            marks=pytest.mark.xfail(strict=True, reason=_REASON),
-        ),
-        pytest.param(
-            _fill_mclaren, _NO_SEAT, id="the-last-seat-taken",
-            marks=pytest.mark.xfail(strict=True, reason=_REASON),
-        ),
-        pytest.param(
-            _turn_test_mode_on, _TEST_MODE, id="test-mode-turned-on",
-            marks=pytest.mark.xfail(strict=True, reason=_REASON),
-        ),
-        pytest.param(
-            _fill_the_standings, _STANDINGS_FULL, id="the-standings-template-full",
-            marks=pytest.mark.xfail(strict=True, reason=_REASON),
-        ),
+        pytest.param(_approve_placements, _NOT_PLACING, id="the-placements-approved"),
+        pytest.param(_fill_mclaren, _NO_SEAT, id="the-last-seat-taken"),
+        pytest.param(_turn_test_mode_on, _TEST_MODE, id="test-mode-turned-on"),
+        pytest.param(_fill_the_standings, _STANDINGS_FULL, id="the-standings-template-full"),
     ],
 )
 async def test_a_driver_assignment_is_judged_again_as_it_starts(tmp_path, meanwhile, reply):
@@ -350,7 +335,6 @@ async def test_a_driver_assignment_is_refused_at_the_ask(tmp_path, build, user_i
     assert league.granted == {} and league.revoked == {}
 
 
-@pytest.mark.xfail(strict=True, reason=_REASON)
 async def test_a_driver_assignment_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. The

@@ -1381,6 +1381,145 @@ class PlacementService:
             for key in ("from_division", "to_division", "from_team", "to_team", "lineups")
         }
 
+    async def guard_assign(
+        self, division_id: int, season_id: int, team_name: str, driver_profile_id: int
+    ) -> None:
+        """Refuse an assignment that would outgrow a template or seat a real driver in test mode.
+
+        The guards `/driver assign` makes before it writes: the image templates' capacity
+        (`_guard_image_capacity`), then the server's test-mode flag (`_guard_test_mode`). Public
+        so that the assignment's check, a job of its own, can ask them at the ask and again as the
+        change starts, since they read templates off the loop and cannot run inside a save.
+        Raises ValueError.
+        """
+        await self._guard_image_capacity(division_id, season_id, team_name)
+        await self._guard_test_mode(driver_profile_id)
+
+    async def judge_assign_on(
+        self,
+        db,
+        *,
+        driver_profile_id: int,
+        division_id: int,
+        team_name: str,
+        season_id: int,
+        uncommitted_only: bool = False,
+    ) -> dict:
+        """Judge the assignment of a driver to a team of a division on *db*, writing nothing: what
+        `assign_on` would refuse, in its words, and the state it would assign from.
+
+        Raises ValueError where the profile is not found, is neither Unassigned nor Assigned,
+        with *uncommitted_only* already holds a confirmed placement in the season, already holds
+        a seat in the division, or the team is not in the division or has no free seat. Returns
+        the profile's *current_state*.
+        """
+        cursor = await db.execute(
+            "SELECT current_state FROM driver_profiles WHERE id = ?", (driver_profile_id,)
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            raise ValueError("Driver profile not found.")
+        current_state = DriverState(row["current_state"])
+        if current_state not in (DriverState.UNASSIGNED, DriverState.ASSIGNED):
+            raise ValueError(
+                f"Driver must be Unassigned or Assigned to be placed "
+                f"(current state: {current_state.value})."
+            )
+
+        if uncommitted_only:
+            cursor = await db.execute(
+                "SELECT 1 FROM driver_season_assignments "
+                "WHERE driver_profile_id = ? AND season_id = ? AND committed = 1 LIMIT 1",
+                (driver_profile_id, season_id),
+            )
+            if await cursor.fetchone() is not None:
+                raise ValueError(
+                    "Driver already holds a confirmed placement this season. Move them "
+                    "with `/driver move`, or release them from a division with "
+                    "`/driver release`."
+                )
+
+        cursor = await db.execute(
+            "SELECT id FROM driver_season_assignments "
+            "WHERE driver_profile_id = ? AND season_id = ? AND division_id = ?",
+            (driver_profile_id, season_id, division_id),
+        )
+        if await cursor.fetchone() is not None:
+            cursor = await db.execute("SELECT name FROM divisions WHERE id = ?", (division_id,))
+            div_row = await cursor.fetchone()
+            div_name = div_row["name"] if div_row else str(division_id)
+            raise ValueError(f"Driver is already assigned to a team in **{div_name}**.")
+
+        await self._find_free_seat(db, division_id, team_name)
+        return {"current_state": current_state}
+
+    async def assign_on(
+        self,
+        db,
+        *,
+        driver_profile_id: int,
+        division_id: int,
+        team_name: str,
+        season_id: int,
+        uncommitted_only: bool = False,
+    ) -> dict:
+        """Assign a driver to a team seat of a division on *db*, leaving the audit entry to the
+        caller.
+
+        Seats the driver in the team's first free seat (the reserve team making another where it
+        has none), writes the assignment unconfirmed, and moves an Unassigned driver to Assigned,
+        on the connection handed and committed by no one here, so that a change on the queue
+        writes the entry with the queue's clock (*audit*). An unconfirmed placement stands outside
+        the championship: it asks no role and no lineup, which follow when placements are
+        confirmed. Nothing is awaited but *db*, and the guards (`guard_assign`) are the caller's.
+        *uncommitted_only* refuses a driver who already holds a confirmed placement in the
+        season. Refused as `judge_assign_on` refuses.
+
+        Returns the summary (was_unassigned, team_name, division_name) and the audit entry's
+        *audit*: its old and new values and the division.
+        """
+        judged = await self.judge_assign_on(
+            db, driver_profile_id=driver_profile_id, division_id=division_id,
+            team_name=team_name, season_id=season_id, uncommitted_only=uncommitted_only,
+        )
+        current_state = judged["current_state"]
+
+        seat_id, _ = await self._free_seat(db, division_id, team_name)
+        team_full_name = await self._team_full_name(db, division_id, team_name)
+        cursor = await db.execute("SELECT name FROM divisions WHERE id = ?", (division_id,))
+        div_name = (await sole_row(cursor))["name"]
+
+        was_unassigned = current_state == DriverState.UNASSIGNED
+        await db.execute(
+            "UPDATE team_seats SET driver_profile_id = ? WHERE id = ?",
+            (driver_profile_id, seat_id),
+        )
+        await db.execute(
+            "INSERT INTO driver_season_assignments "
+            "(driver_profile_id, season_id, division_id, team_seat_id, committed) "
+            "VALUES (?, ?, ?, ?, 0)",
+            (driver_profile_id, season_id, division_id, seat_id),
+        )
+        if was_unassigned:
+            await write_transition(
+                db, driver_profile_id, DriverState.UNASSIGNED, DriverState.ASSIGNED
+            )
+        return {
+            "was_unassigned": was_unassigned,
+            "team_name": team_full_name,
+            "division_name": div_name,
+            "audit": {
+                "old_value": {"state": current_state.value},
+                "new_value": {
+                    "team": team_name,
+                    "division": div_name,
+                    "seat_id": seat_id,
+                    "new_state": DriverState.ASSIGNED.value,
+                },
+                "division_id": division_id,
+            },
+        }
+
     async def assign_driver(
         self,
         driver_profile_id: int,

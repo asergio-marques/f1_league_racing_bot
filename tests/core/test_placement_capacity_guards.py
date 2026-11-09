@@ -141,9 +141,6 @@ async def _seed(tmp_path, name: str = "capacity_guards"):
     return db_path, season_id, division_id
 
 
-_NO_GUARD_ASSIGN = "#283: PlacementService.guard_assign is not yet written"
-
-
 async def _place(service, season_id, division_id, team):
     """Ask *service* whether the unplaced driver 9999 may be assigned to *team*: the guards
     `/driver assign` asks at the ask and again as its change starts."""
@@ -160,7 +157,6 @@ async def _place(service, season_id, division_id, team):
     ],
     ids=["reserve", "sheet", "standings", "declared"],
 )
-@pytest.mark.xfail(strict=True, reason=_NO_GUARD_ASSIGN)
 async def test_placement_capacity_guards_run_with_a_stub_drawing(
     tmp_path, caplog, guard, team, refusal
 ):
@@ -234,7 +230,6 @@ def _failing_reads(monkeypatch, fragment: str, fault: Exception) -> None:
     ],
     ids=["reserve", "sheet", "standings", "declared"],
 )
-@pytest.mark.xfail(strict=True, reason=_NO_GUARD_ASSIGN)
 async def test_a_capacity_guard_s_own_read_fault_lets_the_placement_through(
     tmp_path, monkeypatch, caplog, team, read
 ):
@@ -276,7 +271,6 @@ async def test_a_capacity_guard_s_own_read_fault_lets_the_placement_through(
     ],
     ids=["reserve", "ordinary"],
 )
-@pytest.mark.xfail(strict=True, reason=_NO_GUARD_ASSIGN)
 async def test_a_placement_asks_each_guard_its_own_count(tmp_path, team, asked):
     """Core counts, and the drawing is asked of the count alone: the reserve block counts the
     reserves, the sheet every driver of the division, the standings the race drivers, the
@@ -293,7 +287,6 @@ async def test_a_placement_asks_each_guard_its_own_count(tmp_path, team, asked):
     assert drawing.asked == asked
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_GUARD_ASSIGN)
 async def test_an_unknown_team_asks_neither_the_reserve_block_nor_the_standings(tmp_path):
     """Whether a team is the reserve cannot be known of a team the division does not hold, so
     the two guards that ask it are left out and the guards raise nothing: the assignment's own

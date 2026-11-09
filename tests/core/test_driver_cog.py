@@ -46,7 +46,6 @@ SEASON_ID = 3
 DIVISION_ID = 11
 PROFILE_ID = 55
 
-_ASSIGN_NOT_QUEUED = "#283: /driver assign is not yet a change on the queue"
 _UNASSIGN_NOT_QUEUED = "#283: /driver unassign is not yet a change on the queue"
 
 
@@ -363,7 +362,6 @@ async def test_a_user_with_no_driver_profile_is_refused(command):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_ASSIGN_NOT_QUEUED)
 async def test_a_driver_is_assigned_to_the_named_team_and_division(tmp_path):
     """The season (3) is in placements. A league manager assigns Driver (account 1, profile 55)
     to Alpha in Division 1 (11). The command asks the queue for one `core.driver_assign` of
@@ -385,7 +383,6 @@ async def test_a_driver_is_assigned_to_the_named_team_and_division(tmp_path):
     cog.bot.output_router.post_log.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_ASSIGN_NOT_QUEUED)
 async def test_assign_seats_the_driver_in_the_team_its_shorthand_names(tmp_path):
     """A team is typed by its shorthand (#381), resolved in the division before anything is
     asked; the assignment is asked of the queue under the shorthand as the team holds it."""

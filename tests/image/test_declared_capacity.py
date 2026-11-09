@@ -18,7 +18,6 @@ import pytest
 ORDINARY = "Team 1"
 RACE = "results_race_template"
 DRIVERS = "standings_drivers_template"
-_NO_GUARD_ASSIGN = "#283: PlacementService.guard_assign is not yet written"
 REMEDY = "Enlarge that template, or disable the images module, before adding another driver."
 
 
@@ -176,7 +175,6 @@ async def _seed(tmp_path):
     return db_path, season_id, division_id
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_GUARD_ASSIGN)
 async def test_a_placement_past_the_declared_rows_is_refused_through_guard_assign(
     tmp_path, declare
 ):

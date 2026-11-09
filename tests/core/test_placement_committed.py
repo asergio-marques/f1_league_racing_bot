@@ -26,9 +26,6 @@ from tests.core.test_placement_assign import (
     _service,
 )
 
-#: Why the assignments here fail until the build.
-_NO_ASSIGN_ON = "#283: PlacementService.assign_on, /driver assign's save, is not yet written"
-
 
 async def _assign(db_path, *, division_id: int = DIVISION_ID, **kwargs) -> dict:
     """Place the driver at Alpha through `assign_on`: `/driver assign`'s save without the change
@@ -103,7 +100,6 @@ async def _set_season_status(db_path, status: str) -> None:
 # ── Assigning ──────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_ASSIGN_ON)
 async def test_an_assignment_is_saved_unconfirmed_even_in_a_confirmed_season(tmp_path):
     """The fixture's season is active, where a placement written without saying is confirmed.
     `/driver assign`'s save places the driver at Alpha in Division 1 unconfirmed all the same."""
@@ -133,7 +129,6 @@ async def test_a_placement_in_a_season_in_setup_defaults_to_uncommitted(tmp_path
     assert await _committed(db_path) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_ASSIGN_ON)
 async def test_a_committed_driver_is_refused_where_only_uncommitted_ones_may_be_placed(tmp_path):
     """Mid-season placing: the driver already holds a confirmed seat at Alpha in Division 1, and
     is assigned to Division 2 where only unconfirmed drivers may be placed. The save refuses him,

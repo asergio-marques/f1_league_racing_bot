@@ -11,7 +11,6 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 
 SERVER_ID = 1
-_NO_GUARD_ASSIGN = "#283: PlacementService.guard_assign is not yet written"
 
 
 async def _seed(tmp_path, *, test_mode: bool, drivers: dict[int, bool] | None = None) -> str:
@@ -71,7 +70,6 @@ async def test_an_unknown_profile_is_left_to_the_check_that_reports_it(tmp_path)
     await _service(db_path)._guard_test_mode(404)
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_GUARD_ASSIGN)
 async def test_the_guard_runs_before_a_placement(tmp_path):
     """The refusal reaches the caller through the assignment's guards, not only in isolation."""
     db_path = await _seed(tmp_path, test_mode=True, drivers={1: False})

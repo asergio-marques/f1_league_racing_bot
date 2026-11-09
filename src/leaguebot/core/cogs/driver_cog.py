@@ -8,7 +8,13 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
-from leaguebot.core.services.driver_changes import DRIVER_MOVE, DRIVER_RELEASE, DRIVER_SACK
+from leaguebot.core.services.driver_changes import (
+    DRIVER_ASSIGN,
+    DRIVER_MOVE,
+    DRIVER_RELEASE,
+    DRIVER_SACK,
+    NOT_PLACING_REFUSAL,
+)
 from leaguebot.core.services.lineup_posting import ask_lineup_posts
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
@@ -24,11 +30,6 @@ log = logging.getLogger(__name__)
 #: The stages `/driver assign` and `/driver unassign` are available in (issue #220): while the
 #: season is built, and mid-season for the drivers of the window just closed.
 _PLACING_STAGES = frozenset({SeasonStage.PLACEMENTS, SeasonStage.ONGOING_PLACEMENTS})
-
-_NOT_PLACING_REFUSAL = (
-    "⛔ `{command}` is available only while the season is in placements, or mid-season "
-    "while the drivers of a closed signup window are being placed."
-)
 
 
 class DriverCog(commands.Cog):
@@ -247,15 +248,13 @@ class DriverCog(commands.Cog):
         if current is None:
             return
         user = current
-        actor_id = interaction.user.id
-        actor_name = str(interaction.user)
 
         # Resolve season, and the stage placements may be made in (issue #220)
         season = await self.bot.season_service.get_setup_or_active_season()
         if season is None or season.stage not in _PLACING_STAGES:
             await refuse(
                 interaction,
-                _NOT_PLACING_REFUSAL.format(command="/driver assign"),
+                NOT_PLACING_REFUSAL.format(command="/driver assign"),
                 what=describe(interaction),
             )
             return
@@ -303,41 +302,21 @@ class DriverCog(commands.Cog):
             )
             return
 
-        try:
-            result = await self.bot.placement_service.assign_driver(
-                driver_profile_id=profile.id,
-                division_id=division_id,
-                team_name=reference.team["name"],
-                season_id=season.id,
-                acting_user_id=actor_id,
-                acting_user_name=actor_name,
-                guild=guild_of(interaction),
-                discord_user_id=str(user.id),
-                committed=False,
-                uncommitted_only=season.stage is SeasonStage.ONGOING_PLACEMENTS,
-            )
-        except ValueError as exc:
-            await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
-            return
-
-        # The change is made; the lineups it touched follow on the change queue (#439).
-        await ask_lineup_posts(self.bot.change_queue, self.bot.db_path, result["lineups"])
-
-        verb = "Assigned"
-        await interaction.followup.send(
-            f"✅ {verb} **{user.display_name}** to **{result['team_name']}** "
-            f"in **{result['division_name']}**.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver assign | Success\n"
-            f"  user: {user.display_name} (<@{user.id}>)\n"
-            f"  team: {result['team_name']}\n"
-            f"  division: {result['division_name']}",
-        )
-        log.info(
-            "assign: user=%s → team=%s division=%s by %s",
-            user.id, team, division_name, actor_name,
+        # The assignment is a change on the queue, which refuses again as it starts what is
+        # refused here (`core/services/driver_changes.py`).
+        await self.bot.change_queue.ask(
+            DRIVER_ASSIGN,
+            {
+                "driver_profile_id": profile.id,
+                "discord_user_id": str(user.id),
+                "driver_name": user.display_name,
+                "season_id": season.id,
+                "division_id": division_id,
+                "division": division_name,
+                "team_name": reference.team["name"],
+                "team_full_name": reference.team["full_name"],
+            },
+            interaction=interaction, what=describe(interaction),
         )
 
     # ------------------------------------------------------------------
@@ -371,7 +350,7 @@ class DriverCog(commands.Cog):
         if season is None or season.stage not in _PLACING_STAGES:
             await refuse(
                 interaction,
-                _NOT_PLACING_REFUSAL.format(command="/driver unassign"),
+                NOT_PLACING_REFUSAL.format(command="/driver unassign"),
                 what=describe(interaction),
             )
             return
@@ -646,7 +625,7 @@ class DriverCog(commands.Cog):
         if season is None or season.stage not in _PLACING_STAGES:
             await refuse(
                 interaction,
-                _NOT_PLACING_REFUSAL.format(command="/driver reject"),
+                NOT_PLACING_REFUSAL.format(command="/driver reject"),
                 what=describe(interaction),
             )
             return

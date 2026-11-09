@@ -18,7 +18,6 @@ from lxml import etree
 
 SVG_NS = "http://www.w3.org/2000/svg"
 SHEET = "attendance_template"
-_NO_GUARD_ASSIGN = "#283: PlacementService.guard_assign is not yet written"
 SERVER_ID = 1
 RESERVE = "Reserve"
 ORDINARY = "Team 1"
@@ -177,7 +176,6 @@ async def test_no_sheet_drawn_means_no_problem(tmp_path, toggle, images):
 # ── As a league meets it, through the choke point ─────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_GUARD_ASSIGN)
 async def test_a_reserve_placement_past_the_rows_is_refused_through_guard_assign(tmp_path):
     """Deliberate, and unlike the standings: a seated reserve takes a row, and so would the
     reserve being placed."""
