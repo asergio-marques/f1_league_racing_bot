@@ -576,6 +576,43 @@ async def test_two_changes_waiting_for_one_division_each_record_the_channel_they
     assert await _forecast_channel(db_path) == OTHER_CHANNEL_ID
 
 
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
+async def test_the_same_change_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
+    """Season 1 is being set up, and its Division 1 has no forecast channel. The manager (id 77)
+    asks for #forecasts, and is acknowledged; before the queue runs, with nothing else asked of
+    the league since, they ask for #forecasts again. The second is refused in the queue's words,
+    as a change already asked for and not yet started, and the log channel takes that refusal as
+    a line; only the one change is queued. The queue runs it: Division 1 has #forecasts, one
+    audit entry stands, and the first is told its channel was set."""
+    db_path = await _make_db(tmp_path)
+    cog = await _make_cog(db_path)
+    first, repeat = _interaction(cog), _interaction(cog)
+    repeated = (
+        f"⚠️ Setting the weather forecast channel for **Division 1** to <#{CHANNEL_ID}> has "
+        f"already been asked for and has not started yet, so it was not asked for again."
+    )
+
+    await _ask(cog, first)
+    await _ask(cog, repeat)
+
+    assert acknowledgement(first).startswith("⏳ ")
+    assert _replied(repeat) == repeated
+    assert len(await change_rows(db_path)) == 1
+    await run_queue(cog.bot)
+
+    assert await _forecast_channel(db_path) == CHANNEL_ID
+    assert len(await _audit(db_path)) == 1
+    assert _replied(first) == (
+        f"✅ Weather forecast channel for **Division 1** set to <#{CHANNEL_ID}>."
+    )
+    assert _lines(cog) == [
+        _refusal_line(repeated),
+        f"{NAMED} | /weather channel | Success\n"
+        "  division: Division 1\n"
+        "  channel: #forecasts",
+    ]
+
+
 # ---------------------------------------------------------------------------
 # What changes while the change waits
 # ---------------------------------------------------------------------------
