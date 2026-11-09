@@ -149,10 +149,11 @@ opening rules). Stewarding adds a second [STW-MOD-007].
 **Core reaches a module only through hooks, and the image module through a protocol it declares
 (below).** Where something in core has to let the modules act (the bot starting, a timed event
 falling due, a round amended or its timed work armed again, a round's timing windows read, a round,
-a division or a season cancelled, a round's results made final, placements confirmed, a review
-gathering its lines, a season ending, a season, division, round or driver deleted, a driver merged
-into another or turned down, a base role changed, the bot packed, test mode turned on, the bot's
-in-memory state cleared, the hub's panel gathering its options), core declares a hook. The builder
+a division or a season cancelled, a round's results made final, placements confirmed, a
+configuration confirmed, a review gathering its lines, a season ending, a season, division, round
+or driver deleted, a driver merged into another or turned down, a base role changed, the bot
+packed, test mode turned on, the bot's in-memory state cleared, the hub's panel gathering its
+options), core declares a hook. The builder
 signs each module up to it before the bot connects. Core calls whoever signed up, and never imports
 a module, the bot's type aside (see "How the code is laid out"). A module turned on or off is not a
 hook but a change of the module's own, which core asks for by its kind (see "Each module turns

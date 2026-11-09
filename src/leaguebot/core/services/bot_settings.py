@@ -360,10 +360,8 @@ def _league_role_setting(
     never the role the ask saw, for the same reason. `check`'s having passed is `save`'s own proof
     that *current* is gone whenever the season is fixed, since no queued change lands between them
     on the lane, so `save` judges the grant to every driver from the season's fixedness alone,
-    queried fresh on its own connection. One writer is not yet a queued change: the
-    configuration's confirmation sets the season's stage from its command, so it can land
-    between the two. It goes onto the queue with the season's other structural commands, and the
-    window closes then.
+    queried fresh on its own connection. The configuration's confirmation, which sets the
+    season's stage, is a change on the same lane, so it cannot land between the two.
 
     **The base role's save plans two follow-ons the driver role never needs:** calling the "base
     role changed" hook (`BASE_ROLE_CHANGED`), which moves the signup channel's overwrite without

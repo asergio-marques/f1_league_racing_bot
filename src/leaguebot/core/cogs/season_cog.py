@@ -3839,7 +3839,7 @@ class _ApproveView(LeagueView):
     ) -> None:
         """A confirming button's press, every one but the placements approval's alike: who may
         press, the five minutes, the claim, the evidence, then *confirm*, the confirmation's own
-        work, which takes the review down just before it commits.
+        work, which asks the queue for the review's take-down ahead of the confirmation.
 
         *in_hand* is a reader of whether a confirmation of the season is already waiting,
         running or stopped on the change queue, and the refusal it is answered with: such a
