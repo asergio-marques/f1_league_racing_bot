@@ -108,7 +108,6 @@ def _service(
     signup.save_record = AsyncMock()
 
     drivers = MagicMock()
-    drivers.transition = AsyncMock()
 
     bot = MagicMock()
     bot.signup_module_service = signup
