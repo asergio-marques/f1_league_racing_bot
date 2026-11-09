@@ -5,11 +5,11 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection, inserted_id, sole_row
+from leaguebot.core.db.database import get_connection, inserted_id
 from leaguebot.core.models.division import Division, DivisionStatus
 from leaguebot.core.models.round import (
     ROUND_AWAITING_RESULTS_MODULE,
@@ -752,76 +752,40 @@ class SeasonService:
             await db.execute("DELETE FROM divisions WHERE id = ?", (division_id,))
             await db.commit()
 
-    async def duplicate_division(
+    async def duplicate_division_on(
         self,
-        division_id: int,
+        db: aiosqlite.Connection,
+        source_id: int,
+        *,
         name: str,
         role_id: int,
-        day_offset: int = 0,
-        hour_offset: float = 0.0,
-        tier: int = 0,
+        tier: int,
+        offset: timedelta,
     ) -> Division:
-        """Copy a division (and all its rounds with shifted datetimes) into a new division.
+        """Copy the division *source_id* into a new division of the season being set up, on *db*,
+        a connection the caller holds, and return the new one. Commits nothing.
 
-        One save: the tier refusal comes before any write, then the division, its rounds
-        and their renumbering are written on one connection and committed once, so a refusal
-        or a fault part-way leaves no division and no round behind.
+        The division is inserted as `add_division_on` inserts one, then each round of the source
+        is copied with its moment moved by *offset* and the copies are renumbered, so that one
+        save holds the division and its calendar. The checks that refuse a name or a tier already
+        held are the caller's, the schema the backstop.
         """
-        from datetime import timedelta
-        src_rounds = await self.get_division_rounds(division_id)
-        async with get_connection(self._db_path) as db:
-            # Find the season_id of the source division
-            cursor = await db.execute(
-                "SELECT season_id FROM divisions WHERE id = ?", (division_id,)
+        source_rounds = await self.get_division_rounds_on(db, source_id)
+        division = await self.add_division_on(db, name=name, role_id=role_id, tier=tier)
+        for rnd in source_rounds:
+            await db.execute(
+                "INSERT INTO rounds (division_id, round_number, format, track_name, scheduled_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (
+                    division.id,
+                    rnd.round_number,
+                    rnd.format.value,
+                    rnd.track_name,
+                    (rnd.scheduled_at + offset).isoformat(),
+                ),
             )
-            row = await sole_row(cursor)
-            season_id: int = row[0]
-
-            if tier != 0:
-                if tier < 1:
-                    raise ValueError(f"Tier must be >= 1, got {tier}.")
-                cursor = await db.execute(
-                    "SELECT 1 FROM divisions WHERE season_id = ? AND tier = ?",
-                    (season_id, tier),
-                )
-                if await cursor.fetchone():
-                    raise ValueError(
-                        f"A division with tier {tier} already exists in this season."
-                    )
-
-            cursor = await db.execute(
-                "INSERT INTO divisions (season_id, name, mention_role_id, tier)"
-                " VALUES (?, ?, ?, ?)",
-                (season_id, name, role_id, tier),
-            )
-            new_div_id = inserted_id(cursor)
-
-            delta = timedelta(days=day_offset, hours=hour_offset)
-            for rnd in src_rounds:
-                new_dt = rnd.scheduled_at + delta
-                await db.execute(
-                    "INSERT INTO rounds"
-                    " (division_id, round_number, format, track_name, scheduled_at)"
-                    " VALUES (?, ?, ?, ?, ?)",
-                    (
-                        new_div_id,
-                        rnd.round_number,  # will be renumbered next
-                        rnd.format.value,
-                        rnd.track_name,
-                        new_dt.isoformat(),
-                    ),
-                )
-            await renumber_rounds_on(db, new_div_id)
-            await db.commit()
-
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT id, season_id, name, mention_role_id, forecast_channel_id, status, tier"
-                " FROM divisions WHERE id = ?",
-                (new_div_id,),
-            )
-            row = await sole_row(cursor)
-        return _row_to_division(row)
+        await renumber_rounds_on(db, division.id)
+        return division
 
     # ------------------------------------------------------------------
     # Round

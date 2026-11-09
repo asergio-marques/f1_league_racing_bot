@@ -60,6 +60,7 @@ from leaguebot.core.services.mid_season_confirm_change import (
 from leaguebot.core.services.round_amend_change import ROUND_AMEND, payload_changes
 from leaguebot.core.services.round_moments import read_round_windows
 from leaguebot.core.services.division_add_change import KIND as DIVISION_ADD
+from leaguebot.core.services.division_duplicate_change import KIND as DIVISION_DUPLICATE
 from leaguebot.core.services.division_edit_changes import DIVISION_AMEND, DIVISION_RENAME
 from leaguebot.core.services.round_add_changes import (
     ADD as ROUND_ADD,
@@ -106,8 +107,6 @@ import leaguebot.core.services.track_service as track_service
 from leaguebot.core.services.season_service import (
     SeasonCapacityCounts,
     SeasonImmutableError,
-    validate_division_name,
-    validate_division_tier,
 )
 from leaguebot.core.utils.autocomplete import bounded_autocomplete
 from leaguebot.core.utils.input_validator import parse_datetime
@@ -2229,7 +2228,7 @@ class SeasonCog(commands.Cog):
 
     @division.command(
         name="duplicate",
-        description="Copy a division's rounds with a datetime offset (setup only).",
+        description="Copy a division's rounds with a datetime offset while the season is in placements.",
     )
     @app_commands.describe(
         source_name="Name of the division to copy from",
@@ -2250,114 +2249,16 @@ class SeasonCog(commands.Cog):
         day_offset: int = 0,
         hour_offset: float = 0.0,
     ) -> None:
-        season_id = await self._season_in_placements()
-        if season_id is None:
-            await refuse(
-                interaction,
-                "\u274c `/division duplicate` can only be used while the season is in placements.",
-                what=describe(interaction),
-            )
-            return
-
-        # The tier rule is asked twice, as `/division add` asks it; this command has always said
-        # "in this season" of a taken tier.
-        tier_refusal = validate_division_tier(tier, [], within="season")
-        if tier_refusal is not None:
-            await refuse(interaction, f"\u26d4 {tier_refusal}", what=describe(interaction))
-            return
-
-        divisions = await self.bot.season_service.get_divisions(season_id)
-        src_div = next((d for d in divisions if d.name.lower() == source_name.lower()), None)
-        if src_div is None:
-            await refuse(
-                interaction,
-                f"\u274c Division `{source_name}` not found in pending setup.",
-                what=describe(interaction),
-            )
-            return
-
-        refusal = validate_division_name(new_name)
-        if refusal is not None:
-            await refuse(
-                interaction,
-                f"\u274c {refusal}",
-                what=describe(interaction),
-            )
-            return
-
-        if any(d.name.lower() == new_name.lower() for d in divisions):
-            await refuse(
-                interaction,
-                f"\u274c A division named **{new_name}** already exists.",
-                what=describe(interaction),
-            )
-            return
-
-        tier_refusal = validate_division_tier(tier, [d.tier for d in divisions], within="season")
-        if tier_refusal is not None:
-            await refuse(interaction, f"\u26d4 {tier_refusal}", what=describe(interaction))
-            return
-
-        from collections import Counter
-        from datetime import timedelta
-        delta = timedelta(days=day_offset, hours=hour_offset)
-        src_rounds = await self.bot.season_service.get_division_rounds(src_div.id)
-        shifted = [rnd.scheduled_at + delta for rnd in src_rounds]
-        now = datetime.now(timezone.utc)
-        warnings: list[str] = []
-        for dt in shifted:
-            dt_aware = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
-            if dt_aware < now:
-                warnings.append(f"\u26a0\ufe0f One or more shifted datetimes are in the past: {discord_ts(dt_aware)}")
-                break
-        dt_counts = Counter(shifted)
-        for dt, count in dt_counts.items():
-            if count > 1:
-                dt_aware2 = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
-                warnings.append(f"\u26a0\ufe0f Multiple rounds share the same shifted datetime: {discord_ts(dt_aware2)}")
-                break
-
-        await interaction.response.defer(ephemeral=True)
-
-        try:
-            new_div = await self.bot.season_service.duplicate_division(
-                division_id=src_div.id,
-                name=new_name,
-                role_id=role.id,
-                day_offset=day_offset,
-                hour_offset=hour_offset,
-                tier=tier,
-            )
-        except ValueError as exc:
-            await refuse(
-                interaction,
-                f"\u26d4 {exc}",
-                what=describe(interaction),
-            )
-            return
-
-        # Seed teams for the newly created division
-        await self.bot.team_service.seed_division_teams(new_div.id)
-
-        updated_divisions = await self.bot.season_service.get_divisions(season_id)
-        new_rounds = await self.bot.season_service.get_division_rounds(new_div.id)
-
-        warn_block = ("\n" + "\n".join(warnings)) if warnings else ""
-        await interaction.followup.send(
-            f"\u2705 Division **{new_name}** (Tier {tier}) created from **{source_name}**"
-            f" (offset: {day_offset:+}d {hour_offset:+}h).\n\n"
-            + format_division_list(updated_divisions)
-            + "\n\n"
-            + f"**{new_name} rounds:**\n"
-            + format_round_list(new_rounds)
-            + warn_block,
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division duplicate | Success\n"
-            f"  source: {source_name}\n"
-            f"  new_division: {new_name}, tier: {tier}\n"
-            f"  offset: {day_offset:+}d {hour_offset:+}h",
+        """Copy a division: ask the change queue for it, which refuses what the command has always
+        refused at the ask and again as the change starts, and saves the copy with its rounds, its
+        teams and its audit entry in one save (`core/services/division_duplicate_change.py`)."""
+        await self.bot.change_queue.ask(
+            DIVISION_DUPLICATE,
+            {
+                "source_name": source_name, "new_name": new_name, "role_id": role.id,
+                "tier": tier, "day_offset": day_offset, "hour_offset": hour_offset,
+            },
+            interaction=interaction, what=describe(interaction),
         )
 
     @division.command(

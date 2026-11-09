@@ -376,9 +376,6 @@ async def test_a_division_add_asked_again_while_it_waits_is_refused_as_a_repeat(
 # words. The warnings a shifted calendar earns are given in the reply, never as a refusal, judged
 # against the queue's clock.
 
-#: Why the queue's tests of `/division duplicate` fail until the build.
-_NOT_YET_QUEUED = "#283: /division duplicate is not yet a change on the change queue"
-
 #: Pro's rounds, as `_duplicate_league` lays them down: a normal round at Silverstone on 1 November
 #: and a sprint at Monza on 8 November, both at 18:00 UTC, after the queue's clock.
 _PRO_ROUNDS = (
@@ -458,7 +455,6 @@ def _shifted(rounds, **offset) -> list[tuple[int, str, str, datetime]]:
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_QUEUED)
 async def test_a_duplicate_its_rounds_teams_audit_entry_and_line_are_one_save(tmp_path):
     """The core specification's record of what changed, and its rule that a duplicated division
     inherits none of its source's channels. Season #1 is being set up, in Placements, holding Pro
@@ -535,7 +531,6 @@ async def test_a_duplicate_its_rounds_teams_audit_entry_and_line_are_one_save(tm
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_QUEUED)
 async def test_the_source_division_is_matched_regardless_of_case(tmp_path):
     """The core specification's Divisions: a division's name is what the bot displays. Season #1
     is being set up, in Placements, holding Pro with its two rounds. The manager runs `/division
@@ -582,7 +577,6 @@ async def _approve_the_season(db) -> None:
     await db.execute("UPDATE divisions SET status = 'ACTIVE'")
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_QUEUED)
 @pytest.mark.parametrize(
     "asked, first, meanwhile, reply, after, successes",
     [
@@ -656,7 +650,6 @@ async def test_a_division_duplicate_is_judged_again_as_it_starts(
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_QUEUED)
 async def test_a_division_duplicate_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. Season #1
@@ -691,7 +684,6 @@ async def test_a_division_duplicate_asked_again_while_it_waits_is_refused_as_a_r
     assert last_said(first) == _duplicated("Am", 2, "Pro", "+0d +0.0h", listed, _PRO_ROUNDS)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: /division duplicate still describes itself as setup only")
 def test_division_duplicate_describes_itself_as_a_placements_command():
     """`/division duplicate` runs in Placements alone, as `/division rename` and `/division amend`
     do, and the description Discord shows a manager beside the command says so, as theirs do,

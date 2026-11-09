@@ -23,9 +23,6 @@ import pytest
 from leaguebot.core.db.database import get_connection
 from tests.support.setup_rounds import ask_duplicate, round_moments, setup_league
 
-#: Why a duplicate's fault does not yet stop the lane.
-_NOT_YET_QUEUED = "#283: /division duplicate is not yet a change on the change queue"
-
 #: Pro's rounds: a normal round at Silverstone on 1 March and a sprint round at Monza on 8 March
 #: 2026, both at 18:00 UTC.
 _PRO_ROUNDS = (
@@ -92,18 +89,9 @@ FAIL_RENUMBERING = (
 
 
 @pytest.mark.parametrize("fault", [
-    pytest.param(
-        FAIL_COPYING_ROUNDS, id="copying-the-rounds",
-        marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_QUEUED),
-    ),
-    pytest.param(
-        FAIL_RENUMBERING, id="renumbering",
-        marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_QUEUED),
-    ),
-    pytest.param(
-        None, id="writing-the-audit-entry",
-        marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_QUEUED),
-    ),
+    pytest.param(FAIL_COPYING_ROUNDS, id="copying-the-rounds"),
+    pytest.param(FAIL_RENUMBERING, id="renumbering"),
+    pytest.param(None, id="writing-the-audit-entry"),
 ])
 async def test_a_duplicate_that_fails_part_way_leaves_nothing_behind(tmp_path, fault):
     """Season #1 is being set up, in Placements, holding Pro (tier 1) with its two rounds. The
