@@ -6,7 +6,7 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from functools import partial
 from typing import TYPE_CHECKING, Any, cast
@@ -489,6 +489,21 @@ def _approve_view_for(bot: LeagueBot) -> "Callable[[dict[str, Any]], discord.ui.
     return make
 
 
+def _configuration_faults_of(bot: LeagueBot) -> Callable[[int, Any], Awaitable[list[str]]]:
+    """The season cog's one reading of every fault that stops a configuration being confirmed,
+    handed to the confirmation's check so that it refuses on exactly what the review withholds its
+    button on. Found when the check runs: the cog is loaded by then, and a restart's check is made
+    by a cog of the same bot."""
+    from leaguebot.core.cogs.season_cog import SeasonCog
+
+    async def faults(season_id: int, guild: Any) -> list[str]:
+        loaded = bot.get_cog("SeasonCog")
+        cog = loaded if isinstance(loaded, SeasonCog) else SeasonCog(bot)
+        return await cog._configuration_faults(season_id, guild)
+
+    return faults
+
+
 def register_change_types(bot: LeagueBot) -> None:
     """Make the queue known every kind of change the bot carries out.
 
@@ -549,6 +564,9 @@ def register_change_types(bot: LeagueBot) -> None:
         amendment_in_hand,
         round_amend_change,
         round_rearm_change,
+    )
+    from leaguebot.core.services.configuration_confirm_change import (
+        configuration_confirm_change,
     )
     from leaguebot.core.services.mid_season_confirm_change import mid_season_confirm_change
     from leaguebot.core.services.season_approval_change import (
@@ -1028,6 +1046,14 @@ def register_change_types(bot: LeagueBot) -> None:
             placement=bot.placement_service,
             drawing=bot.image_drawing,
             rasteriser_fault=bot.image_drawing.rasteriser_fault,
+        )
+    )
+    bot.change_queue.register(
+        configuration_confirm_change(
+            drawing=bot.image_drawing,
+            faults=_configuration_faults_of(bot),
+            configuration_confirmed=bot.configuration_confirmed,
+            now=lambda: bot.change_queue.now(),
         )
     )
     bot.change_queue.register(season_review_take_down_change())

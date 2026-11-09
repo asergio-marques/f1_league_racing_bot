@@ -184,10 +184,7 @@ async def test_get_stage_is_none_for_a_season_without_one_or_no_season_at_all(db
 
 # ── The configuration confirmed, on the confirmation's save ─────────────────────────
 
-_SAVE = "#283: the configuration confirmation does not yet move the stage on its save"
 
-
-@pytest.mark.xfail(strict=True, reason=_SAVE)
 @pytest.mark.parametrize("target", [SeasonStage.WAITING, SeasonStage.PLACEMENTS])
 async def test_confirming_the_configuration_on_moves_the_stage_on_the_save_s_connection(
     db_path, target
@@ -211,7 +208,6 @@ async def test_confirming_the_configuration_on_moves_the_stage_on_the_save_s_con
     assert await _row(db_path, season_id) == ("SETUP", "CONFIGURATION")
 
 
-@pytest.mark.xfail(strict=True, reason=_SAVE)
 @pytest.mark.parametrize(
     "start, target",
     [

@@ -1,6 +1,6 @@
 """Moving a season through its lifecycle as the events that drive it happen (issue #220).
 
-``SeasonService.set_stage`` enforces which transitions are legal. This module decides which
+``models.season.ALLOWED_STAGE_TRANSITIONS`` says which transitions are legal. This module decides which
 transition an event calls for — a signup window opening or closing, and later placements
 being confirmed and a season ending — so that every path reaching the event (a command, a
 timer, a restart) moves the season the same way.
@@ -28,7 +28,13 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.models.season import ONGOING_STAGES, InvalidStageTransition, SeasonStage, status_of_stage
+from leaguebot.core.models.season import (
+    ALLOWED_STAGE_TRANSITIONS,
+    ONGOING_STAGES,
+    InvalidStageTransition,
+    SeasonStage,
+    status_of_stage,
+)
 from leaguebot.core.services.change_queue import (
     ChangeType,
     CheckContext,
@@ -128,6 +134,29 @@ async def _move_on(
         raise InvalidStageTransition(
             f"season {season_id} left {current.value} before it could move to {target.value}"
         )
+
+
+async def confirm_configuration_on(
+    db: aiosqlite.Connection, season_id: int, target: SeasonStage
+) -> None:
+    """Move *season_id* out of Configuration to *target*, Waiting or Placements, on the caller's
+    connection, committing nothing, so that the season's move is saved with everything the
+    confirmation of its configuration keeps.
+
+    The season must stand in Configuration and the move be one ``ALLOWED_STAGE_TRANSITIONS``
+    permits; anything else, or a season that does not exist, raises :class:`InvalidStageTransition` and
+    writes nothing. The write is conditioned on the stage that was read.
+    """
+    cursor = await db.execute("SELECT stage FROM seasons WHERE id = ?", (season_id,))
+    row = await cursor.fetchone()
+    if row is None or row["stage"] is None:
+        raise InvalidStageTransition(f"season {season_id} does not exist")
+    current = SeasonStage(row["stage"])
+    if current is not SeasonStage.CONFIGURATION or target not in ALLOWED_STAGE_TRANSITIONS[current]:
+        raise InvalidStageTransition(
+            f"season {season_id} cannot move from {current.value} to {target.value}"
+        )
+    await _move_on(db, season_id, current, target)
 
 
 async def advance_on_window_open_on(db: aiosqlite.Connection) -> SeasonStage | None:

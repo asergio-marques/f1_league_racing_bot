@@ -159,7 +159,6 @@ async def test_the_stage_the_signup_settings_the_audit_entry_and_the_line_are_on
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_the_manager_is_told_at_once_naming_the_confirmation_s_first_job(
     tmp_path, monkeypatch,
 ):
@@ -177,7 +176,6 @@ async def test_the_manager_is_told_at_once_naming_the_confirmation_s_first_job(
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_the_hook_s_subscriber_writes_on_the_save_s_connection(tmp_path, monkeypatch):
     """A further subscriber signed up to the "configuration confirmed" hook is called once, inside
     the confirmation's save, on its connection, handed season 3's id and the queue's clock, and
@@ -197,7 +195,6 @@ async def test_the_hook_s_subscriber_writes_on_the_save_s_connection(tmp_path, m
     assert handed == [(True, "WAITING", SEASON_ID, league.clock())]
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_fault_in_the_save_leaves_the_season_in_configuration_with_nothing_kept(
     tmp_path, monkeypatch,
 ):
@@ -235,7 +232,6 @@ async def test_a_fault_in_the_save_leaves_the_season_in_configuration_with_nothi
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_discarded_save_confirms_nothing_and_says_to_review_again(tmp_path, monkeypatch):
     """The signup module is on, and a subscriber to the "configuration confirmed" hook raises
     every time it is called, as a fault of the database would. The queue stops at the
@@ -273,7 +269,6 @@ async def _delete_the_driver_role(league: Any) -> None:
     league.roles_gone.add(DRIVER_ROLE)
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 @pytest.mark.parametrize(
     "meanwhile, refusal, why, stage",
     [
@@ -311,7 +306,6 @@ async def test_a_refusal_found_as_the_confirmation_starts_confirms_nothing(
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_second_press_while_the_confirmation_is_in_hand_is_refused_and_its_review_stands(
     tmp_path, monkeypatch,
 ):
@@ -348,7 +342,6 @@ async def test_a_second_press_while_the_confirmation_is_in_hand_is_refused_and_i
 
 
 
-@pytest.mark.xfail(strict=True, reason=_XFAIL)
 async def test_a_role_asked_ahead_of_the_confirmation_is_saved_before_the_season_is_fixed(
     tmp_path, monkeypatch,
 ):

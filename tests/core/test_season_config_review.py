@@ -25,8 +25,6 @@ SEASON_ID = 31
 REVIEWER = 4242
 ADMIN_ROLE = 444
 
-_QUEUE = "#283: the configuration confirmation is not yet a change on the queue"
-
 
 def _server_config(*, test_mode: bool = False, base=2, driver=3) -> ServerConfig:
     """The league's two roles are core's, on the server configuration (issue #276)."""
@@ -379,7 +377,6 @@ async def test_a_refused_confirmation_leaves_the_review_standing(tmp_path, monke
     assert _expiry_timer_touched(env) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_QUEUE)
 async def test_a_confirmation_that_goes_through_takes_the_review_down(tmp_path, monkeypatch):
     """The one press that ends the review: Admin (77) presses ✅ Confirm configuration on season
     3's review in channel 610, the season unchanged since its report and nothing at fault. Before
@@ -821,7 +818,6 @@ async def test_an_unreadable_colour_or_portrait_check_stands_aside(unreadable, k
 # ── The button, on a season unchanged since the report ─────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_QUEUE)
 async def test_an_unchanged_configuration_is_handed_to_the_confirmation_with_its_evidence(
     tmp_path, monkeypatch
 ):

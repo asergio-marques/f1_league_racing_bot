@@ -49,6 +49,11 @@ from leaguebot.core.services.cancellation_changes import (
 )
 from leaguebot.core.services.division_settings import NO_SEASON_REFUSAL, division_not_found
 from leaguebot.core.services.image_drawing import DivisionTeams, Held, TeamSeats
+from leaguebot.core.services.configuration_confirm_change import (
+    ALREADY_BEING_CONFIRMED as ALREADY_CONFIGURATION_BEING_CONFIRMED,
+    KIND as CONFIGURATION_CONFIRM_KIND,
+    confirmation_in_hand as configuration_confirmation_in_hand,
+)
 from leaguebot.core.services.mid_season_confirm_change import (
     ALREADY_BEING_CONFIRMED,
     KIND as MID_SEASON_CONFIRM_KIND,
@@ -76,7 +81,6 @@ from leaguebot.core.services.setup_round_amend_change import (
     amend_payload as amend_setup_payload,
 )
 from leaguebot.core.services.season_review_changes import (
-    CONFIRMED,
     EXPIRED,
     FAILED,
     POST as SEASON_REVIEW_POST,
@@ -262,17 +266,6 @@ async def _run_round_import(
 # ---------------------------------------------------------------------------
 # Cog
 # ---------------------------------------------------------------------------
-
-
-async def _take_the_review_down(bot: LeagueBot, interaction: discord.Interaction) -> int | None:
-    """Ask the queue to take the review the pressed question belongs to down, ending confirmed:
-    the confirming press's own work does this just before it commits, so the review is gone
-    ahead of whatever the confirmation sets going. Returns the change's id, or None where
-    nothing was asked (no question to take down, or one already being taken down)."""
-    question = getattr(interaction.message, "id", None)
-    if not isinstance(question, int):
-        return None
-    return await take_review_down(bot.change_queue, bot.db_path, question, CONFIRMED)
 
 
 class _ReviewPoster:
@@ -1908,20 +1901,34 @@ class SeasonCog(commands.Cog):
         )
 
     async def _do_confirm_configuration(
-        self, interaction: discord.Interaction, *, what: str | None = None
+        self,
+        interaction: discord.Interaction,
+        *,
+        what: str | None = None,
+        fingerprint: dict | None = None,
     ) -> bool:
-        """Confirm the configuration: judge the faults afresh, then move the season on. Returns
-        whether it was confirmed: False where the press was refused, which leaves the button's
-        review standing (`_ApproveView._settle_press`).
+        """Ask the change queue to confirm the configuration, the review taken down ahead of it.
+        Returns whether the queue accepted the request: False where the press was refused, which
+        leaves the button's review standing (`_ApproveView._settle_press`).
 
         A refusal is recorded under *what*, the button pressed, which the button passes in;
-        the review's own Confirm configuration button where the caller names none.
+        the review's own Confirm configuration button where the caller names none. *fingerprint*
+        is the review's own, the areas of the season as the report described it, which the
+        confirmation is judged against again when it runs; where it is not given the season is
+        fingerprinted as it stands.
 
-        To Waiting where the signup module is enabled, or to Placements where it is not or
-        the season runs in test mode, test mode never opening a signup window.
+        **The press is not deferred:** the queue's acknowledgement is the press's own response
+        and the confirmation's outcome updates it. The refusals below answer the press at once
+        in the words the confirmation's own check uses (`configuration_confirm_change`), which
+        judges them again when the confirmation runs, and the season no longer in Configuration
+        with them: a season changed while it waited must not be confirmed. Everything after the
+        request, the stage, signup's settings, the audit entry and the line, is the change's one
+        save, to Waiting where the signup module is enabled and test mode is off, or to Placements
+        otherwise.
+
+        The review comes down ahead of the confirmation, but only for a request the queue
+        accepts: one it refuses at once leaves the review standing.
         """
-        from leaguebot.core.models.season import InvalidStageTransition
-
         if what is None:
             what = _review_button("Confirm configuration", "/season config-review")
         season = await self.bot.season_service.get_setup_season()
@@ -1929,7 +1936,6 @@ class SeasonCog(commands.Cog):
             await refuse(interaction, "⛔ There is no season in configuration.", what=what)
             return False
 
-        await interaction.response.defer(ephemeral=True)
         faults = await self._configuration_faults(season.id, interaction.guild)
         if faults:
             body = "\n".join(f"• {fault}" for fault in faults)
@@ -1942,53 +1948,31 @@ class SeasonCog(commands.Cog):
             )
             return False
 
-        server_config = await self.bot.config_service.get_server_config()
-        test_mode = bool(server_config is not None and server_config.test_mode_active)
-        signup_on = await self.bot.module_service.is_signup_enabled()
-        target = (
-            SeasonStage.WAITING if signup_on and not test_mode else SeasonStage.PLACEMENTS
-        )
-        # The stage moves first, so that a confirmation refused because the season has left
-        # configuration fixes nothing: the refusal's "Nothing has been confirmed" is then true.
-        # Taking both in one transaction would have core hand a connection to the signup
-        # module's service, a reach into a module the architecture does not allow.
-        try:
-            await self.bot.season_service.set_stage(season.id, target)
-        except InvalidStageTransition:
-            await refuse(
-                interaction,
-                "⛔ The season is no longer in configuration. **Nothing has been confirmed.**",
-                what=what,
-            )
-            return False
-        # Only a press that confirms takes the review down (core, "Confirming placements"): this
-        # one is asked once the stage has moved, so a confirmation set_stage refuses leaves it
-        # standing. Nothing queued follows it here, so it still comes down ahead of the rest.
-        await _take_the_review_down(self.bot, interaction)
-        if signup_on:
-            # The season's signups are made under these settings, fixed from this moment.
-            await self.bot.signup_module_service.snapshot_season_config(
-                season.id
-            )
+        if fingerprint is None:
+            from leaguebot.core.services.season_fingerprint_service import take_fingerprint
 
-        if target is SeasonStage.WAITING:
-            next_step = "The season now waits for its signup window — open it with `/signup open`."
-        else:
-            next_step = (
-                "The season is now in placements — build its divisions and calendar, place "
-                "its drivers, then run `/season placements-review`."
+            fingerprint = (
+                await take_fingerprint(
+                    self.bot.db_path, season.id, drawing=self.bot.image_drawing
+                )
+            ).areas
+        confirmation = {
+            "season_id": season.id,
+            "season_number": season.season_number,
+            "fingerprint": dict(fingerprint),
+        }
+        question = getattr(interaction.message, "id", None)
+        if isinstance(question, int):
+            change_id = await take_review_down_before(
+                self.bot.change_queue, self.bot.db_path, question, CONFIGURATION_CONFIRM_KIND,
+                confirmation, interaction=interaction, what=what,
             )
-        await interaction.followup.send(
-            f"✅ Season #{season.season_number}'s configuration is confirmed. {next_step}",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
-            f"/season config-review | Confirmed\n"
-            f"  season: Season #{season.season_number}\n"
-            f"  stage: {target.value}",
-        )
-        return True
+        else:
+            change_id = await self.bot.change_queue.ask(
+                CONFIGURATION_CONFIRM_KIND, confirmation, interaction=interaction, what=what
+            )
+        # None where the queue's own check refused the request and saved nothing.
+        return change_id is not None
 
     # No command confirms placements (decided 2026-09-07). They are confirmed from the button
     # `/season placements-review` posts and from nowhere else: the review is the evidence the
@@ -3996,7 +3980,12 @@ class _ConfirmConfigurationView(_ApproveView):
     async def approve(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        await self._confirm_press(interaction, self._cog._do_confirm_configuration)
+        await self._confirm_press(
+            interaction,
+            self._cog._do_confirm_configuration,
+            in_hand=(configuration_confirmation_in_hand, ALREADY_CONFIGURATION_BEING_CONFIRMED),
+            evidence_to_confirm=True,
+        )
 
 
 def _round_amend_named(round_number: int | None, division_name: str | None = None) -> str:
