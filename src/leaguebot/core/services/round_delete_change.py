@@ -46,7 +46,7 @@ from leaguebot.core.services.change_queue import (
 from leaguebot.core.services.division_edit_changes import held_division, placed_division
 from leaguebot.core.services.round_add_changes import held_rounds, round_models, saved_result
 from leaguebot.core.services.season_service import SeasonService
-from leaguebot.core.services.setup_round_amend_change import round_values
+from leaguebot.core.services.setup_round_amend_change import round_fill, round_values
 from leaguebot.core.utils.formatting import format_round_list
 from leaguebot.core.utils.hooks import AwaitedHook
 
@@ -64,37 +64,6 @@ NOTHING_DELETED = (
     "Nothing was deleted: round {number} in **{division}** stands as it was. "
     "Run `/round delete` again."
 )
-
-
-def _fill(seasons: SeasonService) -> Callable[[CheckContext], Awaitable[None]]:
-    async def fill(ctx: CheckContext) -> None:
-        """Name the division and the round the member typed by their ids, and the division by its
-        own spelling, leaving each None where it is not found."""
-        payload = ctx.payload
-        payload["division"] = payload["division_name"]
-        payload["division_id"] = payload["round_id"] = None
-        season = await seasons.get_setup_season()
-        if season is None:
-            return
-        wanted = str(payload["division_name"]).lower()
-        division = next(
-            (d for d in await seasons.get_divisions(season.id) if d.name.lower() == wanted), None
-        )
-        if division is None:
-            return
-        payload["division"] = division.name
-        payload["division_id"] = division.id
-        rnd = next(
-            (
-                r
-                for r in await seasons.get_division_rounds(division.id)
-                if r.round_number == payload["round_number"]
-            ),
-            None,
-        )
-        payload["round_id"] = rnd.id if rnd is not None else None
-
-    return fill
 
 
 def _check(seasons: SeasonService) -> Callable[[CheckContext], Awaitable[Verdict]]:
@@ -183,7 +152,7 @@ def round_delete_change(*, seasons: SeasonService, rounds_deleted: AwaitedHook) 
         key=lambda payload: f"{ROUND_DELETE}|{json.dumps(payload, sort_keys=True)}",
         doing=_doing,
         outcome=_outcome,
-        fill=_fill(seasons),
+        fill=round_fill(seasons),
         lane=lambda _payload: LEAGUE_LANE,
     )
 

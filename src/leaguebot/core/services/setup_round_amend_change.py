@@ -150,7 +150,7 @@ def round_values(rnd: Round) -> dict[str, Any]:
     }
 
 
-def _fill(seasons: SeasonService) -> Callable[[CheckContext], Awaitable[None]]:
+def round_fill(seasons: SeasonService) -> Callable[[CheckContext], Awaitable[None]]:
     async def fill(ctx: CheckContext) -> None:
         """Name the division and the round the member typed by their ids, and the division by its
         own spelling, leaving each None where it is not found."""
@@ -353,7 +353,7 @@ def setup_round_amend_change(*, seasons: SeasonService) -> ChangeType:
         key=lambda payload: f"{ROUND_AMEND_SETUP}|{json.dumps(payload, sort_keys=True)}",
         doing=_doing,
         outcome=_outcome,
-        fill=_fill(seasons),
+        fill=round_fill(seasons),
         lane=lambda _payload: LEAGUE_LANE,
         writes=("rounds",),
     )
