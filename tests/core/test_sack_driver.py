@@ -16,8 +16,9 @@ their signups — the attendance sheet goes on listing a driver who held a seat 
 revoke and someone banned is already out; sacking either would either do nothing or quietly
 overwrite a ban with a milder state. The refusal names the state.
 
-**Roles are revoked before the database changes.** The roles are the only part a driver can see,
-and the seat assignments are what the revocation is computed from.
+**The sack is saved before any role is taken** (#283). The roles to take are read inside the save,
+from the seat assignments it removes; then a step of its own takes them, and a role Discord refuses
+is reported while the sack stands.
 
 **A test driver has no roles to revoke**, and **a driver who has left the server is still
 sacked**. **The audit records the state and the divisions as they were.**
@@ -34,6 +35,7 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.placement_service import PlacementService
+from tests.core.test_driver_move import _end_the_races, _unconfirm_lewis
 from tests.support.teams import seed_team_instances
 
 SERVER_ID = 10708
@@ -400,25 +402,6 @@ async def test_the_placement_roles_are_revoked(tmp_path):
     service.revoke_all_placement_roles.assert_awaited_once()
 
 
-async def test_the_roles_go_before_the_assignments_do(tmp_path):
-    """The assignments are what the revocation is computed from; revoking afterwards would
-    revoke nothing, and the driver would keep every role they had."""
-    db_path = await _make_db(tmp_path, name="sack_role_order")
-    service = _service(db_path)
-    seen: dict[str, int] = {}
-
-    async def _revoke(*_args, **_kwargs):
-        seen["assignments"] = await _count(
-            db_path, "SELECT COUNT(*) FROM driver_season_assignments"
-        )
-
-    service.revoke_all_placement_roles = AsyncMock(side_effect=_revoke)
-
-    await _sack(service, _guild())
-
-    assert seen["assignments"] == 1  # still there when the roles were revoked
-
-
 async def test_the_driver_role_is_revoked(tmp_path):
     """Granted at approval and not covered by the placement roles, so it would otherwise
     mark a sacked driver as signed up indefinitely."""
@@ -572,7 +555,7 @@ async def test_the_sack_names_the_divisions_whose_lineup_is_owed(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# A refused role change: /driver sack keeps today's behaviour; the sanction's own save (#439)
+# A refused role change in attendance's sync's committing form; the sanction's own save (#439)
 # ---------------------------------------------------------------------------
 
 
@@ -600,9 +583,10 @@ def _refusing_guild():
 
 
 async def test_a_role_discord_refuses_is_logged_and_the_sack_still_saved(tmp_path, caplog):
-    """`/driver sack` keeps today's role behaviour until core's pass (#439 slice 8, Part C):
-    Discord refuses to take the driver's roles, the refusal is logged on the host, and the sack
-    is saved all the same: the driver is back at Not Signed Up with no placement."""
+    """`sack_driver`, the committing form `/attendance sync` sacks through until attendance's
+    own pass (#285), `/driver sack` being a change on the queue (#283): Discord refuses to take
+    the driver's roles, the refusal is logged on the host, and the sack is saved all the same:
+    the driver is back at Not Signed Up with no placement."""
     db_path = await _make_db(tmp_path, name="sack_refused_roles")
     service = PlacementService(db_path)
     service._refresh_lineup_post = AsyncMock(return_value=None)
@@ -646,3 +630,294 @@ async def test_sack_on_reads_the_roles_before_it_frees_the_seats(tmp_path):
     assert saved.is_test_driver is False
     assert {999, DRIVER_ROLE} <= set(saved.revoke_role_ids)
     assert await _count(db_path, "SELECT COUNT(*) FROM driver_season_assignments") == 1
+
+
+# ---------------------------------------------------------------------------
+# /driver sack, on the change queue (#283)
+# ---------------------------------------------------------------------------
+#
+# The command asks the change queue for a change of its own on the league's lane, the driver
+# named at the ask by their id. The queue's acknowledgement is its reply. One save, stamped with
+# the queue's clock, sacks the driver (`sack_on`) and writes the `DRIVER_SACK` audit entry and the
+# log channel's line; then a step takes the member's roles, which ends on a fault rather than
+# stopping the lane (architecture.md, "A job that fails stops its lane"), a role Discord refuses
+# being reported in the reply and the line; then the lineup of each division left is posted.
+# These run on `ongoing_league`'s season (see `test_driver_move`'s section of the same name),
+# the league's driver role (820) configured and held by Lewis and Max beside Pro's and Ferrari's.
+
+#: Why each test below fails until `/driver sack` is a change on the queue.
+_SACK_NOT_QUEUED = "#283: /driver sack is not yet a change on the queue"
+
+
+async def _ongoing_sack(tmp_path):
+    """`ongoing_league`'s season, the driver role configured, and Lewis and Max holding it with
+    Pro's role and Ferrari's."""
+    from tests.core.test_driver_move import _ongoing
+    from tests.support.season_league import DRIVER_ROLE as LEAGUE_DRIVER_ROLE, LEWIS, MAX
+
+    league = await _ongoing(tmp_path)
+    await league.write("UPDATE server_configs SET driver_role_id = ?", LEAGUE_DRIVER_ROLE)
+    for user_id in (LEWIS, MAX):
+        league.roles_held[user_id].add(LEAGUE_DRIVER_ROLE)
+    return league
+
+
+async def _ask_sack(league, user_id):
+    """`/driver sack` of the driver *user_id*, as the league admin Admin (77) runs it: the
+    interaction. The queue is not run."""
+    from leaguebot.core.cogs.driver_cog import DriverCog
+    from tests.support.change_queue import tier_member
+    from tests.support.season_league import ADMIN_ID
+    from tests.support.settings_league import interaction
+    from tests.support.undecorate import undecorate
+
+    asked = interaction(
+        league.bot, "driver sack",
+        user=tier_member("admin", member_id=ADMIN_ID, display_name="Admin"),
+    )
+    asked.guild = league.guild
+    await undecorate(DriverCog.sack)(DriverCog(league.bot), asked, league._member(user_id))
+    return asked
+
+
+def _sacking(name: str) -> str:
+    """How the queue words `/driver sack` of *name*."""
+    return f"Sacking **{name}**"
+
+
+def _sacked(name: str) -> str:
+    """`/driver sack`'s reply once saved, word for word, as today."""
+    return f"✅ **{name}** has been sacked. All roles and season assignments removed."
+
+
+def _sack_line(name: str, user_id: int) -> str:
+    """`/driver sack`'s line in the log channel, word for word: today's, the member asking named
+    as every change on the queue names them."""
+    from tests.core.test_driver_move import _ADMIN
+
+    return f"{_ADMIN} | /driver sack | Success\n  user: {name} (<@{user_id}>)"
+
+
+def _sack_refusal(reply: str) -> str:
+    from leaguebot.core.utils.log_lines import reply_reason
+    from tests.core.test_driver_move import _ADMIN
+
+    return f"⛔ `/driver sack` refused for {_ADMIN} — {reply_reason(reply)}"
+
+
+def _sack_lines(lines):
+    return [line for line in lines if "/driver sack" in line]
+
+
+async def _state(league, user_id):
+    from tests.support.season_league import profile_id
+
+    [row] = await league.rows(
+        "SELECT current_state FROM driver_profiles WHERE id = ?", profile_id(user_id)
+    )
+    return row["current_state"]
+
+
+@pytest.mark.xfail(strict=True, reason=_SACK_NOT_QUEUED)
+async def test_a_driver_sack_and_its_audit_entry_and_line_are_one_save_then_roles_and_lineups(
+    tmp_path,
+):
+    """The core specification's sacking and its record of what changed. The season is ongoing;
+    Lewis sits at Ferrari in Pro, confirmed, holding Pro's role, Ferrari's and the driver role.
+    The league admin Admin (77) runs `/driver sack` of Lewis. They are answered at once with the
+    queue's acknowledgement, "Sacking **Lewis**", naming its first job, and nothing is saved, no
+    role touched and no lineup posted until the queue runs the change, of kind `core.driver_sack`.
+    Once it has, Lewis holds no seat and is at Not Signed Up, every other driver where they sat;
+    one audit entry, `DRIVER_SACK`, by Admin, stamped with the queue's clock, records him Assigned
+    in Pro before and Not Signed Up after; the log channel holds today's success line once; Lewis
+    has Pro's role, Ferrari's and the driver role taken; Pro's lineup is posted once in its lineup
+    channel and Am's not at all; and the acknowledgement is updated to today's reply, word for
+    word."""
+    from tests.core.test_driver_move import _STANDING, _seated
+    from tests.support.change_queue import change_rows, run_queue, step_rows
+    from tests.support.season_league import (
+        AM, DIVISIONS, DRIVER_ROLE as LEAGUE_DRIVER_ROLE, FERRARI_ROLE, LEWIS, PRO, PRO_ROLE,
+    )
+    from tests.support.settings_league import audit_rows, last_said, log_lines, said
+    from tests.support.setup_rounds import acknowledged
+
+    league = await _ongoing_sack(tmp_path)
+    asked = await _ask_sack(league, LEWIS)
+
+    first_job = (await step_rows(league.db_path))[0]["id"]
+    assert said(asked)[0] == f"{acknowledged(_sacking('Lewis'))} It begins with job #{first_job}."
+    assert [row["kind"] for row in await change_rows(league.db_path)] == ["core.driver_sack"]
+    assert await _seated(league) == _STANDING
+    assert league.revoked == {} and league.granted == {}
+    assert league.texts(DIVISIONS[PRO][3].lineup) == []
+    await run_queue(league.bot)
+
+    assert await _seated(league) == {k: v for k, v in _STANDING.items() if k != LEWIS}
+    assert await _state(league, LEWIS) == DriverState.NOT_SIGNED_UP.value
+    [entry] = await audit_rows(league.db_path)
+    assert (entry["change_type"], entry["actor_id"]) == ("DRIVER_SACK", 77)
+    assert entry["old_value"] == {"state": "ASSIGNED", "divisions": [PRO]}
+    assert entry["new_value"]["new_state"] == DriverState.NOT_SIGNED_UP.value
+    assert entry["timestamp"] == league.clock.now.isoformat()
+    assert _sack_lines(await log_lines(league)) == [_sack_line("Lewis", LEWIS)]
+    assert sorted(league.revoked[LEWIS]) == [PRO_ROLE, FERRARI_ROLE, LEAGUE_DRIVER_ROLE]
+    assert LEWIS not in league.granted
+    assert len(league.texts(DIVISIONS[PRO][3].lineup)) == 1
+    assert league.texts(DIVISIONS[AM][3].lineup) == []
+    assert last_said(asked) == _sacked("Lewis")
+
+
+@pytest.mark.xfail(strict=True, reason=_SACK_NOT_QUEUED)
+async def test_the_roles_go_after_the_sack_is_saved_and_a_refused_one_is_reported(tmp_path):
+    """The sack is saved before any role is taken, and a role Discord refuses ends its own step
+    rather than stopping the lane (architecture.md, "A job that fails stops its lane"). The season
+    is ongoing; Lewis and Max sit at Ferrari in Pro. The league admin runs `/driver sack` of Lewis,
+    then of Max, before the queue runs; Discord refuses to take any role from Lewis (403 Missing
+    Permissions). The queue runs both. Lewis's sack stands, saved before his roles were asked of
+    Discord: he holds no seat and is at Not Signed Up, and he still holds every role. His reply
+    is today's, then "⚠️ Done, but on Discord:" and a bullet naming the roles refused, then the
+    kind of fault in plain words: "the roles <@&801>, <@&811> and <@&820> could not be taken from
+    <@101>: Discord refused or failed a request from the bot"; his success line carries a "not
+    done:" line in the same words. The lane is not stopped, and Max's sack, asked after, is made
+    in full: his three roles taken, his reply today's alone."""
+    import discord
+
+    from tests.core.test_driver_move import _seated
+    from tests.support.change_queue import http_error, run_queue, stopped_job
+    from tests.support.season_league import (
+        DRIVER_ROLE as LEAGUE_DRIVER_ROLE, FERRARI_ROLE, LEWIS, MAX, PRO_ROLE,
+    )
+    from tests.support.settings_league import last_said, log_lines
+
+    league = await _ongoing_sack(tmp_path)
+    league.revoke_fails[LEWIS] = http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    lewis = await _ask_sack(league, LEWIS)
+    max_ = await _ask_sack(league, MAX)
+    await run_queue(league.bot)
+
+    problem = (
+        f"the roles <@&{PRO_ROLE}>, <@&{FERRARI_ROLE}> and <@&{LEAGUE_DRIVER_ROLE}> could not be "
+        f"taken from <@{LEWIS}>: Discord refused or failed a request from the bot"
+    )
+    seated = await _seated(league)
+    assert LEWIS not in seated and MAX not in seated
+    assert await _state(league, LEWIS) == DriverState.NOT_SIGNED_UP.value
+    assert league.roles_held[LEWIS] == {PRO_ROLE, FERRARI_ROLE, LEAGUE_DRIVER_ROLE}
+    assert last_said(lewis) == f"{_sacked('Lewis')}\n⚠️ Done, but on Discord:\n• {problem}"
+    assert _sack_lines(await log_lines(league)) == [
+        f"{_sack_line('Lewis', LEWIS)}\n  not done: {problem}", _sack_line("Max", MAX),
+    ]
+    assert await stopped_job(league.db_path) is None
+    assert sorted(league.revoked[MAX]) == [PRO_ROLE, FERRARI_ROLE, LEAGUE_DRIVER_ROLE]
+    assert last_said(max_) == _sacked("Max")
+
+
+@pytest.mark.xfail(strict=True, reason=_SACK_NOT_QUEUED)
+async def test_a_failed_driver_sack_sacks_nothing(tmp_path):
+    """The season is ongoing; Lewis sits at Ferrari in Pro. The league admin runs `/driver sack`
+    of Lewis, and as the queue runs it the database fails writing the audit entry. Nothing of the
+    sack is saved, the sack, its audit entry and its line being one save: every driver sits where
+    they sat, Lewis still Assigned, no audit entry is written, the log channel holds no success
+    line, no role is touched on Discord and no lineup posted. The league's lane stops at the job.
+    Once a league admin discards the stopped job, the reply says "Nobody was sacked: **Lewis**
+    keeps their seats. Run `/driver sack` again."; and the lane is clear."""
+    from tests.core.test_driver_move import _STANDING, _seated
+    from tests.support.change_queue import discard_job, run_queue, stopped_job
+    from tests.support.season_league import DIVISIONS, LEWIS, PRO
+    from tests.support.settings_league import audit_rows, fault_in, last_said, log_lines
+
+    league = await _ongoing_sack(tmp_path)
+    asked = await _ask_sack(league, LEWIS)
+    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+        await run_queue(league.bot)
+
+    assert await _seated(league) == _STANDING
+    assert await _state(league, LEWIS) == DriverState.ASSIGNED.value
+    assert await audit_rows(league.db_path) == []
+    assert not any("| Success" in line for line in await log_lines(league))
+    assert league.revoked == {} and league.granted == {}
+    assert league.texts(DIVISIONS[PRO][3].lineup) == []
+    assert await stopped_job(league.db_path) is not None
+
+    await discard_job(league.bot)
+
+    assert last_said(asked) == (
+        "Nobody was sacked: **Lewis** keeps their seats. Run `/driver sack` again."
+    )
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.parametrize(
+    "meanwhile, reply, lewis_after",
+    [
+        pytest.param(
+            _end_the_races,
+            "⛔ `/driver sack` is available only while the season is ongoing.",
+            ("Pro", "Ferrari", True), id="the-races-ended",
+            marks=pytest.mark.xfail(strict=True, reason=_SACK_NOT_QUEUED),
+        ),
+        pytest.param(
+            _unconfirm_lewis,
+            "⛔ Only a driver whose placement is confirmed can be sacked. Remove an unconfirmed "
+            "placement with `/driver unassign`, and turn down an Unassigned driver with "
+            "`/driver reject`.",
+            ("Pro", "Ferrari", False), id="the-placement-unconfirmed",
+            marks=pytest.mark.xfail(strict=True, reason=_SACK_NOT_QUEUED),
+        ),
+    ],
+)
+async def test_a_driver_sack_is_judged_again_as_it_starts(tmp_path, meanwhile, reply, lewis_after):
+    """The season is ongoing; Lewis sits at Ferrari in Pro. The league admin runs `/driver sack`
+    of Lewis and is acknowledged; before the queue runs it, the season's races end (Pending
+    completion), or Lewis's placement in Pro is made unconfirmed. The queue runs. The sack is
+    refused as it starts, in the words it would meet at the ask, its acknowledgement updated to
+    them. Lewis's Pro placement stands as the meanwhile left it, he is still Assigned, no audit
+    entry is written, the log channel holds the refusal alone, no role is touched, no lineup
+    posted, and the queue is not stopped."""
+    from tests.core.test_driver_move import _seated
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.season_league import DIVISIONS, LEWIS, PRO
+    from tests.support.settings_league import audit_rows, last_said, log_lines
+
+    league = await _ongoing_sack(tmp_path)
+    refused = await _ask_sack(league, LEWIS)
+    await meanwhile(league)
+    await run_queue(league.bot)
+
+    assert last_said(refused) == reply
+    assert (await _seated(league))[LEWIS] == lewis_after
+    assert await _state(league, LEWIS) == DriverState.ASSIGNED.value
+    assert await audit_rows(league.db_path) == []
+    assert await log_lines(league) == [_sack_refusal(reply)]
+    assert league.revoked == {} and league.granted == {}
+    assert league.texts(DIVISIONS[PRO][3].lineup) == []
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason=_SACK_NOT_QUEUED)
+async def test_a_driver_sack_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
+    """The core specification's "How a change is carried out": a request repeating a change that
+    has not started, with nothing else asked for since on its lane, is refused, saying so. The
+    season is ongoing; Lewis sits at Ferrari in Pro. The league admin runs `/driver sack` of Lewis
+    and is acknowledged; before the queue runs it, they run it again. The second is refused at
+    once, in the queue's words, and the log channel takes that refusal as a line; only the one
+    change is queued. The queue runs it: Lewis is at Not Signed Up, with one audit entry, and the
+    log channel holds the refusal and then the success line."""
+    from tests.support.change_queue import change_rows, run_queue
+    from tests.support.season_league import LEWIS
+    from tests.support.settings_league import audit_rows, log_lines, said
+    from tests.support.setup_rounds import acknowledged, repeated
+
+    league = await _ongoing_sack(tmp_path)
+    first, repeat = await _ask_sack(league, LEWIS), await _ask_sack(league, LEWIS)
+
+    assert said(first)[0].startswith(acknowledged(_sacking("Lewis")))
+    assert said(repeat) == [repeated(_sacking("Lewis"))]
+    assert len(await change_rows(league.db_path)) == 1
+    await run_queue(league.bot)
+
+    assert await _state(league, LEWIS) == DriverState.NOT_SIGNED_UP.value
+    assert len(await audit_rows(league.db_path)) == 1
+    assert _sack_lines(await log_lines(league)) == [
+        _sack_refusal(repeated(_sacking("Lewis"))), _sack_line("Lewis", LEWIS),
+    ]
