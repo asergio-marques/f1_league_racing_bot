@@ -468,41 +468,42 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   which would hold every change behind one lost permission until Retry or Discard was pressed.
 
   **A fourth exception: the settings a league repairs itself with overtake a stopped head on the
-  league lane.** They are of two kinds. The first is the four that let a league back into the
-  bot: the log channel, the interaction channel, the interaction role and the league admin role,
-  which the core specification's "How a change is carried out" and "Setting the bot up" name as a
-  league's way back in when one of them is wrong or gone. The second is every setting that points
-  the bot at a channel, the hub, a division's lineup, calendar, verdicts, results and attendance
-  channels and the weather forecast channel among them: a stop notice for a channel gone tells
-  the league to set a channel and press Retry, and a stop that cannot be discarded would hold
-  the lane for good if that setting waited behind it. A stop on an unrelated job must not be able
-  to hold either kind up. Each change type gives `overtakes_a_stop=True` (`Setting.repairs_the_bot`,
-  set on each such setting and read once by `setting_change`, never a list of kinds kept by the
-  queue). Where a lane's head is stopped and not yet due for a try, and a queued change behind it
-  is of such a kind, `_heads` and `_choose` take that change instead: the lane still works one
-  change at a time, and the choice is still deterministic, but a repair jumps the queue behind a
-  stop rather than wait with everything else. The stopped head itself stays stopped, and every
-  ordinary change still waits its turn behind it. Every other setting, the module switches and the
-  base and driver roles among them, keeps the plain rule, one change at a time in the order asked.
+  league lane.** They are of two kinds. The first is the four that let a league back into the bot:
+  the log channel, the interaction channel, the interaction role and the league admin role, which
+  the core specification's "How a change is carried out" and "Setting the bot up" name as a
+  league's way back in when one of them is wrong or gone. The second is every setting on the queue
+  that points the bot at a channel, the hub, a division's lineup, calendar, results, standings,
+  verdicts, RSVP and attendance channels and the weather forecast channel among them: a stop notice
+  for a channel gone tells the league to set a channel and press Retry, and a stop that cannot be
+  discarded would hold the lane for good if that setting waited behind it. The signup channel is
+  set off the queue, and so never waits behind a stop. A stop on an unrelated job must not be able
+  to hold either kind up. Each change type gives `overtakes_a_stop=True`
+  (`Setting.repairs_the_bot`, set on each such setting and read once by `setting_change`, never a
+  list of kinds kept by the queue). Where a lane's head is stopped and not yet due for a try, and a
+  queued change behind it is of such a kind, `_heads` and `_choose` take that change instead: the
+  lane still works one change at a time, and the choice is still deterministic, but a repair jumps
+  the queue behind a stop rather than wait with everything else. The stopped head itself stays
+  stopped, and every ordinary change still waits its turn behind it. Every other setting, the
+  module switches and the base and driver roles among them, keeps the plain rule, one change at a
+  time in the order asked.
 
   An overtaking change and its lane's stopped head are both RUNNING at once, which the schema's
   one-RUNNING-per-lane rule (`queued_changes_one_running`) would otherwise refuse: `queued_changes`
   marks every change of such a kind `overtook_a_stop` as it starts, and the index excludes it, so
   the rule still holds between every other pair of changes on a lane. *Rejected:* a lane of the
-  repair settings' own, beside the
-  league's — it would let two lanes write the league's configuration at once, each save
-  re-judging the other's collisions, for no gain once overtaking a stop does the same job on the
-  one lane. A channel setting's save re-checks nothing even though an overtaking change runs ahead
-  of its stopped head's remaining jobs, because no change that can stop a lane gives a channel a
-  job: a change that claims one of the channels a channel setting's check reads
-  (`channel_registry_service.find_channel_use`'s sources) is a `Setting`, and a `Setting` never
-  stops a lane, ending on a fault instead (`setting_change.py`'s own docstring says so); every
-  command that sets such a channel keeps to this as it moves onto the queue. So no stopped head ever
-  has a remaining job that claims a channel, an overtaking change runs to its own end before the
-  head is tried again, and a channel setting's check as the change starts is still the save's last
-  judgement of the state. That invariant is the one a later reader could tune away: a change that
-  can stop its lane and claims a channel would need the save to re-check, or would need to be
-  barred from being overtaken.
+  repair settings' own, beside the league's — it would let two lanes write the league's
+  configuration at once, each save re-judging the other's collisions, for no gain once overtaking a
+  stop does the same job on the one lane. A channel setting's save re-checks nothing even though an
+  overtaking change runs ahead of its stopped head's remaining jobs, because no change that can
+  stop a lane gives a channel a job: a change that claims one of the channels a channel setting's
+  check reads (`channel_registry_service.find_channel_use`'s sources) is a `Setting`, and a
+  `Setting` never stops a lane, ending on a fault instead (`setting_change.py`'s own docstring says
+  so); every command that sets such a channel keeps to this as it moves onto the queue. So no
+  stopped head ever has a remaining job that claims a channel, an overtaking change runs to its own
+  end before the head is tried again, and a channel setting's check as the change starts is still
+  the save's last judgement of the state. That invariant is the one a later reader could tune away:
+  a change that can stop its lane and claims a channel would need the save to re-check, or would
+  need to be barred from being overtaken.
 
   Nothing else overtakes the stopped job, so whatever runs outside the queue leaves alone what a
   change is in hand on, stopped included, as the queue tells it (`unfinished` or `in_hand`; core
