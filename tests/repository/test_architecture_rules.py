@@ -2045,7 +2045,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/season_service.py", "SeasonService.duplicate_division"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.rename_division"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.set_stage"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.sync_pending_config"): (1, PASS["core"]),
     ("core/services/team_service.py", "TeamService.add_default_team"): (1, PASS["core"]),
     ("core/services/team_service.py", "TeamService.get_default_teams"): (1, PASS["core"]),
     ("core/services/team_service.py", "TeamService.get_teams_with_roles"): (1, PASS["core"]),
