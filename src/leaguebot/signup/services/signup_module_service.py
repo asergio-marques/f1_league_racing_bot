@@ -165,22 +165,7 @@ class SignupModuleService:
     async def get_settings(self) -> SignupModuleSettings:
         """Return settings row; if missing, return defaults."""
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT nationality_required, time_type, time_image_required "
-                "FROM signup_module_settings",
-            )
-            row = await cursor.fetchone()
-        if row is None:
-            return SignupModuleSettings(
-                nationality_required=True,
-                time_type="TIME_TRIAL",
-                time_image_required=True,
-            )
-        return SignupModuleSettings(
-            nationality_required=bool(row["nationality_required"]),
-            time_type=row["time_type"],
-            time_image_required=bool(row["time_image_required"]),
-        )
+            return await settings_on(db)
 
     async def save_settings(self, settings: SignupModuleSettings) -> None:
         async with get_connection(self._db_path) as db:
@@ -214,24 +199,7 @@ class SignupModuleService:
         is stored against; see ``AvailabilitySlot``.
         """
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT id, day_of_week, time_hhmm "
-                "FROM signup_availability_slots "
-                " "
-                "ORDER BY day_of_week ASC, time_hhmm ASC",
-            )
-            rows = await cursor.fetchall()
-        return [
-            AvailabilitySlot(
-                id=row["id"],
-                slot_id=AvailabilitySlot.make_slot_id(row["day_of_week"], row["time_hhmm"]),
-                slot_sequence_id=i,
-                day_of_week=row["day_of_week"],
-                time_hhmm=row["time_hhmm"],
-                display_label=AvailabilitySlot.make_label(row["day_of_week"], row["time_hhmm"]),
-            )
-            for i, row in enumerate(rows, start=1)
-        ]
+            return await slots_on(db)
 
     async def add_slot(self, day_of_week: int, time_hhmm: str) -> AvailabilitySlot:
         """Insert a slot; raises ValueError on duplicate.
@@ -877,6 +845,43 @@ class SignupModuleService:
         }
 
 
+async def settings_on(db: aiosqlite.Connection) -> SignupModuleSettings:
+    """The module's settings, read on *db*; the defaults where none are saved."""
+    cursor = await db.execute(
+        "SELECT nationality_required, time_type, time_image_required FROM signup_module_settings"
+    )
+    row = await cursor.fetchone()
+    if row is None:
+        return SignupModuleSettings(
+            nationality_required=True, time_type="TIME_TRIAL", time_image_required=True
+        )
+    return SignupModuleSettings(
+        nationality_required=bool(row["nationality_required"]),
+        time_type=row["time_type"],
+        time_image_required=bool(row["time_image_required"]),
+    )
+
+
+async def slots_on(db: aiosqlite.Connection) -> list[AvailabilitySlot]:
+    """The availability slots, read on *db*, ordered Monday to Sunday and by time, numbered 1..N
+    in that order (see `SignupModuleService.get_slots`)."""
+    cursor = await db.execute(
+        "SELECT id, day_of_week, time_hhmm FROM signup_availability_slots "
+        "ORDER BY day_of_week ASC, time_hhmm ASC"
+    )
+    return [
+        AvailabilitySlot(
+            id=row["id"],
+            slot_id=AvailabilitySlot.make_slot_id(row["day_of_week"], row["time_hhmm"]),
+            slot_sequence_id=i,
+            day_of_week=row["day_of_week"],
+            time_hhmm=row["time_hhmm"],
+            display_label=AvailabilitySlot.make_label(row["day_of_week"], row["time_hhmm"]),
+        )
+        for i, row in enumerate(await cursor.fetchall(), start=1)
+    ]
+
+
 async def signup_enabled_on(db: aiosqlite.Connection) -> bool:
     """Whether the signup module is on, read on *db*, as `ModuleService.is_signup_enabled`
     reads it."""
@@ -901,32 +906,10 @@ async def configuration_confirmed_on(
     """
     if not await signup_enabled_on(db):
         return
-    cursor = await db.execute(
-        "SELECT nationality_required, time_type, time_image_required FROM signup_module_settings"
-    )
-    row = await cursor.fetchone()
-    settings = (
-        SignupModuleSettings(
-            nationality_required=bool(row["nationality_required"]),
-            time_type=row["time_type"],
-            time_image_required=bool(row["time_image_required"]),
-        )
-        if row is not None
-        else SignupModuleSettings(
-            nationality_required=True, time_type="TIME_TRIAL", time_image_required=True
-        )
-    )
-    cursor = await db.execute(
-        "SELECT day_of_week, time_hhmm FROM signup_availability_slots "
-        "ORDER BY day_of_week ASC, time_hhmm ASC"
-    )
+    settings = await settings_on(db)
     slots = [
-        {
-            "slot_id": AvailabilitySlot.make_slot_id(slot["day_of_week"], slot["time_hhmm"]),
-            "day_of_week": slot["day_of_week"],
-            "time_hhmm": slot["time_hhmm"],
-        }
-        for slot in await cursor.fetchall()
+        {"slot_id": slot.slot_id, "day_of_week": slot.day_of_week, "time_hhmm": slot.time_hhmm}
+        for slot in await slots_on(db)
     ]
     await db.execute(
         "INSERT INTO season_signup_config "
