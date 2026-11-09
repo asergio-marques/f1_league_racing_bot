@@ -6,7 +6,7 @@ manager fixes one paste rather than discovering one fault per attempt.
 
 Neither parser touches Discord or the database. That is what lets them be tested with a
 plain string in and a dataclass out, and it is why a track is carried here as the raw text
-that named it: resolving a track needs a connection, so it belongs to the applier.
+that named it: resolving a track needs a connection, so it belongs to the change that adds the rounds (`round_add_changes.py`).
 
 **Datetimes are naive and mean UTC**, matching how a round is stored and how `/round add`
 records one. The XML parser converts from the stated zone and then strips the tzinfo,

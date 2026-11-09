@@ -575,14 +575,13 @@ class SeasonCog(commands.Cog):
         it, and hand back what it says, or *nothing* where no count applies (None), or
         either step could not run. *guard* names the guard in the host's log.
 
-        One catch for the season cog's four capacity checks: the round guard at `/round add`
-        and the round import (`_calendar_round_overflow`), and the review's and the
-        approval's (`_lineup_problems`, `_calendar_capacity_warning`,
-        `_attendance_capacity_warning`). A capacity check that cannot run must not block an
-        approval, a round or a season, only a genuine over-capacity may, so the fault goes to
-        the host's log in full and the check that asked answers as if told nothing was wrong
-        (architecture.md, "A catch-all error handler", a stated exception beside
-        `PlacementService._ask_drawing`'s).
+        One catch for the season cog's three capacity checks, the review's and the approval's
+        (`_lineup_problems`, `_calendar_capacity_warning`, `_attendance_capacity_warning`). A
+        capacity check that cannot run must not block an approval or a season, only a genuine
+        over-capacity may, so the fault goes to the host's log in full and the check that asked
+        answers as if told nothing was wrong (architecture.md, "A catch-all error handler", a
+        stated exception beside `PlacementService._ask_drawing`'s). The round guard of `/round add`
+        and the round imports is the change type's own (`calendar_round_refusal`).
         """
         try:
             counted = await count()
@@ -3543,14 +3542,6 @@ class SeasonCog(commands.Cog):
             season_number=season.season_number,
             game_edition=season.game_edition,
         )
-
-    async def resolve_pending(self, interaction: discord.Interaction) -> PendingConfig | None:
-        """The season being set up, for the command *interaction* is, or None.
-
-        Public because the import modals need it and are module-level classes holding no
-        cog; the season being set up is the league's one, whoever asks.
-        """
-        return await self._get_pending()
 
     async def _snapshot_pending(self, cfg: PendingConfig) -> None:
         """Write the current PendingConfig to DB (status=SETUP) and update cfg.season_id.

@@ -1163,12 +1163,16 @@ to it would switch off the one failure path for every command.
    that the league does not draw its lineup, so the text lineup goes out, because a gate that
    cannot be read must not lose a league its lineup (its docstring says so); the helper through
    which the season cog's own capacity checks count and ask the image module
-   (`SeasonCog._ask_drawing`) — the round guard at `/round add` and the round import
-   (`_calendar_round_overflow`), and the review's and the approval's (`_lineup_problems`,
+   (`SeasonCog._ask_drawing`) — the review's and the approval's (`_lineup_problems`,
    `_calendar_capacity_warning`, `_attendance_capacity_warning`) — is a stated exception beside
    `PlacementService._ask_drawing`'s: its catch-all puts the error in the host's log in full and
-   lets the round or the season through as if no problem were found, because a capacity check
-   that cannot run must not block a round or a season (its docstring says so); the season cog's
+   lets the season through as if no problem were found, because a capacity check that cannot run
+   must not block a season (its docstring says so); the round guard that `/round add` and the
+   round imports share (`calendar_round_refusal`, in `core/services/round_add_changes.py`) is a
+   stated exception beside it: the change types ask it at the ask and again as the change starts,
+   and its catch-all puts the error in the host's log in full and lets the round through as if no
+   problem were found, because a capacity check that cannot run must not block a round (its
+   docstring says so); the season cog's
    reading of the image module's configuration faults (`SeasonCog._image_configuration_faults`)
    is a stated exception too: each of its catch-alls puts the error in the host's log; a fault
    reading the templates is stated as a fault of its own, which refuses the season, because a
