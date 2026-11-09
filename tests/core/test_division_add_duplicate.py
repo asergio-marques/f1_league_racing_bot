@@ -535,15 +535,17 @@ async def test_the_source_division_is_matched_regardless_of_case(tmp_path):
     """The core specification's Divisions: a division's name is what the bot displays. Season #1
     is being set up, in Placements, holding Pro with its two rounds. The manager runs `/division
     duplicate` typing the source as pRo, copying it as Am at tier 2 with no offset, and the queue
-    runs it. Am is copied from Pro, with Pro's two rounds at their own moments; the reply, word for
-    word, and the log line name the source Pro, as it is named, never pRo, as it was typed."""
+    runs it. Am is copied from Pro, with Pro's two rounds at their own moments; the
+    acknowledgement, the reply, word for word, and the log line name the source Pro, as it is
+    named, never pRo, as it was typed."""
     from tests.support.change_queue import run_queue
-    from tests.support.settings_league import last_said, log_lines
+    from tests.support.settings_league import last_said, log_lines, said
 
     league = await _duplicate_league(tmp_path)
     asked = await ask_duplicate(league, "pRo", "Am", 2)
     await run_queue(league.bot)
 
+    assert said(asked)[0].startswith(acknowledged(_duplicating("Pro", "Am", 2)))
     assert await round_moments(league.db_path, "Am") == _shifted(_PRO_ROUNDS)
     assert await log_lines(league) == [_duplicate_line("Pro", "Am", 2, "+0d +0.0h")]
     assert last_said(asked) == _duplicated(
