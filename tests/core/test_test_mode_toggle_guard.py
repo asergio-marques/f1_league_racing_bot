@@ -322,10 +322,11 @@ class TestTheSeasonsStage:
 
 
 async def test_switching_test_mode_on_names_what_the_modules_handed_back(cog, db_path):
-    """Two parts are signed up to test mode turned on in place of results': one hands back that it
-    created "Sprint Ladder", the other that it created nothing. Switching test mode on hands each
-    part the save's own connection, already reading test mode on, and season 3's id; it names
-    "Sprint Ladder" alone, in the reply and in the log line, and nothing else is seeded."""
+    """Three parts are signed up to test mode turned on in place of results', in this order: one
+    hands back that it created "Sprint Ladder", the next that it created nothing, the last that it
+    created "Wet Ladder". Switching test mode on hands each part the save's own connection,
+    already reading test mode on, and season 3's id; it names "Sprint Ladder, Wet Ladder", in the
+    order the parts signed up, in the reply and in the log line, and nothing else is seeded."""
     hook = cog.bot.test_mode_turned_on
     hook._subscribers.clear()
     handed: list[tuple[bool, int]] = []
@@ -342,18 +343,25 @@ async def test_switching_test_mode_on_names_what_the_modules_handed_back(cog, db
         await _record(db, season_id)
         return []
 
+    async def created_another(db: Any, season_id: int) -> list[str]:
+        await _record(db, season_id)
+        return ["Wet Ladder"]
+
     hook.subscribe(created_one)
     hook.subscribe(created_none)
+    hook.subscribe(created_another)
 
     interaction = await _toggle(cog)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute("SELECT id FROM seasons WHERE season_number = 3")
         season_id = (await cursor.fetchone())["id"]
-    assert handed == [(True, season_id), (True, season_id)]
-    assert last_said(interaction).endswith("\n📌 Added default point configs: **Sprint Ladder**")
+    assert handed == [(True, season_id)] * 3
+    assert last_said(interaction).endswith(
+        "\n📌 Added default point configs: **Sprint Ladder, Wet Ladder**"
+    )
     [line] = _success_lines(cog)
-    assert line.endswith("\n  seeded_configs: Sprint Ladder")
+    assert line.endswith("\n  seeded_configs: Sprint Ladder, Wet Ladder")
     assert await _flag(db_path) is True
     assert await _seeded(db_path) == [], "the toggle seeded beside the hook's parts"
 
