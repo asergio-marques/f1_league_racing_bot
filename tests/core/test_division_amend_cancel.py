@@ -322,9 +322,6 @@ async def test_the_delete_is_logged(tmp_path):
 # from then on. These run on the league `setup_league` gives, its season being set up holding Pro
 # (tier 1, role 555) and Am (tier 2, role 556), as the database alone holds them after a restart.
 
-#: Not yet true until the build: both commands ask the change queue.
-_ON_THE_QUEUE = "#283: /division rename and /division amend are not yet changes on the queue"
-
 #: Pro and Am, as `setup_league` takes them: no rounds.
 _HELD = (("Pro", 1, 555, ()), ("Am", 2, 556, ()))
 
@@ -488,7 +485,6 @@ async def test_a_division_rename_its_audit_entry_and_line_are_one_save(tmp_path)
     assert last_said(asked) == _renamed("Pro", "Elite", after)
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_division_amendment_its_audit_entry_and_line_are_one_save(tmp_path):
     """The core specification's record of what changed. Season #1 is being set up, in Placements,
     holding Pro (tier 1, role 555) and Am (tier 2, role 556). The league manager Admin (4242) runs
@@ -572,7 +568,6 @@ async def test_each_field_of_a_division_is_amended_as_asked(tmp_path, asked, aft
 
 
 @pytest.mark.parametrize("command", ["rename", "amend"])
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_failed_division_rename_or_amendment_changes_nothing(tmp_path, command):
     """Season #1 is being set up, in Placements, holding Pro and Am. The manager runs `/division
     rename` of Pro to Elite, or `/division amend` of Pro to tier 3, and as the queue runs it the
@@ -677,21 +672,18 @@ async def _approve_the_season(db) -> None:
             "❌ Division `Pro` not found.",
             [("Am", 2, 556)], [],
             id="amend-the-division-deleted",
-            marks=pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE),
         ),
         pytest.param(
             "amend", {"tier": 4}, None, _replace_pro,
             "❌ Division `Pro` not found.",
             [("Am", 2, 556), ("Pro", 3, 557)], [],
             id="amend-the-division-deleted-and-another-given-its-name",
-            marks=pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE),
         ),
         pytest.param(
             "amend", {"tier": 3}, None, _approve_the_season,
             "❌ `/division amend` is only permitted while the season is in placements.",
             _STANDING, [],
             id="amend-the-season-approved",
-            marks=pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE),
         ),
     ],
 )
@@ -736,7 +728,6 @@ async def test_a_division_rename_or_amendment_is_judged_again_as_it_starts(
 
 
 @pytest.mark.parametrize("command", ["rename", "amend"])
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_division_rename_or_amendment_asked_again_while_it_waits_is_refused_as_a_repeat(
     tmp_path, command
 ):
@@ -999,7 +990,6 @@ async def test_renaming_a_division_to_its_own_name_changes_nothing(tmp_path):
         pytest.param({"new_name": "Pro", "tier": 1, "role": 555}, id="every_value_as_it_stands"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_amending_a_division_to_the_values_that_stand_changes_nothing(tmp_path, asked):
     """Season #1 is being set up, in Placements, holding Pro (tier 1, role 555) and Am. The league
     manager Admin (4242) runs `/division amend` of Pro to values it already holds: its own name,

@@ -182,7 +182,6 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/bot_cog.py", "BotCog.handle_pack"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._team_name_problems"): (3, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._track_autocomplete"): (1, PASS["core"]),
-    ("core/cogs/season_cog.py", "SeasonCog.division_amend"): (3, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.round_amend"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.season_review"): (2, PASS["core"]),
     ("core/cogs/season_cog.py", "_get_setup_season_id"): (2, PASS["core"]),
@@ -1795,8 +1794,6 @@ def _tables_written(sql: str, module: str) -> list[str]:
 COLUMNS_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/config_service.py", "ConfigService.set_core_setting_on"):
         (1, "sets only a column named in `_SETTABLE_COLUMNS`, none of them a module's"),
-    ("core/cogs/season_cog.py", "SeasonCog.division_amend"):
-        (1, "sets only a division's name, tier and role"),
 }
 
 #: A statement that changes a table named at run time: the SQL up to the table, whose name is
@@ -2028,7 +2025,6 @@ def _saves_outside_a_change() -> Counter[tuple[str, str]]:
 
 KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # Core's pass
-    ("core/cogs/season_cog.py", "SeasonCog.division_amend"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService._create_profile"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService.reassign_user_id"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService.set_former_driver"): (1, PASS["core"]),

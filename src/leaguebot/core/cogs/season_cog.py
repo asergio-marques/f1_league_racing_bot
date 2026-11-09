@@ -59,7 +59,7 @@ from leaguebot.core.services.mid_season_confirm_change import (
 from leaguebot.core.services.round_amend_change import ROUND_AMEND, payload_changes
 from leaguebot.core.services.round_moments import read_round_windows
 from leaguebot.core.services.division_add_change import KIND as DIVISION_ADD
-from leaguebot.core.services.division_edit_changes import DIVISION_RENAME
+from leaguebot.core.services.division_edit_changes import DIVISION_AMEND, DIVISION_RENAME
 from leaguebot.core.services.round_add_changes import (
     ADD as ROUND_ADD,
     IMPORT as ROUND_IMPORT,
@@ -105,7 +105,6 @@ import leaguebot.core.services.track_service as track_service
 from leaguebot.core.services.season_service import (
     SeasonCapacityCounts,
     SeasonImmutableError,
-    division_amendment_changes_nothing,
     validate_division_name,
     validate_division_tier,
 )
@@ -2449,141 +2448,19 @@ class SeasonCog(commands.Cog):
         tier: int | None = None,
         role: discord.Role | None = None,
     ) -> None:
-        import json as _json
-
-        if new_name is None and tier is None and role is None:
-            await refuse(
-                interaction,
-                "\u274c Provide at least one of: `new_name`, `tier`, `role`.",
-                what=describe(interaction),
-            )
-            return
-
-        season_id = await self._season_in_placements()
-        if season_id is None:
-            await refuse(
-                interaction,
-                "\u274c `/division amend` is only permitted while the season is in placements.",
-                what=describe(interaction),
-            )
-            return
-
-        divisions = await self.bot.season_service.get_divisions(season_id)
-        div = next((d for d in divisions if d.name.lower() == name.lower()), None)
-        if div is None:
-            await refuse(
-                interaction,
-                f"\u274c Division `{name}` not found.",
-                what=describe(interaction),
-            )
-            return
-
-        if new_name is not None:
-            refusal = validate_division_name(new_name)
-            if refusal is not None:
-                await refuse(
-                    interaction,
-                    f"\u274c {refusal}",
-                    what=describe(interaction),
-                )
-                return
-
-        if new_name is not None and any(
-            d.name.lower() == new_name.lower() for d in divisions if d.id != div.id
-        ):
-            await refuse(
-                interaction,
-                f"\u274c A division named **{new_name}** already exists.",
-                what=describe(interaction),
-            )
-            return
-
-        if tier is not None:
-            tier_refusal = validate_division_tier(
-                tier, [d.tier for d in divisions if d.id != div.id]
-            )
-            if tier_refusal is not None:
-                await refuse(interaction, f"\u26d4 {tier_refusal}", what=describe(interaction))
-                return
-
-        if division_amendment_changes_nothing(
-            div, new_name=new_name, tier=tier, role_id=role.id if role is not None else None
-        ):
-            await interaction.response.send_message(
-                f"\u2139\ufe0f Division **{div.name}** already holds those values. "
-                "Nothing was changed.",
-                ephemeral=True,
-            )
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division amend | "
-                "Nothing changed\n"
-                f"  division: {div.name}\n"
-                "  reason: the values given are the ones it holds",
-            )
-            return
-
-        old_value = _json.dumps({
-            "name": div.name,
-            "tier": div.tier,
-            "mention_role_id": div.mention_role_id,
-        })
-
-        set_clauses: list[str] = []
-        params: list = []
-        if new_name is not None:
-            set_clauses.append("name = ?")
-            params.append(new_name)
-        if tier is not None:
-            set_clauses.append("tier = ?")
-            params.append(tier)
-        if role is not None:
-            set_clauses.append("mention_role_id = ?")
-            params.append(role.id)
-        params.append(div.id)
-
-        new_value = _json.dumps({
-            "name": new_name if new_name is not None else div.name,
-            "tier": tier if tier is not None else div.tier,
-            "mention_role_id": role.id if role is not None else div.mention_role_id,
-        })
-        now = datetime.now(timezone.utc).isoformat()
-
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                f"UPDATE divisions SET {', '.join(set_clauses)} WHERE id = ?",
-                params,
-            )
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, ?, 'DIVISION_AMENDED', ?, ?, ?)",
-                (
-                    interaction.user.id,
-                    str(interaction.user),
-                    div.id,
-                    old_value,
-                    new_value,
-                    now,
-                ),
-            )
-            await db.commit()
-
-        updated_divisions = await self.bot.season_service.get_divisions(season_id)
-        await interaction.response.send_message(
-            f"\u2705 Division **{div.name}** amended.\n\n"
-            + format_division_list(updated_divisions),
-            ephemeral=True,
+        """Amend a division: ask the change queue for it, which refuses what the command has
+        always refused at the ask and again as the change starts, and changes what was given of
+        the division with its audit entry in one save
+        (`core/services/division_edit_changes.py`)."""
+        await self.bot.change_queue.ask(
+            DIVISION_AMEND,
+            {
+                "name": name, "new_name": new_name, "tier": tier,
+                "role_id": role.id if role is not None else None,
+                "role_name": role.name if role is not None else None,
+            },
+            interaction=interaction, what=describe(interaction),
         )
-
-        log_parts = [f"{interaction.user.display_name} (<@{interaction.user.id}>) | /division amend | Success",
-                     f"  division: {div.name}"]
-        if new_name is not None:
-            log_parts.append(f"  new_name: {new_name}")
-        if tier is not None:
-            log_parts.append(f"  tier: {tier}")
-        if role is not None:
-            log_parts.append(f"  role: {role.name}")
-        await self.bot.output_router.post_log("\n".join(log_parts))
 
     @division.command(
         name="cancel",

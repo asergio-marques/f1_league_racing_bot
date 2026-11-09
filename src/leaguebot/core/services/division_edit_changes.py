@@ -1,10 +1,14 @@
-"""`core.division_rename`: `/division rename`, on the change queue.
+"""`core.division_rename` and `core.division_amend`: `/division rename` and `/division amend`, on
+the change queue.
 
-A change type of its own on the league lane, registered by the builder, for a division of the season
-being set up. One SAVE step changes the division's name and writes its `DIVISION_RENAMED` audit
-entry (the division as it stood and as it stands) and the log channel's line, stamped with the
-queue's clock, all on the save's own connection. A division given the name it already bears is
-answered as such, recording that nothing was changed and writing no audit entry.
+Each a change type of its own on the league lane, registered by the builder, for a division of the
+season being set up. One SAVE step changes the division's name, or for amend what was given of its
+name, tier and role, and writes its `DIVISION_RENAMED` or `DIVISION_AMENDED` audit entry (the
+division whole as it stood and as it stands, so that it reads as the division's state either side
+rather than as a difference) and the log channel's line, stamped with the queue's clock, all on the
+save's own connection. A division given the values it already holds is answered as such, recording
+that nothing was changed and writing no audit entry; an amendment changes only what it was given,
+so that amending a tier does not rewrite the role.
 
 **A fault in the save stops the lane**, as a failed job does, for the reason `/season setup`'s does
 (`season_setup_change.py`): a league admin exists to discard the job and clear the stop.
@@ -13,12 +17,13 @@ answered as such, recording that nothing was changed and writing no audit entry.
 asked for (`ChangeType.fill`) and judged by its id from then on, so that a division deleted
 meanwhile is refused as it starts and a division given its name since is never renamed in its
 place. Every refusal is the check's, judged at the ask and again as the change starts, in the
-league's log channel either time, in the order a manager has always met them: the season not in
-Placements, the division not found, a name the league's rules refuse, and a name another division
-holds (compared without regard to case, the division's own name excepted, so that correcting `Pro`
-to `PRO` does not refuse itself). A name taken by a change asked just before is thus refused as it
-starts, in the words it would have met at the ask, rather than reaching the schema's rule that holds
-a name once per season (`001_baseline.sql`).
+league's log channel either time, in the order a manager has always met them: for amend, nothing
+given to change; the season not in Placements, the division not found, a name the league's rules
+refuse, a name another division holds (compared without regard to case, the division's own name
+excepted, so that correcting `Pro` to `PRO` does not refuse itself) and, for amend, a tier below 1
+or one another division holds. A name or a tier taken by a change asked just before is thus refused
+as it starts, in the words it would have met at the ask, rather than reaching the schema's rule that
+holds each once per season (`001_baseline.sql`).
 """
 
 from __future__ import annotations
@@ -49,6 +54,7 @@ from leaguebot.core.services.change_queue import (
 from leaguebot.core.services.season_service import (
     division_amendment_changes_nothing,
     validate_division_name,
+    validate_division_tier,
 )
 from leaguebot.core.utils.formatting import format_division_list
 
@@ -56,12 +62,23 @@ if TYPE_CHECKING:
     from leaguebot.core.services.season_service import SeasonService
 
 DIVISION_RENAME = "core.division_rename"
+DIVISION_AMEND = "core.division_amend"
 
 #: The name of the step that changes the division and writes its audit entry and its line.
 SAVE = "save"
 
 #: `/division rename` as the line names it.
 RENAME = "/division rename"
+
+#: `/division amend` as the line names it.
+AMEND = "/division amend"
+
+#: The reply once a league admin has discarded the stopped save of an amendment: nothing was
+#: amended.
+NOTHING_AMENDED = (
+    "Nothing was amended: division **{division}** stands as it was. "
+    "Run `/division amend` again."
+)
 
 #: The reply once a league admin has discarded the stopped save of a rename: nothing was renamed.
 NOTHING_RENAMED = (
@@ -272,4 +289,136 @@ def division_rename_change(*, seasons: "SeasonService") -> ChangeType:
     )
 
 
-__all__ = ["DIVISION_RENAME", "NOTHING_RENAMED", "division_rename_change"]
+def _amend_check(seasons: "SeasonService") -> Callable[[CheckContext], Awaitable[Verdict]]:
+    async def check(ctx: CheckContext) -> Verdict:
+        """The refusals, in the order they come, each read from the database."""
+        payload = ctx.payload
+        new_name, tier = payload["new_name"], payload["tier"]
+        if new_name is None and tier is None and payload["role_id"] is None:
+            return Verdict.refuse("❌ Provide at least one of: `new_name`, `tier`, `role`.")
+        found = await placed_division(
+            seasons, payload,
+            f"❌ `{AMEND}` is only permitted while the season is in placements.",
+        )
+        if isinstance(found, Verdict):
+            return found
+        division, held = found
+        if new_name is not None:
+            refusal = validate_division_name(str(new_name))
+            if refusal is not None:
+                return Verdict.refuse(f"❌ {refusal}")
+            taken = name_taken(str(new_name), division, held)
+            if taken is not None:
+                return taken
+        if tier is not None:
+            refusal = validate_division_tier(
+                int(tier), [d.tier for d in held if d.id != division.id]
+            )
+            if refusal is not None:
+                return Verdict.refuse(f"⛔ {refusal}")
+        return Verdict.go()
+
+    return check
+
+
+def _amend_save(
+    seasons: "SeasonService",
+) -> Callable[[aiosqlite.Connection, StepContext], Awaitable[StepResult]]:
+    async def save(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """Change what was given of the division and write its audit entry and its line; or, where
+        the division already holds every value given, record that nothing was changed."""
+        payload = ctx.payload
+        division = await held_division(seasons, db, payload)
+        new_name, tier, role_id = payload["new_name"], payload["tier"], payload["role_id"]
+        if division_amendment_changes_nothing(
+            division, new_name=new_name, tier=tier, role_id=role_id
+        ):
+            line = (
+                f"{ctx.named} | {AMEND} | Nothing changed\n"
+                f"  division: {division.name}\n"
+                "  reason: the values given are the ones it holds"
+            )
+            return StepResult(
+                result={"outcome": "unchanged", "division": division.name}, lines=(line,)
+            )
+        before = division_values(division)
+        after = {
+            "name": new_name if new_name is not None else division.name,
+            "tier": tier if tier is not None else division.tier,
+            "mention_role_id": role_id if role_id is not None else division.mention_role_id,
+        }
+        await db.execute(
+            "UPDATE divisions SET name = ?, tier = ?, mention_role_id = ? WHERE id = ?",
+            (after["name"], after["tier"], after["mention_role_id"], division.id),
+        )
+        given = []
+        if new_name is not None:
+            given.append(f"  new_name: {new_name}")
+        if tier is not None:
+            given.append(f"  tier: {tier}")
+        if role_id is not None:
+            given.append(f"  role: {payload['role_name']}")
+        line = "\n".join(
+            [f"{ctx.named} | {AMEND} | Success", f"  division: {division.name}", *given]
+        )
+        return StepResult(
+            result={
+                "outcome": "amended",
+                "division": division.name,
+                "divisions": listing(await seasons.get_divisions_on(db, division.season_id)),
+            },
+            audits=(AuditRecord("DIVISION_AMENDED", before, after, division_id=division.id),),
+            lines=(line,),
+        )
+
+    return save
+
+
+def _amend_doing(payload: dict[str, Any]) -> str:
+    return f"Amending division **{payload['division']}**"
+
+
+def _amend_outcome(ctx: OutcomeContext) -> str:
+    saved = saved_result(ctx)
+    match saved.get("outcome"):
+        case "amended":
+            return f"✅ Division **{saved['division']}** amended.\n\n" + listed(saved)
+        case "unchanged":
+            return (
+                f"ℹ️ Division **{saved['division']}** already holds those values. "
+                "Nothing was changed."
+            )
+        case _:
+            return NOTHING_AMENDED.format(division=ctx.payload["division"])
+
+
+def division_amend_change(*, seasons: "SeasonService") -> ChangeType:
+    """The `core.division_amend` change type, for the builder to register: *seasons* is what the
+    fill and the check read the season being set up and its divisions through, and the save reads
+    and changes the division through."""
+
+    async def fill(ctx: CheckContext) -> None:
+        await division_by_name(seasons, ctx.payload, str(ctx.payload["name"]))
+
+    return ChangeType(
+        kind=DIVISION_AMEND,
+        opening=(PlannedStep(SAVE),),
+        steps={SAVE: Step(SAVE, StepKind.SAVE, _amend_save(seasons))},
+        check=_amend_check(seasons),
+        key=lambda payload: f"{DIVISION_AMEND}|{json.dumps(payload, sort_keys=True)}",
+        doing=_amend_doing,
+        outcome=_amend_outcome,
+        fill=fill,
+        lane=lambda _payload: LEAGUE_LANE,
+        writes=("divisions",),
+    )
+
+
+__all__ = [
+    "DIVISION_AMEND",
+    "DIVISION_RENAME",
+    "NOTHING_AMENDED",
+    "NOTHING_RENAMED",
+    "division_amend_change",
+    "division_rename_change",
+]
