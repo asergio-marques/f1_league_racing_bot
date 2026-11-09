@@ -226,6 +226,9 @@ async def test_a_reassign_expires_an_open_placements_review(tmp_path):
 # signup module on, the league's driver role set, and Valtteri (106) approved for the season and
 # never placed: Unassigned, holding the driver role.
 
+#: What Discord's audit log is given for the roles a reassign takes and gives.
+_REASSIGN_REASON = "Driver's current account changed"
+
 #: The account Valtteri is given, which no driver holds, and Kimi's.
 _NEW, _KIMI_NEW = 9001, 9003
 #: The current account of a driver of past seasons, Not Signed Up, whom Valtteri is merged with.
@@ -357,7 +360,8 @@ async def test_a_driver_reassign_its_audit_entry_and_line_are_one_save_then_role
     Once it has, Valtteri's current account is 9001 and he holds 106 and 9001; one audit entry,
     `DRIVER_USER_ID_REASSIGN`, by Admin, on no division, stamped with the queue's clock, records
     106 before and 9001 after; the log channel holds today's success line once; the driver role
-    is taken from 106 and given to 9001; the portrait of 106 is discarded, once; and the
+    is taken from 106 and given to 9001, Discord's audit log told "Driver's current account
+    changed" for both; the portrait of 106 is discarded, once; and the
     acknowledgement is updated to today's reply, "✅ Driver given a new account." with his
     accounts, state and former-driver flag. Takes the place of `test_driver_cog.py`'s mocked
     "accepts a mentioned old user" and "removes the portrait of the account left behind"."""
@@ -391,6 +395,8 @@ async def test_a_driver_reassign_its_audit_entry_and_line_are_one_save_then_role
     ]
     assert league.revoked == {UNASSIGNED: [DRIVER_ROLE]}
     assert league.granted == {_NEW: [DRIVER_ROLE]}
+    assert league.revoke_reasons == {UNASSIGNED: [_REASSIGN_REASON]}
+    assert league.grant_reasons == {_NEW: [_REASSIGN_REASON]}
     assert discarded == [["106"]]
     assert last_said(asked) == _reassigned("given a new account", _NEW, "<@106>")
 
@@ -902,6 +908,46 @@ async def test_a_driver_reassign_asked_again_while_it_waits_is_refused_as_a_repe
         _reassign_refusal(repeated(_reassigning())),
         _reassign_line(UNASSIGNED, _NEW, f"106, {_NEW}"),
     ]
+
+
+async def test_a_reassign_gives_what_roles_remain_and_names_the_one_gone_from_the_server(
+    tmp_path, monkeypatch,
+):
+    """The core specification's change of a driver's account: making an account current gives it
+    the roles the driver holds. The season is in Placements; Valtteri (106) is Unassigned, and the
+    driver role has been deleted from the league's server. The league manager runs `/driver
+    reassign` of Valtteri onto 9001, then of Kimi onto 9003, and the queue runs both. Valtteri's
+    reassign stands: 9001 is his current account, nothing is given to it, and his reply is today's,
+    then "⚠️ Done, but on Discord:" and a bullet, "the role <@&820> could not be given to <@9001>:
+    it is no longer on the server"; his success line carries a "not done:" line in the same words.
+    The lane is not stopped, and Kimi's reassign, asked after, goes through."""
+    from tests.core.test_driver_move import _as_logged
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.season_league import DRIVER_ROLE, SIGNING_UP, UNASSIGNED, profile_id
+    from tests.support.settings_league import last_said, log_lines
+
+    league = await _queue_league(tmp_path, SIGNING_UP)
+    _portraits_discarded(league, monkeypatch)
+    league.roles_gone.add(DRIVER_ROLE)
+    valtteri = await _ask_reassign(league, UNASSIGNED, _NEW)
+    kimi = await _ask_reassign(league, SIGNING_UP, _KIMI_NEW)
+    await run_queue(league.bot)
+
+    problem = (
+        f"the role <@&{DRIVER_ROLE}> could not be given to <@{_NEW}>: it is no longer on the "
+        "server"
+    )
+    assert (await _accounts(league))[profile_id(UNASSIGNED)][0] == str(_NEW)
+    assert _NEW not in league.granted
+    assert last_said(valtteri) == (
+        f"{_reassigned('given a new account', _NEW, '<@106>')}\n⚠️ Done, but on Discord:\n"
+        f"• {problem}"
+    )
+    assert _reassign_lines(await log_lines(league))[0] == (
+        f"{_reassign_line(UNASSIGNED, _NEW, f'106, {_NEW}')}\n  not done: {_as_logged(problem)}"
+    )
+    assert await stopped_job(league.db_path) is None
+    assert last_said(kimi).startswith(_reassigned("given a new account", _KIMI_NEW, "<@105>"))
 
 
 async def test_a_role_discord_refuses_in_a_reassign_is_reported_and_the_queue_goes_on(

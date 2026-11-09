@@ -99,3 +99,68 @@ async def test_the_role_step_takes_then_gives_and_a_refusal_ends_the_job(
         assert ended.result["problem"] == problem
     assert sorted(league.revoked.get(LEWIS, [])) == sorted(taken or [])
     assert sorted(league.granted.get(LEWIS, [])) == sorted(given or [])
+
+
+_GONE, _ALSO_GONE = 999_998, 999_999
+
+
+@pytest.mark.parametrize("gone, problem", [
+    pytest.param(
+        {_GONE}, f"the role <@&{_GONE}> could not be given to <@{LEWIS}>: it is no longer on the "
+        "server", id="one role gone",
+    ),
+    pytest.param(
+        {_GONE, _ALSO_GONE},
+        f"the roles <@&{_GONE}> and <@&{_ALSO_GONE}> could not be given to <@{LEWIS}>: they are "
+        "no longer on the server", id="two roles gone",
+    ),
+])
+async def test_the_role_step_gives_what_remains_and_names_the_roles_gone(tmp_path, gone, problem):
+    """The core specification's change of a driver's account gives the new account the roles the
+    driver holds. The season is ongoing; Lewis holds Ferrari's role. A role step built to give what
+    remains, with a reason of its own, is run to take Ferrari's role and give Am's and roles the
+    league's server has deleted. Ferrari's role is taken and Am's given, each with the step's
+    reason in Discord's audit log, and the step completes with a problem naming the roles gone, in
+    the singular or the plural."""
+    from leaguebot.core.services.role_moves import role_move_step
+    from tests.support.change_queue import in_a_job
+
+    league = await ongoing_league(tmp_path)
+    league.roles_held[LEWIS] = {FERRARI_ROLE}
+    league.roles_gone.update(gone)
+    step = role_move_step(league.bot.placement_service, reason="Because", give_what_remains=True)
+    ctx = SimpleNamespace(
+        bot=league.bot, db_path=league.db_path, kept=None, payload={}, tries=0,
+        step_payload={
+            "user_id": LEWIS, "revoke": [FERRARI_ROLE], "grant": [AM_ROLE, *sorted(gone)],
+        },
+    )
+
+    with in_a_job():
+        done = await step.run(ctx)
+
+    assert done.result == {"problem": problem}
+    assert league.revoked[LEWIS] == [FERRARI_ROLE] and league.granted[LEWIS] == [AM_ROLE]
+    assert league.revoke_reasons[LEWIS] == ["Because"]
+    assert league.grant_reasons[LEWIS] == ["Because"]
+
+
+async def test_the_role_step_gives_nothing_where_a_role_is_gone_unless_built_to_give_what_remains(
+    tmp_path,
+):
+    """A role step built without giving what remains, as a placement's: one of the roles to give
+    has been deleted from the league's server, and the step ends on a fault with nothing given."""
+    from leaguebot.core.services.role_moves import role_move_step
+    from tests.support.change_queue import in_a_job
+
+    league = await ongoing_league(tmp_path)
+    league.roles_gone.add(_GONE)
+    step = role_move_step(league.bot.placement_service)
+    ctx = SimpleNamespace(
+        bot=league.bot, db_path=league.db_path, kept=None, payload={}, tries=0,
+        step_payload={"user_id": LEWIS, "revoke": [], "grant": [AM_ROLE, _GONE]},
+    )
+
+    with in_a_job(), pytest.raises(Exception):
+        await step.run(ctx)
+    assert LEWIS not in league.granted
