@@ -1,7 +1,7 @@
 """What survives a season-setup command.
 
-Every `/round add`, `/division add`, `/round amend` and round import during setup persists the
-season being built through `SeasonService.sync_pending_config`. Until issue #147 that was a
+Every `/round add`, `/round amend` and round import during setup persists the season being built
+through `SeasonService.sync_pending_config`. Until issue #147 that was a
 snapshot which dropped every division, team, seat and round and re-inserted them with new row
 ids, carrying across by hand only the settings it had been told about: each item below was once
 a line in that list, and two of them were data-loss defects before they were.

@@ -860,8 +860,8 @@ async def test_duplicating_before_placements_is_refused_and_recorded(tmp_path, s
 #
 # The core specification's "The record of what changed": a refusal is one line naming the
 # member, what was refused and why. Each reply stays word for word as today, by the channel it
-# goes by today: /division add's after its defer, /division duplicate's before its own, save a
-# copy the service itself refuses, which comes after it.
+# goes by today: /division duplicate's before its defer, save a copy the service itself refuses,
+# which comes after it.
 
 
 def _answers(interaction) -> list[str]:

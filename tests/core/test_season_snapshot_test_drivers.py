@@ -1,7 +1,7 @@
 """A placed grid, mock or real, survives every season-setup command.
 
-Every `/round add`, `/round amend`, round import and `/division add` writes the SETUP season
-through `SeasonService.sync_pending_config`. Until issue #147 that deleted and re-created the
+Every `/round add`, `/round amend` and round import writes the SETUP season through
+`SeasonService.sync_pending_config`. Until issue #147 that deleted and re-created the
 whole season — divisions, teams and seats all taking new row IDs — and reseated the drivers
 from memory afterwards. Before that reseating existed it deleted every mock driver outright,
 and then every real driver's placement, so a grid built during setup vanished the moment the
