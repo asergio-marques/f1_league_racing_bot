@@ -88,10 +88,10 @@ def division_amendment_changes_nothing(
 
     `/division rename` to its own name, and `/division amend` with the values that stand, change
     nothing, and record that nothing was changed rather than writing an audit entry (the core
-    specification's "The record of what changed"). The command asks this before it opens a
-    connection, from the division it has already read. A name in another case is a change: the
-    name is shown as it is written. Where nothing is asked at all this answers False, that being
-    the command's own refusal.
+    specification's "The record of what changed"). The change's save asks this, of the division as
+    it reads it on its own connection. A name in another case is a change: the name is shown as it
+    is written. Where nothing is asked at all this answers False, that being the change's own
+    refusal.
     """
     asked = {"name": new_name, "tier": tier, "mention_role_id": role_id}
     given = {field: value for field, value in asked.items() if value is not None}
