@@ -138,7 +138,7 @@ async def test_the_stage_the_signup_settings_the_audit_entry_and_the_line_are_on
                                       monkeypatch=monkeypatch)
     press = await _pressed(league)
     assert len(await _confirmations(league)) == 1
-    league.clock.advance(days=40)
+    league.clock.advance(minutes=5)
 
     await run_queue(league.bot)
 

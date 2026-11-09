@@ -40,7 +40,7 @@ async def db_path(tmp_path):
     async with get_connection(path) as db:
         await db.execute(
             "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (?, 1, 2, 3)",
+            "interaction_channel_id, log_channel_id, signup_module_enabled) VALUES (?, 1, 2, 3, 1)",
             (SERVER_ID,),
         )
         await db.execute(
