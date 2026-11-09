@@ -1169,16 +1169,16 @@ to it would switch off the one failure path for every command.
    lets the season through as if no problem were found, because a capacity check that cannot run
    must not block a season (its docstring says so); the round guard that `/round add` and the
    round imports share (`calendar_round_refusal`, in `core/services/round_add_changes.py`) is a
-   stated exception beside it: the change types ask it at the ask and again as the change starts,
-   and its catch-all puts the error in the host's log in full and lets the round through as if no
-   problem were found, because a capacity check that cannot run must not block a round (its
-   docstring says so); the season cog's
-   reading of the image module's configuration faults (`SeasonCog._image_configuration_faults`)
-   is a stated exception too: each of its catch-alls puts the error in the host's log; a fault
-   reading the templates is stated as a fault of its own, which refuses the season, because a
-   check that never ran is not a pass, while a fault reading the per-tier colours or the portrait
-   settings stands aside and lets the season through, because a reader that cannot answer must
-   not be the thing that refuses a season (its docstring says so); the season cog's own image review section
+   stated exception beside it: the change types' checks call it when the change is asked for and
+   again as it starts, and its catch-all puts the error in the host's log in full and lets the
+   round through as if no problem were found, because a capacity check that cannot run must not
+   block a round (its docstring says so); the season cog's reading of the image module's
+   configuration faults (`SeasonCog._image_configuration_faults`) is a stated exception too: each
+   of its catch-alls puts the error in the host's log; a fault reading the templates is stated as
+   a fault of its own, which refuses the season, because a check that never ran is not a pass,
+   while a fault reading the per-tier colours or the portrait settings stands aside and lets the
+   season through, because a reader that cannot answer must not be the thing that refuses a season
+   (its docstring says so); the season cog's own image review section
    (`SeasonCog._build_image_review_section`) is a stated exception beside it: its catch-all puts
    the error in the host's log and states the section as unreadable in the review, because a
    review must never fail for this (its docstring says so); and the image module's artwork
