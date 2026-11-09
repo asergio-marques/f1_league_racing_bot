@@ -3,7 +3,8 @@
 Provides subcommands for system-level testing without waiting for the real
 APScheduler triggers:
 
-  /test-mode toggle            — enable or disable test mode (state persists)
+  /test-mode toggle            — enable or disable test mode (state persists), a change on
+                                 the change queue
   /test-mode nationality       — toggle whether mock drivers carry a nationality
   /test-mode advance           — immediately execute the next pending phase
   /test-mode review            — show season/round/phase status summary (ephemeral)
@@ -17,9 +18,9 @@ same: `/attendance test rsvp` sets the RSVP status of fake drivers.
 Every command here is a league admin's — the core specification places the whole of test
 mode at that tier, backup and restore no more than the rest — and is given in the
 interaction channel.
-Every command but toggle additionally requires test mode to be active. Toggle itself
-refuses to *enable* test mode while the server holds real drivers or its signup window
-is open, and to *disable* it while a running season holds fake drivers.
+Every command but toggle additionally requires test mode to be active. Toggle itself is
+refused outside a season's Configuration, and to *enable* test mode while the server holds real
+drivers.
 """
 
 from __future__ import annotations
