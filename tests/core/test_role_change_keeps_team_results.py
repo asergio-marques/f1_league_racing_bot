@@ -23,7 +23,6 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.models.session_result import SessionResult
-from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.results.services.result_submission_service import (
     _build_division_validation_data,
     _row_dict_from_qualifying,
@@ -162,8 +161,13 @@ async def _record(db_path: str, round_id: int, *, ferrari_wins: bool) -> int:
 
 
 async def _replace_ferrari_role(db_path: str) -> None:
-    """What `/team role` records. Moving the drivers' Discord roles touches no result."""
-    await PlacementService(db_path).set_team_role_config("Ferrari", NEW_ROLE)
+    """What `/team modify` records when it gives Ferrari a new role, written straight into the
+    mapping as its save writes it. Moving the drivers' Discord roles touches no result."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE team_role_configs SET role_id = ? WHERE team_name = 'Ferrari'", (NEW_ROLE,)
+        )
+        await db.commit()
 
 
 async def _persist_round(db_path: str, round_id: int) -> None:
