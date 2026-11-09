@@ -4,8 +4,8 @@
 whole point of it — the deliberately unordered `get_setup_or_active_season` cannot be used.
 A server holding two live seasons at once, which the preview once arbitrated, is refused by the
 database, as `test_one_live_season_per_server.py` pins.
-`get_previous_season_number` gives a fabricated league its season number, and a new season
-its own, one above it.
+`previous_season_number_on` gives a fabricated league its season number, and a new season its
+own, one above it, read on the connection the caller holds.
 """
 from __future__ import annotations
 
@@ -88,42 +88,48 @@ class TestPreviewableSeason:
         assert await service.get_previewable_season() is None
 
 
-# ── get_previous_season_number ────────────────────────────────────────────
+# ── previous_season_number_on ─────────────────────────────────────────────
+
+
+async def _previous_number(service, db_path) -> int:
+    """The highest season number the league has committed, read on a connection of its own."""
+    async with get_connection(db_path) as db:
+        return await service.previous_season_number_on(db)
 
 
 class TestPreviousSeasonNumber:
-    async def test_a_server_that_has_never_held_a_season_is_zero(self, service):
-        assert await service.get_previous_season_number() == 0
+    async def test_a_server_that_has_never_held_a_season_is_zero(self, service, db_path):
+        assert await _previous_number(service, db_path) == 0
 
     async def test_the_highest_committed_number_is_returned(self, service, db_path):
         for number in (1, 2, 3, 4):
             await _seed(db_path, "COMPLETED", number)
 
-        assert await service.get_previous_season_number() == 4
+        assert await _previous_number(service, db_path) == 4
 
     async def test_a_cancelled_season_still_counts(self, service, db_path):
         """Its number was issued and must not be handed out twice."""
         await _seed(db_path, "COMPLETED", 1)
         await _seed(db_path, "CANCELLED", 2)
 
-        assert await service.get_previous_season_number() == 2
+        assert await _previous_number(service, db_path) == 2
 
     async def test_an_active_season_counts(self, service, db_path):
         await _seed(db_path, "ACTIVE", 7)
 
-        assert await service.get_previous_season_number() == 7
+        assert await _previous_number(service, db_path) == 7
 
     async def test_a_season_pending_approval_does_not_count(self, service, db_path):
         """It holds a provisional number; nothing is committed until it is approved."""
         await _seed(db_path, "COMPLETED", 4)
         await _seed(db_path, "SETUP", 5)
 
-        assert await service.get_previous_season_number() == 4
+        assert await _previous_number(service, db_path) == 4
 
     async def test_only_a_pending_season_still_reads_zero(self, service, db_path):
         await _seed(db_path, "SETUP", 1)
 
-        assert await service.get_previous_season_number() == 0
+        assert await _previous_number(service, db_path) == 0
 
 
 # ── get_previewable_divisions ─────────────────────────────────────────────
