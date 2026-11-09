@@ -1,12 +1,14 @@
-"""`core.driver_move`, `core.driver_sack`, `core.driver_release` and `core.driver_assign`:
-`/driver move`, `sack`, `release` and `assign`, on the change queue.
+"""`core.driver_move`, `core.driver_sack`, `core.driver_release`, `core.driver_assign` and
+`core.driver_unassign`: `/driver move`, `sack`, `release`, `assign` and `unassign`, on the change
+queue.
 
 Each is a change type of its own on the league lane, registered by the builder. Move, sack and
 release are for a committed driver while the season is ongoing: moved to a team of the same
 division or another, sacked from every seat, or released from one division and keeping the rest.
-Assign is for a driver not yet placed, while drivers are being placed. The driver, the season and
-the divisions are named by their ids at the ask, a team by its shorthand. A change is four kinds
-of job, in this order:
+Assign and unassign are for a driver whose placement is not yet confirmed, while drivers are being
+placed: assigned to a team of a division, or taken out of one. The driver, the season and the
+divisions are named by their ids at the ask, a team by its shorthand. A change is four kinds of
+job, in this order:
 
 1. **One save** changes the seats (`PlacementService.move_seat_on`, `sack_seats_on`,
    `unassign_on`, `assign_on`) and writes the audit entry (`DRIVER_MOVE`, `DRIVER_SACK`,
@@ -21,20 +23,22 @@ of job, in this order:
    as every post does, and says what it left undone where a league admin discards it.
 4. **The line** that records the change, written last so that it carries what was not done.
 
-An assignment has no job after the save: the placement it writes is never confirmed, so it holds
-no role and posts no lineup, which follow when placements are confirmed. It is refused a driver
-holding a confirmed placement, whom `/driver move` and `/driver release` change instead.
+An assignment and an unassignment have no job after the save: the placement they write or remove
+is never confirmed, so it holds no role and posts no lineup, which follow when placements are
+confirmed. Both are refused a driver holding a confirmed placement, whom `/driver move` and
+`/driver release` change instead.
 
 **A fault in the save stops the lane**, as a failed job does, for the reason `/division delete`'s
 does: a league admin exists to discard the job and clear the stop, and nothing of the change is
 kept. The roles and the lineups are planned by the save and so never follow a discarded one.
 
 **The change is judged by its ids** and every refusal is the check's, at the ask and again as the
-change starts, in the league's log channel either time: the season no longer in the stage the command is made in, a division
-not in the season, the driver without a profile, and what the placement service refuses
-(`PlacementService.judge_move_on`, `guard_move`, `judge_sack_on`, `judge_release_on`,
-`guard_assign`, `judge_assign_on`). The roles go to the account the save read from the driver's profile, so a driver given another account
-meanwhile is not left with the old one's.
+change starts, in the league's log channel either time: the season no longer in the stage the
+command is made in, a division not in the season, the driver without a profile, and what the
+placement service refuses (`PlacementService.judge_move_on`, `guard_move`, `judge_sack_on`,
+`judge_release_on`, `guard_assign`, `judge_assign_on`, `judge_unassign_on`). The roles go to the
+account the save read from the driver's profile, so a driver given another account meanwhile is
+not left with the old one's.
 """
 
 from __future__ import annotations
@@ -74,6 +78,7 @@ DRIVER_MOVE = "core.driver_move"
 DRIVER_SACK = "core.driver_sack"
 DRIVER_RELEASE = "core.driver_release"
 DRIVER_ASSIGN = "core.driver_assign"
+DRIVER_UNASSIGN = "core.driver_unassign"
 
 #: The names of the jobs, as the stop notice, the outcome and the tests know them.
 SAVE = "save"
@@ -108,10 +113,19 @@ NOTHING_RELEASED = (
 #: `/driver assign` as the line names it.
 ASSIGN_COMMAND = "/driver assign"
 
+#: `/driver unassign` as the line names it.
+UNASSIGN_COMMAND = "/driver unassign"
+
 #: The reply once a league admin has discarded the stopped save: nobody was placed.
 NOTHING_ASSIGNED = (
     "Nothing was assigned: **{driver_name}** is not placed in **{division}**. "
     "Run `/driver assign` again."
+)
+
+#: The same for an unassignment: nobody was taken out.
+NOTHING_UNASSIGNED = (
+    "Nothing was unassigned: **{driver_name}** keeps their seat in **{division}**. "
+    "Run `/driver unassign` again."
 )
 
 _NOT_ONGOING = "⛔ `{command}` is available only while the season is ongoing."
@@ -637,8 +651,84 @@ def driver_assign_change(*, placement: PlacementService) -> ChangeType:
     )
 
 
+# ── /driver unassign ──────────────────────────────────────────────────────────────────
+
+
+def driver_unassign_change(*, placement: PlacementService) -> ChangeType:
+    """The `core.driver_unassign` change type, for the builder to register: *placement* is what
+    the check judges the unassignment through and the save removes the placement through.
+
+    The payload names the driver (`driver_profile_id`, `discord_user_id`, `driver_name`), the
+    season (`season_id`) and the division (`division_id`, with its name as typed, `division`).
+    A confirmed placement is refused, so the save plans no role and no lineup.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        """The refusals, in the order they come, each read from the database."""
+        payload = ctx.payload
+        season_id = int(payload["season_id"])
+        division_id = int(payload["division_id"])
+        refused = (
+            await placing_refusal(ctx.db_path, season_id, UNASSIGN_COMMAND)
+            or await division_refusal(
+                ctx.db_path, season_id, [(division_id, payload["division"])]
+            )
+            or await profile_refusal(ctx.db_path, payload)
+        )
+        if refused is not None:
+            return refused
+        try:
+            async with get_connection(ctx.db_path) as db:
+                await placement.judge_unassign_on(
+                    db, driver_profile_id=int(payload["driver_profile_id"]),
+                    division_id=division_id, season_id=season_id, uncommitted_only=True,
+                )
+        except ValueError as refusal:
+            return Verdict.refuse(f"⛔ {refusal}")
+        return Verdict.go()
+
+    async def apply(db: aiosqlite.Connection, ctx: StepContext) -> _Saved:
+        payload = ctx.payload
+        removed = await placement.unassign_on(
+            db, driver_profile_id=int(payload["driver_profile_id"]),
+            division_id=int(payload["division_id"]), season_id=int(payload["season_id"]),
+            uncommitted_only=True,
+        )
+        audit = removed["audit"]
+        return _Saved(
+            result={key: removed[key] for key in ("division_name", "team_name")},
+            audit=AuditRecord(
+                "DRIVER_UNASSIGN", audit["old_value"], audit["new_value"], audit["division_id"]
+            ),
+            user_id=removed["user_id"],
+        )
+
+    def doing(payload: dict[str, Any]) -> str:
+        return f"Unassigning **{payload['driver_name']}** from **{payload['division']}**"
+
+    def done(payload: dict[str, Any], saved: dict[str, Any], _roles_refused: bool) -> str:
+        team_part = f"from **{saved['team_name']}** " if saved.get("team_name") else ""
+        return f"✅ Removed **{payload['driver_name']}** {team_part}in **{saved['division_name']}**."
+
+    def details(payload: dict[str, Any], saved: dict[str, Any]) -> str:
+        return (
+            f"\n  user: {payload['driver_name']} (<@{payload['discord_user_id']}>)"
+            f"\n  division: {saved['division_name']}"
+        )
+
+    return _change(
+        _Kind(
+            kind=DRIVER_UNASSIGN, command=UNASSIGN_COMMAND, doing=doing,
+            nothing_done=NOTHING_UNASSIGNED, done=done, details=details, check=check,
+            apply=apply, afterwards=False,
+        ),
+        placement,
+    )
+
+
 __all__ = [
-    "DRIVER_ASSIGN", "DRIVER_MOVE", "DRIVER_RELEASE", "DRIVER_SACK", "NOBODY_SACKED",
-    "NOT_PLACING_REFUSAL", "NOTHING_ASSIGNED", "NOTHING_MOVED", "NOTHING_RELEASED",
-    "driver_assign_change", "driver_move_change", "driver_release_change", "driver_sack_change",
+    "DRIVER_ASSIGN", "DRIVER_MOVE", "DRIVER_RELEASE", "DRIVER_SACK", "DRIVER_UNASSIGN",
+    "NOBODY_SACKED", "NOT_PLACING_REFUSAL", "NOTHING_ASSIGNED", "NOTHING_MOVED",
+    "NOTHING_RELEASED", "NOTHING_UNASSIGNED", "driver_assign_change", "driver_move_change",
+    "driver_release_change", "driver_sack_change", "driver_unassign_change",
 ]

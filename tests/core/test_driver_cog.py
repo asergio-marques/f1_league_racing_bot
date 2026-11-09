@@ -46,8 +46,6 @@ SEASON_ID = 3
 DIVISION_ID = 11
 PROFILE_ID = 55
 
-_UNASSIGN_NOT_QUEUED = "#283: /driver unassign is not yet a change on the queue"
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -420,7 +418,6 @@ async def test_assign_refuses_a_team_the_division_does_not_have(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_UNASSIGN_NOT_QUEUED)
 async def test_a_driver_is_unassigned_from_the_named_division(tmp_path):
     """The season (3) is in placements. A league manager unassigns Driver (account 1, profile 55)
     from Division 1 (11). The command asks the queue for one `core.driver_unassign` of Driver's

@@ -14,7 +14,6 @@ import pytest
 
 from tests.core.test_driver_move import _ADMIN
 
-_REASON = "#283: /driver unassign is not yet a change on the queue"
 
 _NOT_PLACING = (
     "⛔ `/driver unassign` is available only while the season is in placements, or mid-season "
@@ -129,14 +128,8 @@ async def _confirm_charles(league):
 @pytest.mark.parametrize(
     "build",
     [
-        pytest.param(
-            _in_placements, id="in-placements",
-            marks=pytest.mark.xfail(strict=True, reason=_REASON),
-        ),
-        pytest.param(
-            _placing_mid_season, id="mid-season-placements",
-            marks=pytest.mark.xfail(strict=True, reason=_REASON),
-        ),
+        pytest.param(_in_placements, id="in-placements"),
+        pytest.param(_placing_mid_season, id="mid-season-placements"),
     ],
 )
 async def test_a_driver_unassignment_and_its_audit_entry_and_line_are_one_save(tmp_path, build):
@@ -181,7 +174,6 @@ async def test_a_driver_unassignment_and_its_audit_entry_and_line_are_one_save(t
     assert last_said(asked) == "✅ Removed **Charles** from **McLaren F1 Team** in **Am**."
 
 
-@pytest.mark.xfail(strict=True, reason=_REASON)
 async def test_a_failed_driver_unassignment_removes_nothing(tmp_path):
     """The season is in Placements; Charles sits at McLaren in Am. The league admin runs `/driver
     unassign` of Charles from Am, and as the queue runs it the database fails writing the audit
@@ -217,16 +209,16 @@ async def test_a_failed_driver_unassignment_removes_nothing(tmp_path):
     [
         pytest.param(
             _in_placements, _approve_placements, _NOT_PLACING, _SEATED,
-            id="the-placements-approved", marks=pytest.mark.xfail(strict=True, reason=_REASON),
+            id="the-placements-approved",
         ),
         pytest.param(
             _in_placements, _take_charles_out_of_am, _NOT_THERE, ([], "ASSIGNED"),
-            id="no-longer-seated-there", marks=pytest.mark.xfail(strict=True, reason=_REASON),
+            id="no-longer-seated-there",
         ),
         pytest.param(
             _placing_mid_season, _confirm_charles, _CONFIRMED, ([("Am", "McLaren", True)],
                                                                 "ASSIGNED"),
-            id="the-placement-confirmed", marks=pytest.mark.xfail(strict=True, reason=_REASON),
+            id="the-placement-confirmed",
         ),
     ],
 )
@@ -305,7 +297,6 @@ async def test_unassigning_a_driver_who_holds_no_seat_names_no_team(tmp_path):
     ) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_REASON)
 async def test_a_driver_unassignment_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. The

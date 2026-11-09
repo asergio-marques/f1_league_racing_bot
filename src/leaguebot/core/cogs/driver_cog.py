@@ -13,15 +13,14 @@ from leaguebot.core.services.driver_changes import (
     DRIVER_MOVE,
     DRIVER_RELEASE,
     DRIVER_SACK,
+    DRIVER_UNASSIGN,
     NOT_PLACING_REFUSAL,
 )
-from leaguebot.core.services.lineup_posting import ask_lineup_posts
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
 from leaguebot.core.utils.input_validator import parse_user_id
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.league_server import guild_of
 from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.services.season_service import SeasonImmutableError
 
@@ -343,8 +342,6 @@ class DriverCog(commands.Cog):
         if current is None:
             return
         user = current
-        actor_id = interaction.user.id
-        actor_name = str(interaction.user)
 
         season = await self.bot.season_service.get_setup_or_active_season()
         if season is None or season.stage not in _PLACING_STAGES:
@@ -375,7 +372,7 @@ class DriverCog(commands.Cog):
                 what=describe(interaction),
             )
             return
-        division_id, _division_name = resolved
+        division_id, division_name = resolved
 
         profile = await self.bot.driver_service.get_profile(
             str(user.id)
@@ -388,37 +385,19 @@ class DriverCog(commands.Cog):
             )
             return
 
-        try:
-            result = await self.bot.placement_service.unassign_driver(
-                driver_profile_id=profile.id,
-                division_id=division_id,
-                season_id=season.id,
-                acting_user_id=actor_id,
-                acting_user_name=actor_name,
-                guild=guild_of(interaction),
-                discord_user_id=str(user.id),
-                uncommitted_only=season.stage is SeasonStage.ONGOING_PLACEMENTS,
-            )
-        except ValueError as exc:
-            await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
-            return
-
-        # The change is made; the lineups it touched follow on the change queue (#439).
-        await ask_lineup_posts(self.bot.change_queue, self.bot.db_path, result["lineups"])
-
-        team_part = f"from **{result['team_name']}** " if result.get("team_name") else ""
-        await interaction.followup.send(
-            f"✅ Removed **{user.display_name}** {team_part}in **{result['division_name']}**.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /driver unassign | Success\n"
-            f"  user: {user.display_name} (<@{user.id}>)\n"
-            f"  division: {result['division_name']}",
-        )
-        log.info(
-            "unassign: user=%s from division=%s by %s",
-            user.id, division, actor_name,
+        # The removal is a change on the queue, which refuses again as it starts what is
+        # refused here (`core/services/driver_changes.py`).
+        await self.bot.change_queue.ask(
+            DRIVER_UNASSIGN,
+            {
+                "driver_profile_id": profile.id,
+                "discord_user_id": str(user.id),
+                "driver_name": user.display_name,
+                "season_id": season.id,
+                "division_id": division_id,
+                "division": division_name,
+            },
+            interaction=interaction, what=describe(interaction),
         )
 
     # ------------------------------------------------------------------
