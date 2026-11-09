@@ -75,9 +75,6 @@ NAMED = f"Manager (`<@{ACTOR_ID}>`)"
 #: The kind of change `/weather channel` asks of the queue.
 KIND = "weather.setting.forecast_channel"
 
-#: Why a test fails until `/weather channel` is a weather `Setting` asked of the change queue.
-ON_THE_QUEUE = "#283: /weather channel is not yet a weather Setting asked of the change queue"
-
 _OFF = "❌ The Weather module is not enabled."
 _NO_SEASON = (
     "❌ No season is live. A division's channels belong to the season being built or raced — "
@@ -438,7 +435,6 @@ async def test_moving_a_channel_says_it_was_updated(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_the_assignment_is_audited_against_its_division(tmp_path):
     """Season 1 is being set up, and its Division 1 has no forecast channel. The manager (id 77)
     runs `/weather channel` for #forecasts. The change is asked of the queue as weather's
@@ -489,7 +485,6 @@ async def test_the_weather_channel_is_logged_as_weather_channel(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_the_manager_is_acknowledged_before_anything_is_written(tmp_path):
     """Season 1 is being set up, and its Division 1 has no forecast channel. The manager (id 77)
     runs `/weather channel` for #forecasts. They are answered at once with the queue's
@@ -511,7 +506,6 @@ async def test_the_manager_is_acknowledged_before_anything_is_written(tmp_path):
     assert await _audit(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_fault_in_the_save_saves_neither_the_channel_nor_its_audit(tmp_path, monkeypatch):
     """Season 1 is being set up, and its Division 1 has no forecast channel. The manager runs
     `/weather channel` for #forecasts, and the audit entry's write fails on the database as the
@@ -545,7 +539,6 @@ async def test_a_fault_in_the_save_saves_neither_the_channel_nor_its_audit(tmp_p
     assert await stopped_job(db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_two_changes_waiting_for_one_division_each_record_the_channel_they_replace(
     tmp_path,
 ):
@@ -582,7 +575,6 @@ async def test_two_changes_waiting_for_one_division_each_record_the_channel_they
     assert await _forecast_channel(db_path) == OTHER_CHANNEL_ID
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_the_same_change_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """Season 1 is being set up, and its Division 1 has no forecast channel. The manager (id 77)
     asks for #forecasts, and is acknowledged; before the queue runs, with nothing else asked of
@@ -644,7 +636,6 @@ async def _claim_the_channel(db_path: str) -> None:
     await _seed_other_division_results(db_path, CHANNEL_ID)
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 @pytest.mark.parametrize(
     "meanwhile,refused",
     [
@@ -680,7 +671,6 @@ async def test_a_change_is_refused_as_it_starts_where_its_ask_no_longer_holds(
     assert await stopped_job(db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_division_renamed_while_its_change_waits_still_gets_its_channel(tmp_path):
     """Season 1 is being set up, and its Division 1 has no forecast channel. The manager asks for
     #forecasts for Division 1, and is acknowledged; before the change runs, Division 1 is renamed

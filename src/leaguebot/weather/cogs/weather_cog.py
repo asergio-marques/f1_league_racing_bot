@@ -8,20 +8,17 @@ forecasts are posted to.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.services import audit_service
-from leaguebot.core.services.channel_registry_service import channel_refusal
+from leaguebot.core.services.division_settings import NO_SEASON_REFUSAL, division_not_found
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.log_lines import refuse
-from leaguebot.weather.services.forecast_channel import set_division_forecast_channel
-from leaguebot.weather.services.weather_settings import DEADLINE
+from leaguebot.weather.services.weather_settings import DEADLINE, FORECAST_CHANNEL, NOT_ENABLED
 
 log = logging.getLogger(__name__)
 
@@ -53,7 +50,7 @@ class WeatherCog(commands.Cog):
         """
         if await self.bot.module_service.is_weather_enabled():
             return True
-        reply = "❌ The Weather module is not enabled."
+        reply = NOT_ENABLED
         if record:
             await refuse(interaction, reply, what=describe(interaction))
         else:
@@ -164,79 +161,47 @@ class WeatherCog(commands.Cog):
         name: str,
         channel: discord.TextChannel,
     ) -> None:
-        """Set the channel a division's forecasts are posted to (#462).
+        """Ask the change queue to set the channel a division's forecasts are posted to.
 
-        Weather's own command, under weather's own group: it sat under core's `/division`
-        until #462 moved it, and only its name changed. It keeps its own module check, worded as
-        `_module_gate` words it, so the two commands refuse in one voice.
+        Weather's own command, under weather's own group: it keeps its own module check, worded
+        as `_module_gate` words it, so the two commands refuse in one voice.
 
-        **The live season's division** (#220): a division's channels belong to the season being
-        built or raced, and an archived one's no longer matter. Pending completion is live,
-        so a channel lost before the season completes may be repaired.
+        **The live season's division**: a division's channels belong to the season being built or
+        raced, and an archived one's no longer matter. Pending completion is live, so a channel
+        lost before the season completes may be repaired. The command finds the division from
+        the name typed, since the change is for it by its id (`forecast_channel_setting`).
 
-        **A channel does one job** (`channel_refusal`), checked before the write, so a
-        refusal leaves the configuration exactly as it stood — the value the setting already
-        holds included. The change is recorded by core's `audit_service`, as it was when core
-        wrote it: `DIVISION_CHANNEL_SET`, with its `channel_type`.
+        **A channel does one job** (`channel_registry_service`, judged by the setting's `check`), as the
+        queue is asked and again as the change starts, so a refusal leaves the configuration
+        exactly as it stood — the value the setting already holds included. The queue's
+        acknowledgement is the command's response, so nothing is deferred; the queue writes the
+        channel and its audit entry in one save and answers and logs after it.
         """
         if not await self.bot.module_service.is_weather_enabled():
-            await refuse(
-                interaction,
-                "\u274c The Weather module is not enabled.",
-                what=describe(interaction),
-            )
+            await refuse(interaction, NOT_ENABLED, what=describe(interaction))
             return
 
         season = await self.bot.season_service.get_setup_or_active_season()
         if season is None:
-            await refuse(
-                interaction,
-                "\u274c No season is live. A division's channels belong to the season being built or raced \u2014 start one with `/season setup`.",
-                what=describe(interaction),
-            )
+            await refuse(interaction, NO_SEASON_REFUSAL, what=describe(interaction))
             return
 
         divisions = await self.bot.season_service.get_divisions(season.id)
         div = next((d for d in divisions if d.name.lower() == name.lower()), None)
         if div is None:
-            await refuse(
-                interaction,
-                f"\u274c Division **{name}** not found in the current season.",
-                what=describe(interaction),
-            )
+            await refuse(interaction, division_not_found(name), what=describe(interaction))
             return
 
-        refused = await channel_refusal(
-            self.bot.db_path, channel, "weather", division_name=div.name
-        )
-        if refused is not None:
-            await refuse(interaction, refused, what=describe(interaction))
-            return
-
-        old_id = await set_division_forecast_channel(
-            self.bot.db_path, div.id, channel.id
-        )
-        await audit_service.record_change(
-            self.bot.db_path,
-            actor_id=interaction.user.id,
-            actor_name=str(interaction.user),
-            change_type="DIVISION_CHANNEL_SET",
-            old_value={"channel_type": "weather", "channel_id": old_id},
-            new_value={"channel_type": "weather", "channel_id": channel.id},
-            now=datetime.now(timezone.utc),
-            division_id=div.id,
-        )
-
-        # "Updated" says a channel was moved rather than assigned afresh (issue #212).
-        verb = "set" if old_id is None else "updated"
-        await interaction.response.send_message(
-            f"\u2705 Weather forecast channel for **{name}** {verb} to {channel.mention}.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /weather channel | Success\n"
-            f"  division: {name}\n"
-            f"  channel: #{channel.name}",
+        await self.bot.change_queue.ask(
+            FORECAST_CHANNEL,
+            {
+                "division_id": div.id,
+                "division_name": name,
+                "value": channel.id,
+                "channel_name": channel.name,
+            },
+            interaction=interaction,
+            what=describe(interaction),
         )
 
 

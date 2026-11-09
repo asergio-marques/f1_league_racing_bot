@@ -558,7 +558,10 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.results.services.amendment_settings import amendment_settings
     from leaguebot.results.services.module_switch_settings import module_on_results
     from leaguebot.results.services.points_settings import points_settings
-    from leaguebot.weather.services.weather_settings import deadline_setting
+    from leaguebot.weather.services.weather_settings import (
+        deadline_setting,
+        forecast_channel_setting,
+    )
     from leaguebot.weather.services.module_switch_settings import (
         module_off_weather,
         module_on_weather,
@@ -1027,6 +1030,11 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(
         setting_change(deadline_setting(modules=bot.module_service, seasons=bot.season_service))
+    )
+    bot.change_queue.register(
+        setting_change(
+            forecast_channel_setting(modules=bot.module_service, seasons=bot.season_service)
+        )
     )
     bot.change_queue.register(
         setting_change(
