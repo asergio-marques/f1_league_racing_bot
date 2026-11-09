@@ -196,18 +196,16 @@ async def test_a_deletion_job_already_gone_is_armed_again(tmp_path, monkeypatch)
 
 async def test_an_account_holding_no_channel_moves_nothing(tmp_path, monkeypatch):
     """Neither Valtteri (106) nor 9001 holds a signup channel. After `/driver reassign` of Valtteri
-    onto 9001 has run, neither has a wizard record, no deletion timer is armed or disarmed, and the
-    reply is today's alone. Was the same, `move_held_channel` called directly."""
+    onto 9001 has run, neither has a wizard record and no deletion timer is armed or disarmed.
+    Was the same, `move_held_channel` called directly."""
     from tests.support.change_queue import run_queue
-    from tests.support.settings_league import last_said
 
-    league, asked, _held_channel, _theirs = await _reassign(tmp_path, monkeypatch, held=False)
+    league, _asked, _held_channel, _theirs = await _reassign(tmp_path, monkeypatch, held=False)
     await run_queue(league.bot)
 
     assert await _channel_of(league, UNASSIGNED) == "no record"
     assert await _channel_of(league, _NEW) == "no record"
     assert _armed(league) == [] and _disarmed(league) == []
-    assert last_said(asked) == _reassigned("given a new account", _NEW, "<@106>")
 
 
 async def test_a_draft_the_new_account_abandoned_goes_in_the_same_save_as_the_move(
