@@ -650,6 +650,24 @@ async def test_a_division_duplicate_is_judged_again_as_it_starts(
     assert await stopped_job(league.db_path) is None
 
 
+async def test_a_duplicate_offset_beyond_the_dates_a_datetime_holds_raises_at_the_ask(tmp_path):
+    """Season #1 is being set up, in Placements, holding Pro (tier 1) with its two rounds. The manager
+    runs `/division duplicate` of Pro as Am shifted by three million days, which moves Pro's rounds
+    beyond the dates a datetime holds. The ask itself raises, for the bot's general failure reply to
+    answer, rather than queueing a change whose save would fault and stop the league's lane: nothing
+    is queued, no division is created, and no job is stopped."""
+    from tests.support.change_queue import change_rows, stopped_job
+
+    league = await _duplicate_league(tmp_path)
+
+    with pytest.raises(OverflowError):
+        await ask_duplicate(league, "Pro", "Am", 2, day_offset=3_000_000)
+
+    assert await change_rows(league.db_path) == []
+    assert await _division_rows(league.db_path) == [("Pro", 1, 10)]
+    assert await stopped_job(league.db_path) is None
+
+
 async def test_a_division_duplicate_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. Season #1
