@@ -215,7 +215,6 @@ async def test_a_driver_release_is_refused_at_the_ask(tmp_path, setup, division,
     assert league.revoked == {} and league.granted == {}
 
 
-@pytest.mark.xfail(strict=True, reason=_RELEASE_NOT_QUEUED)
 async def test_a_failed_driver_release_releases_nothing(tmp_path):
     """The season is ongoing; Lewis sits at Ferrari in Pro and at McLaren in Am. The league admin
     runs `/driver release` of Lewis from Am, and as the queue runs it the database fails writing
@@ -254,21 +253,17 @@ async def test_a_failed_driver_release_releases_nothing(tmp_path):
         pytest.param(
             _end_the_races, "⛔ `/driver release` is available only while the season is ongoing.",
             _BOTH, id="the-races-ended",
-            marks=pytest.mark.xfail(strict=True, reason=_RELEASE_NOT_QUEUED),
         ),
         pytest.param(
             _unconfirm_lewis_in_pro, _ONLY_SEAT,
             [("Pro", "Ferrari", False), ("Am", "McLaren", True)], id="now-the-only-confirmed-seat",
-            marks=pytest.mark.xfail(strict=True, reason=_RELEASE_NOT_QUEUED),
         ),
         pytest.param(
             _unconfirm_lewis_in_am, _NOT_CONFIRMED,
             [("Pro", "Ferrari", True), ("Am", "McLaren", False)], id="the-placement-unconfirmed",
-            marks=pytest.mark.xfail(strict=True, reason=_RELEASE_NOT_QUEUED),
         ),
         pytest.param(
             _take_lewis_out_of_am, _NO_SEAT, [("Pro", "Ferrari", True)], id="no-longer-seated-there",
-            marks=pytest.mark.xfail(strict=True, reason=_RELEASE_NOT_QUEUED),
         ),
     ],
 )

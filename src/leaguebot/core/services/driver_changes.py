@@ -60,6 +60,7 @@ from leaguebot.core.services.season_approval_change import unposted_lineup_line
 
 DRIVER_MOVE = "core.driver_move"
 DRIVER_SACK = "core.driver_sack"
+DRIVER_RELEASE = "core.driver_release"
 
 #: The names of the jobs, as the stop notice, the outcome and the tests know them.
 SAVE = "save"
@@ -77,9 +78,18 @@ NOTHING_MOVED = (
     "Nothing was moved: **{driver_name}** stays where they were. Run `/driver move` again."
 )
 
+#: `/driver release` as the line names it.
+RELEASE_COMMAND = "/driver release"
+
 #: The same for a sack: nobody was sacked.
 NOBODY_SACKED = (
     "Nobody was sacked: **{driver_name}** keeps their seats. Run `/driver sack` again."
+)
+
+#: The same for a release: nobody was released from the division.
+NOTHING_RELEASED = (
+    "Nothing was released: **{driver_name}** keeps their seat in **{division}**. "
+    "Run `/driver release` again."
 )
 
 _NOT_ONGOING = "⛔ `{command}` is available only while the season is ongoing."
@@ -424,7 +434,79 @@ def driver_sack_change(*, placement: PlacementService) -> ChangeType:
     )
 
 
+# ── /driver release ───────────────────────────────────────────────────────────────────
+
+
+def driver_release_change(*, placement: PlacementService) -> ChangeType:
+    """The `core.driver_release` change type, for the builder to register: *placement* is what
+    the check judges the release through, the save releases the driver through, and the jobs
+    after it take the roles and post the division's lineup through.
+
+    The payload names the driver (`driver_profile_id`, `discord_user_id`, `driver_name`), the
+    season (`season_id`) and the division (`division_id`, with its name as typed, `division`).
+    The roles come after the save, which reads them as it frees the seat.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        """The refusals, in the order they come, each read from the database."""
+        payload = ctx.payload
+        season_id = int(payload["season_id"])
+        refused = (
+            await ongoing_refusal(ctx.db_path, season_id, RELEASE_COMMAND)
+            or await division_refusal(
+                ctx.db_path, season_id, [(int(payload["division_id"]), payload["division"])]
+            )
+            or await profile_refusal(ctx.db_path, payload)
+        )
+        if refused is not None:
+            return refused
+        try:
+            async with get_connection(ctx.db_path) as db:
+                await placement.judge_release_on(
+                    db, driver_profile_id=int(payload["driver_profile_id"]),
+                    division_id=int(payload["division_id"]), season_id=season_id,
+                )
+        except ValueError as refusal:
+            return Verdict.refuse(f"⛔ {refusal}")
+        return Verdict.go()
+
+    async def apply(db: aiosqlite.Connection, ctx: StepContext) -> _Saved:
+        payload = ctx.payload
+        released = await placement.unassign_on(
+            db, driver_profile_id=int(payload["driver_profile_id"]),
+            division_id=int(payload["division_id"]), season_id=int(payload["season_id"]),
+        )
+        audit = released["audit"]
+        return _Saved(
+            result={"division_name": released["division_name"]},
+            audit=AuditRecord(
+                "DRIVER_UNASSIGN", audit["old_value"], audit["new_value"], audit["division_id"]
+            ),
+            user_id=released["user_id"], revoke=released["revoke"], lineups=released["lineups"],
+        )
+
+    def doing(payload: dict[str, Any]) -> str:
+        return f"Releasing **{payload['driver_name']}** from **{payload['division']}**"
+
+    def done(payload: dict[str, Any], saved: dict[str, Any], _roles_refused: bool) -> str:
+        return f"✅ Released **{payload['driver_name']}** from **{saved['division_name']}**."
+
+    def details(payload: dict[str, Any], saved: dict[str, Any]) -> str:
+        return (
+            f"\n  user: {payload['driver_name']} (<@{payload['discord_user_id']}>)"
+            f"\n  division: {saved['division_name']}"
+        )
+
+    return _change(
+        _Kind(
+            kind=DRIVER_RELEASE, command=RELEASE_COMMAND, doing=doing,
+            nothing_done=NOTHING_RELEASED, done=done, details=details, check=check, apply=apply,
+        ),
+        placement,
+    )
+
+
 __all__ = [
-    "DRIVER_MOVE", "DRIVER_SACK", "NOBODY_SACKED", "NOTHING_MOVED",
-    "driver_move_change", "driver_sack_change",
+    "DRIVER_MOVE", "DRIVER_RELEASE", "DRIVER_SACK", "NOBODY_SACKED", "NOTHING_MOVED",
+    "NOTHING_RELEASED", "driver_move_change", "driver_release_change", "driver_sack_change",
 ]

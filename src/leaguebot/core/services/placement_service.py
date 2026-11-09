@@ -1561,58 +1561,221 @@ class PlacementService:
     # Unassign driver (T012)
     # ------------------------------------------------------------------
 
-    async def release_driver(
+    async def judge_release_on(
+        self, db, *, driver_profile_id: int, division_id: int, season_id: int
+    ) -> dict:
+        """Judge the release of a committed driver from one division on *db*, writing nothing:
+        what `unassign_on` would refuse of it, in its words, and the facts it then unassigns by.
+
+        Refused (ValueError) for a division where the driver holds no seat, for an uncommitted
+        placement, which is unassigned instead, for a driver's only confirmed seat, which is
+        sacked or moved instead, and as `judge_unassign_on` refuses.
+        """
+        cursor = await db.execute(
+            "SELECT committed FROM driver_season_assignments "
+            "WHERE driver_profile_id = ? AND season_id = ? AND division_id = ?",
+            (driver_profile_id, season_id, division_id),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            raise ValueError("Driver holds no seat in that division.")
+        if not row["committed"]:
+            raise ValueError(
+                "That placement is not yet confirmed. Remove it with `/driver unassign`."
+            )
+        # Only a confirmed seat counts: a driver left holding nothing but an unconfirmed
+        # placement has been taken out of the championship, which moving them does instead.
+        cursor = await db.execute(
+            "SELECT COUNT(*) AS n FROM driver_season_assignments "
+            "WHERE driver_profile_id = ? AND season_id = ? AND division_id != ? "
+            "AND committed = 1",
+            (driver_profile_id, season_id, division_id),
+        )
+        if (await sole_row(cursor))["n"] == 0:
+            raise ValueError(
+                "That is the driver's only seat. Sack them with `/driver sack`, or move "
+                "them with `/driver move`."
+            )
+        return await self.judge_unassign_on(
+            db, driver_profile_id=driver_profile_id, division_id=division_id,
+            season_id=season_id,
+        )
+
+    async def judge_unassign_on(
         self,
+        db,
+        *,
         driver_profile_id: int,
         division_id: int,
         season_id: int,
-        acting_user_id: int,
-        acting_user_name: str,
-        guild: discord.Guild,
-        discord_user_id: str,
+        uncommitted_only: bool = False,
     ) -> dict:
-        """Release a committed driver from one division, keeping every other seat they hold.
+        """Judge the removal of a driver's assignment from one division on *db*, writing nothing:
+        what `unassign_on` would refuse, in its words, and what it would then remove.
 
-        Issue #220. The division's role is revoked, the team's role only where no other seat
-        maps to it, and the division's lineup is posted again — the removal a committed
-        placement undergoes. Refused for an uncommitted placement, which is unassigned instead,
-        and for a driver's only seat, which is sacked or moved instead.
+        Raises ValueError where the profile is not found, is not Assigned, holds no assignment
+        in the division, or, with *uncommitted_only*, holds a confirmed one. Returns the
+        profile's account (*user_id*), whether it is a test driver, and the assignment: its
+        row (*assignment_id*), its seat (*seat_id*) and whether it was confirmed
+        (*was_committed*).
         """
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT committed FROM driver_season_assignments "
-                "WHERE driver_profile_id = ? AND season_id = ? AND division_id = ?",
-                (driver_profile_id, season_id, division_id),
-            )
-            row = await cursor.fetchone()
-            if row is None:
-                raise ValueError("Driver holds no seat in that division.")
-            if not row["committed"]:
-                raise ValueError(
-                    "That placement is not yet confirmed. Remove it with `/driver unassign`."
-                )
-            # Only a confirmed seat counts: a driver left holding nothing but an unconfirmed
-            # placement has been taken out of the championship, which moving them does instead.
-            cursor = await db.execute(
-                "SELECT COUNT(*) AS n FROM driver_season_assignments "
-                "WHERE driver_profile_id = ? AND season_id = ? AND division_id != ? "
-                "AND committed = 1",
-                (driver_profile_id, season_id, division_id),
-            )
-            if (await sole_row(cursor))["n"] == 0:
-                raise ValueError(
-                    "That is the driver's only seat. Sack them with `/driver sack`, or move "
-                    "them with `/driver move`."
-                )
-        return await self.unassign_driver(
-            driver_profile_id=driver_profile_id,
-            division_id=division_id,
-            season_id=season_id,
-            acting_user_id=acting_user_id,
-            acting_user_name=acting_user_name,
-            guild=guild,
-            discord_user_id=discord_user_id,
+        cursor = await db.execute(
+            "SELECT discord_user_id, current_state, is_test_driver FROM driver_profiles "
+            "WHERE id = ?",
+            (driver_profile_id,),
         )
+        row = await cursor.fetchone()
+        if row is None:
+            raise ValueError("Driver profile not found.")
+        current_state = DriverState(row["current_state"])
+        if current_state != DriverState.ASSIGNED:
+            raise ValueError(
+                f"Driver must be in Assigned state to be unassigned "
+                f"(current state: {current_state.value})."
+            )
+
+        cursor = await db.execute(
+            "SELECT id, team_seat_id, committed FROM driver_season_assignments "
+            "WHERE driver_profile_id = ? AND season_id = ? AND division_id = ?",
+            (driver_profile_id, season_id, division_id),
+        )
+        asgn_row = await cursor.fetchone()
+        if asgn_row is None:
+            cursor = await db.execute("SELECT name FROM divisions WHERE id = ?", (division_id,))
+            div_row = await cursor.fetchone()
+            div_name = div_row["name"] if div_row else str(division_id)
+            raise ValueError(f"Driver is not assigned to any team in **{div_name}**.")
+        was_committed = bool(asgn_row["committed"])
+        if uncommitted_only and was_committed:
+            raise ValueError(
+                "That placement has been confirmed. Move the driver with `/driver move`, "
+                "or release them from the division with `/driver release`."
+            )
+        return {
+            "user_id": int(row["discord_user_id"]),
+            "is_test_driver": bool(row["is_test_driver"]),
+            "assignment_id": asgn_row["id"],
+            "seat_id": asgn_row["team_seat_id"],
+            "was_committed": was_committed,
+        }
+
+    async def unassign_on(
+        self,
+        db,
+        *,
+        driver_profile_id: int,
+        division_id: int,
+        season_id: int,
+        uncommitted_only: bool = False,
+    ) -> dict:
+        """Remove a driver's assignment from one division on *db*, leaving the audit entry to the
+        caller.
+
+        Everything `unassign_driver` writes but the audit entry, written on the connection
+        handed and committed by no one here, so that a change on the queue writes the entry with
+        the queue's clock (*audit*). It awaits nothing but *db*: no member is fetched and no role
+        asked of Discord. Roles and the lineup are owed only where the placement was committed
+        (issue #220), and a test driver holds no roles. Refused as `judge_unassign_on` refuses.
+
+        Returns the summary (division_name, has_remaining_assignments, team_name, lineups), the
+        audit entry's *audit* (its old and new values and the division), the driver's account
+        *user_id*, and *revoke*, the role ids to take back, empty where none is owed.
+        """
+        judged = await self.judge_unassign_on(
+            db, driver_profile_id=driver_profile_id, division_id=division_id,
+            season_id=season_id, uncommitted_only=uncommitted_only,
+        )
+        asgn_id = judged["assignment_id"]
+        seat_id = judged["seat_id"]
+        was_committed = judged["was_committed"]
+
+        # The team's shorthand (for its role) and full name (for what a reply shows).
+        team_name: str | None = None
+        team_full_name: str | None = None
+        if seat_id is not None:
+            cursor = await db.execute(
+                "SELECT ti.name, ti.full_name FROM team_instances ti "
+                "JOIN team_seats ts ON ts.team_instance_id = ti.id "
+                "WHERE ts.id = ?",
+                (seat_id,),
+            )
+            team_row = await cursor.fetchone()
+            team_name = team_row["name"] if team_row else None
+            team_full_name = team_row["full_name"] if team_row else None
+
+        cursor = await db.execute(
+            "SELECT name, mention_role_id FROM divisions WHERE id = ?", (division_id,)
+        )
+        div_info = await sole_row(cursor)
+        div_name = div_info["name"]
+        div_role_id = div_info["mention_role_id"]
+
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM driver_season_assignments "
+            "WHERE driver_profile_id = ? AND season_id = ? AND division_id != ?",
+            (driver_profile_id, season_id, division_id),
+        )
+        has_remaining = (await sole_row(cursor))[0] > 0
+
+        # The team's role goes only where the driver holds no other seat in a team mapped to it.
+        team_role_id_to_revoke: int | None = None
+        if team_name is not None:
+            team_role_id = await self._team_role_on(db, team_name)
+            if team_role_id is not None:
+                cursor = await db.execute(
+                    """
+                    SELECT COUNT(*) FROM driver_season_assignments dsa
+                    JOIN team_seats ts ON ts.id = dsa.team_seat_id
+                    JOIN team_instances ti ON ti.id = ts.team_instance_id
+                    JOIN team_role_configs trc
+                        ON trc.team_name = ti.name
+                    WHERE dsa.driver_profile_id = ?
+                      AND dsa.season_id = ?
+                      AND dsa.division_id != ?
+                      AND trc.role_id = ?
+                    """,
+                    (driver_profile_id, season_id, division_id, team_role_id),
+                )
+                if (await sole_row(cursor))[0] == 0:
+                    team_role_id_to_revoke = team_role_id
+
+        # Atomically: free the seat, delete the assignment, update the state if needed.
+        if seat_id is not None:
+            await db.execute(
+                "UPDATE team_seats SET driver_profile_id = NULL WHERE id = ?", (seat_id,)
+            )
+        await db.execute("DELETE FROM driver_season_assignments WHERE id = ?", (asgn_id,))
+        if not has_remaining:
+            await write_transition(
+                db, driver_profile_id, DriverState.ASSIGNED, DriverState.UNASSIGNED
+            )
+
+        revoke: list[int] = []
+        if not judged["is_test_driver"] and was_committed:
+            revoke = [div_role_id]
+            if team_role_id_to_revoke is not None:
+                revoke.append(team_role_id_to_revoke)
+        return {
+            "division_name": div_name,
+            "has_remaining_assignments": has_remaining,
+            # The name a reply shows is the full one; the shorthand stays a key (#381).
+            "team_name": team_full_name,
+            # The lineup to post, for the caller to post: none while the placement was
+            # uncommitted.
+            "lineups": [division_id] if was_committed else [],
+            "audit": {
+                "old_value": {"team": team_name, "seat_id": seat_id},
+                "new_value": {
+                    "new_state": (
+                        DriverState.ASSIGNED if has_remaining else DriverState.UNASSIGNED
+                    ).value,
+                    "has_remaining": has_remaining,
+                },
+                "division_id": division_id,
+            },
+            "user_id": judged["user_id"],
+            "revoke": revoke,
+        }
 
     async def unassign_driver(
         self,
@@ -1629,127 +1792,22 @@ class PlacementService:
     ) -> dict:
         """Remove a driver's assignment from one division.
 
-        Roles are revoked and the lineup posted again only where the placement was committed;
-        an uncommitted one held neither (issue #220). *uncommitted_only* refuses a committed
-        placement, which `/driver move` and `/driver release` change instead. *season_state*
-        is no longer read.
+        `unassign_on`, and the `DRIVER_UNASSIGN` audit entry written with it, stamped with the
+        wall clock and committed here, then the roles it names revoked, swallowing Discord's
+        refusals. Roles are revoked and the lineup posted again only where the placement was
+        committed; an uncommitted one held neither (issue #220). *uncommitted_only* refuses a
+        committed placement, which `/driver move` and `/driver release` change instead.
+        *season_state* is no longer read.
 
         Returns a summary dict: division_name, has_remaining_assignments.
         Raises ValueError for blocking conditions.
         """
         async with get_connection(self._db_path) as db:
-            # 1. Validate driver state
-            cursor = await db.execute(
-                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ?",
-                (driver_profile_id,),
+            summary = await self.unassign_on(
+                db, driver_profile_id=driver_profile_id, division_id=division_id,
+                season_id=season_id, uncommitted_only=uncommitted_only,
             )
-            row = await cursor.fetchone()
-            if row is None:
-                raise ValueError("Driver profile not found.")
-            current_state = DriverState(row["current_state"])
-            is_test_driver: bool = bool(row["is_test_driver"])
-            if current_state != DriverState.ASSIGNED:
-                raise ValueError(
-                    f"Driver must be in Assigned state to be unassigned "
-                    f"(current state: {current_state.value})."
-                )
-
-            # 2. Find the assignment row for this division
-            cursor = await db.execute(
-                "SELECT id, team_seat_id, committed FROM driver_season_assignments "
-                "WHERE driver_profile_id = ? AND season_id = ? AND division_id = ?",
-                (driver_profile_id, season_id, division_id),
-            )
-            asgn_row = await cursor.fetchone()
-            if asgn_row is None:
-                cursor = await db.execute(
-                    "SELECT name FROM divisions WHERE id = ?", (division_id,)
-                )
-                div_row = await cursor.fetchone()
-                div_name = div_row["name"] if div_row else str(division_id)
-                raise ValueError(
-                    f"Driver is not assigned to any team in **{div_name}**."
-                )
-            asgn_id = asgn_row["id"]
-            seat_id = asgn_row["team_seat_id"]
-            was_committed = bool(asgn_row["committed"])
-            if uncommitted_only and was_committed:
-                raise ValueError(
-                    "That placement has been confirmed. Move the driver with `/driver move`, "
-                    "or release them from the division with `/driver release`."
-                )
-
-            # 3. Fetch team name for this seat (needed for role revocation)
-            team_name: str | None = None
-            if seat_id is not None:
-                cursor = await db.execute(
-                    "SELECT ti.name, ti.full_name FROM team_instances ti "
-                    "JOIN team_seats ts ON ts.team_instance_id = ti.id "
-                    "WHERE ts.id = ?",
-                    (seat_id,),
-                )
-                team_row = await cursor.fetchone()
-                team_name = team_row["name"] if team_row else None
-                team_full_name = team_row["full_name"] if team_row else None
-
-            # 4. Fetch division name and role
-            cursor = await db.execute(
-                "SELECT name, mention_role_id FROM divisions WHERE id = ?", (division_id,)
-            )
-            div_info = await sole_row(cursor)
-            div_name = div_info["name"]
-            div_role_id = div_info["mention_role_id"]
-
-            # 5. Count remaining assignments after this removal
-            cursor = await db.execute(
-                "SELECT COUNT(*) FROM driver_season_assignments "
-                "WHERE driver_profile_id = ? AND season_id = ? AND division_id != ?",
-                (driver_profile_id, season_id, division_id),
-            )
-            remaining_count = (await sole_row(cursor))[0]
-            has_remaining = remaining_count > 0
-
-            # 6. Determine if team role should be revoked
-            # Revoke only if the driver holds no other seat in any team mapped to that role
-            team_role_id_to_revoke: int | None = None
-            if team_name is not None:
-                team_cfg = await self.get_team_role_config(team_name)
-                if team_cfg is not None:
-                    # Check other assignments that share this role
-                    cursor = await db.execute(
-                        """
-                        SELECT COUNT(*) FROM driver_season_assignments dsa
-                        JOIN team_seats ts ON ts.id = dsa.team_seat_id
-                        JOIN team_instances ti ON ti.id = ts.team_instance_id
-                        JOIN team_role_configs trc
-                            ON trc.team_name = ti.name
-                        WHERE dsa.driver_profile_id = ?
-                          AND dsa.season_id = ?
-                          AND dsa.division_id != ?
-                          AND trc.role_id = ?
-                        """,
-                        (driver_profile_id, season_id, division_id, team_cfg.role_id),
-                    )
-                    other_same_role = (await sole_row(cursor))[0]
-                    if other_same_role == 0:
-                        team_role_id_to_revoke = team_cfg.role_id
-
-            now = datetime.now(timezone.utc).isoformat()
-
-            # 7. Atomically: free seat, delete assignment, update state if needed
-            if seat_id is not None:
-                await db.execute(
-                    "UPDATE team_seats SET driver_profile_id = NULL WHERE id = ?",
-                    (seat_id,),
-                )
-            await db.execute(
-                "DELETE FROM driver_season_assignments WHERE id = ?", (asgn_id,)
-            )
-            if not has_remaining:
-                await write_transition(
-                    db, driver_profile_id, DriverState.ASSIGNED, DriverState.UNASSIGNED
-                )
-
+            audit = summary["audit"]
             await db.execute(
                 "INSERT INTO audit_entries "
                 "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
@@ -1757,39 +1815,28 @@ class PlacementService:
                 (
                     acting_user_id,
                     acting_user_name,
-                    division_id,
-                    json.dumps({"team": team_name, "seat_id": seat_id}),
-                    json.dumps({
-                        "new_state": DriverState.UNASSIGNED.value if not has_remaining else DriverState.ASSIGNED.value,
-                        "has_remaining": has_remaining,
-                    }),
-                    now,
+                    audit["division_id"],
+                    json.dumps(audit["old_value"]),
+                    json.dumps(audit["new_value"]),
+                    datetime.now(timezone.utc).isoformat(),
                 ),
             )
             await db.commit()
 
-        # 8. Revoke Discord roles (fail-soft)
-        member = guild.get_member(int(discord_user_id))
-        if member is None:
-            try:
-                member = await guild.fetch_member(int(discord_user_id))
-            except discord.HTTPException:
-                member = None
-
-        if member is not None and not is_test_driver and was_committed:
-            roles_to_revoke = [div_role_id]
-            if team_role_id_to_revoke is not None:
-                roles_to_revoke.append(team_role_id_to_revoke)
-            await self._revoke_roles(member, *roles_to_revoke)
+        # Revoke Discord roles (fail-soft)
+        if summary["revoke"]:
+            member = guild.get_member(int(discord_user_id))
+            if member is None:
+                try:
+                    member = await guild.fetch_member(int(discord_user_id))
+                except discord.HTTPException:
+                    member = None
+            if member is not None:
+                await self._revoke_roles(member, *summary["revoke"])
 
         return {
-            "division_name": div_name,
-            "has_remaining_assignments": has_remaining,
-            # The name a reply shows is the full one; the shorthand stays a key (#381).
-            "team_name": team_full_name,
-            # The lineup to post, for the caller to ask the change queue for (#439): none while
-            # the placement was uncommitted.
-            "lineups": [division_id] if was_committed else [],
+            key: summary[key]
+            for key in ("division_name", "has_remaining_assignments", "team_name", "lineups")
         }
 
     # ------------------------------------------------------------------

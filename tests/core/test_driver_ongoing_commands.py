@@ -83,10 +83,6 @@ def _reply(interaction: MagicMock) -> str:
     return interaction.followup.send.await_args.args[0]
 
 
-#: Why a test below fails until `/driver release` is a change on the queue.
-_RELEASE_NOT_QUEUED = "#283: /driver release is not yet a change on the queue"
-
-
 def _asked(cog: DriverCog) -> tuple[str, dict]:
     """The one change the command asked of the queue: its kind and its payload."""
     cog.bot.change_queue.ask.assert_awaited_once()
@@ -251,7 +247,6 @@ async def test_a_release_of_a_member_with_no_profile_is_refused():
     assert cog.bot.change_queue.method_calls == []
 
 
-@pytest.mark.xfail(strict=True, reason=_RELEASE_NOT_QUEUED)
 @pytest.mark.parametrize(
     "stage", [SeasonStage.ONGOING, SeasonStage.ONGOING_SIGNUPS, SeasonStage.ONGOING_PLACEMENTS]
 )
@@ -336,7 +331,6 @@ def _past_account_cog(current_member: MagicMock | None) -> tuple[DriverCog, Magi
     return cog, interaction
 
 
-@pytest.mark.xfail(strict=True, reason=_RELEASE_NOT_QUEUED)
 async def test_a_command_given_a_past_account_acts_on_the_current_one():
     """A manager releases Racer naming a past account (4242); the driver's current account is
     5353, Racer Now, in the server. The release asked of the queue is of the current account,
