@@ -18,7 +18,8 @@ async def set_division_forecast_channel(
     """Set `divisions.forecast_channel_id` on *db*, never committing; returns the previous value.
 
     The save that calls it owns the transaction, so the column and the audit entry stand or fall
-    together.
+    together. A value already held is left unwritten, and the caller told so by the value it gets
+    back.
     """
     old_id: int | None = (
         await sole_row(
@@ -27,7 +28,8 @@ async def set_division_forecast_channel(
             )
         )
     )["forecast_channel_id"]
-    await db.execute(
-        "UPDATE divisions SET forecast_channel_id = ? WHERE id = ?", (channel_id, division_id)
-    )
+    if old_id != channel_id:
+        await db.execute(
+            "UPDATE divisions SET forecast_channel_id = ? WHERE id = ?", (channel_id, division_id)
+        )
     return old_id
