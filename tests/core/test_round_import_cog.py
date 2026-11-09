@@ -386,9 +386,6 @@ _NOT_FOUND = "[Pro]: no division of that name in the pending setup."
 
 _NO_SETUP = "No pending season setup. Run `/season setup` first."
 
-#: Pro holding round 1, at the Hungaroring on 14 June 2026 at 18:00 UTC.
-_PRO_ROUND_1 = (("Pro", 1, 10, (("NORMAL", "Hungaroring", datetime(2026, 6, 14, 18, 0)),)),)
-
 
 @pytest.mark.parametrize(
     "form, value, stage, reply_says, carried",
@@ -463,7 +460,7 @@ async def test_every_import_form_refusal_is_recorded(
     from tests.support.settings_league import log_lines, said
 
     league = await setup_league(
-        tmp_path, stage=stage, divisions=_PRO_ROUND_1 if stage == "PLACEMENTS" else (),
+        tmp_path, stage=stage, divisions=_PRO_HOLDING_THE_14TH if stage == "PLACEMENTS" else (),
     )
 
     asked = await import_rounds(league, form, value)
