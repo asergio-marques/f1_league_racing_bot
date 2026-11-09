@@ -128,8 +128,9 @@ def role_move_step(
             if not found:
                 return StepResult(result={"gone": True})
         if missing:
+            gone = "it is" if len(missing) == 1 else "they are"
             problem = problem_of(
-                user_id, (), missing, taken=True, kind="it is no longer on the server"
+                user_id, (), missing, taken=True, kind=f"{gone} no longer on the server"
             )
             return StepResult(result={"problem": problem})
         return StepResult(result={})
