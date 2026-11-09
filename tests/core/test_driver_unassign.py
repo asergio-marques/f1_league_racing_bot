@@ -260,6 +260,51 @@ async def test_a_driver_unassignment_is_judged_again_as_it_starts(
     assert await stopped_job(league.db_path) is None
 
 
+async def test_a_driver_unassignment_is_refused_at_the_ask(tmp_path):
+    """The season is in Placements, and Charles holds no seat in Am. The league admin runs
+    `/driver unassign` of Charles from Am. They are refused at once, in today's words: "Driver is
+    not assigned to any team in **Am**.", and the log channel takes the refusal as its one line.
+    Nothing is asked of the queue, no audit entry is written and no role touched. Takes the place
+    of `test_driver_cog_refusals.py`'s "unassign refused by the service" case and
+    `test_driver_cog.py`'s `test_a_refused_unassignment_is_reported_not_raised`, which mocked the
+    service."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import audit_rows, last_said, log_lines
+
+    league = await _in_placements(tmp_path)
+    await _take_charles_out_of_am(league)
+    asked = await _ask_unassign(league, 103)
+
+    assert last_said(asked) == _NOT_THERE
+    assert _unassign_lines(await log_lines(league)) == [_unassign_refusal(_NOT_THERE)]
+    assert await change_rows(league.db_path) == []
+    assert await audit_rows(league.db_path) == []
+    assert league.granted == {} and league.revoked == {}
+
+
+async def test_unassigning_a_driver_who_holds_no_seat_names_no_team(tmp_path):
+    """The season is in Placements; Charles is of Am but holds no seat in it, his seat at McLaren
+    freed. The league admin runs `/driver unassign` of Charles from Am, and the queue runs it. The
+    reply names the division alone, "✅ Removed **Charles** in **Am**.", rather than an empty
+    team. Takes the place of `test_driver_cog.py`'s
+    `test_unassigning_a_driver_who_held_no_seat_omits_the_team`, which mocked the service."""
+    from tests.support.change_queue import run_queue
+    from tests.support.settings_league import last_said
+
+    league = await _in_placements(tmp_path)
+    await league.write("UPDATE team_seats SET driver_profile_id = NULL WHERE driver_profile_id = 43")
+    await league.write(
+        "UPDATE driver_season_assignments SET team_seat_id = NULL WHERE driver_profile_id = 43"
+    )
+    asked = await _ask_unassign(league, 103)
+    await run_queue(league.bot)
+
+    assert last_said(asked) == "✅ Removed **Charles** in **Am**."
+    assert await league.rows(
+        "SELECT 1 FROM driver_season_assignments WHERE driver_profile_id = 43"
+    ) == []
+
+
 @pytest.mark.xfail(strict=True, reason=_REASON)
 async def test_a_driver_unassignment_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The core specification's "How a change is carried out": a request repeating a change that

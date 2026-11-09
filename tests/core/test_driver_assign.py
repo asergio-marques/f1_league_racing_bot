@@ -254,6 +254,61 @@ async def test_a_driver_assignment_is_judged_again_as_it_starts(tmp_path, meanwh
     assert await stopped_job(league.db_path) is None
 
 
+_CONFIRMED_ELSEWHERE = (
+    "⛔ Driver already holds a confirmed placement this season. Move them with `/driver move`, or "
+    "release them from a division with `/driver release`."
+)
+
+
+async def _placing_mclaren_full(tmp_path):
+    """`_placing`'s season, Max then placed in McLaren's free second seat in Am."""
+    league = await _placing(tmp_path)
+    await _fill_mclaren(league)
+    return league
+
+
+async def _placing_mid_season(tmp_path):
+    """`placing_league`'s season, placing mid-season: Lewis confirmed at Ferrari in Pro."""
+    from tests.support.season_league import placing_league
+
+    return await placing_league(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "build, user_id, reply",
+    [
+        pytest.param(_placing_mclaren_full, 106, _NO_SEAT, id="no-free-seat"),
+        pytest.param(_placing_mid_season, 101, _CONFIRMED_ELSEWHERE, id="a-confirmed-driver"),
+    ],
+)
+async def test_a_driver_assignment_is_refused_at_the_ask(tmp_path, build, user_id, reply):
+    """The core specification's placement. Either the season is in Placements and McLaren's two
+    seats in Am are both taken, and the league admin runs `/driver assign` of Valtteri to McLaren
+    in Am; or the season is placing drivers mid-season, Lewis holds a confirmed seat at Ferrari in
+    Pro, and the league admin runs `/driver assign` of Lewis to McLaren in Am. They are refused at
+    once, in today's words: "**McLaren** in this division has no available seats." or "Driver
+    already holds a confirmed placement this season. Move them with `/driver move`, or release
+    them from a division with `/driver release`.", and the log channel takes the refusal as its
+    one line. Nothing is asked of the queue, nobody is placed, no audit entry is written and no
+    role touched. Takes the place of `test_driver_cog_refusals.py`'s "assign refused by the
+    service" case and `test_driver_cog.py`'s `test_a_refused_assignment_is_reported_not_raised`,
+    which mocked the service, and of the mid-season case of its
+    `test_an_assignment_is_made_uncommitted`."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import audit_rows, last_said, log_lines
+
+    league = await build(tmp_path)
+    placements = await league.rows("SELECT * FROM driver_season_assignments ORDER BY id")
+    asked = await _ask_assign(league, user_id)
+
+    assert last_said(asked) == reply
+    assert _assign_lines(await log_lines(league)) == [_assign_refusal(reply)]
+    assert await change_rows(league.db_path) == []
+    assert await league.rows("SELECT * FROM driver_season_assignments ORDER BY id") == placements
+    assert await audit_rows(league.db_path) == []
+    assert league.granted == {} and league.revoked == {}
+
+
 @pytest.mark.xfail(strict=True, reason=_REASON)
 async def test_a_driver_assignment_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The core specification's "How a change is carried out": a request repeating a change that

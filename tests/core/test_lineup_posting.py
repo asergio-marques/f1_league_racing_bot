@@ -3,12 +3,12 @@ its own change, then asks the queue, as the bot's and repeatably, to post each l
 (`lineup.post`); its reply is unchanged and the post follows on the queue. `/driver move`,
 `release` and `sack` ask no lineup: each is a change on the queue that posts its lineups as steps
 of its own (#283), pinned in `test_driver_move.py`, `test_driver_release.py` and
-`test_sack_driver.py`.
+`test_sack_driver.py`. `/driver assign` and `unassign` ask none either: each is a change on the
+queue whose placement is never confirmed, so no lineup is owed (`test_driver_assign.py`,
+`test_driver_unassign.py`).
 
 The league is `ongoing_league`'s: season 3 being raced, Pro (21) with its lineup channel 600 and Am
-(22) with 700, images off. Where a command is run, its cog stands on a bot whose services are
-stubbed to say which divisions' lineups the change touched, and whose queue and database are the
-league's, so the asks are real and the queue run posts the lineups.
+(22) with 700, images off.
 """
 from __future__ import annotations
 
@@ -44,12 +44,6 @@ from tests.support.season_league import (
 
 KIND = "lineup.post"
 LINEUP = {PRO: DIVISIONS[PRO][3].lineup, AM: DIVISIONS[AM][3].lineup}
-
-
-async def _lineup_asks(league: Any) -> list[tuple[int, str]]:
-    """Each `lineup.post` asked, in order: its division and its origin."""
-    return [(json.loads(row["payload"])["division_id"], row["origin"])
-            for row in await change_rows(league.db_path) if row["kind"] == KIND]
 
 
 async def _said(league: Any) -> str:
@@ -93,56 +87,6 @@ async def _stop_the_queue(league: Any) -> None:
     await league.bot.change_queue.ask("blocker", {}, what="the blocker", origin=ChangeOrigin.BOT)
     await run_queue(league.bot)
     assert (await stopped_job(league.db_path))["name"] == "block"
-
-
-# ── The commands ask ───────────────────────────────────────────────────────────────
-
-
-async def _assign(league: Any, lineups: list[int]) -> Any:
-    from tests.core.test_driver_cog import _assign, _interaction, _make_cog, _season
-
-    cog = _make_cog(season=_season())
-    cog.bot.placement_service.assign_driver.return_value = {
-        "team_name": "Alpha", "division_name": "Pro", "lineups": lineups,
-    }
-    return cog, _interaction(), _assign
-
-
-async def _unassign(league: Any, lineups: list[int]) -> Any:
-    from tests.core.test_driver_cog import _interaction, _make_cog, _season, _unassign
-
-    cog = _make_cog(season=_season())
-    cog.bot.placement_service.unassign_driver.return_value = {
-        "team_name": "Alpha", "division_name": "Pro", "lineups": lineups,
-    }
-    return cog, _interaction(), _unassign
-
-
-@pytest.mark.parametrize("command, lineups", [
-    pytest.param(_assign, [PRO], id="assign"),
-    pytest.param(_unassign, [PRO], id="unassign"),
-])
-async def test_a_driver_command_asks_the_queue_for_each_lineup_it_touched(tmp_path, command,
-                                                                         lineups):
-    league = await ongoing_league(tmp_path)
-    cog, interaction, run = await command(league, lineups)
-    cog.bot.db_path = league.db_path
-    cog.bot.change_queue = league.bot.change_queue
-    before = {division: len(league.texts(LINEUP[division])) for division in lineups}
-
-    await run(cog, interaction)
-
-    assert await _lineup_asks(league) == [(division, "BOT") for division in lineups]
-    assert interaction.followup.send.await_count + interaction.response.send_message.await_count
-    cog.bot.output_router.post_log.assert_awaited_once()
-    for division in lineups:
-        assert len(league.texts(LINEUP[division])) == before[division]
-
-    await run_queue(league.bot)
-
-    assert await stopped_job(league.db_path) is None
-    for division in lineups:
-        assert len(league.texts(LINEUP[division])) == before[division] + 1
 
 
 # ── What the queue does with the ask ───────────────────────────────────────────────

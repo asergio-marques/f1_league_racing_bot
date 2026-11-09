@@ -4,9 +4,10 @@ The rule is the core specification's "The record of what changed": a refusal is 
 line naming the member, what was refused and why. Each case below turns a league manager away at
 one of the driver cog's own checks, and expects today's reply, seen by them alone, and exactly one
 standard refusal line. `/driver reassign`'s stage refusal goes through the shared season gate,
-which already records it, and is not a case here. `/driver move`, `release` and `sack` are
-changes on the queue (#283), whose refusals beyond the cog's own are the change's, pinned with
-their lines against a real database in `test_driver_move.py`, `test_driver_release.py` and
+which already records it, and is not a case here. `/driver assign`, `unassign`, `move`, `release`
+and `sack` are changes on the queue (#283), whose refusals beyond the cog's own are the change's,
+pinned with their lines against a real database in `test_driver_assign.py`,
+`test_driver_unassign.py`, `test_driver_move.py`, `test_driver_release.py` and
 `test_sack_driver.py`.
 """
 from __future__ import annotations
@@ -200,12 +201,6 @@ _CASES = {
         _no_profile,
         "No driver profile found for **Racer**",
     ),
-    "assign refused by the service": (
-        "driver assign",
-        lambda cog, i: undecorate(DriverCog.assign)(cog, i, _driver(), "Pro", "Reserve"),
-        _service_refuses("assign_driver", "**Reserve** has no available seats."),
-        "**Reserve** has no available seats.",
-    ),
     "unassign not placing": (
         "driver unassign",
         lambda cog, i: undecorate(DriverCog.unassign)(cog, i, _driver(), "Pro"),
@@ -229,12 +224,6 @@ _CASES = {
         lambda cog, i: undecorate(DriverCog.unassign)(cog, i, _driver(), "Pro"),
         _no_profile,
         "No driver profile found for **Racer**",
-    ),
-    "unassign refused by the service": (
-        "driver unassign",
-        lambda cog, i: undecorate(DriverCog.unassign)(cog, i, _driver(), "Pro"),
-        _service_refuses("unassign_driver", "Racer holds no seat in Pro."),
-        "Racer holds no seat in Pro.",
     ),
     "move not ongoing": (
         "driver move",

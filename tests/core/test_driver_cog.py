@@ -16,9 +16,11 @@ there being no season at all).
 placing stages, sack to the ongoing ones. Between seasons nothing is sacked — the season's end
 has already returned every driver to Not Signed Up.
 
-A sack that clears the ladder asks the change queue for a `core.driver_sack` (#283), whose save,
-roles, lineups, reply and line are tested against a real database in `test_sack_driver.py`, with
-the refusals it makes at the ask and as it starts; here, only what the command asks of the queue.
+An assign, unassign or sack that clears the ladder asks the change queue for a
+`core.driver_assign`, `core.driver_unassign` or `core.driver_sack` (#283), whose save, roles,
+lineups, reply and line are tested against a real database in `test_driver_assign.py`,
+`test_driver_unassign.py` and `test_sack_driver.py`, with the refusals it makes at the ask and as
+it starts; here, only what the command asks of the queue.
 
 The archived-season refusal is pinned for all three mutating commands together, because
 `SeasonImmutableError` is what stops a completed season being edited after the fact — the
@@ -43,6 +45,9 @@ SERVER_ID = 8808
 SEASON_ID = 3
 DIVISION_ID = 11
 PROFILE_ID = 55
+
+_ASSIGN_NOT_QUEUED = "#283: /driver assign is not yet a change on the queue"
+_UNASSIGN_NOT_QUEUED = "#283: /driver unassign is not yet a change on the queue"
 
 
 # ---------------------------------------------------------------------------
@@ -112,13 +117,6 @@ def _make_cog(
 
     bot.placement_service = MagicMock()
     bot.placement_service.resolve_division = AsyncMock(return_value=division)
-    # No lineup is owed, so none is asked of the change queue (#439).
-    bot.placement_service.assign_driver = AsyncMock(
-        return_value={"team_name": "Alpha", "division_name": "Division 1", "lineups": []}
-    )
-    bot.placement_service.unassign_driver = AsyncMock(
-        return_value={"team_name": "Alpha", "division_name": "Division 1", "lineups": []}
-    )
     bot.change_queue.ask = AsyncMock()
     bot.placement_service.move_driver_roles = AsyncMock(return_value=[])
     bot.wizard_service.move_held_channel = AsyncMock(return_value=[])
@@ -319,8 +317,7 @@ async def test_no_season_refuses_a_placement_change(command):
     await command(cog, interaction)
 
     assert "available only while the season is in placements" in _replied(interaction)
-    cog.bot.placement_service.assign_driver.assert_not_awaited()
-    cog.bot.placement_service.unassign_driver.assert_not_awaited()
+    assert cog.bot.change_queue.method_calls == []
 
 
 @pytest.mark.parametrize("command", [pytest.param(_assign, id="assign"),
@@ -334,8 +331,7 @@ async def test_an_archived_season_refuses_every_change(command):
     await command(cog, interaction)
 
     assert "archived" in _replied(interaction)
-    cog.bot.placement_service.assign_driver.assert_not_awaited()
-    cog.bot.placement_service.unassign_driver.assert_not_awaited()
+    assert cog.bot.change_queue.method_calls == []
 
 
 @pytest.mark.parametrize("command", [pytest.param(_assign, id="assign"),
@@ -367,30 +363,32 @@ async def test_a_user_with_no_driver_profile_is_refused(command):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_ASSIGN_NOT_QUEUED)
 async def test_a_driver_is_assigned_to_the_named_team_and_division(tmp_path):
-    """The command hands the placement service the driver, division, team and season it
-    names, tells the manager the driver was assigned, and logs the move with the command and
-    the team, the log being the league's audit trail for who moved whom."""
+    """The season (3) is in placements. A league manager assigns Driver (account 1, profile 55)
+    to Alpha in Division 1 (11). The command asks the queue for one `core.driver_assign` of
+    Driver's profile, Division 1 and Alpha, in season 3, and says and logs nothing itself: the
+    reply and the line are the change's (`test_driver_assign.py`)."""
     cog = _make_cog(season=_season())
     interaction = _interaction()
 
     await _assign(cog, interaction)
 
-    kwargs = cog.bot.placement_service.assign_driver.await_args.kwargs
-    assert kwargs["driver_profile_id"] == PROFILE_ID
-    assert kwargs["division_id"] == DIVISION_ID
-    assert kwargs["team_name"] == "Alpha"
-    assert kwargs["season_id"] == SEASON_ID
-    assert "Assigned" in _replied(interaction)
-    cog.bot.output_router.post_log.assert_awaited_once()
-    logged = cog.bot.output_router.post_log.await_args.args[0]
-    assert "/driver assign" in logged
-    assert "Alpha" in logged
+    cog.bot.change_queue.ask.assert_awaited_once()
+    kind, payload = cog.bot.change_queue.ask.await_args.args[:2]
+    assert kind == "core.driver_assign"
+    assert payload["driver_profile_id"] == PROFILE_ID
+    assert payload["division_id"] == DIVISION_ID
+    assert payload["team_name"] == "Alpha"
+    assert payload["season_id"] == SEASON_ID
+    assert _replied(interaction) == ""
+    cog.bot.output_router.post_log.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_ASSIGN_NOT_QUEUED)
 async def test_assign_seats_the_driver_in_the_team_its_shorthand_names(tmp_path):
     """A team is typed by its shorthand (#381), resolved in the division before anything is
-    written; the placement is made under the shorthand as the team holds it."""
+    asked; the assignment is asked of the queue under the shorthand as the team holds it."""
     from leaguebot.core.services.team_service import TeamReference
 
     cog = _make_cog(season=_season())
@@ -402,7 +400,7 @@ async def test_assign_seats_the_driver_in_the_team_its_shorthand_names(tmp_path)
     await _assign(cog, interaction, team="alp")
 
     cog.bot.team_service.resolve_division_team.assert_awaited_once_with(DIVISION_ID, "alp")
-    assert cog.bot.placement_service.assign_driver.await_args.kwargs["team_name"] == "ALP"
+    assert cog.bot.change_queue.ask.await_args.args[1]["team_name"] == "ALP"
 
 
 async def test_assign_refuses_a_team_the_division_does_not_have(tmp_path):
@@ -417,37 +415,7 @@ async def test_assign_refuses_a_team_the_division_does_not_have(tmp_path):
     await _assign(cog, interaction, team="@everyone")
 
     assert "`@everyone` is not a team." in _replied(interaction)
-    cog.bot.placement_service.assign_driver.assert_not_awaited()
-
-
-@pytest.mark.parametrize(
-    "stage, uncommitted_only", [("PLACEMENTS", False), ("ONGOING_PLACEMENTS", True)]
-)
-async def test_an_assignment_is_made_uncommitted(stage, uncommitted_only):
-    """Issue #220: a placement stands outside the championship until placements are confirmed,
-    and mid-season the command is kept to drivers who hold no confirmed placement."""
-    cog = _make_cog(season=_season("SETUP", stage))
-    interaction = _interaction()
-
-    await _assign(cog, interaction)
-
-    kwargs = cog.bot.placement_service.assign_driver.await_args.kwargs
-    assert kwargs["committed"] is False
-    assert kwargs["uncommitted_only"] is uncommitted_only
-
-
-async def test_a_refused_assignment_is_reported_not_raised(tmp_path):
-    """`assign_driver` refuses a full team, a driver already seated, and a team that would
-    outgrow the lineup graphic. All of them must reach the manager as a message."""
-    cog = _make_cog(season=_season())
-    cog.bot.placement_service.assign_driver = AsyncMock(
-        side_effect=ValueError("Team Alpha is full.")
-    )
-    interaction = _interaction()
-
-    await _assign(cog, interaction)
-
-    assert "Team Alpha is full." in _replied(interaction)
+    assert cog.bot.change_queue.method_calls == []
 
 
 # ---------------------------------------------------------------------------
@@ -455,45 +423,25 @@ async def test_a_refused_assignment_is_reported_not_raised(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_UNASSIGN_NOT_QUEUED)
 async def test_a_driver_is_unassigned_from_the_named_division(tmp_path):
+    """The season (3) is in placements. A league manager unassigns Driver (account 1, profile 55)
+    from Division 1 (11). The command asks the queue for one `core.driver_unassign` of Driver's
+    profile and Division 1, in season 3, and says and logs nothing itself: the reply and the line
+    are the change's (`test_driver_unassign.py`)."""
     cog = _make_cog(season=_season())
     interaction = _interaction()
 
     await _unassign(cog, interaction)
 
-    kwargs = cog.bot.placement_service.unassign_driver.await_args.kwargs
-    assert kwargs["driver_profile_id"] == PROFILE_ID
-    assert kwargs["division_id"] == DIVISION_ID
-    assert "Removed" in _replied(interaction)
-    assert "Alpha" in _replied(interaction)
-
-
-async def test_unassigning_a_driver_who_held_no_seat_omits_the_team(tmp_path):
-    """A driver of the division with no seat — a reserve who was never placed. Saying
-    "from ****" would read as a missing name rather than as no team."""
-    cog = _make_cog(season=_season())
-    cog.bot.placement_service.unassign_driver = AsyncMock(
-        return_value={"team_name": None, "division_name": "Division 1", "lineups": []}
-    )
-    interaction = _interaction()
-
-    await _unassign(cog, interaction)
-
-    replied = _replied(interaction)
-    assert "Division 1" in replied
-    assert "from ****" not in replied
-
-
-async def test_a_refused_unassignment_is_reported_not_raised(tmp_path):
-    cog = _make_cog(season=_season())
-    cog.bot.placement_service.unassign_driver = AsyncMock(
-        side_effect=ValueError("Driver is not in that division.")
-    )
-    interaction = _interaction()
-
-    await _unassign(cog, interaction)
-
-    assert "not in that division" in _replied(interaction)
+    cog.bot.change_queue.ask.assert_awaited_once()
+    kind, payload = cog.bot.change_queue.ask.await_args.args[:2]
+    assert kind == "core.driver_unassign"
+    assert payload["driver_profile_id"] == PROFILE_ID
+    assert payload["division_id"] == DIVISION_ID
+    assert payload["season_id"] == SEASON_ID
+    assert _replied(interaction) == ""
+    cog.bot.output_router.post_log.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
