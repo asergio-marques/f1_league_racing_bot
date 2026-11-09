@@ -1,8 +1,9 @@
 """The season-setup commands defer before they do their work.
 
 `/round add` and `/round amend` each ask the change queue for its change, judged at the ask, and
-`/round add`'s check loads and parses the calendar template to check its capacity (#283). Until issue #147 the write rebuilt the whole
-season, and on a season holding more than one division that work outlasted Discord's
+`/round add`'s check loads and parses the calendar template to check its capacity (#283). Until
+issue #147 the write rebuilt the whole season, and on a season holding more than one division
+that work outlasted Discord's
 three-second window: the interaction token expired, and the reply raised `404 Unknown
 interaction` *after* the round had already been written. What a league manager saw was a
 command that appeared to fail while having silently succeeded. The write is small now, but
