@@ -112,9 +112,6 @@ async def test_an_approved_signup_outranks_a_later_one_that_was_not(tmp_path):
     assert await _driver_nationality(db_path, int(B)) == "PT"
 
 
-_TURNED_DOWN_NOT_YET = "#283: signup's withdrawal is not yet a subscriber to core's driver-turned-down hook"
-
-
 async def _signup_on(db_path: str) -> None:
     async with get_connection(db_path) as db:
         await db.execute("UPDATE server_configs SET signup_module_enabled = 1")
@@ -127,7 +124,6 @@ async def _approvals(db_path: str) -> int:
         return (await cursor.fetchone())[0]
 
 
-@pytest.mark.xfail(strict=True, reason=_TURNED_DOWN_NOT_YET)
 async def test_a_turned_down_signup_no_longer_outranks_the_others(tmp_path):
     """The signup specification: a signup ceases to be approved when the approved driver is turned
     down. The signup module is on; the driver's signup on their past account A is approved, and a
@@ -176,7 +172,6 @@ async def _while_signup_is_off(db_path: str, profile_id: int) -> None:
         pytest.param(_while_signup_is_off, id="signup-off"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=_TURNED_DOWN_NOT_YET)
 async def test_a_turned_down_signup_keeps_its_approval_unless_the_save_holds_and_signup_is_on(
     tmp_path, turn_down
 ):

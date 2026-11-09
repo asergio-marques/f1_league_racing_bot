@@ -159,6 +159,12 @@ class LeagueBot(commands.Bot):
     #: from this moment (signup's settings and slots). The builder makes it and hands it to the
     #: confirmation, which calls it inside its save.
     configuration_confirmed: AwaitedHook
+    #: A driver turned down (`/driver reject`'s save), given the save's connection and the
+    #: driver's profile id: each module signing up what it lets go of from them (signup's
+    #: withdrawal of their signup's approval). The builder makes it and hands it to the change,
+    #: which calls it inside its save, and to the season's wind-down, which calls it for each
+    #: approved driver it returns.
+    driver_turned_down: AwaitedHook
     #: A division's final round read (the completion's first save), given the connection and the
     #: division's id: each module signing up its own read, handing back the round its final
     #: classification is drawn against, or None (results' last round with results). The builder

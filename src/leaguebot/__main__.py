@@ -328,6 +328,18 @@ def _sign_up_to_configuration_confirmed(bot: LeagueBot) -> None:
     bot.configuration_confirmed.subscribe(signup_module_service.configuration_confirmed_on)
 
 
+def _sign_up_to_driver_turned_down(bot: LeagueBot) -> None:
+    """Make the hook a driver turned down declares, and sign each module's part up to it: what a
+    module lets go of from the driver, on the connection of the save that turns them down, given
+    their profile id (architecture.md, "How modules and core fit together"). Signup withdraws the
+    approval of their signup. The builder hands it to `/driver reject`'s change and to the
+    season's wind-down."""
+    from leaguebot.signup.services import signup_module_service
+
+    bot.driver_turned_down = AwaitedHook()
+    bot.driver_turned_down.subscribe(signup_module_service.driver_turned_down_on)
+
+
 def _sign_up_to_placements_confirmed(bot: LeagueBot) -> None:
     """Make the hooks placements confirmed (the season's approval) declares, and sign each
     module's opening post up to them: the jobs it plans for a division, handed the save's
@@ -1475,6 +1487,7 @@ async def build(settings: Settings) -> LeagueBot:
     _sign_up_to_rounds_made_final(bot)
     _sign_up_to_test_mode_turned_on(bot)
     _sign_up_to_configuration_confirmed(bot)
+    _sign_up_to_driver_turned_down(bot)
     _sign_up_to_placements_confirmed(bot)
     _sign_up_to_season_completed(bot)
     _sign_up_to_season_end(bot)

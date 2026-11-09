@@ -12,6 +12,7 @@ import discord
 
 from leaguebot.core.db.database import get_connection, inserted_id
 from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.core.services.driver_service import accounts_of_profile
 from leaguebot.core.services.pack_service import CLEARED_SIGNUP_CHANNEL_ID, CLEARED_WIZARDS
 from leaguebot.signup.models.signup_module import (
     AvailabilitySlot,
@@ -928,6 +929,30 @@ async def configuration_confirmed_on(
             json.dumps(slots),
             now.isoformat(),
         ),
+    )
+
+
+async def driver_turned_down_on(db: aiosqlite.Connection, driver_profile_id: int) -> None:
+    """Withdraw the approval of the latest approved signup of *driver_profile_id*, under any of
+    their accounts, on *db*, committing nothing.
+
+    Core hands it the driver as it turns them down, in the save that does it, so that the signup
+    ceases to be approved, and no longer outranks the driver's others, with the turn-down or not at
+    all (architecture.md, "How modules and core fit together"). The signup is kept. While the
+    signup module is off it withdraws nothing, the hook being called whatever the modules'
+    switches say.
+    """
+    if not await signup_enabled_on(db):
+        return
+    accounts = await accounts_of_profile(db, driver_profile_id)
+    if not accounts:
+        return
+    await db.execute(
+        "UPDATE signup_records SET approved = 0 WHERE id = ("
+        "  SELECT id FROM signup_records WHERE approved = 1"
+        f"  AND discord_user_id IN ({', '.join('?' * len(accounts))})"
+        "  ORDER BY id DESC LIMIT 1)",
+        accounts,
     )
 
 
