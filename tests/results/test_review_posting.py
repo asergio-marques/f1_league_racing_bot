@@ -37,11 +37,13 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
+    acknowledgement,
     attach_queue,
     discard_job,
     http_error,
     league_double,
     member_interaction,
+    register,
     restart_queue,
     retry_job,
     run_queue,
@@ -51,6 +53,8 @@ from tests.support.change_queue import (
     updated_reply,
 )
 from tests.support.mentions import NOBODY, notified
+from tests.support.season_league import set_module_flag
+from tests.support.undecorate import undecorate
 
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
 SEASON_ID = 1
@@ -514,21 +518,51 @@ async def test_a_post_repointed_to_a_new_channel_lands_there_on_retry(tmp_path):
 
 async def _set_results_channel(league: _League, channel_id: int) -> Any:
     """Run `/results channel results` for Pro as the league manager Alex, through the command's
-    own body and the real season service. Gives Alex's interaction."""
+    body and the real season service, with results on and results' channel setting registered on
+    the queue as the builder registers it; the queue is not run. Gives Alex's interaction."""
+    from leaguebot.__main__ import register_change_types
     from leaguebot.core.services.season_service import SeasonService
     from leaguebot.results.cogs.results_cog import ResultsCog
 
+    builder = MagicMock()
+    register_change_types(builder)
+    built = {call.args[0].kind: call.args[0]
+             for call in builder.change_queue.register.call_args_list}
+    register(league.bot, built["results.setting.results_channel"])
+    await set_module_flag(league.db_path, "results", True)
+    league.bot.module_service.is_results_enabled = AsyncMock(return_value=True)
     league.bot.season_service = SeasonService(league.db_path)
     cog = ResultsCog.__new__(ResultsCog)
     cog.bot = league.bot
     interaction = member_interaction(league.bot)
     interaction.user.display_name = "Alex"
-    await cog._set_division_channel(interaction, "Pro", league.channel(channel_id), "results")
+    await undecorate(ResultsCog.channel_results)(cog, interaction, "Pro",
+                                                 league.channel(channel_id))
     return interaction
 
 
+async def _results_channel(db_path: str) -> int | None:
+    async with get_connection(db_path) as db:
+        row = await (await db.execute(
+            "SELECT results_channel_id FROM division_results_config WHERE division_id = ?",
+            (DIVISION_ID,),
+        )).fetchone()
+    return None if row is None or row[0] is None else int(row[0])
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: /results channel results is not yet a results setting that overtakes a stopped job",
+)
 async def test_a_stopped_post_lands_once_the_channel_is_set_and_retried(tmp_path):
-    """Set the channel, then Retry: the remedy the stop notice leads a manager to, end to end."""
+    """Set the channel, then Retry: the remedy the stop notice leads a manager to, end to end.
+
+    Pro's round 3 results are republished, and the post stops at `post_session_results`, its
+    results channel gone. Alex runs `/results channel results` for Pro with channel 703 and is
+    acknowledged; the queue runs. The setting does not wait behind the stopped post: it runs past
+    it, saves 703 as Pro's results channel and tells Alex the channel was updated, while the post
+    still stops the league's lane. Alex presses Retry: the results land once in 703, the session
+    records that message, and nothing stops the queue."""
     league = await _league(tmp_path, results_message_id=None)
     league.gone.add(RESULTS_CHANNEL)
     await _ask(league)
@@ -537,8 +571,13 @@ async def test_a_stopped_post_lands_once_the_channel_is_set_and_retried(tmp_path
     assert job is not None and job["name"] == "post_session_results"
 
     manager = await _set_results_channel(league, NEW_RESULTS_CHANNEL)
-    assert "updated to" in str(manager.response.send_message.await_args.args[0])
-    assert await stopped_job(league.db_path) is not None, "setting the channel ran the job"
+    assert acknowledgement(manager).startswith("⏳ ")
+    await run_queue(league.bot)
+
+    assert "updated to" in updated_reply(manager)
+    assert await _results_channel(league.db_path) == NEW_RESULTS_CHANNEL
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "post_session_results", "setting the channel ran the job"
     await retry_job(league.bot)
 
     new = league.sent_to(NEW_RESULTS_CHANNEL)
