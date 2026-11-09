@@ -465,10 +465,12 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   lane waits on. Each such step carries `Step.on_fault`, so a role Discord refuses is reported and
   the queue goes on; what the member and the log channel are told is the core specification's, which
   gains this exception with the work that builds it. The move of a held signup channel's
-  permissions after a driver's account changes is the same: work the save does not need and
-  nothing later on the lane waits on, so signup's step reports a refusal of the permissions in its
-  result and the queue goes on. Every other job, and a bot's own change whose check raises, keeps
-  the rule. *Rejected:* stopping the lane on a refused role, as other jobs do,
+  permissions after a driver's account changes is likewise work the save does not need and nothing
+  later on the lane waits on, but its step carries no `Step.on_fault`: it catches Discord's refusal
+  of the permissions itself and ends with the problem in its result, so the queue goes on, and any
+  other fault in it stops the lane as any job's does; what the member and the log channel are told
+  is the core specification's ("A driver's accounts"). Every other job, and a bot's own change
+  whose check raises, keeps the rule. *Rejected:* stopping the lane on a refused role, as other jobs do,
   which would hold every change behind one lost permission until Retry or Discard was pressed.
 
   **A fourth exception: the settings a league repairs itself with overtake a stopped head on the
