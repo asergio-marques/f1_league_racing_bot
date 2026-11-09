@@ -12,12 +12,11 @@ commands therefore refuse it at the point it is typed. Each refusal's wording is
 word by a case of its own, because a reader tidying near-identical branches into one loses the
 wording that tells a manager which of them they hit.
 
-**`/division add` writes into the pending snapshot, `/division duplicate` writes to the
-database.** Add is part of building a season that does not exist yet, so it edits the in-memory
-config and rewrites the snapshot; duplicate copies rounds that are already rows, so it goes
-through `season_service.duplicate_division` and then reloads the pending config from what it
-wrote. The reload is the subtle half: without it the snapshot the manager sees next would not
-contain the division they just created.
+**`/division add` writes through the setup's snapshot, `/division duplicate` writes the rows
+directly.** Add edits the season being set up and saves it whole; duplicate copies rounds that
+are already rows, so it goes through `season_service.duplicate_division`. Neither leaves a copy of
+the setup to bring up to date: the setup is read from the database whenever a command asks for it
+(#283), so the review the manager sees next holds the division just created.
 
 **An empty division slot is filled before a new one is appended.** `/season setup` lays out
 blank slots for the number of divisions a league said it wanted, and adding must consume one
@@ -137,7 +136,6 @@ def _make_cog(
     cog._pending = {ACTOR_ID: cfg} if cfg is not None else {}
     cog._get_pending = MagicMock(return_value=cfg)
     cog._snapshot_pending = AsyncMock(return_value=None)
-    cog._reload_pending_from_db = AsyncMock(return_value=None)
     return cog
 
 
@@ -507,32 +505,6 @@ async def test_the_new_division_is_seeded_with_teams(tmp_path):
     await _duplicate(cog, _interaction())
 
     cog.bot.team_service.seed_division_teams.assert_awaited_once_with(12)
-
-
-async def test_the_pending_config_is_reloaded_from_what_was_written(tmp_path):
-    """Duplicate writes to the database, not to the snapshot — without the reload the
-    manager's next `/season placements-review` would not contain the division they just made."""
-    db_path = await _make_db(tmp_path)
-    cfg = _pending(PendingDivision(name="Pro", role_id=1, tier=1))
-    cog = _make_cog(db_path, cfg=cfg)
-
-    await _duplicate(cog, _interaction())
-
-    cog._reload_pending_from_db.assert_awaited_once_with(cfg)
-
-
-async def test_a_season_with_no_pending_config_still_duplicates(tmp_path):
-    """The rows are the truth; a missing in-memory snapshot is a restart, not a reason to
-    refuse a copy the database can perfectly well take."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, cfg=None)
-    interaction = _interaction()
-
-    await _duplicate(cog, interaction)
-
-    cog.bot.season_service.duplicate_division.assert_awaited_once()
-    cog._reload_pending_from_db.assert_not_awaited()
-    assert "created from" in _replied(interaction)
 
 
 async def test_a_refused_copy_reports_the_reason_the_service_gave(tmp_path):

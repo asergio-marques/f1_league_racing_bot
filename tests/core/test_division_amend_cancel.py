@@ -45,7 +45,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.cogs.season_cog import PendingConfig, PendingDivision, SeasonCog
+from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.season_service import SeasonImmutableError
 from tests.support.undecorate import undecorate
@@ -99,7 +99,6 @@ def _division(name="Pro", tier=1, *, id=DIVISION_ID, status="ACTIVE", channel=No
 def _make_cog(
     db_path: str,
     *,
-    cfg: PendingConfig | None = None,
     divisions=None,
     remaining=None,
     season=SimpleNamespace(
@@ -137,12 +136,7 @@ def _make_cog(
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
 
-    cog = SeasonCog.__new__(SeasonCog)
-    cog.bot = bot
-    cog._pending = {ACTOR_ID: cfg} if cfg is not None else {}
-    cog._get_pending = MagicMock(return_value=cfg)
-    cog._reload_pending_from_db = AsyncMock(return_value=None)
-    return cog
+    return SeasonCog(bot)
 
 
 def _interaction(*, channel=None):
@@ -319,29 +313,6 @@ async def test_the_remaining_divisions_are_listed_after_a_delete(tmp_path):
     assert "Am" in _replied(interaction)
 
 
-async def test_a_delete_reloads_the_pending_config(tmp_path):
-    """The snapshot in memory still holds the division that was just removed; without the
-    reload the next `/season placements-review` would show a division that no longer exists."""
-    db_path = await _make_db(tmp_path)
-    cfg = PendingConfig(divisions=[PendingDivision(name="Pro")])
-    cog = _make_cog(db_path, cfg=cfg)
-
-    await _delete(cog, _interaction())
-
-    cog._reload_pending_from_db.assert_awaited_once_with(cfg)
-
-
-async def test_a_delete_without_a_pending_config_still_works(tmp_path):
-    """The rows are the truth; a missing snapshot is a restart, not a reason to refuse."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, cfg=None)
-
-    await _delete(cog, _interaction())
-
-    cog.bot.season_service.delete_division.assert_awaited_once()
-    cog._reload_pending_from_db.assert_not_awaited()
-
-
 async def test_the_delete_is_logged(tmp_path):
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
@@ -391,34 +362,6 @@ async def test_a_division_may_be_renamed_to_a_variant_of_its_own_name(tmp_path):
     await _rename(cog, _interaction(), current="Pro", new="PRO")
 
     cog.bot.season_service.rename_division.assert_awaited_once_with(DIVISION_ID, "PRO")
-
-
-@pytest.mark.parametrize(
-    "divisions, renamed",
-    [
-        pytest.param(
-            lambda: [PendingDivision(name="Pro", tier=1), PendingDivision(name="Am", tier=2)],
-            ["Elite", "Am"],
-            id="another_division",
-        ),
-        pytest.param(
-            lambda: [PendingDivision(name="Pro"), PendingDivision(name="Pro Am")],
-            ["Elite", "Pro Am"],
-            id="a_name_containing_the_old_one",
-        ),
-    ],
-)
-async def test_the_rename_reaches_the_pending_config(tmp_path, divisions, renamed):
-    """Renamed in place rather than reloaded, because the pending division carries rounds a
-    manager may have typed and not yet committed. Only the renamed division changes: another
-    division, even one whose name contains the old one, is left alone."""
-    db_path = await _make_db(tmp_path)
-    cfg = PendingConfig(divisions=divisions())
-    cog = _make_cog(db_path, cfg=cfg)
-
-    await _rename(cog, _interaction())
-
-    assert [d.name for d in cfg.divisions] == renamed
 
 
 async def test_the_rename_is_logged_with_both_names(tmp_path):
@@ -560,16 +503,6 @@ async def test_the_audit_carries_the_unchanged_fields_too(tmp_path):
 
     new = json.loads((await _audit_rows(db_path))[0]["new_value"])
     assert new == {"name": "Pro", "tier": 3, "mention_role_id": 555}
-
-
-async def test_an_amendment_reloads_the_pending_config(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cfg = PendingConfig(divisions=[PendingDivision(name="Pro")])
-    cog = _make_cog(db_path, cfg=cfg)
-
-    await _amend(cog, _interaction(), tier=3)
-
-    cog._reload_pending_from_db.assert_awaited_once_with(cfg)
 
 
 @pytest.mark.parametrize(

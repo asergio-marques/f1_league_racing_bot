@@ -106,10 +106,7 @@ def _make_cog(
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
 
-    cog = SeasonCog.__new__(SeasonCog)
-    cog.bot = bot
-    cog._get_pending = MagicMock(return_value=None)
-    cog._reload_pending_from_db = AsyncMock(return_value=None)
+    cog = SeasonCog(bot)
     cog._setup_season_id = setup_season_id
     return cog
 
@@ -217,18 +214,6 @@ async def test_deleting_before_placements_is_refused_and_recorded(stage):
     assert logged == [
         f"\u26d4 `/round delete` refused for Admin (<@{ACTOR_ID}>) \u2014 {reply[2:]}"
     ]
-
-
-async def test_the_pending_setup_is_reloaded_after_a_delete():
-    """The season being built lives in memory as well as in the database; leaving the
-    in-memory copy stale would have the review show a round that no longer exists."""
-    cog = _make_cog()
-    cog._get_pending = MagicMock(return_value=MagicMock())
-    interaction = _interaction()
-
-    await _delete(cog, interaction)
-
-    cog._reload_pending_from_db.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
