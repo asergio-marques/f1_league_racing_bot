@@ -419,41 +419,53 @@ async def test_a_full_calendar_does_not_refuse_a_setup_round_amendment(tmp_path,
 # ---------------------------------------------------------------------------
 
 
+_STANDING = {"track": "Hungaroring", "format": "NORMAL", "scheduled_at": "2026-06-21T18:00:00"}
+
+
 @pytest.mark.parametrize(
-    "fields",
+    "round_number, given",
     [
-        pytest.param(("track",), id="its_own_track"),
-        pytest.param(("format",), id="its_own_format"),
-        pytest.param(("scheduled_at",), id="its_own_moment"),
-        pytest.param(("track", "format", "scheduled_at"), id="every_value_as_it_stands"),
+        pytest.param(2, {"track": _STANDING["track"]}, id="its_own_track"),
+        pytest.param(2, {"format": _STANDING["format"]}, id="its_own_format"),
+        pytest.param(2, {"scheduled_at": _STANDING["scheduled_at"]}, id="its_own_moment"),
+        pytest.param(2, _STANDING, id="every_value_as_it_stands"),
+        pytest.param(1, {"track": "Hungaroring"}, id="a_track_for_a_trackless_mystery_round"),
+        pytest.param(
+            1,
+            {"track": "Hungaroring", "format": "MYSTERY"},
+            id="a_track_for_a_mystery_round_kept_a_mystery",
+        ),
     ],
 )
-async def test_a_setup_round_amended_to_what_stands_changes_nothing(tmp_path, fields):
+async def test_a_setup_round_amended_to_what_stands_changes_nothing(
+    tmp_path, round_number, given
+):
     """The core specification's record of what changed: a command that changes nothing because
     nothing was asked of it records that nothing was changed. Season #1 is being set up, in
     Placements, Pro's round 2 standing at the Hungaroring, in the NORMAL format, on 21 June 2026
-    at 18:00 UTC; the manager amends it to values it already holds, and the queue runs whatever
-    was asked of it. The reply says round 2 already holds those values and nothing was changed;
-    Pro's rounds are as they were; no audit entry is written; and the log channel holds one line,
-    in the success form, saying nothing changed and why."""
+    at 18:00 UTC, and its round 1 a mystery round with no track. The manager amends round 2 to
+    values it already holds, or gives round 1 a track, alone or with the MYSTERY format: a mystery
+    round names no track, so round 1 would stand as it does. The queue runs whatever was asked of
+    it. The reply says the round already holds those values and nothing was changed; Pro's rounds
+    are as they were; no audit entry is written; and the log channel holds one line, in the
+    success form, saying nothing changed and why."""
     from tests.support.change_queue import run_queue
     from tests.support.settings_league import audit_rows, last_said, log_lines
 
     league = await setup_league(tmp_path, divisions=_HELD)
     before = await round_rows(league.db_path, "Pro")
-    standing = {"track": "Hungaroring", "format": "NORMAL", "scheduled_at": "2026-06-21T18:00:00"}
-    asked = await _ask(league, round_number=2, **{field: standing[field] for field in fields})
+    asked = await _ask(league, round_number=round_number, **given)
     await run_queue(league.bot)
 
     assert last_said(asked) == (
-        "ℹ️ Round 2 in **Pro** already holds those values. Nothing was changed."
+        f"ℹ️ Round {round_number} in **Pro** already holds those values. Nothing was changed."
     )
     assert await round_rows(league.db_path, "Pro") == before
     assert await audit_rows(league.db_path) == []
     assert await log_lines(league) == [
         f"{NAMED} | /round amend (pending) | Nothing changed\n"
         "  division: Pro\n"
-        "  round: 2\n"
+        f"  round: {round_number}\n"
         "  reason: the values given are the ones it holds"
     ]
 
