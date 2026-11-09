@@ -276,6 +276,11 @@ async def test_a_failed_setup_round_amendment_changes_nothing(tmp_path):
             id="the-setup-gone-by-the-time-it-runs",
         ),
         pytest.param(
+            "the-season-approved",
+            "❌ No pending season setup. Run `/season setup` first.",
+            id="the-season-approved-by-the-time-it-runs",
+        ),
+        pytest.param(
             "a-round-added-at-that-moment",
             _clash(4, _JULY_5),
             id="a-round-at-that-moment-by-the-time-it-runs",
@@ -287,7 +292,8 @@ async def test_a_setup_round_amendment_is_judged_again_as_it_starts(tmp_path, me
     manager runs `/round amend` for Pro's round 1, moving it to 5 July at 18:00, and nothing is
     saved at the ask. Before the queue runs it: Pro's round 1 is deleted and Pro renumbered, as
     `/round delete` leaves it, so that 21 June's round is now round 1; Pro is deleted; the season
-    being set up is deleted; or Pro is given a round 4 on 5 July at 18:00. The queue runs. The
+    being set up is deleted; the season is approved, active and under way with Pro and its rounds
+    as they stood; or Pro is given a round 4 on 5 July at 18:00. The queue runs. The
     amendment is refused as it starts, in the words it would meet at the ask, its acknowledgement
     updated to them — the round the manager named, not the one that now bears its number, being
     the one judged; the log channel records the refusal alone; nothing is
@@ -304,6 +310,9 @@ async def test_a_setup_round_amendment_is_judged_again_as_it_starts(tmp_path, me
             await db.execute(
                 f"UPDATE rounds SET round_number = round_number - 1 WHERE division_id = {pro}"
             )
+        elif meanwhile == "the-season-approved":
+            await db.execute("UPDATE seasons SET status = 'ACTIVE', stage = 'ONGOING'")
+            await db.execute("UPDATE divisions SET status = 'ACTIVE'")
         elif meanwhile == "a-round-added-at-that-moment":
             await db.execute(
                 "INSERT INTO rounds (division_id, round_number, format, track_name, scheduled_at)"
