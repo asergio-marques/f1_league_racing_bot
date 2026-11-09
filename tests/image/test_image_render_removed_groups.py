@@ -106,7 +106,7 @@ def _verify(teams):
 
 class TestARemovedGroupTakesItsFieldsWithIt:
     def test_a_division_fielding_no_reserve_driver_renders(self):
-        """`seed_division_teams` creates no seats for a reserve team, so this is the
+        """`seed_division_teams_on` creates no seats for a reserve team, so this is the
         shape every newly-created division has."""
         _root, spec, problem = _verify(_division([]))
 

@@ -115,7 +115,9 @@ async def _make_db(tmp_path) -> str:
         await db.commit()
     service = TeamService(db_path)
     await service.add_default_team("RBR", full_name="Oracle Red Bull Racing")
-    await service.seed_division_teams(1)
+    async with get_connection(db_path) as db:
+        await service.seed_division_teams_on(db, 1)
+        await db.commit()
     return db_path
 
 

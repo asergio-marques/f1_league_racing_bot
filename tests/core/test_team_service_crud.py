@@ -398,12 +398,20 @@ async def test_listing_teams_with_roles_restores_a_lost_reserve(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+async def _seed(service: TeamService, db_path: str, division_id: int) -> None:
+    """Seed division *division_id*'s teams from the league's list, as the save of `/division add`
+    or `/division duplicate` seeds them, on a connection of its own, committed."""
+    async with get_connection(db_path) as db:
+        await service.seed_division_teams_on(db, division_id)
+        await db.commit()
+
+
 async def test_seeding_a_division_copies_the_server_s_teams(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
     service = TeamService(db_path)
     await service.add_default_team("Alpha", full_name="Alpha")
 
-    await service.seed_division_teams(1)
+    await _seed(service, db_path, 1)
 
     assert sorted(await _division_names(db_path, 1)) == ["Alpha", RESERVE]
 
@@ -413,7 +421,7 @@ async def test_seeding_pre_creates_a_seat_for_every_place_in_a_team(tmp_path):
     service = TeamService(db_path)
     await service.add_default_team("Alpha", full_name="Alpha", max_seats=3)
 
-    await service.seed_division_teams(1)
+    await _seed(service, db_path, 1)
 
     assert await _seat_count(db_path, 1, "Alpha") == 3
 
@@ -452,7 +460,7 @@ async def test_seeding_a_division_copies_each_team_s_full_name(tmp_path):
     service = TeamService(db_path)
     await service.add_default_team("RBR", full_name="Oracle Red Bull Racing")
 
-    await service.seed_division_teams(1)
+    await _seed(service, db_path, 1)
 
     names = {t["name"]: t["full_name"] for t in await service.get_division_teams(1)}
     assert names == {"RBR": "Oracle Red Bull Racing", RESERVE: RESERVE}
@@ -463,7 +471,7 @@ async def test_the_reserve_team_is_seeded_without_seats(tmp_path):
     so pre-creating seats would invent a capacity it does not have."""
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
 
-    await TeamService(db_path).seed_division_teams(1)
+    await _seed(TeamService(db_path), db_path, 1)
 
     assert await _seat_count(db_path, 1, RESERVE) == 0
 
@@ -478,7 +486,7 @@ async def test_the_season_s_team_names_are_reported_without_the_reserve(tmp_path
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=2)
     service = TeamService(db_path)
     await service.add_default_team("Alpha", full_name="Alpha")
-    await service.seed_division_teams(1)
+    await _seed(service, db_path, 1)
 
     names = await service.get_setup_season_team_names(SEASON_ID)
 
@@ -490,8 +498,8 @@ async def test_a_name_in_two_divisions_is_reported_once(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=2)
     service = TeamService(db_path)
     await service.add_default_team("Alpha", full_name="Alpha")
-    await service.seed_division_teams(1)
-    await service.seed_division_teams(2)
+    await _seed(service, db_path, 1)
+    await _seed(service, db_path, 2)
 
     assert await service.get_setup_season_team_names(SEASON_ID) == {"Alpha"}
 
@@ -519,7 +527,7 @@ async def test_a_division_s_reserve_team_comes_last(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
     service = TeamService(db_path)
     # Seeding an empty list gives the division its Reserve alone, so Alpha is inserted after it.
-    await service.seed_division_teams(1)
+    await _seed(service, db_path, 1)
     await _insert_division_team(db_path, 1, "Alpha")
 
     teams = await service.get_division_teams(1)
@@ -531,7 +539,7 @@ async def test_an_empty_seat_is_reported_with_no_driver(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
     service = TeamService(db_path)
     await service.add_default_team("Alpha", full_name="Alpha", max_seats=2)
-    await service.seed_division_teams(1)
+    await _seed(service, db_path, 1)
 
     teams = await service.get_division_teams(1)
 
@@ -544,7 +552,7 @@ async def test_a_filled_seat_carries_its_driver(tmp_path):
     db_path = await _make_db(tmp_path, season_status="SETUP", divisions=1)
     service = TeamService(db_path)
     await service.add_default_team("Alpha", full_name="Alpha", max_seats=2)
-    await service.seed_division_teams(1)
+    await _seed(service, db_path, 1)
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO driver_profiles "

@@ -94,7 +94,6 @@ def _bot() -> MagicMock:
     bot.season_service.get_setup_season = AsyncMock(return_value=None)
     bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
     bot.season_service.get_divisions = AsyncMock(return_value=[])
-    bot.team_service.seed_division_teams = AsyncMock()
     bot.output_router.post_log = AsyncMock()
     return bot
 
