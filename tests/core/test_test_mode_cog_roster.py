@@ -389,8 +389,8 @@ class TestTheNationalityCommand:
     @pytest.mark.parametrize("configured", [True, False], ids=["test_mode_off", "unconfigured"])
     async def test_it_is_refused_while_test_mode_is_off(self, league, configured):
         """Admin (77) runs the command with test mode off, or on a server with no configuration
-        at all. They are refused at once in the words the command has always used, nothing is
-        queued, the switch is not touched and nothing is audited; where the server is configured
+        at all. They are refused at once, in one reply seen by them alone, in the words the command
+        has always used; nothing is queued, the switch is not touched and nothing is audited; where the server is configured
         its log channel takes the standard refusal line, and where it is not there is no log
         channel to take one."""
         async with get_connection(league.db_path) as db:
@@ -404,6 +404,8 @@ class TestTheNationalityCommand:
         await _ask_nationality(league, interaction)
 
         assert said(interaction) == [_REFUSAL]
+        [reply] = interaction.response.send_message.await_args_list
+        assert reply.kwargs.get("ephemeral") is True
         assert await change_rows(league.db_path) == []
         assert await audit_rows(league.db_path) == []
         if configured:
