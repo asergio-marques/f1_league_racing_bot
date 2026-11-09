@@ -277,14 +277,14 @@ def test_a_module_s_switch_is_its_own_settings_signed_up_by_the_builder(
             assert sorted(switch.writes) == sorted(writes), kind
 
 
+@pytest.mark.xfail(strict=True, reason="#283: two jobs still let go of a setup held in memory")
 def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
     """Over every change type the builder registers, the jobs marked as never to be discarded are
     exactly those whose loss could stop a season from being started or completed, or would leave
     the league no way to put it right (#439, slice 8; owner, 2026-10-23): the arming of an
     approved season's timed work and of an amended round's, the creation of a round's results
     submission channel, the save of a round's, a division's and a season's cancellation once
-    their timed work is removed, and the letting go of a season's setup held in memory once it is
-    approved or aborted, the forgetting of a review taken down, and the start of a round's
+    their timed work is removed, the forgetting of a review taken down, and the start of a round's
     results submission and the clearing of one a restart cut short, and the last job of a penalty
     review's opening and of its prompt's posting, both jobs of an appeals review's reopening, and
     the last job of a reports approval and of an appeals approval, the marking of a round's
@@ -322,9 +322,7 @@ def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
         ("results.submission.open", "create_channel"),
         ("results.submission.open", "start_round"),
         ("results.submission.restart", "clear"),
-        ("season.abort", "forget_setup"),
         ("season.approve", "arm"),
-        ("season.approve", "forget_setup"),
         ("season.cancel", "apply"),
         ("season.division.cancel", "apply"),
         ("season.review.take_down", "forget"),

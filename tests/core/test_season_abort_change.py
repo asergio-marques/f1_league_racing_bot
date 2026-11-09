@@ -81,11 +81,6 @@ ONLY_BEFORE = (
     "ongoing season is cancelled with `/season cancel`."
 )
 END_DISCARDED = "Nothing was aborted: the season stands as it was. Run `/season abort` again."
-CANNOT_DISCARD_FORGET = (
-    "⛔ This job can't be discarded: without it the bot would go on holding the aborted season's "
-    "setup, and no new season could be set up until the bot restarts. Fix what stopped it and "
-    "press **Retry**."
-)
 NOTICE_DISCARDED = f"<@{SIGNING_UP}> — their signup channel was closed without its notice"
 WINDOW_OPEN = (
     "The signup window could not be closed. Close it with `/signup close`. "
@@ -641,6 +636,7 @@ async def test_a_season_confirmed_while_the_abort_waited_is_refused_when_it_runs
 WINDOW_JOBS = ("delete_button", "post_closed")
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the abort still lets go of a setup held in memory")
 async def test_the_jobs_run_in_order(tmp_path):
     league = await setup_league(tmp_path, signups_open=True, test_mode=True)
     await signing_up(league)
@@ -652,9 +648,9 @@ async def test_the_jobs_run_in_order(tmp_path):
     # read apart: where they fall beside `close_window` is the close's to say.
     names = [name for name in await _names(league) if name not in WINDOW_JOBS]
     assert names[:3] == ["close_window", "flush_forecasts", "end"]
-    assert names[-3:] == ["discard_portraits", "forget_setup", "close"]
-    assert "signup_notice" in names[3:-3]
-    assert set(names[3:-3]) <= {"signup_notice", "close_signup", "take_driver_role"}
+    assert names[-2:] == ["discard_portraits", "close"]
+    assert "signup_notice" in names[3:-2]
+    assert set(names[3:-2]) <= {"signup_notice", "close_signup", "take_driver_role"}
     assert "discard_backup" not in names
     assert not await _season_stands(league)
 
@@ -723,20 +719,6 @@ async def test_test_mode_is_switched_off_and_its_saved_state_kept(tmp_path):
     assert not await _season_stands(league)
 
 
-async def test_the_setup_held_in_memory_is_let_go_after_the_save(tmp_path):
-    league = await setup_league(tmp_path)
-    await _asked(league)
-
-    await _run_through(league, "end")
-    assert not await _season_stands(league)
-    assert league.cog._get_pending() is not None
-
-    await run_queue(league.bot)
-    assert league.cog._get_pending() is None
-    names = await _names(league)
-    assert names.index("end") < names.index("forget_setup")
-
-
 async def test_a_discarded_save_aborts_nothing(tmp_path):
     league = await setup_league(tmp_path, test_mode=True)
     interaction = await _asked(league)
@@ -753,7 +735,6 @@ async def test_a_discarded_save_aborts_nothing(tmp_path):
     assert await driver_state(league, LEWIS) == "ASSIGNED"
     assert await driver_state(league, TEST_DRIVER) == "ASSIGNED"
     assert await _test_mode(league) == 1
-    assert league.cog._get_pending() is not None
 
 
 async def test_one_success_line_records_the_drivers_returned_and_deleted(tmp_path):
@@ -771,36 +752,6 @@ async def test_one_success_line_records_the_drivers_returned_and_deleted(tmp_pat
     assert "not done:" not in line
     jobs = await _jobs(league)
     assert jobs[-1]["name"] == "close" and all(job["done_at"] for job in jobs)
-
-
-async def test_letting_go_of_the_setup_cannot_be_discarded_on_an_abort(tmp_path):
-    """Letting go of the setup the bot holds in memory fails once the season is deleted and stops
-    the queue. A league admin's Discard on it is refused, saying the bot would go on holding the
-    aborted season's setup and no new season could be set up until it restarts; the queue stays
-    stopped there. Once the fault is lifted, Retry lets the setup go and the abort reports
-    nothing left undone."""
-    league = await setup_league(tmp_path)
-    league.cog.clear_pending = MagicMock(side_effect=RuntimeError("the cog is reloading"))
-    interaction = await _asked(league)
-
-    await run_queue(league.bot)
-    assert await _stopped_at(league) == ("forget_setup", None)
-    assert not await _season_stands(league)
-
-    discarding = await discard_job(league.bot)
-
-    assert CANNOT_DISCARD_FORGET in reply(discarding)
-    assert await _stopped_at(league) == ("forget_setup", None)
-    assert _success_lines(league) == []
-
-    del league.cog.clear_pending
-    await retry_job(league.bot)
-
-    assert await _stopped_at(league) is None
-    assert league.cog._get_pending() is None
-    assert ABORTED in reply(interaction)
-    [line] = _success_lines(league)
-    assert "not done:" not in line
 
 
 async def _window_refused(tmp_path: Any, _monkeypatch: Any) -> Any:

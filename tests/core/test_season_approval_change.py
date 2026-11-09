@@ -3,7 +3,7 @@
 ✅ Approve on `/season placements-review` runs its gates and, under test mode, the backup
 question at the press, then asks the change queue for the season's approval. It is checked when
 pressed and again when it runs; the sessions, the placements, the points and the season's state are
-saved in one save; letting go of the setup held in memory, the arming of the timed work, each
+saved in one save; the arming of the timed work, each
 driver's roles, the batch notice and each division's lineup, calendar, opening standings and
 opening sheet follow as jobs, each of which stops the queue when it fails. While an approval is in
 hand, a second is refused without naming its job. Where the outcome can no longer reach the member,
@@ -693,17 +693,18 @@ async def test_the_approval_is_audited_with_the_season_and_the_placements_commit
     }
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the approval still lets go of a setup held in memory")
 async def test_each_driver_s_roles_division_s_lineup_calendar_and_opening_posts_are_jobs_of_their_own(
     tmp_path, monkeypatch,
 ):
     """Results and attendance on, Pro (tier 1) and Am (tier 2), Lewis and Max seated in Pro and
-    Charles in Am. Once the approval has run, its jobs are, in order: the save, letting go of the
-    setup, the arming, each driver's roles, the batch notice, then for Pro and then for Am its
-    lineup, its calendar, its opening standings and its opening sheet, then the notice's deletion,
-    the review's channel told and the closing line. The modules' jobs are planned through the
-    placements confirmed hook, called inside the save, on its connection, once for each division
-    in tier order and handed the division's id and name; a further subscriber signed up to it
-    sees the season already Ongoing on that connection, before it is committed."""
+    Charles in Am. Once the approval has run, its jobs are, in order: the save, the arming, each
+    driver's roles, the batch notice, then for Pro and then for Am its lineup, its calendar, its
+    opening standings and its opening sheet, then the notice's deletion, the review's channel told
+    and the closing line. The modules' jobs are planned through the placements confirmed hook,
+    called inside the save, on its connection, once for each division in tier order and handed the
+    division's id and name; a further subscriber signed up to it sees the season already Ongoing on
+    that connection, before it is committed."""
     league = await _league_for(tmp_path, monkeypatch, results=True, attendance=True)
     handed: list[tuple[Any, ...]] = []
 
@@ -720,7 +721,7 @@ async def test_each_driver_s_roles_division_s_lineup_calendar_and_opening_posts_
 
     names = [job["name"] for job in await _jobs(league)]
     assert names == (
-        ["apply", "forget_setup", "arm"] + ["grant_roles"] * 3 + ["post_batch_notice"]
+        ["apply", "arm"] + ["grant_roles"] * 3 + ["post_batch_notice"]
         + ["refresh_lineup", "post_calendar", "opening_standings", "opening_sheet"] * 2
         + ["delete_batch_notice", "tell_review_channel", "close"]
     )
@@ -918,54 +919,6 @@ async def test_the_season_s_arming_cannot_be_discarded_and_once_retried_arms_eve
     assert "timed work was not armed" not in reply(press)
 
 
-#: The refusal of a Discard on letting go of the setup held in memory.
-CANNOT_DISCARD_FORGET = (
-    "⛔ This job can't be discarded: without it the bot would go on holding season 3's setup, and "
-    "`/round amend` would refuse its rounds until the bot restarts. Fix what stopped it and press "
-    "**Retry**."
-)
-
-
-async def test_letting_go_of_the_setup_cannot_be_discarded(tmp_path, monkeypatch):
-    """Letting go of the setup the bot holds in memory fails once season 3 is saved and stops the
-    queue. A league admin's Discard on it is refused, saying the bot would go on holding season
-    3's setup and `/round amend` would refuse its rounds until it restarts; the queue stays
-    stopped there. Once the fault is lifted, Retry lets the setup go and the approval goes on."""
-    league = await _league_for(tmp_path, monkeypatch, results=True)
-    press = await _pressed(league)
-    await _fail_forget(league)
-    await run_queue(league.bot)
-    assert await _stopped_at(league) == "forget_setup"
-
-    discarding = await discard_job(league.bot)
-
-    assert CANNOT_DISCARD_FORGET in _said_to(discarding)
-    assert await _stopped_at(league) == "forget_setup"
-    assert league.cog._get_pending() is not None
-
-    del league.cog.clear_pending
-    await retry_job(league.bot)
-
-    assert league.cog._get_pending() is None
-    assert await stopped_job(league.db_path) is None
-    assert APPROVED in reply(press)
-    assert "could not be let go of" not in reply(press)
-
-
-async def test_the_setup_held_in_memory_is_let_go_of_once_the_season_is_saved(
-    tmp_path, monkeypatch,
-):
-    league = await _league_for(tmp_path, monkeypatch)
-    await _pressed(league)
-    assert league.cog._get_pending() is not None
-
-    await _run_through(league, "apply")
-    assert league.cog._get_pending() is not None
-    await _run_through(league, "forget_setup")
-
-    assert league.cog._get_pending() is None
-
-
 @pytest.mark.xfail(strict=True, reason="#283: the approval still defines its forget_setup job")
 async def test_a_stored_job_letting_go_of_the_setup_stops_the_queue_until_discarded(
     tmp_path, monkeypatch,
@@ -1046,17 +999,16 @@ async def test_the_calendar_is_posted_with_the_season_number_and_its_rounds_as_t
     assert "Monza" in league.texts(PRO_CH.calendar)[-1]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the approval reads the season number held in memory")
 async def test_a_season_numbered_zero_is_drawn_as_zero_and_logged(tmp_path, monkeypatch, caplog):
     """A season number of 0 is a malformed row, `seasons.season_number` counting from one. The
     calendar is drawn with 0, never hidden, and the bot logs that it will draw "SEASON 0" (#213).
-    The number is 0 both in the setup the press reads and in the database, so the test holds
-    wherever the approval takes it from.
+    The number is 0 in the database, where the approval reads the setup from.
     It replaces the deleted
     `test_do_approve_posting.py::test_a_season_with_no_number_still_draws_and_is_logged`."""
     league = await _league_for(tmp_path, monkeypatch, images=True)
     drawn = draw_calendars_with(league.bot, monkeypatch, CalendarDrawingStub()).asked
     await league.write("UPDATE seasons SET season_number = 0 WHERE id = ?", SEASON_ID)
-    league.cog._pending[ADMIN_ID].season_number = 0
 
     with caplog.at_level(logging.WARNING):
         await _pressed(league)
@@ -1527,10 +1479,6 @@ async def test_a_discarded_save_approves_nothing_and_says_to_review_again(tmp_pa
     assert (await league.season())["stage"] == "PLACEMENTS"
     assert _confirmed_lines(league) == []
     assert league.armed == [] and league.granted == {}
-
-
-async def _fail_forget(league: Any) -> None:
-    league.cog.clear_pending = MagicMock(side_effect=RuntimeError("the cog is reloading"))
 
 
 async def _fail_arm(league: Any) -> None:

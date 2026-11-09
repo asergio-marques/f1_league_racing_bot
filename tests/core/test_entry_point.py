@@ -378,59 +378,54 @@ _ATTENDANCE_AMENDMENT_STEPS = [
 async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     """Straight after `build`, each module's part of a moment core declares is signed up to that
     moment's hook on the bot, in the order core calls them, and nothing has been called yet. The
-    bot's in-memory state cleared: the season setups the season cog holds, then the penalty
-    reviews results holds for staging, then the reasons signup awaits from an admin. A
-    cancellation of rounds: what stands in its way, results' refusal of a round whose open
-    submission has accepted results; the rounds called off, results' close of their empty
-    submissions, then attendance's take-down of their calls; the notices posted for a division,
-    each handed the save's connection, the scope and the division told, attendance's check-in
-    notice, then weather's forecast note, then results' results note; and the steps a module
-    plans, results' deletion of a submission channel, attendance's take-down of a call,
-    attendance's reading of a round's check-in record, then attendance's check-in notice,
-    weather's forecast note and results' results note. A round ended with every session entered
-    as not held, handed the save's connection and the round: attendance's reading of its check-in
-    record for the log. A round's
-    timing windows read: attendance's window, then weather's, each handed whether the round is
-    being amended. A round amended: inside the save, weather's withdrawal of the forecasts the
-    amendment withdraws, then attendance's reopening of its check-in; as the round is armed again,
-    the posts each owes, attendance's then weather's, then the clean-ups due a day after the
+    bot's in-memory state cleared: the penalty reviews results holds for staging, then the reasons
+    signup awaits from an admin. A cancellation of rounds: what stands in its way, results' refusal
+    of a round whose open submission has accepted results; the rounds called off, results' close of
+    their empty submissions, then attendance's take-down of their calls; the notices posted for a
+    division, each handed the save's connection, the scope and the division told, attendance's
+    check-in notice, then weather's forecast note, then results' results note; and the steps a
+    module plans, results' deletion of a submission channel, attendance's take-down of a call,
+    attendance's reading of a round's check-in record, then attendance's check-in notice, weather's
+    forecast note and results' results note. A round ended with every session entered as not held,
+    handed the save's connection and the round: attendance's reading of its check-in record for the
+    log. A round's timing windows read: attendance's window, then weather's, each handed whether the
+    round is being amended. A round amended: inside the save, weather's withdrawal of the forecasts
+    the amendment withdraws, then attendance's reopening of its check-in; as the round is armed
+    again, the posts each owes, attendance's then weather's, then the clean-ups due a day after the
     round, weather's then attendance's; the steps each defines, weather's then attendance's, under
     the names the amendment gives them today; and the words an outcome gives a step that was not
-    done, weather's for a forecast. A season's end: what stands in its way, results' refusal while
-    a round is being amended; the drivers it returns, signup's ending of their wizards in the save,
-    and the jobs signup plans for a driver returned; the jobs that close what a module holds
-    open, signup's close of its window; the steps each module defines for it, signup's notice and
-    close, its window's close, the Sign Up button's deletion and the closed post, then weather's
-    deletion of a forecast; the jobs that clear what test mode posted, weather's; and the drivers
-    deleted, image's discard of their portraits. A season, division or round deleted, each module
-    deleting its own rows: of the rounds, attendance's, results' then weather's; of the divisions,
-    attendance's then results'; of the season, results' then signup's. A driver deleted, each
-    module deleting or letting go of its own rows of them, attendance's then results'; and a
-    driver merged into another, each re-pointing its own, attendance's then results'. The bot
-    packed, each module clearing its own rows tied to the server left behind: signup's, weather's,
-    attendance's then results'. A round's results made final, handed the closing's connection and
-    the rounds' ids: results' marking of the drivers who raced them as former drivers. Test mode
-    turned on, handed the save's connection and the current season's id: results' seeding of its
-    points configurations. Placements confirmed, handed the approval's save's connection and a
-    division's id and name: the jobs results plans for its opening standings, then attendance's
-    for its opening sheet; and the steps each defines, results' opening standings, then
-    attendance's opening sheet. A division's final round read, handed the completion's save's
-    connection and the division's id: results' reading of its last round with results. A season
-    completed, handed the completion's save's connection, a division's id and name and that
-    round's id: the jobs results plans for its final standings, then attendance's for its final
-    sheet; and the steps each defines, results' final standings, then attendance's final
-    sheet."""
+    done, weather's for a forecast. A season's end: what stands in its way, results' refusal while a
+    round is being amended; the drivers it returns, signup's ending of their wizards in the save,
+    and the jobs signup plans for a driver returned; the jobs that close what a module holds open,
+    signup's close of its window; the steps each module defines for it, signup's notice and close,
+    its window's close, the Sign Up button's deletion and the closed post, then weather's deletion
+    of a forecast; the jobs that clear what test mode posted, weather's; and the drivers deleted,
+    image's discard of their portraits. A season, division or round deleted, each module deleting
+    its own rows: of the rounds, attendance's, results' then weather's; of the divisions,
+    attendance's then results'; of the season, results' then signup's. A driver deleted, each module
+    deleting or letting go of its own rows of them, attendance's then results'; and a driver merged
+    into another, each re-pointing its own, attendance's then results'. The bot packed, each module
+    clearing its own rows tied to the server left behind: signup's, weather's, attendance's then
+    results'. A round's results made final, handed the closing's connection and the rounds' ids:
+    results' marking of the drivers who raced them as former drivers. Test mode turned on, handed
+    the save's connection and the current season's id: results' seeding of its points
+    configurations. Placements confirmed, handed the approval's save's connection and a division's
+    id and name: the jobs results plans for its opening standings, then attendance's for its opening
+    sheet; and the steps each defines, results' opening standings, then attendance's opening sheet.
+    A division's final round read, handed the completion's save's connection and the division's id:
+    results' reading of its last round with results. A season completed, handed the completion's
+    save's connection, a division's id and name and that round's id: the jobs results plans for its
+    final standings, then attendance's for its final sheet; and the steps each defines, results'
+    final standings, then attendance's final sheet."""
     import importlib
 
     import leaguebot.__main__ as entry_point
-    from leaguebot.core.cogs.season_cog import SeasonCog
     from leaguebot.core.models.cancellation import SCOPE_ROUND
     from leaguebot.results.services import penalty_wizard
     from leaguebot.signup.services import signup_views
     from leaguebot.weather.services import forecast_changes
 
     called: list[str] = []
-    monkeypatch.setattr(SeasonCog, "clear_pending", lambda self: called.append("season setups"))
     for module, name, part in (
         (penalty_wizard, "clear_held_reviews", "penalty reviews"),
         (signup_views, "clear_pending_reasons", "pending reasons"),
@@ -493,7 +488,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
 
     bot.in_memory_state_cleared.call()
 
-    assert called == ["season setups", "penalty reviews", "pending reasons"]
+    assert called == ["penalty reviews", "pending reasons"]
     called.clear()
     await bot.cancellation_refused.call(None, SCOPE_ROUND, ())
     assert called == ["results' refusal"]
