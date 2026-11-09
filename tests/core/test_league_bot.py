@@ -199,10 +199,6 @@ CHANNEL_SETTING_KINDS = {
 }
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: the hub, lineup, calendar and forecast channel settings wait behind a stop",
-)
 def test_every_channel_setting_overtakes_a_stopped_job():
     """A stop notice for a channel tells the league to set the channel, then press Retry: a
     setting waiting behind the stop it is meant to clear could never do it. Every channel the

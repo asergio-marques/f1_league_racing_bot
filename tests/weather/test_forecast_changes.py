@@ -404,7 +404,6 @@ async def test_a_forecast_for_a_division_with_no_forecast_channel_is_drawn_and_i
     assert await _forecasts(league) == {1: new}
 
 
-@pytest.mark.xfail(strict=True, reason="#283: /weather channel waits behind a stopped job")
 async def test_a_stopped_forecast_lands_once_the_forecast_channel_is_set_and_retried(tmp_path):
     """Set the channel, then Retry: the remedy the stop notice leads a manager to, end to end.
 

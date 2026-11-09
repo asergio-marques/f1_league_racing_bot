@@ -207,7 +207,6 @@ async def test_two_commands_in_a_row_each_ask_for_the_lineup(tmp_path):
     assert [row["state"] for row in rows] == ["QUEUED", "QUEUED"]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: /division lineup-channel waits behind a stopped job")
 async def test_a_stopped_lineup_lands_once_the_lineup_channel_is_set_and_retried(tmp_path):
     """Set the channel, then Retry: the remedy the stop notice leads a manager to, end to end.
 

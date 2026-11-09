@@ -698,6 +698,7 @@ def hub_channel_setting(*, config: "ConfigService") -> Setting:
             RESTYLE_HUB: _restyle_hub(config),
             REFRESH_HUB_PANEL: _ask_hub_refresh(command),
         },
+        repairs_the_bot=True,
     )
 
 

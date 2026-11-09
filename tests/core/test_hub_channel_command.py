@@ -593,7 +593,6 @@ async def test_a_refused_deletion_of_the_old_panel_stops_the_queue(db_path):
     assert await stopped_job(db_path) is not None
 
 
-@pytest.mark.xfail(strict=True, reason="#283: /bot hub-channel waits behind a stopped job")
 async def test_the_hub_is_set_while_the_queue_is_stopped_on_another_job(db_path):
     """The league's server is set up with no hub, and the league's queue is stopped on another
     job, which failed on a fault in the bot. The manager (77) points the hub at 7920 with
@@ -629,7 +628,6 @@ async def test_the_hub_is_set_while_the_queue_is_stopped_on_another_job(db_path)
     assert (still["id"], still["change_id"]) == (stopped["id"], stopped["change_id"])
 
 
-@pytest.mark.xfail(strict=True, reason="#283: /bot hub-channel waits behind a stopped job")
 async def test_a_stopped_hub_panel_lands_once_the_hub_is_set_and_retried(db_path):
     """Set the channel, then Retry: the remedy the stop notice leads a manager to, end to end.
 

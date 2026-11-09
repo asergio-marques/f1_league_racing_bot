@@ -377,7 +377,6 @@ async def test_a_fault_in_the_save_saves_neither_the_channel_nor_its_audit(
     assert await stopped_job(db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason="#283: a division's lineup and calendar channels wait behind a stopped job")
 @pytest.mark.parametrize("which", ALL)
 async def test_the_channel_is_set_while_the_queue_is_stopped_on_another_job(tmp_path, which):
     """Season 1 is being set up, and its Division 1 has no channel. The league's queue is stopped

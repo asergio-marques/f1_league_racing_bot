@@ -199,6 +199,7 @@ def forecast_channel_setting(*, modules: "ModuleService", seasons: "SeasonServic
         save=save,
         reply=reply,
         writes=("divisions",),
+        repairs_the_bot=True,
     )
 
 

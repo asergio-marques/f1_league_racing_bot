@@ -142,6 +142,7 @@ def _division_channel(column: str, seasons: "SeasonService") -> Setting:
         save=save,
         reply=reply,
         writes=("divisions",),
+        repairs_the_bot=True,
     )
 
 

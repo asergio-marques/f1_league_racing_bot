@@ -508,7 +508,6 @@ async def test_the_manager_is_acknowledged_before_anything_is_written(tmp_path):
     assert await _audit(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#283: /weather channel waits behind a stopped job")
 async def test_the_channel_is_set_while_the_queue_is_stopped_on_another_job(tmp_path):
     """Season 1 is being set up, and its Division 1 has no forecast channel. The league's queue
     is stopped on another job, which failed on a fault in the bot. The manager (id 77) runs
