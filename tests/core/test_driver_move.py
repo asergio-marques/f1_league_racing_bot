@@ -409,9 +409,6 @@ async def test_a_role_discord_refuses_is_logged_and_the_move_still_saved(db_path
 # Charles (103) at McLaren (role 812, one seat of three taken), every placement confirmed; Lewis
 # and Max hold Pro's role and Ferrari's on the server.
 
-#: Why each test below fails until `/driver move` is a change on the queue.
-_MOVE_NOT_QUEUED = "#283: /driver move is not yet a change on the queue"
-
 #: The command as the log channel names it in a refusal.
 _MOVE = "`/driver move`"
 

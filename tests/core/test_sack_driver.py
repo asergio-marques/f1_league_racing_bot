@@ -645,9 +645,6 @@ async def test_sack_on_reads_the_roles_before_it_frees_the_seats(tmp_path):
 # These run on `ongoing_league`'s season (see `test_driver_move`'s section of the same name),
 # the league's driver role (820) configured and held by Lewis and Max beside Pro's and Ferrari's.
 
-#: Why each test below fails until `/driver sack` is a change on the queue.
-_SACK_NOT_QUEUED = "#283: /driver sack is not yet a change on the queue"
-
 
 async def _ongoing_sack(tmp_path):
     """`ongoing_league`'s season, the driver role configured, and Lewis and Max holding it with

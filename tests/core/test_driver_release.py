@@ -27,9 +27,6 @@ from tests.core.test_driver_move import (
     _seat_lewis_in_am,
 )
 
-#: Why each test below fails until `/driver release` is a change on the queue.
-_RELEASE_NOT_QUEUED = "#283: /driver release is not yet a change on the queue"
-
 
 async def _twice_seated(tmp_path):
     """`ongoing_league`'s season, Lewis seated at McLaren in Am as well as at Ferrari in Pro,
