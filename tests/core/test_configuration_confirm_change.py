@@ -22,7 +22,14 @@ from typing import Any
 
 import pytest
 
-from tests.support.change_queue import change_rows, retry_job, run_queue, step_rows, stopped_job
+from tests.support.change_queue import (
+    change_rows,
+    discard_job,
+    retry_job,
+    run_queue,
+    step_rows,
+    stopped_job,
+)
 from tests.support.season_league import (
     ADMIN_ID,
     CONFIGURATION_CONFIRM_KIND as KIND,
@@ -50,6 +57,10 @@ DRIVER_ROLE_GONE = (
     "• The league's **driver role** is no longer on the server — replace it with "
     "`/bot driver-role`.\n"
     "**Nothing has been confirmed.**"
+)
+NOT_CONFIRMED = (
+    "Nothing has been confirmed: the season is still in configuration. Run `/season "
+    "config-review` again."
 )
 ALREADY = (
     "⏳ This season's configuration is already being confirmed, so this press confirms nothing. "
@@ -225,6 +236,34 @@ async def test_a_fault_in_the_save_leaves_the_season_in_configuration_with_nothi
     assert len(await _audits(league)) == 1
     assert len(_confirmed_lines(league)) == 1
     assert WAITING in reply(press)
+    assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason=_XFAIL)
+async def test_a_discarded_save_confirms_nothing_and_says_to_review_again(tmp_path, monkeypatch):
+    """The signup module is on, and a subscriber to the "configuration confirmed" hook raises
+    every time it is called, as a fault of the database would. The queue stops at the
+    confirmation's save, and a league admin presses Discard on its notice. Admin's reply says
+    nothing has been confirmed and to run the review again, and not that it was confirmed; the
+    season stays in configuration, no signup settings are kept, nothing is audited, no line says
+    it was confirmed, and the queue is no longer stopped."""
+    league = await configuring_league(tmp_path, signup=True, monkeypatch=monkeypatch)
+
+    async def failing(*_args: Any) -> None:
+        raise RuntimeError("disk I/O error")
+
+    league.bot.configuration_confirmed.subscribe(failing)
+    press = await _pressed(league)
+
+    await run_queue(league.bot)
+    await discard_job(league.bot)
+
+    assert NOT_CONFIRMED in reply(press)
+    assert WAITING not in reply(press)
+    assert await _stage(league) == "CONFIGURATION"
+    assert await _kept(league) == []
+    assert await _audits(league) == []
+    assert _confirmed_lines(league) == []
     assert await stopped_job(league.db_path) is None
 
 
