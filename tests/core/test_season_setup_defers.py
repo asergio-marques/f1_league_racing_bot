@@ -307,6 +307,13 @@ ACKNOWLEDGED = (
     "takes longer, the log channel will say so."
 )
 
+#: `/season setup` asked again, for the same game edition, while the first waits on the queue: the
+#: queue's refusal of a repeat, word for word.
+REPEATED = (
+    "⚠️ Starting the season setup has already been asked for and has not started yet, so it was "
+    "not asked for again."
+)
+
 #: The log channel's name for the member asking: `member()`'s Admin (4242).
 NAMED = "Admin (`<@4242>`)"
 
@@ -326,8 +333,11 @@ def _success_line(number: int, edition: int) -> str:
 
 
 def _refusal_line(reply: str) -> str:
-    """The log channel's line for `/season setup` refused with *reply*."""
-    return f"⛔ `/season setup` refused for {NAMED} — {reply[2:]}"
+    """The log channel's line for `/season setup` refused with *reply*, its reason the reply without
+    the mark it opens with."""
+    from leaguebot.core.utils.log_lines import reply_reason
+
+    return f"⛔ `/season setup` refused for {NAMED} — {reply_reason(reply)}"
 
 
 async def _league(tmp_path, *, now: datetime = NOW):
@@ -518,3 +528,38 @@ async def test_a_season_setup_is_judged_again_as_it_starts(tmp_path, meanwhile, 
     successes = [_success_line(number, edition) for number, edition in set_up]
     assert await log_lines(league) == [*successes, _refusal_line(reply)]
     assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: /season setup is not on the change queue, so a repeat is refused as a setup in "
+    "progress, not as a repeat",
+)
+async def test_a_season_setup_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
+    """The core specification's "How a change is carried out": a request repeating a change that
+    has not started, with nothing else asked for since on its lane, is refused, saying so. A league
+    with no season. The manager runs `/season setup` for F1 25, and is acknowledged; before the
+    queue runs it, with nothing else asked of the league since, they run `/season setup` for F1 25
+    again. The second is refused at once, in the queue's words, as a change already asked for and
+    not yet started, and the log channel takes that refusal as a line; only the one change is
+    queued. The queue runs it: season #1 is being set up for F1 25, with its one audit entry, the
+    log channel holds the refusal and then the success line, and the first is told the season's
+    setup started."""
+    from tests.support.change_queue import change_rows, run_queue
+    from tests.support.settings_league import audit_rows, last_said, log_lines, said
+
+    league = await _league(tmp_path)
+    first = await _ask_setup(league, 25)
+    repeat = await _ask_setup(league, 25)
+
+    assert said(first)[0].startswith(ACKNOWLEDGED)
+    assert said(repeat) == [REPEATED]
+    assert len(await change_rows(league.db_path)) == 1
+    await run_queue(league.bot)
+
+    held = [(s["season_number"], s["game_edition"]) for s in await _setup_rows(league.db_path)]
+    assert held == [(1, 25)]
+    assert len(await audit_rows(league.db_path)) == 1
+    assert await log_lines(league) == [_refusal_line(REPEATED), _success_line(1, 25)]
+    assert last_said(first) == _started(1, 25)
+    assert said(repeat) == [REPEATED]
