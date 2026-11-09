@@ -2028,11 +2028,9 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/driver_service.py", "DriverService.reassign_user_id"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService.set_former_driver"): (1, PASS["core"]),
     ("core/services/driver_service.py", "DriverService.transition"): (1, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService.assign_driver"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.delete_team_role_config"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.rename_team_role_config"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.set_team_role_config"): (1, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService.unassign_driver"): (1, PASS["core"]),
     ("core/services/team_service.py", "TeamService.add_default_team"): (1, PASS["core"]),
     ("core/services/team_service.py", "TeamService.get_default_teams"): (1, PASS["core"]),
     ("core/services/team_service.py", "TeamService.get_teams_with_roles"): (1, PASS["core"]),
@@ -2830,7 +2828,6 @@ KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/output_router.py", "OutputRouter._warn_member"): (1, PASS["core"]),
     ("core/services/output_router.py", "OutputRouter.queue_log_on"): (1, PASS["core"]),
     ("core/services/pack_service.py", "pack"): (1, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService.assign_driver"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.delete_team_role_config"):
         (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.move_on"): (1, PASS["attendance"]),
@@ -2839,7 +2836,6 @@ KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/placement_service.py", "PlacementService.sack_on"): (1, PASS["attendance"]),
     ("core/services/placement_service.py", "PlacementService.set_team_role_config"):
         (1, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService.unassign_driver"): (1, PASS["core"]),
     ("core/services/retry_service.py", "attempt_delivery"): (1, PASS["core"]),
     ("core/services/retry_service.py", "enqueue"): (1, PASS["core"]),
     ("core/services/retry_service.py", "mark_failed"): (1, PASS["core"]),
