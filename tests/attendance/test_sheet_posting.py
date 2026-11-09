@@ -24,6 +24,7 @@ from tests.attendance.test_attendance_sheet_composition import (  # noqa: F401 �
     db_path,
 )
 from tests.support.change_queue import (
+    acknowledgement,
     change_rows,
     discard_job,
     http_error,
@@ -32,6 +33,7 @@ from tests.support.change_queue import (
     run_queue,
     step_rows,
     stopped_job,
+    updated_reply,
 )
 from tests.support.season_league import (
     DIVISIONS,
@@ -41,6 +43,7 @@ from tests.support.season_league import (
     ongoing_league,
     profile_id,
     round_id,
+    run_attendance_channel_command,
 )
 
 KIND = "attendance.sheet.post"
@@ -185,6 +188,49 @@ async def test_a_sheet_for_a_division_with_no_attendance_channel_stops_the_queue
 
     assert await stopped_job(league.db_path) is None
     assert len(league.texts(SHEET)) == 1
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: /attendance channel attendance is not yet an attendance setting on the change "
+    "queue that runs past a stopped job",
+)
+async def test_a_stopped_sheet_lands_once_the_attendance_channel_is_set_and_retried(tmp_path):
+    """Set the channel, then Retry: the remedy the stop notice leads a manager to, end to end.
+
+    Pro's attendance channel is unset, and Pro's round 1 sheet stops the queue at its post.
+    Alex runs `/attendance channel attendance` for Pro with channel 604 and is acknowledged; the
+    queue runs. The setting does not wait behind the stopped sheet: it runs past it, saves 604
+    as Pro's attendance channel and tells Alex the channel was set, while the sheet still stops
+    the league's lane. Alex presses Retry: the sheet lands once in 604, and nothing stops the
+    queue."""
+    from leaguebot.attendance.services.sheet_posting import ask_sheet_post
+
+    league = await _scored_league(tmp_path)
+    await league.write(
+        "UPDATE attendance_division_config SET attendance_channel_id = NULL WHERE division_id = ?",
+        PRO,
+    )
+    await ask_sheet_post(league.bot.change_queue, league.db_path, PRO, ROUND_1)
+    await run_queue(league.bot)
+    assert (await stopped_job(league.db_path))["name"] == "post_sheet"
+
+    manager = await run_attendance_channel_command(league, "attendance", SHEET)
+    assert acknowledgement(manager).startswith("⏳ ")
+    await run_queue(league.bot)
+
+    assert "set to" in updated_reply(manager)
+    [row] = await league.rows(
+        "SELECT attendance_channel_id FROM attendance_division_config WHERE division_id = ?", PRO,
+    )
+    assert int(row["attendance_channel_id"]) == SHEET
+    assert (await stopped_job(league.db_path))["name"] == "post_sheet", (
+        "setting the channel ran the job"
+    )
+    await retry_job(league.bot)
+
+    assert len(league.texts(SHEET)) == 1
+    assert await stopped_job(league.db_path) is None
 
 
 # ── The post and the deletion of the sheet it replaces, as two jobs ──────────────────

@@ -842,6 +842,24 @@ async def ongoing_league(
     return league
 
 
+async def run_attendance_channel_command(league: SeasonLeague, which: str, channel_id: int) -> Any:
+    """Run `/attendance channel rsvp` or `/attendance channel attendance` (*which*) for Pro with
+    channel *channel_id*, as the league manager Alex, through the command's body on the league's
+    builder-built bot; the queue is not run. Gives Alex's interaction."""
+    from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
+
+    command = {"rsvp": AttendanceCog.channel_rsvp,
+               "attendance": AttendanceCog.channel_attendance}[which]
+    cog = AttendanceCog.__new__(AttendanceCog)
+    cog.bot = league.bot
+    interaction = member_interaction(league.bot)
+    interaction.guild = league.guild
+    interaction.command = SimpleNamespace(qualified_name=f"attendance channel {which}")
+    interaction.user.display_name = "Alex"
+    await undecorate(command)(cog, interaction, "Pro", league.channel(channel_id))
+    return interaction
+
+
 def attendance_from_the_database(league: SeasonLeague) -> None:
     """The league's attendance service reading its configuration from the database, in place of
     the league's stub, and held by the check-in's change types: the builder's own service with

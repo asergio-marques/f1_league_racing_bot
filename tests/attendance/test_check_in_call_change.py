@@ -26,6 +26,7 @@ import discord
 import pytest
 
 from tests.support.change_queue import (
+    acknowledgement,
     change_rows,
     discard_job,
     http_error,
@@ -33,6 +34,7 @@ from tests.support.change_queue import (
     run_queue,
     step_rows,
     stopped_job,
+    updated_reply,
 )
 from tests.support.season_league import (
     CALL_MESSAGES,
@@ -45,6 +47,7 @@ from tests.support.season_league import (
     ongoing_league,
     profile_id,
     round_id,
+    run_attendance_channel_command,
 )
 
 KIND = "attendance.check_in.call"
@@ -229,6 +232,47 @@ async def test_a_call_whose_rsvp_channel_is_unset_stops_the_queue_naming_the_com
     assert "/attendance channel rsvp" in league.log()
     assert _sent(league) == []
     assert await _call_record(league) == []
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: /attendance channel rsvp is not yet an attendance setting on the change queue "
+    "that runs past a stopped job",
+)
+async def test_a_stopped_call_lands_once_the_rsvp_channel_is_set_and_retried(tmp_path):
+    """Set the channel, then Retry: the remedy the stop notice leads a manager to, end to end.
+
+    Pro's check-in channel is unset, and round 4's call stops the queue at its post. Alex runs
+    `/attendance channel rsvp` for Pro with channel 603 and is acknowledged; the queue runs. The
+    setting does not wait behind the stopped call: it runs past it, saves 603 as Pro's check-in
+    channel and tells Alex the channel was set, while the call still stops the league's lane.
+    Alex presses Retry: the call lands once in 603, its record is saved, and nothing stops the
+    queue."""
+    league = await _call_league(tmp_path)
+    await league.write(
+        "UPDATE attendance_division_config SET rsvp_channel_id = NULL WHERE division_id = ?", PRO,
+    )
+    await _ask(league)
+    await run_queue(league.bot)
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "post_call"
+
+    manager = await run_attendance_channel_command(league, "rsvp", CHECK_IN)
+    assert acknowledgement(manager).startswith("⏳ ")
+    await run_queue(league.bot)
+
+    assert "set to" in updated_reply(manager)
+    [row] = await league.rows(
+        "SELECT rsvp_channel_id FROM attendance_division_config WHERE division_id = ?", PRO,
+    )
+    assert int(row["rsvp_channel_id"]) == CHECK_IN
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "post_call", "setting the channel ran the job"
+    await retry_job(league.bot)
+
+    assert len(_sent(league)) == 1
+    assert len(await _call_record(league)) == 1
+    assert await stopped_job(league.db_path) is None
 
 
 async def test_a_call_whose_record_fails_removes_its_copy_before_the_next_try(tmp_path):
