@@ -41,7 +41,6 @@ FLUSH_FORECASTS = "flush_forecasts"
 DELETE_FORECAST = "delete_forecast"
 DISCARD_PORTRAITS = "discard_portraits"
 DISCARD_BACKUP = "discard_backup"
-FORGET_SETUP = "forget_setup"
 
 
 async def refusal_of_the_modules(

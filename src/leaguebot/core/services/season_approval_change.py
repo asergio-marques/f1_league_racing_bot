@@ -123,7 +123,6 @@ STAGE_REFUSAL = "⛔ The season is no longer in placements. **Nothing has been a
 #: The job names, as the stop notice, the tests and `StepView` know them.
 APPLY = "apply"
 JUDGE = "judge"
-FORGET_SETUP = "forget_setup"
 ARM = "arm"
 GRANT_ROLES = "grant_roles"
 POST_BATCH_NOTICE = "post_batch_notice"
@@ -285,7 +284,6 @@ def season_approval_change(
     placements_confirmed_steps: Hook,
     rasteriser_fault: Callable[[], str | None],
     snapshot_points_on: Callable[[aiosqlite.Connection, int], Awaitable[None]],
-    forget_setup: Callable[[], None],
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that approves a season's placements; see the module.
@@ -299,8 +297,7 @@ def season_approval_change(
     *placements_confirmed_steps* (each module's step definitions for its own opening post, by
     name), *rasteriser_fault* (what is wrong with the host's drawing program, None where nothing
     is), results' *snapshot_points_on* (the points snapshot on a handed save, which reads
-    results' own switch), *forget_setup* (lets go of the setup the season cog holds in memory)
-    and *now* (the queue's clock).
+    results' own switch) and *now* (the queue's clock).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -414,7 +411,7 @@ def season_approval_change(
         if not await transition_to_active_on(db, season_id):
             raise RuntimeError(f"season {season_id} could not be moved to Ongoing")
 
-        steps: list[PlannedStep] = [PlannedStep(FORGET_SETUP), PlannedStep(ARM)]
+        steps: list[PlannedStep] = [PlannedStep(ARM)]
         cursor = await db.execute(
             "SELECT id, name, lineup_channel_id, calendar_channel_id FROM divisions "
             "WHERE season_id = ? ORDER BY tier, id",
@@ -485,10 +482,6 @@ def season_approval_change(
             audits=(audit,),
             then=tuple(steps),
         )
-
-    async def forget_the_setup(_ctx: StepContext) -> StepResult:
-        forget_setup()
-        return StepResult()
 
     async def arm(ctx: StepContext) -> StepResult:
         """Arm every round of the season, read as the job runs, whatever the modules.
@@ -631,15 +624,6 @@ def season_approval_change(
     async def never_runs(ctx: StepContext) -> str:
         return f"no round of season {ctx.payload['season_number']} would ever run"
 
-    async def keeps_the_setup(ctx: StepContext) -> str:
-        return (
-            f"the bot would go on holding season {ctx.payload['season_number']}'s setup, and "
-            "`/round amend` would refuse its rounds until the bot restarts"
-        )
-
-    async def describe_forget(_ctx: StepContext) -> str:
-        return "letting go of the setup the bot holds in memory"
-
     async def describe_arm(ctx: StepContext) -> str:
         return f"arming the timed work of season {ctx.payload['season_number']}"
 
@@ -731,10 +715,6 @@ def season_approval_change(
     steps: dict[str, Step] = {
         APPLY: Step(APPLY, StepKind.SAVE, apply, describe=describe_apply),
         JUDGE: Step(JUDGE, StepKind.ACT, judge, describe=describe_judge),
-        FORGET_SETUP: Step(
-            FORGET_SETUP, StepKind.ACT, forget_the_setup, describe=describe_forget,
-            undiscardable=keeps_the_setup,
-        ),
         ARM: Step(
             ARM, StepKind.ACT, arm, describe=describe_arm, undiscardable=never_runs
         ),

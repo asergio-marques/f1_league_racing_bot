@@ -166,7 +166,6 @@ def _moving() -> set[tuple[str, str]]:
     return set(MOVING) | {(to, name) for (_, name), (to, _commit) in MOVING.items()}
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the season cog still holds the setup in memory")
 def test_every_store_is_cleared_or_exempt():
     unaccounted = sorted(
         _stores() - CLEARED - EXEMPT - set(LEAVING) - _moving() - set(ARRIVING_EXEMPT)

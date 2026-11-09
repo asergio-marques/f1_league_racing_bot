@@ -693,7 +693,6 @@ async def test_the_approval_is_audited_with_the_season_and_the_placements_commit
     }
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the approval still lets go of a setup held in memory")
 async def test_each_driver_s_roles_division_s_lineup_calendar_and_opening_posts_are_jobs_of_their_own(
     tmp_path, monkeypatch,
 ):
@@ -919,7 +918,6 @@ async def test_the_season_s_arming_cannot_be_discarded_and_once_retried_arms_eve
     assert "timed work was not armed" not in reply(press)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the approval still defines its forget_setup job")
 async def test_a_stored_job_letting_go_of_the_setup_stops_the_queue_until_discarded(
     tmp_path, monkeypatch,
 ):

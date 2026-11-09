@@ -277,7 +277,6 @@ def test_a_module_s_switch_is_its_own_settings_signed_up_by_the_builder(
             assert sorted(switch.writes) == sorted(writes), kind
 
 
-@pytest.mark.xfail(strict=True, reason="#283: two jobs still let go of a setup held in memory")
 def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
     """Over every change type the builder registers, the jobs marked as never to be discarded are
     exactly those whose loss could stop a season from being started or completed, or would leave

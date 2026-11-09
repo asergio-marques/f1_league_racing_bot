@@ -112,15 +112,6 @@ def create_bot() -> LeagueBot:
     return bot
 
 
-def _forget_setup(bot: LeagueBot) -> None:
-    """Let go of the setup the season cog holds in memory, as `clear_in_memory_state` does."""
-    from leaguebot.core.cogs.season_cog import SeasonCog
-
-    cog = bot.get_cog("SeasonCog")
-    if isinstance(cog, SeasonCog):
-        cog.clear_pending()
-
-
 def _cancel_wizard_timers(bot: LeagueBot) -> "Callable[[str], None]":
     """Removes one driver's signup inactivity and channel-deletion timers, for the close that
     returns them to Not Signed Up (`signup.close`, and a season's end's close of the window) and
@@ -983,7 +974,6 @@ def register_change_types(bot: LeagueBot) -> None:
             divisions_deleted=bot.divisions_deleted,
             season_deleted=bot.season_deleted,
             profiles_deleted=bot.profiles_deleted,
-            forget_setup=lambda: _forget_setup(bot),
         )
     )
     # The season's approval is judged again as it runs: the clock is the queue's, the windows the
@@ -1003,7 +993,6 @@ def register_change_types(bot: LeagueBot) -> None:
             placements_confirmed_steps=bot.placements_confirmed_steps,
             rasteriser_fault=bot.image_drawing.rasteriser_fault,
             snapshot_points_on=snapshot_configs_to_season_on,
-            forget_setup=lambda: _forget_setup(bot),
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -1436,7 +1425,6 @@ async def build(settings: Settings) -> LeagueBot:
     from leaguebot.signup.services.signup_views import clear_pending_reasons
 
     bot.in_memory_state_cleared = Hook()
-    bot.in_memory_state_cleared.subscribe(season_cog.clear_pending)
     bot.in_memory_state_cleared.subscribe(clear_held_reviews)
     bot.in_memory_state_cleared.subscribe(clear_pending_reasons)
 

@@ -48,16 +48,13 @@ used: no season set up or active, or one past the confirmation of its placements
 test mode is on, then `end`, one save that runs the driver pass (no history is written, the season
 having none), switches test mode off and deletes the season, **last**. After that save each driver
 the pass reaches has their signup channel's notice and lock or their driver role as jobs of their
-own, the portraits of the drivers deleted are discarded and the setup the bot holds in memory is
-let go of (`forget_setup`, which a league admin cannot discard: without it the bot would go on
-holding the aborted season's setup and no new season could be set up until the bot restarts). The
-saved test-mode state is kept, a season aborted being one
-abandoned. The signup records are keyed by account and outlive the season, so a channel is still
+own, and the portraits of the drivers deleted are discarded. The saved test-mode state is kept,
+a season aborted being one abandoned. The signup records are keyed by account and outlive the season, so a channel is still
 held after the save.
 """
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
@@ -88,7 +85,6 @@ from leaguebot.core.services.season_end_service import (
     DELETE_FORECAST,
     DISCARD_PORTRAITS,
     FLUSH_FORECASTS,
-    FORGET_SETUP,
     REVOKE_ROLES,
     refusal_of_the_modules,
     season_role_targets_on,
@@ -817,7 +813,6 @@ def season_abort_change(
     divisions_deleted: AwaitedHook,
     season_deleted: AwaitedHook,
     profiles_deleted: AwaitedHook,
-    forget_setup: Callable[[], None],
 ) -> ChangeType:
     """The change that aborts the season being set up; see the module.
 
@@ -828,7 +823,7 @@ def season_abort_change(
     (*season_end_closes*, *drivers_returned*, *driver_returned_jobs*, *season_end_steps*,
     *test_mode_flushed*, *drivers_deleted*), the hooks the season's deletion calls
     (*rounds_deleted*, *divisions_deleted*, *season_deleted*), the hook each driver deleted calls
-    (*profiles_deleted*) and *forget_setup* (lets go of the setup the season cog holds in memory).
+    (*profiles_deleted*).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -888,7 +883,6 @@ def season_abort_change(
         )
         if driver_pass.accounts:
             planned.append(PlannedStep(DISCARD_PORTRAITS, {"accounts": driver_pass.accounts}))
-        planned.append(PlannedStep(FORGET_SETUP))
         return StepResult(
             result={
                 "drivers_returned": driver_pass.reset,
@@ -953,30 +947,12 @@ def season_abort_change(
         async with get_connection(ctx.db_path) as db:
             return await test_mode_on(db)
 
-    async def keeps_the_setup(_ctx: StepContext) -> str:
-        return (
-            "the bot would go on holding the aborted season's setup, and no new season could be "
-            "set up until the bot restarts"
-        )
-
-    async def forget_the_setup(_ctx: StepContext) -> StepResult:
-        forget_setup()
-        return StepResult()
-
-    async def describe_setup(_ctx: StepContext) -> str:
-        return "letting go of the setup the bot holds in memory"
-
     shared = shared_steps(
         placement, scheduler, season_end_steps=season_end_steps,
         test_mode_flushed=test_mode_flushed, drivers_deleted=drivers_deleted,
     )
     steps: dict[str, Step] = {
         **shared,
-        # Only an abort holds a setup the bot must let go of.
-        FORGET_SETUP: Step(
-            FORGET_SETUP, StepKind.ACT, forget_the_setup, describe=describe_setup,
-            undiscardable=keeps_the_setup,
-        ),
         FLUSH_FORECASTS: replace(shared[FLUSH_FORECASTS], still_due=test_mode_still_on),
         END: Step(END, StepKind.SAVE, end, describe=describe_end),
         CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),

@@ -518,11 +518,6 @@ async def _overflow_for(cog, _division_name: str, would_hold: int):
 # ---------------------------------------------------------------------------
 
 
-#: The key a setup recovered after a restart is held under. No user began it in this
-#: process, and no Discord id is 0.
-_RECOVERED = 0
-
-
 async def _take_the_review_down(bot: LeagueBot, interaction: discord.Interaction) -> int | None:
     """Ask the queue to take the review the pressed question belongs to down, ending confirmed:
     the confirming press's own work does this just before it commits, so the review is gone
@@ -557,9 +552,6 @@ class _ReviewPoster:
 class SeasonCog(commands.Cog):
     def __init__(self, bot: LeagueBot) -> None:
         self.bot = bot
-        # Keyed by user_id, or by _RECOVERED on recovery \u2192 PendingConfig. At most one
-        # season is live in the league, so at most one setup is pending at a time.
-        self._pending: dict[int, PendingConfig] = {}
 
     # ------------------------------------------------------------------
     # /season group
@@ -3984,17 +3976,6 @@ class SeasonCog(commands.Cog):
     # ------------------------------------------------------------------
     # Shared instance methods
     # ------------------------------------------------------------------
-
-    def clear_pending(self) -> None:
-        """Discard any in-memory pending setup."""
-        stale_keys = list(self._pending)
-        for uid in stale_keys:
-            del self._pending[uid]
-        if stale_keys:
-            log.info(
-                "Cleared %d pending season setup(s)",
-                len(stale_keys),
-            )
 
     async def _get_pending(self) -> PendingConfig | None:
         """The season being set up, as the database holds it at this moment, or None.
