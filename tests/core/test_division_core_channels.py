@@ -203,6 +203,22 @@ async def _seed_other_division_lineup(db_path: str, channel_id: int) -> None:
         await db.commit()
 
 
+async def _seed_other_division_results(db_path: str, channel_id: int) -> None:
+    """Give Division 2 (id 12), of the same season, *channel_id* as its results channel, written
+    where `/results channel results` writes it."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO divisions (id, season_id, name, tier, mention_role_id) "
+            "VALUES (?, ?, 'Division 2', 2, 556)",
+            (OTHER_DIVISION_ID, SEASON_ID),
+        )
+        await db.execute(
+            "INSERT INTO division_results_config (division_id, results_channel_id) VALUES (?, ?)",
+            (OTHER_DIVISION_ID, channel_id),
+        )
+        await db.commit()
+
+
 async def _channel_column(db_path: str, column: str):
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -628,14 +644,21 @@ async def test_every_channel_command_here_audits_its_ids_as_integers(tmp_path, w
 @pytest.mark.parametrize("which", ALL)
 @pytest.mark.parametrize(
     "case",
-    ["no_season", "an_unknown_division", "a_channel_doing_another_job", "the_channel_already_set"],
+    [
+        "no_season",
+        "an_unknown_division",
+        "a_channel_doing_another_job",
+        "another_divisions_results_channel",
+        "the_channel_already_set",
+    ],
 )
 async def test_every_channel_command_refusal_is_recorded(tmp_path, which, case):
     """Division 1 of a season being set up, and a text channel #notices. The manager (id 77) runs
-    /division lineup-channel or calendar-channel and is refused at the ask in four cases: with no
+    /division lineup-channel or calendar-channel and is refused at the ask in five cases: with no
     season live; naming Division 9, which does not exist; giving #notices while it is already
-    the lineup channel of Division 2; and giving #notices while it is already this very channel
-    of Division 1. The manager gets today's reply word for word and nothing else, the setting is
+    the lineup channel of Division 2; giving #notices while it is already the results channel of
+    Division 2, a setting of another kind and another module; and giving #notices while it is
+    already this very channel of Division 1. The manager gets today's reply word for word and nothing else, the setting is
     not written and nothing is audited, and the log channel gets exactly one line, "⛔
     `/division …-channel` refused for Manager (`<@77>`) — " and the reply's first line, without
     its mark."""
@@ -643,12 +666,17 @@ async def test_every_channel_command_refusal_is_recorded(tmp_path, which, case):
     name = "Division 9" if case == "an_unknown_division" else "Division 1"
     if case == "a_channel_doing_another_job":
         await _seed_other_division_lineup(db_path, CHANNEL_ID)
+    if case == "another_divisions_results_channel":
+        await _seed_other_division_results(db_path, CHANNEL_ID)
     if case == "the_channel_already_set":
         await _seed_core_channel(db_path, which, CHANNEL_ID)
     reply = {
         "no_season": _NO_SEASON,
         "an_unknown_division": "❌ Division **Division 9** not found in the current season.",
         "a_channel_doing_another_job": _IN_USE,
+        "another_divisions_results_channel": f"❌ <#{CHANNEL_ID}> is already the results channel "
+        "for **Division 2**. A channel does one job — pick one that is not in use, or clear the "
+        "other setting first.",
         "the_channel_already_set": f"ℹ️ <#{CHANNEL_ID}> is already the {which} channel for "
         "**Division 1**. Nothing was changed.",
     }[case]
