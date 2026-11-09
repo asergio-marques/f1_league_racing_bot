@@ -1406,48 +1406,6 @@ async def end_rounds_awaiting_results_on(
     ]
 
 
-async def _sync_division_rounds(db, division_id: int, rounds: list[dict]) -> None:
-    """Make the rounds of *division_id* match *rounds*, writing only the difference.
-
-    Part of :meth:`SeasonService.sync_pending_config`, on its connection and inside its
-    transaction. A round is matched on its format, track and scheduled time, the scheduled
-    time compared as the ISO string both sides store. Duplicates are matched one for one, so
-    two identical rounds in the config need two in the DB.
-    """
-    cursor = await db.execute(
-        "SELECT id, round_number, format, track_name, scheduled_at FROM rounds "
-        "WHERE division_id = ? ORDER BY round_number, id",
-        (division_id,),
-    )
-    held: dict[tuple, list[tuple[int, int]]] = {}
-    for r in await cursor.fetchall():
-        key = (r["format"], r["track_name"], r["scheduled_at"])
-        held.setdefault(key, []).append((r["id"], r["round_number"]))
-
-    for r in rounds:
-        key = (r["format"].value, r["track_name"], r["scheduled_at"].isoformat())
-        matches = held.get(key)
-        if matches:
-            round_id, round_number = matches.pop(0)
-            if round_number != r["round_number"]:
-                await db.execute(
-                    "UPDATE rounds SET round_number = ? WHERE id = ?",
-                    (r["round_number"], round_id),
-                )
-            continue
-        await db.execute(
-            "INSERT INTO rounds "
-            "(division_id, round_number, format, track_name, scheduled_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (division_id, r["round_number"], *key),
-        )
-
-    surplus = [round_id for matches in held.values() for round_id, _ in matches]
-    if surplus:
-        ph = ",".join("?" * len(surplus))
-        await db.execute(f"DELETE FROM rounds WHERE id IN ({ph})", surplus)  # noqa: S608
-
-
 async def live_season(db_path: str) -> Season | None:
     """The live (SETUP or ACTIVE) season of the league database at *db_path*, or None.
 
