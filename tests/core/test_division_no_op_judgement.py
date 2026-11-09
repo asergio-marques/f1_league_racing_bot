@@ -4,8 +4,7 @@ The core specification's "The record of what changed": a command that changes no
 nothing was asked of it records that nothing was changed. `/division rename` to the name that
 stands, and `/division amend` with the values that stand, write no audit entry, reply that nothing
 changed and record it. Whether they do is judged by a pure function beside the other division
-rules in `season_service`, before the command opens a connection, from the division it has
-already read.
+rules in `season_service`, from the division as the change's save reads it.
 
 Pure tests: no database, no Discord.
 """

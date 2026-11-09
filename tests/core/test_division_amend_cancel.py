@@ -1,30 +1,28 @@
 """Deleting, renaming, amending and cancelling a division.
 
-Issue #208. The four commands that change a division after it exists, none of which were
-covered. They divide cleanly in two, and the division is the point of the file.
+Issue #208. The four commands that change a division after it exists. They divide cleanly in two,
+and the division is the point of the file.
 
-**Delete, rename and amend are setup-only. Cancel is for a season already running.** A season in
-SETUP has nothing armed — no jobs, no roles granted, no lineups posted — so a division in it can
-simply go. Once the season is ACTIVE that is no longer true, and `/division cancel` is the
-irreversible, confirmation-guarded alternative: it stands the division down, cancels every
-scheduled job it owns and tells the drivers, rather than removing rows that results and
-standings now point at. Each command's own refusal names itself, so a manager who reached for
-the wrong one is told which one they are in — each pinned word for word by a case of its own,
-because a reader collapsing them into one shared guard would lose exactly that.
+**Delete, rename and amend are for a season being set up, in Placements. Cancel is for a season
+already running.** A season being set up has nothing armed — no jobs, no roles granted, no lineups
+posted — so a division in it can simply go. Once the season is under way that is no longer true,
+and `/division cancel` is the irreversible, confirmation-guarded alternative: it stands the
+division down, cancels every scheduled job it owns and tells the drivers, rather than removing rows
+that results and standings now point at. Each command's own refusal names itself, so a manager who
+reached for the wrong one is told which one they are in — each pinned word for word by a case of
+its own, because a reader collapsing them into one shared guard would lose exactly that.
 
 **A name is a division's identity in every command that follows.** They all resolve a division
 by name, since a slash command takes a name and not an id, so rename and amend both refuse a
 name another division already holds — and both exclude the division being renamed from that
-check, or renaming `Pro` to `Pro` would refuse itself.
+check, or renaming `Pro` to `PRO` would refuse itself.
 
-**Amend changes only what it was given.** It builds its `UPDATE` from the arguments that are not
-`None`, so a manager amending a tier does not have their role silently rewritten with a default.
-That is parametrised over each field alone and over combinations, because the failure mode of a
-hand-built `SET` clause is a column nobody meant to touch.
-
-**Amend is audited, with the old values and the new.** It writes the division's columns directly
-rather than through the service, so the audit row is the only record that the tier a season was
-approved with is not the tier it was built with.
+**Rename and amend are changes on the queue** (#283). Each asks the change queue for a change of
+its own, whose one save writes the division, its audit entry (the division as it stood and as it
+stands) and its line. Amend changes only what it was given, so a manager amending a tier does not
+have the role rewritten with a default. Every refusal is judged at the ask and again as the change
+starts, the division judged by the id it had at the ask, so that a name or a tier taken meanwhile
+is refused in the ask's words rather than reaching the schema's rule.
 
 **Cancel asks for `CONFIRM` typed exactly.** It is irreversible and it stands down a division's
 whole calendar; a click-through would make it an accident rather than a decision.
@@ -37,7 +35,6 @@ it runs; it, and what the change does, are tested in `test_division_cancel_chang
 """
 from __future__ import annotations
 
-import json
 import os
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -48,6 +45,14 @@ import pytest
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.season_service import SeasonImmutableError
+from tests.support.setup_rounds import (
+    NAMED,
+    NOW,
+    acknowledged,
+    refusal_line,
+    repeated,
+    setup_league,
+)
 from tests.support.undecorate import undecorate
 from leaguebot.core.models.season import SeasonStage
 
@@ -189,16 +194,6 @@ async def _delete(cog, interaction, *, name="Pro"):
     return await undecorate(SeasonCog.division_delete)(cog, interaction, name)
 
 
-async def _rename(cog, interaction, *, current="Pro", new="Elite"):
-    return await undecorate(SeasonCog.division_rename)(cog, interaction, current, new)
-
-
-async def _amend(cog, interaction, *, name="Pro", new_name=None, tier=None, role=None):
-    return await undecorate(SeasonCog.division_amend)(
-        cog, interaction, name, new_name, tier, role
-    )
-
-
 async def _cancel(cog, interaction, *, name="Pro", confirm="CONFIRM"):
     """Run the command. What the change does once asked is the change queue's, and is tested in
     `test_division_cancel_change.py`; here the command is held to asking it, once, for the right
@@ -232,9 +227,8 @@ async def _audit_rows(db_path: str) -> list[dict]:
         )
         return [dict(r) for r in await cursor.fetchall()]
 
-
 # ---------------------------------------------------------------------------
-# Only during setup — and each command says its own name
+# Only during setup — and the command says its own name
 # ---------------------------------------------------------------------------
 
 
@@ -242,37 +236,29 @@ async def _audit_rows(db_path: str) -> list[dict]:
     "run,fragment",
     [
         (_delete, "/division delete"),
-        (_rename, "/division rename"),
-        (_amend, "/division amend"),
     ],
 )
 async def test_a_running_season_refuses_the_setup_commands(tmp_path, run, fragment):
     """A SETUP season has nothing armed; an ACTIVE one has jobs scheduled, roles granted and
-    results pointing at these rows."""
+    results pointing at these rows. Rename and amend are refused so as changes on the queue,
+    below."""
     db_path = await _make_db(tmp_path, status="ACTIVE", name="amend_active")
     cog = _make_cog(db_path)
     interaction = _interaction()
 
-    kwargs = {"new_name": "Elite"} if run is _amend else {}
-    await run(cog, interaction, **kwargs)
+    await run(cog, interaction)
 
     assert fragment in _replied(interaction)
     cog.bot.season_service.delete_division.assert_not_awaited()
-    cog.bot.season_service.rename_division.assert_not_awaited()
 
 
-@pytest.mark.parametrize("run", [_delete, _rename, _amend])
+@pytest.mark.parametrize("run", [_delete])
 async def test_an_unknown_division_is_refused_by_name(tmp_path, run):
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path)
     interaction = _interaction()
 
-    kwargs = {"new_name": "Elite"} if run is _amend else {}
-    if run is _rename:
-        kwargs = {"current": "Rookie"}
-        await run(cog, interaction, **kwargs)
-    else:
-        await run(cog, interaction, name="Rookie", **kwargs)
+    await run(cog, interaction, name="Rookie")
 
     assert "Rookie" in _replied(interaction)
     assert "not found" in _replied(interaction)
@@ -325,214 +311,786 @@ async def test_the_delete_is_logged(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# /division rename
+# /division rename and /division amend, on the change queue (#283)
 # ---------------------------------------------------------------------------
+#
+# Each command asks the change queue for a change of its own on the league's lane, and the queue's
+# acknowledgement is its reply. One save writes the division's new name, or for amend its name,
+# tier and role, the audit entry recording the division as it stood and as it stands, and the log
+# channel's line, stamped with the queue's clock. Every refusal is judged at the ask and again as
+# the change starts, in the same words; the division is the one named at the ask, judged by its id
+# from then on. These run on the league `setup_league` gives, its season being set up holding Pro
+# (tier 1, role 555) and Am (tier 2, role 556), as the database alone holds them after a restart.
+
+#: Not yet true until the build: both commands ask the change queue.
+_ON_THE_QUEUE = "#283: /division rename and /division amend are not yet changes on the queue"
+
+#: Pro and Am, as `setup_league` takes them: no rounds.
+_HELD = (("Pro", 1, 555, ()), ("Am", 2, 556, ()))
+
+#: Pro and Am as `_divisions` reads them, before anything is changed.
+_STANDING = [("Pro", 1, 555), ("Am", 2, 556)]
+
+#: Each command as the log channel names it in a refusal.
+_RENAME = "`/division rename`"
+_AMEND = "`/division amend`"
 
 
-async def test_a_division_is_renamed(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await _rename(cog, interaction)
-
-    cog.bot.season_service.rename_division.assert_awaited_once_with(DIVISION_ID, "Elite")
-    assert "renamed to" in _replied(interaction)
-
-
-async def test_renaming_onto_another_divisions_name_is_refused(tmp_path):
-    """Both names would then resolve to two divisions, and every command that takes a name
-    would be ambiguous."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, divisions=[_division(), _division("Am", 2, id=12)])
-    interaction = _interaction()
-
-    await _rename(cog, interaction, new="Am")
-
-    assert "already exists" in _replied(interaction)
-    cog.bot.season_service.rename_division.assert_not_awaited()
+async def _league(tmp_path, *, stage: str | None = "PLACEMENTS", raced: bool = False):
+    """`setup_league`'s league, season #1 being set up in *stage* and holding Pro and Am; with
+    *raced*, that season approved and under way instead, so that none is being set up."""
+    league = await setup_league(tmp_path, stage=stage, divisions=_HELD)
+    if raced:
+        async with get_connection(league.db_path) as db:
+            await db.execute("UPDATE seasons SET status = 'ACTIVE', stage = 'ONGOING'")
+            await db.execute("UPDATE divisions SET status = 'ACTIVE'")
+            await db.commit()
+    return league
 
 
-async def test_a_division_may_be_renamed_to_a_variant_of_its_own_name(tmp_path):
-    """The uniqueness check excludes the division being renamed, or correcting `pro` to
-    `Pro` would refuse itself."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
+async def _ask_rename(league, current: str = "Pro", new: str = "Elite"):
+    """`/division rename` of *current* to *new*, as the league manager Admin (4242) runs it: the
+    interaction."""
+    from tests.support.settings_league import interaction
 
-    await _rename(cog, _interaction(), current="Pro", new="PRO")
-
-    cog.bot.season_service.rename_division.assert_awaited_once_with(DIVISION_ID, "PRO")
-
-
-async def test_the_rename_is_logged_with_both_names(tmp_path):
-    """A log saying only the new name cannot be read back to what was renamed."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-
-    await _rename(cog, _interaction())
-
-    logged = str(cog.bot.output_router.post_log.await_args.args[0])
-    assert "Pro" in logged and "Elite" in logged
+    asked = interaction(league.bot, "division rename")
+    await undecorate(SeasonCog.division_rename)(SeasonCog(league.bot), asked, current, new)
+    return asked
 
 
-# ---------------------------------------------------------------------------
-# /division amend
-# ---------------------------------------------------------------------------
+async def _ask_amend(league, name: str = "Pro", *, new_name=None, tier=None, role=None):
+    """`/division amend` of *name*, as the league manager Admin (4242) runs it: the
+    interaction."""
+    from tests.support.settings_league import interaction
+
+    asked = interaction(league.bot, "division amend")
+    await undecorate(SeasonCog.division_amend)(
+        SeasonCog(league.bot), asked, name, new_name, tier, role
+    )
+    return asked
 
 
-async def test_amending_nothing_is_refused(tmp_path):
-    """Every argument is optional, so the command is callable with none of them — and an
-    `UPDATE` with an empty `SET` clause is a syntax error, not a no-op."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await _amend(cog, interaction)
-
-    assert "at least one of" in _replied(interaction)
+def _renaming(old: str, new: str) -> str:
+    """How the queue words `/division rename` of *old* to *new*."""
+    return f"Renaming division **{old}** to **{new}**"
 
 
-async def test_a_new_name_is_written(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-
-    await _amend(cog, _interaction(), new_name="Elite")
-
-    assert (await _division_row(db_path))["name"] == "Elite"
+def _amending(name: str) -> str:
+    """How the queue words `/division amend` of *name*."""
+    return f"Amending division **{name}**"
 
 
-async def test_a_new_tier_is_written(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-
-    await _amend(cog, _interaction(), tier=3)
-
-    assert (await _division_row(db_path))["tier"] == 3
+def _listed(rows: list[tuple[str, int, int]]) -> str:
+    """The season's divisions as a reply lists them, *rows* as `_divisions` reads them."""
+    return "**Divisions:**\n" + "\n".join(f"  📂 **{n}** (Tier {t}) | <@&{r}>" for n, t, r in rows)
 
 
-async def test_a_new_role_is_written(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
+def _renamed(old: str, new: str, rows: list[tuple[str, int, int]]) -> str:
+    """`/division rename`'s reply once saved, word for word."""
+    return f"✅ Division **{old}** renamed to **{new}**.\n\n" + _listed(rows)
 
-    await _amend(cog, _interaction(), role=_role(888))
 
-    assert (await _division_row(db_path))["mention_role_id"] == 888
+def _amended(name: str, rows: list[tuple[str, int, int]]) -> str:
+    """`/division amend`'s reply once saved, word for word: *name* is the name it had."""
+    return f"✅ Division **{name}** amended.\n\n" + _listed(rows)
+
+
+def _rename_line(old: str, new: str) -> str:
+    """`/division rename`'s line in the log channel, word for word."""
+    return f"{NAMED} | /division rename | Success\n  old_name: {old}\n  new_name: {new}"
+
+
+def _amend_line(name: str, *given: str) -> str:
+    """`/division amend`'s line in the log channel, word for word: *given* is each field asked
+    for, as the line states it."""
+    return f"{NAMED} | /division amend | Success\n  division: {name}" + "".join(
+        f"\n  {field}" for field in given
+    )
+
+
+def _discarded(command: str, name: str) -> str:
+    """The reply once a league admin has discarded the stopped save of `/division <command>` of
+    *name*: nothing was done."""
+    done = {"rename": "renamed", "amend": "amended"}[command]
+    return (
+        f"Nothing was {done}: division **{name}** stands as it was. "
+        f"Run `/division {command}` again."
+    )
+
+
+async def _divisions(db_path: str) -> list[tuple[str, int, int]]:
+    """Every division, as (name, tier, role id), by tier."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT name, tier, mention_role_id FROM divisions ORDER BY tier, name"
+        )
+        return [tuple(row) for row in await cursor.fetchall()]
+
+
+async def _division_id(db_path: str, name: str) -> int:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT id FROM divisions WHERE name = ?", (name,))
+        return (await cursor.fetchone())[0]
+
+
+async def _writes_of_the_change_queued(db_path: str) -> tuple[str, ...]:
+    """The tables the one change queued declares its save may write, as the builder registers
+    its kind."""
+    from leaguebot.__main__ import register_change_types
+    from tests.support.change_queue import change_rows
+
+    [queued] = await change_rows(db_path)
+    builder = MagicMock()
+    register_change_types(builder)
+    [change_type] = [
+        call.args[0] for call in builder.change_queue.register.call_args_list
+        if call.args[0].kind == queued["kind"]
+    ]
+    return change_type.writes
+
+
+@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
+async def test_a_division_rename_its_audit_entry_and_line_are_one_save(tmp_path):
+    """The core specification's record of what changed. Season #1 is being set up, in Placements,
+    holding Pro (tier 1, role 555) and Am (tier 2, role 556). The league manager Admin (4242) runs
+    `/division rename` of Pro to Elite. They are answered at once with the queue's
+    acknowledgement, "Renaming division **Pro** to **Elite**", naming its first job, and nothing
+    is saved until the queue runs the change, whose kind declares its save may write the divisions
+    alone. Once it has, the season holds Elite (tier 1, role 555) and Am; one audit entry,
+    `DIVISION_RENAMED`, by Admin, on the division, stamped with the queue's clock, records it as it
+    stood (Pro, tier 1, role 555) and as it stands (Elite, tier 1, role 555); the log channel holds
+    today's success line alone, naming both names; and the acknowledgement is updated to today's
+    reply, word for word, the divisions listed by tier."""
+    from tests.support.change_queue import run_queue, step_rows
+    from tests.support.settings_league import audit_rows, last_said, log_lines, said
+
+    league = await _league(tmp_path)
+    pro = await _division_id(league.db_path, "Pro")
+    asked = await _ask_rename(league)
+
+    first_job = (await step_rows(league.db_path))[0]["id"]
+    assert said(asked)[0] == (
+        f"{acknowledged(_renaming('Pro', 'Elite'))} It begins with job #{first_job}."
+    )
+    assert await _writes_of_the_change_queued(league.db_path) == ("divisions",)
+    assert await _divisions(league.db_path) == _STANDING
+    await run_queue(league.bot)
+
+    after = [("Elite", 1, 555), ("Am", 2, 556)]
+    assert await _divisions(league.db_path) == after
+    [entry] = await audit_rows(league.db_path)
+    assert (entry["change_type"], entry["actor_id"], entry["division_id"]) == (
+        "DIVISION_RENAMED", 4242, pro
+    )
+    assert entry["old_value"] == {"name": "Pro", "tier": 1, "mention_role_id": 555}
+    assert entry["new_value"] == {"name": "Elite", "tier": 1, "mention_role_id": 555}
+    assert entry["timestamp"] == NOW.isoformat()
+    assert await log_lines(league) == [_rename_line("Pro", "Elite")]
+    assert last_said(asked) == _renamed("Pro", "Elite", after)
+
+
+@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
+async def test_a_division_amendment_its_audit_entry_and_line_are_one_save(tmp_path):
+    """The core specification's record of what changed. Season #1 is being set up, in Placements,
+    holding Pro (tier 1, role 555) and Am (tier 2, role 556). The league manager Admin (4242) runs
+    `/division amend` of Pro to tier 3, giving nothing else. They are answered at once with the
+    queue's acknowledgement, "Amending division **Pro**", naming its first job, and nothing is
+    saved until the queue runs the change, whose kind declares its save may write the divisions
+    alone. Once it has, Pro stands at tier 3 with its name and role as they were, and Am is
+    untouched; one audit entry, `DIVISION_AMENDED`, by Admin, on Pro, stamped with the queue's
+    clock, records the division whole as it stood (Pro, tier 1, role 555) and as it stands (Pro,
+    tier 3, role 555), the fields not amended included, so that it reads as the division's state
+    either side rather than as a difference; the log channel holds today's success line alone,
+    naming the tier and nothing else; and the acknowledgement is updated to today's reply, word for
+    word, the divisions listed by tier."""
+    from tests.support.change_queue import run_queue, step_rows
+    from tests.support.settings_league import audit_rows, last_said, log_lines, said
+
+    league = await _league(tmp_path)
+    pro = await _division_id(league.db_path, "Pro")
+    asked = await _ask_amend(league, tier=3)
+
+    first_job = (await step_rows(league.db_path))[0]["id"]
+    assert said(asked)[0] == f"{acknowledged(_amending('Pro'))} It begins with job #{first_job}."
+    assert await _writes_of_the_change_queued(league.db_path) == ("divisions",)
+    assert await _divisions(league.db_path) == _STANDING
+    await run_queue(league.bot)
+
+    after = [("Am", 2, 556), ("Pro", 3, 555)]
+    assert await _divisions(league.db_path) == after
+    [entry] = await audit_rows(league.db_path)
+    assert (entry["change_type"], entry["actor_id"], entry["division_id"]) == (
+        "DIVISION_AMENDED", 4242, pro
+    )
+    assert entry["old_value"] == {"name": "Pro", "tier": 1, "mention_role_id": 555}
+    assert entry["new_value"] == {"name": "Pro", "tier": 3, "mention_role_id": 555}
+    assert entry["timestamp"] == NOW.isoformat()
+    assert await log_lines(league) == [_amend_line("Pro", "tier: 3")]
+    assert last_said(asked) == _amended("Pro", after)
 
 
 @pytest.mark.parametrize(
-    "kwargs,untouched",
+    "asked, after, given",
     [
-        ({"new_name": "Elite"}, {"tier": 1, "mention_role_id": 555}),
-        ({"tier": 3}, {"name": "Pro", "mention_role_id": 555}),
-        ({"role": "role"}, {"name": "Pro", "tier": 1}),
+        pytest.param(
+            {"new_name": "Elite"}, [("Elite", 1, 555), ("Am", 2, 556)], ("new_name: Elite",),
+            id="a-new-name",
+        ),
+        pytest.param(
+            {"role": (888, "Elite drivers")}, [("Pro", 1, 888), ("Am", 2, 556)],
+            ("role: Elite drivers",),
+            id="a-new-role-logged-by-name",
+        ),
+        pytest.param(
+            {"new_name": "Elite", "tier": 3, "role": (888, "Elite drivers")},
+            [("Am", 2, 556), ("Elite", 3, 888)],
+            ("new_name: Elite", "tier: 3", "role: Elite drivers"),
+            id="all-three-at-once",
+        ),
     ],
 )
-async def test_amending_one_field_leaves_the_others_alone(tmp_path, kwargs, untouched):
-    """The `SET` clause is built by hand from the arguments that are not None. A field
-    slipping into it with a default is how a manager amending a tier finds the division
-    mentioning a role nobody chose."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    if kwargs.get("role") == "role":
-        kwargs["role"] = _role(888)
+async def test_each_field_of_a_division_is_amended_as_asked(tmp_path, asked, after, given):
+    """Season #1 is being set up, in Placements, holding Pro (tier 1, role 555) and Am (tier 2,
+    role 556). The manager runs `/division amend` of Pro, giving only a new name, Elite; only a new
+    role, 888, named Elite drivers; or all three at once, Elite at tier 3 with role 888. The queue
+    runs it. Pro holds what was given and every field not given as it was, so that no field slips
+    into the save with a default; Am is untouched; one audit entry is written; the success line
+    names each field given and no other, the role by its name rather than its id; and the reply is
+    today's, word for word, naming the division by the name it had."""
+    from tests.support.change_queue import run_queue
+    from tests.support.settings_league import audit_rows, last_said, log_lines
 
-    await _amend(cog, _interaction(), **kwargs)
+    league = await _league(tmp_path)
+    if "role" in asked:
+        asked = {**asked, "role": _role(*asked["role"])}
+    replied = await _ask_amend(league, **asked)
+    await run_queue(league.bot)
 
-    row = await _division_row(db_path)
-    for column, value in untouched.items():
-        assert row[column] == value
-
-
-async def test_all_three_fields_may_be_amended_at_once(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-
-    await _amend(cog, _interaction(), new_name="Elite", tier=3, role=_role(888))
-
-    assert await _division_row(db_path) == {
-        "name": "Elite",
-        "tier": 3,
-        "mention_role_id": 888,
-    }
+    assert await _divisions(league.db_path) == after
+    assert len(await audit_rows(league.db_path)) == 1
+    assert await log_lines(league) == [_amend_line("Pro", *given)]
+    assert last_said(replied) == _amended("Pro", after)
 
 
-async def test_amending_onto_another_divisions_name_is_refused(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, divisions=[_division(), _division("Am", 2, id=12)])
-    interaction = _interaction()
+@pytest.mark.parametrize("command", ["rename", "amend"])
+@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
+async def test_a_failed_division_rename_or_amendment_changes_nothing(tmp_path, command):
+    """Season #1 is being set up, in Placements, holding Pro and Am. The manager runs `/division
+    rename` of Pro to Elite, or `/division amend` of Pro to tier 3, and as the queue runs it the
+    database fails writing the audit entry. Nothing of the change is saved, the division and its
+    audit entry being one save: Pro and Am stand as they were, no audit entry is written, and the
+    log channel holds no success line. The league's lane stops at the job, as any failed job stops
+    it. Once a league admin discards the stopped job, the manager's reply says that nothing was
+    renamed, or amended, that Pro stands as it was, and to run the command again; and the lane is
+    clear."""
+    from tests.support.change_queue import discard_job, run_queue, stopped_job
+    from tests.support.settings_league import audit_rows, fault_in, last_said, log_lines
 
-    await _amend(cog, interaction, new_name="Am")
+    league = await _league(tmp_path)
+    if command == "rename":
+        asked = await _ask_rename(league)
+    else:
+        asked = await _ask_amend(league, tier=3)
+    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+        await run_queue(league.bot)
 
-    assert "already exists" in _replied(interaction)
-    assert (await _division_row(db_path))["name"] == "Pro"
+    assert await _divisions(league.db_path) == _STANDING
+    assert await audit_rows(league.db_path) == []
+    assert not any("| Success" in line for line in await log_lines(league))
+    assert await stopped_job(league.db_path) is not None
 
+    await discard_job(league.bot)
 
-async def test_a_division_may_be_amended_to_a_variant_of_its_own_name(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-
-    await _amend(cog, _interaction(), new_name="PRO")
-
-    assert (await _division_row(db_path))["name"] == "PRO"
-
-
-async def test_the_amendment_records_what_it_replaced(tmp_path):
-    """Written directly to the columns rather than through the service, so this row is the
-    only record that the tier a season was approved with is not the one it was built with."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-
-    await _amend(cog, _interaction(), tier=3)
-
-    rows = await _audit_rows(db_path)
-    assert [r["change_type"] for r in rows] == ["DIVISION_AMENDED"]
-    assert json.loads(rows[0]["old_value"]) == {
-        "name": "Pro",
-        "tier": 1,
-        "mention_role_id": 555,
-    }
+    assert last_said(asked) == _discarded(command, "Pro")
+    assert await stopped_job(league.db_path) is None
 
 
-async def test_the_audit_carries_the_unchanged_fields_too(tmp_path):
-    """So the row reads as the division's whole state either side of the amendment, rather
-    than as a diff a reader has to reconstruct against whatever it is today."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
+async def _rename_am_to_elite(league):
+    return await _ask_rename(league, "Am", "Elite")
 
-    await _amend(cog, _interaction(), tier=3)
 
-    new = json.loads((await _audit_rows(db_path))[0]["new_value"])
-    assert new == {"name": "Pro", "tier": 3, "mention_role_id": 555}
+async def _amend_am_to_elite(league):
+    return await _ask_amend(league, "Am", new_name="Elite")
+
+
+async def _amend_am_to_tier_3(league):
+    return await _ask_amend(league, "Am", tier=3)
+
+
+async def _delete_pro(db) -> None:
+    await db.execute("DELETE FROM divisions WHERE name = 'Pro'")
+
+
+async def _replace_pro(db) -> None:
+    await db.execute("DELETE FROM divisions WHERE name = 'Pro'")
+    await db.execute(
+        "INSERT INTO divisions (season_id, name, mention_role_id, tier) "
+        "VALUES ((SELECT id FROM seasons), 'Pro', 557, 3)"
+    )
+
+
+async def _approve_the_season(db) -> None:
+    await db.execute("UPDATE seasons SET status = 'ACTIVE', stage = 'ONGOING'")
+    await db.execute("UPDATE divisions SET status = 'ACTIVE'")
 
 
 @pytest.mark.parametrize(
-    "kwargs,fragment",
+    "command, asked, first, meanwhile, reply, after, successes",
     [
-        ({"new_name": "Elite"}, "new_name: Elite"),
-        ({"tier": 3}, "tier: 3"),
+        pytest.param(
+            "rename", {"new": "elite"}, _rename_am_to_elite, None,
+            "❌ A division named **elite** already exists.",
+            [("Pro", 1, 555), ("Elite", 2, 556)], [_rename_line("Am", "Elite")],
+            id="rename-a-second-rename-onto-the-same-name",
+            marks=pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE),
+        ),
+        pytest.param(
+            "rename", {}, None, _delete_pro,
+            "❌ Division `Pro` not found.",
+            [("Am", 2, 556)], [],
+            id="rename-the-division-deleted",
+            marks=pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE),
+        ),
+        pytest.param(
+            "rename", {}, None, _replace_pro,
+            "❌ Division `Pro` not found.",
+            [("Am", 2, 556), ("Pro", 3, 557)], [],
+            id="rename-the-division-deleted-and-another-given-its-name",
+            marks=pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE),
+        ),
+        pytest.param(
+            "rename", {}, None, _approve_the_season,
+            "❌ `/division rename` can only be used while the season is in placements.",
+            _STANDING, [],
+            id="rename-the-season-approved",
+            marks=pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE),
+        ),
+        pytest.param(
+            "amend", {"new_name": "elite"}, _amend_am_to_elite, None,
+            "❌ A division named **elite** already exists.",
+            [("Pro", 1, 555), ("Elite", 2, 556)], [_amend_line("Am", "new_name: Elite")],
+            id="amend-a-second-amendment-onto-the-same-name",
+        ),
+        pytest.param(
+            "amend", {"tier": 3}, _amend_am_to_tier_3, None,
+            "⛔ A division with tier **3** already exists in this setup.",
+            [("Pro", 1, 555), ("Am", 3, 556)], [_amend_line("Am", "tier: 3")],
+            id="amend-a-second-amendment-onto-the-same-tier",
+        ),
+        pytest.param(
+            "amend", {"tier": 3}, None, _delete_pro,
+            "❌ Division `Pro` not found.",
+            [("Am", 2, 556)], [],
+            id="amend-the-division-deleted",
+            marks=pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE),
+        ),
+        pytest.param(
+            "amend", {"tier": 4}, None, _replace_pro,
+            "❌ Division `Pro` not found.",
+            [("Am", 2, 556), ("Pro", 3, 557)], [],
+            id="amend-the-division-deleted-and-another-given-its-name",
+            marks=pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE),
+        ),
+        pytest.param(
+            "amend", {"tier": 3}, None, _approve_the_season,
+            "❌ `/division amend` is only permitted while the season is in placements.",
+            _STANDING, [],
+            id="amend-the-season-approved",
+            marks=pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE),
+        ),
     ],
 )
-async def test_the_log_names_only_what_was_amended(tmp_path, kwargs, fragment):
-    """A log listing every field would report an unchanged tier as though it had moved."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
+async def test_a_division_rename_or_amendment_is_judged_again_as_it_starts(
+    tmp_path, command, asked, first, meanwhile, reply, after, successes
+):
+    """Season #1 is being set up, in Placements, holding Pro (tier 1, role 555) and Am (tier 2,
+    role 556). The manager runs `/division rename` of Pro to Elite, or `/division amend` of Pro,
+    and nothing is saved at the ask. Either it is asked second, after a change it races to the same
+    end: Am renamed, or amended, to Elite while Pro is to elite, or Am amended to tier 3 while Pro
+    is too, each acknowledged; or, before the queue runs it, Pro is deleted, Pro is deleted and
+    another division named Pro is added at tier 3 with role 557, or the season is approved and
+    under way. The queue runs. The first change, where there is one, goes through; Pro's is refused
+    as it starts, in the words it would meet at the ask, its acknowledgement updated to them: a
+    name or a tier taken meanwhile is refused by the check rather than reaching the schema's rule
+    and the failure reply, and the division judged is the one named at the ask, so that a division
+    given its name since is never changed in its place. The log channel records the first's success
+    line, where there is one, and the refusal; one audit entry is written for each change that
+    went through; and the queue is not stopped."""
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.settings_league import audit_rows, last_said, log_lines
 
-    await _amend(cog, _interaction(), **kwargs)
+    league = await _league(tmp_path)
+    if first is not None:
+        await first(league)
+    if command == "rename":
+        refused = await _ask_rename(league, **{"current": "Pro", "new": "Elite", **asked})
+    else:
+        refused = await _ask_amend(league, "Pro", **asked)
+    if meanwhile is not None:
+        async with get_connection(league.db_path) as db:
+            await meanwhile(db)
+            await db.commit()
+    await run_queue(league.bot)
 
-    logged = str(cog.bot.output_router.post_log.await_args.args[0])
-    assert fragment in logged
-    assert logged.count("\n") == 2  # the header, the division, and the one field
+    assert last_said(refused) == reply
+    assert await _divisions(league.db_path) == after
+    assert len(await audit_rows(league.db_path)) == len(successes)
+    what = _RENAME if command == "rename" else _AMEND
+    assert await log_lines(league) == [*successes, refusal_line(what, reply)]
+    assert await stopped_job(league.db_path) is None
 
 
-async def test_an_amended_role_is_logged_by_name(tmp_path):
-    """An id in the log tells a manager reading it nothing; the role's name does."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
+@pytest.mark.parametrize("command", ["rename", "amend"])
+@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
+async def test_a_division_rename_or_amendment_asked_again_while_it_waits_is_refused_as_a_repeat(
+    tmp_path, command
+):
+    """The core specification's "How a change is carried out": a request repeating a change that
+    has not started, with nothing else asked for since on its lane, is refused, saying so. Season #1
+    is being set up, in Placements, holding Pro and Am. The manager runs `/division rename` of Pro
+    to Elite, or `/division amend` of Pro to tier 3, and is acknowledged; before the queue runs it,
+    they run the same command again. The second is refused at once, in the queue's words, as a
+    change already asked for and not yet started, and the log channel takes that refusal as a line;
+    only the one change is queued. The queue runs it: Pro is changed once, with its one audit
+    entry, and the log channel holds the refusal and then the success line."""
+    from tests.support.change_queue import change_rows, run_queue
+    from tests.support.settings_league import audit_rows, log_lines, said
 
-    await _amend(cog, _interaction(), role=_role(888, "Elite drivers"))
+    league = await _league(tmp_path)
+    if command == "rename":
+        ask, doing, what = _ask_rename, _renaming("Pro", "Elite"), _RENAME
+        after, line = [("Elite", 1, 555), ("Am", 2, 556)], _rename_line("Pro", "Elite")
+        first, repeat = await ask(league), await ask(league)
+    else:
+        doing, what = _amending("Pro"), _AMEND
+        after, line = [("Am", 2, 556), ("Pro", 3, 555)], _amend_line("Pro", "tier: 3")
+        first, repeat = await _ask_amend(league, tier=3), await _ask_amend(league, tier=3)
 
-    assert "Elite drivers" in str(cog.bot.output_router.post_log.await_args.args[0])
+    assert said(first)[0].startswith(acknowledged(doing))
+    assert said(repeat) == [repeated(doing)]
+    assert len(await change_rows(league.db_path)) == 1
+    await run_queue(league.bot)
 
+    assert await _divisions(league.db_path) == after
+    assert len(await audit_rows(league.db_path)) == 1
+    assert await log_lines(league) == [refusal_line(what, repeated(doing)), line]
+
+
+@pytest.mark.parametrize(
+    "command, asked, after",
+    [
+        pytest.param(
+            "rename", {"new": "PRO"}, [("PRO", 1, 555), ("Am", 2, 556)], id="rename",
+        ),
+        pytest.param(
+            "amend", {"new_name": "PRO"}, [("PRO", 1, 555), ("Am", 2, 556)], id="amend",
+        ),
+    ],
+)
+async def test_a_division_may_be_given_a_variant_of_its_own_name(tmp_path, command, asked, after):
+    """The name taken is judged among the other divisions alone, or correcting Pro to PRO would
+    refuse itself; and a change of case is a change, the name being shown as it is written.
+    Season #1 is being set up, in Placements, holding Pro and Am. The manager runs `/division
+    rename` of Pro to PRO, or `/division amend` of Pro with the new name PRO, and the queue runs
+    it. The division is named PRO, and the reply is today's, word for word."""
+    from tests.support.change_queue import run_queue
+    from tests.support.settings_league import last_said
+
+    league = await _league(tmp_path)
+    if command == "rename":
+        replied = await _ask_rename(league, **asked)
+    else:
+        replied = await _ask_amend(league, **asked)
+    await run_queue(league.bot)
+
+    assert await _divisions(league.db_path) == after
+    expected = _renamed("Pro", "PRO", after) if command == "rename" else _amended("Pro", after)
+    assert last_said(replied) == expected
+
+
+_A_MEMBER = "<@123456789012345678>"
+
+_A_MENTION_REFUSED = (
+    "❌ A mention of a member in the division name would notify them wherever it is "
+    "posted. Remove it, then try again."
+)
+
+
+async def _rename_asked(league, asked):
+    return await _ask_rename(league, **{"current": "Pro", "new": "Elite", **asked})
+
+
+async def _amend_asked(league, asked):
+    return await _ask_amend(league, **{"name": "Pro", "tier": 3, **asked})
+
+
+@pytest.mark.parametrize(
+    "command, arranged, asked, reply",
+    [
+        pytest.param(
+            "rename", {"raced": True}, {},
+            "❌ `/division rename` can only be used while the season is in placements.",
+            id="rename-a_season_being_raced_and_none_being_set_up",
+        ),
+        *(
+            pytest.param(
+                "rename", {"stage": stage}, {},
+                "❌ `/division rename` can only be used while the season is in placements.",
+                id=f"rename-before_placements_{stage.lower()}",
+            )
+            for stage in ("CONFIGURATION", "WAITING", "SIGNUPS")
+        ),
+        pytest.param(
+            "rename", {}, {"current": "Rookie"}, "❌ Division `Rookie` not found.",
+            id="rename-an_unknown_division",
+        ),
+        pytest.param(
+            "rename", {}, {"new": _A_MEMBER}, _A_MENTION_REFUSED,
+            id="rename-a_member_mention_in_the_name",
+        ),
+        pytest.param(
+            "rename", {}, {"new": "<@&987654321098765432> Elite"},
+            "❌ A role mention in the division name would notify everybody it covers. Remove it, "
+            "then try again.",
+            id="rename-a_role_mention_in_the_name",
+        ),
+        pytest.param(
+            "rename", {}, {"new": "am"}, "❌ A division named **am** already exists.",
+            id="rename-a_name_already_taken",
+        ),
+        pytest.param(
+            "amend", {}, {"tier": None},
+            "❌ Provide at least one of: `new_name`, `tier`, `role`.",
+            id="amend-no_option",
+        ),
+        pytest.param(
+            "amend", {"raced": True}, {},
+            "❌ `/division amend` is only permitted while the season is in placements.",
+            id="amend-a_season_being_raced_and_none_being_set_up",
+        ),
+        *(
+            pytest.param(
+                "amend", {"stage": stage}, {},
+                "❌ `/division amend` is only permitted while the season is in placements.",
+                id=f"amend-before_placements_{stage.lower()}",
+            )
+            for stage in ("CONFIGURATION", "WAITING", "SIGNUPS")
+        ),
+        pytest.param(
+            "amend", {}, {"name": "Rookie"}, "❌ Division `Rookie` not found.",
+            id="amend-an_unknown_division",
+        ),
+        pytest.param(
+            "amend", {}, {"new_name": _A_MEMBER}, _A_MENTION_REFUSED,
+            id="amend-a_member_mention_in_the_name",
+        ),
+        pytest.param(
+            "amend", {}, {"new_name": "@everyone Elite"},
+            "❌ `@everyone` in the division name would notify everybody it covers. Remove it, "
+            "then try again.",
+            id="amend-everyone_in_the_name",
+        ),
+        pytest.param(
+            "amend", {}, {"new_name": "AM"}, "❌ A division named **AM** already exists.",
+            id="amend-a_name_already_taken",
+        ),
+    ],
+)
+async def test_every_division_rename_and_amend_refusal_is_recorded(
+    tmp_path, command, arranged, asked, reply
+):
+    """The core specification's record of what changed: a refusal is one line naming the member,
+    what was refused and why. Season #1 is being set up, in Placements, holding Pro (tier 1, role
+    555) and Am (tier 2, role 556), unless the case says otherwise. The league manager Admin (4242)
+    runs `/division rename` of Pro to Elite, or `/division amend` of Pro to tier 3, with one thing
+    wrong: the season approved and under way, so that none is being set up; the season still in
+    configuration, waiting or signups; division Rookie, which does not exist; a new name holding a
+    member's mention, a role's mention or `@everyone`; a new name another division holds in
+    another case, am or AM; or, for amend, nothing given at all, which would leave the save nothing
+    to write. The manager gets today's reply word for word and nothing else, nothing is asked of
+    the change queue, Pro and Am stand as they were, no audit entry is written, and the log channel
+    gets exactly one line, "⛔ `/division …` refused for Admin (`<@4242>`) — " and the reply's
+    words."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import audit_rows, log_lines, said
+
+    league = await _league(tmp_path, **arranged)
+    if command == "rename":
+        replied = await _rename_asked(league, asked)
+    else:
+        replied = await _amend_asked(league, asked)
+
+    assert said(replied) == [reply]
+    assert await change_rows(league.db_path) == []
+    assert await _divisions(league.db_path) == _STANDING
+    assert await audit_rows(league.db_path) == []
+    what = _RENAME if command == "rename" else _AMEND
+    assert await log_lines(league) == [refusal_line(what, reply)]
+
+
+@pytest.mark.parametrize(
+    "tier,reply",
+    [
+        pytest.param(0, "⛔ Tier must be 1 or higher.", id="zero"),
+        pytest.param(-1, "⛔ Tier must be 1 or higher.", id="negative"),
+        pytest.param(
+            2,
+            "⛔ A division with tier **2** already exists in this setup.",
+            id="another_divisions_tier",
+        ),
+    ],
+)
+async def test_amending_to_a_tier_the_rule_refuses_is_refused_in_adds_words(tmp_path, tier, reply):
+    """The core specification's Divisions: a tier is unique within its season and no lower than
+    1. Season #1 is being set up, in Placements, holding Pro at tier 1 and Am at tier 2; the
+    league manager Admin (4242) amends Pro's tier to 0, -1 or 2. The refusal is `/division add`'s,
+    word for word, and nothing else is said; nothing is asked of the change queue; Pro keeps its
+    tier and nothing is audited; and the log channel gets exactly one line, "⛔ `/division amend`
+    refused for Admin (`<@4242>`) — " and the reply's words."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import audit_rows, log_lines, said
+
+    league = await _league(tmp_path)
+    replied = await _ask_amend(league, tier=tier)
+
+    assert said(replied) == [reply]
+    assert await change_rows(league.db_path) == []
+    assert await _divisions(league.db_path) == _STANDING
+    assert await audit_rows(league.db_path) == []
+    assert await log_lines(league) == [refusal_line(_AMEND, reply)]
+
+
+# ---------------------------------------------------------------------------
+# Asking for what already stands changes nothing, and says so (#482)
+# ---------------------------------------------------------------------------
+#
+# The core specification's "The record of what changed": a command that changes nothing because
+# nothing was asked of it records that nothing was changed. No audit entry is written, since no
+# value moved; the reply says nothing changed; and the log holds one line, in the success form,
+# saying so. Only an exact match is nothing: "Pro" to "PRO" is a rename (above). The change is
+# asked of the queue and acknowledged, and judged so as it runs.
+
+
+@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
+async def test_renaming_a_division_to_its_own_name_changes_nothing(tmp_path):
+    """Season #1 is being set up, in Placements, holding Pro and Am. The league manager Admin
+    (4242) runs `/division rename` of Pro to Pro, is acknowledged, and the queue runs it. The
+    reply is updated to say Pro is already named Pro and nothing was changed; Pro and Am stand as
+    they were; no audit entry is written; and the log channel holds one line, in the success form,
+    saying nothing changed because it already bears that name."""
+    from tests.support.change_queue import run_queue
+    from tests.support.settings_league import audit_rows, last_said, log_lines, said
+
+    league = await _league(tmp_path)
+    asked = await _ask_rename(league, "Pro", "Pro")
+    await run_queue(league.bot)
+
+    assert said(asked)[0].startswith(acknowledged(_renaming("Pro", "Pro")))
+    assert last_said(asked) == "ℹ️ Division **Pro** is already named **Pro**. Nothing was changed."
+    assert await _divisions(league.db_path) == _STANDING
+    assert await audit_rows(league.db_path) == []
+    assert await log_lines(league) == [
+        f"{NAMED} | /division rename | Nothing changed\n"
+        "  division: Pro\n"
+        "  reason: it already bears that name"
+    ]
+
+
+@pytest.mark.parametrize(
+    "asked",
+    [
+        pytest.param({"new_name": "Pro"}, id="its_own_name"),
+        pytest.param({"tier": 1}, id="its_own_tier"),
+        pytest.param({"role": 555}, id="its_own_role"),
+        pytest.param({"new_name": "Pro", "tier": 1, "role": 555}, id="every_value_as_it_stands"),
+    ],
+)
+@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
+async def test_amending_a_division_to_the_values_that_stand_changes_nothing(tmp_path, asked):
+    """Season #1 is being set up, in Placements, holding Pro (tier 1, role 555) and Am. The league
+    manager Admin (4242) runs `/division amend` of Pro to values it already holds: its own name,
+    its own tier, its own role, or all three. They are acknowledged, and the queue runs it. The
+    reply is updated to say Pro already holds those values and nothing was changed; Pro and Am
+    stand as they were; no audit entry is written; and the log channel holds one line, in the
+    success form, saying nothing changed because the values given are the ones it holds."""
+    from tests.support.change_queue import run_queue
+    from tests.support.settings_league import audit_rows, last_said, log_lines, said
+
+    league = await _league(tmp_path)
+    if "role" in asked:
+        asked = {**asked, "role": _role(asked["role"])}
+    replied = await _ask_amend(league, **asked)
+    await run_queue(league.bot)
+
+    assert said(replied)[0].startswith(acknowledged(_amending("Pro")))
+    assert last_said(replied) == (
+        "ℹ️ Division **Pro** already holds those values. Nothing was changed."
+    )
+    assert await _divisions(league.db_path) == _STANDING
+    assert await audit_rows(league.db_path) == []
+    assert await log_lines(league) == [
+        f"{NAMED} | /division amend | Nothing changed\n"
+        "  division: Pro\n"
+        "  reason: the values given are the ones it holds"
+    ]
+
+
+# ---------------------------------------------------------------------------
+# A division is named as it is named, not as it was typed (#482, F8)
+# ---------------------------------------------------------------------------
+#
+# Rename and amend find the division without regard to case, so a manager may type `pro` for
+# Pro. The core specification's Divisions: "its name shall be what the bot displays". The
+# acknowledgement, the reply and the log line name the division as it stands, never as the
+# manager typed it.
+
+
+@pytest.mark.parametrize(
+    "command, done",
+    [
+        pytest.param("division rename", "renamed to", id="rename"),
+        pytest.param("division amend", "amended", id="amend"),
+    ],
+)
+async def test_a_division_typed_in_another_case_is_named_as_it_is_named(tmp_path, command, done):
+    """Season #1 is being set up, in Placements, holding Pro and Am. The league manager Admin
+    (4242) runs `/division rename` of Pro to Elite, or `/division amend` of Pro to tier 3, typing
+    the division's name as `pro`, and the queue runs it. The acknowledgement names **Pro**; the
+    reply's first line says it was renamed, or amended, and names **Pro**; nothing the manager
+    sees holds the word `pro`; and the one log line names the command and Pro, never `pro`."""
+    from tests.support.change_queue import run_queue
+    from tests.support.settings_league import last_said, log_lines, said
+
+    league = await _league(tmp_path)
+    if command == "division rename":
+        asked = await _ask_rename(league, "pro", "Elite")
+    else:
+        asked = await _ask_amend(league, "pro", tier=3)
+    await run_queue(league.bot)
+
+    assert "**Pro**" in said(asked)[0]
+    first = last_said(asked).splitlines()[0]
+    assert done in first
+    assert "**Pro**" in first
+    seen = " ".join(said(asked))
+    assert "pro" not in {word.strip("*`:,.()") for word in seen.split()}
+    [line] = await log_lines(league)
+    words = {word.strip("*`:,.()") for word in line.split()}
+    assert f"/{command}" in line
+    assert "Pro" in words
+    assert "pro" not in words
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#283: /division rename still describes itself as setup only"
+)
+def test_division_rename_describes_itself_as_a_placements_command():
+    """`/division rename` runs in Placements alone, as `/division amend` does, and the description
+    Discord shows a manager beside the command says so, as amend's does, rather than "(setup
+    only)": a season being set up but not yet in Placements refuses it."""
+    assert SeasonCog.division_rename.description == (
+        "Rename a division while the season is in placements."
+    )
 
 # ---------------------------------------------------------------------------
 # /division cancel
@@ -624,191 +1182,14 @@ async def test_a_division_is_cancelled_only_while_the_season_is_ongoing(tmp_path
 
 
 # ---------------------------------------------------------------------------
-# A new name is held to the rules every typed name is (#362)
-# ---------------------------------------------------------------------------
-
-
-async def test_a_division_renamed_with_a_role_mention_is_refused(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await _rename(cog, interaction, new="<@&987654321098765432> Elite")
-
-    assert "division name" in _replied(interaction)
-    cog.bot.season_service.rename_division.assert_not_awaited()
-
-
-async def test_a_division_amended_to_a_name_with_everyone_is_refused(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
-
-    await _amend(cog, interaction, new_name="@everyone Elite")
-
-    assert "division name" in _replied(interaction)
-    assert (await _division_row(db_path))["name"] == "Pro"
-
-
-# ---------------------------------------------------------------------------
-# /division amend holds a tier to the rule /division add does (#482)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "tier,reply",
-    [
-        pytest.param(0, "\u26d4 Tier must be 1 or higher.", id="zero"),
-        pytest.param(-1, "\u26d4 Tier must be 1 or higher.", id="negative"),
-        pytest.param(
-            2,
-            "\u26d4 A division with tier **2** already exists in this setup.",
-            id="another_divisions_tier",
-        ),
-    ],
-)
-async def test_amending_to_a_tier_the_rule_refuses_is_refused_in_adds_words(tmp_path, tier, reply):
-    """The core specification's Divisions: a tier is unique within its season and no lower than
-    1. Pro holds tier 1 and Am tier 2; the manager amends Pro's tier. The refusal is
-    `/division add`'s, word for word, and is recorded; Pro keeps its tier and nothing is
-    audited."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, divisions=[_division(), _division("Am", 2, id=12)])
-    interaction = _run_by_the_manager(cog, "division amend")
-
-    await _amend(cog, interaction, tier=tier)
-
-    assert _replied(interaction) == reply
-    assert (await _division_row(db_path))["tier"] == 1
-    assert await _audit_rows(db_path) == []
-    assert _logged(cog) == [
-        f"\u26d4 `/division amend` refused for Manager (<@{ACTOR_ID}>) \u2014 {reply[2:]}"
-    ]
-
-
-# ---------------------------------------------------------------------------
-# Asking for what already stands changes nothing, and says so (#482)
-# ---------------------------------------------------------------------------
-#
-# The core specification's "The record of what changed": a command that changes nothing because
-# nothing was asked of it records that nothing was changed. No audit entry is written, since no
-# value moved; the reply says nothing changed; and the log holds one line, in the success form,
-# saying so. Only an exact match is nothing: "Pro" to "PRO" is a rename (above).
-
-
-
-def _says_nothing_changed(text: str) -> bool:
-    return "nothing" in text.lower() and "chang" in text.lower()
-
-
-async def test_renaming_a_division_to_its_own_name_changes_nothing(tmp_path):
-    """Pro, in a season in placements, is renamed to Pro."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _run_by_the_manager(cog, "division rename")
-
-    await _rename(cog, interaction, current="Pro", new="Pro")
-
-    cog.bot.season_service.rename_division.assert_not_awaited()
-    assert _says_nothing_changed(_replied(interaction))
-    assert "renamed to" not in _replied(interaction)
-    assert await _audit_rows(db_path) == []
-    [line] = _logged(cog)
-    assert line.startswith(f"Manager (<@{ACTOR_ID}>) | /division rename |")
-    assert _says_nothing_changed(line)
-
-
-@pytest.mark.parametrize(
-    "asked",
-    [
-        pytest.param({"new_name": "Pro"}, id="its_own_name"),
-        pytest.param({"tier": 1}, id="its_own_tier"),
-        pytest.param({"role": 555}, id="its_own_role"),
-        pytest.param({"new_name": "Pro", "tier": 1, "role": 555}, id="every_value_as_it_stands"),
-    ],
-)
-async def test_amending_a_division_to_the_values_that_stand_changes_nothing(tmp_path, asked):
-    """Pro, tier 1, role 555, in a season in placements, is amended to values it already holds."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _run_by_the_manager(cog, "division amend")
-    if "role" in asked:
-        asked = {**asked, "role": _role(asked["role"])}
-
-    await _amend(cog, interaction, **asked)
-
-    assert await _division_row(db_path) == {"name": "Pro", "tier": 1, "mention_role_id": 555}
-    assert await _audit_rows(db_path) == []
-    assert _says_nothing_changed(_replied(interaction))
-    assert "amended" not in _replied(interaction)
-    [line] = _logged(cog)
-    assert line.startswith(f"Manager (<@{ACTOR_ID}>) | /division amend |")
-    assert _says_nothing_changed(line)
-
-
-# ---------------------------------------------------------------------------
-# A division is named as it is named, not as it was typed (#482, F8)
-# ---------------------------------------------------------------------------
-#
-# Rename and amend find the division without regard to case, so a manager may type `pro` for
-# Pro. The core specification's Divisions: "its name shall be what the bot displays". The reply
-# and the log line name the division as it stands, never as the manager typed it.
-
-
-@pytest.mark.parametrize(
-    "command,run,done",
-    [
-        pytest.param(
-            "division rename",
-            lambda cog, interaction: _rename(cog, interaction, current="pro", new="Elite"),
-            "renamed to",
-            id="rename",
-        ),
-        pytest.param(
-            "division amend",
-            lambda cog, interaction: _amend(cog, interaction, name="pro", tier=3),
-            "amended",
-            id="amend",
-        ),
-    ],
-)
-async def test_a_division_typed_in_another_case_is_named_as_it_is_named(
-    tmp_path, command, run, done
-):
-    """Pro, in a season in placements, is renamed to Elite, or amended to tier 3, by a manager
-    who typed its name as `pro`."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _run_by_the_manager(cog, command)
-
-    await run(cog, interaction)
-
-    replied = _replied(interaction)
-    first = replied.splitlines()[0]
-    assert done in first
-    assert "**Pro**" in first
-    assert "pro" not in {word.strip("*`:,.()") for word in replied.split()}
-    [line] = _logged(cog)
-    words = {word.strip("*`:,.()") for word in line.split()}
-    assert f"/{command}" in line
-    assert "Pro" in words
-    assert "pro" not in words
-
-
-# ---------------------------------------------------------------------------
 # The setup commands run in Placements alone (#482, F4)
 # ---------------------------------------------------------------------------
 #
 # The core specification: "Divisions shall be created and deleted, and rounds added and deleted,
-# only while the season is in Placements", and "A division may be renamed, and its name, tier
-# and role amended, while its season is in Placements alone". A season being set up but not yet
-# in Placements is refused in the words each command uses today, and the refusal is recorded.
-# In Placements each still works: every test above runs there.
+# only while the season is in Placements". A season being set up but not yet in Placements is
+# refused in the words the command uses today, and the refusal is recorded. In Placements it still
+# works: every test above runs there.
 
-
-
-async def _amend_the_tier(cog, interaction):
-    return await _amend(cog, interaction, tier=2)
 
 
 @pytest.mark.parametrize(
@@ -825,26 +1206,14 @@ async def _amend_the_tier(cog, interaction):
             "\u274c `/division delete` can only be used while the season is in placements.",
             id="delete",
         ),
-        pytest.param(
-            "division rename",
-            _rename,
-            "\u274c `/division rename` can only be used while the season is in placements.",
-            id="rename",
-        ),
-        pytest.param(
-            "division amend",
-            _amend_the_tier,
-            "\u274c `/division amend` is only permitted while the season is in placements.",
-            id="amend",
-        ),
     ],
 )
 async def test_a_setup_command_before_placements_is_refused_and_recorded(
     tmp_path, command, run, reply, stage
 ):
     """A season being set up, still in configuration, waiting or signups, holds division Pro at
-    tier 1. The manager deletes Pro, renames it Elite, or amends it to tier 2. Each is refused
-    in today's words and recorded, and Pro stands as it was."""
+    tier 1. The manager deletes Pro. It is refused in today's words and recorded, and Pro stands
+    as it was. Rename and amend are refused so as changes on the queue, above."""
     db_path = await _make_db(tmp_path)
     cog = _make_cog(db_path, stage=stage)
     interaction = _run_by_the_manager(cog, command)
@@ -853,23 +1222,19 @@ async def test_a_setup_command_before_placements_is_refused_and_recorded(
 
     assert _replied(interaction) == reply
     cog.bot.season_service.delete_division.assert_not_awaited()
-    cog.bot.season_service.rename_division.assert_not_awaited()
     assert await _division_row(db_path) == {"name": "Pro", "tier": 1, "mention_role_id": 555}
     assert await _audit_rows(db_path) == []
     assert _logged(cog) == [
         f"\u26d4 `/{command}` refused for Manager (<@{ACTOR_ID}>) \u2014 {reply[2:]}"
     ]
 
-
-
 # ---------------------------------------------------------------------------
-# Every other refusal of /division delete, rename and amend is recorded (#482)
+# Every other refusal of /division delete is recorded (#482)
 # ---------------------------------------------------------------------------
 #
 # The core specification's "The record of what changed": a refusal is one line naming the
 # member, what was refused and why. Each reply stays word for word as today, and goes as today's
-# does, as the first answer to the interaction. /division amend with no option stays a refusal:
-# something was asked for and nothing given.
+# does, as the first answer to the interaction.
 
 
 def _as_discord(interaction):
@@ -886,42 +1251,8 @@ def _as_discord(interaction):
     return interaction
 
 
-async def _rename_to_a_mention(cog, interaction):
-    return await _rename(cog, interaction, new="<@123456789012345678>")
-
-
-async def _rename_onto_am(cog, interaction):
-    return await _rename(cog, interaction, new="am")
-
-
-async def _amend_nothing(cog, interaction):
-    return await _amend(cog, interaction)
-
-
-async def _amend_to_a_mention(cog, interaction):
-    return await _amend(cog, interaction, new_name="<@123456789012345678>")
-
-
-async def _amend_onto_am(cog, interaction):
-    return await _amend(cog, interaction, new_name="AM")
-
-
 async def _delete_elite(cog, interaction):
     return await _delete(cog, interaction, name="Elite")
-
-
-async def _rename_elite(cog, interaction):
-    return await _rename(cog, interaction, current="Elite", new="Rookie")
-
-
-async def _amend_elite(cog, interaction):
-    return await _amend(cog, interaction, name="Elite", tier=3)
-
-
-_A_MENTION_REFUSED = (
-    "❌ A mention of a member in the division name would notify them wherever it is "
-    "posted. Remove it, then try again."
-)
 
 
 @pytest.mark.parametrize(
@@ -937,64 +1268,18 @@ _A_MENTION_REFUSED = (
             "❌ Division `Elite` not found.",
             id="delete-an_unknown_division",
         ),
-        pytest.param(
-            "division rename", _rename, {"status": "ACTIVE"},
-            "❌ `/division rename` can only be used while the season is in placements.",
-            id="rename-no_season_being_set_up",
-        ),
-        pytest.param(
-            "division rename", _rename_elite, {},
-            "❌ Division `Elite` not found.",
-            id="rename-an_unknown_division",
-        ),
-        pytest.param(
-            "division rename", _rename_to_a_mention, {},
-            _A_MENTION_REFUSED,
-            id="rename-a_mention_in_the_name",
-        ),
-        pytest.param(
-            "division rename", _rename_onto_am, {},
-            "❌ A division named **am** already exists.",
-            id="rename-a_name_already_taken",
-        ),
-        pytest.param(
-            "division amend", _amend_nothing, {},
-            "❌ Provide at least one of: `new_name`, `tier`, `role`.",
-            id="amend-no_option",
-        ),
-        pytest.param(
-            "division amend", _amend_the_tier, {"status": "ACTIVE"},
-            "❌ `/division amend` is only permitted while the season is in placements.",
-            id="amend-no_season_being_set_up",
-        ),
-        pytest.param(
-            "division amend", _amend_elite, {},
-            "❌ Division `Elite` not found.",
-            id="amend-an_unknown_division",
-        ),
-        pytest.param(
-            "division amend", _amend_to_a_mention, {},
-            _A_MENTION_REFUSED,
-            id="amend-a_mention_in_the_name",
-        ),
-        pytest.param(
-            "division amend", _amend_onto_am, {},
-            "❌ A division named **AM** already exists.",
-            id="amend-a_name_already_taken",
-        ),
     ],
 )
 async def test_every_other_division_delete_rename_and_amend_refusal_is_recorded(
     tmp_path, command, run, arranged, reply
 ):
     """A season in placements holding division Pro at tier 1 with role 555, and division Am at
-    tier 2, unless the case says otherwise. The manager (id 77) is refused in eleven cases:
-    /division delete, rename or amend with no season being set up (the season is being raced) or
-    naming division Elite, which does not exist; a rename or an amend of Pro to a member's
-    mention, or onto Am's name in another case; and an amend asking for nothing. The manager gets
-    today's reply word for word and nothing else. Pro stands as it was, nothing is deleted or
-    renamed, and no audit entry is written. The log channel gets exactly one line, "⛔
-    `/division …` refused for Manager (<@77>) — " and the reply's words."""
+    tier 2, unless the case says otherwise. The manager (id 77) is refused /division delete in two
+    cases: with no season being set up (the season is being raced), or naming division Elite,
+    which does not exist. The manager gets today's reply word for word and nothing else. Pro
+    stands as it was, nothing is deleted, and no audit entry is written. The log channel gets
+    exactly one line, "⛔ `/division delete` refused for Manager (<@77>) — " and the reply's
+    words. Rename and amend are refused so as changes on the queue, above."""
     db_path = await _make_db(tmp_path, status=arranged.get("status", "SETUP"))
     cog = _make_cog(db_path, divisions=[_division(), _division("Am", 2, id=12)])
     interaction = _as_discord(_run_by_the_manager(cog, command))
@@ -1004,7 +1289,6 @@ async def test_every_other_division_delete_rename_and_amend_refusal_is_recorded(
     interaction.response.send_message.assert_awaited_once_with(reply, ephemeral=True)
     interaction.followup.send.assert_not_awaited()
     cog.bot.season_service.delete_division.assert_not_awaited()
-    cog.bot.season_service.rename_division.assert_not_awaited()
     assert await _division_row(db_path) == {"name": "Pro", "tier": 1, "mention_role_id": 555}
     assert await _audit_rows(db_path) == []
     assert _logged(cog) == [
