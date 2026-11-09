@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import PendingConfig, PendingDivision, SeasonCog
+from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import change_rows, league_bot, league_queue, run_queue
 from tests.support.setup_reads import hold_setup
@@ -375,32 +375,9 @@ async def test_a_failed_round_amend_confirmation_goes_to_report_failure(tmp_path
     assert view.is_finished()
 
 
-def _pending(track: str | None = "Bahrain International Circuit") -> PendingConfig:
-    """Div A of the season being set up, holding round 1."""
-    from leaguebot.core.models.round import RoundFormat
-
-    return PendingConfig(
-        season_id=7,
-        divisions=[
-            PendingDivision(
-                name=DIVISION,
-                role_id=1,
-                tier=1,
-                rounds=[
-                    {
-                        "round_number": 1,
-                        "format": RoundFormat.NORMAL,
-                        "track_name": track,
-                        "scheduled_at": datetime(2026, 12, 1, 18, 0),
-                    }
-                ],
-            )
-        ]
-    )
-
-
-#: Every refusal `/round amend` makes, on either path, and each of its Confirm button's: the
-#: case, the arguments, and a fragment of the reply.
+#: Every refusal `/round amend` makes of a round of a season being raced, and each of its
+#: Confirm button's: the case, the arguments, and a fragment of the reply. A round of the season
+#: being set up is refused through the change queue, in `test_amendment_cog_pending.py`.
 ROUND_AMEND_REFUSALS = [
     pytest.param("command", {}, "Provide at least one field", id="no-field-given"),
     pytest.param("no season", {"track": NEW_TRACK}, "No season is being raced", id="no-season"),
@@ -412,17 +389,6 @@ ROUND_AMEND_REFUSALS = [
     pytest.param("command", {"scheduled_at": "soon"}, "Invalid datetime", id="bad-datetime"),
     pytest.param("command", {"format": "DRAG"}, "Invalid format", id="bad-format"),
     pytest.param("started", {"track": NEW_TRACK}, "already started", id="the-rules-refuse"),
-    pytest.param("pending", {"division": "Nowhere", "track": NEW_TRACK}, "pending setup",
-                 id="pending-unknown-division"),
-    pytest.param("pending", {"round_number": 9, "track": NEW_TRACK}, "pending setup",
-                 id="pending-unknown-round"),
-    pytest.param("pending", {"track": "Nowhere Ring"}, "Unknown track",
-                 id="pending-unknown-track"),
-    pytest.param("pending", {"scheduled_at": "soon"}, "Invalid datetime",
-                 id="pending-bad-datetime"),
-    pytest.param("pending", {"format": "DRAG"}, "Invalid format", id="pending-bad-format"),
-    pytest.param("pending no track", {"format": "NORMAL"}, "requires a track",
-                 id="pending-format-needs-a-track"),
     pytest.param("confirm by another", {}, "Not your action", id="confirm-not-your-action"),
     pytest.param("confirm round gone", {}, "no longer exists", id="confirm-round-gone"),
     pytest.param("confirm window passed", {}, "can no longer be amended",
@@ -455,12 +421,6 @@ async def test_every_round_amend_refusal_reaches_the_log_channel(tmp_path, case,
     else:
         if case == "no season":
             cog.bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
-        if case.startswith("pending"):
-            hold_setup(
-                cog.bot.season_service,
-                _pending(track=None if case == "pending no track" else "Bahrain"),
-            )
-            cog._snapshot_pending = AsyncMock()
         kwargs = dict(kwargs)
         division = kwargs.pop("division", DIVISION)
         round_number = kwargs.pop("round_number", 1)
@@ -472,9 +432,6 @@ async def test_every_round_amend_refusal_reaches_the_log_channel(tmp_path, case,
     if not case.startswith("confirm"):
         assert not _offered_a_confirmation(interaction), "a refused amendment must not be offered"
     assert await _amendments(path) == []
-    if case.startswith("pending"):
-        # The season being set up is written through its snapshot, not the amendment service.
-        cog._snapshot_pending.assert_not_awaited()
     # The member refused is the one who pressed: on another's Confirm, member 89, not 88.
     refused = USER_ID + 1 if case == "confirm by another" else USER_ID
     [line] = _lines(cog)
@@ -562,28 +519,6 @@ async def test_a_confirmed_round_amend_whose_reply_fails_still_records_what_chan
     assert f"  track: Bahrain International Circuit \u2192 {NEW_TRACK}" in success.splitlines()
 
 
-async def test_a_pending_round_amend_logs_the_values_it_set(tmp_path):
-    """On a season still being set up, the success line likewise names the member and
-    `/round amend`, and states beneath it each field changed, from its old value to its new
-    one."""
-    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
-    cog = await _cog(path)
-    hold_setup(cog.bot.season_service, _pending())
-    cog._snapshot_pending = AsyncMock()
-    interaction = _interaction()
-    _recording(cog, interaction)
-
-    await _amend(cog, interaction, track=NEW_TRACK)
-
-    cog._snapshot_pending.assert_awaited_once()
-    [line] = _lines(cog)
-    assert "/round amend" in line
-    assert f"<@{USER_ID}>" in line
-    values = line.split("\n", 1)[1] if "\n" in line else ""
-    assert "Bahrain International Circuit" in values, "the old value is not stated"
-    assert NEW_TRACK in values, "the new value is not stated"
-
-
 @pytest.mark.parametrize(
     "where, error, message",
     [
@@ -639,9 +574,10 @@ async def test_a_round_amend_confirmation_that_fails_elsewhere_stops_its_view(
 # ---------------------------------------------------------------------------
 #
 # The core specification's "The record of what changed": a command that changes nothing because
-# nothing was asked of it records that nothing was changed. On either path the reply says nothing
-# changed, no audit entry is written and the log holds one line, in the success form, saying so;
-# the active path offers no confirmation for it. Whether the values stand is judged purely
+# nothing was asked of it records that nothing was changed. The reply says nothing changed, no
+# audit entry is written and the log holds one line, in the success form, saying so, and no
+# confirmation is offered. A round of the season being set up is tested in
+# `test_amendment_cog_pending.py`. Whether the values stand is judged purely
 # (`amendment_rules_service`), and tested there.
 
 
@@ -689,43 +625,6 @@ async def test_an_active_round_amended_to_what_stands_changes_nothing(tmp_path, 
     # Nothing is asked of the change queue, which makes every amendment.
     assert await _amendments(path) == []
     assert _says_nothing_changed(_reply(interaction))
-    assert await _audit_rows(path) == []
-    [line] = _lines(cog)
-    assert line.startswith(f"Manager (<@{USER_ID}>) | /round amend")
-    assert not line.startswith("⛔")
-    assert _says_nothing_changed(line)
-
-
-@pytest.mark.parametrize(
-    "fields",
-    [
-        pytest.param(("track",), id="its_own_track"),
-        pytest.param(("format",), id="its_own_format"),
-        pytest.param(("scheduled_at",), id="its_own_moment"),
-        pytest.param(("track", "format", "scheduled_at"), id="every_value_as_it_stands"),
-    ],
-)
-async def test_a_pending_round_amended_to_what_stands_changes_nothing(tmp_path, fields):
-    """Round 1 of Div A, in the season being set up, stands at Bahrain International Circuit, in
-    the NORMAL format, on 1 December 2026 at 18:00 UTC; the manager amends it to values it
-    already holds. Nothing is saved to the season being set up."""
-    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
-    cog = await _cog(path)
-    hold_setup(cog.bot.season_service, _pending())
-    cog._snapshot_pending = AsyncMock()
-    interaction = _interaction()
-    _recording(cog, interaction)
-    standing = {
-        "track": "Bahrain International Circuit",
-        "format": "NORMAL",
-        "scheduled_at": "2026-12-01T18:00:00",
-    }
-
-    await _amend(cog, interaction, **{field: standing[field] for field in fields})
-
-    cog._snapshot_pending.assert_not_awaited()
-    assert _says_nothing_changed(_reply(interaction))
-    assert "updated and saved" not in _reply(interaction)
     assert await _audit_rows(path) == []
     [line] = _lines(cog)
     assert line.startswith(f"Manager (<@{USER_ID}>) | /round amend")
