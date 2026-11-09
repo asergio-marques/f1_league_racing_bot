@@ -157,8 +157,8 @@ async def test_a_held_channel_on_the_new_account_is_kept_and_the_other_deleted(
     """E24. Valtteri (106) and 9001 each hold a held channel, each due for deletion in six hours.
     The league manager runs `/driver reassign` of Valtteri onto 9001. Nothing is deleted until the
     queue runs. Once it has, Valtteri's channel is deleted and its record with it; 9001 keeps its
-    channel and its record, no timer is armed for it, and neither channel's permissions are
-    edited. Was `move_held_channel` called directly, asserting that `signup.channel.delete` was
+    channel and its record, no timer is armed for it and its own is not disarmed, so it is still
+    deleted when it was due, and neither channel's permissions are edited. Was `move_held_channel` called directly, asserting that `signup.channel.delete` was
     asked of the queue and the old record stood until it ran; `test_wizard_changes.py`'s "driver
     reassign asks the held channel's deletion" ran that change to the channel's deletion, and is
     folded in here."""
@@ -176,6 +176,7 @@ async def test_a_held_channel_on_the_new_account_is_kept_and_the_other_deleted(
     assert await _channel_of(league, UNASSIGNED) == "no record"
     assert await _channel_of(league, _NEW) == THEIRS
     assert [account for account, _due_at in _armed(league)] == []
+    assert str(_NEW) not in _disarmed(league)
     assert _edits(held) == [] and _edits(theirs) == []
 
 
