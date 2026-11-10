@@ -197,6 +197,72 @@ _TEAM_REMOVED = {"shorthand": "Ferrari", "full_name": "Scuderia Ferrari"}
 _RESERVE_ROLE_GARBLED = {"role_id": "x", "role_name": "Reserve"}
 
 
+def _reassign_change(driver, profiles_merged=None):
+    """`driver_changes.driver_reassign_change`'s change, judged and saved through *driver*, a
+    merge calling *profiles_merged*, and every Discord job a double."""
+    from leaguebot.core.services.driver_changes import driver_reassign_change
+    from leaguebot.core.utils.hooks import AwaitedHook
+
+    return driver_reassign_change(
+        driver=driver, placement=MagicMock(), drawing=MagicMock(),
+        profiles_merged=profiles_merged or AwaitedHook(),
+        driver_account_changed=AwaitedHook(), driver_account_changed_steps=MagicMock(),
+        now=lambda: datetime(2026, 9, 17, 12, tzinfo=timezone.utc),
+    )
+
+
+async def _reassign_checked(tmp_path, monkeypatch) -> None:
+    """`/driver reassign` of 6501 to 6502 checked, the service's judge raising."""
+    from leaguebot.core.models.change import ChangeOrigin
+    from leaguebot.core.services.change_queue import CheckContext
+
+    db_path = str(tmp_path / "check.db")
+    await run_migrations(db_path)
+    driver = MagicMock()
+    driver.judge_reassign_on = AsyncMock(side_effect=ValueError(BUG))
+    await _reassign_change(driver).check(CheckContext(
+        payload={"old_user_id": "6501", "new_user_id": "6502", "new_name": "Lewis"},
+        bot=MagicMock(), db_path=db_path, origin=ChangeOrigin.MEMBER,
+    ))
+
+
+async def _reassign_merge_hook_faulted(tmp_path, monkeypatch) -> None:
+    """`/driver reassign` of 6501 to 6502 saved, two drivers neither of whom holds the live
+    season and who share no division, so the two are merged: a module's part of the merge, called
+    through `profiles_merged`, raises."""
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.core.services.change_queue import StepContext
+    from leaguebot.core.services.driver_changes import SAVE
+    from leaguebot.core.services.driver_service import DriverService
+    from leaguebot.core.utils.hooks import AwaitedHook
+    from tests.core.test_driver_merge import A, B, _make_db, _profile
+
+    db_path = await _make_db(tmp_path)
+    await _profile(db_path, A)
+    await _profile(db_path, B)
+    hook = AwaitedHook()
+    hook.subscribe(AsyncMock(side_effect=ValueError(BUG)))
+    change = _reassign_change(DriverService(db_path), hook)
+    async with get_connection(db_path) as db:
+        await change.steps[SAVE].run(db, StepContext(
+            bot=MagicMock(), db_path=db_path, change_id=1, kind=change.kind,
+            payload={"old_user_id": A, "new_user_id": B, "new_name": "Lewis"},
+            what="the change", actor_id=77, actor_name="Admin", named="Admin (<@77>)",
+            steps=(), step_name=SAVE,
+        ))
+
+
+async def _former_driver_set(tmp_path, monkeypatch) -> None:
+    """`/test-mode set-former-driver` of Racer in test mode, the service raising."""
+    from tests.core.test_test_mode_cog_refusals import _cog, _command, _interaction, _member
+
+    cog = _cog()
+    cog.bot.driver_service.set_former_driver = AsyncMock(side_effect=ValueError(BUG))
+    await _command("set_former_driver", _member(), True)(
+        cog, _interaction(cog, "test-mode set-former-driver")
+    )
+
+
 #: One case per catch: what it guards, and how to raise a bug's `ValueError` inside it.
 CATCHES = [
     pytest.param(_placement_check("driver_move_change"), id="driver move check",
@@ -228,6 +294,12 @@ CATCHES = [
                  marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
     pytest.param(_team_save("team_reserve_role_change", _RESERVE_ROLE_GARBLED),
                  id="team reserve-role save, a role id no number",
+                 marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
+    pytest.param(_reassign_checked, id="driver reassign check",
+                 marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
+    pytest.param(_reassign_merge_hook_faulted, id="driver reassign save, a merge hook's fault",
+                 marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
+    pytest.param(_former_driver_set, id="test-mode set-former-driver",
                  marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
 ]
 
