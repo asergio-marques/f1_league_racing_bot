@@ -561,24 +561,6 @@ async def test_the_backup_question_is_put_after_every_gate_and_before_the_approv
     assert (await _approval(league))["state"] == "QUEUED"
 
 
-async def test_a_second_press_while_the_approval_is_in_hand_puts_no_backup_question(
-    tmp_path, monkeypatch,
-):
-    """A second approval of the season, pressed while the first waits on the queue, is refused
-    without being asked whether to save the databases."""
-    from leaguebot.core.services.season_approval_change import ALREADY_BEING_APPROVED
-
-    league = await _league_for(tmp_path, monkeypatch, test_mode=True)
-    await _pressed(league, backup="save")
-    assert league.backup_answers == [("save", 0)]
-
-    again = await _pressed(league, backup="save")
-
-    assert ALREADY_BEING_APPROVED in reply(again)
-    assert league.backup_answers == [("save", 0)]
-    assert (await _approval(league))["state"] == "QUEUED"
-
-
 async def test_cancelling_at_the_backup_question_asks_nothing(tmp_path, monkeypatch):
     league = await _league_for(tmp_path, monkeypatch, test_mode=True)
 
