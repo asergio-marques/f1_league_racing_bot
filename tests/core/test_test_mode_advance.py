@@ -138,6 +138,12 @@ def _make_cog(db_path: str, *, test_mode: bool = True) -> _Cog:
     bot.output_router.post_log = AsyncMock(return_value=None)
     bot.change_queue = MagicMock()
     bot.change_queue.ask = AsyncMock(return_value=1)
+    # The bot's own advance steps, made as the builder makes them, for `_advancing` to sign each
+    # kind's step up on, once the test-mode service holds them on an object (#283).
+    from leaguebot.core.services import test_mode_service
+
+    if hasattr(test_mode_service, "AdvanceSteps"):
+        bot.advance_steps = test_mode_service.AdvanceSteps()
 
     cog = _Cog.__new__(_Cog)
     cog.bot = bot
@@ -241,8 +247,8 @@ def _advancing(bot, entry, *, passed=None, sign_up: bool = True):
         "get_passed_over_steps": AsyncMock(return_value=list(passed or [])),
     }
     with ExitStack() as stack:
-        # The steps are signed up into a registry the module keeps for the process, so it is
-        # put back as it was when the test ends: otherwise the steps bound to this test's bot
+        # While the steps are signed up into a registry the module keeps for the process, it
+        # is put back as it was when the test ends: otherwise the steps bound to this test's bot
         # would answer the next test's advance on the same worker.
         steps = getattr(test_mode_service, "_ADVANCE_STEPS", None)
         if isinstance(steps, dict):
