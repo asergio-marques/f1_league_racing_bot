@@ -40,6 +40,9 @@ _REPLY_MARKS = ("❌", "⛔", "⚠️", "⚠", "ℹ️", "ℹ", "⏳", "⛓", "�
 #: How the log names the roster import form.
 _IMPORT_FORM = "the “Import a test roster” form"
 
+#: The cases whose service refuses with `Refused`, which #283's build brings in.
+_REFUSED_BY_NAME = {"set-former-driver refused by the service"}
+
 
 def _reason(reply: str) -> str:
     """The reason a refusal line gives: the reply's first line, without its opening mark."""
@@ -372,7 +375,11 @@ _CASES = {
 }
 
 
-@pytest.mark.parametrize("case", sorted(_CASES))
+@pytest.mark.parametrize("case", [
+    pytest.param(case)
+    if case in _REFUSED_BY_NAME else case
+    for case in sorted(_CASES)
+])
 async def test_a_refusal_of_the_test_mode_cog_is_recorded_in_the_log_channel(case, monkeypatch):
     """A league admin the test-mode cog's own checks turn away is answered as today, seen by
     them alone, and one standard line records the refusal; on the import form it names the

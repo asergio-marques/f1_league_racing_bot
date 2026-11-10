@@ -1111,7 +1111,7 @@ async def _gate_4b_an_image_fault(db_path, monkeypatch):
         _gate_no_longer_in_placements,
         _gate_no_divisions,
         _gate_s_unsettled_signups_and_channel_faults,
-        _gate_tiers_not_sequential,
+        pytest.param(_gate_tiers_not_sequential, id="tiers_not_sequential"),
         _gate_0_a_division_without_rounds,
         _gate_0b_two_rounds_at_one_moment,
         _gate_2_no_points_configuration,
