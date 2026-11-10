@@ -414,7 +414,7 @@ async def get_next_pending_phase(
 
     The scheduler orders what it holds by fire time, and a job is matched to the step its module
     hands back by round and kind: the step is offered with the job's id, and a job its module
-    hands back no step for is stale and passed over. Before a job, every earlier round (and for a
+    hands back no step for is stale and passed over, but only after every earlier round (and for a
     clean-up, which falls a day after its round, its own) is checked for a step the job store
     cannot see: one its job misfired or was evicted, or never armed for a past-dated round, or
     one that never has a job, such as result submission. Once the job store has nothing, the
@@ -459,14 +459,14 @@ async def get_next_pending_phase(
         index = next((i for i, rnd in enumerate(rounds) if rnd.round_id == job["round_id"]), None)
         if index is None:
             continue
-        job_step = next((s for s in steps[job["round_id"]] if s.kind == job_kind), None)
-        if job_step is None:
-            continue  # its module hands back no such step: stale
         is_cleanup = phase in CLEAN_UP_PHASES
         for rnd in rounds[: index + 1 if is_cleanup else index]:
             entry = first(rnd, clean_up=False)
             if entry is not None:
                 return entry
+        job_step = next((s for s in steps[job["round_id"]] if s.kind == job_kind), None)
+        if job_step is None:
+            continue  # its module hands back no such step: stale
         return _entry(rounds[index], job_step, job["job_id"])
 
     for rnd in rounds:

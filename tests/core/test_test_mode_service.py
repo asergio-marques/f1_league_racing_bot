@@ -1584,11 +1584,7 @@ async def test_core_offers_the_first_of_the_steps_the_modules_hand_back(
                  id="a job whose step has run passed over for its round's next step"),
     pytest.param("NORMAL", [[(1, 1, "weather_p1"), (1, 2, "weather_p2")]],
                  [_job(2, 1, days=1), _job(1, 2, days=2)], (1, 1, None),
-                 id="an earlier round's step before a later round's stale job",
-                 marks=pytest.mark.xfail(
-                     strict=True,
-                     reason="#283: a stale job is passed over before the earlier rounds are asked",
-                 )),
+                 id="an earlier round's step before a later round's stale job"),
 ])
 async def test_a_queued_job_is_offered_as_its_module_s_step(
     tmp_path, round_format, handed, jobs, expected,
