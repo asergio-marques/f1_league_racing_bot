@@ -456,9 +456,8 @@ async def test_the_hub_panel_posted_or_edited_notifies_nobody(league):
 @pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_a_hub_panel_emptied_of_options_loses_its_buttons(league):
     """The hub options the refresh is built on hold one option, and the panel is posted with
-    its button; the
-    option then stops being offered and the panel is refreshed through the queue. The panel says
-    nothing is offered and carries no view, so no old button is left under it."""
+    its button; the option then stops being offered and the panel is refreshed through the queue.
+    The panel says nothing is offered and carries no view, so no old button is left under it."""
     offered = _offered(True)
     _offer(league, _option("licence", offered=offered))
     await _ask_refresh(league)
@@ -507,9 +506,9 @@ async def test_a_hub_channel_gone_stops_the_queue_naming_the_command(league):
 @pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_the_panel_s_id_is_saved_with_its_mark(league):
     """The hub is set, no panel stands and the hub options the refresh is built on hold no
-    option; the refresh is asked and the queue run. The panel is posted; its id is kept, so that the next refresh edits
-    it in place rather than posting a second, and is written in the refresh job's own save, with
-    its mark."""
+    option; the refresh is asked and the queue run. The panel is posted; its id is kept, so that
+    the next refresh edits it in place rather than posting a second, and is written in the refresh
+    job's own save, with its mark."""
     _offer(league)
     await _ask_refresh(league)
     await run_queue(league.bot)
@@ -659,8 +658,8 @@ async def test_permissions_are_left_alone_while_no_hub_is_set(db_path):
 async def test_a_restart_routes_every_registered_option_and_refreshes(league):
     """Every option, offered or not: a stale press is refused in words, not in silence. The
     panel stands in the hub; after a restart every option on the hub options handed to the
-    recovery has its button
-    routed again, and the panel's refresh is asked of the queue rather than made at once."""
+    recovery has its button routed again, and the panel's refresh is asked of the queue rather
+    than made at once."""
     standing = await league.hub.send("old panel")
     await _configure(league.db_path, hub_message_id=standing.id)
     hub_options = _offer(
