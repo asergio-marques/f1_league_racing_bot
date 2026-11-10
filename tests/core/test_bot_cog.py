@@ -1703,7 +1703,6 @@ async def test_bot_pack_losing_a_race_to_a_queued_job_names_the_job_not_a_season
     assert lines[1] == f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"
 
 
-@pytest.mark.xfail(strict=True, reason="#283: /bot pack hands the pack the change queue's time")
 async def test_bot_pack_is_audited_as_the_member_who_ran_it(tmp_path):
     """Issue #383. What the entry holds is the service's to pin; who it names and when, the change
     queue's time, are the cog's. The
@@ -1836,9 +1835,6 @@ async def test_bot_factory_reset_erases_nothing_without_a_backup(tmp_path, monke
     interaction.user.send.assert_not_awaited()
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: /bot factory-reset names its backup by the change queue's time"
-)
 async def test_bot_factory_reset_backs_up_then_wipes_then_reports_by_dm(tmp_path):
     """The backup is named by the change queue's time. The wipe clears what the bot holds in
     memory through the bot's own hook for it, called once."""
@@ -1978,9 +1974,6 @@ async def _pending_rows(db_path: str) -> int:
             id="clean-up-stopped-part-way",
         ),
     ],
-)
-@pytest.mark.xfail(
-    strict=True, reason="#283: /bot factory-reset hands its clean-up the change queue's time"
 )
 async def test_a_factory_reset_that_goes_ahead_posts_one_line_once_its_clean_up_ends(
     tmp_path, monkeypatch, ending

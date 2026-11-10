@@ -44,7 +44,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.db.database import get_connection
@@ -190,6 +190,7 @@ async def pack(
     bot_packed: AwaitedHook,
     actor_id: int,
     actor_name: str,
+    now: datetime,
 ) -> PackResult:
     """Clear everything tied to this server and free the claim. Raises `PackRefused`.
 
@@ -200,7 +201,8 @@ async def pack(
     in-memory league state dropped too; the command passes both, the queue being handed on to
     the clear, and a test of the database alone need not. The two travel together: given one
     without the other, the memory is left alone. *actor_id* and *actor_name* are the member
-    who packed, and have no default: nothing but a member's command packs the bot.
+    who packed, and have no default: nothing but a member's command packs the bot. *now* stamps
+    the audit entry.
     """
     async with get_connection(db_path) as db:
         await db.execute("BEGIN IMMEDIATE")
@@ -252,7 +254,7 @@ async def pack(
                     actor_name,
                     json.dumps(cleared),
                     json.dumps({**dict.fromkeys(cleared), "team_roles": {}}),
-                    datetime.now(timezone.utc).isoformat(),
+                    now.isoformat(),
                 ),
             )
         except BaseException:

@@ -23,7 +23,7 @@ import logging
 import sqlite3
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import discord
@@ -59,14 +59,14 @@ def backup_path(live_path: str | Path, stamp: str) -> Path:
 
 
 def take_backup(
-    db_path: str | Path, jobstore_path: str | Path, *, now: datetime | None = None
+    db_path: str | Path, jobstore_path: str | Path, *, now: datetime
 ) -> FactoryBackup:
     """Copy both databases beside the live ones. Raises `backup_service.BackupFault`.
 
     The caller pauses the scheduler around this, as `backup_service.save`'s callers do, so
-    that no job is written to the job store mid-copy.
+    that no job is written to the job store mid-copy. *now* names the copies.
     """
-    stamp = (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
+    stamp = now.strftime("%Y%m%dT%H%M%SZ")
     database = backup_path(db_path, stamp)
     backup_service.snapshot_database(db_path, database)
     _self_contained(database)
@@ -255,7 +255,7 @@ async def clean_discord(
     targets: DiscordTargets,
     report: Report,
     *,
-    now: datetime | None = None,
+    now: datetime,
 ) -> CleanOutcome:
     """Delete the channels the bot created, then the bot's own messages everywhere else.
 
@@ -279,7 +279,6 @@ async def clean_discord(
     job for Retry and Discard. A refusal is therefore not a stop but a fault in *outcome*, which
     the report names, and the run goes on.
     """
-    moment = now or datetime.now(timezone.utc)
     outcome = CleanOutcome(total=len(targets.created) + len(targets.channels))
 
     for channel_id in targets.created:
@@ -299,7 +298,7 @@ async def clean_discord(
             await report(_progress(outcome, f"clearing #{channel.name}"))
             try:
                 outcome.messages_deleted += await _delete_own_messages(
-                    channel, bot_user_id, moment
+                    channel, bot_user_id, now
                 )
             except discord.HTTPException as exc:
                 outcome.faults.append(f"#{channel.name} could not be cleared: {exc}")

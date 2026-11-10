@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import Any
 
 import discord
@@ -513,6 +514,7 @@ class BotCog(commands.Cog):
                 bot_packed=self.bot.bot_packed,
                 actor_id=interaction.user.id,
                 actor_name=str(interaction.user),
+                now=self.bot.change_queue.now(),
             )
         except pack_service.PackRefused as refused:
             if refused.job_id is not None:
@@ -592,7 +594,9 @@ class BotCog(commands.Cog):
 
         try:
             with scheduler.paused():
-                backup = factory_reset_service.take_backup(db_path, scheduler.jobstore_path)
+                backup = factory_reset_service.take_backup(
+                    db_path, scheduler.jobstore_path, now=self.bot.change_queue.now()
+                )
         except backup_service.BackupFault as exc:
             # A copy, a write or a check that failed is a fault in the bot, not a refusal, and
             # nothing has been erased: the reply says so without naming the error.
@@ -645,7 +649,14 @@ class BotCog(commands.Cog):
             await self._post_closing_line(log_channel, who, ending, detail)
 
         self._clean_up = asyncio.create_task(
-            _clean_up(interaction.guild, bot_user_id, targets, report, close)
+            _clean_up(
+                interaction.guild,
+                bot_user_id,
+                targets,
+                report,
+                close,
+                now=self.bot.change_queue.now(),
+            )
         )
 
     async def _post_closing_line(
@@ -670,14 +681,17 @@ class BotCog(commands.Cog):
         log.warning("factory reset: the closing line could not be posted:\n%s", line)
 
 
-async def _clean_up(guild, bot_user_id: int, targets, report, close) -> None:
+async def _clean_up(guild, bot_user_id: int, targets, report, close, *, now: datetime) -> None:
     """Run the clean-up, and say so where something it did not expect stops it.
 
     However it ends, *close(ending, detail)* is then awaited once, to leave the reset's closing
-    line: after the clean-up, so that its deletions leave the line standing.
+    line: after the clean-up, so that its deletions leave the line standing. *now* is the
+    moment the clean-up judges a message's age by.
     """
     try:
-        outcome = await factory_reset_service.clean_discord(guild, bot_user_id, targets, report)
+        outcome = await factory_reset_service.clean_discord(
+            guild, bot_user_id, targets, report, now=now
+        )
     except Exception as exc:  # noqa: BLE001 — the last report must say it stopped
         log.exception("factory reset: the Discord clean-up stopped")
         # The owner's private progress message keeps the text (a test pins it); the log
