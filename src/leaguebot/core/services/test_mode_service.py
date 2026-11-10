@@ -49,10 +49,9 @@ class PhaseEntry(TypedDict):
     round_number: int
     division_id: int
     #: 0 = mystery notice — from the job store as well, where it is armed as `weather_p1` and
-    #: `get_next_pending_phase` reads the round's format, 1|2|3 = weather phases of a
-    #: round of any other format, 4 = result submission, 5|6|7 = the check-in
-    #: call, its last notice and its deadline, 8|9 = the forecast and the check-in cleanups a
-    #: day after the round.
+    #: weather's step reads the round's format, 1|2|3 = weather phases of a round of any other
+    #: format, 4 = result submission, 5|6|7 = the check-in call, its last notice and its
+    #: deadline, 8|9 = the forecast and the check-in cleanups a day after the round.
     phase_number: int
     #: The kind of round job the step is armed under (`ROUND_JOB_KINDS`): `weather_p1` for the
     #: mystery notice (0) as for Phase 1, the key of the step its module signed up

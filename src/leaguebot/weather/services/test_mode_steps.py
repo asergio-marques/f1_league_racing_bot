@@ -5,7 +5,8 @@ Core's `pending_steps_read` hook asks each module which of the rounds it hands o
 still pending (architecture.md, "How modules and core fit together"). Weather answers from its own
 switch, its own columns on `rounds` (`phase1_done` to `phase3_done`), the forecasts it keeps and
 the forecast changes still in hand on the change queue; core hands it the rounds as it reads them,
-their format, race time and status, and orders what comes back.
+their format, race time and status, and orders what comes back. Weather reads a round's format
+itself, from the round it is handed, to tell a mystery round's notice from Phase 1.
 
 Weather's steps of a round are a mystery round's notice (0) until it is posted, or each of Phases 1
 to 3 (1, 2, 3) not done, and the forecast clean-up (8) while a forecast of Phases 1 to 3 stands. A
