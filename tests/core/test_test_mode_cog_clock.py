@@ -63,7 +63,6 @@ async def test_the_review_judges_the_season_at_the_queue_s_time(monkeypatch):
     interaction.response.send_message.assert_awaited_once_with("Season review", ephemeral=True)
 
 
-
 @pytest.mark.xfail(
     strict=True, reason="#283: the review does not yet ask the modules' marks of the bot's hook"
 )
@@ -78,6 +77,7 @@ async def test_the_review_asks_each_module_s_marks_of_the_bot_s_hook(monkeypatch
     await undecorate(_Cog.review)(cog, _interaction("test-mode review"))
 
     assert summary.await_args.kwargs.get("review_marks_read") is cog.bot.review_marks_read
+
 
 async def test_the_former_driver_flag_is_set_at_the_queue_s_time():
     """With test mode on, Alex sets Racer's former-driver flag. The service is handed the change
