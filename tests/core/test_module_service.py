@@ -58,18 +58,25 @@ async def test_a_module_is_off_by_default(db_path, module):
 @pytest.mark.parametrize("module", MODULES)
 async def test_each_module_s_switch_reads_its_own_flag_alone(db_path, module):
     """The module's flag turned on, as its switch leaves it: the module reads as on and every
-    other module still as off; turned off again, it reads as off."""
+    other module still as off. Every other module then turned on too: all read as on together.
+    The module turned off again: it reads as off, and every other module still as on."""
     from tests.support.season_league import set_module_flag
 
     svc = _modules(db_path)
 
+    async def switches() -> dict[str, bool]:
+        return {name: await getattr(svc, f"is_{name}_enabled")() for name in MODULES}
+
     await set_module_flag(db_path, module, True)
-    assert {name: await getattr(svc, f"is_{name}_enabled")() for name in MODULES} == {
-        name: name == module for name in MODULES
-    }
+    assert await switches() == {name: name == module for name in MODULES}
+
+    for other in MODULES:
+        if other != module:
+            await set_module_flag(db_path, other, True)
+    assert await switches() == {name: True for name in MODULES}
 
     await set_module_flag(db_path, module, False)
-    assert await getattr(svc, f"is_{module}_enabled")() is False
+    assert await switches() == {name: name != module for name in MODULES}
 
 
 @pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
