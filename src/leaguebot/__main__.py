@@ -15,6 +15,7 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
+from leaguebot.core.models.round import read_scheduled_at
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.season_review_changes import recover_expired_review_prompts
 from leaguebot.core.services.start_up import StartUpStep, start_up
@@ -1954,9 +1955,7 @@ async def _recover_missed_phases(bot: LeagueBot) -> None:
 
     for row in rows:
         round_id, scheduled_at_str, p1, p2, p3, fmt = row
-        scheduled_at = datetime.fromisoformat(scheduled_at_str)
-        if scheduled_at.tzinfo is None:
-            scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+        scheduled_at = read_scheduled_at(scheduled_at_str)
 
         # A round already raced has no forecast owing, whatever its flags say.
         if scheduled_at <= now:
@@ -2056,11 +2055,9 @@ async def _recover_missed_check_in_calls(
 
     for row in rows:
         try:
-            scheduled_at = datetime.fromisoformat(str(row["scheduled_at"]))
+            scheduled_at = read_scheduled_at(str(row["scheduled_at"]))
         except ValueError:
             continue
-        if scheduled_at.tzinfo is None:
-            scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
         due_at = scheduled_at - timedelta(days=row["rsvp_notice_days"] or 0)
         deadline_at = scheduled_at - timedelta(hours=row["rsvp_deadline_hours"] or 0)
         if moment < due_at:
@@ -2190,12 +2187,7 @@ async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
     for rrow in round_rows:
         scheduled_at_raw = rrow["scheduled_at"]
         try:
-            if isinstance(scheduled_at_raw, str):
-                scheduled_at = _dt.fromisoformat(scheduled_at_raw)
-            else:
-                scheduled_at = scheduled_at_raw
-            if scheduled_at.tzinfo is None:
-                scheduled_at = scheduled_at.replace(tzinfo=_tz.utc)
+            scheduled_at = read_scheduled_at(scheduled_at_raw)
         except (ValueError, TypeError):
             continue
 
@@ -2257,11 +2249,9 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
 
     def _due(scheduled_at_raw: object) -> bool:
         try:
-            scheduled_at = datetime.fromisoformat(str(scheduled_at_raw))
+            scheduled_at = read_scheduled_at(str(scheduled_at_raw))
         except ValueError:
             return False
-        if scheduled_at.tzinfo is None:
-            scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
         return scheduled_at + POST_RACE_CLEANUP_DELAY <= now
 
     try:
