@@ -151,7 +151,12 @@ def _sign_up_to_review_sections(bot: LeagueBot) -> None:
     up to it, in the order the review lays them out: signup's, attendance's, results' then
     weather's. Each is handed which review is gathered, the season and its divisions, and checks
     its own switch."""
+    from leaguebot.signup.services import signup_module_service
+
     bot.review_sections_read = AwaitedHook()
+    bot.review_sections_read.subscribe(partial(
+        signup_module_service.review_section, bot.signup_module_service, bot.module_service
+    ))
 
 
 def _sign_up_to_base_role_changed(bot: LeagueBot) -> None:

@@ -5,7 +5,7 @@ import json
 import logging
 from collections.abc import Iterable
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 import discord
@@ -15,6 +15,7 @@ from leaguebot.core.models.change import PlannedStep
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.driver_service import accounts_of_profile
 from leaguebot.core.services.pack_service import CLEARED_SIGNUP_CHANNEL_ID, CLEARED_WIZARDS
+from leaguebot.core.services.review_sections import Review, ReviewSection
 from leaguebot.signup.models.signup_module import (
     AvailabilitySlot,
     ConfigSnapshot,
@@ -24,6 +25,9 @@ from leaguebot.signup.models.signup_module import (
     SignupWizardRecord,
     WizardState,
 )
+
+if TYPE_CHECKING:
+    from leaguebot.core.services.module_service import ModuleService
 
 log = logging.getLogger(__name__)
 
@@ -1012,3 +1016,47 @@ async def bot_packed_on(db: aiosqlite.Connection) -> dict[str, Any]:
         CLEARED_WIZARDS: wizards,
         CLEARED_SIGNUP_CHANNEL_ID: None if row is None else row["signup_channel_id"],
     }
+
+
+async def review_section(
+    service: SignupModuleService,
+    modules: "ModuleService",
+    *,
+    review: Review,
+    season_id: int,
+    division_ids: list[int],
+) -> ReviewSection | None:
+    """Signup's section of a season review: its channel, settings and available slots, or None
+    where the module is off.
+
+    Subscribed to core's `review_sections_read`. The placements review also hands the signup
+    channel it shows beside the module's line in its Modules section, where signup has a
+    configuration; the configuration review shows none. Reads only.
+    """
+    if not await modules.is_signup_enabled():
+        return None
+    config = await service.get_config()
+    settings = await service.get_settings()
+    slots = await service.get_slots()
+    channel = (
+        f"<#{config.signup_channel_id}>"
+        if config and config.signup_channel_id
+        else "*(not configured)*"
+    )
+    time_type = settings.time_type.replace("_", " ").title()
+    time_image = "Required" if settings.time_image_required else "Not required"
+    nationality = "Required" if settings.nationality_required else "Not required"
+    labels = [slot.display_label for slot in slots] if slots else ["*(none configured)*"]
+    return ReviewSection(
+        module="signup",
+        lines=[
+            "**Signup Config**",
+            f"  • Channel: {channel}",
+            f"  • Time type: {time_type}",
+            f"  • Time image: {time_image}",
+            f"  • Nationality: {nationality}",
+            f"  • Available slots: {', '.join(labels)}",
+            "",
+        ],
+        modules_note=f"Channel: {channel}" if review is Review.PLACEMENTS and config else None,
+    )

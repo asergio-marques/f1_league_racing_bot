@@ -10,8 +10,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-_NOT_YET = "#283: signup hands no review section; the season cog writes it"
-
 _LINES = [
     "**Signup Config**",
     "  • Channel: <#900>",
@@ -52,9 +50,8 @@ async def _section(service, on: bool, review: str):
 
 
 @pytest.mark.parametrize(("review", "note"), [
-    pytest.param("PLACEMENTS", "Channel: <#900>",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
-    pytest.param("CONFIGURATION", None, marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+    ("PLACEMENTS", "Channel: <#900>"),
+    ("CONFIGURATION", None),
 ])
 async def test_signup_hands_its_section_to_each_review(review, note):
     """Signup on, its channel set, its settings and one slot: each review gets the Signup Config
@@ -68,7 +65,6 @@ async def test_signup_hands_its_section_to_each_review(review, note):
     assert dict(section.division_lines) == {}
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_placements_review_with_no_signup_configuration_names_no_channel():
     """Signup on and never configured: no channel beside its line in the Modules section, and the
     Signup Config section says the channel is not configured."""
@@ -78,7 +74,6 @@ async def test_a_placements_review_with_no_signup_configuration_names_no_channel
     assert section.lines[1] == "  • Channel: *(not configured)*"
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_placements_review_with_no_signup_channel_says_so_beside_its_module():
     """Signup on and configured, but with no channel set: the Modules section shows "Channel:
     *(not configured)*" beside its line, and the Signup Config section says the same."""
@@ -88,10 +83,7 @@ async def test_a_placements_review_with_no_signup_channel_says_so_beside_its_mod
     assert section.lines[1] == "  • Channel: *(not configured)*"
 
 
-@pytest.mark.parametrize("review", [
-    pytest.param("PLACEMENTS", marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
-    pytest.param("CONFIGURATION", marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
-])
+@pytest.mark.parametrize("review", ["PLACEMENTS", "CONFIGURATION"])
 async def test_signup_hands_nothing_while_it_is_off(review):
     """Signup off: no section, and nothing of signup's is read."""
     service = _service()
