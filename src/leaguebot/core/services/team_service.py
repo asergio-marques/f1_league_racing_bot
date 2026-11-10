@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection, inserted_id
+from leaguebot.core.models.refusal import Refused
 from leaguebot.core.models.team import DefaultTeam, TeamInstance
 from leaguebot.core.utils.asset_slug import normalise
 from leaguebot.core.utils.input_validator import NAME, parse_role_mention, parse_user_mention
@@ -207,16 +208,16 @@ class TeamService:
         return [_row_to_default_team(r) for r in await cursor.fetchall()]
 
     async def judge_add_on(self, db: aiosqlite.Connection, name: str, *, full_name: str) -> None:
-        """Raise ValueError, in the words a league is told, where a team under the shorthand
+        """Raise Refused, in the words a league is told, where a team under the shorthand
         *name* and the *full_name* cannot be added to the server's list, reading on *db* and
         writing nothing: the Reserve name, a shorthand already taken, a name the rules refuse."""
         if name == RESERVE_NAME:
-            raise ValueError(
+            raise Refused(
                 f'The team name "{RESERVE_NAME}" is protected and cannot be managed.'
             )
         existing = await db.execute("SELECT 1 FROM default_teams WHERE name = ?", (name,))
         if await existing.fetchone():
-            raise ValueError(f'A default team named "{name}" already exists.')
+            raise Refused(f'A default team named "{name}" already exists.')
 
         # The normalised name must serve as a lineup template's field identifier
         # (Principle IX). Scope: the server's own team list.
@@ -224,7 +225,7 @@ class TeamService:
             name, await self._server_keys(db, exclude=name)
         ) or validate_full_name(full_name, await self._server_full_names(db))
         if problem is not None:
-            raise ValueError(problem)
+            raise Refused(problem)
 
     async def add_default_team_on(
         self, db: aiosqlite.Connection, name: str, *, full_name: str, max_seats: int = 2
@@ -233,7 +234,7 @@ class TeamService:
         *db*, a connection the caller holds: commits nothing and writes no audit entry, which the
         change that calls it records.
 
-        Raises ValueError on a duplicate or the Reserve name (`judge_add_on`).
+        Raises Refused on a duplicate or the Reserve name (`judge_add_on`).
         """
         await self.judge_add_on(db, name, full_name=full_name)
         cursor = await db.execute(
@@ -260,14 +261,14 @@ class TeamService:
         full_name: str | None = None,
     ) -> tuple[int, str, str]:
         """The id of the team whose shorthand is *current_name* and the shorthand and full name it
-        would carry, read on *db* and writing nothing. Raises ValueError, in the words a league is
+        would carry, read on *db* and writing nothing. Raises Refused, in the words a league is
         told, where the team cannot be changed so.
 
         As on a rename, only the **new** names are validated: a team named before a rule existed
         must still be correctable (FR-011). The Reserve team is protected.
         """
         if current_name == RESERVE_NAME:
-            raise ValueError(
+            raise Refused(
                 f'The team name "{RESERVE_NAME}" is protected and cannot be managed.'
             )
         row = await (
@@ -277,9 +278,9 @@ class TeamService:
             )
         ).fetchone()
         if row is None:
-            raise ValueError(f'No default team named "{current_name}" found.')
+            raise Refused(f'No default team named "{current_name}" found.')
         if row["is_reserve"]:
-            raise ValueError(f'The team "{current_name}" is protected and cannot be managed.')
+            raise Refused(f'The team "{current_name}" is protected and cannot be managed.')
 
         new_shorthand = (shorthand or row["name"]).strip()
         new_full_name = (full_name or row["full_name"]).strip()
@@ -289,19 +290,19 @@ class TeamService:
                 await db.execute("SELECT 1 FROM default_teams WHERE name = ?", (new_shorthand,))
             ).fetchone()
             if conflict:
-                raise ValueError(f'A default team named "{new_shorthand}" already exists.')
+                raise Refused(f'A default team named "{new_shorthand}" already exists.')
             problem = validate_team_name(
                 new_shorthand, await self._server_keys(db, exclude=current_name)
             )
             if problem is not None:
-                raise ValueError(problem)
+                raise Refused(problem)
 
         if new_full_name != row["full_name"]:
             problem = validate_full_name(
                 new_full_name, await self._server_full_names(db, exclude_id=row["id"])
             )
             if problem is not None:
-                raise ValueError(problem)
+                raise Refused(problem)
         return int(row["id"]), new_shorthand, new_full_name
 
     async def modify_default_team_on(
@@ -331,9 +332,9 @@ class TeamService:
 
     async def judge_remove_on(self, db: aiosqlite.Connection, name: str) -> int:
         """The id of the team of the server's list whose shorthand is *name*, read on *db*.
-        Raises ValueError where none is, or where it is the protected Reserve team."""
+        Raises Refused where none is, or where it is the protected Reserve team."""
         if name == RESERVE_NAME:
-            raise ValueError(
+            raise Refused(
                 f'The team name "{RESERVE_NAME}" is protected and cannot be managed.'
             )
         row = await (
@@ -342,14 +343,14 @@ class TeamService:
             )
         ).fetchone()
         if row is None:
-            raise ValueError(f'No default team named "{name}" found.')
+            raise Refused(f'No default team named "{name}" found.')
         if row["is_reserve"]:
-            raise ValueError(f'The team "{name}" is protected and cannot be managed.')
+            raise Refused(f'The team "{name}" is protected and cannot be managed.')
         return int(row["id"])
 
     async def remove_default_team_on(self, db: aiosqlite.Connection, name: str) -> None:
         """Remove a default team on *db*, a connection the caller holds: commits nothing and
-        writes no audit entry. Raises ValueError if protected or not found."""
+        writes no audit entry. Raises Refused if protected or not found."""
         team_id = await self.judge_remove_on(db, name)
         await db.execute("DELETE FROM default_teams WHERE id = ?", (team_id,))
 

@@ -37,8 +37,6 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.team_service import TeamService
 
-#: Why a team refusal test fails until #283's build raises the member's refusal by name.
-TEAM_REFUSAL = "#283: the team list still refuses with a bare ValueError, not Refused"
 
 SERVER_ID = 8708
 SEASON_ID = 1
@@ -227,7 +225,6 @@ async def test_the_reserve_team_sorts_last(tmp_path):
     ],
     ids=["add", "modify", "remove"],
 )
-@pytest.mark.xfail(strict=True, reason=TEAM_REFUSAL)
 async def test_no_team_command_may_manage_the_reserve_team(tmp_path, call):
     """Adding a team named Reserve, changing the Reserve team's shorthand and removing it are
     each refused as protected by the list's writers, as a `/team` change's save calls them."""
@@ -238,7 +235,6 @@ async def test_no_team_command_may_manage_the_reserve_team(tmp_path, call):
         await _write(db_path, call)
 
 
-@pytest.mark.xfail(strict=True, reason=TEAM_REFUSAL)
 async def test_a_reserve_team_cannot_be_renamed_by_its_row_either(tmp_path):
     """The name check catches the usual case; the `is_reserve` check behind it catches a
     Reserve team that was somehow stored under another name. The Reserve team's row, the one
@@ -284,7 +280,6 @@ async def test_a_team_is_added_with_its_seat_count(tmp_path):
     assert await _audit_rows(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=TEAM_REFUSAL)
 async def test_a_duplicate_team_name_is_refused(tmp_path):
     from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
@@ -294,7 +289,6 @@ async def test_a_duplicate_team_name_is_refused(tmp_path):
         await _write(db_path, lambda s, db: s.add_default_team_on(db, "Alpha", full_name="Alpha"))
 
 
-@pytest.mark.xfail(strict=True, reason=TEAM_REFUSAL)
 async def test_a_name_colliding_once_normalised_is_refused(tmp_path):
     """The normalised name is a lineup template's field identifier, so two teams that
     normalise alike cannot both be drawn. The collision is invisible in the raw names,
@@ -340,7 +334,6 @@ async def test_a_team_s_full_name_is_changed_on_its_own(tmp_path):
     assert await _audit_rows(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=TEAM_REFUSAL)
 async def test_modifying_a_team_that_does_not_exist_says_so(tmp_path):
     from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
@@ -349,7 +342,6 @@ async def test_modifying_a_team_that_does_not_exist_says_so(tmp_path):
         await _write(db_path, lambda s, db: s.modify_default_team_on(db, "Ghost", shorthand="Beta"))
 
 
-@pytest.mark.xfail(strict=True, reason=TEAM_REFUSAL)
 async def test_a_shorthand_already_taken_is_refused(tmp_path):
     from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
@@ -360,7 +352,6 @@ async def test_a_shorthand_already_taken_is_refused(tmp_path):
         await _write(db_path, lambda s, db: s.modify_default_team_on(db, "Alpha", shorthand="Beta"))
 
 
-@pytest.mark.xfail(strict=True, reason=TEAM_REFUSAL)
 async def test_a_full_name_already_taken_is_refused_and_nothing_is_written(tmp_path):
     from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
@@ -399,7 +390,6 @@ async def test_a_team_is_removed(tmp_path):
     assert await _audit_rows(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=TEAM_REFUSAL)
 async def test_removing_a_team_that_does_not_exist_says_so(tmp_path):
     from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
@@ -486,7 +476,6 @@ async def test_a_team_is_added_with_its_full_name_beside_its_shorthand(tmp_path)
 
 
 @pytest.mark.parametrize("full_name", ["oracle RED BULL racing", "reserve"])
-@pytest.mark.xfail(strict=True, reason=TEAM_REFUSAL)
 async def test_a_team_is_refused_a_full_name_another_team_shows(tmp_path, full_name):
     """Full names are unique across the server's list ignoring case, the Reserve team's
     included, and nothing is added when one is taken (#381)."""

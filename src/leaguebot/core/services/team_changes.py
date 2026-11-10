@@ -43,6 +43,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import AuditRecord, LEAGUE_LANE, PlannedStep, StepKind, StepResult, Verdict
+from leaguebot.core.models.refusal import Refused
 from leaguebot.core.models.season import Season, SeasonStage
 from leaguebot.core.services.change_queue import (
     ChangeType,
@@ -196,7 +197,7 @@ def _refused(ctx: OutcomeContext) -> str | None:
     return str(refused) if refused else None
 
 
-def _refused_in_save(ctx: StepContext, refusal: ValueError) -> StepResult:
+def _refused_in_save(ctx: StepContext, refusal: Refused) -> StepResult:
     """The result of a save that found a refusal: nothing written, the log channel told."""
     reply = f"⛔ {refusal}"
     return StepResult(
@@ -232,7 +233,7 @@ def team_add_change(
         try:
             async with get_connection(ctx.db_path) as db:
                 await teams.judge_add_on(db, payload["shorthand"], full_name=payload["full_name"])
-        except ValueError as refusal:
+        except Refused as refusal:
             return Verdict.refuse(f"⛔ {refusal}")
         return Verdict.go()
 
@@ -249,7 +250,7 @@ def team_add_change(
                 db, shorthand, role_id, now=now()
             )
             await teams.add_default_team_on(db, shorthand, full_name=full_name)
-        except ValueError as refusal:
+        except Refused as refusal:
             return _refused_in_save(ctx, refusal)
         line = (
             f"{ctx.named} | /team add | Success\n"
@@ -313,7 +314,7 @@ def team_remove_change(
         try:
             async with get_connection(ctx.db_path) as db:
                 await _judge_remove(teams, db, ctx.payload["shorthand"])
-        except ValueError as refusal:
+        except Refused as refusal:
             return Verdict.refuse(f"⛔ {refusal}")
         return Verdict.go()
 
@@ -323,7 +324,7 @@ def team_remove_change(
         shorthand = ctx.payload["shorthand"]
         try:
             full_name = await _judge_remove(teams, db, shorthand)
-        except ValueError as refusal:
+        except Refused as refusal:
             return _refused_in_save(ctx, refusal)
         await teams.remove_default_team_on(db, shorthand)
         role_id = await placement.delete_team_role_config_on(db, shorthand)
@@ -360,13 +361,13 @@ def team_remove_change(
 
 
 async def _judge_remove(teams: TeamService, db: aiosqlite.Connection, shorthand: str) -> str:
-    """The full name of the team *shorthand* names, read on *db*. Raises ValueError, in the words a
+    """The full name of the team *shorthand* names, read on *db*. Raises Refused, in the words a
     league is told, where the list holds no such team or it is the protected Reserve team."""
     reference = resolve_team_reference(
         shorthand, await teams.teams_with_roles_on(db), scope=" in the server's list"
     )
     if reference.team is None:
-        raise ValueError(str(reference.refusal))
+        raise Refused(str(reference.refusal))
     await teams.judge_remove_on(db, reference.team["name"])
     return str(reference.team["full_name"])
 
@@ -477,7 +478,7 @@ def team_modify_change(
                         db, payload["was_shorthand"], shorthand=payload["shorthand"],
                         full_name=payload["full_name"],
                     )
-            except ValueError as refusal:
+            except Refused as refusal:
                 return Verdict.refuse(f"⛔ {refusal}")
         return Verdict.go()
 
@@ -488,21 +489,22 @@ def team_modify_change(
         was, shorthand = payload["was_shorthand"], payload["shorthand"]
         full_name = payload["full_name"]
         role_id = payload["role_id"]
+        mapped = None if role_id is None else int(role_id)
         try:
             current = await teams.server_team_on(db, was)
             if current is None:
-                raise ValueError(_GONE.format(full_name=payload["was_full_name"]))
+                raise Refused(_GONE.format(full_name=payload["was_full_name"]))
             if names_changed(payload):
                 await teams.judge_modify_on(db, was, shorthand=shorthand, full_name=full_name)
             old_role_id = current["role_id"]
-            if role_id is not None:
+            if mapped is not None:
                 try:
                     old_role_id = await placement.set_team_role_config_on(
-                        db, was, int(role_id), now=now()
+                        db, was, mapped, now=now()
                     )
-                except ValueError as refusal:
-                    raise ValueError(f"{refusal} Nothing was written.") from refusal
-        except ValueError as refusal:
+                except Refused as refusal:
+                    raise Refused(f"{refusal} Nothing was written.") from refusal
+        except Refused as refusal:
             return _refused_in_save(ctx, refusal)
         audits: list[AuditRecord] = []
         if names_changed(payload):
@@ -514,7 +516,6 @@ def team_modify_change(
                     {"shorthand": shorthand, "full_name": full_name},
                 )
             )
-        mapped = None if role_id is None else int(role_id)
         if shorthand != was:
             held = await placement.rename_team_role_config_on(db, was, shorthand, now=now())
             if mapped is None:
@@ -616,14 +617,15 @@ def team_reserve_role_change(
         """The one save; see the module."""
         _actor(ctx)
         role_id = ctx.payload["role_id"]
+        mapped = None if role_id is None else int(role_id)
         try:
-            if role_id is None:
+            if mapped is None:
                 old_role_id = await placement.delete_team_role_config_on(db, RESERVE_NAME)
             else:
                 old_role_id = await placement.set_team_role_config_on(
-                    db, RESERVE_NAME, int(role_id), now=now()
+                    db, RESERVE_NAME, mapped, now=now()
                 )
-        except ValueError as refusal:
+        except Refused as refusal:
             return _refused_in_save(ctx, refusal)
         audits: tuple[AuditRecord, ...] = ()
         if role_id is not None or old_role_id is not None:
