@@ -1232,25 +1232,26 @@ would add a line to the log channel for a fault in reading a switch.
 any other kind would empty the whole fingerprint, and the review would read as changed in every
 area.
 
-A refusal whose words the refusing code writes is raised as `Refused` (`core/models/refusal.py`),
-its text what the member reads, or as a refusal type of its own, caught by name; a refusal the
-command words itself from fields the error carries has a type of its own, not a `ValueError`
-(`PackRefused`). A catch that turns a refusal into a reply names its type around the call that
-refuses, and its own lines hold no parse of a stored value (a payload's ids, a row) and call no
-hook, directly or through what they call: a save that calls a hook judges inside the catch and calls
-the hook after it. A parse inside the call that refuses is harmless, as a catch that names a
-refusal's type cannot take a parse's `ValueError`. Where a command, or a change's check or save,
-parses what the member typed (a round's format), a catch may take that parse's own `ValueError` as
-the refusal, its try holding the parse alone. Anywhere else a bare `ValueError` is a fault, which
-Python raises for a bug (`int()` of a stored id, a bad enum value read from the database), and goes
-on as one, since no refusal catch takes it. `Refused` subclasses `ValueError` so that a caller with
-no cause to tell the two apart still catches it as a `ValueError`. The driver state machine's
-refusal of a transition the table does not allow is `InvalidDriverTransition`, a fault that a save
-expecting the race catches by name. `/bot pack` is the one catch around a hook: its refusals are
-judged in the transaction that clears the server, so that no change can start between the judging
-and the clear, and the modules' hook is called in that transaction after them; `PackRefused` is
-raised by `pack_service` alone, so no hook's fault can be taken for it (`pack_service.pack` says
-so).
+**A refusal is raised and caught by name.** A refusal whose words the refusing code writes is raised
+as `Refused` (`core/models/refusal.py`), its text what the member reads, or as a refusal type of its
+own, caught by name; a refusal the command words itself from fields the error carries has a type of
+its own, not a `ValueError` (`PackRefused`). A catch that turns a refusal into a reply names its
+type around the call that refuses, and its own lines hold no parse of a stored value (a payload's
+ids, a row) and call no hook, directly or through what they call: a save that calls a hook judges
+inside the catch and calls the hook after it. A parse inside the call that refuses is harmless, as a
+catch that names a refusal's type cannot take a parse's `ValueError`. Outside the exceptions below,
+no refusal catch takes a bare `ValueError`: it is a fault, which Python raises for a bug (`int()` of
+a stored id, a bad enum value read from the database). `Refused` subclasses `ValueError` so that a
+caller with no cause to tell the two apart still catches it as a `ValueError`.
+
+Three exceptions. Where a command, or a change's check or save, parses what the member typed (a
+round's format), a catch may take that parse's own `ValueError` as the refusal, its try holding the
+parse alone. The driver state machine's refusal of a transition the table does not allow is
+`InvalidDriverTransition`, a fault that a save expecting the race catches by name. And `/bot pack`
+is the one catch around a hook: its refusals are judged in the transaction that clears the server,
+so that no change can start between the judging and the clear, and the modules' hook is called in
+that transaction after them; `PackRefused` is raised by `pack_service` alone, so no hook's fault can
+be taken for it (`pack_service.pack` says so).
 
 ---
 
