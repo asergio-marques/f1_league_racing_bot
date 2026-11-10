@@ -98,8 +98,6 @@ ignore_imports =
     leaguebot.core.services.season_review_workflows -> leaguebot.results.services.season_points_service
     # #283: signup:
     leaguebot.core.services.placement_service -> leaguebot.signup.models.signup_module
-    # #283: weather:
-    leaguebot.core.cogs.season_cog -> leaguebot.weather.services.weather_config_service
     # #284: the points amendment in the amendment service is results' code, to move there.
     leaguebot.core.services.amendment_service -> leaguebot.attendance.services.attendance_service
     leaguebot.core.services.amendment_service -> leaguebot.results.services.results_post_service

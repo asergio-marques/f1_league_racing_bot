@@ -48,6 +48,7 @@ from leaguebot.core.services.division_settings import NO_SEASON_REFUSAL, divisio
 from leaguebot.core.services.image_drawing import Held
 from leaguebot.core.services.round_amend_change import ROUND_AMEND, payload_changes
 from leaguebot.core.services.round_moments import read_round_windows
+from leaguebot.core.services.review_sections import Review, read_review_sections
 from leaguebot.core.services.division_add_change import KIND as DIVISION_ADD
 from leaguebot.core.services.division_duplicate_change import KIND as DIVISION_DUPLICATE
 from leaguebot.core.services.division_delete_change import DIVISION_DELETE
@@ -579,10 +580,6 @@ class SeasonCog(commands.Cog):
             f"**Season Review{season_num}**",
             "",
         ]
-        signup_lines: list[str] = []
-        attendance_lines: list[str] = []
-        points_lines: list[str] = []
-        weather_lines: list[str] = []
         image_lines: list[str] = []
 
         # Why the approve button must be withheld, if it must. A list rather than a flag
@@ -605,7 +602,16 @@ class SeasonCog(commands.Cog):
         phantom_configs: list[str] = []
         no_points_attached = False
 
-        # Load from DB to get tier and team roster data
+        # The divisions the review shows, read before the modules are asked for their sections,
+        # which hand lines for each of them.
+        db_divisions = await self.bot.season_service.get_divisions_with_results_config(season.id)
+        sections = await read_review_sections(
+            self.bot.review_sections_read,
+            Review.PLACEMENTS,
+            season_id=season.id,
+            division_ids=[division.id for division in db_divisions if division.name],
+        )
+
         # ── Modules ───────────────────────────────────────────────
         weather_on = await self.bot.module_service.is_weather_enabled()
         signup_on = await self.bot.module_service.is_signup_enabled()
@@ -614,12 +620,11 @@ class SeasonCog(commands.Cog):
         on = "✅ Enabled"
         off = "❌ Disabled"
         if signup_on:
-            signup_cfg = await self.bot.signup_module_service.get_config()
-            if signup_cfg:
-                signup_ch = f"<#{signup_cfg.signup_channel_id}>" if signup_cfg.signup_channel_id else "*(not configured)*"
-                signup_line = f"  Signup: {on} | Channel: {signup_ch}"
-            else:
-                signup_line = f"  Signup: {on}"
+            signup_note = next(
+                (section.modules_note for section in sections if section.module == "signup"),
+                None,
+            )
+            signup_line = f"  Signup: {on} | {signup_note}" if signup_note else f"  Signup: {on}"
         else:
             signup_line = f"  Signup: {off}"
         images_on = await self.bot.module_service.is_images_enabled()
@@ -684,65 +689,13 @@ class SeasonCog(commands.Cog):
             header_lines += [f"  • {problem}" for problem in name_problems]
             header_lines.append("")
 
-        # ── Each module's own configuration ───────────────────────
-        # Built by the helpers `/season config-review` reads too, so the two reviews
-        # report a module's configuration in the same words.
-        if weather_on:
-            weather_lines += await self._weather_review_lines()
-        if signup_on:
-            signup_lines += await self._signup_review_lines()
-        if attendance_on:
-            attendance_lines += await self._attendance_review_lines()
-        points_lines += await self._points_names_review_lines(season.id)
-
-        # ── Points ordering ───────────────────────────────────────
-        # Reported here rather than left to the approval. The refusal at
-        # the confirmation of placements is the one that matters, but a review whose whole purpose
-        # is to show a manager what stands in the way of approving is a review that
-        # must look at this too — read through the same helper the gate reads, so
-        # the report and the refusal cannot drift.
+        # ── Points: what withholds the button ─────────────────────
+        # Read through the helpers results' own section reports from and the approval refuses
+        # on, so the report and the refusal cannot drift.
         if results_on:
-            # Nothing attached is refused by the approval as surely as a phantom is, and
-            # `/results config detach` stays open in Placements (#409). Test mode is no
-            # exception (decided 2026-09-23): it attaches its two only when enabled.
             no_points_attached = await season_points_service.no_points_config_attached(self.bot.db_path, season.id)
-            if no_points_attached:
-                points_lines.append("")
-                points_lines.append(
-                    "❌ **No points configuration attached** — this blocks approval."
-                )
-                points_lines.append(
-                    "  Attach one with `/results config append`, then review again."
-                )
-            # Named before the ordering faults, because a configuration that is not
-            # there is the reason the names above may not mean what they appear to.
-            # The list of attached names is printed from the links alone, so a mistyped
-            # one reads exactly like a real one — which is what let #132 pass a review
-            # and then stop an approval dead.
             phantom_configs = await season_points_service.missing_points_config_problems(self.bot.db_path, season.id)
-            if phantom_configs:
-                points_lines.append("")
-                points_lines.append(
-                    "❌ **Attached but never created** — these block approval:"
-                )
-                points_lines += [f"  • **{name}**" for name in phantom_configs]
-                points_lines.append(
-                    "  The name above is attached to this season and no such "
-                    "configuration exists on the server. Build it with "
-                    "`/results config add`, or drop it with `/results config detach`."
-                )
             points_faults = await season_points_service.points_ordering_problems(self.bot.db_path, season.id)
-            if points_faults:
-                points_lines.append("")
-                points_lines.append(
-                    "\u274c **Points tables out of order** — these block approval:"
-                )
-                points_lines += [f"  \u2022 {fault}" for fault in points_faults]
-                points_lines.append(
-                    "  A lower position cannot be worth as much as the one above it. "
-                    "Repair them with `/results config session`, then review again."
-                )
-        points_lines.append("")
 
         # Pre-fetch role configs so we can warn about teams missing a role
         teams_with_roles = await self.bot.team_service.get_teams_with_roles(
@@ -767,21 +720,17 @@ class SeasonCog(commands.Cog):
         # Still chunked underneath. The image subsection alone can carry eight
         # outputs, each with its cause and its remedy, and pass the 2000-character
         # limit on its own; an over-long send loses the message, not merely its tail.
-        for section in (
+        for block in (
             header_lines,
-            signup_lines,
-            attendance_lines,
-            points_lines,
-            weather_lines,
+            *[section.lines for section in sections],
             image_lines,
         ):
-            body = "\n".join(section).strip()
+            body = "\n".join(block).strip()
             if not body:
                 continue
             report.extend(chunk_message(body))
 
         # ── Per-division blocks (4 messages each) ────────────────
-        db_divisions = await self.bot.season_service.get_divisions_with_results_config(season.id)
         # The rounds are read once here, and the review's calendars are made from them.
         rounds_by_division = {}
         for _div in db_divisions:
@@ -827,20 +776,8 @@ class SeasonCog(commands.Cog):
                 f"  Standings channel: {standings_chan}",
                 f"  Verdicts channel: {verdicts_chan}",
             ]
-            if attendance_on:
-                att_div_cfg = await self.bot.attendance_service.get_division_config(div.id)
-                rsvp_chan = (
-                    f"<#{att_div_cfg.rsvp_channel_id}>"
-                    if att_div_cfg and att_div_cfg.rsvp_channel_id
-                    else "*(not set)*"
-                )
-                att_chan = (
-                    f"<#{att_div_cfg.attendance_channel_id}>"
-                    if att_div_cfg and att_div_cfg.attendance_channel_id
-                    else "*(not set)*"
-                )
-                cfg_lines.append(f"  RSVP channel: {rsvp_chan}")
-                cfg_lines.append(f"  Attendance channel: {att_chan}")
+            for section in sections:
+                cfg_lines += section.division_lines.get(div.id, [])
             cfg_lines.append(f"  Weather channel: {weather_chan}")
             report.append("\n".join(cfg_lines))
 
@@ -1204,16 +1141,6 @@ class SeasonCog(commands.Cog):
     # /season config-review — confirming the configuration (issue #220)
     # ------------------------------------------------------------------
 
-    async def _weather_review_lines(self) -> list[str]:
-        """The weather deadlines, as both reviews report them."""
-        from leaguebot.weather.services.weather_config_service import (
-            describe_deadlines,
-            get_weather_pipeline_config,
-        )
-
-        _wcfg = await get_weather_pipeline_config(self.bot.db_path)
-        return ["**Weather Config**", *describe_deadlines(_wcfg), ""]
-
     async def _league_roles_review_lines(self) -> list[str]:
         """The league's base role and driver role, as the configuration review reports them.
 
@@ -1236,66 +1163,6 @@ class SeasonCog(commands.Cog):
             f"  Driver role: {_role(server_cfg.driver_role_id if server_cfg else None)}",
             "",
         ]
-
-    async def _signup_review_lines(self) -> list[str]:
-        """The signup module's configuration, as both reviews report it."""
-        _s_cfg = await self.bot.signup_module_service.get_config()
-        _s_settings = await self.bot.signup_module_service.get_settings()
-        _s_slots = await self.bot.signup_module_service.get_slots()
-        _signup_ch = f"<#{_s_cfg.signup_channel_id}>" if _s_cfg and _s_cfg.signup_channel_id else "*(not configured)*"
-        _time_type = _s_settings.time_type.replace("_", " ").title()
-        _time_img = "Required" if _s_settings.time_image_required else "Not required"
-        _nationality = "Required" if _s_settings.nationality_required else "Not required"
-        _slot_labels = [s.display_label for s in _s_slots] if _s_slots else ["*(none configured)*"]
-        return [
-            "**Signup Config**",
-            f"  • Channel: {_signup_ch}",
-            f"  • Time type: {_time_type}",
-            f"  • Time image: {_time_img}",
-            f"  • Nationality: {_nationality}",
-            f"  • Available slots: {', '.join(_slot_labels)}",
-            "",
-        ]
-
-    async def _attendance_review_lines(self) -> list[str]:
-        """The attendance module's configuration, as both reviews report it."""
-        att_cfg = await self.bot.attendance_service.get_config()
-        if not att_cfg:
-            return []
-        ar = att_cfg.autoreserve_threshold
-        as_ = att_cfg.autosack_threshold
-        ar_str = f"{ar} pts" if ar is not None else "*(not set)*"
-        as_str = f"{as_} pts" if as_ is not None else "*(not set)*"
-        ln_last = (
-            f"{att_cfg.rsvp_last_notice_hours}h before deadline"
-            if att_cfg.rsvp_last_notice_hours
-            else "*(disabled)*"
-        )
-        return [
-            "**Attendance Config**",
-            f"  • RSVP notice: {att_cfg.rsvp_notice_days} day(s) before race",
-            f"  • Last notice: {ln_last}",
-            f"  • Deadline: {att_cfg.rsvp_deadline_hours}h before race",
-            f"  • No-RSVP penalty: {att_cfg.no_rsvp_penalty} pt(s)",
-            f"  • Absent penalty: {att_cfg.absent_penalty} pt(s)",
-            f"  • No-show penalty: {att_cfg.no_show_penalty} pt(s)",
-            f"  • Auto-reserve threshold: {ar_str}",
-            f"  • Auto-sack threshold: {as_str}",
-            "",
-        ]
-
-    async def _points_names_review_lines(self, season_id: int) -> list[str]:
-        """The names of the points configurations attached to the season, as both reviews
-        report them. The faults of those configurations are reported beside them by each.
-
-        Nothing is promised under test mode (decided 2026-09-23): it attaches Standard and
-        Half Points when it is enabled and at no other moment, so a test season with none is
-        a fault here as any other season's is.
-        """
-        config_names = await season_points_service.get_season_config_names(self.bot.db_path, season_id)
-        if config_names:
-            return ["**Points Configs:** " + ", ".join(config_names)]
-        return ["**Points Configs:** *(none attached)*"]
 
     @season.command(
         name="config-review",
@@ -1356,23 +1223,18 @@ class SeasonCog(commands.Cog):
 
         # Every module's configuration, subsection by subsection, in the words and the
         # order of the placements review — save the divisions, which do not exist yet.
-        results_on = await module.is_results_enabled()
-        sections: list[list[str]] = [lines]
-        if await module.is_signup_enabled():
-            sections.append(await self._signup_review_lines())
-        if await module.is_attendance_enabled():
-            sections.append(await self._attendance_review_lines())
-        if results_on:
-            sections.append(
-                await self._points_names_review_lines(season.id)
-            )
-        if await module.is_weather_enabled():
-            sections.append(await self._weather_review_lines())
+        sections = await read_review_sections(
+            self.bot.review_sections_read,
+            Review.CONFIGURATION,
+            season_id=season.id,
+            division_ids=[],
+        )
+        section_lines: list[list[str]] = [lines, *[section.lines for section in sections]]
         if await module.is_images_enabled():
-            sections.append(await self._build_image_review_section())
+            section_lines.append(await self._build_image_review_section())
         report: list[str] = []
-        for section in sections:
-            body = "\n".join(section).strip()
+        for block in section_lines:
+            body = "\n".join(block).strip()
             if not body:
                 continue
             report.extend(chunk_message(body))

@@ -1274,8 +1274,6 @@ class _NotLookedUp:
         raise AssertionError(f"the review looked up {self._name}.{attribute} on the bot")
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the review reads signup's and attendance's "
-                   "services on the bot rather than through the review's sections hook")
 async def test_the_review_reaches_each_module_through_its_section_alone(db_path):
     """Signup and attendance on, their services stubbed as the builder signs their sections up,
     then taken off the bot: the review still reports the signup channel among the modules, the
