@@ -275,10 +275,9 @@ class ApproveView(LeagueView):
         Widening who may review and narrowing who may approve is the whole point of the
         split: the review is a league manager's, the approval a league admin's.
 
-        It asked for Discord's Administrator permission until the two tiers became roles
-        (issue #116). The tier is a property of the league, so the role is what it reads
-        now — and reading it through `is_league_admin` is what keeps this button and the
-        league admin commands answering the same question.
+        The tier is a property of the league, so the role is what it reads — and reading it
+        through `is_league_admin` is what keeps this button and the league admin commands
+        answering the same question.
         """
         member = interaction.user
         if getattr(member, "id", None) == self._reviewer_id:
@@ -329,7 +328,7 @@ class ApproveView(LeagueView):
             # A second approval of the season, from this review or another, is refused at once,
             # naming no job, before the evidence is read: a season whose first approval has
             # saved and is stopped at a post no longer fingerprints as it did, and the press is
-            # told what is true of it (#439).
+            # told what is true of it.
             if await approval_in_hand(self._db_path, review.season_id):
                 await refuse(interaction, ALREADY_BEING_APPROVED, what=self._button)
                 press.leave_standing = True
@@ -388,7 +387,7 @@ class ApproveView(LeagueView):
         *in_hand* is a reader of whether a confirmation of the season is already waiting,
         running or stopped on the change queue, and the refusal it is answered with: such a
         press is refused at once, naming no job, before the evidence is read, and leaves the
-        review standing, as the approval's does (#439). *evidence_to_confirm* hands the review's
+        review standing, as the approval's does. *evidence_to_confirm* hands the review's
         own evidence to *confirm* as its `fingerprint`, for a confirmation the queue judges
         again when it runs."""
         if not await self._may_approve(interaction):
@@ -447,7 +446,7 @@ class _Press:
 
 
 class ConfirmMidSeasonPlacementsView(ApproveView):
-    """The confirm button of `/season placements-review` in Ongoing, placements (#220).
+    """The confirm button of `/season placements-review` in Ongoing, placements.
 
     Governed as every review button is; pressing it commits the new placements.
     """
