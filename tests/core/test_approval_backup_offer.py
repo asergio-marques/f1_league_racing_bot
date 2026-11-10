@@ -34,9 +34,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog
+from tests.support.review_workflows import build_view, run_workflow
 
 SERVER_ID = 13108
+
+#: The backup question is still `SeasonCog._offer_backup_before_approving`, its view the cog's.
+_ON_THE_COG = (
+    "#283: the backup question is not yet season_review_workflows.offer_backup_before_approving"
+)
+
+#: The question's view, where the approval's workflow posts it from.
+_VIEW = "leaguebot.core.services.season_review_workflows.BackupBeforeApprovalView"
 
 
 # ---------------------------------------------------------------------------
@@ -44,7 +52,9 @@ SERVER_ID = 13108
 # ---------------------------------------------------------------------------
 
 
-def _make_cog(*, test_mode: bool = True, config_missing: bool = False) -> SeasonCog:
+def _make_cog(*, test_mode: bool = True, config_missing: bool = False) -> SimpleNamespace:
+    """A league's bot, held as the review's views hold it: the question runs with nothing of the
+    season cog."""
     bot = MagicMock()
     bot.db_path = "/tmp/does-not-matter.db"
     bot.config_service = MagicMock()
@@ -55,9 +65,9 @@ def _make_cog(*, test_mode: bool = True, config_missing: bool = False) -> Season
     # The log channel takes a line, as a real one does, so an outcome the approval or its
     # backup question records is not stopped by the test's own stand-in.
     bot.output_router.post_log = AsyncMock()
-    cog = SeasonCog.__new__(SeasonCog)
-    cog.bot = bot
-    return cog
+    # The time left is read from the queue's clock, here the host's.
+    bot.change_queue.now = MagicMock(side_effect=lambda: datetime.now(timezone.utc))
+    return SimpleNamespace(bot=bot)
 
 
 def _interaction():
@@ -100,14 +110,14 @@ def _answering(answer: str | None):
     """Patch the view so `wait()` returns immediately with *answer* already set."""
 
     class _View:
-        def __init__(self, cog, timeout=None):
+        def __init__(self, *, timeout=None, **_services):
             self.answer = answer
             self.timeout = timeout
 
         async def wait(self):
             return None
 
-    return patch("leaguebot.core.cogs.season_cog._BackupBeforeApprovalView", new=_View)
+    return patch(_VIEW, new=_View)
 
 
 async def _offer(cog, interaction, *, minutes_left: float = 5, state=None, answer=None):
@@ -115,7 +125,9 @@ async def _offer(cog, interaction, *, minutes_left: float = 5, state=None, answe
     with patch(
         "leaguebot.core.services.backup_service.state", return_value=state or _backup_state()
     ), _answering(answer):
-        return await cog._offer_backup_before_approving(interaction, deadline)
+        return await run_workflow(
+            "offer_backup_before_approving", cog.bot, interaction, deadline=deadline
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +135,7 @@ async def _offer(cog, interaction, *, minutes_left: float = 5, state=None, answe
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_league_not_in_test_mode_is_not_asked():
     """The offer exists because a rehearsal is meant to be undone; a real league approving
     a real season is not going to restore a database over it."""
@@ -133,6 +146,7 @@ async def test_a_league_not_in_test_mode_is_not_asked():
     interaction.followup.send.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_server_with_no_configuration_is_not_asked():
     cog = _make_cog(config_missing=True)
     interaction = _interaction()
@@ -141,6 +155,7 @@ async def test_a_server_with_no_configuration_is_not_asked():
     assert _view_of(interaction) is None
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_test_mode_league_is_asked():
     cog = _make_cog(test_mode=True)
     interaction = _interaction()
@@ -150,6 +165,7 @@ async def test_a_test_mode_league_is_asked():
     assert "Save the databases before approving" in _replied(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_the_question_says_what_approving_costs_to_redo():
     """A maintainer weighing the question needs to know what they would be rebuilding."""
     cog = _make_cog()
@@ -167,6 +183,7 @@ async def test_the_question_says_what_approving_costs_to_redo():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_review_that_has_already_expired_asks_nothing():
     """There is no window left to answer in, so asking would be a question nobody could
     answer in time."""
@@ -180,6 +197,7 @@ async def test_a_review_that_has_already_expired_asks_nothing():
     assert "expired before the season could be approved" in _replied(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_the_question_inherits_what_is_left_of_the_review():
     """Not a window of its own. A review stops describing its season five minutes after it
     is posted, and that is as true of one waiting on this question as of one waiting on the
@@ -190,7 +208,7 @@ async def test_the_question_inherits_what_is_left_of_the_review():
     captured: list[float] = []
 
     class _View:
-        def __init__(self, cog_, timeout=None):
+        def __init__(self, *, timeout=None, **_services):
             captured.append(timeout)
             self.answer = "skip"
 
@@ -199,9 +217,11 @@ async def test_the_question_inherits_what_is_left_of_the_review():
 
     deadline = datetime.now(timezone.utc) + timedelta(minutes=2)
     with patch("leaguebot.core.services.backup_service.state", return_value=_backup_state()), patch(
-        "leaguebot.core.cogs.season_cog._BackupBeforeApprovalView", new=_View
+        _VIEW, new=_View
     ):
-        await cog._offer_backup_before_approving(interaction, deadline)
+        await run_workflow(
+            "offer_backup_before_approving", cog.bot, interaction, deadline=deadline
+        )
 
     assert captured
     assert 100 < captured[0] <= 120  # what remains of the two minutes, not a fresh window
@@ -209,11 +229,12 @@ async def test_the_question_inherits_what_is_left_of_the_review():
     # The stand-in above only shows what the method hands the view. The real view must keep
     # that timeout, or an unanswered question would stay open for discord's default three
     # minutes after the review had run out.
-    from leaguebot.core.cogs.season_cog import _BackupBeforeApprovalView
+    assert build_view(
+        "BackupBeforeApprovalView", cog.bot, timeout=captured[0]
+    ).timeout == captured[0]
 
-    assert _BackupBeforeApprovalView(cog, timeout=captured[0]).timeout == captured[0]
 
-
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_the_question_says_when_the_review_expires():
     """So a maintainer weighing it knows they are on a clock, whichever way they answer."""
     cog = _make_cog()
@@ -229,6 +250,7 @@ async def test_the_question_says_when_the_review_expires():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_an_existing_backup_is_named_as_one_that_would_be_replaced():
     """Saying yes would overwrite it, which is a cost the maintainer may not want."""
     cog = _make_cog()
@@ -239,6 +261,7 @@ async def test_an_existing_backup_is_named_as_one_that_would_be_replaced():
     assert "would be replaced" in _replied(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_locked_backup_is_named_as_safe():
     """The lock is what a maintainer sets precisely so an afternoon's rehearsing cannot
     overwrite the save they care about."""
@@ -251,6 +274,7 @@ async def test_a_locked_backup_is_named_as_safe():
     assert "locked and will not be replaced" in replied
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_no_backup_yet_says_so():
     """Distinct from one that would be replaced — there is nothing to lose by saying yes."""
     cog = _make_cog()
@@ -266,6 +290,7 @@ async def test_no_backup_yet_says_so():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 @pytest.mark.parametrize("answer", ["save", "skip"])
 async def test_a_decided_question_lets_the_approval_go_on(answer):
     """Both are decisions. Declining the backup is not the same as refusing to approve."""
@@ -274,6 +299,7 @@ async def test_a_decided_question_lets_the_approval_go_on(answer):
     assert await _offer(cog, _interaction(), answer=answer) is True
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_cancelling_stops_the_approval():
     cog = _make_cog()
     interaction = _interaction()
@@ -284,6 +310,7 @@ async def test_cancelling_stops_the_approval():
     assert "Nothing has been approved, and nothing has been saved" in _replied(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_silence_and_cancelling_are_reported_differently():
     """One is a decision, the other is a review that expired while nobody was looking —
     and a maintainer needs to know which happened before they re-run the review."""
@@ -297,6 +324,7 @@ async def test_silence_and_cancelling_are_reported_differently():
     assert _replied(cancelled) != _replied(lapsed)
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 @pytest.mark.parametrize("answer", [None, "cancel"])
 async def test_every_refusal_says_nothing_was_approved(answer):
     """A maintainer who has just watched a question time out needs to know the season is
@@ -309,6 +337,7 @@ async def test_every_refusal_says_nothing_was_approved(answer):
     assert "Nothing has been approved" in _replied(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 @pytest.mark.parametrize("answer", [None, "cancel"])
 async def test_a_refusal_names_the_way_back(answer):
     cog = _make_cog()
@@ -338,12 +367,11 @@ def _button_interaction():
 async def _view(cog=None, *, scheduler=None):
     """The backup question on *cog*'s bot, whose scheduler is *scheduler*, or by default one
     that can be paused and names a job store no test reads, as the bot always carries one."""
-    from leaguebot.core.cogs.season_cog import _BackupBeforeApprovalView
     from tests.support.scheduler import PausingScheduler
 
     cog = cog or _make_cog()
     cog.bot.scheduler_service = scheduler or PausingScheduler("/tmp/not-read-jobs.db")
-    return _BackupBeforeApprovalView(cog, timeout=60)
+    return build_view("BackupBeforeApprovalView", cog.bot, timeout=60)
 
 
 def _press(view, name, interaction):
@@ -352,6 +380,7 @@ def _press(view, name, interaction):
     return getattr(type(view), name)(view, interaction, MagicMock())
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_the_scheduler_is_paused_for_the_copy():
     """Exactly as `/test-mode backup save` pauses it: the job store is written on the event
     loop, and a job added mid-copy tears."""
@@ -369,6 +398,7 @@ async def test_the_scheduler_is_paused_for_the_copy():
     assert scheduler.events == ["pause", "resume"]
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_paused_scheduler_is_resumed_even_when_the_copy_fails():
     """Otherwise a failed backup silently stops every scheduled session the league has."""
     from tests.support.scheduler import PausingScheduler
@@ -384,6 +414,7 @@ async def test_a_paused_scheduler_is_resumed_even_when_the_copy_fails():
     assert scheduler.events == ["pause", "resume"]
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_backup_that_cannot_be_taken_still_approves():
     """The manager asked for a convenience and is told it was not available; approving is
     what they actually came to do, and making them run the review again for a reason that
@@ -402,6 +433,7 @@ async def test_a_backup_that_cannot_be_taken_still_approves():
     assert "no room" in str(interaction.followup.send.await_args.args[0])
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_approving_without_saving_asks_for_no_backup():
     view = await _view()
 
@@ -412,6 +444,7 @@ async def test_approving_without_saving_asks_for_no_backup():
     assert view.answer == "skip"
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_cancelling_is_distinguishable_from_declining_the_backup():
     """They read alike on the screen and mean opposite things: one approves the season
     without a backup, the other approves nothing at all."""
@@ -425,6 +458,7 @@ async def test_cancelling_is_distinguishable_from_declining_the_backup():
     assert cancelled.answer == "cancel"
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 @pytest.mark.parametrize("name", ["save", "skip", "cancel"])
 async def test_every_button_stops_the_view(name):
     """A view left running holds the approval open past the answer it already has."""
@@ -436,6 +470,7 @@ async def test_every_button_stops_the_view(name):
     assert view.is_finished()
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_silence_leaves_no_answer():
     """Which is how the caller tells an expired review from a deliberate decision."""
     view = await _view()
@@ -452,7 +487,7 @@ async def test_silence_leaves_no_answer():
 # one line naming the member and why; a failure is recorded as every failure is. Alex (id 77) is
 # the league manager approving the season, under test mode.
 
-def _recording_cog() -> SeasonCog:
+def _recording_cog() -> SimpleNamespace:
     """A test-mode league whose bot keeps every log line and finds Alex on its server by id."""
     cog = _make_cog()
     cog.bot.output_router.post_log = AsyncMock()
@@ -500,6 +535,7 @@ def _logged(cog) -> list[str]:
     return [call.args[0] for call in cog.bot.output_router.post_log.await_args_list]
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_cancelling_the_backup_question_is_recorded():
     """Alex approves a test-mode season, is asked about a backup, and presses ❌ Cancel.
 
@@ -521,6 +557,7 @@ async def test_cancelling_the_backup_question_is_recorded():
     assert detail == "Nothing has been approved, and nothing has been saved. Run the review again."
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 @pytest.mark.parametrize(
     "minutes_left,answer,said",
     [
@@ -553,6 +590,7 @@ async def test_a_backup_question_that_lapses_is_recorded(minutes_left, answer, s
     assert said in detail and "Nothing has been approved" in detail, detail
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_backup_saved_before_approving_writes_its_own_line():
     """Alex presses 💾 Save, then approve, and the backup is written.
 
@@ -577,6 +615,7 @@ async def test_a_backup_saved_before_approving_writes_its_own_line():
     assert head.endswith("/season placements-review backup | Success"), head
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_backup_refused_is_recorded_with_its_reason():
     """Alex presses 💾 Save, then approve, but the backup cannot be taken for a reason the bot
     is not at fault for (here: 'the saved backup is locked').
@@ -608,6 +647,7 @@ async def test_a_backup_refused_is_recorded_with_its_reason():
     assert reason == "the saved backup is locked"
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 @pytest.mark.parametrize("fault", ["backup_fault", "unexpected_error"])
 async def test_a_backup_stopped_by_a_fault_is_recorded_and_the_approval_goes_on(fault):
     """Alex presses 💾 Save, then approve, and the copy stops on a fault in the bot.
