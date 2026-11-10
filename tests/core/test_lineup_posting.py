@@ -601,3 +601,32 @@ async def test_a_lineup_step_with_no_channel_raises(tmp_path):
         await step.run(ctx)
 
     assert len(league.texts(LINEUP[PRO])) == before
+
+
+async def test_a_lineup_step_whose_images_switch_nobody_signed_up_for_raises(tmp_path):
+    """The images module's switch reader was never signed up, so asking whether the lineup is drawn
+    raises `SwitchNotSignedUp`. The lineup job for Pro (`lineup_step`, through the real placement
+    service) raises it as a fault in the bot's assembly, rather than taking it for a picture that
+    could not be drawn and posting the lineup as text."""
+    from types import SimpleNamespace
+
+    from leaguebot.core.services.lineup_posting import lineup_step
+    from leaguebot.core.services.module_service import SwitchNotSignedUp
+    from tests.support.change_queue import in_a_job
+
+    league = await ongoing_league(tmp_path)
+    before = len(league.texts(LINEUP[PRO]))
+    placement = league.bot.placement_service
+    placement._drawing = SimpleNamespace(
+        lineup_wanted=AsyncMock(side_effect=SwitchNotSignedUp("images")),
+    )
+    step = lineup_step(placement, now=lambda: league.clock.now)
+    ctx = SimpleNamespace(
+        bot=league.bot, kept=[], step_payload={"division_id": PRO, "division_name": "Pro"},
+        payload={}, tries=0,
+    )
+
+    with in_a_job(), pytest.raises(SwitchNotSignedUp, match="images"):
+        await step.run(ctx)
+
+    assert len(league.texts(LINEUP[PRO])) == before

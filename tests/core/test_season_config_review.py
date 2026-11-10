@@ -856,6 +856,19 @@ async def test_templates_that_cannot_be_read_are_a_fault_not_a_pass():
     assert faults == [_RASTERISER, "The image templates could not be read."]
 
 
+async def test_a_portrait_check_whose_switch_nobody_signed_up_for_raises():
+    """The images module's switch reader was never signed up, so the portrait check raises
+    `SwitchNotSignedUp`: a fault in the bot's assembly, which the image faults raise rather than
+    stand aside from as a check that cannot be read."""
+    from leaguebot.core.services.module_service import SwitchNotSignedUp
+
+    cog = _image_cog()
+    cog.bot.image_drawing.portrait_fault = AsyncMock(side_effect=SwitchNotSignedUp("images"))
+
+    with pytest.raises(SwitchNotSignedUp, match="images"):
+        await _image_faults(cog)
+
+
 @pytest.mark.parametrize(
     ("unreadable", "kept"),
     [
