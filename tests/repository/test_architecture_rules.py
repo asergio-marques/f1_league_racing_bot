@@ -2305,7 +2305,9 @@ def _reads_outside_the_owner_among(nodes) -> Counter[tuple[str, str]]:
     counted unless its function is named in `READS_OF_OWN_COLUMNS`; such a function is passed over
     for the one table its entry names, and a read of any other table in it still counts. A table
     whose name is spliced into an f-string after `FROM` or `JOIN` cannot be told, so each counts,
-    unless its function was read by hand (`SPLICED_READS_READ_BY_HAND`)."""
+    unless its function was read by hand (`SPLICED_READS_READ_BY_HAND`). A table spliced by
+    concatenation, `.format` or `%` is not seen, so the bot splices table names in f-strings
+    alone."""
     nodes = list(nodes)
     docstrings = _docstrings_among(nodes)
     found: Counter[tuple[str, str]] = Counter()
@@ -2690,18 +2692,19 @@ def test_the_read_check_counts_a_table_spliced_in_unless_its_function_was_read_b
         "    await db.execute(f'SELECT * FROM {table} t JOIN {other} o ON o.id = t.id')\n"
         "    await db.execute(f'DELETE FROM {table} WHERE id = ?')\n"
         "    await db.execute(f'SELECT {table} FROM seasons')\n"
+        "    await db.execute('SELECT channel_id FROM signup_records')\n"
     )
 
     assert _reads_outside_the_owner_among(_sample(source, "results/services/sample_service.py")) == Counter(
-        {("results/services/sample_service.py", "handler"): 4}
+        {("results/services/sample_service.py", "handler"): 5}
     )
 
     path, function = "core/services/factory_reset_service.py", "gather_targets"
     assert (path, function) in SPLICED_READS_READ_BY_HAND
     read_by_hand = source.replace("handler", function)
-    assert _reads_outside_the_owner_among(_sample(read_by_hand, path)) == Counter()
+    assert _reads_outside_the_owner_among(_sample(read_by_hand, path)) == Counter({(path, function): 1})
     assert _reads_outside_the_owner_among(_sample(read_by_hand, "results/services/sample.py")) == Counter(
-        {("results/services/sample.py", function): 4}
+        {("results/services/sample.py", function): 5}
     )
 
 

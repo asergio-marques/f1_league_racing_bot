@@ -5,9 +5,10 @@ holds a channel (`channel_uses_read`). Each module's channel columns are its own
 "Each table is read and written by its owner alone"), so the registry reads only core's.
 
 The hook is made here by the builder's own `_sign_up_to_channel_uses_read`, so that the modules
-signed up to it are the bot's and not a copy. The factory reset asks the same of every season, not
-only the live one, through a hook of its own (`setting_channels_read`), made by the builder's
-`_sign_up_to_setting_channels_read`.
+signed up to it are the bot's and not a copy. The factory reset asks every season's, not only the
+live one's, through a hook of its own (`setting_channels_read`), made by the builder's
+`_sign_up_to_setting_channels_read`; each module hands it back the channels its settings hold and
+the channels it posted to, and apart from them the channels it created.
 """
 from __future__ import annotations
 

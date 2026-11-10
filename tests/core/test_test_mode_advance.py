@@ -247,9 +247,10 @@ def _advancing(bot, entry, *, passed=None, sign_up: bool = True):
         "get_passed_over_steps": AsyncMock(return_value=list(passed or [])),
     }
     with ExitStack() as stack:
-        # While the steps are signed up into a registry the module keeps for the process, it
-        # is put back as it was when the test ends: otherwise the steps bound to this test's bot
-        # would answer the next test's advance on the same worker.
+        # While the steps are signed up into a registry the module keeps for the process, it is
+        # put back as it was when the test ends, so that the steps bound to this test's bot do not
+        # answer the next test's advance on the same worker. Once the steps are held on the bot's
+        # own `advance_steps`, there is no such registry and this does nothing.
         steps = getattr(test_mode_service, "_ADVANCE_STEPS", None)
         if isinstance(steps, dict):
             stack.enter_context(patch.dict(steps))
