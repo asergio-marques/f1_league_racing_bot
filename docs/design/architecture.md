@@ -154,40 +154,42 @@ opening rules). Stewarding adds a second [STW-MOD-007].
 falling due, a round amended or its timed work armed again, a round's timing windows read, a round,
 a division or a season cancelled, a round's results made final, placements confirmed, a season's
 configuration confirmed, a review gathering its lines, the placements review gathering each
-division's lines, a division's channel faults read, a driver's name read, a season's fingerprint
-taken, a season's pending test-mode steps read, the test-mode review's marks read, a season's
-confirmation judged, a season ending, a season, division, round or driver deleted, a driver merged
-into another or turned down, a driver's account changed, a base role changed, the bot packed, test
-mode turned on, the bot's in-memory state cleared, the hub's panel gathering its options, a module's
-switch read), core declares a hook. The builder signs each module up to it before the bot connects.
-Core calls whoever signed up, and never imports a module, the bot's type aside (see "How the code is
-laid out"). A module turned on or off is not a hook but a change of the module's own, which core
-asks for by its kind (see "Each module turns itself on and off").
+division's lines, a division's channel faults read, a driver's name read, the divisions a driver's
+accounts raced in read, a driver's standing in a division read for the history a season's end
+writes, a season's fingerprint taken, a season's pending test-mode steps read, the test-mode
+review's marks read, a season's confirmation judged, a season ending, a season, division, round or
+driver deleted, a driver merged into another or turned down, a driver's account changed, a base role
+changed, the bot packed, test mode turned on, the bot's in-memory state cleared, the hub's panel
+gathering its options, a module's switch read), core declares a hook. The builder signs each module
+up to it before the bot connects. Core calls whoever signed up, and never imports a module, the
+bot's type aside (see "How the code is laid out"). A module turned on or off is not a hook but a
+change of the module's own, which core asks for by its kind (see "Each module turns itself on and
+off").
 
 **A hook core declares is a list of subscribers.** Core declares the moment and what it hands over:
-what the moment concerns, where it concerns anything (the rows, the round, the time its subscribers
-judge at, the jobs the scheduler holds), and, where core holds one open, the connection its
-subscribers read and write on (the save's own where the moment falls inside one, so that what they
-write is part of the save), and, where core holds none, at most the database's path, each subscriber
-opening its own connection. Each module signs up a function of its own, and core calls each in the
-order they signed up. A subscriber may hand something back, which the hook gathers in that order;
-what core does with them, if anything, is the moment's: a value to read or to keep, a line to write,
-a step to plan or to register, a refusal to give. The hook names no module and no module's
-operation, so a module's part of the moment is the module's own code, and a module added later signs
-up without core changing, the switch read aside (below). A hook keyed by a kind takes one function
-for each key instead, as a kind of timed job takes its one handler (see "Timed work and restarts").
-**A module's switch read is a keyed hook:** one reader for each module, keyed by the module's name,
-which the module's own work may also call; core asks for it by that name (`is_<module>_enabled`, or
-`is_enabled_on` on a connection the caller holds), because core names the modules and shows which
-are on in the reviews (the core specification's "Modules"), and keeps the dependency table (above).
-The key is the name the module's switch is asked by: `images` for the image module, the module's own
-name for the rest. So a module added later adds its `is_<module>_enabled` to core's module service
-as well as signing up; core knows its name for its switch and nothing more. A module that never
-signed up is a fault in the bot's assembly, and asking for it raises `SwitchNotSignedUp`, a
-`LookupError` of its own type, which no reader that stands aside takes for an answer: each lets that
-type through by name and stands aside from any other fault. A link the dependency table allows
-between two modules is not one of core's hooks: there the module depended on may name what it asks
-of its dependant, as results does of attendance (below).
+what the moment concerns, where it concerns anything (the rows, the round, the driver's accounts,
+the time its subscribers judge at, the jobs the scheduler holds), and, where core holds one open,
+the connection its subscribers read and write on (the save's own where the moment falls inside one,
+so that what they write is part of the save), and, where core holds none, at most the database's
+path, each subscriber opening its own connection. Each module signs up a function of its own, and
+core calls each in the order they signed up. A subscriber may hand something back, which the hook
+gathers in that order; what core does with them, if anything, is the moment's: a value to read or to
+keep, a line to write, a step to plan or to register, a refusal to give. The hook names no module
+and no module's operation, so a module's part of the moment is the module's own code, and a module
+added later signs up without core changing, the switch read aside (below). A hook keyed by a kind
+takes one function for each key instead, as a kind of timed job takes its one handler (see "Timed
+work and restarts"). **A module's switch read is a keyed hook:** one reader for each module, keyed
+by the module's name, which the module's own work may also call; core asks for it by that name
+(`is_<module>_enabled`, or `is_enabled_on` on a connection the caller holds), because core names the
+modules and shows which are on in the reviews (the core specification's "Modules"), and keeps the
+dependency table (above). The key is the name the module's switch is asked by: `images` for the
+image module, the module's own name for the rest. So a module added later adds its
+`is_<module>_enabled` to core's module service as well as signing up; core knows its name for its
+switch and nothing more. A module that never signed up is a fault in the bot's assembly, and asking
+for it raises `SwitchNotSignedUp`, a `LookupError` of its own type, which no reader that stands
+aside takes for an answer: each lets that type through by name and stands aside from any other
+fault. A link the dependency table allows between two modules is not one of core's hooks: there the
+module depended on may name what it asks of its dependant, as results does of attendance (below).
 
 *Rejected:* a hook as one object of named operations the builder fills in, one for each module's
 part, which leaves core knowing what each module does at that moment. *Rejected:* only writing the
