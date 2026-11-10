@@ -698,12 +698,12 @@ async def test_the_configuration_review_reports_the_league_s_roles(monkeypatch, 
 @pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     """The placements review's subsections, save the divisions, in the same words (#220): with
-    signup, results, attendance and weather on, the review asked of the queue carries each
-    module's configuration."""
+    signup, results, attendance, weather and images on, the review asked of the queue carries each
+    module's configuration, the image outputs last and in a message of their own."""
     from leaguebot.results.services import season_points_service
     from leaguebot.weather.services import weather_config_service
 
-    bot = _report_bot(signup=True, results=True)
+    bot = _report_bot(signup=True, results=True, images=True)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
     bot.attendance_service.get_config = AsyncMock(
@@ -722,6 +722,7 @@ async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
         AsyncMock(return_value=SimpleNamespace(phase_1_days=5, phase_2_days=2, phase_3_hours=2)),
     )
     cog = _cog(bot)
+    cog._build_image_review_section = AsyncMock(return_value=["**Image outputs**", "  lineup: on"])
     # The faults are pinned above; here only what is reported.
     cog.configuration_faults = AsyncMock(return_value=[])
 
@@ -733,7 +734,7 @@ async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     # whichever order the hook gathers them in (core specification, "Confirming the
     # configuration").
     headings = ("**Signup Config**", "**Attendance Config**", "**Points Configs:**",
-                "**Weather Config**")
+                "**Weather Config**", "**Image outputs**")
     assert len(messages) == 1 + len(headings), messages
     for message, heading in zip(messages[1:], headings):
         assert message.startswith(heading), (heading, message)
@@ -741,6 +742,7 @@ async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     assert "Auto-sack threshold: 10 pts" in text
     assert "**Points Configs:** Standard, Sprint" in text
     assert "Phase 3 deadline: 2h before race" in text
+    assert messages[-1] == "**Image outputs**\n  lineup: on"
 
 
 @pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
