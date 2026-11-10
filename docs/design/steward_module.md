@@ -483,8 +483,8 @@ one query that forgets it resurrects a sanction that should not exist.
 
 **~~How long a gap may be disregarded.~~** Settled 2026-09-20: five minutes, now named in
 [STW-RST-002]. It is the interval the bot already holds to elsewhere, as in
-`APPROVAL_WINDOW_SECONDS`, the placements-review button, the retry loop, the signup correction
-timeout and the signup view's own. Below it, everybody's window is quietly
+`REVIEW_WINDOW` in `season_review_changes`, the placements-review button, the retry loop, the
+signup correction timeout and the signup view's own. Below it, everybody's window is quietly
 shortened by the outage; that is accepted.
 
 **~~What the flip-flop latch of a historical-accumulation rule becomes on a merge.~~** Settled
