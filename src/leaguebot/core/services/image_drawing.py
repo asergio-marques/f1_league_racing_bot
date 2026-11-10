@@ -166,7 +166,8 @@ class ImageDrawing(Protocol):
     async def calendar_wanted(self) -> bool:
         """Whether this league conveys its calendar as a picture: both the module and the
         `calendar` aspect must be on. A gate that cannot be read answers False, so the text
-        calendar goes out and a league never loses its calendar to a fault reading a switch."""
+        calendar goes out and a league never loses its calendar to a fault reading a switch; a
+        switch nobody signed up for (`SwitchNotSignedUp`) is raised."""
 
     async def draw_calendar(
         self, division: Any, rounds: Any, tracks: Any, *, season_number: Any = None,
@@ -178,7 +179,8 @@ class ImageDrawing(Protocol):
     async def lineup_wanted(self) -> bool:
         """Whether this league conveys its lineup as a picture: both the module and the
         `lineup` aspect must be on. A gate that cannot be read answers False, so the text
-        lineup goes out and a league never loses its lineup to a fault reading a switch."""
+        lineup goes out and a league never loses its lineup to a fault reading a switch; a
+        switch nobody signed up for (`SwitchNotSignedUp`) is raised."""
 
     async def draw_lineup(self, guild: Any, division_id: int) -> LineupPicture:
         """Draw *division_id*'s lineup in *guild*, as the lineup of record. Hands back the
@@ -246,4 +248,5 @@ class ImageDrawing(Protocol):
         obtained from Discord with neither pre-render nor daily updates enabled would never
         fetch one, and so is a fault wherever the images module is on; every other combination,
         and the module off, is none. A fault reading the configuration is let out, for core to
-        stand aside on: a season is never blocked on settings that could not be read."""
+        stand aside on: a season is never blocked on settings that could not be read. A switch
+        nobody signed up for (`SwitchNotSignedUp`) is let out too, and core raises it."""

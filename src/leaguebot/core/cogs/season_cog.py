@@ -25,6 +25,7 @@ from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import approval_checks
 from leaguebot.core.services.cancellation_changes import SEASON_CANCEL
 from leaguebot.core.services.image_drawing import Held
+from leaguebot.core.services.module_service import SwitchNotSignedUp
 from leaguebot.core.services.round_moments import read_round_windows
 from leaguebot.core.services.confirmation_refusals import Confirmation, read_refusals
 from leaguebot.core.services.review_sections import (
@@ -309,6 +310,8 @@ class SeasonCog(commands.Cog):
         """
         try:
             lines = await self.bot.image_drawing.review_section()
+        except SwitchNotSignedUp:
+            raise  # a module that never signed up is a fault in the bot's assembly, not a reading
         except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
             log.error("season review: image section failed: %s", exc, exc_info=True)
             return ["**Image output**", "  ⚠️ Could not be read.", ""]

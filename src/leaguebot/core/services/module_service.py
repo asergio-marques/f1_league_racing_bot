@@ -19,6 +19,7 @@ from leaguebot.core.db.database import get_connection
 
 log = logging.getLogger(__name__)
 
+
 class SwitchNotSignedUp(LookupError):
     """A module's switch was asked for and no reader is signed up for it: a fault in the bot's
     assembly. Its own type, so that a reader standing aside from a fault reading a switch lets this
@@ -42,7 +43,8 @@ class ModuleService:
 
     async def is_enabled_on(self, db: aiosqlite.Connection, module: str) -> bool:
         """Whether *module* is on, read on *db*, a connection the caller holds: a save asks a
-        module's switch here, so that the read is part of it."""
+        module's switch here so that the read is part of it, and the fingerprint so that the read
+        is one with the rest of its reading."""
         reader = self._switch_readers.get(module)
         if reader is None:
             raise SwitchNotSignedUp(f"no switch reader is signed up for the {module} module")
