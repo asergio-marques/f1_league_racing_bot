@@ -161,7 +161,6 @@ def _division(**overrides):
         mention_role_id=555,
         calendar_channel_id=701,
         lineup_channel_id=702,
-        forecast_channel_id=706,
     )
     fields.update(overrides)
     return SimpleNamespace(**fields)
