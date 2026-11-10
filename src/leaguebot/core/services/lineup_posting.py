@@ -18,8 +18,8 @@ same post through the attendance hook.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from datetime import datetime, timezone
+from collections.abc import Callable, Mapping, Sequence
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
@@ -101,12 +101,13 @@ def _then(result: Mapping[str, Any] | None) -> tuple[PlannedStep, ...]:
 
 
 async def record_lineup_on(
-    db: aiosqlite.Connection, ctx: StepContext, result: StepResult
+    db: aiosqlite.Connection, ctx: StepContext, result: StepResult, *, now: datetime
 ) -> None:
     """Save the new lineup message on the division, and the audit of the posting, in the save
     that marks the post job done (#439). Nothing is committed here.
 
-    The audit is the system's (actor 0), as both paths wrote it before; a picture says so.
+    The audit is the system's (actor 0), as both paths wrote it before; a picture says so. It is
+    stamped *now*.
     """
     new = result.result.get("new")
     if new is None:
@@ -123,12 +124,12 @@ async def record_lineup_on(
         value["form"] = "image"
     await record_change_on(
         db, actor_id=0, actor_name="system", change_type="SIGNUP_LINEUP_POSTED",
-        old_value={}, new_value=value, now=datetime.now(timezone.utc), division_id=division_id,
+        old_value={}, new_value=value, now=now, division_id=division_id,
     )
 
 
 def lineup_step(
-    placement: "PlacementService", *, name: str = POST_LINEUP
+    placement: "PlacementService", *, now: Callable[[], datetime], name: str = POST_LINEUP
 ) -> Step:
     """The job that posts a division's lineup, the job's own `division_id` or else the change's.
 
@@ -159,11 +160,15 @@ def lineup_step(
     async def describe(ctx: StepContext) -> str:
         return f"posting the lineup of **{value_of(ctx, 'division_name', 'the division')}**"
 
-    return Step(name, StepKind.ACT, run, describe=describe, record=record_lineup_on)
+    async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
+        await record_lineup_on(db, ctx, result, now=now())
+
+    return Step(name, StepKind.ACT, run, describe=describe, record=record)
 
 
-def lineup_post_change(placement: "PlacementService") -> ChangeType:
-    """`lineup.post`: the bot's change, repeatable, that posts one division's lineup.
+def lineup_post_change(placement: "PlacementService", *, now: Callable[[], datetime]) -> ChangeType:
+    """`lineup.post`: the bot's change, repeatable, that posts one division's lineup, its audit
+    stamped by *now*, the queue's clock.
 
     The check drops the request where the division is gone or its season is no longer live, and
     refuses where it has no lineup channel set: the bot's change so refused stops the queue with
@@ -194,7 +199,7 @@ def lineup_post_change(placement: "PlacementService") -> ChangeType:
         kind=LINEUP_POST,
         opening=(PlannedStep(POST_LINEUP),),
         steps={
-            POST_LINEUP: lineup_step(placement),
+            POST_LINEUP: lineup_step(placement, now=now),
             standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
         },
         check=check,

@@ -1009,15 +1009,28 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(hub_refresh_change(bot.change_queue, bot.config_service))
     bot.change_queue.register(calendar_sync_change(bot.season_service, bot.image_drawing))
-    bot.change_queue.register(lineup_post_change(bot.placement_service))
-    bot.change_queue.register(driver_move_change(placement=bot.placement_service))
-    bot.change_queue.register(driver_sack_change(placement=bot.placement_service))
-    bot.change_queue.register(driver_release_change(placement=bot.placement_service))
-    bot.change_queue.register(driver_assign_change(placement=bot.placement_service))
-    bot.change_queue.register(driver_unassign_change(placement=bot.placement_service))
+    bot.change_queue.register(
+        lineup_post_change(bot.placement_service, now=lambda: bot.change_queue.now())
+    )
+    bot.change_queue.register(
+        driver_move_change(placement=bot.placement_service, now=lambda: bot.change_queue.now())
+    )
+    bot.change_queue.register(
+        driver_sack_change(placement=bot.placement_service, now=lambda: bot.change_queue.now())
+    )
+    bot.change_queue.register(
+        driver_release_change(placement=bot.placement_service, now=lambda: bot.change_queue.now())
+    )
+    bot.change_queue.register(
+        driver_assign_change(placement=bot.placement_service, now=lambda: bot.change_queue.now())
+    )
+    bot.change_queue.register(
+        driver_unassign_change(placement=bot.placement_service, now=lambda: bot.change_queue.now())
+    )
     bot.change_queue.register(
         driver_reject_change(
-            placement=bot.placement_service, driver_turned_down=bot.driver_turned_down
+            placement=bot.placement_service, driver_turned_down=bot.driver_turned_down,
+            now=lambda: bot.change_queue.now(),
         )
     )
     bot.change_queue.register(
@@ -1172,6 +1185,7 @@ def register_change_types(bot: LeagueBot) -> None:
             placement=bot.placement_service,
             drawing=bot.image_drawing,
             rasteriser_fault=bot.image_drawing.rasteriser_fault,
+            now=lambda: bot.change_queue.now(),
         )
     )
     bot.change_queue.register(

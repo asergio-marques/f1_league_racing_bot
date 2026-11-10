@@ -317,8 +317,11 @@ async def _division_names(db: aiosqlite.Connection, division_ids: Sequence[int])
     return names
 
 
-def _change(kind: _Kind, placement: PlacementService) -> ChangeType:
-    """The change type *kind* describes, its jobs as the module says."""
+def _change(
+    kind: _Kind, placement: PlacementService, now: Callable[[], datetime]
+) -> ChangeType:
+    """The change type *kind* describes, its jobs as the module says, the lineup's audit stamped by
+    *now*, the queue's clock."""
 
     async def save(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """The one save; see the module."""
@@ -377,7 +380,7 @@ def _change(kind: _Kind, placement: PlacementService) -> ChangeType:
     }
     if kind.afterwards:
         steps[MOVE_ROLES] = role_move_step(placement, reason=kind.role_reason)
-        steps[POST_LINEUP] = lineup_posting.lineup_step(placement)
+        steps[POST_LINEUP] = lineup_posting.lineup_step(placement, now=now)
         steps[standing_posts.DELETE_REPLACED] = standing_posts.delete_replaced_step()
     return ChangeType(
         kind=kind.kind,
@@ -394,7 +397,9 @@ def _change(kind: _Kind, placement: PlacementService) -> ChangeType:
 # ── /driver move ──────────────────────────────────────────────────────────────────────
 
 
-def driver_move_change(*, placement: PlacementService) -> ChangeType:
+def driver_move_change(
+    *, placement: PlacementService, now: Callable[[], datetime]
+) -> ChangeType:
     """The `core.driver_move` change type, for the builder to register: *placement* is what the
     check judges the move through, the save moves the driver through, and the jobs after it give
     the roles and post the lineups through.
@@ -479,14 +484,16 @@ def driver_move_change(*, placement: PlacementService) -> ChangeType:
             kind=DRIVER_MOVE, command=MOVE_COMMAND, doing=doing, nothing_done=NOTHING_MOVED,
             done=done, details=details, check=check, apply=apply,
         ),
-        placement,
+        placement, now,
     )
 
 
 # ── /driver sack ──────────────────────────────────────────────────────────────────────
 
 
-def driver_sack_change(*, placement: PlacementService) -> ChangeType:
+def driver_sack_change(
+    *, placement: PlacementService, now: Callable[[], datetime]
+) -> ChangeType:
     """The `core.driver_sack` change type, for the builder to register: *placement* is what the
     check judges the sack through, the save sacks the driver through, and the jobs after it take
     the roles and post the lineups through.
@@ -542,14 +549,16 @@ def driver_sack_change(*, placement: PlacementService) -> ChangeType:
             kind=DRIVER_SACK, command=SACK_COMMAND, doing=doing, nothing_done=NOBODY_SACKED,
             done=done, details=details, check=check, apply=apply,
         ),
-        placement,
+        placement, now,
     )
 
 
 # ── /driver release ───────────────────────────────────────────────────────────────────
 
 
-def driver_release_change(*, placement: PlacementService) -> ChangeType:
+def driver_release_change(
+    *, placement: PlacementService, now: Callable[[], datetime]
+) -> ChangeType:
     """The `core.driver_release` change type, for the builder to register: *placement* is what
     the check judges the release through, the save releases the driver through, and the jobs
     after it take the roles and post the division's lineup through.
@@ -614,14 +623,16 @@ def driver_release_change(*, placement: PlacementService) -> ChangeType:
             kind=DRIVER_RELEASE, command=RELEASE_COMMAND, doing=doing,
             nothing_done=NOTHING_RELEASED, done=done, details=details, check=check, apply=apply,
         ),
-        placement,
+        placement, now,
     )
 
 
 # ── /driver assign ────────────────────────────────────────────────────────────────────
 
 
-def driver_assign_change(*, placement: PlacementService) -> ChangeType:
+def driver_assign_change(
+    *, placement: PlacementService, now: Callable[[], datetime]
+) -> ChangeType:
     """The `core.driver_assign` change type, for the builder to register: *placement* is what the
     check judges the assignment through and the save assigns the driver through.
 
@@ -701,14 +712,16 @@ def driver_assign_change(*, placement: PlacementService) -> ChangeType:
             nothing_done=NOTHING_ASSIGNED, done=done, details=details, check=check, apply=apply,
             afterwards=False,
         ),
-        placement,
+        placement, now,
     )
 
 
 # ── /driver unassign ──────────────────────────────────────────────────────────────────
 
 
-def driver_unassign_change(*, placement: PlacementService) -> ChangeType:
+def driver_unassign_change(
+    *, placement: PlacementService, now: Callable[[], datetime]
+) -> ChangeType:
     """The `core.driver_unassign` change type, for the builder to register: *placement* is what
     the check judges the unassignment through and the save removes the placement through.
 
@@ -776,7 +789,7 @@ def driver_unassign_change(*, placement: PlacementService) -> ChangeType:
             nothing_done=NOTHING_UNASSIGNED, done=done, details=details, check=check,
             apply=apply, afterwards=False,
         ),
-        placement,
+        placement, now,
     )
 
 
@@ -810,7 +823,8 @@ async def _account_gone_refusal(ctx: CheckContext) -> Verdict | None:
 
 
 def driver_reject_change(
-    *, placement: PlacementService, driver_turned_down: AwaitedHook
+    *, placement: PlacementService, driver_turned_down: AwaitedHook,
+    now: Callable[[], datetime],
 ) -> ChangeType:
     """The `core.driver_reject` change type, for the builder to register: *placement* is what the
     job after the save takes the driver role through, and *driver_turned_down* the hook the save
@@ -884,7 +898,7 @@ def driver_reject_change(
             nothing_done=NOBODY_TURNED_DOWN, done=done, details=details, check=check, apply=apply,
             role_reason="Driver rejected",
         ),
-        placement,
+        placement, now,
     )
 
 

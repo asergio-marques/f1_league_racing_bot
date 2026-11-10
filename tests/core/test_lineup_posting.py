@@ -508,7 +508,6 @@ async def test_a_lineup_fallen_back_to_text_is_recorded_by_every_change_that_pos
 
 
 @pytest.mark.parametrize("form", ["text", "image"])
-@pytest.mark.xfail(strict=True, reason="#283: the lineup's audit is stamped with the change queue's time")
 async def test_the_lineup_s_id_and_audit_are_saved_with_its_post(tmp_path, monkeypatch, form):
     """Once the post job is done, and before the deletion after it runs, the division records
     the new lineup and one `SIGNUP_LINEUP_POSTED` audit stands, written by the system, saying
@@ -592,7 +591,7 @@ async def test_a_lineup_step_with_no_channel_raises(tmp_path):
     league = await ongoing_league(tmp_path)
     await league.write("UPDATE divisions SET lineup_channel_id = NULL WHERE id = ?", PRO)
     before = len(league.texts(LINEUP[PRO]))
-    step = lineup_step(league.bot.placement_service)
+    step = lineup_step(league.bot.placement_service, now=lambda: league.clock.now)
     ctx = SimpleNamespace(
         bot=league.bot, kept=[], step_payload={"division_id": PRO, "division_name": "Pro"},
         payload={}, tries=0,

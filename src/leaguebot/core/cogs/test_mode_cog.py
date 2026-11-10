@@ -474,7 +474,9 @@ class TestModeCog(commands.Cog):
             )
             return
 
-        locked = backup_service.set_lock(db_path, who=interaction.user.display_name)
+        locked = backup_service.set_lock(
+            db_path, who=interaction.user.display_name, now=self.bot.change_queue.now()
+        )
         await interaction.followup.send(
             "🔒 Locked. `/test-mode backup save` will refuse to overwrite it until you "
             "run this again."

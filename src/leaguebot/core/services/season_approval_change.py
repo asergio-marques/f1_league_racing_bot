@@ -721,7 +721,7 @@ def season_approval_change(
         POST_BATCH_NOTICE: Step(
             POST_BATCH_NOTICE, StepKind.ACT, post_batch_notice, describe=describe_notice_post
         ),
-        REFRESH_LINEUP: lineup_posting.lineup_step(placement, name=REFRESH_LINEUP),
+        REFRESH_LINEUP: lineup_posting.lineup_step(placement, name=REFRESH_LINEUP, now=now),
         **calendar_steps(seasons, drawing),
         **{
             name: step

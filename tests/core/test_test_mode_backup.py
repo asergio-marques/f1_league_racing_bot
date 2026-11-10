@@ -317,7 +317,6 @@ async def test_a_locked_backup_refuses_the_save(live):
 # ── Lock ──────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#283: /test-mode backup lock hands the lock the change queue's time")
 async def test_lock_toggles_and_says_which_way(live):
     """The lock is stamped with the change queue's clock, the bot's clock, not the host's."""
     cog = _cog(live)

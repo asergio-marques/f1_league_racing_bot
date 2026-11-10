@@ -145,6 +145,9 @@ def verdict_steps(
             int(result.result["message_id"]), result.result["channel_id"],
         )
 
+    async def record_lineup(db: Any, ctx: StepContext, result: StepResult) -> None:
+        await lineup_posting.record_lineup_on(db, ctx, result, now=now())
+
     async def record_card(db: Any, ctx: StepContext, result: StepResult) -> None:
         # The banner the card stands beneath is noted as heading a sanction card, in the save that
         # marks the card posted: a replay of the round's verdicts then keeps it (#345).
@@ -195,7 +198,7 @@ def verdict_steps(
         ),
         REFRESH_LINEUP: Step(
             REFRESH_LINEUP, StepKind.ACT, bound(_refresh_lineup), still_due=_after_a_sanction,
-            describe=_describe_lineup, record=lineup_posting.record_lineup_on,
+            describe=_describe_lineup, record=record_lineup,
         ),
     }
 

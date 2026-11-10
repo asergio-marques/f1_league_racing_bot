@@ -37,6 +37,7 @@ completed.
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
@@ -191,12 +192,14 @@ def mid_season_confirm_change(
     placement: Any,
     drawing: "ImageDrawing",
     rasteriser_fault: Callable[[], str | None],
+    now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that confirms a season's placements mid-season; see the module.
 
     The builder hands in *modules* (which modules are on), the *placement* service (a driver's
     roles, a division's lineup), the image module's own drawing (*drawing*) and
-    *rasteriser_fault* (what is wrong with the host's drawing program, None where nothing is).
+    *rasteriser_fault* (what is wrong with the host's drawing program, None where nothing is) and
+    *now* (the queue's clock, which stamps the lineup's audit).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -437,7 +440,7 @@ def mid_season_confirm_change(
         APPLY: Step(APPLY, StepKind.SAVE, apply, describe=describe_apply),
         JUDGE: Step(JUDGE, StepKind.ACT, judge, describe=describe_judge),
         GRANT_ROLES: driver_roles_step(placement),
-        POST_LINEUP: lineup_posting.lineup_step(placement),
+        POST_LINEUP: lineup_posting.lineup_step(placement, now=now),
         standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
         TELL_REVIEW_CHANNEL: Step(
             TELL_REVIEW_CHANNEL, StepKind.ACT, tell_review_channel, still_due=reply_lost,

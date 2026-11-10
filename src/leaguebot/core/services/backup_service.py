@@ -232,8 +232,8 @@ def locked_by(live_path: str | Path) -> str | None:
         return None
 
 
-def set_lock(live_path: str | Path, *, who: str, now: datetime | None = None) -> bool:
-    """Toggle the lock. Returns whether it is locked afterwards.
+def set_lock(live_path: str | Path, *, who: str, now: datetime) -> bool:
+    """Toggle the lock. Returns whether it is locked afterwards, a new lock naming *now*.
 
     A toggle rather than a one-way door: the alternative is unlocking by deleting a file
     over SSH, which is a poor thing to require of a manager who locked one by accident.
@@ -242,7 +242,7 @@ def set_lock(live_path: str | Path, *, who: str, now: datetime | None = None) ->
     if path.is_file():
         path.unlink(missing_ok=True)
         return False
-    stamp = (now or datetime.now(timezone.utc)).isoformat(timespec="seconds")
+    stamp = now.isoformat(timespec="seconds")
     path.write_text(f"locked by {who} at {stamp}", encoding="utf-8")
     return True
 
