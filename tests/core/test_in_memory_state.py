@@ -81,9 +81,6 @@ LEAVING = {
     # Exempt while it stands; it goes with `_ReviewPoster` when the review is posted on the
     # queue (C93).
     ("core/cogs/season_cog.py", "posted"): "#439 6b C93",
-    # The weather phases' callables bound at start-up: the bot's wiring, not the league's data.
-    # Exempt while it stands; it goes when every kind is signed up in `_timer_callbacks` (#283).
-    ("core/services/scheduler_service.py", "_phase_callbacks"): "#283 S7a",
 }
 
 #: Stores the plan moves with no change, by (file, name): the file each moves to and the commit
