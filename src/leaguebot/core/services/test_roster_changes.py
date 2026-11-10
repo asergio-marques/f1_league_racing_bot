@@ -107,9 +107,14 @@ ROSTER_NOT_ADDED = (
 #: `/test-mode roster remove` as the line names it.
 REMOVE_COMMAND = "/test-mode roster remove"
 
-#: The reply once a league admin has discarded the stopped save: nobody was removed.
+#: The reply once a league admin has discarded the stopped save: nobody was removed. The first form
+#: names the division the driver is seated in, the second serves a driver who holds no seat.
 NOBODY_REMOVED = (
     "Nothing was removed: **{driver_name}** is still seated in **{division}**. "
+    "Run `/test-mode roster remove` again."
+)
+NOBODY_REMOVED_UNSEATED = (
+    "Nothing was removed: **{driver_name}** is still on the server. "
     "Run `/test-mode roster remove` again."
 )
 
@@ -460,10 +465,11 @@ def test_roster_remove_change(*, profiles_deleted: AwaitedHook) -> ChangeType:
         if saved.get("refused"):
             return str(saved["refused"])
         if not saved.get("saved"):
-            return NOBODY_REMOVED.format(
-                driver_name=ctx.payload.get("driver_name") or ctx.payload["user_id"],
-                division=ctx.payload.get("division") or "its division",
-            )
+            driver_name = ctx.payload.get("driver_name") or ctx.payload["user_id"]
+            division = ctx.payload.get("division")
+            if not division:
+                return NOBODY_REMOVED_UNSEATED.format(driver_name=driver_name)
+            return NOBODY_REMOVED.format(driver_name=driver_name, division=division)
         return f"✅ Removed fake driver **{saved['driver']}** from **{saved['team']}**."
 
     return ChangeType(
