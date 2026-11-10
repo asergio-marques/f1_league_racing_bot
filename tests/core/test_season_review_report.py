@@ -1293,8 +1293,6 @@ async def test_the_review_reaches_each_module_through_its_section_alone(db_path)
     assert "  RSVP channel: <#801>\n  Attendance channel: *(not set)*\n  Weather channel:" in public
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the review judges its calendar on the host's "
-                   "clock, not the queue's")
 async def test_the_review_judges_its_calendar_on_the_queue_s_clock(db_path):
     """A round three days ahead by the host's clock, and the queue's clock five days ahead of
     the host's: the round has gone by on the queue's clock, so the review says the calendar

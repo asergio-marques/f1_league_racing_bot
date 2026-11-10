@@ -789,7 +789,7 @@ class SeasonCog(commands.Cog):
             fault_lines = self._calendar_fault_lines(
                 calendar_faults(
                     rounds_db,
-                    now=datetime.now(timezone.utc),
+                    now=self.bot.change_queue.now(),
                     attendance=_att_windows,
                     weather=_wx_windows,
                 )
