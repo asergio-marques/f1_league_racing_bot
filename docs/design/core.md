@@ -60,13 +60,15 @@ A division's `status` is stored rather than worked out from its rounds, and
 `refresh_division_status_on` brings it up to date wherever a round's outcome settles; its docstring
 gives the reason.
 
-**What is derived is kept by the database or by one function.** The driver's accounts and division
-memberships are written by triggers, so that no path creating a profile or committing a placement
-can miss them (`tests/core/test_driver_accounts.py`'s docstring). A round's number is recomputed
-from the rounds' moments by `renumber_rounds_on`, and a round's sessions are replaced as a set by
-`create_sessions_for_round_on`. A division's teams copy the list's names when the division is
-seeded and keep them, so a season keeps the names it ran under (the baseline's comment on
-`team_instances`).
+**What is derived is kept by the database or by one function.** A driver's accounts are written
+by triggers, so that no path creating a profile can miss them
+(`tests/core/test_driver_accounts.py`'s docstring). A driver's division memberships are written
+by triggers too, recording each committed placement as it is committed and never cleared by a
+placement changing (`write_driver_history_entries_on`'s docstring, which reads them). A round's
+number is recomputed from the rounds' moments by `renumber_rounds_on`, and a round's sessions are
+replaced as a set by `create_sessions_for_round_on`. A division's teams copy the list's names when
+the division is seeded and keep them, so a season keeps the names it ran under (the baseline's
+comment on `team_instances`).
 
 **`team_role_configs` is linked to the list by name.** A team's rename re-keys its role through
 `PlacementService.rename_team_role_config_on`.
@@ -162,7 +164,9 @@ Answers to `architecture.md`, "How the code is laid out". Core's code sits in `c
 | Channels | `channel_registry_service` | nothing: it reads core's channel columns, and the modules' through a hook |
 | Module switches | `module_service` (`ModuleService`) | nothing: each switch is read through its module |
 | The image module | `image_drawing` (the `ImageDrawing` protocol) | nothing: it declares what core asks |
-| Season reviews and confirmations | `approval_checks`, `review_sections`, `confirmation_refusals`, `season_fingerprint_service`, `season_review_changes`, `season_review_views`, `season_review_workflows` | `season_review_prompts` |
+| Amending a round | `amendment_rules_service`, `round_steps` | nothing: the first judges what an amendment may do and costs, pure; the second names a round in an amendment's step by the number it bears when read |
+| A points amendment | `amendment_service` | nothing: `approval_faults`, what stops a mid-season points amendment being published, which results calls |
+| Season reviews and confirmations | `approval_checks`, `approval_window_service` (`calendar_faults`, what is already behind a season on the day it is approved), `review_sections`, `confirmation_refusals`, `season_fingerprint_service`, `season_review_changes`, `season_review_views`, `season_review_workflows` | `season_review_prompts` |
 | The hub | `hub_service`, `about_service` | `server_configs.hub_message_id` |
 | Test mode | `test_mode_service`, `test_roster_service`, `backup_service` | `server_configs.test_mode_active` |
 | Starting over | `pack_service`, `factory_reset_service`, `in_memory_state` | — |
@@ -229,11 +233,12 @@ specification's section of the same name holds what a league is told.
 
 ### The queue's code
 
-The queue is `ChangeQueue` (`core/services/change_queue.py`), with its vocabulary in
-`core/models/change.py`: `Step`, `StepKind` (`SAVE`, `ACT`, `DELETE`, `EDIT`), `ChangeType`,
-`Verdict`, `StepResult`, `StepFailedOnDiscord`, and the lane names. Its constants are there too:
-`RETRY_AFTER`, the bot's own tries; `CONVERSATION_LANES_AT_ONCE`; `UPDATABLE_FOR`, how long a reply
-may be updated; `WORKER_PAUSE_AFTER_FAULT`. The module docstring holds the engineering decisions,
+The queue is `ChangeQueue` (`core/services/change_queue.py`). Beside it in that file are `Step`
+and `ChangeType`, and the queue's constants: `RETRY_AFTER`, the bot's own tries;
+`CONVERSATION_LANES_AT_ONCE`; `UPDATABLE_FOR`, how long a reply may be updated; and
+`WORKER_PAUSE_AFTER_FAULT`. The plain data is in `core/models/change.py`: `StepKind` (`SAVE`,
+`ACT`, `DELETE`, `EDIT`), `Verdict`, `StepResult`, `StepFailedOnDiscord`, `GuildUnavailable` and
+the lane names. The queue's module docstring holds the engineering decisions,
 each pinned by a test in `tests/core/test_change_queue.py`, `test_change_queue_lanes.py` or
 `test_change_queue_controls.py`. Among them:
 
@@ -309,9 +314,9 @@ Every core change type runs on the league lane; none is a conversation's. Each i
 | `core.team_*` (four) | `/team add`, `modify`, `remove`, `reserve-role` | the list and the role mapping, audited | role moves |
 | `core.test_mode_toggle` | `/test-mode toggle` | the flag, the modules' part, the audit entry; turned off, every fake driver deleted | forecasts cleared, the backup deleted |
 | `hub.refresh` | the bot, wherever what the panel offers may change | none: the panel's id is its job's `record` | the old panel deleted where the hub moved |
-| `calendar.sync` | `/division calendar-sync` | none | — |
-| `lineup.post` | the bot, after a change made off the queue moves a driver | none | — |
-| `core.clean` | `/clean-bot` | the closing line | — |
+| `calendar.sync` | `/division calendar-sync` | `close`, a save writing the line, after the post | the post, then the deletion of the calendar it replaced |
+| `lineup.post` | the bot, after a change made off the queue moves a driver | none: the lineup's id and audit entry are its post's `record` | the post, then the deletion of the lineup it replaced |
+| `core.clean` | `/clean-bot` | `close`, a save writing the line, last | `choose`, then one `delete_message` for each message chosen |
 
 Each module's switch is a change of the module's own, of kind `module.on:<name>` or
 `module.off:<name>` (`module_on` and `module_off` in `core/models/change.py`), which `ModuleCog`
@@ -388,7 +393,8 @@ reports the bot ready, `start_up` (`core/services/start_up.py`) runs once per pr
   landed, and starts the dispatcher.
 - **A guard of its own** makes a second ready, after a network drop, run nothing.
 
-Each is pinned by a test in `tests/core/test_start_up.py`.
+The first, second and fourth are each pinned by a test in `tests/core/test_start_up.py`;
+`ChangeQueue.start`'s docstring says what the queue's start does.
 
 The steps are a fixed tuple the builder makes (`_start_up_steps`), in an order its comments give
 where the order matters (`test_the_builder_orders_the_start_up_steps`):
@@ -408,8 +414,9 @@ where the order matters (`test_the_builder_orders_the_start_up_steps`):
 | 11 | hub | core's: routes the hub's buttons again and asks the panel's refresh |
 | 12 | wizards | arms each signup wizard's inactivity timer again |
 
-The retry loop for log lines is no step: `LeagueBot.setup_hook` starts it once per run at login
-(`test_login_starts_the_retry_loop_once`), and it runs every five minutes from `retry_cog`.
+The retry loop for log lines is no step (`architecture.md`, "Start-up runs once, in one
+function"): core's is `RetryCog.retry_loop` (`retry_cog`), started by `LeagueBot.setup_hook`
+(`test_login_starts_the_retry_loop_once`).
 
 ### The clock
 
@@ -444,21 +451,21 @@ A replaced standing post is deleted by a job after the new one, built by `standi
 `test_the_text_lineup_is_posted_before_the_old_one_is_deleted` and
 `test_moving_the_hub_posts_the_new_panel_before_deleting_the_old` pin it.
 
-**A picture that cannot be drawn is replaced by its text in the same try.** A lineup or review
-picture Discord refuses is posted as text in that try too; a refused calendar stops the lane, and
-the lineup's and the calendar's next try posts text. A calendar posted on a command is the
-exception to the fallback: it posts nothing and says what is at fault, for the reason
-`post_division_calendar`'s docstring gives (`test_an_uncommanded_posting_falls_back_to_the_text`).
+**Where a picture falls back to text** (Constitution XIV, rules 7 and 8): the lineup's in
+`PlacementService._refresh_lineup_post`, the review's in `season_review_changes`' `draw_and_post`,
+and the calendar's in `post_division_calendar`, whose `commanded` parameter tells a posting a member
+asked for from one that was not (`test_an_uncommanded_posting_falls_back_to_the_text`). The lineup's
+and the calendar's post job ask for text on every try after the first (`as_text`).
 
-**Who a post may mention is stated where it is sent.** Every core post mentions nobody, save the
-review's expiry notice (the reviewer alone), a line to the review's channel (the member it names
-alone), and the stop notice (the league admin role, where `_admins_to_notify` says so). A log line
-wraps every mention as code (`test_every_mention_in_a_log_line_is_written_as_code`).
-`season_review_changes`' docstring gives the review's reason.
+**Who a post may mention is stated where it is sent**, as the `mentions` argument each handler
+requires; who that is, is the core specification's ("The record of what changed", "How a change is
+carried out"). The stop notice's mention is decided by `ChangeQueue._admins_to_notify`, and a log
+line's mentions are wrapped by the router (`test_every_mention_in_a_log_line_is_written_as_code`).
+`post_cancellation_notice` posts with the mentions its caller, a module's notice job, hands it.
 
-**Core's posts off the queue** are those `architecture.md` names: the router's log lines, the stop
-notice and the turn-away, a reply and the queue's update of it, and the factory reset's clean-up
-and progress. `/team lineup` answers the member with its picture as a reply and records nothing.
+**Core's posts off the queue** are `architecture.md`'s exceptions ("Every post is made in a
+job"), in `OutputRouter`, `ChangeQueue._update_reply`, `typed_turns` and `BotCog`'s factory reset.
+`/team lineup` answers the member with its picture as a reply and records nothing.
 
 ---
 
@@ -492,7 +499,7 @@ which each `_sign_up_to_*` docstring states where it matters.
 | `amendment_step_failure` | P | weather | `round_amend_change` |
 | `cancellation_refused` | A | results | `cancellation_changes` |
 | `rounds_called_off` | A | results, attendance | `cancellation_changes` |
-| `cancellation_notices` | A | attendance, weather, results | `cancellation_changes` |
+| `cancellation_notices` | A | attendance, weather, results | `cancellation_changes`; results' not-held round end calls it too |
 | `cancellation_steps` | P | results, attendance (three), weather, results | `cancellation_changes` |
 | `round_ended_not_held` | A | attendance | — (results' not-held round end calls it) |
 | `rounds_made_final` | A | results | `season_service` (`end_rounds_awaiting_results_on`, `close_raced_rounds_on`) |
@@ -597,10 +604,10 @@ handler (`test_a_command_with_its_own_error_handler_is_left_alone`). `on_event_e
 listener's own arguments, which can hold a member's message, and never raises
 (`test_the_event_error_handler_never_raises`).
 
-**The log writer contains its own faults.** `OutputRouter.post_log` returns nothing on a failure
-rather than raising, keeps the line for retry and warns the member; a database fault reading the log
-channel is contained too (`test_a_database_fault_reading_the_log_channel_is_contained`).
-`log_destination` alone raises, being a query rather than a line posted (its docstring).
+**The log writer contains its own faults**, as `architecture.md` ("Posting to Discord") has it:
+in `OutputRouter._read_config`, `_try_send` and `_enqueue_if_configured`
+(`test_a_database_fault_reading_the_log_channel_is_contained`). `log_destination` alone raises,
+being a query rather than a line posted (its docstring).
 
 **Core's refusal and fault types**, each caught by name:
 
@@ -622,13 +629,12 @@ Each is stated where it lives and pinned by the test named.
 
 | Constraint | Stated in | Pinned by |
 |---|---|---|
-| SQLite's busy timeout is five seconds, sized for the longest legitimate write; an autocomplete asks for one | `core/db/database.py`, `_BUSY_TIMEOUT_SECONDS` | `test_connections_carry_an_explicit_busy_timeout` |
+| SQLite's busy timeout is five seconds, sized for the longest legitimate write; an autocomplete asks for a shorter one (`AUTOCOMPLETE_TIMEOUT_SECONDS`) | `core/db/database.py`, `_BUSY_TIMEOUT_SECONDS` | `test_connections_carry_an_explicit_busy_timeout` |
 | The database runs in WAL with `synchronous` left at FULL, durability chosen over speed | `_enable_wal` | `test_migrations_leave_the_database_in_wal_mode`, `test_connections_keep_full_durability` |
 | Four idle connections are kept to be lent again | `_IDLE_CONNECTIONS_KEPT` | `test_no_more_than_four_idle_connections_are_kept` |
 | `server_configs` holds one row; the claim's condition is in its statement, so two servers cannot both win; releasing the claim keeps the row | `config_service`'s docstring, `ConfigService.claim_on` | `test_a_single_row_table_refuses_a_second_row`, `test_only_one_server_claims_a_released_row`, `test_releasing_the_claim_keeps_what_is_the_league_s` |
 | One live season, held by the schema rather than each reader | `idx_seasons_one_live`; `tests/core/test_one_live_season_per_server.py`'s docstring | `test_a_second_live_season_is_refused` |
 | A placed driver's seat stops a division's delete | `delete_division_on` | `test_a_division_with_a_driver_placed_in_it_is_not_deleted` |
-| A merge moves the memberships first, or a trigger would add one twice | the comment in `DriverService._merge` | `test_a_merge_leaves_nothing_naming_the_driver_absorbed`, `test_a_failure_part_way_through_a_merge_changes_nothing` |
 | A reassign judges every refusal on its save's connection before it writes | `DriverService.reassign_judged_on`, `driver_changes`' docstring | `test_a_failed_driver_reassign_changes_nothing`, `test_a_refusal_found_inside_the_save_ends_the_reassign_and_the_lane_goes_on` |
 | `write_transition` is the one writer of a driver's state | `write_transition` | `test_every_reset_goes_through_the_transition_table` |
 | The driver has no ban states | `DriverState` | `test_the_driver_has_seven_states_and_no_ban_among_them` |
