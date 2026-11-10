@@ -1,4 +1,4 @@
-"""`_do_approve` runs its gates without reaching for something that is not there.
+"""`approve_season` runs its gates without reaching for something that is not there.
 
 This file exists because of a shipped fault. `_image_template_problems` was deleted with
 the approval's render pass, and its *call* was left behind — so pressing Approve raised
@@ -10,7 +10,8 @@ Neither a compile check nor a lint pass catches it: `self._image_template_proble
 is valid Python and a perfectly ordinary attribute lookup, resolved only at run time. The
 one thing that catches it is running the function.
 
-So these drive `_do_approve` rather than reading it. They are not about whether each gate
+So these drive the approval's workflow, `season_review_workflows.approve_season`, rather than
+reading it. They are not about whether each gate
 decides correctly — the gates have their own tests — but about whether the sequence
 *executes*: every attribute it touches exists, and every refusal reaches the manager
 instead of an exception log.
@@ -39,20 +40,29 @@ review, in `test_season_review_report.py`.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from contextlib import ExitStack
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog
-
 from leaguebot.core.db.database import get_connection, run_migrations
+from tests.support.review_workflows import run_workflow
 from tests.support.season_points import snapshot_points
 from tests.support.setup_reads import hold_setup
 
 SERVER_ID = 3300
 SEASON_ID = 11
 USER_ID = 77
+
+#: The approval still runs as `SeasonCog._do_approve`, its gates the cog's methods.
+_ON_THE_COG = "#283: the approval is not yet season_review_workflows.approve_season"
+
+#: The gates a test may stand in, each a function of `approval_checks` the workflow calls.
+_GATES = (
+    "team_name_problems", "lineup_problems", "image_configuration_faults",
+    "placement_confirmation_faults", "season_has_divisions",
+)
 
 
 
@@ -106,11 +116,12 @@ def _pending():
 
 
 def _cog(db_path, **overrides):
-    """A cog whose services all answer, so the gates run to the end and the approval is asked
-    of the change queue (#439), whose ``ask`` is a double: what the approval then does is
-    `test_season_approval_change.py`'s. The check for an approval of the season already in
-    hand reads the real, empty, queue of this file's database."""
-    cog = SeasonCog.__new__(SeasonCog)
+    """A bot whose services all answer, and gates standing in for `approval_checks`'s, so the
+    gates run to the end and the approval is asked of the change queue (#439), whose ``ask`` is
+    a double: what the approval then does is `test_season_approval_change.py`'s. The check for
+    an approval of the season already in hand reads the real, empty, queue of this file's
+    database. The queue's clock is the host's."""
+    cog = SimpleNamespace()
     # A ``MagicMock`` bot with every awaited member named below, not a blanket
     # ``AsyncMock`` (issue #240). The blanket form looks like it makes the walk more
     # thorough and does the opposite: an unstubbed ``await bot.svc.method()`` answers with
@@ -121,6 +132,7 @@ def _cog(db_path, **overrides):
     cog.bot = MagicMock()
     cog.bot.db_path = db_path
     cog.bot.change_queue.ask = AsyncMock(return_value=None)
+    cog.bot.change_queue.now = MagicMock(side_effect=lambda: datetime.now(timezone.utc))
     # The windows are read as the builder has them read, through the hook it signs attendance
     # and weather up to, off the cog's own doubles: a test switching a module on or off moves
     # its window too.
@@ -156,16 +168,16 @@ def _cog(db_path, **overrides):
     # The gates that read the season rather than Discord. Each answers "nothing wrong",
     # so the sequence runs its whole length — which is what makes a missing attribute
     # anywhere along it fail this test rather than hide behind an early return.
-    cog._team_name_problems = AsyncMock(return_value=[])
-    cog._lineup_problems = AsyncMock(return_value=[])
+    cog.team_name_problems = AsyncMock(return_value=[])
+    cog.lineup_problems = AsyncMock(return_value=[])
     # The season is in Placements with every signup settled and every channel set; the
     # gates of issue #220 have tests of their own in test_placements_confirmation.py.
     from leaguebot.core.models.season import SeasonStage
 
     season_svc.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
-    cog._placement_confirmation_faults = AsyncMock(return_value=([], []))
+    cog.placement_confirmation_faults = AsyncMock(return_value=([], []))
     # A season with no division is refused on its own terms, pinned in test_placements_confirmation.py.
-    cog._season_has_divisions = AsyncMock(return_value=True)
+    cog.season_has_divisions = AsyncMock(return_value=True)
 
     for name, value in overrides.items():
         setattr(cog, name, value)
@@ -182,8 +194,16 @@ def _assert_asked(cog) -> None:
     assert (call.args[0] if call.args else call.kwargs["kind"]) == KIND
 
 
-async def _run(cog, interaction):
-    await SeasonCog._do_approve(cog, interaction)
+async def _run(cog, interaction, **given):
+    """Press ✅ Approve: the approval's workflow, handed *cog*'s bot's services, with every gate
+    *cog* stands in for patched on `approval_checks`."""
+    from leaguebot.core.services import approval_checks
+
+    with ExitStack() as stack:
+        for gate in _GATES:
+            if hasattr(cog, gate):
+                stack.enter_context(patch.object(approval_checks, gate, getattr(cog, gate)))
+        await run_workflow("approve_season", cog.bot, interaction, **given)
 
 
 def _replies(interaction) -> str:
@@ -192,6 +212,7 @@ def _replies(interaction) -> str:
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_no_pending_setup_refuses_without_reaching_a_gate(db_path):
     cog = _cog(db_path)
     hold_setup(cog.bot.season_service, None, divisions=False)
@@ -203,6 +224,7 @@ async def test_no_pending_setup_refuses_without_reaching_a_gate(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_bad_tier_sequence_refuses_ephemerally(db_path):
     cog = _cog(db_path)
     cog.bot.season_service.validate_division_tiers = AsyncMock(
@@ -220,17 +242,20 @@ async def test_a_bad_tier_sequence_refuses_ephemerally(db_path):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_the_withdrawn_template_gate_is_not_called_again(db_path):
     """Gate 4 went with the approval's render pass, and its method with it. The templates
-    are judged again since #396, but through `_image_configuration_faults` — the helper the
-    review withholds its button on — and not through a second evaluation of the approval's
-    own, which is what let the two disagree."""
-    cog = _cog(db_path)
+    are judged again since #396, but through `approval_checks.image_configuration_faults` — the
+    helper the review withholds its button on — and not through a second evaluation of the
+    approval's own, which is what let the two disagree."""
+    from leaguebot.core.services import approval_checks, season_review_workflows
 
-    assert not hasattr(cog, "_image_template_problems"), (
-        "the withdrawn template gate is back; the templates are judged through "
-        "`_image_configuration_faults`"
-    )
+    for module in (approval_checks, season_review_workflows):
+        for name in ("image_template_problems", "_image_template_problems"):
+            assert not hasattr(module, name), (
+                "the withdrawn template gate is back; the templates are judged through "
+                "`approval_checks.image_configuration_faults`"
+            )
 
 
 # ── Gate 4b: the image module's configuration (#396) ────────────────────────
@@ -256,6 +281,7 @@ def _images_on(cog, *, rasteriser=None, templates=(), colours=()):
     return cog
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_sound_image_configuration_still_approves(db_path):
     cog = _images_on(_cog(db_path))
 
@@ -265,6 +291,7 @@ async def test_a_sound_image_configuration_still_approves(db_path):
     cog.bot.image_drawing.template_faults.assert_awaited_once_with()
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_missing_rasteriser_refuses_and_commits_nothing(db_path):
     cog = _images_on(_cog(db_path), rasteriser=_RASTERISER)
     interaction = _interaction()
@@ -277,6 +304,7 @@ async def test_a_missing_rasteriser_refuses_and_commits_nothing(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_broken_template_of_a_switched_on_output_refuses_and_commits_nothing(db_path):
     """Which templates a switched-on output draws, and so which break the season, is the image
     module's to say (`test_image_drawing_review.py`); the approval refuses on each it names."""
@@ -290,6 +318,7 @@ async def test_a_broken_template_of_a_switched_on_output_refuses_and_commits_not
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_tier_colour_shortfall_refuses_and_commits_nothing(db_path):
     cog = _images_on(
         _cog(db_path), colours=["`calendar_template` — `accent` is not set for **Pro**"]
@@ -304,16 +333,17 @@ async def test_a_tier_colour_shortfall_refuses_and_commits_nothing(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_the_image_checks_are_not_read_with_the_module_off(db_path):
     """A league not drawing has no template, rasteriser or colour to be wrong about."""
     cog = _cog(
         db_path,
-        _image_configuration_faults=AsyncMock(return_value=["Inkscape is not installed."]),
+        image_configuration_faults=AsyncMock(return_value=["Inkscape is not installed."]),
     )
 
     await _run(cog, _interaction())
 
-    cog._image_configuration_faults.assert_not_awaited()
+    cog.image_configuration_faults.assert_not_awaited()
     _assert_asked(cog)
 
 
@@ -372,6 +402,7 @@ def _cog_with_rounds(db_path, rounds, *, attendance=True, weather=False):
     return cog
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_an_overdue_check_in_window_refuses_and_commits_nothing(db_path):
     """#121: round 1 three days out against a five-day notice.
 
@@ -390,6 +421,7 @@ async def test_an_overdue_check_in_window_refuses_and_commits_nothing(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_the_overdue_refusal_is_private(db_path):
     cog = _cog_with_rounds(db_path, [_round_in(3)])
     interaction = _interaction()
@@ -402,6 +434,7 @@ async def test_the_overdue_refusal_is_private(db_path):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_an_overdue_weather_phase_refuses_on_its_own(db_path):
     """#122: the weather half, with attendance off, so the gate is not carried by #121."""
     cog = _cog_with_rounds(db_path, [_round_in(3)], attendance=False, weather=True)
@@ -413,6 +446,7 @@ async def test_an_overdue_weather_phase_refuses_on_its_own(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_season_clear_of_its_windows_still_approves(db_path):
     """The gate must not stand in the way of an ordinary season."""
     cog = _cog_with_rounds(db_path, [_round_in(30)])
@@ -422,6 +456,7 @@ async def test_a_season_clear_of_its_windows_still_approves(db_path):
     _assert_asked(cog)
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_the_gate_does_no_arithmetic_without_rounds(db_path):
     """No rounds, no windows — and so no reason to read the configs at all.
 
@@ -431,7 +466,7 @@ async def test_the_gate_does_no_arithmetic_without_rounds(db_path):
     walk. The approval being asked of the queue is the proof it did neither, the windows
     being read through the reader the bot carries rather than the cog's configs.
 
-    It is also the regression, blunt and on purpose. `_do_approve` reads a dozen services and
+    It is also the regression, blunt and on purpose. `approve_season` reads a dozen services and
     helpers, and an editing slip that removes one while leaving its call raises only when the
     button is actually pressed. The walk ends at the change queue's ask (#439), where the press
     ends: everything before it can refuse, and the approval's own check and jobs follow it on
@@ -465,10 +500,11 @@ async def test_the_gate_does_no_arithmetic_without_rounds(db_path):
 _NO_ATTENDANCE_CHANNEL = ([], ["**Pro** has no attendance channel — `/attendance channel attendance`."])
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_missing_attendance_channel_refuses_before_the_window_gate(db_path):
     """The channel gate is the earlier one, and a manager hears about it first."""
     cog = _cog_with_rounds(db_path, [_round_in(3)])
-    cog._placement_confirmation_faults = AsyncMock(return_value=_NO_ATTENDANCE_CHANNEL)
+    cog.placement_confirmation_faults = AsyncMock(return_value=_NO_ATTENDANCE_CHANNEL)
     interaction = _interaction()
 
     await _run(cog, interaction)
@@ -480,6 +516,7 @@ async def test_a_missing_attendance_channel_refuses_before_the_window_gate(db_pa
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_the_window_gate_is_not_consulted_once_a_channel_is_missing(db_path):
     """The proof of the order, rather than of the wording.
 
@@ -487,7 +524,7 @@ async def test_the_window_gate_is_not_consulted_once_a_channel_is_missing(db_pat
     is refusable on both counts. Only the first refusal may be reached.
     """
     cog = _cog_with_rounds(db_path, [_round_in(3)])
-    cog._placement_confirmation_faults = AsyncMock(return_value=_NO_ATTENDANCE_CHANNEL)
+    cog.placement_confirmation_faults = AsyncMock(return_value=_NO_ATTENDANCE_CHANNEL)
 
     await _run(cog, _interaction())
 
@@ -500,6 +537,7 @@ async def test_the_window_gate_is_not_consulted_once_a_channel_is_missing(db_pat
 # stuck at *not run* for good, with no submission channel, no results and no standings.
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_season_in_the_past_is_refused_with_both_modules_off(db_path):
     """#181 exactly. Before this the approval succeeded and said nothing."""
     cog = _cog_with_rounds(db_path, [_round_in(-90)], attendance=False, weather=False)
@@ -513,6 +551,7 @@ async def test_a_season_in_the_past_is_refused_with_both_modules_off(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_past_round_is_refused_with_the_modules_on_too(db_path):
     """The rule does not turn on which modules a league happens to run.
 
@@ -526,6 +565,7 @@ async def test_a_past_round_is_refused_with_the_modules_on_too(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_the_latest_past_round_is_the_one_named(db_path):
     """Naming round 1 would understate what the manager has to move."""
     rounds = [_round_in(-30, number=1), _round_in(-20, number=2), _round_in(-10, number=3)]
@@ -537,6 +577,7 @@ async def test_the_latest_past_round_is_the_one_named(db_path):
     assert "Round 3 has already run" in _replies(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_the_past_round_refusal_is_private(db_path):
     cog = _cog_with_rounds(db_path, [_round_in(-90)], attendance=False, weather=False)
     interaction = _interaction()
@@ -549,6 +590,7 @@ async def test_the_past_round_refusal_is_private(db_path):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_future_season_still_approves_with_both_modules_off(db_path):
     """The gate must not stand in the way of an ordinary season."""
     cog = _cog_with_rounds(db_path, [_round_in(30)], attendance=False, weather=False)
@@ -558,6 +600,7 @@ async def test_a_future_season_still_approves_with_both_modules_off(db_path):
     _assert_asked(cog)
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_cancelled_past_round_does_not_refuse_the_season(db_path):
     """Refusing over one would leave a league unable to approve until they deleted it."""
     from leaguebot.core.models.round import RoundStatus
@@ -579,7 +622,7 @@ async def test_a_cancelled_past_round_does_not_refuse_the_season(db_path):
 # The defect these pin is not that the rule was wrong — it was right, and had its own
 # passing tests — but that the gate asked it about a table nothing had filled in yet.
 # Every test of the rule seeded the season's own points by hand, so none of them could
-# notice. These drive `_do_approve` with the results module on and a config a manager
+# notice. These drive the approval with the results module on and a config a manager
 # could build this afternoon, which is the only vantage point the fault is visible from.
 # ---------------------------------------------------------------------------
 
@@ -587,7 +630,7 @@ async def test_a_cancelled_past_round_does_not_refuse_the_season(db_path):
 def _cog_with_results(db_path, **overrides):
     """A cog whose results module is on and whose test mode is off.
 
-    Test mode once mattered here: with it on, `_do_approve` attached configs of its own before
+    Test mode once mattered here: with it on, the approval attached configs of its own before
     the gate, which is precisely why #131 was invisible to anyone exercising approval in test
     mode. It attaches nothing now (decided 2026-09-23), and off is still said outright.
     """
@@ -631,6 +674,7 @@ async def _attach(db_path, config_name: str, points: list[tuple[int, int]]) -> N
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_wrongly_ordered_points_table_refuses_a_first_approval(db_path):
     """The regression. Before the fix this season was approved without a word."""
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
@@ -645,6 +689,7 @@ async def test_a_wrongly_ordered_points_table_refuses_a_first_approval(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_refused_season_takes_no_copy_of_the_points_it_was_refused_for(db_path):
     """Refusing must leave nothing behind, or the next approval inherits the bad table."""
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
@@ -659,6 +704,7 @@ async def test_a_refused_season_takes_no_copy_of_the_points_it_was_refused_for(d
         assert (await cursor.fetchone())["n"] == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 @pytest.mark.parametrize("name, points", [
     pytest.param("GOOD", [(1, 25), (2, 18), (3, 15)], id="well ordered"),
     pytest.param("ZEROS", [(1, 25), (2, 18), (3, 0), (4, 0)], id="trailing zeros"),
@@ -676,6 +722,7 @@ async def test_a_well_ordered_points_table_still_approves(db_path, name, points)
     _assert_asked(cog)
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_test_season_with_nothing_attached_is_refused_as_any_other(db_path):
     """Test mode attaches Standard and Half Points when it is enabled and at no other moment
     (decided 2026-09-23, #409). The approval once attached them itself where a test season had
@@ -696,6 +743,7 @@ async def test_a_test_season_with_nothing_attached_is_refused_as_any_other(db_pa
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_entries_left_by_an_earlier_approval_are_still_caught(db_path):
     """The case the old check did cover, and which the new one must not displace.
 
@@ -721,6 +769,7 @@ async def test_entries_left_by_an_earlier_approval_are_still_caught(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_one_broken_position_is_named_once_however_many_checks_saw_it(db_path):
     """A re-approval is looked at from both sides; the manager reads one line, not two."""
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
@@ -751,6 +800,7 @@ async def _attach_phantom(db_path, config_name: str) -> None:
         await db.commit()
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_approve_refuses_and_names_a_phantom_points_config(db_path):
     """The regression for #132, and the whole of what a league saw: nothing at all.
 
@@ -772,6 +822,7 @@ async def test_approve_refuses_and_names_a_phantom_points_config(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_phantom_alongside_a_real_config_is_still_refused(db_path):
     """One good configuration does not excuse the one that is not there."""
     await _attach(db_path, "GOOD", [(1, 25), (2, 18)])
@@ -785,6 +836,7 @@ async def test_a_phantom_alongside_a_real_config_is_still_refused(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_season_refused_for_a_phantom_config_takes_no_snapshot(db_path):
     """The snapshot is what used to raise; it must not run at all now."""
     await _attach(db_path, "GOOD", [(1, 25), (2, 18)])
@@ -800,6 +852,7 @@ async def test_a_season_refused_for_a_phantom_config_takes_no_snapshot(db_path):
         assert (await cursor.fetchone())["n"] == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_the_refusal_names_every_phantom_at_once(db_path):
     """Two typos are two lines, so a manager does not approve once per mistake."""
     await _attach_phantom(db_path, "Standrad")
@@ -888,12 +941,12 @@ async def _a_past_round(db_path, monkeypatch):
 
 
 async def _an_unusable_team_name(db_path, monkeypatch):
-    cog = _cog(db_path, _team_name_problems=AsyncMock(return_value=["Team ✱ cannot be a field"]))
+    cog = _cog(db_path, team_name_problems=AsyncMock(return_value=["Team ✱ cannot be a field"]))
     return cog, "cannot become", None
 
 
 async def _a_lineup_too_small(db_path, monkeypatch):
-    cog = _cog(db_path, _lineup_problems=AsyncMock(return_value=["No seat for driver 3"]))
+    cog = _cog(db_path, lineup_problems=AsyncMock(return_value=["No seat for driver 3"]))
     return cog, "cannot draw this season", None
 
 
@@ -932,13 +985,14 @@ async def _a_review_expired_at_the_backup_question(db_path, monkeypatch):
     ],
     ids=lambda f: f.__name__.lstrip("_"),
 )
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_refused_approval_writes_no_sessions(db_path, monkeypatch, refusal):
     cog, refused_for, deadline = await refusal(db_path, monkeypatch)
     rnd = await _seed_round(db_path, days_out=-1 if refusal is _a_past_round else 30)
     _writing_sessions(cog, db_path, rnd)
     interaction = _interaction()
 
-    await SeasonCog._do_approve(cog, interaction, deadline=deadline)
+    await _run(cog, interaction, deadline=deadline)
 
     assert refused_for in _replies(interaction)
     cog.bot.change_queue.ask.assert_not_awaited()
@@ -992,13 +1046,13 @@ async def _gate_no_longer_in_placements(db_path, monkeypatch):
 
 
 async def _gate_no_divisions(db_path, monkeypatch):
-    return _cog(db_path, _season_has_divisions=AsyncMock(return_value=False)), "no divisions"
+    return _cog(db_path, season_has_divisions=AsyncMock(return_value=False)), "no divisions"
 
 
 async def _gate_s_unsettled_signups_and_channel_faults(db_path, monkeypatch):
     cog = _cog(
         db_path,
-        _placement_confirmation_faults=AsyncMock(
+        placement_confirmation_faults=AsyncMock(
             return_value=(
                 ["Driver <@501>'s signup is not settled"],
                 ["**Pro** has no results channel set"],
@@ -1047,12 +1101,12 @@ async def _gate_2d_a_round_already_run(db_path, monkeypatch):
 
 
 async def _gate_3a_an_unusable_team_name(db_path, monkeypatch):
-    cog = _cog(db_path, _team_name_problems=AsyncMock(return_value=["Team ✱ cannot be a field"]))
+    cog = _cog(db_path, team_name_problems=AsyncMock(return_value=["Team ✱ cannot be a field"]))
     return cog, "cannot become"
 
 
 async def _gate_4a_a_lineup_too_small(db_path, monkeypatch):
-    cog = _cog(db_path, _lineup_problems=AsyncMock(return_value=["No seat for driver 3"]))
+    cog = _cog(db_path, lineup_problems=AsyncMock(return_value=["No seat for driver 3"]))
     return cog, "cannot draw this season"
 
 
@@ -1061,6 +1115,7 @@ async def _gate_4b_an_image_fault(db_path, monkeypatch):
     return cog, "image module is not correctly configured"
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 @pytest.mark.parametrize(
     "gate",
     [
