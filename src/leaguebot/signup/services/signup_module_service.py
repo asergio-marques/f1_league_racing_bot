@@ -40,9 +40,8 @@ DELETE_REPLACED_CHANNEL = "delete_replaced_channel"
 
 #: The order "the driver's signup" is chosen in: the latest season first, and within a season
 #: an approved signup before any other, then the latest. A seated driver's approved signup
-#: therefore outranks a later one the league rejected on another of their accounts (decided
-#: 2026-09-18). A driver cannot sign up again while approved, so within one account the rule
-#: changes nothing.
+#: therefore outranks a later one the league rejected on another of their accounts. A driver
+#: cannot sign up again while approved, so within one account the rule changes nothing.
 SIGNUP_PRECEDENCE_SQL = "season_id DESC, approved DESC, id DESC"
 
 
@@ -152,7 +151,7 @@ class SignupModuleService:
         Unassigned drivers are seeded by total_lap_ms ASC NULLS LAST, then by the moment their
         signup was submitted — not approved, and not last corrected. A driver still awaiting
         approval or correction follows them, holding no seed (``seed`` is None) — they are
-        listed because confirming placements waits on them too (issue #220).
+        listed because confirming placements waits on them too.
         """
         results = []
         for i, (driver, row) in enumerate(await self._unsettled_drivers(), start=1):
@@ -188,7 +187,7 @@ class SignupModuleService:
 
         ``slot_presence`` is **keyed** by the display ordinal, because that is the CSV
         column order, but each answer is **matched** on the slot's durable ID. Matching
-        on the ordinal is the defect in issue #126: it is a chronological position
+        on the ordinal is wrong: it is a chronological position
         recomputed on every read, so a slot added or removed since the driver signed up
         would put their X under somebody else's time.
         """
@@ -1049,8 +1048,8 @@ async def driver_signup_on(
 
     A driver's signups are kept under the account each was made from, so *accounts* are every
     account the driver has held (core's `accounts_of_profile`), and the signup is chosen across all
-    of them in `SIGNUP_PRECEDENCE_SQL`'s order: records are kept, never overwritten (#220), and an
-    approved one outranks a later one that was not (#243).
+    of them in `SIGNUP_PRECEDENCE_SQL`'s order: records are kept, never overwritten, and an
+    approved one outranks a later one that was not.
     """
     if not accounts:
         return None

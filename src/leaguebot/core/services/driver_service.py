@@ -145,7 +145,7 @@ async def drivers_in_states(db, states: Sequence[str]) -> list[dict[str, Any]]:
     (``id``), account (``discord_user_id``) and state (``current_state``), read on *db*.
 
     The one read a module lists drivers by their state through without reading `driver_profiles`
-    itself (core owns it, CLAUDE.md), as signup lists the unsettled ones.
+    itself, as signup lists the unsettled ones.
     """
     if not states:
         return []

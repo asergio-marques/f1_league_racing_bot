@@ -27,7 +27,11 @@ from leaguebot.core.services.cancellation_changes import SEASON_CANCEL
 from leaguebot.core.services.image_drawing import Held
 from leaguebot.core.services.round_moments import read_round_windows
 from leaguebot.core.services.confirmation_refusals import Confirmation, read_refusals
-from leaguebot.core.services.review_sections import Review, read_division_lines, read_review_sections
+from leaguebot.core.services.review_sections import (
+    Review,
+    read_division_lines,
+    read_review_sections,
+)
 from leaguebot.core.services.season_setup_change import KIND as SEASON_SETUP
 from leaguebot.core.services.season_review_changes import POST as SEASON_REVIEW_POST, REVIEW_WINDOW
 from leaguebot.core.services.season_end_changes import (

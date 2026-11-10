@@ -203,8 +203,8 @@ def mid_season_confirm_change(
     roles, a division's lineup), the image module's own drawing (*drawing*) and
     *rasteriser_fault* (what is wrong with the host's drawing program, None where nothing is),
     *driver_names_read* (the hook an unsettled driver is named through),
-    *division_channel_faults_read* (the hook each module names its own channels' faults through) and *now* (the queue's
-    clock, which stamps the lineup's audit).
+    *division_channel_faults_read* (the hook each module names its own channels' faults through)
+    and *now* (the queue's clock, which stamps the lineup's audit).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
