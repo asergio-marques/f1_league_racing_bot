@@ -180,8 +180,9 @@ and no module's operation, so a module's part of the moment is the module's own 
 added later signs up without core changing, the switch read aside (below). A hook keyed by a kind
 takes one function for each key instead, as a kind of timed job takes its one handler (see "Timed
 work and restarts") and a kind of a round's job its one `/test-mode advance` step; each is an object
-the builder makes and every module signs up on, never a registry a module keeps for the process. **A module's switch read is a keyed hook:** one reader for each module, keyed
-by the module's name, which the module's own work may also call; core asks for it by that name
+the builder makes and signs each module's own up on, never a registry a module keeps for the
+process. **A module's switch read is a keyed hook:** one reader for each module, keyed by the
+module's name, which the module's own work may also call; core asks for it by that name
 (`is_<module>_enabled`, or `is_enabled_on` on a connection the caller holds), because core names the
 modules and shows which are on in the reviews (the core specification's "Modules"), and keeps the
 dependency table (above). The key is the name the module's switch is asked by: `images` for the
