@@ -591,7 +591,7 @@ async def test_a_lineup_step_with_no_channel_raises(tmp_path):
     league = await ongoing_league(tmp_path)
     await league.write("UPDATE divisions SET lineup_channel_id = NULL WHERE id = ?", PRO)
     before = len(league.texts(LINEUP[PRO]))
-    step = lineup_step(league.bot.placement_service, now=lambda: league.clock.now)
+    step = lineup_step(league.bot.placement_service)
     ctx = SimpleNamespace(
         bot=league.bot, kept=[], step_payload={"division_id": PRO, "division_name": "Pro"},
         payload={}, tries=0,
