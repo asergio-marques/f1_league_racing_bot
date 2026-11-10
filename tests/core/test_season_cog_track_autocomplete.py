@@ -115,9 +115,6 @@ async def test_an_autocomplete_that_hangs_offers_nothing(cog, monkeypatch):
     await asyncio.wait(left_running, timeout=5)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: the autocomplete opens its own connection to read the tracks"
-)
 async def test_it_asks_the_service_with_a_lock_wait_short_enough_to_answer_in_time(
     cog, monkeypatch
 ):

@@ -18,7 +18,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection
+from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
 from leaguebot.core.models.round import Round as RoundModel
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.services.cancellation_changes import (
@@ -269,10 +269,9 @@ class RoundCog(commands.Cog):
         interaction token.
         """
         results: list[app_commands.Choice[str]] = []
-        async with get_connection(
+        _tracks = await track_service.list_tracks(
             self.bot.db_path, timeout=AUTOCOMPLETE_TIMEOUT_SECONDS
-        ) as _tdb:
-            _tracks = await track_service.get_all_tracks(_tdb)
+        )
         for r in _tracks:
             label = f"{r['id']:02d} \u2013 {r['name']}"
             if current.lower() in label.lower():
@@ -380,8 +379,7 @@ class RoundCog(commands.Cog):
         amendments: list[tuple[str, object]] = []
 
         if track:
-            async with get_connection(self.bot.db_path) as _tdb:
-                _resolved = await track_service.resolve_track_name(_tdb, track)
+            _resolved = await track_service.resolve_track(self.bot.db_path, track)
             if _resolved is None:
                 await refuse(
                     interaction,
