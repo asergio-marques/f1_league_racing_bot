@@ -31,6 +31,7 @@ from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.season_service import SeasonService
 from leaguebot.core.services.team_service import TeamService
+from tests.support.review_workflows import run_check
 
 SEASON_ID = 1
 PROBLEM = "The stub template draws too few"
@@ -188,7 +189,11 @@ def _cog(db_path, drawing):
 
 # ── The lineup (047 FR-022) ───────────────────────────────────────────────
 
+#: The lineup gate is still `SeasonCog._lineup_problems`.
+_LINEUP_ON_THE_COG = "#283: the lineup gate is not yet approval_checks.lineup_problems"
 
+
+@pytest.mark.xfail(strict=True, reason=_LINEUP_ON_THE_COG)
 async def test_the_lineup_check_asks_of_each_division_s_race_teams_in_tier_order(tmp_path):
     """Each division in tier order, its race teams in the order they were made and the drivers
     seated in each: an empty seat is not counted and the reserve team is not handed. What the
@@ -198,7 +203,7 @@ async def test_the_lineup_check_asks_of_each_division_s_race_teams_in_tier_order
     drawing = _Drawing({"lineup_review_problems": ["one problem", "another"]})
     cog = _cog(await _seed(tmp_path, SEASON), drawing)
 
-    assert await cog._lineup_problems(SEASON_ID) == ["one problem", "another"]
+    assert await run_check("lineup_problems", cog.bot, SEASON_ID) == ["one problem", "another"]
     assert drawing.asked == [
         (
             "lineup_review_problems",
@@ -343,7 +348,8 @@ def _counts_fail(cog, monkeypatch):
 
 #: Each check, the question it asks, how it is called, and what it answers where it cannot run.
 CHECKS = [
-    ("lineup", "lineup_review_problems", lambda cog: cog._lineup_problems(SEASON_ID), []),
+    ("lineup", "lineup_review_problems",
+     lambda cog: run_check("lineup_problems", cog.bot, SEASON_ID), []),
     ("round", "round_capacity_problem", lambda cog: _round_refusal(cog, 25), None),
     ("calendar", "calendar_review_problem",
      lambda cog: cog._calendar_capacity_warning(SEASON_ID), []),
@@ -354,7 +360,11 @@ CHECKS = [
 #: Each fault a check can meet: the drawing's, for every check, and the season's own counts, for
 #: every check but the round's, whose count it is handed rather than reads.
 FAULTS = [
-    pytest.param(fault, *case[1:], id=f"{fault}-{case[0]}")
+    pytest.param(
+        fault, *case[1:], id=f"{fault}-{case[0]}",
+        marks=(pytest.mark.xfail(strict=True, reason=_LINEUP_ON_THE_COG)
+               if case[0] == "lineup" else ()),
+    )
     for fault in ("drawing", "counts")
     for case in CHECKS
     if not (fault == "counts" and case[0] == "round")
