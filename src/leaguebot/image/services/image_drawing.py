@@ -475,6 +475,8 @@ class ImageDrawing:
             if not await self._modules.is_images_enabled():
                 return False
             return await self._config.is_aspect_enabled(CALENDAR_ASPECT)
+        except LookupError:
+            raise  # a module that never signed up is a fault in the bot's assembly, not a reading
         except Exception:  # noqa: BLE001 — a stated exception, see the docstring
             log.exception("calendar: could not read the image gates")
             return False

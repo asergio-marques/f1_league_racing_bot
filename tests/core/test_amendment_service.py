@@ -1343,6 +1343,27 @@ async def test_the_attendance_channels_are_not_checked_while_the_module_is_off(d
 
 
 @pytest.mark.asyncio
+async def test_an_attendance_switch_nobody_signed_up_for_is_raised_not_read_as_off(db_path):
+    """The attendance module's switch reader was never signed up (`LookupError`): that is a fault
+    in the bot's assembly, not a switch that cannot be read, so `approval_faults` raises it rather
+    than standing aside and reading the module as off."""
+    from unittest.mock import AsyncMock
+
+    from leaguebot.core.services.amendment_service import approval_faults
+
+    path, season_id = db_path
+    await _seed_season_points(path, season_id)
+    await _seed_division_with_rounds(path, season_id)
+    await _staged_amendment(path, season_id)
+
+    bot = await _bot_recording_reposts(path, [])
+    bot.module_service.is_attendance_enabled = AsyncMock(side_effect=LookupError("attendance"))
+
+    with pytest.raises(LookupError, match="attendance"):
+        await approval_faults(path, season_id, bot)
+
+
+@pytest.mark.asyncio
 async def test_the_approval_is_logged_after_the_cascade_not_before(db_path):
     """The log records the approval once the reposting it claims has been done (#187).
 

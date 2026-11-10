@@ -47,7 +47,8 @@ async def approval_faults(db_path: str, season_id: int, bot: LeagueBot) -> list[
     composes them, and reaches into neither's configuration itself.
 
     A fault reading whether the attendance module is on stands aside, logged on the host and read
-    as off: an attendance switch that cannot be read never refuses an amendment.
+    as off: an attendance switch that cannot be read never refuses an amendment. A switch nobody
+    signed up for is not such a fault but one in the bot's assembly, and its `LookupError` is raised.
     """
     from leaguebot.results.services import results_post_service
 
