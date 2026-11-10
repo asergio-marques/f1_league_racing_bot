@@ -465,7 +465,7 @@ CREATE TABLE "rounds" (
     round_number    INTEGER NOT NULL,
     format          TEXT    NOT NULL,  -- NORMAL | SPRINT | MYSTERY | ENDURANCE
     track_name      TEXT,
-    scheduled_at    TEXT    NOT NULL,  -- ISO datetime UTC, e.g. 2025-06-15T18:00:00
+    scheduled_at    TEXT    NOT NULL,  -- ISO 8601 UTC with its offset, e.g. 2025-06-15T18:00:00+00:00
     phase1_done     INTEGER NOT NULL DEFAULT 0,
     phase2_done     INTEGER NOT NULL DEFAULT 0,
     phase3_done     INTEGER NOT NULL DEFAULT 0,

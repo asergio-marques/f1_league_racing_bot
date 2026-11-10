@@ -1,7 +1,7 @@
 """Round model, and the plain data that places a round's timed events: its job kinds and windows."""
 from __future__ import annotations
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 class RoundFormat(str, Enum):
@@ -98,6 +98,19 @@ class Round:
     phase2_done: bool = False
     phase3_done: bool = False
     status: str = RoundStatus.NOT_RUN.value
+
+
+def read_scheduled_at(stored: str) -> datetime:
+    """A round's stored moment as an aware UTC datetime: the one reader of ``rounds.scheduled_at``.
+
+    Every writer stores ``moment.astimezone(timezone.utc).isoformat()``, the offset included, so
+    no reader makes a moment aware itself. A value without an offset is no form a writer
+    produces, and it is refused with a ``ValueError`` rather than read as UTC by guesswork.
+    """
+    moment = datetime.fromisoformat(stored)
+    if moment.tzinfo is None:
+        raise ValueError(f"a round's stored moment carries no offset: {stored!r}")
+    return moment.astimezone(timezone.utc)
 
 
 #: The kinds of the jobs the weather module owns: its three forecast phases and the post-race

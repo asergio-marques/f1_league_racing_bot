@@ -74,12 +74,6 @@ def test_round_event_moments(scheduled_at, weather, check_in, offsets):
     assert all(each.tzinfo is not None for each in moments.values())
 
 
-
-#: Why the one reader's tests fail until the build adds it.
-_ONE_READER = "#283: no single reader of a round's stored moment yet"
-
-
-@pytest.mark.xfail(strict=True, reason=_ONE_READER)
 @pytest.mark.parametrize(
     "stored",
     [
@@ -98,7 +92,6 @@ def test_a_stored_round_moment_is_read_as_an_aware_utc_moment(stored):
     assert moment.utcoffset() == timedelta(0)
 
 
-@pytest.mark.xfail(strict=True, reason=_ONE_READER)
 def test_a_stored_round_moment_without_its_offset_is_refused():
     """A round's moment stored as "2026-06-14T14:00:00", with no offset, is a form no writer
     produces: the one reader refuses it with a ValueError rather than guess its zone."""
