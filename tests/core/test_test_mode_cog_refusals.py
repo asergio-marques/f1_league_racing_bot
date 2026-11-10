@@ -5,9 +5,13 @@ line naming the member, what was refused and why, and only a view, a list, a pre
 About record nothing. Each case below turns a league admin away at one of the test-mode cog's own
 checks, and expects today's reply, seen by them alone, and exactly one standard refusal line; a
 refusal on the roster import form names the form. The refusal to change the roster outside
-placements is recorded already and is not a case; the restore confirmation is tested in
-`test_test_mode_backup.py`. `/test-mode nationality` is refused by its setting's check, which the
-change queue makes (#283), and is tested with the command in `test_test_mode_cog_roster.py`;
+placements is recorded already and is not a case, and neither is a refusal `/test-mode roster
+remove`, `clear` or the import form makes of what the database holds: each is judged as the change
+is asked of the queue (#283), and is tested with its command in `test_test_mode_roster_remove.py`,
+`test_test_mode_roster_clear.py` and `test_test_mode_roster_add_bulk.py`. The restore
+confirmation is tested in `test_test_mode_backup.py`. `/test-mode nationality` is refused by its
+setting's check, which the change queue makes (#283), and is tested with the command in
+`test_test_mode_cog_roster.py`;
 `/test-mode toggle`'s refusals, judged at the ask and again as its change starts, are tested with
 the command in `test_test_mode_toggle_guard.py`.
 
@@ -26,7 +30,6 @@ from leaguebot.core.cogs.test_mode_cog import TestModeCog as _Cog
 from leaguebot.core.cogs.test_mode_cog import _RosterImportModal
 from leaguebot.core.services import backup_service
 from leaguebot.core.services import test_mode_service
-from leaguebot.core.services import test_roster_service
 from leaguebot.core.utils import roster_import
 from leaguebot.results.services import result_submission_service
 from tests.support.undecorate import undecorate
@@ -192,28 +195,11 @@ def _backup(*, exists: bool, readable: bool = True):
     return setup
 
 
-def _roster_service_refuses(name: str, reason: str):
-    def setup(cog, monkeypatch):
-        monkeypatch.setattr(test_roster_service, name, AsyncMock(return_value=reason))
-    return setup
-
-
 def _paste_unreadable(cog, monkeypatch):
     monkeypatch.setattr(
         roster_import,
         "parse_roster_csv",
         MagicMock(return_value=([], ["Row 2: no team is named `XYZ`."])),
-    )
-
-
-def _paste_refused_by_the_service(cog, monkeypatch):
-    monkeypatch.setattr(
-        roster_import, "parse_roster_csv", MagicMock(return_value=([MagicMock()], []))
-    )
-    monkeypatch.setattr(
-        test_roster_service,
-        "add_test_drivers_in_bulk",
-        AsyncMock(return_value=(0, ["Pro already holds drivers."])),
     )
 
 
@@ -321,12 +307,6 @@ _CASES = {
         None,
         _submit_import_form,
         _paste_unreadable,
-        "The roster was not imported — 1 problem(s)",
-    ),
-    "import form refused by the service": (
-        None,
-        _submit_import_form,
-        _paste_refused_by_the_service,
         "The roster was not imported — 1 problem(s)",
     ),
 }
