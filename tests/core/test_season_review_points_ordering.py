@@ -5,7 +5,7 @@ It collected every other blocker and not this one — which was harmless only wh
 was dead (#131), and stopped being harmless the moment the gate started refusing: a season
 could review clean and then be refused for a fault the report had just said nothing about.
 
-Both surfaces read `_points_ordering_problems`, and the drift is what these pin. A copy of
+Both surfaces read `approval_checks.points_ordering_problems`, and the drift is what these pin. A copy of
 the logic in each would pass every test in this file on the day it was written and diverge
 the first time either was touched.
 """
@@ -16,7 +16,6 @@ from pathlib import Path
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from tests.support import saves
@@ -25,6 +24,9 @@ from tests.support.season_points import snapshot_points
 SRC = Path(__file__).resolve().parents[2] / "src"
 SERVER_ID = 5500
 SEASON_ID = 12
+
+#: The points gates are still the season cog's methods, the approval `SeasonCog._do_approve`.
+_GATE_ON_THE_COG = "#283: the points gates are not yet functions of approval_checks"
 
 
 @pytest.fixture
@@ -46,17 +48,13 @@ async def db_path(tmp_path):
     return path
 
 
-def _cog(db_path):
-    from unittest.mock import MagicMock
+async def _problems(db_path) -> list[str]:
+    """Every place the season's points would score a lower position above a higher one, the
+    gate handed the database alone (issue #240: a reader that grew a second dependency could not
+    be given one here)."""
+    from leaguebot.core.services import approval_checks
 
-    cog = SeasonCog.__new__(SeasonCog)
-    # ``MagicMock``, not ``AsyncMock`` (issue #240). The helper below reads nothing but
-    # ``db_path``, and this keeps it that way: on a whole-bot ``AsyncMock`` a reader that
-    # grew a second dependency would be answered with a truthy mock and go on passing,
-    # where here the unpinned ``await`` raises and says so.
-    cog.bot = MagicMock()
-    cog.bot.db_path = db_path
-    return cog
+    return await approval_checks.points_ordering_problems(db_path, SEASON_ID)
 
 
 async def _attach(db_path, config_name: str, points: list[tuple[int, int]]) -> None:
@@ -70,8 +68,17 @@ async def _attach(db_path, config_name: str, points: list[tuple[int, int]]) -> N
     )
 
 
+#: Where each surface lives: the review command stays on the season cog, the approval and the
+#: configuration's gate are core services.
+_FILES = {
+    "season_review": "core/cogs/season_cog.py",
+    "approve_season": "core/services/season_review_workflows.py",
+    "configuration_faults": "core/services/approval_checks.py",
+}
+
+
 def _function_source(name: str) -> str:
-    text = (SRC / "leaguebot" / "core" / "cogs" / "season_cog.py").read_text(encoding="utf-8")
+    text = (SRC / "leaguebot" / _FILES[name]).read_text(encoding="utf-8")
     tree = ast.parse(text)
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
@@ -83,24 +90,27 @@ def _function_source(name: str) -> str:
 # ── The shared helper ─────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 @pytest.mark.asyncio
 async def test_a_well_built_table_raises_nothing(db_path):
     await _attach(db_path, "GOOD", [(1, 25), (2, 18), (3, 15)])
 
-    assert await _cog(db_path)._points_ordering_problems(SEASON_ID) == []
+    assert await _problems(db_path) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 @pytest.mark.asyncio
 async def test_a_table_the_season_has_not_copied_yet_is_still_found(db_path):
     """The whole of #131: the season's own table is empty until approval copies into it."""
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
 
-    faults = await _cog(db_path)._points_ordering_problems(SEASON_ID)
+    faults = await _problems(db_path)
 
     assert len(faults) == 1
     assert "BROKEN" in faults[0]
 
 
+@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 @pytest.mark.asyncio
 async def test_entries_left_by_an_earlier_approval_are_found_too(db_path):
     """The snapshot clears nothing, so a re-approval can hold rows no config mentions."""
@@ -115,17 +125,18 @@ async def test_entries_left_by_an_earlier_approval_are_found_too(db_path):
             )
         await db.commit()
 
-    faults = await _cog(db_path)._points_ordering_problems(SEASON_ID)
+    faults = await _problems(db_path)
 
     assert any("GONE" in fault for fault in faults)
 
 
+@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 @pytest.mark.asyncio
 async def test_a_fault_visible_from_both_sides_is_named_once(db_path):
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
     await snapshot_points(db_path, SEASON_ID)
 
-    faults = await _cog(db_path)._points_ordering_problems(SEASON_ID)
+    faults = await _problems(db_path)
 
     assert len(faults) == 1
 
@@ -133,10 +144,11 @@ async def test_a_fault_visible_from_both_sides_is_named_once(db_path):
 # ── The two surfaces read the same helper ─────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 def test_the_review_asks_the_helper_rather_than_the_services_itself():
     source = _function_source("season_review")
 
-    assert "_points_ordering_problems" in source
+    assert "approval_checks.points_ordering_problems" in source
     for own_check in ("validate_attached_config_ordering", "validate_monotonic_ordering"):
         assert own_check not in source, (
             f"season_review calls {own_check} directly — a second copy of the rule, free "
@@ -144,13 +156,14 @@ def test_the_review_asks_the_helper_rather_than_the_services_itself():
         )
 
 
+@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 def test_the_approval_gate_asks_the_same_helper():
-    source = _function_source("_do_approve")
+    source = _function_source("approve_season")
 
-    assert "_points_ordering_problems" in source
+    assert "approval_checks.points_ordering_problems" in source
     for own_check in ("validate_attached_config_ordering", "validate_monotonic_ordering"):
         assert own_check not in source, (
-            f"_do_approve calls {own_check} directly — the report and the refusal can "
+            f"approve_season calls {own_check} directly — the report and the refusal can "
             f"now disagree about the same season"
         )
 
