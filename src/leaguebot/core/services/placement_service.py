@@ -433,6 +433,29 @@ class PlacementService:
         async with get_connection(self._db_path) as db:
             return await uncommitted_placements_on(db, season_id)
 
+    async def division_lineup(self, division_id: int) -> list[dict]:
+        """Every driver assigned in *division_id*, committed or not, for the season review.
+
+        One row each, ordered by the team's full name and then the driver: *discord_user_id*,
+        *is_test_driver*, *test_display_name*, *team_name* (the team's full name) and
+        *is_reserve*. Read on a connection of its own.
+        """
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                """
+                SELECT dp.discord_user_id, dp.is_test_driver, dp.test_display_name,
+                       ti.full_name AS team_name, ti.is_reserve
+                FROM driver_season_assignments dsa
+                JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
+                JOIN team_seats ts ON ts.id = dsa.team_seat_id
+                JOIN team_instances ti ON ti.id = ts.team_instance_id
+                WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
+                ORDER BY ti.full_name, dp.discord_user_id
+                """,
+                (division_id,),
+            )
+            return [dict(row) for row in await cursor.fetchall()]
+
     # ------------------------------------------------------------------
     # Image template capacity (036 / Constitution XIV.12)
     # ------------------------------------------------------------------

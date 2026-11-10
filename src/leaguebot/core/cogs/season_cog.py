@@ -19,7 +19,6 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import approval_checks
@@ -676,21 +675,7 @@ class SeasonCog(commands.Cog):
                 )
                 if role_warning is not None:
                     lineup_lines.append(role_warning)
-            async with get_connection(self.bot.db_path) as _db:
-                _cur = await _db.execute(
-                    """
-                    SELECT dp.discord_user_id, dp.is_test_driver, dp.test_display_name,
-                           ti.full_name AS team_name, ti.is_reserve
-                    FROM driver_season_assignments dsa
-                    JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
-                    JOIN team_seats ts ON ts.id = dsa.team_seat_id
-                    JOIN team_instances ti ON ti.id = ts.team_instance_id
-                    WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
-                    ORDER BY ti.full_name, dp.discord_user_id
-                    """,
-                    (div.id,),
-                )
-                assignment_rows = await _cur.fetchall()
+            assignment_rows = await self.bot.placement_service.division_lineup(div.id)
             if assignment_rows:
                 regular_teams: dict[str, list[str]] = {}
                 reserve_teams: dict[str, list[str]] = {}

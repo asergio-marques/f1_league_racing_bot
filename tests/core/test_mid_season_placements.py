@@ -54,9 +54,6 @@ async def test_the_uncommitted_placements_are_listed(db_path):
     assert placements[0]["team_name"] == "Alpha"
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: the season review reads a division's lineup in the cog"
-)
 async def test_a_division_s_lineup_is_its_assigned_drivers_by_team(db_path):
     """The lineup the season review shows, read of the placements service (#283). Beside the
     fixture's Alpha (1001 committed, 1002 uncommitted, 1003 seated with no placement), a reserve
