@@ -22,7 +22,7 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -253,6 +253,33 @@ async def test_no_late_call_for_a_round_left_alone(tmp_path, seed):
 
     attendance_enabled = seed.get("attendance_enabled", True)
     assert await _late_calls(db_path, attendance_enabled=attendance_enabled) == 0
+
+
+async def test_the_calls_owed_are_asked_in_the_order_their_rounds_race(tmp_path):
+    """Division 1 owes two calls: round 429, two days out, and round 430, added after it but
+    racing a day out, both moments stored in UTC with their offset. The restart asks for round
+    430's call first and round 429's second: the rounds are taken in the order they race, not
+    the order they were added."""
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+            "scheduled_at, status, checkin_cleared) "
+            "VALUES (?, ?, 5, 'NORMAL', 'Monza Circuit', ?, 'NOT_RUN', 0)",
+            (ROUND_ID + 1, DIVISION_ID, (NOW + timedelta(days=1)).isoformat()),
+        )
+        await db.commit()
+    bot = await _make_bot(db_path)
+    asked: list[int] = []
+
+    async def _record(_queue: Any, _db_path: Any, round_id: int, **_kwargs: Any) -> None:
+        asked.append(round_id)
+
+    with patch("leaguebot.attendance.services.check_in_changes.ask_check_in_call",
+               new=AsyncMock(side_effect=_record)):
+        await _recover_missed_check_in_calls(bot, now=NOW)
+
+    assert asked == [ROUND_ID + 1, ROUND_ID]
 
 
 # ---------------------------------------------------------------------------

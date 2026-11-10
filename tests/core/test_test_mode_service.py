@@ -891,6 +891,22 @@ def _round_row(summary: str, round_number: int) -> str:
     return rows[0]
 
 
+async def test_the_review_lists_a_division_s_rounds_in_the_order_they_race(tmp_path) -> None:
+    """Division A holds round 1 (Monza), a fortnight ahead, and round 2 (Bahrain), added after it
+    but three days ahead, both moments stored in UTC with their offset. The review lists round 2
+    above round 1: a division's rounds in the order they race, not the order they were added."""
+    db_path = str(tmp_path / "review_order.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [
+        {"track_name": "Monza", "scheduled_at": (NOW + timedelta(days=14)).isoformat()},
+        {"track_name": "Bahrain", "scheduled_at": (NOW + timedelta(days=3)).isoformat()},
+    ])
+
+    summary = await build_review_summary(db_path, now=NOW)
+
+    assert summary.index(_round_row(summary, 2)) < summary.index(_round_row(summary, 1))
+
+
 async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_scheduler) -> None:
     """Every step of a season armed as approval arms it has its job queued, and reads ⏳."""
     db_path = await _season_armed_as_approval_arms_it(tmp_path, paused_scheduler)
@@ -1312,6 +1328,28 @@ async def test_the_steps_passed_over_are_a_raced_round_s_undone_weather_steps(tm
         (1, 1), (1, 2), (1, 3), (2, 0),
     ]
     assert {step["division_name"] for step in steps} == {"Division A"}
+
+
+async def test_the_steps_passed_over_follow_the_order_the_rounds_raced(tmp_path) -> None:
+    """Weather is on, and it is noon on 12 October 2026. Round 1 (Bahrain) was raced an hour ago
+    and round 2 (Monza), added after it, two hours ago, neither with a phase done and both
+    moments stored in UTC with their offset. The steps named as passed over are round 2's Phases
+    1, 2 and 3, then round 1's: in the order the rounds raced, not the order they were added."""
+    from leaguebot.core.services.test_mode_service import get_passed_over_steps
+
+    now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
+    db_path = str(tmp_path / "passed_over_order.db")
+    await run_migrations(db_path)
+    await _seed_with_weather(db_path, [
+        {"track_name": "Bahrain", "scheduled_at": "2026-10-12T11:00:00+00:00"},
+        {"track_name": "Monza", "scheduled_at": "2026-10-12T10:00:00+00:00"},
+    ])
+
+    steps = await get_passed_over_steps(db_path, now=now)
+
+    assert [(step["round_number"], step["phase_number"]) for step in steps] == [
+        (2, 1), (2, 2), (2, 3), (1, 1), (1, 2), (1, 3),
+    ]
 
 
 async def test_no_step_is_passed_over_while_the_weather_module_is_off(tmp_path) -> None:
