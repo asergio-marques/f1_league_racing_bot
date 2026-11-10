@@ -13,8 +13,6 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.teams import seed_team_instances
 
-ASKED_OF_RESULTS = "#283: core does not yet ask results for a driver's records through a hook"
-
 A, B, C = "6501", "6502", "6503"
 LEADER = "6464"
 #: Seasons 1 and 3; season 1 holds Pro and Am, season 3 holds Pro.
@@ -70,7 +68,6 @@ async def _took_part(db, how: str, account: str, division: int) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_RESULTS)
 @pytest.mark.parametrize("how", ["race", "qualifying", "standing"])
 async def test_results_answers_the_divisions_a_driver_s_accounts_raced_in(tmp_path, how):
     """A driver holds accounts A and B. A holds a race result, a qualifying result or a standing
@@ -108,7 +105,6 @@ async def _standings(db, rows: list[tuple[int, str, int, int]]) -> None:
         )
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_RESULTS)
 async def test_results_answers_a_driver_s_last_standing_and_the_winner_s_points(tmp_path):
     """Season 1 Pro raced rounds 2 to 4 with standings. The driver stood 1st on 25 and 1st on 43
     after rounds 2 and 3 on account A, then changed account and stood 2nd on 88 after round 4 on
@@ -129,7 +125,6 @@ async def test_results_answers_a_driver_s_last_standing_and_the_winner_s_points(
         assert tuple(await season_standing_on(db, S1_AM, [A, B])) == (None, None)
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_RESULTS)
 async def test_the_builder_signs_results_up_for_a_driver_s_records(tmp_path, monkeypatch):
     """Results answers which divisions a driver raced in and their season standing. The hooks as
     the builder makes them ask results' own answers, each handed the save's connection and what

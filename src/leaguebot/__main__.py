@@ -554,6 +554,27 @@ def _sign_up_to_placements_confirmed(bot: LeagueBot) -> None:
     bot.placements_confirmed_steps.subscribe(partial(sheet_posting.opening_steps, bot.module_service))
 
 
+def _sign_up_to_divisions_raced_read(bot: LeagueBot) -> None:
+    """Make the hook `/driver reassign` asks which divisions a driver's accounts raced in through,
+    and sign results' read of its own records up to it, handed the connection of the check or the
+    save that asks and the accounts. The builder hands it to the change."""
+    from leaguebot.results.services import results_purge_service
+
+    bot.divisions_raced_read = AwaitedHook()
+    bot.divisions_raced_read.subscribe(results_purge_service.divisions_raced_on)
+
+
+def _sign_up_to_season_standing_read(bot: LeagueBot) -> None:
+    """Make the hook a season's history is written through, asking each driver's standing in a
+    division, and sign results' read of its own standings up to it, handed the connection of the
+    save that writes the history, the division and the driver's accounts. The builder hands it to
+    the completion and to the cancellation."""
+    from leaguebot.results.services import season_standings_posts
+
+    bot.season_standing_read = AwaitedHook()
+    bot.season_standing_read.subscribe(season_standings_posts.season_standing_on)
+
+
 def _sign_up_to_season_completed(bot: LeagueBot) -> None:
     """Make the hooks a division's final round read and a season completed declare, and sign
     each module's final post up to them: results' read of its own `session_results` and its
@@ -1769,6 +1790,8 @@ async def build(settings: Settings) -> LeagueBot:
     _sign_up_to_review_marks_read(bot)
     _sign_up_to_driver_account_changed(bot)
     _sign_up_to_placements_confirmed(bot)
+    _sign_up_to_divisions_raced_read(bot)
+    _sign_up_to_season_standing_read(bot)
     _sign_up_to_season_completed(bot)
     _sign_up_to_season_end(bot)
     _sign_up_to_deletes(bot)

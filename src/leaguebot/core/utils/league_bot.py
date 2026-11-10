@@ -239,6 +239,20 @@ class LeagueBot(commands.Bot):
     #: makes it and hands it to the completion, which asks it for each division the completion
     #: still has after its own divisions still CANCELLED are left out.
     final_round_read: AwaitedHook
+    #: The divisions a driver's accounts raced in (`/driver reassign`'s check and its save), given
+    #: the connection and the accounts: each module signing up its own read, handing back the
+    #: ids of the divisions it holds a result or a standing under any of them (results'). Core
+    #: joins the answers to the divisions the driver holds a seat in; with no subscriber the
+    #: driver raced in none. The builder makes it and hands it to the change.
+    divisions_raced_read: AwaitedHook
+    #: A driver's standing in a division for the history written at a season's end (the
+    #: completion's and the cancellation's second save), given the connection, the division's id
+    #: and the accounts the driver has held: each module signing up its own read, handing back
+    #: the driver's last standing as (position, points) or None, and the division's winner's
+    #: points or None (results'). Core takes the first answer a module gives and writes the
+    #: history itself; with no subscriber the history records no position, no points and no gap.
+    #: The builder makes it and hands it to both changes.
+    season_standing_read: AwaitedHook
     #: A season completed (the completion's first save), given the connection and a division's id,
     #: name and the round its final classification is drawn against: each module signing up its
     #: own final post, handing back the jobs it plans for that division (results' final standings,

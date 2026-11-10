@@ -40,6 +40,7 @@ what becomes of the announcement of a ban that itself survives the module being 
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -406,6 +407,38 @@ async def profiles_merged_on(db: aiosqlite.Connection, kept_id: int, absorbed_id
         "UPDATE driver_standings_snapshots SET driver_profile_id = ? WHERE driver_profile_id = ?",
         moved,
     )
+
+
+async def divisions_raced_on(db: aiosqlite.Connection, accounts: Sequence[str]) -> set[int]:
+    """The ids of the divisions in which any of *accounts* holds a race result, a qualifying
+    result or a standing, read on *db*; none where *accounts* is empty.
+
+    Signed up to core's `divisions_raced_read`, which `/driver reassign` asks on the connection
+    its check and its save hold, handing the accounts the driver has held: core joins what it
+    answers to the divisions the driver holds a seat in (architecture.md, "How modules and core
+    fit together"). A division belongs to one season, so a division both sides of a merge raced in
+    is one person in one season's standings twice.
+    """
+    if not accounts:
+        return set()
+    held = [int(account) for account in accounts]
+    marks = ",".join("?" for _ in held)
+    cursor = await db.execute(
+        f"""
+        SELECT sr.division_id FROM race_session_results x
+        JOIN session_results sr ON sr.id = x.session_result_id
+        WHERE x.driver_user_id IN ({marks})
+        UNION
+        SELECT sr.division_id FROM qualifying_session_results x
+        JOIN session_results sr ON sr.id = x.session_result_id
+        WHERE x.driver_user_id IN ({marks})
+        UNION
+        SELECT division_id FROM driver_standings_snapshots
+        WHERE driver_user_id IN ({marks})
+        """,  # noqa: S608
+        (*held, *held, *held),
+    )
+    return {int(row[0]) for row in await cursor.fetchall()}
 
 
 async def bot_packed_on(db: aiosqlite.Connection) -> None:

@@ -25,7 +25,7 @@ copy before it posts both again.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -237,6 +237,42 @@ async def final_round_on(db: Any, division_id: int) -> int | None:
         if await cursor.fetchone() is not None:
             return round_id
     return None
+
+
+async def season_standing_on(
+    db: Any, division_id: int, accounts: Sequence[str]
+) -> tuple[tuple[int, int] | None, int | None]:
+    """A driver's last standing in *division_id* and the division's winner's points, read on the
+    save's connection, signed up to core's `season_standing_read`.
+
+    Core hands the accounts the driver has held, and writes the season's history entry from what
+    this hands back: `((position, points) or None, winner's points or None)`. The standing is the
+    driver's under whichever of *accounts* it stands in the latest round that holds one: a driver
+    who changed account after the last round finished it under the old one. The winner's points
+    are the most any driver holds in the latest round with a standing at all. The round ids come
+    from core's `division_rounds_on`, newest first, read on this same connection, rather than from
+    a join of `rounds` into these queries (architecture.md, "The database"). No standing is None,
+    and so is a division with no standings.
+    """
+    rounds = await division_rounds_on(db, division_id)
+    cursor = await db.execute(
+        "SELECT round_id, MAX(total_points) FROM driver_standings_snapshots "
+        "WHERE division_id = ? GROUP BY round_id",
+        (division_id,),
+    )
+    winners = {int(row[0]): int(row[1]) for row in await cursor.fetchall()}
+    standings: dict[int, tuple[int, int]] = {}
+    if accounts:
+        marks = ",".join("?" for _ in accounts)
+        cursor = await db.execute(
+            "SELECT round_id, standing_position, total_points FROM driver_standings_snapshots "
+            f"WHERE division_id = ? AND driver_user_id IN ({marks}) ORDER BY id",  # noqa: S608
+            (division_id, *(int(account) for account in accounts)),
+        )
+        standings = {int(row[0]): (int(row[1]), int(row[2])) for row in await cursor.fetchall()}
+    standing = next((standings[each] for each in rounds if each in standings), None)
+    winner = next((winners[each] for each in rounds if each in winners), None)
+    return standing, winner
 
 
 async def _final_round(db_path: str, division_id: int, round_id: int):
