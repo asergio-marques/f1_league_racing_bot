@@ -2960,6 +2960,15 @@ CATCH_ALLS_ALLOWED = {
         "still names them",
     ("core/services/scheduler_service.py", "SchedulerService._remove_job"):
         "a stated exception: a teardown goes on past one job that will not go",
+    ("core/services/amendment_service.py", "approval_faults"):
+        "a stated exception: an attendance switch that cannot be read never refuses an amendment",
+    ("core/services/approval_checks.py", "channel_on_server"):
+        "a stated exception: a channel check that cannot tell must not refuse a season",
+    ("core/services/season_fingerprint_service.py", "take_fingerprint"):
+        "a stated exception: a fingerprint that cannot be taken is empty, which refuses an approval",
+    ("core/cogs/bot_cog.py", "_clean_up"):
+        "a stated exception: a factory reset's clean-up that stops part-way says so, in its last "
+        "report and its closing line",
     ("core/services/season_review_changes.py", "season_review_post_change.draw_and_post"):
         "place 5, a picture that cannot be drawn is withheld and its fault is a line of the job",
     ("core/services/placement_service.py", "PlacementService._ask_drawing"):
@@ -3047,14 +3056,10 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_service.py", "enforce_attendance_sanctions"):
         (1, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "_checkin_attachment"): (2, PASS["attendance"]),
-    ("core/cogs/bot_cog.py", "_clean_up"): (1, PASS["core"]),
     ("core/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
-    ("core/services/amendment_service.py", "approval_faults"): (1, PASS["core"]),
-    ("core/services/approval_checks.py", "channel_on_server"): (1, PASS["core"]),
     ("core/services/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
     ("core/services/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),
     ("core/services/scheduler_service.py", "_one_off_timer_job"): (1, BACKGROUND_FAILURES),
-    ("core/services/season_fingerprint_service.py", "take_fingerprint"): (1, PASS["core"]),
     ("core/services/season_review_changes.py", "recover_expired_review_prompts"): (1, PASS["core"]),
     ("image/cogs/image_cog.py", "ImageCog._division_autocomplete"): (1, PASS["image"]),
     ("image/services/driver_portrait_service.py", "discard_portraits"): (1, PASS["image"]),

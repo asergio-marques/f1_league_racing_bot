@@ -1298,9 +1298,17 @@ async def test_approval_faults_names_a_cancelled_division_s_deleted_attendance_c
 
 
 @pytest.mark.asyncio
-async def test_the_attendance_channels_are_not_checked_while_the_module_is_off(db_path):
+@pytest.mark.parametrize(
+    "unreadable",
+    [pytest.param(False, id="module off"), pytest.param(True, id="module's state unreadable")],
+)
+async def test_the_attendance_channels_are_not_checked_while_the_module_is_off(db_path, unreadable):
     """A league without the attendance module must not be refused for a channel it has
-    never configured — the same gate the cascade's own recalculation holds to."""
+    never configured — the same gate the cascade's own recalculation holds to. Nor is one whose
+    attendance switch cannot be read (the database is locked): the reader stands aside, so it is
+    never the thing that refuses an amendment."""
+    from unittest.mock import AsyncMock
+
     path, season_id = db_path
     await _seed_season_points(path, season_id)
     division_id, _raced, _unraced = await _seed_division_with_rounds(path, season_id)
@@ -1316,8 +1324,13 @@ async def test_the_attendance_channels_are_not_checked_while_the_module_is_off(d
         await db.commit()
     await _staged_amendment(path, season_id)
 
-    # 601 is absent, but the module is off, so nothing asks after it.
-    await _approve(path, season_id, await _bot_recording_reposts(path, [], missing=(601,)))
+    # 601 is absent, but the module is off, or cannot be read, so nothing asks after it.
+    bot = await _bot_recording_reposts(path, [], missing=(601,))
+    if unreadable:
+        bot.module_service.is_attendance_enabled = AsyncMock(
+            side_effect=sqlite3.OperationalError("database is locked")
+        )
+    await _approve(path, season_id, bot)
 
     async with get_connection(path) as db:
         row = await (

@@ -17,6 +17,8 @@ import importlib
 import logging
 from typing import Any
 
+import pytest
+
 _MODULE = "leaguebot.core.services.start_up"
 
 
@@ -157,3 +159,39 @@ async def test_a_queue_that_fails_to_start_still_resumes_the_scheduler(caplog):
     assert record.calls[-2:] == ["queue start failed", "scheduler resumed"]
     [error] = [r for r in caplog.records if r.levelno >= logging.ERROR]
     assert error.exc_info is not None and error.exc_info[0] is RuntimeError
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the expired review prompts' recovery catches a fault reading the database "
+    "itself, so start-up never records the step as failed",
+)
+async def test_a_review_prompt_recovery_that_cannot_read_the_database_fails_its_step(
+    tmp_path, caplog
+):
+    """The real bot's 'expired review prompts' step, run by start-up over a database whose review
+    prompts cannot be read (their table is gone), is logged as a failed step naming it, with the
+    database error and its traceback, and the next step, the missed phases, still runs."""
+    import sqlite3
+    from datetime import datetime, timezone
+
+    from leaguebot.core.db.database import get_connection
+    from tests.support.change_queue import built_bot
+
+    bot = await built_bot(tmp_path, now=datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc))
+    [step] = [step for step in bot.start_up_steps if step[0] == "expired review prompts"]
+    async with get_connection(bot.db_path) as db:
+        await db.execute("DROP TABLE season_review_prompts")
+        await db.commit()
+    module = _fresh_start_up()
+    record = _Recorder()
+
+    with caplog.at_level(logging.DEBUG, logger=_MODULE):
+        await module.start_up(steps=(step, record.step("missed phases")),
+                              change_queue=record.queue, scheduler=record.scheduler)
+
+    assert "missed phases" in record.calls
+    errors = [r for r in caplog.records if r.name == _MODULE and r.levelno >= logging.ERROR]
+    assert [r.getMessage() for r in errors] == ["Start-up step 'expired review prompts' failed"]
+    [error] = errors
+    assert error.exc_info is not None and issubclass(error.exc_info[0], sqlite3.Error)

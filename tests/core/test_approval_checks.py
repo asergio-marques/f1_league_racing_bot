@@ -56,28 +56,37 @@ def _modules(*, weather=False, results=False, attendance=False):
     return modules
 
 
-def _guild(*, gone: tuple[int, ...] = ()):
-    """A server holding every channel but those *gone*, which a fetch reports not found."""
+def _guild(*, gone: tuple[int, ...] = (), unreadable: tuple[int, ...] = ()):
+    """A server holding every channel but those *gone*, which a fetch reports not found, and
+    those *unreadable*, out of the cache and whose fetch fails with a server error."""
 
     async def _fetch(channel_id):
+        if channel_id in unreadable:
+            raise discord.HTTPException(MagicMock(status=500), "Internal Server Error")
         raise discord.NotFound(MagicMock(status=404), "Unknown Channel")
 
     guild = MagicMock()
-    guild.get_channel = MagicMock(side_effect=lambda cid: None if cid in gone else MagicMock())
+    guild.get_channel = MagicMock(
+        side_effect=lambda cid: None if cid in gone or cid in unreadable else MagicMock()
+    )
     guild.fetch_channel = AsyncMock(side_effect=_fetch)
     return guild
 
 
-async def test_the_channel_faults_are_read_by_the_service(db_path):
+@pytest.mark.parametrize("pro_lineup", ["deleted", "cannot be told"])
+async def test_the_channel_faults_are_read_by_the_service(db_path, pro_lineup):
     """With every module off, Am has no lineup channel and Pro's lineup channel 100 has been
     deleted from the server. The service names both, with the command that sets each, and asks
-    nothing of the cancelled division."""
+    nothing of the cancelled division. Where Discord cannot say whether channel 100 is there (a
+    server error), it is taken as there: a check that could not tell does not refuse a season."""
     from leaguebot.core.services.approval_checks import division_channel_faults
 
-    faults = await division_channel_faults(_modules(), db_path, SEASON_ID, _guild(gone=(100,)))
+    guild = _guild(gone=(100,)) if pro_lineup == "deleted" else _guild(unreadable=(100,))
 
-    assert faults == [
-        "**Pro**'s lineup channel is no longer on the server — `/division lineup-channel`.",
+    faults = await division_channel_faults(_modules(), db_path, SEASON_ID, guild)
+
+    pro = ["**Pro**'s lineup channel is no longer on the server — `/division lineup-channel`."]
+    assert faults == (pro if pro_lineup == "deleted" else []) + [
         "**Am** has no lineup channel — `/division lineup-channel`.",
     ]
 
