@@ -258,7 +258,10 @@ async def test_team_names_of_the_server_list_are_checked():
     assert faults == ["Team name: **!!!** reduces to nothing"]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: results has no points gates of its own; core reads them in approval_checks")
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: results has no points gates of its own; core reads them in approval_checks",
+)
 async def test_the_results_module_needs_a_points_configuration(tmp_path):
     from leaguebot.core.db.database import run_migrations
 
@@ -730,8 +733,8 @@ async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     messages = review["report"]
     text = "\n".join(_texts(review))
 
-    # Each section its own message, after the season's and in the placements review's order,
-    # whichever order the hook gathers them in (core specification, "Confirming the
+    # Each section its own message, after the season's, in the order the builder signs the
+    # modules up, which is the placements review's order (core specification, "Confirming the
     # configuration").
     headings = ("**Signup Config**", "**Attendance Config**", "**Points Configs:**",
                 "**Weather Config**", "**Image outputs**")

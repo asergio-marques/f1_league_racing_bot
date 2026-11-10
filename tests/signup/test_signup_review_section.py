@@ -23,10 +23,10 @@ _LINES = [
 ]
 
 
-def _service(*, configured: bool = True) -> MagicMock:
+def _service(*, configured: bool = True, channel_id: int | None = 900) -> MagicMock:
     service = MagicMock()
     service.get_config = AsyncMock(
-        return_value=SimpleNamespace(signup_channel_id=900) if configured else None
+        return_value=SimpleNamespace(signup_channel_id=channel_id) if configured else None
     )
     service.get_settings = AsyncMock(return_value=SimpleNamespace(
         time_type="TIME_TRIAL", time_image_required=True, nationality_required=False
@@ -75,6 +75,16 @@ async def test_a_placements_review_with_no_signup_configuration_names_no_channel
     section = await _section(_service(configured=False), True, "PLACEMENTS")
 
     assert section.modules_note is None
+    assert section.lines[1] == "  • Channel: *(not configured)*"
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
+async def test_a_placements_review_with_no_signup_channel_says_so_beside_its_module():
+    """Signup on and configured, but with no channel set: the Modules section shows "Channel:
+    *(not configured)*" beside its line, and the Signup Config section says the same."""
+    section = await _section(_service(channel_id=None), True, "PLACEMENTS")
+
+    assert section.modules_note == "Channel: *(not configured)*"
     assert section.lines[1] == "  • Channel: *(not configured)*"
 
 

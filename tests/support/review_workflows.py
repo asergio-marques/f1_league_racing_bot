@@ -30,7 +30,9 @@ def sign_up_confirmation_refused(bot: Any) -> None:
     """Give *bot* the hook a season's confirmation is refused through (`confirmation_refused`),
     results' refusals signed up to it as the builder signs them: handed *bot*'s module service and
     database, then what the hook is called with. Results' function is looked up as the hook is
-    called, so a stand-in bot carries the hook whether or not any workflow asks it yet."""
+    called, so a stand-in bot carries the hook whether or not any workflow asks it yet. This copies
+    the builder's sign-up, as no builder function for it exists before the build; once one does,
+    this calls it."""
     from leaguebot.core.utils.hooks import AwaitedHook
 
     async def results_refusals(*args: Any, **kwargs: Any) -> Any:

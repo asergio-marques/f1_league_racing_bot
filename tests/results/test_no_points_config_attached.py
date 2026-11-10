@@ -7,9 +7,9 @@ reachable because `/results config detach` stays open in Placements. Each surfac
 
 All three now read results' `season_points_service.no_points_config_attached`, through results'
 section of the placements review and results' refusals of a season's confirmation, and the drift
-between them is what the source pins below hold. Test mode is no exception (decided 2026-09-23): it attaches Standard and
-Half Points when it is enabled and at no other moment, so all three judge a test season as any
-other.
+between them is what the source pins below hold. Test mode is no exception (decided 2026-09-23): it
+attaches Standard and Half Points when it is enabled and at no other moment, so all three judge a
+test season as any other.
 """
 from __future__ import annotations
 

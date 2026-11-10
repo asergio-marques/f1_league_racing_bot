@@ -152,8 +152,8 @@ def test_the_review_asks_the_helper_rather_than_the_service_itself():
 
     assert "missing_points_config_problems(" in source
     assert "missing_attached_configs" not in source, (
-        "results' review section calls missing_attached_configs directly — a second copy of the rule, "
-        "free to drift from the one the approval refuses on"
+        "results' review section calls missing_attached_configs directly — a second copy of the "
+        "rule, free to drift from the one the approval refuses on"
     )
 
 
