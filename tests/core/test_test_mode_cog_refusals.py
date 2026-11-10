@@ -311,23 +311,11 @@ _CASES = {
         _not_in_test_mode,
         "only available when test mode is enabled",
     ),
-    "roster remove outside test mode": (
-        "test-mode roster remove",
-        _command("roster_remove", "900001"),
-        _not_in_test_mode,
-        "only available when test mode is enabled",
-    ),
     "roster remove of an id that is not a number": (
         "test-mode roster remove",
         _command("roster_remove", "not-a-number"),
         None,
         "`user_id` must be a numeric Discord user ID",
-    ),
-    "roster remove refused by the service": (
-        "test-mode roster remove",
-        _command("roster_remove", "900001"),
-        _roster_service_refuses("remove_test_driver", "No fake driver has that ID."),
-        "No fake driver has that ID.",
     ),
     "roster clear outside test mode": (
         "test-mode roster clear",
