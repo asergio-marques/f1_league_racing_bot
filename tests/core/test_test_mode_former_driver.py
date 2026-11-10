@@ -139,11 +139,13 @@ async def test_the_flag_and_its_audit_entry_and_line_are_one_save(
     **<value>**", naming its first job, and nothing is written until the queue runs the change, of
     kind `core.test_mode_former_driver`. Once it has, Racer's flag reads *value*; one audit entry,
     `TEST_FORMER_DRIVER_FLAG_SET`, by Admin, on no division, stamped with the queue's clock,
-    records the flag before and after; the acknowledgement reads today's reply, naming Racer and
+    names Racer and the account Racer holds now (the one moved to, in the third case) and records
+    the flag before and after; the acknowledgement reads today's reply, naming Racer and
     both values; and the log channel holds today's success line once."""
     await _seed_racer(league.db_path, former=former)
     if past_account:
         await reassigned(league.db_path, RACER, RACER_NOW)
+    held = RACER_NOW if past_account else RACER
     interaction = _asks(league)
 
     await _ask(league, interaction, value)
@@ -163,7 +165,9 @@ async def test_the_flag_and_its_audit_entry_and_line_are_one_save(
          row["actor_id"], row["division_id"], row["timestamp"])
         for row in await audit_rows(league.db_path)
     ] == [(
-        _AUDIT_TYPE, {"former_driver": former}, {"former_driver": value},
+        _AUDIT_TYPE,
+        {"driver": "Racer", "user_id": held, "former_driver": former},
+        {"driver": "Racer", "user_id": held, "former_driver": value},
         ACTOR_ID, None, NOW.isoformat(),
     )]
     assert last_said(interaction) == (
