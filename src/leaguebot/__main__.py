@@ -32,6 +32,7 @@ from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
 if TYPE_CHECKING:
     from leaguebot.core.services.calendar_post_service import CalendarCommandOutcome
     from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.hub_service import HubOptions
     from leaguebot.image.services.image_lineup_post import LineupPostOutcome
 
 #: The oldest discord.py the bot runs on. `/team add` and `/team modify` take their input in a
@@ -155,6 +156,14 @@ def register_module_switches(modules: "ModuleService") -> None:
     modules.register_switch("results", results_enabled_on)
     modules.register_switch("attendance", attendance_enabled_on)
     modules.register_switch("images", images_enabled_on)
+
+
+def register_hub_options(hub_options: "HubOptions") -> None:
+    """Sign each option the hub's panel carries up on *hub_options*: core's About. A module's
+    option is signed up here, beside it, by its module's own function."""
+    from leaguebot.core.services.about_service import ABOUT_OPTION
+
+    hub_options.register_option(ABOUT_OPTION)
 
 
 def _sign_up_to_round_windows(bot: LeagueBot) -> None:
@@ -1757,12 +1766,15 @@ async def build(settings: Settings) -> LeagueBot:
     bot.driver_service = DriverService(settings.db_path)
     bot.team_service = TeamService(settings.db_path)
 
+    from leaguebot.core.services.hub_service import HubOptions
     from leaguebot.core.services.module_service import ModuleService
     from leaguebot.image.services.image_config_service import ImageConfigService
     from leaguebot.image.services.image_validity_service import ImageValidityService
 
     bot.module_service = ModuleService(settings.db_path)
     register_module_switches(bot.module_service)
+    bot.hub_options = HubOptions()
+    register_hub_options(bot.hub_options)
     bot.image_config_service = ImageConfigService(settings.db_path)
     bot.image_validity_service = ImageValidityService(
         bot.image_config_service,

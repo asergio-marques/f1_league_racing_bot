@@ -129,7 +129,6 @@ def test_the_hub_service_registers_no_option_itself():
     assert HubOptions().registered_options() == []
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 def test_options_are_ordered_by_their_order_then_their_key():
     """The order options are signed up in is where the builder happens to sign each module up;
     the panel should not move because that did."""
@@ -140,7 +139,6 @@ def test_options_are_ordered_by_their_order_then_their_key():
     assert [o.key for o in hub_options.registered_options()] == ["beta", "alpha", "zeta"]
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 def test_two_options_may_not_share_a_key():
     """The key routes the press: a second option under it, signed up on the same hub options,
     would answer for the first, and is refused."""
@@ -150,7 +148,6 @@ def test_two_options_may_not_share_a_key():
         hub_options.register_option(_option("licence", label="Something else"))
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 def test_registering_the_same_option_again_is_harmless():
     """Signing the same option up twice on one hub options is allowed: only a second option
     under one key is refused."""

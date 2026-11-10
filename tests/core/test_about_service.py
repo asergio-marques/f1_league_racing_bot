@@ -119,7 +119,6 @@ async def test_a_bot_holding_no_version_answers_unknown():
     assert "Dated" not in answer
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_about_is_always_offered_and_after_every_module():
     """About and two modules' options, ordered 10 and 999, signed up on one hub options: About
     is offered always, and placed after both."""
@@ -163,7 +162,6 @@ def test_both_forms_of_the_version_are_shown_as_read(version_):
     assert f"Version: {version_}\n" in about_text(version_)
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_the_bot_registers_about_before_the_hub_is_recovered(tmp_path):
     """Straight after `build`, before start-up, run later, recovers the hub, the bot's hub
     options, which the builder makes, hold About and nothing else: the builder signs it up once,

@@ -44,6 +44,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.module_service import ModuleService
     from leaguebot.core.services.placement_service import PlacementService
     from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.core.services.hub_service import HubOptions
     from leaguebot.core.services.start_up import StartUpStep
     from leaguebot.core.services.test_mode_service import AdvanceSteps
     from leaguebot.core.services.season_service import SeasonService
@@ -156,6 +157,11 @@ class LeagueBot(commands.Bot):
     #: scheduler, as the module service holds each module's switch reader (architecture.md, "How
     #: modules and core fit together"). A kind with none is a fault in the bot's assembly.
     advance_steps: AdvanceSteps
+    #: Every option the hub's panel can carry, one for each key: the builder makes it and signs
+    #: each option up on it (core's About, and any module's), so that nothing is registered at
+    #: import (architecture.md, "How modules and core fit together"). The panel, its start-up view
+    #: and a press are handed it.
+    hub_options: HubOptions
     #: The moment `/test-mode advance` asks which steps of the season's rounds are still pending
     #: and which it passes over: each module signs up a function handing back, as `ModuleSteps`,
     #: its own steps of the rounds it is handed (the active season's, as core reads them), judged

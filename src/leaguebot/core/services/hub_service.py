@@ -83,6 +83,7 @@ log = logging.getLogger(__name__)
 
 __all__ = [
     "HubOption",
+    "HubOptions",
     "HubPanelView",
     "CUSTOM_ID_PREFIX",
     "register_option",
@@ -122,6 +123,40 @@ class HubOption:
     order: int
     respond: Callable[[discord.Interaction], Awaitable[None]]
     offered: Callable[[Any], Awaitable[bool]] | None = None
+
+
+class HubOptions:
+    """Every option the hub's panel can carry, one for each key.
+
+    The builder makes one, keeps it on the bot (`LeagueBot.hub_options`) and signs each option up
+    on it, as it signs a kind's handler up with the scheduler (`register_timer`) and a module's
+    switch reader with the module service (`register_switch`): a keyed hook is an object of its
+    own, never a registry kept at module level for the life of the process (architecture.md,
+    "How modules and core fit together"). It is handed to whatever draws the panel, routes its
+    buttons or answers a press, never looked up on the bot.
+    """
+
+    def __init__(self) -> None:
+        self._options: dict[str, HubOption] = {}
+
+    def register_option(self, option: HubOption) -> None:
+        """Sign *option* up. A second option under one key is refused.
+
+        Signing the same option up twice is harmless; two options sharing a key would route one's
+        presses to the other.
+        """
+        existing = self._options.get(option.key)
+        if existing is not None and existing is not option:
+            raise ValueError(f"a hub option is already registered as {option.key!r}")
+        self._options[option.key] = option
+
+    def registered_options(self) -> list[HubOption]:
+        """Every option signed up, in panel order."""
+        return sorted(self._options.values(), key=lambda option: (option.order, option.key))
+
+    def option_for(self, key: str) -> HubOption | None:
+        """The option signed up under *key*, or None where none is."""
+        return self._options.get(key)
 
 
 _OPTIONS: dict[str, HubOption] = {}
