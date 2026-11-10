@@ -2024,12 +2024,6 @@ def _saves_outside_a_change() -> Counter[tuple[str, str]]:
 KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # Core's pass
     ("core/services/driver_service.py", "DriverService.set_former_driver"): (1, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService.delete_team_role_config"): (1, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService.rename_team_role_config"): (1, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService.set_team_role_config"): (1, PASS["core"]),
-    ("core/services/team_service.py", "TeamService.add_default_team"): (1, PASS["core"]),
-    ("core/services/team_service.py", "TeamService.modify_default_team"): (1, PASS["core"]),
-    ("core/services/team_service.py", "TeamService.remove_default_team"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "_delete_test_drivers_in_division"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "add_test_driver"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "add_test_drivers_in_bulk"): (1, PASS["core"]),
@@ -2778,10 +2772,6 @@ def _wall_clock_reads_among(nodes) -> Counter[tuple[str, str]]:
 
 KNOWN_SQL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/driver_service.py", "DriverService.set_former_driver"): (1, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService.rename_team_role_config"):
-        (1, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService.set_team_role_config"):
-        (1, PASS["core"]),
     ("core/services/season_lifecycle_service.py", "_turn_down_on"): (1, PASS["core"]),
     ("core/services/season_lifecycle_service.py", "run_driver_pass_on"): (1, PASS["core"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.save_record_on"):
@@ -2814,14 +2804,8 @@ KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/output_router.py", "OutputRouter._warn_member"): (1, PASS["core"]),
     ("core/services/output_router.py", "OutputRouter.queue_log_on"): (1, PASS["core"]),
     ("core/services/pack_service.py", "pack"): (1, PASS["core"]),
-    ("core/services/placement_service.py", "PlacementService.delete_team_role_config"):
-        (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.move_on"): (1, PASS["attendance"]),
-    ("core/services/placement_service.py", "PlacementService.rename_team_role_config"):
-        (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.sack_on"): (1, PASS["attendance"]),
-    ("core/services/placement_service.py", "PlacementService.set_team_role_config"):
-        (1, PASS["core"]),
     ("core/services/retry_service.py", "attempt_delivery"): (1, PASS["core"]),
     ("core/services/retry_service.py", "enqueue"): (1, PASS["core"]),
     ("core/services/retry_service.py", "mark_failed"): (1, PASS["core"]),
@@ -2829,7 +2813,6 @@ KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
         (1, PASS["core"]),
     ("core/services/season_review_changes.py", "season_review_post_change.post_question"):
         (1, PASS["core"]),
-    ("core/services/team_service.py", "TeamService.modify_default_team"): (1, PASS["core"]),
     ("core/services/test_mode_service.py", "build_review_summary"): (1, PASS["core"]),
     ("core/services/test_mode_service.py", "get_next_pending_phase"): (1, PASS["core"]),
     ("core/services/test_mode_service.py", "get_passed_over_steps"): (1, PASS["core"]),

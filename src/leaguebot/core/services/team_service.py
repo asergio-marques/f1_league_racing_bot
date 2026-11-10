@@ -1,12 +1,10 @@
 """TeamService — the server's team list, and the division teams seeded from it."""
 from __future__ import annotations
 
-import json
 import logging
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
 
 import aiosqlite
 
@@ -248,15 +246,6 @@ class TeamService:
             is_reserve=False,
         )
 
-    async def add_default_team(
-        self, name: str, *, full_name: str, max_seats: int = 2
-    ) -> DefaultTeam:
-        """`add_default_team_on` on a connection of its own, committed."""
-        async with get_connection(self._db_path) as db:
-            team = await self.add_default_team_on(db, name, full_name=full_name, max_seats=max_seats)
-            await db.commit()
-        return team
-
     async def server_team_on(self, db: aiosqlite.Connection, name: str) -> dict | None:
         """The team of the server's list whose shorthand is *name*, with its mapped role, read on
         *db*: ``{name, full_name, max_seats, is_reserve, role_id}``, or None where none is."""
@@ -340,40 +329,6 @@ class TeamService:
         )
         return {"name": new_shorthand, "full_name": new_full_name}
 
-    async def modify_default_team(
-        self,
-        current_name: str,
-        *,
-        shorthand: str | None = None,
-        full_name: str | None = None,
-        actor_id: int = 0,
-        actor_name: str = "system",
-    ) -> dict:
-        """`modify_default_team_on` on a connection of its own, with its `TEAM_NAMES` audit entry
-        where the names changed, committed."""
-        async with get_connection(self._db_path) as db:
-            was = await self.server_team_on(db, current_name)
-            named = await self.modify_default_team_on(
-                db, current_name, shorthand=shorthand, full_name=full_name
-            )
-            if was is not None and (named["name"], named["full_name"]) != (
-                was["name"], was["full_name"]
-            ):
-                await db.execute(
-                    "INSERT INTO audit_entries "
-                    "(actor_id, actor_name, division_id, change_type, "
-                    "old_value, new_value, timestamp) "
-                    "VALUES (?, ?, NULL, 'TEAM_NAMES', ?, ?, ?)",
-                    (
-                        actor_id, actor_name,
-                        json.dumps({"shorthand": was["name"], "full_name": was["full_name"]}),
-                        json.dumps({"shorthand": named["name"], "full_name": named["full_name"]}),
-                        datetime.now(timezone.utc).isoformat(),
-                    ),
-                )
-            await db.commit()
-        return named
-
     async def judge_remove_on(self, db: aiosqlite.Connection, name: str) -> int:
         """The id of the team of the server's list whose shorthand is *name*, read on *db*.
         Raises ValueError where none is, or where it is the protected Reserve team."""
@@ -397,12 +352,6 @@ class TeamService:
         writes no audit entry. Raises ValueError if protected or not found."""
         team_id = await self.judge_remove_on(db, name)
         await db.execute("DELETE FROM default_teams WHERE id = ?", (team_id,))
-
-    async def remove_default_team(self, name: str) -> None:
-        """`remove_default_team_on` on a connection of its own, committed."""
-        async with get_connection(self._db_path) as db:
-            await self.remove_default_team_on(db, name)
-            await db.commit()
 
     # ------------------------------------------------------------------
     # Division seeding (US4/US6)
