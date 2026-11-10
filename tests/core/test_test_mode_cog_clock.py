@@ -69,7 +69,7 @@ async def test_the_review_judges_the_season_at_the_queue_s_time(monkeypatch):
 @pytest.mark.xfail(strict=True, reason=COG_HANDS_THE_HOST_CLOCK)
 async def test_the_former_driver_flag_is_set_at_the_queue_s_time():
     """With test mode on, Alex sets Racer's former-driver flag. The service is handed the change
-    queue's time, which its audit row is stamped with, and Alex is told the old and new values."""
+    queue's time, and Alex is told the old and new values."""
     cog = _cog()
     cog.bot.driver_service.set_former_driver = AsyncMock(return_value=(False, True))
     member = MagicMock()
