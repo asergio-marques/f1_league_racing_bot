@@ -178,10 +178,9 @@ async def test_disable_preserves_every_settable_column(tmp_path):
 # ── T013 ──────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
-async def test_commands_gated_when_disabled(module_service, config_service):
-    """A server that never enabled the module has no configuration to read."""
-    assert await module_service.is_images_enabled() is False
+async def test_commands_gated_when_disabled(config_service):
+    """A server that never enabled the module has no configuration to read. That its switch reads
+    as off is `test_a_module_is_off_by_default[images]`'s."""
     assert await config_service.get_config() is None
     assert not any((await config_service.get_toggles()).values())
 
