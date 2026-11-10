@@ -31,6 +31,7 @@ from datetime import datetime
 
 import discord
 
+from leaguebot.core.models.refusal import Refused
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import approval_checks, backup_service
 from leaguebot.core.services.approval_checks import SignupModuleSettings
@@ -571,7 +572,7 @@ async def approve_season(
     # Validate tier sequential integrity before committing
     try:
         await season_service.validate_division_tiers(season.id)
-    except ValueError as exc:
+    except Refused as exc:
         await refuse(interaction, f"\u26d4 Season cannot be approved. {exc}", what=what)
         return False
 

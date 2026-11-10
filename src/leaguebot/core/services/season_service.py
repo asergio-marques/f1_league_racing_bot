@@ -11,6 +11,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection, inserted_id
 from leaguebot.core.models.division import Division, DivisionStatus
+from leaguebot.core.models.refusal import Refused
 from leaguebot.core.models.round import (
     ROUND_AWAITING_RESULTS_MODULE,
     ROUND_CANCELLABLE,
@@ -338,7 +339,7 @@ class SeasonService:
     async def validate_division_tiers(self, season_id: int) -> None:
         """Validate division tiers form a gapless sequence 1..N.
 
-        Raises ValueError with a diagnostic message if any tier is missing.
+        Raises Refused, with a diagnostic message, if any tier is missing.
         Cancelled divisions are excluded from the check.
         """
         divisions = await self.get_divisions(season_id)
@@ -350,7 +351,7 @@ class SeasonService:
         if tiers != expected:
             existing = sorted(set(tiers))
             missing = sorted(set(expected) - set(tiers))
-            raise ValueError(
+            raise Refused(
                 f"Division tiers are not sequential. "
                 f"Current tiers: {existing}. "
                 f"Missing tier(s): {missing}."

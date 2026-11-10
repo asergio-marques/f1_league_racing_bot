@@ -55,9 +55,6 @@ SERVER_ID = 3300
 SEASON_ID = 11
 USER_ID = 77
 
-#: Why a tier test fails until #283's build raises the member's refusal by name.
-TIERS_REFUSAL = "#283: the tier check still refuses with a bare ValueError, not Refused"
-
 #: The gates a test may stand in, each a function of `approval_checks` the workflow calls.
 _GATES = (
     "team_name_problems", "lineup_problems", "image_configuration_faults",
@@ -225,7 +222,6 @@ async def test_no_pending_setup_refuses_without_reaching_a_gate(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=TIERS_REFUSAL)
 async def test_a_bad_tier_sequence_refuses_ephemerally(db_path):
     from leaguebot.core.models.refusal import Refused
 
@@ -1115,10 +1111,7 @@ async def _gate_4b_an_image_fault(db_path, monkeypatch):
         _gate_no_longer_in_placements,
         _gate_no_divisions,
         _gate_s_unsettled_signups_and_channel_faults,
-        pytest.param(
-            _gate_tiers_not_sequential, id="tiers_not_sequential",
-            marks=pytest.mark.xfail(strict=True, reason=TIERS_REFUSAL),
-        ),
+        _gate_tiers_not_sequential,
         _gate_0_a_division_without_rounds,
         _gate_0b_two_rounds_at_one_moment,
         _gate_2_no_points_configuration,

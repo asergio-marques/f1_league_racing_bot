@@ -346,9 +346,6 @@ async def test_divisions_are_returned_in_tier_order(tmp_path):
     assert [d.name for d in divisions] == ["First", "Second"]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: the tier check still refuses with a bare ValueError, not Refused"
-)
 async def test_tiers_with_a_gap_are_refused_in_the_member_s_words(tmp_path):
     """Approving a season checks its divisions' tiers run 1, 2, 3 and so on with none missing,
     and a gap is a refusal the manager reads. Season 1 is being set up with Division 1 at tier 1
