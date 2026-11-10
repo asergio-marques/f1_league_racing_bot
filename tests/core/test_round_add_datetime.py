@@ -7,8 +7,8 @@ touches no other division's rounds, and deletes nothing. Every refusal is judged
 again as the change starts, in the same words, so that a round or a division changed meanwhile is
 caught there.
 
-**A round's moment is read by the shared datetime rule** (#362). A round is stored naive, meaning
-UTC. The XML import converted a time given with a zone to that form, but `/round add` kept the
+**A round's moment is read by the shared datetime rule** (#362). A round is stored in UTC with its
+offset (#283). The XML import converted a time given with a zone to UTC, but `/round add` kept the
 zone as typed, so the same moment could be stored two ways and two rounds at one instant would not
 be seen to clash. Both now read by `leaguebot.core.utils.input_validator.parse_datetime`.
 
@@ -36,6 +36,11 @@ from tests.support.setup_rounds import (
     setup_league,
 )
 from tests.support.undecorate import undecorate
+
+#: Why the tests of a round's stored moment fail until the build stores it with its offset.
+_NO_OFFSET = "#283: /round add still stores a round's moment without its offset"
+#: Why the tests of a clash with a held round fail until the build reads it aware.
+_CLASH = "#283: /round add still misses a held round at the same moment, held with its offset"
 
 #: The command as the log channel names it.
 WHAT = "`/round add`"
@@ -99,6 +104,7 @@ def _success_line(number: int, division: str, fmt: str, track: str | None, at: d
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_a_round_its_renumbering_audit_entry_and_line_are_one_save(tmp_path):
     """The core specification's record of what changed. Season #1 is being set up, in Placements,
     as the database alone holds it after a restart: Pro holds mystery rounds on 14 and 28 June
@@ -126,19 +132,19 @@ async def test_a_round_its_renumbering_audit_entry_and_line_are_one_save(tmp_pat
 
     rows = await round_rows(league.db_path, "Pro")
     assert rows == [
-        (1, "MYSTERY", None, "2026-06-14T18:00:00"),
-        (2, "MYSTERY", None, "2026-06-21T18:00:00"),
-        (3, "MYSTERY", None, "2026-06-28T18:00:00"),
+        (1, "MYSTERY", None, "2026-06-14T18:00:00+00:00"),
+        (2, "MYSTERY", None, "2026-06-21T18:00:00+00:00"),
+        (3, "MYSTERY", None, "2026-06-28T18:00:00+00:00"),
     ]
     assert await round_rows(league.db_path, "Am") == am_before
     ids = await round_ids(league.db_path, "Pro")
     new = {
-        "round_id": ids["2026-06-21T18:00:00"],
+        "round_id": ids["2026-06-21T18:00:00+00:00"],
         "division_id": ids["division"],
         "round_number": 2,
         "format": "MYSTERY",
         "track_name": None,
-        "scheduled_at": "2026-06-21T18:00:00",
+        "scheduled_at": "2026-06-21T18:00:00+00:00",
     }
     [entry] = await audit_rows(league.db_path)
     assert (entry["change_type"], entry["actor_id"], entry["division_id"]) == (
@@ -187,6 +193,7 @@ async def test_a_failed_round_save_adds_nothing(tmp_path):
             "❌ **Pro** already holds round 2 at <t:1782064800:F>. Two rounds of one division "
             "cannot share a moment — the season could not be approved. The round was **not** "
             "added.",
+            marks=pytest.mark.xfail(strict=True, reason=_CLASH),
             id="a-round-added-at-that-moment-meanwhile",
         ),
         pytest.param(
@@ -258,10 +265,10 @@ async def test_a_round_add_is_judged_again_as_it_starts(tmp_path, monkeypatch, m
 
     assert last_said(refused) == reply
     if meanwhile in ("a-second-add-of-the-same-moment", "the-calendar-full"):
-        expected = [(1, "MYSTERY", None, "2026-06-14T18:00:00")]
+        expected = [(1, "MYSTERY", None, "2026-06-14T18:00:00+00:00")]
         if audits:
-            expected.append((2, "MYSTERY", None, "2026-06-21T18:00:00"))
-        expected.append((len(expected) + 1, "MYSTERY", None, "2026-06-28T18:00:00"))
+            expected.append((2, "MYSTERY", None, "2026-06-21T18:00:00+00:00"))
+        expected.append((len(expected) + 1, "MYSTERY", None, "2026-06-28T18:00:00+00:00"))
         assert await round_rows(league.db_path, "Pro") == expected
     else:
         assert await round_rows(league.db_path, "Pro") == []
@@ -270,6 +277,7 @@ async def test_a_round_add_is_judged_again_as_it_starts(tmp_path, monkeypatch, m
     assert await stopped_job(league.db_path) is None
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_a_calendar_guard_that_cannot_run_lets_the_round_through(tmp_path, monkeypatch, caplog):
     """architecture.md, "A catch-all error handler": a capacity check that cannot run must not
     block a round. Season #1 is being set up, in Placements, Pro holding its rounds of 14 and 28
@@ -294,7 +302,7 @@ async def test_a_calendar_guard_that_cannot_run_lets_the_round_through(tmp_path,
 
     rows = await round_rows(league.db_path, "Pro")
     assert [row[3] for row in rows] == [
-        "2026-06-14T18:00:00", "2026-06-21T18:00:00", "2026-06-28T18:00:00"
+        "2026-06-14T18:00:00+00:00", "2026-06-21T18:00:00+00:00", "2026-06-28T18:00:00+00:00"
     ]
     assert failing.await_count == 2
     assert len(await audit_rows(league.db_path)) == 1
@@ -339,9 +347,6 @@ async def test_a_round_add_asked_again_while_it_waits_is_refused_as_a_repeat(tmp
 # The moment, by the shared datetime rule (#362)
 # ---------------------------------------------------------------------------
 
-#: Why the stored form's tests fail until the build stores the offset.
-_NO_OFFSET = "#283: /round add still stores a round's moment without its offset"
-
 
 @pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_round_add_stores_a_zoned_time_as_utc(tmp_path):
@@ -359,6 +364,7 @@ async def test_round_add_stores_a_zoned_time_as_utc(tmp_path):
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=_CLASH)
 async def test_a_zoned_time_clashes_with_the_same_instant_given_without_one(tmp_path):
     """Stored alike, the two are seen to be one moment and the second is refused. Season #1 is
     being set up, in Placements, Pro holding a mystery round on 14 June 2026 at 18:00 UTC. The
@@ -432,6 +438,7 @@ _OVERFLOW = (
             "❌ **Pro** already holds round 1 at <t:1781460000:F>. Two rounds of one "
             "division cannot share a moment — the season could not be approved. The round "
             "was **not** added.",
+            marks=pytest.mark.xfail(strict=True, reason=_CLASH),
             id="a_round_clash",
         ),
         pytest.param(

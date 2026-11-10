@@ -363,19 +363,19 @@ _HELD = (("Pro", 1, 10, (_PRO_14, _PRO_21, _PRO_28)), ("Am", 2, 20, (_AM_21,)))
 
 #: Pro's rounds as `round_rows` reads them, before anything is deleted.
 _PRO_STANDING = [
-    (1, "MYSTERY", None, "2026-06-14T18:00:00"),
-    (2, "NORMAL", "Hungaroring", "2026-06-21T18:00:00"),
-    (3, "MYSTERY", "Hungaroring", "2026-06-28T18:00:00"),
+    (1, "MYSTERY", None, "2026-06-14T18:00:00+00:00"),
+    (2, "NORMAL", "Hungaroring", "2026-06-21T18:00:00+00:00"),
+    (3, "MYSTERY", "Hungaroring", "2026-06-28T18:00:00+00:00"),
 ]
 
 #: Pro's rounds once round 2 is deleted: the third renumbered to 2.
 _PRO_AFTER = [
-    (1, "MYSTERY", None, "2026-06-14T18:00:00"),
-    (2, "MYSTERY", "Hungaroring", "2026-06-28T18:00:00"),
+    (1, "MYSTERY", None, "2026-06-14T18:00:00+00:00"),
+    (2, "MYSTERY", "Hungaroring", "2026-06-28T18:00:00+00:00"),
 ]
 
 #: Am's round, which no test here deletes but one.
-_AM_STANDING = [(1, "NORMAL", "Hungaroring", "2026-06-21T18:00:00")]
+_AM_STANDING = [(1, "NORMAL", "Hungaroring", "2026-06-21T18:00:00+00:00")]
 
 
 async def _league(tmp_path, *, stage: str | None = "PLACEMENTS", raced: bool = False):
@@ -501,19 +501,19 @@ async def test_a_round_delete_its_hook_renumbering_audit_entry_and_line_are_one_
     assert await round_rows(league.db_path, "Pro") == _PRO_AFTER
     assert await round_rows(league.db_path, "Am") == _AM_STANDING
     assert await _drawn(league.db_path) == [
-        round_id for round_id in drawn if round_id != ids["2026-06-21T18:00:00"]
+        round_id for round_id in drawn if round_id != ids["2026-06-21T18:00:00+00:00"]
     ]
     [entry] = await audit_rows(league.db_path)
     assert (entry["change_type"], entry["actor_id"], entry["division_id"]) == (
         "ROUND_DELETED", 4242, ids["division"]
     )
     assert entry["old_value"] == {
-        "round_id": ids["2026-06-21T18:00:00"],
+        "round_id": ids["2026-06-21T18:00:00+00:00"],
         "division_id": ids["division"],
         "round_number": 2,
         "format": "NORMAL",
         "track_name": "Hungaroring",
-        "scheduled_at": "2026-06-21T18:00:00",
+        "scheduled_at": "2026-06-21T18:00:00+00:00",
     }
     assert entry["new_value"] == {}
     assert entry["timestamp"] == NOW.isoformat()

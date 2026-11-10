@@ -11,9 +11,9 @@ The load-bearing rules pinned here:
     discovering one fault per attempt.
   * Line numbers count blank lines, so a reported number matches what the manager is
     looking at rather than the number of rounds before it.
-  * A parsed datetime is **naive**. Rounds are stored naive-meaning-UTC, and a division
-    holding a mix of naive and aware datetimes cannot be sorted — which happens every
-    time a round is added.
+  * A parsed datetime is **aware, in UTC**, the form a round's moment is stored in (#283):
+    a division holding a mix of naive and aware datetimes cannot be sorted — which happens
+    every time a round is added.
 """
 from __future__ import annotations
 
@@ -36,8 +36,8 @@ from leaguebot.core.utils.round_import import (
 
 @pytest.mark.xfail(strict=True, reason=_AWARE)
 def test_a_calendar_of_three_rounds():
-    """Each datetime is written without seconds, and is stated in UTC and stored naive — see
-    the module docstring."""
+    """Each datetime is written without seconds, and is stated in UTC and handed back aware —
+    see the module docstring."""
     rounds, errors = parse_bulk_round_lines(
         "2026-06-14T18:00, Normal, 14\n"
         "2026-06-21T18:00, Sprint, Hungaroring\n"

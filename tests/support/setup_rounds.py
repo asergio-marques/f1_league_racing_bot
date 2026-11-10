@@ -26,8 +26,8 @@ async def setup_league(tmp_path: Any, *, stage: str | None = "PLACEMENTS",
                        divisions: tuple[Division, ...] = ()) -> Any:
     """`settings_league`'s league, no module on, its queue's clock `NOW`. With *stage*, season #1
     is being set up, in that stage, holding *divisions*, each round numbered by its moment and
-    stored as a round of a setup is, its moment naive UTC in ISO form; with None, no season is
-    being set up."""
+    stored as a round of a setup is, its moment in UTC in ISO form with its offset; with None, no
+    season is being set up."""
     from tests.support.settings_league import settings_league
 
     league = await settings_league(tmp_path, modules=(), now=NOW)
@@ -51,7 +51,8 @@ async def setup_league(tmp_path: Any, *, stage: str | None = "PLACEMENTS",
                 await db.execute(
                     "INSERT INTO rounds (division_id, round_number, format, track_name, "
                     "scheduled_at) VALUES (?, ?, ?, ?, ?)",
-                    (division_id, number, fmt, track, at.replace(tzinfo=None).isoformat()),
+                    (division_id, number, fmt, track,
+                     at.replace(tzinfo=timezone.utc).isoformat()),
                 )
         await db.commit()
     return league
@@ -83,15 +84,12 @@ async def round_ids(db_path: str, division: str) -> dict[str, int]:
 
 
 async def round_moments(db_path: str, division: str) -> list[tuple[int, str, str | None, datetime]]:
-    """The rounds of the division named *division*, as `round_rows` gives them, each moment read
-    as UTC, whether it is stored with its zone or without."""
-    moments = []
-    for number, fmt, track, at in await round_rows(db_path, division):
-        moment = datetime.fromisoformat(at)
-        if moment.tzinfo is None:
-            moment = moment.replace(tzinfo=timezone.utc)
-        moments.append((number, fmt, track, moment.astimezone(timezone.utc)))
-    return moments
+    """The rounds of the division named *division*, as `round_rows` gives them, each moment parsed
+    as stored: one stored without its offset is left naive, and so equals no moment in UTC."""
+    return [
+        (number, fmt, track, datetime.fromisoformat(at))
+        for number, fmt, track, at in await round_rows(db_path, division)
+    ]
 
 
 async def ask_duplicate(league: Any, source: str = "Pro", new_name: str = "Am", tier: int = 2, *,

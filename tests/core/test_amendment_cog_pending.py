@@ -33,6 +33,11 @@ from tests.support.setup_rounds import (
 )
 from tests.support.undecorate import undecorate
 
+#: Why the tests of a round's stored moment fail until the build stores it with its offset.
+_NO_OFFSET = "#283: /round amend still stores a round's moment without its offset"
+#: Why the tests of a clash with a held round fail until the build reads it aware.
+_CLASH = "#283: /round amend still misses a held round at the same moment, held with its offset"
+
 #: The command as the log channel names it.
 WHAT = "`/round amend`"
 
@@ -108,6 +113,7 @@ def _clash(number: int, at: datetime) -> str:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_a_setup_round_amendment_its_renumbering_audit_entry_and_line_are_one_save(
     tmp_path,
 ):
@@ -154,18 +160,18 @@ async def test_a_setup_round_amendment_its_renumbering_audit_entry_and_line_are_
 
     rows = await round_rows(league.db_path, "Pro")
     assert rows == [
-        (1, "NORMAL", "Hungaroring", "2026-06-21T18:00:00"),
-        (2, "MYSTERY", "Hungaroring", "2026-06-28T18:00:00"),
-        (3, "MYSTERY", None, "2026-07-05T18:00:00"),
+        (1, "NORMAL", "Hungaroring", "2026-06-21T18:00:00+00:00"),
+        (2, "MYSTERY", "Hungaroring", "2026-06-28T18:00:00+00:00"),
+        (3, "MYSTERY", None, "2026-07-05T18:00:00+00:00"),
     ]
     assert await round_rows(league.db_path, "Am") == am_before
     old = {
-        "round_id": ids["2026-06-14T18:00:00"],
+        "round_id": ids["2026-06-14T18:00:00+00:00"],
         "division_id": ids["division"],
         "round_number": 1,
         "format": "MYSTERY",
         "track_name": None,
-        "scheduled_at": "2026-06-14T18:00:00",
+        "scheduled_at": "2026-06-14T18:00:00+00:00",
     }
     [entry] = await audit_rows(league.db_path)
     assert (entry["change_type"], entry["actor_id"], entry["division_id"]) == (
@@ -173,7 +179,7 @@ async def test_a_setup_round_amendment_its_renumbering_audit_entry_and_line_are_
     )
     assert entry["old_value"] == old
     assert entry["new_value"] == {
-        **old, "round_number": 3, "scheduled_at": "2026-07-05T18:00:00"
+        **old, "round_number": 3, "scheduled_at": "2026-07-05T18:00:00+00:00"
     }
     assert entry["timestamp"] == NOW.isoformat()
     assert await log_lines(league) == [
@@ -187,33 +193,35 @@ async def test_a_setup_round_amendment_its_renumbering_audit_entry_and_line_are_
     [
         pytest.param(
             2, {"track": "Silverstone Circuit"},
-            (2, "NORMAL", "Silverstone Circuit", "2026-06-21T18:00:00"),
+            (2, "NORMAL", "Silverstone Circuit", "2026-06-21T18:00:00+00:00"),
             ("track: Hungaroring → Silverstone Circuit",),
             id="a-new-track",
         ),
         pytest.param(
             2, {"format": "MYSTERY"},
-            (2, "MYSTERY", None, "2026-06-21T18:00:00"),
+            (2, "MYSTERY", None, "2026-06-21T18:00:00+00:00"),
             ("format: NORMAL → MYSTERY", "track: Hungaroring → none"),
             id="a-mystery-round-loses-its-track",
         ),
         pytest.param(
             3, {"format": "NORMAL"},
-            (3, "NORMAL", "Hungaroring", "2026-06-28T18:00:00"),
+            (3, "NORMAL", "Hungaroring", "2026-06-28T18:00:00+00:00"),
             ("format: MYSTERY → NORMAL",),
             id="a-round-leaving-mystery-keeps-the-track-it-holds",
         ),
         pytest.param(
             2, {"track": "Silverstone Circuit", "scheduled_at": "2026-06-21T18:00:00"},
-            (2, "NORMAL", "Silverstone Circuit", "2026-06-21T18:00:00"),
+            (2, "NORMAL", "Silverstone Circuit", "2026-06-21T18:00:00+00:00"),
             ("track: Hungaroring → Silverstone Circuit",),
+            marks=pytest.mark.xfail(strict=True, reason=_NO_OFFSET),
             id="its-own-moment-restated-which-am-also-holds",
         ),
         pytest.param(
             3, {"scheduled_at": "2026-07-05T18:00:00"},
-            (3, "MYSTERY", None, "2026-07-05T18:00:00"),
+            (3, "MYSTERY", None, "2026-07-05T18:00:00+00:00"),
             ("scheduled_at: 2026-06-28 18:00:00 → 2026-07-05 18:00:00",
              "track: Hungaroring → none"),
+            marks=pytest.mark.xfail(strict=True, reason=_NO_OFFSET),
             id="a-moved-mystery-round-loses-the-track-it-holds",
         ),
     ],
@@ -304,6 +312,7 @@ async def test_a_failed_setup_round_amendment_changes_nothing(tmp_path):
         pytest.param(
             "a-round-added-at-that-moment",
             _clash(4, _JULY_5),
+            marks=pytest.mark.xfail(strict=True, reason=_CLASH),
             id="a-round-at-that-moment-by-the-time-it-runs",
         ),
     ],
@@ -337,7 +346,7 @@ async def test_a_setup_round_amendment_is_judged_again_as_it_starts(tmp_path, me
         elif meanwhile == "a-round-added-at-that-moment":
             await db.execute(
                 "INSERT INTO rounds (division_id, round_number, format, track_name, scheduled_at)"
-                f" VALUES ({pro}, 4, 'MYSTERY', NULL, '2026-07-05T18:00:00')"
+                f" VALUES ({pro}, 4, 'MYSTERY', NULL, '2026-07-05T18:00:00+00:00')"
             )
         else:
             await db.execute(f"DELETE FROM rounds WHERE division_id = {pro}")
@@ -357,6 +366,7 @@ async def test_a_setup_round_amendment_is_judged_again_as_it_starts(tmp_path, me
     assert await stopped_job(league.db_path) is None
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_a_setup_round_amendment_asked_again_while_it_waits_is_refused_as_a_repeat(
     tmp_path,
 ):
@@ -381,7 +391,7 @@ async def test_a_setup_round_amendment_asked_again_while_it_waits_is_refused_as_
     await run_queue(league.bot)
 
     assert [row[3] for row in await round_rows(league.db_path, "Pro")] == [
-        "2026-06-21T18:00:00", "2026-06-28T18:00:00", "2026-07-05T18:00:00"
+        "2026-06-21T18:00:00+00:00", "2026-06-28T18:00:00+00:00", "2026-07-05T18:00:00+00:00"
     ]
     assert len(await audit_rows(league.db_path)) == 1
     assert await log_lines(league) == [
@@ -390,6 +400,7 @@ async def test_a_setup_round_amendment_asked_again_while_it_waits_is_refused_as_
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_a_full_calendar_does_not_refuse_a_setup_round_amendment(tmp_path, monkeypatch):
     """An amendment adds no round, so the calendar's room is not asked. Season #1 is being set up,
     in Placements, Pro holding its rounds of 14, 21 and 28 June, and the image module's drawing
@@ -409,7 +420,7 @@ async def test_a_full_calendar_does_not_refuse_a_setup_round_amendment(tmp_path,
     await run_queue(league.bot)
 
     assert [row[3] for row in await round_rows(league.db_path, "Pro")] == [
-        "2026-06-21T18:00:00", "2026-06-28T18:00:00", "2026-07-05T18:00:00"
+        "2026-06-21T18:00:00+00:00", "2026-06-28T18:00:00+00:00", "2026-07-05T18:00:00+00:00"
     ]
     full.assert_not_awaited()
 
@@ -509,6 +520,7 @@ async def test_a_setup_round_amended_to_what_stands_changes_nothing(
         ),
         pytest.param(
             {"scheduled_at": "2026-06-21T18:00:00"}, _clash(2, datetime(2026, 6, 21, 18, 0)),
+            marks=pytest.mark.xfail(strict=True, reason=_CLASH),
             id="a-moment-another-round-holds",
         ),
     ],
