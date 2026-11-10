@@ -1214,7 +1214,7 @@ to it would switch off the one failure path for every command.
    named by mention alone, and a refusal's record that fails is logged on the host and not answered
    a second time, because a line to the log channel must not fail the work it records; the readers
    that stand aside (`amendment_service.approval_faults`, `approval_checks.channel_on_server`,
-   `season_fingerprint_service.take_fingerprint` and `BotCog._clean_up`) are stated exceptions too:
+   `season_fingerprint_service.take_fingerprint` and `bot_cog._clean_up`) are stated exceptions too:
    the first two put the error in the host's log and read an attendance switch as off and a channel
    as present, because a reader that cannot answer must not refuse an amendment or a season, the
    third signs a fingerprint it cannot take as an empty one, which refuses an approval, and the
