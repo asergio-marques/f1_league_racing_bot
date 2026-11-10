@@ -497,7 +497,6 @@ async def season_has_divisions(season_id: int, *, season_service: SeasonService)
 
 
 async def placement_confirmation_faults(
-    module_service: ModuleService,
     db_path: str,
     season_id: int,
     guild: discord.Guild | None = None,
@@ -512,8 +511,7 @@ async def placement_confirmation_faults(
     withholds its button on either, and the confirmation refuses on either, from this one
     reading — mid-season as at the first confirmation. The unsettled are named through
     *driver_names_read*, and each module names its own channels through
-    *division_channel_faults_read*. *module_service* is no longer read: each module asks its own
-    switch of itself.
+    *division_channel_faults_read*.
     """
     unsettled = await unsettled_signups(db_path, driver_names_read)
     return unsettled, await division_channel_faults(

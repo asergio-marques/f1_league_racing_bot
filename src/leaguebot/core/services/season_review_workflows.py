@@ -221,7 +221,7 @@ async def confirm_mid_season_placements(
     # drawn again: the fingerprint proves the images configuration and the artwork
     # unchanged since the review drew them.
     unsettled, channel_faults = await approval_checks.placement_confirmation_faults(
-        module_service, db_path, season.id, interaction.guild,
+        db_path, season.id, interaction.guild,
         driver_names_read=driver_names_read,
         division_channel_faults_read=division_channel_faults_read,
     )
@@ -563,7 +563,7 @@ async def approve_season(
     # ── Gate S: every signup settled, and every channel a division posts to set and on
     # the server ──
     unsettled, channel_faults = await approval_checks.placement_confirmation_faults(
-        module_service, db_path, season.id, interaction.guild,
+        db_path, season.id, interaction.guild,
         driver_names_read=driver_names_read,
         division_channel_faults_read=division_channel_faults_read,
     )

@@ -71,12 +71,11 @@ def _cog(db_path, *, weather=False, results=False, attendance=False) -> SeasonCo
 
 async def _faults(cog, guild=None) -> tuple[list[str], list[str]]:
     """What stops the season's placements being confirmed: the gate both confirmations run,
-    handed the league's modules and database, *guild* to look its channels up on, and every hook
+    handed the league's database, *guild* to look its channels up on, and every hook
     it asks the modules through off the bot."""
     return await run_check(
         "placement_confirmation_faults",
         cog.bot,
-        cog.bot.module_service,
         cog.bot.db_path,
         SEASON_ID,
         guild,

@@ -485,7 +485,7 @@ async def test_the_channels_are_judged_upon_the_review_s_own_server(monkeypatch)
         await undecorate(SeasonCog.season_review)(cog, interaction)
 
     assert cog.placement_confirmation_faults.await_args.args == (
-        cog.bot.module_service, cog.bot.db_path, 1, interaction.guild
+        cog.bot.db_path, 1, interaction.guild
     )
 
 
