@@ -37,6 +37,13 @@ log = logging.getLogger(__name__)
 MOVE_HELD_CHANNEL = "move_held_channel"
 DELETE_REPLACED_CHANNEL = "delete_replaced_channel"
 
+#: The order "the driver's signup" is chosen in: the latest season first, and within a season
+#: an approved signup before any other, then the latest. A seated driver's approved signup
+#: therefore outranks a later one the league rejected on another of their accounts (decided
+#: 2026-09-18). A driver cannot sign up again while approved, so within one account the rule
+#: changes nothing.
+SIGNUP_PRECEDENCE_SQL = "season_id DESC, approved DESC, id DESC"
+
 
 class SignupModuleService:
     def __init__(self, db_path: str) -> None:
@@ -91,6 +98,17 @@ class SignupModuleService:
             (row["discord_user_id"], DriverState(row["current_state"]), row["signup_channel_id"])
             for row in rows
         ]
+
+    async def driver_signups(self, profile_ids: Iterable[int]) -> dict[int, aiosqlite.Row]:
+        """The signup that is each driver's, keyed by their profile id, as `driver_signup_on`
+        chooses it across the accounts core holds for them. A driver with none is absent."""
+        found: dict[int, aiosqlite.Row] = {}
+        async with get_connection(self._db_path) as db:
+            for profile_id in profile_ids:
+                row = await driver_signup_on(db, await accounts_of_profile(db, profile_id))
+                if row is not None:
+                    found[profile_id] = row
+        return found
 
     async def save_config(self, cfg: SignupModuleConfig) -> None:
         async with get_connection(self._db_path) as db:
@@ -908,6 +926,43 @@ async def configuration_confirmed_on(
             now.isoformat(),
         ),
     )
+
+
+async def driver_signup_on(
+    db: aiosqlite.Connection, accounts: list[str]
+) -> aiosqlite.Row | None:
+    """The signup record that is the driver's, read on *db*, or None where they have none.
+
+    A driver's signups are kept under the account each was made from, so *accounts* are every
+    account the driver has held (core's `accounts_of_profile`), and the signup is chosen across all
+    of them in `SIGNUP_PRECEDENCE_SQL`'s order: records are kept, never overwritten (#220), and an
+    approved one outranks a later one that was not (#243).
+    """
+    if not accounts:
+        return None
+    cursor = await db.execute(
+        "SELECT * FROM signup_records "
+        f"WHERE discord_user_id IN ({', '.join('?' * len(accounts))}) "
+        f"ORDER BY {SIGNUP_PRECEDENCE_SQL} LIMIT 1",
+        accounts,
+    )
+    return await cursor.fetchone()
+
+
+async def driver_names(
+    service: SignupModuleService, profile_ids: Iterable[int]
+) -> dict[int, str]:
+    """The name each driver of *profile_ids* gave in their signup, keyed by profile id.
+
+    Subscribed to core's `driver_names_read`. A driver with no signup, or whose signup holds no
+    name, is absent from the answer, and core names them by their account. Reads only, and whatever
+    the module's switch says: a signup kept while the module was on still names its driver.
+    """
+    return {
+        profile_id: row["server_display_name"]
+        for profile_id, row in (await service.driver_signups(profile_ids)).items()
+        if row["server_display_name"]
+    }
 
 
 async def driver_turned_down_on(db: aiosqlite.Connection, driver_profile_id: int) -> None:

@@ -715,7 +715,8 @@ class SeasonCog(commands.Cog):
         # Named in the public report, every one of them, so that whoever reads the review
         # sees who is still to be placed or turned down — not merely how many.
         unsettled, channel_faults = await approval_checks.placement_confirmation_faults(
-            self.bot.module_service, self.bot.db_path, season.id, interaction.guild
+            self.bot.module_service, self.bot.db_path, season.id, interaction.guild,
+            driver_names_read=self.bot.driver_names_read,
         )
         if unsettled:
             report.extend(chunk_message(
@@ -887,7 +888,8 @@ class SeasonCog(commands.Cog):
                 report.extend(chunk_message("\n".join(block)))
 
         unsettled, channel_faults = await approval_checks.placement_confirmation_faults(
-            self.bot.module_service, self.bot.db_path, season.id, interaction.guild
+            self.bot.module_service, self.bot.db_path, season.id, interaction.guild,
+            driver_names_read=self.bot.driver_names_read,
         )
         configuration_faults = await approval_checks.mid_season_configuration_faults(
             self.bot.module_service, self.bot.image_drawing

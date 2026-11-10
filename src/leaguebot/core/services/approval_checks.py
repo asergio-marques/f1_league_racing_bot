@@ -201,22 +201,27 @@ async def division_channel_faults(modules, db_path: str, season_id: int, guild=N
     return faults
 
 
-async def unsettled_signups(db_path: str) -> list[str]:
-    """The signups not yet settled, named: what the review and the confirmation both list."""
-    from leaguebot.core.services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL
+async def unsettled_signups(db_path: str, driver_names_read: AwaitedHook) -> list[str]:
+    """The signups not yet settled, named: what the review and the confirmation both list.
+
+    Each driver is named by what *driver_names_read* hands back for them, the name signup holds
+    from their signup, or by their account where it holds none.
+    """
     from leaguebot.core.services.season_lifecycle_service import UNSETTLED_STATES
 
     placeholders = ",".join("?" for _ in UNSETTLED_STATES)
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            f"SELECT dp.discord_user_id, dp.current_state, sr.server_display_name "
-            f"FROM driver_profiles dp "
-            f"LEFT JOIN signup_records sr ON sr.id = {DRIVERS_SIGNUP_OF_DP_SQL} "
-            f"WHERE dp.current_state IN ({placeholders}) "
-            f"ORDER BY dp.current_state, dp.discord_user_id",
+            f"SELECT id, discord_user_id, current_state FROM driver_profiles "
+            f"WHERE current_state IN ({placeholders}) "
+            f"ORDER BY current_state, discord_user_id",
             (*UNSETTLED_STATES,),
         )
         unsettled_rows = await cursor.fetchall()
+
+    names: dict[int, str] = {}
+    for handed in await driver_names_read.call([row["id"] for row in unsettled_rows]):
+        names.update(handed)
 
     state_labels = {
         "UNASSIGNED": "not yet placed",
@@ -225,7 +230,7 @@ async def unsettled_signups(db_path: str) -> list[str]:
         "PENDING_DRIVER_CORRECTION": "correcting their signup",
     }
     return [
-        f"**{row['server_display_name'] or row['discord_user_id']}** — "
+        f"**{names.get(row['id']) or row['discord_user_id']}** — "
         f"{state_labels.get(row['current_state'], row['current_state'])}"
         for row in unsettled_rows
     ]
@@ -492,16 +497,22 @@ async def season_has_divisions(season_id: int, *, season_service: SeasonService)
 
 
 async def placement_confirmation_faults(
-    module_service: ModuleService, db_path: str, season_id: int, guild: discord.Guild | None = None
+    module_service: ModuleService,
+    db_path: str,
+    season_id: int,
+    guild: discord.Guild | None = None,
+    *,
+    driver_names_read: AwaitedHook,
 ) -> tuple[list[str], list[str]]:
     """What stops placements being confirmed that no older gate checks.
 
     Returns ``(unsettled, channels)``: the unsettled signups, named, and every channel a
     division posts to that is not set or no longer on the server. The review
     withholds its button on either, and the confirmation refuses on either, from this one
-    reading — mid-season as at the first confirmation.
+    reading — mid-season as at the first confirmation. The unsettled are named through
+    *driver_names_read*.
     """
-    unsettled = await unsettled_signups(db_path)
+    unsettled = await unsettled_signups(db_path, driver_names_read)
     return unsettled, await division_channel_faults(module_service, db_path, season_id, guild)
 
 

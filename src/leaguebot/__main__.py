@@ -392,6 +392,20 @@ def _sign_up_to_configuration_confirmed(bot: LeagueBot) -> None:
     bot.configuration_confirmed.subscribe(signup_module_service.configuration_confirmed_on)
 
 
+def _sign_up_to_driver_names_read(bot: LeagueBot) -> None:
+    """Make the hook a driver's name is read through, and sign each module's part up to it: the
+    name a module holds for each driver of the profile ids core hands it. Signup names a driver by
+    their signup, across every account they have held, through its module service. The builder
+    hands it to the placements review and its confirmation (architecture.md, "How modules and core
+    fit together")."""
+    from leaguebot.signup.services import signup_module_service
+
+    bot.driver_names_read = AwaitedHook()
+    bot.driver_names_read.subscribe(
+        partial(signup_module_service.driver_names, bot.signup_module_service)
+    )
+
+
 def _sign_up_to_driver_turned_down(bot: LeagueBot) -> None:
     """Make the hook a driver turned down declares, and sign each module's part up to it: what a
     module lets go of from the driver, on the connection of the save that turns them down, given
@@ -591,6 +605,7 @@ def _approve_view_for(bot: LeagueBot) -> "Callable[[dict[str, Any]], discord.ui.
             output_router=bot.output_router,
             round_windows_read=bot.round_windows_read,
             confirmation_refused=bot.confirmation_refused,
+            driver_names_read=bot.driver_names_read,
             now=bot.change_queue.now,
         )
 
@@ -1212,6 +1227,7 @@ def register_change_types(bot: LeagueBot) -> None:
             placement=bot.placement_service,
             drawing=bot.image_drawing,
             rasteriser_fault=bot.image_drawing.rasteriser_fault,
+            driver_names_read=bot.driver_names_read,
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -1642,6 +1658,7 @@ async def build(settings: Settings) -> LeagueBot:
     _sign_up_to_test_mode_turned_on(bot)
     _sign_up_to_configuration_confirmed(bot)
     _sign_up_to_driver_turned_down(bot)
+    _sign_up_to_driver_names_read(bot)
     _sign_up_to_driver_account_changed(bot)
     _sign_up_to_placements_confirmed(bot)
     _sign_up_to_season_completed(bot)

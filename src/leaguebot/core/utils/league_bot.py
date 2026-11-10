@@ -98,6 +98,11 @@ class LeagueBot(commands.Bot):
     #: approval and configuration check read no module's service (architecture.md, "A hook core
     #: declares is a list of subscribers"); `read_refusals` gathers what they hand back.
     confirmation_refused: AwaitedHook
+    #: A driver's name read (the placements review and its confirmation naming the unsettled
+    #: signups): signup signs up a function handing back, for the profile ids it is given, the name
+    #: each gave in their signup. The builder makes it and signs signup up, so that core reads no
+    #: signup record (architecture.md, "A hook core declares is a list of subscribers").
+    driver_names_read: AwaitedHook
     #: The moment a season review gathers its lines (`/season placements-review` and
     #: `/season config-review`): each module signs up a function handing back its own section
     #: of the review, or nothing, as its own switch decides, handed which review is gathered, the

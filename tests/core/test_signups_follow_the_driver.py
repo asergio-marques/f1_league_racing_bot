@@ -142,9 +142,6 @@ async def _in_two_seasons(db_path: str) -> None:
         pytest.param(True, True, "Racer Now", id="the-later-season-s-over-an-earlier-approved-one"),
     ],
 )
-@pytest.mark.xfail(
-    strict=True, reason="#283: signup has no reader of a driver's name across their accounts"
-)
 async def test_signup_names_a_driver_from_their_signup_across_accounts(
     tmp_path, approved, two_seasons, name
 ):

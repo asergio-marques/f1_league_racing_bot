@@ -76,6 +76,7 @@ from leaguebot.core.services.season_approval_change import (
 from leaguebot.core.services.season_fingerprint_service import SeasonFingerprint, take_fingerprint
 from leaguebot.core.services.season_lifecycle_service import confirm_placements_on
 from leaguebot.core.services.placement_service import uncommitted_placements_on
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
@@ -192,14 +193,16 @@ def mid_season_confirm_change(
     placement: Any,
     drawing: "ImageDrawing",
     rasteriser_fault: Callable[[], str | None],
+    driver_names_read: AwaitedHook,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that confirms a season's placements mid-season; see the module.
 
     The builder hands in *modules* (which modules are on), the *placement* service (a driver's
     roles, a division's lineup), the image module's own drawing (*drawing*) and
-    *rasteriser_fault* (what is wrong with the host's drawing program, None where nothing is) and
-    *now* (the queue's clock, which stamps the lineup's audit).
+    *rasteriser_fault* (what is wrong with the host's drawing program, None where nothing is),
+    *driver_names_read* (the hook an unsettled driver is named through) and *now* (the queue's
+    clock, which stamps the lineup's audit).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -229,7 +232,7 @@ def mid_season_confirm_change(
                 f"the season has changed since this review:\n{bullets}",
             )
 
-        unsettled = await approval_checks.unsettled_signups(ctx.db_path)
+        unsettled = await approval_checks.unsettled_signups(ctx.db_path, driver_names_read)
         guild = await league_guild(ctx.bot)
         channels = await approval_checks.division_channel_faults(
             modules, ctx.db_path, season_id, guild
