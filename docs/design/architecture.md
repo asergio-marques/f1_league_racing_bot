@@ -155,7 +155,7 @@ falling due, a round amended or its timed work armed again, a round's timing win
 a division or a season cancelled, a round's results made final, placements confirmed, a season's
 configuration confirmed, a review gathering its lines, the placements review gathering each
 division's lines, a division's channel faults read, a channel's uses read as a command sets it, the
-factory reset gathering the channels each module's settings hold, a round's drawn phases read, a
+factory reset gathering the channels each module holds, a round's drawn phases read, a
 driver's name read, the divisions a driver's accounts raced in read, a driver's standing in a
 division read for the season's history, a season's fingerprint taken, a season's pending test-mode
 steps read, the test-mode review's marks read, a season's confirmation judged, a division's final
@@ -179,7 +179,8 @@ keep, a line to write, a step to plan or to register, a refusal to give. The hoo
 and no module's operation, so a module's part of the moment is the module's own code, and a module
 added later signs up without core changing, the switch read aside (below). A hook keyed by a kind
 takes one function for each key instead, as a kind of timed job takes its one handler (see "Timed
-work and restarts"). **A module's switch read is a keyed hook:** one reader for each module, keyed
+work and restarts") and a kind of a round's job its one `/test-mode advance` step; each is an object
+the builder makes and every module signs up on, never a registry a module keeps for the process. **A module's switch read is a keyed hook:** one reader for each module, keyed
 by the module's name, which the module's own work may also call; core asks for it by that name
 (`is_<module>_enabled`, or `is_enabled_on` on a connection the caller holds), because core names the
 modules and shows which are on in the reviews (the core specification's "Modules"), and keeps the
@@ -1370,9 +1371,12 @@ later on its own.
   use may, as a cog does; `league_guild` is the one a service calls), a table written by a module
   that does not own it, a table read outside its owner (core's tables too; the scan sees tables, not
   columns, so a module's read of its own columns on a core table is named for good,
-  `READS_OF_OWN_COLUMNS`), a module's own column on a core table named in a file outside that
-  module, the entry point's included (`KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER`; the check counts the
-  column's name in any string outside a docstring, in SQL or as a row's key), core reading a
+  `READS_OF_OWN_COLUMNS`; a table whose name is spliced into an f-string after `FROM` or `JOIN`
+  cannot be told, so each counts unless its function was read by hand and found to name only its
+  own module's tables, `SPLICED_READS_READ_BY_HAND`, which holds the count exactly), a module's own
+  column on a core table named in a file outside that module, the entry point's included
+  (`KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER`; the check counts the column's name in any string outside
+  a docstring, in SQL or as a row's key, and each attribute named for it, read or set), core reading a
   module's service on the bot (an attribute `LeagueBot` types from a module's package, read from a
   file of core), SQLite's clock in a statement, a service reading the wall clock (the change queue's
   own default clock is the one place allowed, `WALL_CLOCK_ALLOWED`), a catch-all handler outside the

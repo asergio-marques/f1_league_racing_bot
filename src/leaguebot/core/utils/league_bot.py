@@ -137,9 +137,10 @@ class LeagueBot(commands.Bot):
     #: (architecture.md, "A hook core declares is a list of subscribers").
     channel_uses_read: AwaitedHook
     #: The moment the factory reset gathers the channels it cleans up: each module signs up a
-    #: function handing back the ids of every channel its own settings hold, in any season (the
-    #: database's path is bound as it signs up), whatever its switch. The builder makes it and
-    #: signs them up in the same order, so that core's reset reads no module's table
+    #: function handing back, as `DiscordTargets`, every channel it holds in any season (the
+    #: database's path is bound as it signs up), whatever its switch: those its settings name and
+    #: those it posted to, and apart from them those it created. The builder makes it and signs
+    #: them up in the same order, so that core's reset reads no module's table
     #: (architecture.md, "A hook core declares is a list of subscribers").
     setting_channels_read: AwaitedHook
     #: The moment a season's fingerprint is taken (a review's post, and every check that compares
