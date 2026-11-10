@@ -154,19 +154,18 @@ opening rules). Stewarding adds a second [STW-MOD-007].
 falling due, a round amended or its timed work armed again, a round's timing windows read, a round,
 a division or a season cancelled, a round's results made final, placements confirmed, a season's
 configuration confirmed, a review gathering its lines, the placements review gathering each
-division's lines, a division's channel faults read, what a channel is already used for, read when a
-command sets it, the channels every module's settings hold read for the factory reset, which phases
-a round has had drawn read, a driver's name read, the divisions a driver's
-accounts raced in read, a driver's standing in a division read for the season's history, a season's
-fingerprint taken, a season's pending test-mode steps read, the test-mode review's marks read, a
-season's confirmation judged, a division's final round read, a season ending, a season, division,
-round or driver deleted, a driver merged into another or turned down, a driver's account changed, a
-base role changed, the bot packed, test mode turned on, the bot's in-memory state cleared, the hub's
-panel gathering its options, a module's switch read), core declares a hook. The builder signs each
-module up to it before the bot connects. Core calls whoever signed up, and never imports a module,
-the bot's type aside (see "How the code is laid out"). A module turned on or off is not a hook but a
-change of the module's own, which core asks for by its kind (see "Each module turns itself on and
-off").
+division's lines, a division's channel faults read, a channel's uses read as a command sets it, the
+factory reset gathering the channels each module's settings hold, a round's drawn phases read, a
+driver's name read, the divisions a driver's accounts raced in read, a driver's standing in a
+division read for the season's history, a season's fingerprint taken, a season's pending test-mode
+steps read, the test-mode review's marks read, a season's confirmation judged, a division's final
+round read, a season ending, a season, division, round or driver deleted, a driver merged into
+another or turned down, a driver's account changed, a base role changed, the bot packed, test mode
+turned on, the bot's in-memory state cleared, the hub's panel gathering its options, a module's
+switch read), core declares a hook. The builder signs each module up to it before the bot connects.
+Core calls whoever signed up, and never imports a module, the bot's type aside (see "How the code is
+laid out"). A module turned on or off is not a hook but a change of the module's own, which core
+asks for by its kind (see "Each module turns itself on and off").
 
 **A hook core declares is a list of subscribers.** Core declares the moment and what it hands over:
 what the moment concerns, where it concerns anything (the rows, the round, the driver's accounts,
@@ -522,16 +521,17 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   repair settings' own, beside the league's — it would let two lanes write the league's
   configuration at once, each save re-judging the other's collisions, for no gain once overtaking a
   stop does the same job on the one lane. A channel setting's save re-checks nothing even though an
-  overtaking change runs ahead of its stopped head's remaining jobs, because no change that can
-  stop a lane gives a channel a job: a change that claims one of the channels a channel setting's
-  check reads (`channel_registry_service.find_channel_use`'s sources) is a `Setting` or
-  `/bot init`, and neither ever stops a lane, each ending on a fault instead (the docstrings of
-  `setting_change.py` and `bot_init_change.py` say so); every command that sets such a channel
-  keeps to this as it moves onto the queue. So no stopped head ever has a remaining job that claims
-  a channel, an overtaking change runs to its own end before the head is tried again, and a channel
-  setting's check as the change starts is still the save's last judgement of the state. That
-  invariant is the one a later reader could tune away: a change that can stop its lane and claims a
-  channel would need the save to re-check, or would need to be barred from being overtaken.
+  overtaking change runs ahead of its stopped head's remaining jobs, because no change that can stop
+  a lane gives a channel a job: a change that claims one of the channels a channel setting's check
+  reads (`channel_registry_service.find_channel_use`'s: core's own and those its `channel_uses_read`
+  subscribers name) is a `Setting` or `/bot init`, and neither ever stops a lane, each ending on a
+  fault instead (the docstrings of `setting_change.py` and `bot_init_change.py` say so); every
+  command that sets such a channel keeps to this as it moves onto the queue. So no stopped head ever
+  has a remaining job that claims a channel, an overtaking change runs to its own end before the
+  head is tried again, and a channel setting's check as the change starts is still the save's last
+  judgement of the state. That invariant is the one a later reader could tune away: a change that
+  can stop its lane and claims a channel would need the save to re-check, or would need to be barred
+  from being overtaken.
 
   Nothing else overtakes the stopped job, so whatever runs outside the queue leaves alone what a
   change is in hand on, stopped included, as the queue tells it (`unfinished` or `in_hand`; core
