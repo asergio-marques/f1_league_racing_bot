@@ -136,9 +136,9 @@ def _check_then(league, kind: str, then):
 
 async def _ask_add(league, shorthand: str = "Alpine", full_name: str = "Alpine Racing",
                    role_id: int = ALPINE_ROLE, *, role=None):
-    """The "Add a team" form submitted by Admin with *shorthand*, *full_name* and the role
-    *role_id* (or the double *role*): the interaction. The queue is not run."""
-    from leaguebot.core.cogs.team_cog import TeamCog
+    """The "Add a team" form submitted by Admin with *shorthand* and *full_name* as typed and the
+    role *role_id* (or the double *role*) chosen: the form's interaction. The queue is not run."""
+    from leaguebot.core.cogs.team_cog import TeamCog, _TeamAddModal
     from tests.support.change_queue import tier_member
     from tests.support.season_league import ADMIN_ID
     from tests.support.settings_league import interaction
@@ -147,10 +147,11 @@ async def _ask_add(league, shorthand: str = "Alpine", full_name: str = "Alpine R
         league.bot, None, user=tier_member("manager", member_id=ADMIN_ID, display_name="Admin"),
     )
     asked.guild = league.guild
-    await TeamCog(league.bot).add_team(
-        asked, shorthand=shorthand, full_name=full_name,
-        role=role if role is not None else league._role(role_id), what=_ADD_FORM,
-    )
+    form = _TeamAddModal(TeamCog(league.bot))
+    form.shorthand._value = shorthand
+    form.full_name._value = full_name
+    form.role._values = [role if role is not None else league._role(role_id)]
+    await form.on_submit(asked)
     return asked
 
 
@@ -183,11 +184,11 @@ _STANDING = {
 @pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_team_add_its_row_mapping_audit_entries_and_line_are_one_save(tmp_path):
     """The core specification's team list, and its record of what changed. The season is in
-    Configuration. Admin submits the "Add a team" form with the shorthand Alpine, the full name
-    "Alpine Racing" and the role 813. They are answered at once with the queue's acknowledgement,
+    Configuration. Admin submits the "Add a team" form with the shorthand "  Alpine  " and the full
+    name " Alpine Racing ", stray spaces typed about both, and the role 813. They are answered at once with the queue's acknowledgement,
     "Adding **Alpine Racing**", naming its first job, and nothing is written until the queue runs
     the change, of kind `core.team_add`. Once it has, the server's list holds Alpine, "Alpine
-    Racing", mapped to 813; two audit entries, by Admin, on no division, stamped with the queue's
+    Racing", the form having trimmed both names, mapped to 813; two audit entries, by Admin, on no division, stamped with the queue's
     clock, record the team added (`TEAM_ADD`: the shorthand and full name) and then its role
     (`TEAM_ROLE_CONFIG`: Alpine, 813, where it had none); the log channel holds today's success
     line once; no role is given or taken on Discord; no division's teams change, the server's
@@ -200,7 +201,7 @@ async def test_a_team_add_its_row_mapping_audit_entries_and_line_are_one_save(tm
 
     league = await _team_league(tmp_path)
     divisions = await _division_teams(league)
-    asked = await _ask_add(league)
+    asked = await _ask_add(league, "  Alpine  ", " Alpine Racing ")
 
     first_job = (await step_rows(league.db_path))[0]["id"]
     assert said(asked)[0] == f"{acknowledged(_adding())} It begins with job #{first_job}."
