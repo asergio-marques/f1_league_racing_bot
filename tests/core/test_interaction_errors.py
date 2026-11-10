@@ -289,12 +289,6 @@ async def test_a_failed_form_tells_the_member_and_the_log_channel():
 
 # ── Discord events ────────────────────────────────────────────────────────
 
-#: Why the event tests fail until the build: discord.py's own `Client.on_error` only logs.
-NO_EVENT_HANDLER = (
-    "#283: the builder attaches no error handler for Discord events, so a listener that raises "
-    "reaches discord.py's own handler, which only logs"
-)
-
 #: The log channel's line for a Discord event whose listener raised: the failure line's shape,
 #: with no member to name.
 EVENT_LINE = (
@@ -318,7 +312,6 @@ def _handler_records(caplog) -> list[logging.LogRecord]:
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=NO_EVENT_HANDLER)
 async def test_a_failed_event_goes_to_the_host_log_and_the_log_channel(caplog):
     """A listener that raises reaches the one error handler for Discord events, which the
     builder attaches to the bot (architecture.md, "Errors and failures"): the full error goes to
@@ -339,7 +332,6 @@ async def test_a_failed_event_goes_to_the_host_log_and_the_log_channel(caplog):
     assert "on_message" in records[0].getMessage()
 
 
-@pytest.mark.xfail(strict=True, reason=NO_EVENT_HANDLER)
 @pytest.mark.parametrize("log_channel", ["refuses", "not built"])
 async def test_the_event_error_handler_never_raises(log_channel, caplog):
     """The handler is itself a failure path: where the line cannot be recorded, whether the

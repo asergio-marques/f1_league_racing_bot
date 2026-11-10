@@ -21,7 +21,12 @@ from leaguebot.core.services.season_review_changes import recover_expired_review
 from leaguebot.core.services.start_up import StartUpStep, start_up
 from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.league_server import league_guild, LeagueCommandTree, warn_if_serving_several
+from leaguebot.core.utils.league_server import (
+    league_guild,
+    LeagueCommandTree,
+    on_event_error,
+    warn_if_serving_several,
+)
 from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
 
 if TYPE_CHECKING:
@@ -109,6 +114,9 @@ def create_bot() -> LeagueBot:
 
     bot.add_listener(_warn_if_serving_several, "on_ready")
     bot.add_listener(_warn_if_serving_several, "on_guild_join")
+    # A listener that raises is reported by one handler, never by a method of the bot. It is set
+    # with `setattr` because the type check reads an assignment to `on_error` as one to a method.
+    setattr(bot, "on_error", partial(on_event_error, bot))
 
     return bot
 

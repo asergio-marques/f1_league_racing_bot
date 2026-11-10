@@ -34,18 +34,28 @@ while no server is claimed; see `LeagueView`.
 **The same three classes are where a failure is answered.** A command, button or form that
 raises is reported to its member, the log channel and the host's log by
 `leaguebot.core.utils.interaction_errors.report_failure`, which each class's `on_error` calls (issue #156).
+
+**A failed Discord event is answered by `on_event_error`**, which the builder attaches to the bot
+as its `on_error`. An event has no member to tell, so the full error goes to the host's log and
+one line, from `event_failure_line`, to the log channel.
 """
 
 from __future__ import annotations
 
 import logging
+import sys
 from collections.abc import Awaitable, Callable
 
 import discord
 from discord import app_commands
 
 from leaguebot.core.utils.answering import answer_for
-from leaguebot.core.utils.interaction_errors import describe, describe_form, report_failure
+from leaguebot.core.utils.interaction_errors import (
+    describe,
+    describe_form,
+    event_failure_line,
+    report_failure,
+)
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 
 log = logging.getLogger(__name__)
@@ -216,6 +226,39 @@ class LeagueModal(discord.ui.Modal):
         # because discord.py's own `Modal` narrows `BaseView.on_error`, and a subclass has to
         # satisfy both (#228).
         await report_failure(interaction, error, what=describe_form(self))
+
+
+async def on_event_error(bot: LeagueBot, event: str, /, *args: object, **kwargs: object) -> None:
+    """Report the failure of the listener for the Discord event *event*, called inside its `except`.
+
+    The builder attaches it to the bot as `on_error`, with the bot bound first, in place of
+    discord.py's own, which only logs. It is a function here, beside the base classes, and
+    never a method of the bot (architecture.md, "Errors and failures"). The listener's own
+    arguments are dropped: they can hold a member's message, and neither the host's log nor the
+    log channel needs it to say which event failed.
+
+    The host's log keeps the full error with its traceback, once. The log channel gets one line
+    through the bot's log writer, which keeps a line it cannot post for retry as it keeps any.
+
+    **It never raises**, being itself a failure path: where the line cannot be recorded, because
+    the writer raises or the bot has none yet, that is logged and nothing more.
+    """
+    error = sys.exc_info()[1]
+    log.error("the bot's handling of the Discord event %s failed", event, exc_info=error)
+    if error is None:
+        return
+    router = getattr(bot, "output_router", None)
+    if router is None:
+        return
+    try:
+        await router.post_log(event_failure_line(event, error))
+    except Exception as exc:  # noqa: BLE001 — the handler must never raise
+        log.error(
+            "could not record in the log channel that the handling of %s failed: %s",
+            event,
+            exc,
+            exc_info=True,
+        )
 
 
 #: What a button or a menu built at runtime does when it is used.

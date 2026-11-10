@@ -94,6 +94,17 @@ def failure_line(what: str, named: str, error: BaseException) -> str:
     )
 
 
+def event_failure_line(event: str, error: BaseException) -> str:
+    """The log channel's line for the Discord event *event* whose handling failed with *error*.
+
+    The failure line's shape, with no member to name: an event has none.
+    """
+    return (
+        f"❌ The bot's handling of the Discord event `{event}` failed — "
+        f"{type(error).__name__}. The details are in the host's log."
+    )
+
+
 def describe_fault(error: BaseException) -> str:
     """The kind of fault *error* is, in plain words, never the exception itself."""
     if isinstance(error, app_commands.CommandInvokeError):
