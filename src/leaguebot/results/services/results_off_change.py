@@ -67,6 +67,7 @@ from leaguebot.core.services.season_lifecycle_service import (
 )
 from leaguebot.core.services.season_service import end_rounds_awaiting_results_on
 from leaguebot.core.utils.hooks import AwaitedHook
+from leaguebot.results.services.module_switch_settings import results_enabled_on
 from leaguebot.results.services.results_purge_service import (
     CHANNEL_KINDS,
     MESSAGE_KINDS,
@@ -119,9 +120,8 @@ def results_off_change(
 
     async def check(ctx: CheckContext) -> Verdict:
         async with get_connection(ctx.db_path) as db:
-            cursor = await db.execute("SELECT module_enabled FROM results_module_config")
-            row = await cursor.fetchone()
-        if row is None or not row["module_enabled"]:
+            results_on = await results_enabled_on(db)
+        if not results_on:
             return Verdict.refuse(ALREADY_DISABLED)
         if await modules_frozen_for_completion(ctx.db_path):
             return Verdict.refuse(FROZEN_FOR_COMPLETION_REFUSAL)
