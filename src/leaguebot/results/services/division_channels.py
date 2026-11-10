@@ -178,7 +178,11 @@ async def setting_channels(db_path: str, *, division_ids: Sequence[int]) -> set[
     found: set[int] = set()
     async with get_connection(db_path) as db:
         for column, _setting in _SETTINGS:
-            found |= await channel_ids_in(db, "division_results_config", column)
+            found |= await channel_ids_in(
+                db,
+                f"SELECT {column} FROM division_results_config WHERE {column} IS NOT NULL",
+                f"division_results_config.{column}",
+            )
     return found
 
 

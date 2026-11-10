@@ -153,13 +153,17 @@ async def gather_targets(db_path: str, *, setting_channels_read: AwaitedHook) ->
     async with get_connection(db_path) as db:
         created: set[int] = set()
         for table, column in _CREATED_SOURCES:
-            created |= await channel_ids_in(db, table, column)
+            created |= await channel_ids_in(
+                db, f"SELECT {column} FROM {table} WHERE {column} IS NOT NULL", f"{table}.{column}"
+            )
         settings = [
             (table, column) for _key, table, column in (*SERVER_SOURCES, *DIVISION_SOURCES)
         ]
         channels: set[int] = set()
         for table, column in [*settings, *_OTHER_SOURCES]:
-            channels |= await channel_ids_in(db, table, column)
+            channels |= await channel_ids_in(
+                db, f"SELECT {column} FROM {table} WHERE {column} IS NOT NULL", f"{table}.{column}"
+            )
         cursor = await db.execute("SELECT id FROM divisions")
         division_ids = [int(row[0]) for row in await cursor.fetchall()]
     for held in await setting_channels_read.call(division_ids=division_ids):

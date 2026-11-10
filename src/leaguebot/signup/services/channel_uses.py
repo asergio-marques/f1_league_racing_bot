@@ -30,4 +30,8 @@ async def setting_channels(db_path: str, *, division_ids: Sequence[int]) -> set[
     """The channel signup's setting names, where it is set. The divisions are handed, as they are
     every subscriber, and not read."""
     async with get_connection(db_path) as db:
-        return await channel_ids_in(db, "signup_module_config", "signup_channel_id")
+        return await channel_ids_in(
+            db,
+            "SELECT signup_channel_id FROM signup_module_config WHERE signup_channel_id IS NOT NULL",
+            "signup_module_config.signup_channel_id",
+        )

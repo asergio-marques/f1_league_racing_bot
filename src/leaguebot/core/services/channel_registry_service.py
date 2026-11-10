@@ -22,7 +22,7 @@ channels are the module's own columns (architecture.md, "Each table is read and 
 owner alone"), so the registry asks each module for the uses of a channel through the bot's
 `channel_uses_read` hook (:func:`find_channel_use`), and the factory reset asks each for every
 channel its settings hold, in any season, through `setting_channels_read`
-(:func:`channel_ids_in` is what a module reads a column with, for that).
+(:func:`channel_ids_in` parses the ids a module's own statement selects, for that).
 """
 
 from __future__ import annotations
@@ -109,20 +109,22 @@ SERVER_SOURCES: tuple[tuple[str, str, str], ...] = (
 )
 
 
-async def channel_ids_in(db: aiosqlite.Connection, table: str, column: str) -> set[int]:
-    """Every channel id *column* of *table* holds, as integers: what a module's
-    `setting_channels_read` subscriber reads its own channel columns with.
+async def channel_ids_in(db: aiosqlite.Connection, sql: str, source: str) -> set[int]:
+    """Every channel id the single column *sql* selects holds, as integers: what a
+    `setting_channels_read` subscriber reads its own channel columns with. The statement is the
+    caller's, as `tuple_rows_in` takes it, so that each table is read in the module that owns it;
+    *source* names the column, for the log.
 
     A column holding something that is not an id (a TEXT column holds whatever it was given) is
     logged and left out, so that one bad value never stops the clean-up reaching the rest.
     """
     found: set[int] = set()
-    cursor = await db.execute(f"SELECT {column} FROM {table} WHERE {column} IS NOT NULL")
+    cursor = await db.execute(sql)
     for row in await cursor.fetchall():
         try:
             found.add(int(row[0]))
         except (TypeError, ValueError):
-            log.warning("%s.%s holds %r, which is not a channel id", table, column, row[0])
+            log.warning("%s holds %r, which is not a channel id", source, row[0])
     return found
 
 
