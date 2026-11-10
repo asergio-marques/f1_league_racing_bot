@@ -1911,14 +1911,15 @@ class PlacementService:
         image_path: Path | None = None
         problem: str | None = None
         drawing = self._drawing
-        if not as_text and drawing is not None:
+        # Asked before the drawing's catch-all: the gate stands aside from its own faults, and a
+        # switch nobody signed up for is a fault in the bot's assembly, not a picture not drawn.
+        if not as_text and drawing is not None and await drawing.lineup_wanted():
             try:
-                if await drawing.lineup_wanted():
-                    picture = await drawing.draw_lineup(guild, division_id)
-                    if picture.problem is not None:
-                        problem = picture.problem
-                    elif picture.path is not None:
-                        image_path = picture.path
+                picture = await drawing.draw_lineup(guild, division_id)
+                if picture.problem is not None:
+                    problem = picture.problem
+                elif picture.path is not None:
+                    image_path = picture.path
             except Exception as exc:  # noqa: BLE001 — never block a placement on this
                 log.error("_refresh_lineup_post: image path failed: %s", exc, exc_info=True)
                 problem = str(exc)

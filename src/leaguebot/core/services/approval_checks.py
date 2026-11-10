@@ -447,6 +447,8 @@ async def image_configuration_faults(image_drawing: ImageDrawing) -> list[str]:
         log.error("config review: the per-tier colours could not be read: %s", exc, exc_info=True)
     try:
         portrait_fault = await image_drawing.portrait_fault()
+    except SwitchNotSignedUp:
+        raise  # a module that never signed up is a fault in the bot's assembly, not a reading
     except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
         log.error("config review: the portrait settings could not be read: %s", exc, exc_info=True)
         portrait_fault = None
