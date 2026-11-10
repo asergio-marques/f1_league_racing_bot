@@ -1324,9 +1324,6 @@ async def test_a_role_refused_after_a_team_modify_is_reported_and_the_queue_goes
 
 # ── /team reserve-role ────────────────────────────────────────────────────────────────
 
-#: Why each `/team reserve-role` test below fails until the build.
-_RESERVE_ON_THE_QUEUE = "#283: /team reserve-role is not yet a change on the queue"
-
 #: The Reserve team's role where a test gives it one, and the role a test moves it to.
 RESERVE_ROLE, RESERVES_ROLE = 815, 816
 _RESERVE_ROLE_COMMAND = "`/team reserve-role`"
@@ -1406,7 +1403,6 @@ async def _reserves_role_now_managed(league):
     _grantable(league, RESERVES_ROLE, "Reserves").managed = True
 
 
-@pytest.mark.xfail(strict=True, reason=_RESERVE_ON_THE_QUEUE)
 @pytest.mark.parametrize("season", _LIST_OPEN)
 @pytest.mark.parametrize(
     "role_id, role_name",
@@ -1508,7 +1504,6 @@ async def test_a_team_reserve_role_is_refused_at_the_ask(tmp_path, setup, role_i
     assert league.granted == {} and league.revoked == {}
 
 
-@pytest.mark.xfail(strict=True, reason=_RESERVE_ON_THE_QUEUE)
 async def test_a_failed_team_reserve_role_changes_nothing(tmp_path):
     """The season is in Configuration, and the Reserve team is mapped to 815. Admin runs
     `/team reserve-role` with 816, and as the queue runs it the database fails writing the audit
@@ -1539,7 +1534,6 @@ async def test_a_failed_team_reserve_role_changes_nothing(tmp_path):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_RESERVE_ON_THE_QUEUE)
 @pytest.mark.parametrize(
     "meanwhile, reply, standing",
     [
@@ -1585,7 +1579,6 @@ async def test_a_team_reserve_role_is_judged_again_as_it_starts(tmp_path, meanwh
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_RESERVE_ON_THE_QUEUE)
 async def test_a_refusal_found_inside_the_save_ends_the_team_reserve_role_and_the_lane_goes_on(
     tmp_path,
 ):
@@ -1629,7 +1622,6 @@ async def test_a_refusal_found_inside_the_save_ends_the_team_reserve_role_and_th
     assert last_said(haas) == _added("Haas", "Haas F1 Team", HAAS_ROLE)
 
 
-@pytest.mark.xfail(strict=True, reason=_RESERVE_ON_THE_QUEUE)
 async def test_a_team_reserve_role_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The season is in Configuration, and the Reserve team is mapped to 815. Admin runs
     `/team reserve-role` with 816 and is acknowledged; before the queue runs it, they run it again,
@@ -1677,7 +1669,6 @@ async def _reserve_seated_league(tmp_path, *seated: int):
     return league
 
 
-@pytest.mark.xfail(strict=True, reason=_RESERVE_ON_THE_QUEUE)
 @pytest.mark.parametrize(
     "role_id, role_name",
     [pytest.param(RESERVES_ROLE, "Reserves", id="set"), pytest.param(None, None, id="cleared")],
@@ -1732,7 +1723,6 @@ async def test_a_team_reserve_role_moves_its_seated_drivers_roles_after_the_save
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_RESERVE_ON_THE_QUEUE)
 async def test_a_role_refused_after_a_team_reserve_role_is_reported_and_the_queue_goes_on(
     tmp_path,
 ):

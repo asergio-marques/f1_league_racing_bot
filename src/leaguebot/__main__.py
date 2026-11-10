@@ -578,6 +578,7 @@ def register_change_types(bot: LeagueBot) -> None:
         team_add_change,
         team_modify_change,
         team_remove_change,
+        team_reserve_role_change,
     )
     from leaguebot.core.services.driver_changes import (
         driver_assign_change,
@@ -1010,6 +1011,11 @@ def register_change_types(bot: LeagueBot) -> None:
         team_modify_change(
             teams=bot.team_service, placement=bot.placement_service,
             now=lambda: bot.change_queue.now(),
+        )
+    )
+    bot.change_queue.register(
+        team_reserve_role_change(
+            placement=bot.placement_service, now=lambda: bot.change_queue.now()
         )
     )
     bot.change_queue.register(sheet_post_change())

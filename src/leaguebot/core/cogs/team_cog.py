@@ -14,11 +14,12 @@ from leaguebot.core.services.team_changes import (
     TEAM_ADD,
     TEAM_MODIFY,
     TEAM_REMOVE,
+    TEAM_RESERVE_ROLE,
     season_done_reply,
 )
 from leaguebot.core.services.team_service import FULL_NAME_MAX, SHORTHAND_MAX
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
-from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only, role_grant_refusal, changes_nothing
+from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only, changes_nothing
 from leaguebot.core.utils.interaction_errors import describe, describe_form
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import LeagueModal
@@ -507,52 +508,20 @@ class TeamCog(commands.Cog):
         interaction: discord.Interaction,
         role: discord.Role | None = None,
     ) -> None:
-        """Set or clear the Reserve team's role, on the same terms `/team modify` sets a team's.
+        """Ask for the Reserve team's role to be set or cleared, on the same terms `/team modify`
+        sets a team's.
 
-        Refused once the season is pending completion, for the reason given there, and refuses
-        a role the bot cannot grant as every team command does (#381).
+        The change is one on the queue (`core/services/team_changes.py`), which refuses at once,
+        and again as the change starts, once the season is pending completion, and a role the bot
+        cannot grant or another team holds, as every team command does (#381).
         """
-        if await self._refuse_once_the_season_is_done(
-            interaction, "reserve-role", what=describe(interaction)
-        ):
-            return
-        if role is not None:
-            refusal = role_grant_refusal(role)
-            if refusal is not None:
-                await refuse(interaction, f"⛔ {refusal}", what=describe(interaction))
-                return
-        await interaction.response.defer(ephemeral=True)
-        teams = await self.bot.team_service.get_teams_with_roles()
-        old_role_id = next((t["role_id"] for t in teams if t["is_reserve"]), None)
-        if role is not None:
-            try:
-                await self.bot.placement_service.set_team_role_config(
-                    "Reserve", role.id,
-                    actor_id=interaction.user.id, actor_name=str(interaction.user),
-                )
-            except ValueError as exc:
-                # Another team holds the role (#375): nothing is changed and no driver moves.
-                await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
-                return
-            msg = f"✅ Reserve team role set to {role.mention}."
-        else:
-            await self.bot.placement_service.delete_team_role_config(
-                "Reserve",
-                actor_id=interaction.user.id, actor_name=str(interaction.user),
-            )
-            msg = "✅ Reserve team role cleared."
-
-        # The drivers already seated in Reserve follow its role (issue #220).
-        moved = await self.bot.placement_service.swap_team_role(
-            "Reserve", old_role_id, role.id if role else None,
-            interaction.guild,
-        )
-        if moved:
-            msg += f" {moved} seated driver(s) moved to the new role."
-        await interaction.followup.send(msg, ephemeral=True)
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team reserve-role | Success\n"
-            + (f"  role: {role.name} (<@&{role.id}>)" if role else "  role: cleared"),
+        await self.bot.change_queue.ask(
+            TEAM_RESERVE_ROLE,
+            {
+                "role_id": None if role is None else role.id,
+                "role_name": None if role is None else role.name,
+            },
+            interaction=interaction, what=describe(interaction),
         )
 
 

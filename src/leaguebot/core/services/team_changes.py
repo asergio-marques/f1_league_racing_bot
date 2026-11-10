@@ -54,7 +54,7 @@ from leaguebot.core.services.change_queue import (
 from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.core.services.role_moves import MOVE_ROLES, role_move_step
 from leaguebot.core.services.season_service import live_season
-from leaguebot.core.services.team_service import TeamService, resolve_team_reference
+from leaguebot.core.services.team_service import RESERVE_NAME, TeamService, resolve_team_reference
 from leaguebot.core.utils.asset_slug import normalise
 from leaguebot.core.utils.channel_guard import role_grant_refusal
 from leaguebot.core.utils.league_server import league_guild
@@ -63,6 +63,7 @@ from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 TEAM_ADD = "core.team_add"
 TEAM_REMOVE = "core.team_remove"
 TEAM_MODIFY = "core.team_modify"
+TEAM_RESERVE_ROLE = "core.team_reserve_role"
 
 #: The names of the jobs, as the outcome and the tests know them.
 SAVE = "save"
@@ -70,6 +71,7 @@ CLOSE = "close"
 
 #: The reasons Discord's audit log is given for the roles of the drivers seated in a team.
 MODIFY_REASON = "Team's role changed"
+RESERVE_REASON = "Reserve team's role changed"
 
 #: The reply once a league admin has discarded the stopped save, for each change.
 NOTHING_ADDED = (
@@ -82,6 +84,10 @@ NOTHING_REMOVED = (
 
 NOTHING_MODIFIED = (
     'Nothing was changed: "{was_full_name}" stands as it was. Run `/team modify` again.'
+)
+NOTHING_RESERVED = (
+    "Nothing was changed: the Reserve team's role stands as it was. Run `/team reserve-role` "
+    "again."
 )
 
 _GONE = '"{full_name}" is no longer in the server\'s team list.'
@@ -567,8 +573,102 @@ def team_modify_change(
     )
 
 
+def team_reserve_role_change(
+    *, placement: PlacementService, now: Callable[[], datetime]
+) -> ChangeType:
+    """The `core.team_reserve_role` change type, for the builder to register: *placement* is what
+    the check judges the role through and the save maps it through, and gives the roles of the
+    drivers seated in the Reserve team, *now* the queue's clock.
+
+    The payload names the role the Reserve team is to be given (`role_id`, with `role_name` as the
+    line names it), or None where its role is cleared.
+    """
+
+    async def check(ctx: CheckContext) -> Verdict:
+        """The refusals of the season and of the role, each in its words."""
+        refused = await season_done_refusal(ctx.db_path, "reserve-role")
+        if refused is not None:
+            return refused
+        role_id = ctx.payload["role_id"]
+        if role_id is None:
+            return Verdict.go()
+        return await _role_refusal(
+            ctx, placement, int(role_id), other_than=RESERVE_NAME
+        ) or Verdict.go()
+
+    async def save(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """The one save; see the module."""
+        _actor(ctx)
+        role_id = ctx.payload["role_id"]
+        try:
+            if role_id is None:
+                old_role_id = await placement.delete_team_role_config_on(db, RESERVE_NAME)
+            else:
+                old_role_id = await placement.set_team_role_config_on(
+                    db, RESERVE_NAME, int(role_id), now=now()
+                )
+        except ValueError as refusal:
+            return _refused_in_save(ctx, refusal)
+        audits: tuple[AuditRecord, ...] = ()
+        if role_id is not None or old_role_id is not None:
+            audits = (
+                AuditRecord(
+                    "TEAM_ROLE_CONFIG",
+                    {"team": RESERVE_NAME, "role_id": old_role_id},
+                    {"team": RESERVE_NAME, "role_id": role_id},
+                ),
+            )
+        users = (
+            await placement.seated_user_ids_on(db, RESERVE_NAME) if old_role_id != role_id else []
+        )
+        return StepResult(
+            result={"saved": True}, audits=audits, then=_moves(users, old_role_id, role_id)
+        )
+
+    def details(ctx: StepContext) -> str:
+        role_id = ctx.payload["role_id"]
+        return "  role: cleared" if role_id is None else (
+            f"  role: {ctx.payload['role_name']} (<@&{role_id}>)"
+        )
+
+    def outcome(ctx: OutcomeContext) -> str:
+        refused = _refused(ctx)
+        if refused is not None:
+            return refused
+        if _saved(ctx) is None:
+            return NOTHING_RESERVED
+        role_id = ctx.payload["role_id"]
+        reply = (
+            "✅ Reserve team role cleared." if role_id is None
+            else f"✅ Reserve team role set to <@&{role_id}>."
+        )
+        moved = _moved(ctx)
+        if moved:
+            reply += f" {moved} seated driver(s) moved to the new role."
+        return _with_problems(reply, ctx)
+
+    return ChangeType(
+        kind=TEAM_RESERVE_ROLE,
+        opening=(PlannedStep(SAVE), PlannedStep(CLOSE)),
+        steps={
+            SAVE: Step(SAVE, StepKind.SAVE, save),
+            CLOSE: _close_step("/team reserve-role", details),
+            MOVE_ROLES: role_move_step(placement, reason=RESERVE_REASON),
+        },
+        check=check,
+        key=lambda payload: f"{TEAM_RESERVE_ROLE}|{json.dumps(payload, sort_keys=True)}",
+        doing=lambda payload: (
+            "Clearing the Reserve team's role" if payload["role_id"] is None
+            else "Setting the Reserve team's role"
+        ),
+        outcome=outcome,
+        lane=lambda _payload: LEAGUE_LANE,
+    )
+
+
 __all__ = [
-    "MODIFY_REASON", "NOTHING_ADDED", "NOTHING_MODIFIED", "NOTHING_REMOVED", "TEAM_ADD",
-    "TEAM_MODIFY", "TEAM_REMOVE", "list_lock_refusal", "season_done_refusal", "season_done_reply",
-    "team_add_change", "team_modify_change", "team_remove_change",
+    "MODIFY_REASON", "NOTHING_ADDED", "NOTHING_MODIFIED", "NOTHING_REMOVED", "NOTHING_RESERVED",
+    "RESERVE_REASON", "TEAM_ADD", "TEAM_MODIFY", "TEAM_REMOVE", "TEAM_RESERVE_ROLE",
+    "list_lock_refusal", "season_done_refusal", "season_done_reply", "team_add_change",
+    "team_modify_change", "team_remove_change", "team_reserve_role_change",
 ]
