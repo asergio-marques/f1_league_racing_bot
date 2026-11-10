@@ -591,7 +591,8 @@ async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(mo
     manager's interaction, naming season 31, the manager as reviewer and `/season config-review`,
     and carrying the evidence its report was computed from. The report's first section heads the
     review and says what is on and off and which role each team has, warning of the reserve
-    team's missing role; the review ends in the question asking to confirm the configuration.
+    team's missing role; the review ends in the question asking to confirm the configuration,
+    open for the next 5 minutes.
     The command writes no line to the log channel itself, no refusal and no "Review posted": the
     line naming who ran it is written once its question is posted (#482, criterion 6)."""
     bot = _report_bot(signup=True, test_mode=True)
@@ -610,6 +611,7 @@ async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(mo
     assert "Reserve → no role" in report
     assert "Reserve team has no role assigned" in report
     assert "Do you confirm this season's configuration?" in messages[-1]
+    assert "for the next 5 minutes" in messages[-1]
     assert (review["channel_id"], review["season_id"]) == (COMMAND_CHANNEL, SEASON_ID)
     assert (review["reviewer_id"], review["review"]) == (REVIEWER, "/season config-review")
     assert review["evidence"]

@@ -401,8 +401,8 @@ async def test_the_mid_season_review_names_each_driver_to_confirm_and_offers_the
     """Season 1 is placing two drivers mid-season, a member (1002) to Alpha Racing and the test
     driver Test Bravo to Reserve, both in Pro; Old is cancelled. The review asked of the queue,
     in the command's channel for season 1, names each driver and Pro's lineup as it will stand,
-    says nothing of Old, and offers the question with the evidence its report was computed
-    from; the command builds no view."""
+    says nothing of Old, and offers the question, open for the next 5 minutes, with the evidence
+    its report was computed from; the command builds no view."""
     cog = _report_cog(
         placements=[
             _placement("1002"),
@@ -421,6 +421,7 @@ async def test_the_mid_season_review_names_each_driver_to_confirm_and_offers_the
     assert "**Reserve**: *(empty)*" in text
     assert "Old" not in text, "a cancelled division has no lineup to confirm"
     assert "Do you confirm these placements?" in messages[-1][0]
+    assert "for the next 5 minutes" in messages[-1][0]
     review = cog.review_asked
     assert (review["channel_id"], review["season_id"]) == (interaction.channel_id, 1)
     assert review["reviewer_id"] == 42
