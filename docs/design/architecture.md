@@ -1220,10 +1220,10 @@ outcome, as `/test-mode backup save` does with a backup fault, saying that the p
 A refusal whose words the refusing code writes is raised as `Refused` (`core/models/refusal.py`), its
 text what the member reads, and a catch that turns one into a reply names `Refused` around the call
 that refuses and nothing else: parsing a payload, or calling a hook, stays outside it, so a save
-judges inside the catch and writes, hooks included, after it. `Refused` subclasses `ValueError`,
+that calls a hook judges inside the catch and calls the hook after it. `Refused` subclasses `ValueError`,
 which Python raises for a bug (`int("x")`, a bad enum value), so a fault keeps the bare
 `ValueError` and goes on as one. A refusal the command words itself from fields the error carries
-has a type of its own, not a `ValueError` (`PackRefused`, `PreviewRefused`), and is not converted.
+has a type of its own, not a `ValueError` (`PackRefused`), and is not converted.
 The driver state machine's refusal of a transition the table does not allow is
 `InvalidDriverTransition`, a fault that a save expecting the race catches by name.
 
