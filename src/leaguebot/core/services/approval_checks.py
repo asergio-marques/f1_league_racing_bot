@@ -26,6 +26,7 @@ from leaguebot.core.models.division import Division
 from leaguebot.core.models.round import AttendanceWindows, Round, WeatherWindows
 from leaguebot.core.services.approval_window_service import calendar_faults
 from leaguebot.core.services.config_service import ConfigService
+from leaguebot.core.services.confirmation_refusals import Confirmation, read_refusals
 from leaguebot.core.services.image_drawing import DivisionTeams, ImageDrawing, TeamSeats
 from leaguebot.core.services.module_service import ModuleService
 from leaguebot.core.services.season_service import SeasonService
@@ -33,7 +34,7 @@ from leaguebot.core.services.team_service import TeamService, validate_team_name
 from leaguebot.core.utils.asset_slug import normalise
 from leaguebot.core.utils.channel_guard import league_role_faults
 from leaguebot.core.utils.formatting import discord_ts
-from leaguebot.results.services import season_points_service
+from leaguebot.core.utils.hooks import AwaitedHook
 
 log = logging.getLogger(__name__)
 
@@ -514,7 +515,7 @@ async def configuration_faults(
     signup_module_service: SignupModuleSettings,
     config_service: ConfigService,
     team_service: TeamService,
-    db_path: str,
+    confirmation_refused: AwaitedHook,
     image_drawing: ImageDrawing,
 ) -> list[str]:
     """Every fault that stops a season's configuration being confirmed.
@@ -563,22 +564,13 @@ async def configuration_faults(
         for problem in await team_name_problems(team_service, None)
     ]
 
-    # ── Results: points configurations ────────────────────────────────────
-    if await module_service.is_results_enabled():
-        if await season_points_service.no_points_config_attached(db_path, season_id):
-            faults.append(
-                "No points configuration is attached to this season — "
-                "`/results config append`."
-            )
-        for name in await season_points_service.missing_points_config_problems(db_path, season_id):
-            faults.append(
-                f"The attached points configuration **{name}** does not exist — build "
-                f"it with `/results config add`, or drop it with `/results config detach`."
-            )
-        faults += [
-            f"Points table out of order: {fault}"
-            for fault in await season_points_service.points_ordering_problems(db_path, season_id)
-        ]
+    # ── The modules' own refusals: results' points configurations ─────────
+    faults += [
+        refusal.message
+        for refusal in await read_refusals(
+            confirmation_refused, season_id, Confirmation.CONFIGURATION
+        )
+    ]
 
     # ── Images: rasteriser, templates, colours, portraits ─────────────────
     if await module_service.is_images_enabled():

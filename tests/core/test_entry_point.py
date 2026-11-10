@@ -952,8 +952,6 @@ async def test_the_builder_signs_every_module_up_to_the_review_sections(tmp_path
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: no hook a season's confirmation is refused through; "
-                   "core reads results' points gates itself")
 async def test_the_builder_signs_results_up_to_a_confirmation_refused(tmp_path, monkeypatch):
     """Straight after `build`, results' refusals are signed up to the hook a season's confirmation
     is refused through, nothing called yet: handed the league's modules and the database, then

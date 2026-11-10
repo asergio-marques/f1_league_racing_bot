@@ -27,7 +27,6 @@ from tests.support import saves
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 SERVER_ID = 5600
-_NOT_YET = "#283: the points gates are core's, in approval_checks; results keeps none of its own"
 SEASON_ID = 13
 
 
@@ -152,7 +151,6 @@ def test_the_review_asks_the_helper_rather_than_the_service_itself():
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 def test_the_approval_gate_asks_the_same_helper():
     source = _function_source("confirmation_refusals")
 

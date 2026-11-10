@@ -24,7 +24,6 @@ from tests.support import saves
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 SERVER_ID = 5700
-_NOT_YET = "#283: the points gates are core's, in approval_checks; results keeps none of its own"
 SEASON_ID = 14
 
 
@@ -108,8 +107,7 @@ async def test_a_link_to_a_configuration_never_created_is_not_this_helpers_compl
 
 @pytest.mark.parametrize("surface, asks", [
     pytest.param("review_section", "no_points_config_attached("),
-    pytest.param("confirmation_refusals", "no_points_config_attached(",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+    pytest.param("confirmation_refusals", "no_points_config_attached("),
 ])
 def test_every_surface_asks_the_helper_rather_than_counting_for_itself(surface, asks):
     source = _function_source(surface)

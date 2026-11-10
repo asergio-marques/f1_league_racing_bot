@@ -92,10 +92,6 @@ ignore_imports =
     # type checker only (under TYPE_CHECKING). Services stay typed attributes on the bot
     # (architecture.md, "How the code is laid out").
     leaguebot.core.utils.league_bot -> leaguebot.*.services.*
-    # #283: results:
-    leaguebot.core.cogs.season_cog -> leaguebot.results.services.season_points_service
-    leaguebot.core.services.approval_checks -> leaguebot.results.services.season_points_service
-    leaguebot.core.services.season_review_workflows -> leaguebot.results.services.season_points_service
     # #283: signup:
     leaguebot.core.services.placement_service -> leaguebot.signup.models.signup_module
     # #284: the points amendment in the amendment service is results' code, to move there.

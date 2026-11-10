@@ -91,6 +91,13 @@ class LeagueBot(commands.Bot):
     #: or weather (architecture.md, "A hook core declares is a list of subscribers");
     #: `read_round_windows` gathers what they hand back.
     round_windows_read: AwaitedHook
+    #: The moment a season's confirmation is judged (the placements review, the approval and the
+    #: configuration's faults): each module signs up a function handing back what it refuses the
+    #: confirmation on, or nothing where its module is off, handed the season and which
+    #: confirmation is judged. The builder makes it and signs them up, so that core's review,
+    #: approval and configuration check read no module's service (architecture.md, "A hook core
+    #: declares is a list of subscribers"); `read_refusals` gathers what they hand back.
+    confirmation_refused: AwaitedHook
     #: The moment a season review gathers its lines (`/season placements-review` and
     #: `/season config-review`): each module signs up a function handing back its own section
     #: of the review, or nothing where its module is off, handed which review is gathered, the

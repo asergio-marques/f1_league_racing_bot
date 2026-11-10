@@ -37,6 +37,7 @@ from leaguebot.core.services.approval_checks import SignupModuleSettings
 from leaguebot.core.services.change_queue import ChangeQueue
 from leaguebot.core.services.config_service import ConfigService
 from leaguebot.core.services.configuration_confirm_change import KIND as CONFIGURATION_CONFIRM_KIND
+from leaguebot.core.services.confirmation_refusals import Confirmation, read_refusals
 from leaguebot.core.services.image_drawing import ImageDrawing
 from leaguebot.core.services.mid_season_confirm_change import (
     ALREADY_BEING_CONFIRMED,
@@ -66,7 +67,6 @@ from leaguebot.core.utils.league_bot import bot_of
 from leaguebot.core.utils.league_server import LeagueView
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
-from leaguebot.results.services import season_points_service
 
 __all__ = [
     "BackupBeforeApprovalView",
@@ -94,6 +94,7 @@ async def confirm_configuration(
     db_path: str,
     image_drawing: ImageDrawing,
     change_queue: ChangeQueue,
+    confirmation_refused: AwaitedHook,
     what: str | None = None,
     fingerprint: dict | None = None,
 ) -> bool:
@@ -133,7 +134,7 @@ async def confirm_configuration(
         signup_module_service=signup_module_service,
         config_service=config_service,
         team_service=team_service,
-        db_path=db_path,
+        confirmation_refused=confirmation_refused,
         image_drawing=image_drawing,
     )
     if faults:
@@ -495,6 +496,7 @@ async def approve_season(
     scheduler_service: SchedulerService,
     output_router: OutputRouter,
     round_windows_read: AwaitedHook,
+    confirmation_refused: AwaitedHook,
     now: Callable[[], datetime],
     deadline: datetime | None = None,
     what: str | None = None,
@@ -607,52 +609,18 @@ async def approve_season(
     # and attendance channels among them — is judged at Gate S above, by the helper the
     # review withholds its button on.
 
-    # ── Gate 2: points-config prerequisites (FR-013) ───────────────────────
-    if await module_service.is_results_enabled():
-        # Test mode is no exception: it attaches Standard and Half
-        # Points when it is enabled, and a test season that has had them detached is
-        # refused here as any other rather than having them attached again behind it.
-        errors: list[str] = []
-        if await season_points_service.no_points_config_attached(db_path, season.id):
-            errors.append("no points configuration is attached to this season")
-
-        # Counting the links is not the same as having the configurations they name.
-        # A link is a bare name, so one that was mistyped — or one whose configuration
-        # has since been removed — satisfies the count above and then breaks the
-        # snapshot further down, which is exactly the silence a snapshot that cannot be taken makes.
-        for phantom in await season_points_service.missing_points_config_problems(db_path, season.id):
-            errors.append(
-                f"points configuration **{phantom}** is attached to this season but "
-                f"does not exist — create it with `/results config add`, or drop it "
-                f"with `/results config detach {phantom}`"
-            )
-
-        if errors:
-            bullet_list = "\n\u2022 ".join(errors)
-            await refuse(
-                interaction,
-                f"\u274c Season cannot be approved \u2014 R&S prerequisites not met:\n\u2022 {bullet_list}",
-                what=what,
-                reason="R&S prerequisites not met:\n" + "\n".join(errors),
-            )
-            return False
-
-        # ── Gate 2a: monotonic ordering check (FR-008) ───────────────────
-        #
-        # Through the same helper `/season placements-review` reports from, so the report a
-        # manager was given and the refusal they then meet cannot disagree.
-        mono_errors = await season_points_service.points_ordering_problems(db_path, season.id)
-        if mono_errors:
-            bullet_list = "\n\u2022 ".join(mono_errors)
-            await refuse(
-                interaction,
-                f"\u274c Season cannot be approved \u2014 points configuration "
-                f"violates monotonic ordering:\n\u2022 {bullet_list}",
-                what=what,
-                reason="points configuration violates monotonic ordering:\n"
-                + "\n".join(mono_errors),
-            )
-            return False
+    # ── Gate 2: what the modules refuse the approval on (FR-013, FR-008) ───
+    #
+    # Results' points configurations: the first refusal, the prerequisites (FR-013) before the
+    # monotonic ordering (FR-008), read through the same helpers `/season placements-review`
+    # reports from, so the report a manager was given and the refusal they then meet cannot
+    # disagree.
+    refusals = await read_refusals(confirmation_refused, season.id, Confirmation.APPROVAL)
+    if refusals:
+        await refuse(
+            interaction, refusals[0].message, what=what, reason=refusals[0].reason
+        )
+        return False
 
     # ── Gate 2b: signup module config prerequisites ───────────────────────
     missing = await approval_checks.signup_prerequisite_problems(

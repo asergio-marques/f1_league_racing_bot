@@ -48,6 +48,7 @@ from leaguebot.core.services.division_settings import NO_SEASON_REFUSAL, divisio
 from leaguebot.core.services.image_drawing import Held
 from leaguebot.core.services.round_amend_change import ROUND_AMEND, payload_changes
 from leaguebot.core.services.round_moments import read_round_windows
+from leaguebot.core.services.confirmation_refusals import Confirmation, read_refusals
 from leaguebot.core.services.review_sections import Review, read_review_sections
 from leaguebot.core.services.division_add_change import KIND as DIVISION_ADD
 from leaguebot.core.services.division_duplicate_change import KIND as DIVISION_DUPLICATE
@@ -75,7 +76,6 @@ from leaguebot.core.services.season_end_changes import (
     season_end_refusal,
 )
 from leaguebot.core.services.amendment_rules_service import amendment_changes_nothing
-from leaguebot.results.services import season_points_service
 import leaguebot.core.services.track_service as track_service
 from leaguebot.core.services.season_service import (
     SeasonCapacityCounts,
@@ -595,13 +595,6 @@ class SeasonCog(commands.Cog):
         # own channels, and the manager reading this is the one person able to fix it.
         approval_blockers: list[str] = []
 
-        # Kept beside it rather than inside the results branch that fills it: the block
-        # that withholds the approve button reads this whether or not the results module
-        # is on, and a season with results off has no points tables to be wrong about.
-        points_faults: list[str] = []
-        phantom_configs: list[str] = []
-        no_points_attached = False
-
         # The divisions the review shows, read before the modules are asked for their sections,
         # which hand lines for each of them.
         db_divisions = await self.bot.season_service.get_divisions_with_results_config(season.id)
@@ -689,13 +682,12 @@ class SeasonCog(commands.Cog):
             header_lines += [f"  • {problem}" for problem in name_problems]
             header_lines.append("")
 
-        # ── Points: what withholds the button ─────────────────────
-        # Read through the helpers results' own section reports from and the approval refuses
-        # on, so the report and the refusal cannot drift.
-        if results_on:
-            no_points_attached = await season_points_service.no_points_config_attached(self.bot.db_path, season.id)
-            phantom_configs = await season_points_service.missing_points_config_problems(self.bot.db_path, season.id)
-            points_faults = await season_points_service.points_ordering_problems(self.bot.db_path, season.id)
+        # ── What the modules refuse the confirmation on ──────────
+        # Read through the hook the approval and the configuration's faults read it by, so the
+        # report and the refusal cannot drift. Each is a private reply, sent below.
+        module_refusals = await read_refusals(
+            self.bot.confirmation_refused, season.id, Confirmation.REVIEW
+        )
 
         # Pre-fetch role configs so we can warn about teams missing a role
         teams_with_roles = await self.bot.team_service.get_teams_with_roles(
@@ -932,38 +924,8 @@ class SeasonCog(commands.Cog):
                 "Put it right, then run `/season placements-review` again."
             ):
                 await poster.reply(chunk, ephemeral=True)
-        if no_points_attached:
-            await poster.reply(
-                "⛔ **No points configuration is attached to this season.**\n"
-                "Without one there is nothing to score its results by. The season is "
-                "**not** offered for approval while that stands — attach one with "
-                "`/results config append`, then run `/season placements-review` again.",
-                ephemeral=True,
-            )
-        if phantom_configs:
-            body = "\n".join(f"\u2022 **{name}**" for name in phantom_configs)
-            await poster.reply(
-                "\u26d4 **This season is attached to a points configuration that "
-                "does not exist.**\n"
-                f"{body}\n"
-                "Nothing of that name is in the server's points store, so there is "
-                "nothing for the approval to copy. The season is **not** offered for "
-                "approval while that stands \u2014 build it with `/results config add`, or "
-                "drop it with `/results config detach`, then run `/season placements-review` "
-                "again.",
-                ephemeral=True,
-            )
-        if points_faults:
-            body = "\n".join(f"\u2022 {fault}" for fault in points_faults)
-            await poster.reply(
-                "\u26d4 **This season's points tables are out of order.**\n"
-                f"{body}\n"
-                "A lower position cannot be worth as much as the one above it. The "
-                "season is **not** offered for approval while that stands — repair "
-                "the tables with `/results config session`, then run `/season placements-review` "
-                "again.",
-                ephemeral=True,
-            )
+        for refusal in module_refusals:
+            await poster.reply(refusal.message, ephemeral=True)
         if name_problems:
             # Named in full at the head of the review. No command renames a team once
             # the configuration is confirmed, which fixes the team list (see
@@ -1000,9 +962,7 @@ class SeasonCog(commands.Cog):
         offered = (
             not approval_blockers
             and not calendar_faults_found
-            and not points_faults
-            and not phantom_configs
-            and not no_points_attached
+            and not module_refusals
             and not name_problems
             and not unsettled
             and not channel_faults
@@ -1246,7 +1206,7 @@ class SeasonCog(commands.Cog):
             signup_module_service=self.bot.signup_module_service,
             config_service=self.bot.config_service,
             team_service=self.bot.team_service,
-            db_path=self.bot.db_path,
+            confirmation_refused=self.bot.confirmation_refused,
             image_drawing=self.bot.image_drawing,
         )
         if faults:

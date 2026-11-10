@@ -171,6 +171,18 @@ def _sign_up_to_review_sections(bot: LeagueBot) -> None:
     ))
 
 
+def _sign_up_to_confirmation_refused(bot: LeagueBot) -> None:
+    """Make the hook a season's confirmation is refused through, and sign results' refusals up to
+    it: handed the league's modules and the database, then the season and which confirmation is
+    judged. Results checks its own switch."""
+    from leaguebot.results.services import season_points_service
+
+    bot.confirmation_refused = AwaitedHook()
+    bot.confirmation_refused.subscribe(partial(
+        season_points_service.confirmation_refusals, bot.module_service, bot.db_path
+    ))
+
+
 def _sign_up_to_base_role_changed(bot: LeagueBot) -> None:
     """Make the hook the base role changed declares, and sign signup's move of the signup
     channel's overwrite up to it, so core never reaches into the signup module itself
@@ -551,6 +563,7 @@ def _approve_view_for(bot: LeagueBot) -> "Callable[[dict[str, Any]], discord.ui.
             scheduler_service=bot.scheduler_service,
             output_router=bot.output_router,
             round_windows_read=bot.round_windows_read,
+            confirmation_refused=bot.confirmation_refused,
             now=bot.change_queue.now,
         )
 
@@ -1166,6 +1179,7 @@ def register_change_types(bot: LeagueBot) -> None:
             configs=bot.config_service,
             teams=bot.team_service,
             configuration_confirmed=bot.configuration_confirmed,
+            confirmation_refused=bot.confirmation_refused,
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -1571,6 +1585,7 @@ async def build(settings: Settings) -> LeagueBot:
     bot.attendance_after_review = AttendanceAfterReview(bot, bot.placement_service)
     _sign_up_to_round_windows(bot)
     _sign_up_to_review_sections(bot)
+    _sign_up_to_confirmation_refused(bot)
     _sign_up_to_base_role_changed(bot)
     _sign_up_to_amendments(bot)
 

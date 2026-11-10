@@ -9,6 +9,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import AuditRecord
+from leaguebot.core.services.confirmation_refusals import Confirmation, Refusal
 from leaguebot.core.services.review_sections import Review, ReviewSection
 from leaguebot.core.services.setting_change import Saved
 from leaguebot.results.models.points_changed import PointsChanged, ValueChange
@@ -290,6 +291,114 @@ async def no_points_config_attached(db_path: str, season_id: int) -> bool:
     detached is refused as any other.
     """
     return not await get_attached_config_names(db_path, season_id)
+
+
+async def confirmation_refusals(
+    modules: "ModuleService", db_path: str, season_id: int, confirmation: Confirmation
+) -> list[Refusal]:
+    """What results refuses a season's confirmation on: its points configurations.
+
+    Subscribed to core's `confirmation_refused`, and handing nothing while results is off. The
+    three faults are read through `no_points_config_attached`, `missing_points_config_problems`
+    and `points_ordering_problems`, the helpers `review_section` reports from, so the report and
+    the refusal cannot drift. Test mode is no exception: it attaches Standard and Half Points when
+    it is enabled and at no other moment, and a season that has had them detached is refused as
+    any other, not given them again behind it.
+
+    The placements review refuses on each fault in a private reply of its own: nothing attached,
+    then configurations attached that do not exist, then tables out of order. The approval
+    refuses once, on the first thing that stands in its way: the prerequisites (nothing attached,
+    and each configuration that does not exist, in one reply) or, where those are met, the
+    ordering, which is read only then. The configuration's faults are one line each, in the
+    review's order. Reads only.
+    """
+    if not await modules.is_results_enabled():
+        return []
+    if confirmation is Confirmation.APPROVAL:
+        return await _approval_refusals(db_path, season_id)
+
+    nothing_attached = await no_points_config_attached(db_path, season_id)
+    phantoms = await missing_points_config_problems(db_path, season_id)
+    ordering = await points_ordering_problems(db_path, season_id)
+
+    if confirmation is Confirmation.CONFIGURATION:
+        lines: list[str] = []
+        if nothing_attached:
+            lines.append(
+                "No points configuration is attached to this season \u2014 "
+                "`/results config append`."
+            )
+        lines += [
+            f"The attached points configuration **{name}** does not exist \u2014 build "
+            f"it with `/results config add`, or drop it with `/results config detach`."
+            for name in phantoms
+        ]
+        lines += [f"Points table out of order: {fault}" for fault in ordering]
+        return [Refusal(line) for line in lines]
+
+    refusals: list[Refusal] = []
+    if nothing_attached:
+        refusals.append(Refusal(
+            "\u26d4 **No points configuration is attached to this season.**\n"
+            "Without one there is nothing to score its results by. The season is "
+            "**not** offered for approval while that stands \u2014 attach one with "
+            "`/results config append`, then run `/season placements-review` again."
+        ))
+    if phantoms:
+        body = "\n".join(f"\u2022 **{name}**" for name in phantoms)
+        refusals.append(Refusal(
+            "\u26d4 **This season is attached to a points configuration that "
+            "does not exist.**\n"
+            f"{body}\n"
+            "Nothing of that name is in the server's points store, so there is "
+            "nothing for the approval to copy. The season is **not** offered for "
+            "approval while that stands \u2014 build it with `/results config add`, or "
+            "drop it with `/results config detach`, then run `/season placements-review` "
+            "again."
+        ))
+    if ordering:
+        body = "\n".join(f"\u2022 {fault}" for fault in ordering)
+        refusals.append(Refusal(
+            "\u26d4 **This season's points tables are out of order.**\n"
+            f"{body}\n"
+            "A lower position cannot be worth as much as the one above it. The "
+            "season is **not** offered for approval while that stands \u2014 repair "
+            "the tables with `/results config session`, then run `/season placements-review` "
+            "again."
+        ))
+    return refusals
+
+
+async def _approval_refusals(db_path: str, season_id: int) -> list[Refusal]:
+    """The approval's one refusal from results, or none: the prerequisites if any is unmet, else
+    the ordering, which is read only when the prerequisites are met."""
+    errors: list[str] = []
+    if await no_points_config_attached(db_path, season_id):
+        errors.append("no points configuration is attached to this season")
+    # Counting the links is not the same as having the configurations they name. A link is a
+    # bare name, so one that was mistyped, or whose configuration has since been removed,
+    # satisfies the count above and then breaks the snapshot, which cannot be taken.
+    for phantom in await missing_points_config_problems(db_path, season_id):
+        errors.append(
+            f"points configuration **{phantom}** is attached to this season but "
+            f"does not exist \u2014 create it with `/results config add`, or drop it "
+            f"with `/results config detach {phantom}`"
+        )
+    if errors:
+        bullet_list = "\n\u2022 ".join(errors)
+        return [Refusal(
+            f"\u274c Season cannot be approved \u2014 R&S prerequisites not met:\n\u2022 {bullet_list}",
+            reason="R&S prerequisites not met:\n" + "\n".join(errors),
+        )]
+    ordering = await points_ordering_problems(db_path, season_id)
+    if ordering:
+        bullet_list = "\n\u2022 ".join(ordering)
+        return [Refusal(
+            f"\u274c Season cannot be approved \u2014 points configuration "
+            f"violates monotonic ordering:\n\u2022 {bullet_list}",
+            reason="points configuration violates monotonic ordering:\n" + "\n".join(ordering),
+        )]
+    return []
 
 
 async def review_section(

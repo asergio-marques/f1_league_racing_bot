@@ -123,6 +123,7 @@ def configuration_confirm_change(
     configs: ConfigService,
     teams: TeamService,
     configuration_confirmed: AwaitedHook,
+    confirmation_refused: AwaitedHook,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that confirms a season's configuration; see the module.
@@ -130,7 +131,8 @@ def configuration_confirm_change(
     The builder hands in the image module's own drawing (*drawing*, which the fingerprint reads and
     the faults read), the services the faults read (*modules*, *signup_module*, *configs* and
     *teams*), the *configuration_confirmed* hook each module's part is kept through, called inside
-    the save on its connection, and *now* (the queue's clock).
+    the save on its connection, the *confirmation_refused* hook the modules' own faults are
+    read through, and *now* (the queue's clock).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -164,7 +166,7 @@ def configuration_confirm_change(
             signup_module_service=signup_module,
             config_service=configs,
             team_service=teams,
-            db_path=ctx.db_path,
+            confirmation_refused=confirmation_refused,
             image_drawing=drawing,
         )
         if found:

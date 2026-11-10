@@ -131,6 +131,7 @@ class ApproveView(LeagueView):
         scheduler_service: SchedulerService,
         output_router: OutputRouter,
         round_windows_read: AwaitedHook,
+        confirmation_refused: AwaitedHook,
         now: Callable[[], datetime],
     ) -> None:
         super().__init__(timeout=None)
@@ -146,6 +147,7 @@ class ApproveView(LeagueView):
         self._scheduler_service = scheduler_service
         self._output_router = output_router
         self._round_windows_read = round_windows_read
+        self._confirmation_refused = confirmation_refused
         self._now = now
         # The review the last press read from its row. A view serves one question, and a second
         # press is refused (`_refuse_if_under_way`) before it reads, so this is the row of the one
@@ -366,6 +368,7 @@ class ApproveView(LeagueView):
                 scheduler_service=self._scheduler_service,
                 output_router=self._output_router,
                 round_windows_read=self._round_windows_read,
+                confirmation_refused=self._confirmation_refused,
                 now=self._now,
                 deadline=review.deadline,
                 what=self._button,
@@ -511,6 +514,7 @@ class ConfirmConfigurationView(ApproveView):
             db_path=self._db_path,
             image_drawing=self._image_drawing,
             change_queue=self._change_queue,
+            confirmation_refused=self._confirmation_refused,
             what=what,
             fingerprint=fingerprint,
         )
