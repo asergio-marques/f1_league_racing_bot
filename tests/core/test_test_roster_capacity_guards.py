@@ -205,7 +205,6 @@ async def _add(path, service, team, division="Alpha", name="Mock"):
     return result
 
 
-@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_a_reserve_past_the_lineup_s_reserve_slots_is_refused(tmp_path):
     path, _divisions = await _seed(tmp_path)
     service = _service(path, {LINEUP: _lineup(tmp_path, reserve_slots=1)})
@@ -219,7 +218,6 @@ async def test_a_reserve_past_the_lineup_s_reserve_slots_is_refused(tmp_path):
     assert await _seated(path) == 1, "the refused driver was written anyway"
 
 
-@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_a_driver_past_the_sheet_rows_is_refused(tmp_path):
     path, _divisions = await _seed(tmp_path)
     service = _service(path, {SHEET: _sheet(tmp_path, rows=2)})
@@ -232,7 +230,6 @@ async def test_a_driver_past_the_sheet_rows_is_refused(tmp_path):
     assert await _seated(path) == 2
 
 
-@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_a_driver_past_the_standings_rows_is_refused_but_a_reserve_is_not(tmp_path):
     path, _divisions = await _seed(tmp_path)
     service = _service(path, {DRIVERS: _standings(tmp_path, rows=2)})

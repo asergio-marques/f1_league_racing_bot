@@ -1,7 +1,7 @@
 """test_roster_service.py — Fake driver management for test mode.
 
 Provides helpers consumed by TestModeCog:
-  - add_test_driver:        create a synthetic driver and seat them in a division team
+  - add_test_driver_on:     create a synthetic driver and seat them in a division team
   - list_test_drivers:      retrieve all fake drivers in a division (for cheat sheet)
   - remove_test_driver:     remove one fake driver by their synthetic user ID
   - clear_test_drivers:     remove all fake drivers from a named division
@@ -21,7 +21,9 @@ reachable in the foreseeable future (current IDs are ~1.3×10^18 as of 2026).
 from __future__ import annotations
 
 import logging
-from typing import TypedDict
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Any, TypedDict
 
 import aiosqlite
 
@@ -29,7 +31,6 @@ from leaguebot.core.db.database import get_connection, inserted_id, sole_row
 from leaguebot.core.models.refusal import Refused
 from leaguebot.core.services.team_service import (
     division_team_references,
-    resolve_division_team,
     resolve_team_reference,
 )
 from leaguebot.core.utils.hooks import AwaitedHook
@@ -53,17 +54,16 @@ class TestDriverInfo(TypedDict):
 
 # ─── Internal helpers ────────────────────────────────────────────────────────
 
-async def _next_synthetic_id(db_path: str) -> int:
+async def _next_synthetic_id_on(db: aiosqlite.Connection) -> int:
     """Return the next available synthetic driver ID."""
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT MAX(CAST(discord_user_id AS INTEGER)) AS mx "
-            "FROM driver_profiles "
-            "WHERE is_test_driver = 1 "
-            "  AND CAST(discord_user_id AS INTEGER) >= ?",
-            (_SYNTHETIC_ID_BASE,),
-        )
-        row = await cursor.fetchone()
+    cursor = await db.execute(
+        "SELECT MAX(CAST(discord_user_id AS INTEGER)) AS mx "
+        "FROM driver_profiles "
+        "WHERE is_test_driver = 1 "
+        "  AND CAST(discord_user_id AS INTEGER) >= ?",
+        (_SYNTHETIC_ID_BASE,),
+    )
+    row = await cursor.fetchone()
     current_max = row["mx"] if (row and row["mx"] is not None) else None
     return _SYNTHETIC_ID_BASE + 1 if current_max is None else current_max + 1
 
@@ -82,7 +82,7 @@ async def _reattach_history(db, discord_user_id: str, profile_id: int) -> None:
     )
 
 
-async def _get_active_season_id(db_path: str) -> int | None:
+async def _get_active_season_id_on(db: aiosqlite.Connection) -> int | None:
     """Return the live season ID for a server, or None if it has none.
 
     A server holds at most one live (SETUP or ACTIVE) season — the partial unique index
@@ -95,13 +95,36 @@ async def _get_active_season_id(db_path: str) -> int | None:
     `/season placements-review` drew the other's: a full `roster list` beside an empty lineup, with
     neither command reporting a fault.
     """
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT id FROM seasons WHERE status IN ('ACTIVE', 'SETUP') "
-            "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
-        )
-        row = await cursor.fetchone()
+    cursor = await db.execute(
+        "SELECT id FROM seasons WHERE status IN ('ACTIVE', 'SETUP') "
+        "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
+    )
+    row = await cursor.fetchone()
     return row["id"] if row else None
+
+
+async def _get_active_season_id(db_path: str) -> int | None:
+    """`_get_active_season_id_on`, on a connection of its own."""
+    async with get_connection(db_path) as db:
+        return await _get_active_season_id_on(db)
+
+
+async def _get_division_on(
+    db: aiosqlite.Connection, season_id: int, division_name: str
+) -> aiosqlite.Row | None:
+    """Return the id and name of a named division in the active season, or None."""
+    cursor = await db.execute(
+        """
+        SELECT d.id, d.name
+        FROM divisions d
+        JOIN seasons s ON s.id = d.season_id
+        WHERE s.id = ?
+          AND LOWER(d.name) = LOWER(?)
+          AND d.status != 'CANCELLED'
+        """,
+        (season_id, division_name),
+    )
+    return await cursor.fetchone()
 
 
 async def _get_division_id(
@@ -109,47 +132,78 @@ async def _get_division_id(
 ) -> int | None:
     """Return the division ID for a named division in the active season, or None."""
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT d.id
-            FROM divisions d
-            JOIN seasons s ON s.id = d.season_id
-            WHERE s.id = ?
-              AND LOWER(d.name) = LOWER(?)
-              AND d.status != 'CANCELLED'
-            """,
-            (season_id, division_name),
-        )
-        row = await cursor.fetchone()
+        row = await _get_division_on(db, season_id, division_name)
     return row["id"] if row else None
+
+
+@dataclass(frozen=True)
+class Located:
+    """Where a fake driver is to be seated: the live season, the division named and the team of it
+    whose shorthand was typed."""
+
+    season_id: int
+    division_id: int
+    division_name: str
+    team: Mapping[str, Any]
+
+
+async def locate_on(
+    db: aiosqlite.Connection, division_name: str, team_name: str
+) -> Located | str:
+    """The season, division and team a fake driver is to be seated in, or the refusal, in its words.
+
+    A team is typed by its shorthand; a role, a member or a name no team has is refused.
+    """
+    season_id = await _get_active_season_id_on(db)
+    if season_id is None:
+        return "No active or setup season found."
+    division = await _get_division_on(db, season_id, division_name)
+    if division is None:
+        return f"Division '{division_name}' not found in the active season."
+    reference = resolve_team_reference(
+        team_name, await division_team_references(db, division["id"]), scope=" of this division"
+    )
+    if reference.team is None:
+        return f"{reference.refusal} (division '{division_name}')"
+    return Located(season_id, division["id"], division["name"], reference.team)
 
 
 # ─── Public API ──────────────────────────────────────────────────────────────
 
-async def add_test_driver(
+@dataclass(frozen=True)
+class AddPlan:
+    """A fake driver the roster would seat: judged, and not yet written. *seat_id* is the free seat
+    they would take, None where a reserve team grows one."""
+
+    driver_name: str
+    nationality: str | None
+    located: Located
+    synthetic_uid: int
+    team_instance_id: int
+    seat_id: int | None
+
+
+async def judge_add_on(
+    db: aiosqlite.Connection,
     driver_name: str,
     team_name: str,
     division_name: str,
-    db_path: str,
     nationality: str | None = None,
     placement_service=None,
-) -> TestDriverInfo | str:
-    """Create a fake driver profile and seat them in *team_name* in *division_name*.
+) -> AddPlan | str:
+    """Judge a fake driver's seating in *team_name* in *division_name* on *db*, writing nothing:
+    the plan to write it, or the refusal the member can act on, in its words.
 
     *nationality* is optional and accepted in the form the signup wizard accepts it — a
     nationality adjective, a country name, or "other" — and stored canonically. A mock
     driver created without one records none, and is drawn without a flag.
 
     *placement_service* holds the driver to the template capacities a real placement into
-    the same team is held to, and the driver is refused where one would be. The cog
-    always passes it; left None, as tests of the seating alone do, the check is skipped.
+    the same team is held to, and the driver is refused where one would be. The change always
+    passes it; left None, as tests of the seating alone do, the check is skipped.
 
     *driver_name* is drawn on graphics as a real driver's name is, so it is held to the rules
     every name a league types is held to.
-
-    Returns a TestDriverInfo dict on success, or a refusal the member can act on, as a string.
-    A fault in writing the driver is not a refusal: it raises, and the one transaction the
-    driver is written in leaves nothing behind.
     """
     refusal = NAME.check("driver name", driver_name).refusal
     if refusal is not None:
@@ -164,106 +218,109 @@ async def add_test_driver(
                 "(e.g. 'British') or country name (e.g. 'United Kingdom'), or 'other'."
             )
 
-    season_id = await _get_active_season_id(db_path)
-    if season_id is None:
-        return "No active or setup season found."
+    located = await locate_on(db, division_name, team_name)
+    if isinstance(located, str):
+        return located
 
-    division_id = await _get_division_id(season_id, division_name, db_path)
-    if division_id is None:
-        return f"Division '{division_name}' not found in the active season."
+    cursor = await db.execute(
+        "SELECT id, name, max_seats, is_reserve FROM team_instances WHERE id = ?",
+        (located.team["id"],),
+    )
+    team_row = await sole_row(cursor)
 
-    # A team is typed by its shorthand; a role, a member or a name no team has is refused.
-    reference = await resolve_division_team(db_path, division_id, team_name)
-    if reference.team is None:
-        return f"{reference.refusal} (division '{division_name}')"
-
-    # Read before the write opens: it takes a connection of its own, which must not be
-    # awaited while this one holds a write.
-    synthetic_uid = await _next_synthetic_id(db_path)
-    uid_str = str(synthetic_uid)
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT id, name, max_seats, is_reserve FROM team_instances WHERE id = ?",
-            (reference.team["id"],),
-        )
-        team_row = await sole_row(cursor)
-
-        team_instance_id: int = team_row["id"]
-        is_reserve: bool = bool(team_row["is_reserve"])
-
-        # Nothing has been written yet, so a refusal here leaves the roster as it was.
-        if placement_service is not None:
-            try:
-                await placement_service.guard_roster_capacity(
-                    division_id, {team_row["name"]: 1}
-                )
-            except Refused as exc:
-                return str(exc)
-
-        # Find a free seat (driver_profile_id IS NULL)
-        seat_cursor = await db.execute(
-            "SELECT id, seat_number FROM team_seats "
-            "WHERE team_instance_id = ? AND driver_profile_id IS NULL "
-            "ORDER BY seat_number "
-            "LIMIT 1",
-            (team_instance_id,),
-        )
-        seat_row = await seat_cursor.fetchone()
-        if seat_row is None:
-            if not is_reserve:
-                return f"No free seats available in team '{team_name}'."
-            # Reserve team has unlimited seats — create a new one
-            max_cursor = await db.execute(
-                "SELECT MAX(seat_number) FROM team_seats WHERE team_instance_id = ?",
-                (team_instance_id,),
+    if placement_service is not None:
+        try:
+            await placement_service.guard_roster_capacity(
+                located.division_id, {team_row["name"]: 1}
             )
-            max_row = await sole_row(max_cursor)
-            next_seat_number = (max_row[0] or 0) + 1
-            new_seat_cursor = await db.execute(
-                "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
-                "VALUES (?, ?, NULL)",
-                (team_instance_id, next_seat_number),
-            )
-            seat_id = inserted_id(new_seat_cursor)
-        else:
-            seat_id = seat_row["id"]
+        except Refused as exc:
+            return str(exc)
 
-        # Create driver profile
-        profile_cursor = await db.execute(
-            "INSERT INTO driver_profiles "
-            "(discord_user_id, current_state, former_driver, is_test_driver, "
-            " test_display_name, test_nationality) "
-            "VALUES (?, 'ASSIGNED', 0, 1, ?, ?)",
-            (uid_str, driver_name, canonical_nationality),
+    # Find a free seat (driver_profile_id IS NULL); a reserve team, which has unlimited seats,
+    # grows one.
+    seat_cursor = await db.execute(
+        "SELECT id FROM team_seats "
+        "WHERE team_instance_id = ? AND driver_profile_id IS NULL "
+        "ORDER BY seat_number "
+        "LIMIT 1",
+        (team_row["id"],),
+    )
+    seat_row = await seat_cursor.fetchone()
+    if seat_row is None and not team_row["is_reserve"]:
+        return f"No free seats available in team '{team_name}'."
+    return AddPlan(
+        driver_name=driver_name,
+        nationality=canonical_nationality,
+        located=located,
+        synthetic_uid=await _next_synthetic_id_on(db),
+        team_instance_id=team_row["id"],
+        seat_id=None if seat_row is None else seat_row["id"],
+    )
+
+
+async def seat_on(db: aiosqlite.Connection, plan: AddPlan) -> TestDriverInfo:
+    """Write the fake driver *plan* describes, on *db*, committing nothing: the save it belongs to
+    does, so that the driver, the seat and the audit entry are one."""
+    uid_str = str(plan.synthetic_uid)
+    seat_id = plan.seat_id
+    if seat_id is None:
+        max_cursor = await db.execute(
+            "SELECT MAX(seat_number) FROM team_seats WHERE team_instance_id = ?",
+            (plan.team_instance_id,),
         )
-        profile_id: int = inserted_id(profile_cursor)
-        await _reattach_history(db, uid_str, profile_id)
-
-        # Occupy the seat
-        await db.execute(
-            "UPDATE team_seats SET driver_profile_id = ? WHERE id = ?",
-            (profile_id, seat_id),
+        max_row = await sole_row(max_cursor)
+        new_seat_cursor = await db.execute(
+            "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+            "VALUES (?, ?, NULL)",
+            (plan.team_instance_id, (max_row[0] or 0) + 1),
         )
+        seat_id = inserted_id(new_seat_cursor)
 
-        # Create season assignment
-        await db.execute(
-            "INSERT INTO driver_season_assignments "
-            "(driver_profile_id, season_id, division_id, team_seat_id) "
-            "VALUES (?, ?, ?, ?)",
-            (profile_id, season_id, division_id, seat_id),
-        )
-
-        await db.commit()
-
+    profile_cursor = await db.execute(
+        "INSERT INTO driver_profiles "
+        "(discord_user_id, current_state, former_driver, is_test_driver, "
+        " test_display_name, test_nationality) "
+        "VALUES (?, 'ASSIGNED', 0, 1, ?, ?)",
+        (uid_str, plan.driver_name, plan.nationality),
+    )
+    profile_id: int = inserted_id(profile_cursor)
+    await _reattach_history(db, uid_str, profile_id)
+    await db.execute(
+        "UPDATE team_seats SET driver_profile_id = ? WHERE id = ?",
+        (profile_id, seat_id),
+    )
+    await db.execute(
+        "INSERT INTO driver_season_assignments "
+        "(driver_profile_id, season_id, division_id, team_seat_id) "
+        "VALUES (?, ?, ?, ?)",
+        (profile_id, plan.located.season_id, plan.located.division_id, seat_id),
+    )
     return TestDriverInfo(
         profile_id=profile_id,
-        discord_user_id=synthetic_uid,
-        display_name=driver_name,
+        discord_user_id=plan.synthetic_uid,
+        display_name=plan.driver_name,
         # What a reply shows is the full name; the shorthand is what was typed.
-        team_name=reference.team["full_name"],
-        nationality=canonical_nationality,
+        team_name=plan.located.team["full_name"],
+        nationality=plan.nationality,
     )
+
+
+async def add_test_driver_on(
+    db: aiosqlite.Connection,
+    driver_name: str,
+    team_name: str,
+    division_name: str,
+    nationality: str | None = None,
+    placement_service=None,
+) -> TestDriverInfo | str:
+    """Judge a fake driver (`judge_add_on`) and seat them (`seat_on`) on *db*: the driver, or the
+    refusal, in which case nothing was written. Commits nothing."""
+    plan = await judge_add_on(
+        db, driver_name, team_name, division_name, nationality, placement_service
+    )
+    if isinstance(plan, str):
+        return plan
+    return await seat_on(db, plan)
 
 
 async def add_test_drivers_in_bulk(

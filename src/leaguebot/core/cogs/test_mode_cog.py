@@ -33,6 +33,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.services.test_mode_settings import NOT_IN_TEST_MODE
+from leaguebot.core.services.test_roster_changes import NOT_PLACING, TEST_ROSTER_ADD
 from leaguebot.core.services.test_mode_former_driver_change import TEST_MODE_FORMER_DRIVER
 from leaguebot.core.services.test_mode_toggle_change import TEST_MODE_TOGGLE
 from leaguebot.core.services.test_mode_service import (
@@ -341,7 +342,7 @@ class TestModeCog(commands.Cog):
         live = await live_season_stage(self.bot.db_path)
         if live is not None and live[1] is SeasonStage.PLACEMENTS:
             return False
-        reply = "⛔ The test roster can only be changed while the season is in placements."
+        reply = NOT_PLACING
         if record:
             await refuse(interaction, reply, what=describe(interaction))
         else:
@@ -574,76 +575,21 @@ class TestModeCog(commands.Cog):
         division: str,
         nationality: str | None = None,
     ) -> None:
-        config = await self.bot.config_service.get_server_config(
+        """Ask the change that seats the fake driver.
 
-        )
-        if config is None or not config.test_mode_active:
-            await refuse(
-                interaction,
-                NOT_IN_TEST_MODE,
-                what=describe(interaction),
-            )
-            return
-        if await self._refuse_roster_change_outside_placements(interaction):
-            return
-
-        # A nationality cannot be recorded while the switch is off, as the signup wizard
-        # drops the question entirely rather than collecting an answer it will not keep.
-        if nationality is not None and not config.test_mode_nationality_required:
-            await refuse(
-                interaction,
-                "⛔ Nationality is switched off for test mode, so one cannot be recorded. "
-                "Turn it on with `/test-mode nationality`, or leave the parameter out.",
-                what=describe(interaction),
-            )
-            return
-
-        from leaguebot.core.services.test_roster_service import add_test_driver
-
-        # The driver is written in one transaction, so a fault leaves the roster as it was,
-        # and the command says so itself (see `report_failure`).
-        try:
-            result = await add_test_driver(
-                driver_name=driver_name,
-                team_name=team_name,
-                division_name=division,
-                db_path=self.bot.db_path,
-                nationality=nationality,
-                placement_service=self.bot.placement_service,
-            )
-        except Exception as exc:  # noqa: BLE001 — reported here, to say the driver was not added
-            await report_failure(
-                interaction,
-                exc,
-                what=describe(interaction),
-                outcome="The test driver was not added. Run `/test-mode roster add` again to retry.",
-            )
-            return
-
-        if isinstance(result, str):
-            await refuse(interaction, f"⛔ {result}", what=describe(interaction))
-            return
-
-        mention_str = f"<@{result['discord_user_id']}>"
-        nationality_line = (
-            f"Nationality: **{result['nationality']}**\n" if result["nationality"] else ""
-        )
-        # The division is named because a team name repeats across divisions — every
-        # division is seeded from the same server team list — so the team alone does not
-        # say where the driver landed, which is the one thing the manager is choosing.
-        await interaction.response.send_message(
-            f"✅ Added fake driver **{result['display_name']}** to **{result['team_name']}** "
-            f"in **{division}**.\n"
-            f"{nationality_line}"
-            f"Mention string (copy-paste into results): `{mention_str}`",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode roster add | Success\n"
-            f"  driver: {result['display_name']}\n"
-            f"  team: {result['team_name']}\n"
-            f"  division: {division}\n"
-            f"  nationality: {result['nationality'] or '(none)'}",
+        Test mode, the season's stage, the nationality and the seat are judged by the change, as it
+        is asked and as it starts (`test_roster_changes`).
+        """
+        await self.bot.change_queue.ask(
+            TEST_ROSTER_ADD,
+            {
+                "driver_name": driver_name,
+                "team_name": team_name,
+                "division": division,
+                "nationality": nationality,
+            },
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     # /test-mode roster remove --------------------------------------------

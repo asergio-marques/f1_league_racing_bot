@@ -873,6 +873,7 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.core.services.test_mode_former_driver_change import (
         test_mode_former_driver_change,
     )
+    from leaguebot.core.services.test_roster_changes import test_roster_add_change
     from leaguebot.core.services.test_mode_toggle_change import test_mode_toggle_change
     from leaguebot.core.services.clean_change import clean_change
     from leaguebot.core.services.hub_service import hub_refresh_change
@@ -1549,6 +1550,9 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     bot.change_queue.register(test_mode_former_driver_change())
+    bot.change_queue.register(
+        test_roster_add_change(placement=lambda: bot.placement_service)
+    )
     for setting in (
         log_channel_setting(config=bot.config_service),
         interaction_channel_setting(config=bot.config_service),

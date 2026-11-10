@@ -322,6 +322,7 @@ Every core change type runs on the league lane; none is a conversation's. Each i
 | `core.team_*` (four) | `/team add`, `modify`, `remove`, `reserve-role` | the list and the role mapping, audited | role moves |
 | `core.test_mode_toggle` | `/test-mode toggle` | the flag, the modules' part, the audit entry; turned off, every fake driver deleted | forecasts cleared, the backup deleted |
 | `core.test_mode_former_driver` | `/test-mode set-former-driver` | the flag and the audit entry | — |
+| `core.test_roster_add` | `/test-mode roster add` | the fake driver, its seat and assignment, and the audit entry | — |
 | `hub.refresh` | the bot, wherever what the panel offers may change | none: the panel's id is its job's `record` | the old panel deleted where the hub moved |
 | `calendar.sync` | `/division calendar-sync` | `close`, last: a save writing the line | before it: the post, then the deletion of the calendar it replaced |
 | `lineup.post` | the bot, after a change made off the queue moves a driver | none: the lineup's id and audit entry are its post's `record` | the post, then the deletion of the lineup it replaced |
@@ -744,7 +745,11 @@ real driver stands in the way is counted by `count_live_real_drivers`. `/test-mo
 `Setting`. `/test-mode set-former-driver` is a change of its own, `core.test_mode_former_driver`,
 carrying the account picked and the value, with test mode and the profile judged at the ask and
 as it starts, and one save of the flag and its audit entry; the flag it leaves for a discarded
-save is read into the payload at the ask (`fill`).
+save is read into the payload at the ask (`fill`). `/test-mode roster add` is `core.test_roster_add`
+(`test_roster_changes`): the driver is judged without a write (`judge_add_on`) at the ask and as it
+starts, and one save seats them (`seat_on`) with the audit entry; the roster's writers take the
+connection of the save and commit nothing. The change is handed the placement service as a getter, so
+the template capacities are measured by the bot's own.
 
 **Fake drivers are seeded, not moved through the state machine.** `test_roster_service` inserts a
 fake driver at Assigned, flagged as a test driver, with a synthetic id above any real Discord id;

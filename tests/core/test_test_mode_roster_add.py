@@ -25,9 +25,6 @@ from tests.support.settings_league import interaction as member_asks
 from tests.support.setup_rounds import acknowledged
 from tests.support.undecorate import undecorate
 
-#: What is not yet true of the command.
-ON_THE_QUEUE = "#283: /test-mode roster add is not yet a change on the queue"
-
 ACTOR_ID = 77
 _NAMED = f"Admin (`<@{ACTOR_ID}>`)"
 
@@ -100,7 +97,6 @@ def _lines(league) -> list[str]:
     return [unruled(str(line)) for line in league.bot.log_channel.sent]
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 @pytest.mark.parametrize(
     "switched_off, given, kept",
     [
@@ -220,7 +216,6 @@ async def _last_seat_taken(league) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 @pytest.mark.parametrize(
     "meanwhile, refusal",
     [
@@ -253,7 +248,6 @@ async def test_it_is_judged_again_as_it_starts(league, meanwhile, refusal):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_fault_in_the_save_adds_nobody(league):
     """The season is in Placements under test mode, McLaren's second seat in Am free. Admin (77)
     runs `/test-mode roster add` of Mock Alpha to McLaren in Am, and the audit entry's write fails
@@ -292,7 +286,6 @@ async def test_a_fault_in_the_save_adds_nobody(league):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_the_same_ask_while_the_first_waits_is_refused_as_a_repeat(league):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. The
