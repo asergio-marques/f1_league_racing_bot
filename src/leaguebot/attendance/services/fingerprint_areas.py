@@ -9,24 +9,37 @@ module's switch among it. Reads only.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
 from leaguebot.core.db.database import tuple_rows
 
+if TYPE_CHECKING:
+    from leaguebot.core.services.season_service import SeasonService
 
-async def fingerprint_areas(db: aiosqlite.Connection, season_id: int) -> dict[str, Any]:
+
+async def _in_divisions(
+    db: aiosqlite.Connection, seasons: "SeasonService", season_id: int, sql: str
+) -> list[tuple[Any, ...]]:
+    """The rows *sql* returns for the divisions of *season_id*, as the season service reads them:
+    its `{marks}` stand for the divisions' ids."""
+    ids = sorted(division.id for division in await seasons.get_divisions_on(db, season_id))
+    return await tuple_rows(db, sql.format(marks=", ".join("?" for _ in ids)), *ids)
+
+
+async def fingerprint_areas(
+    seasons: "SeasonService", db: aiosqlite.Connection, season_id: int
+) -> dict[str, Any]:
     """Attendance's areas of the fingerprint of *season_id*: its two channels by division, and its
     configuration."""
     return {
-        "channels": await tuple_rows(
+        "channels": await _in_divisions(
             db,
-            "SELECT c.division_id, c.rsvp_channel_id, c.attendance_channel_id "
-            "FROM attendance_division_config c "
-            "JOIN divisions d ON d.id = c.division_id "
-            "WHERE d.season_id = ? ORDER BY c.division_id",
+            seasons,
             season_id,
+            "SELECT division_id, rsvp_channel_id, attendance_channel_id "
+            "FROM attendance_division_config WHERE division_id IN ({marks}) ORDER BY division_id",
         ),
         "attendance": await tuple_rows(
             db,

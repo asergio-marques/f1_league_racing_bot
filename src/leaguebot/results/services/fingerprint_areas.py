@@ -10,25 +10,38 @@ of those, which the approval copies onto the season. Reads only.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
 from leaguebot.core.db.database import tuple_rows
 
+if TYPE_CHECKING:
+    from leaguebot.core.services.season_service import SeasonService
 
-async def fingerprint_areas(db: aiosqlite.Connection, season_id: int) -> dict[str, Any]:
+
+async def _in_divisions(
+    db: aiosqlite.Connection, seasons: "SeasonService", season_id: int, sql: str
+) -> list[tuple[Any, ...]]:
+    """The rows *sql* returns for the divisions of *season_id*, as the season service reads them:
+    its `{marks}` stand for the divisions' ids."""
+    ids = sorted(division.id for division in await seasons.get_divisions_on(db, season_id))
+    return await tuple_rows(db, sql.format(marks=", ".join("?" for _ in ids)), *ids)
+
+
+async def fingerprint_areas(
+    seasons: "SeasonService", db: aiosqlite.Connection, season_id: int
+) -> dict[str, Any]:
     """Results' areas of the fingerprint of *season_id*: its channels and `reserves_in_standings`
     by division, and its points configurations."""
     return {
-        "channels": await tuple_rows(
+        "channels": await _in_divisions(
             db,
-            "SELECT c.division_id, c.results_channel_id, c.standings_channel_id, "
-            "       c.penalty_channel_id, c.reserves_in_standings "
-            "FROM division_results_config c "
-            "JOIN divisions d ON d.id = c.division_id "
-            "WHERE d.season_id = ? ORDER BY c.division_id",
+            seasons,
             season_id,
+            "SELECT division_id, results_channel_id, standings_channel_id, penalty_channel_id, "
+            "       reserves_in_standings "
+            "FROM division_results_config WHERE division_id IN ({marks}) ORDER BY division_id",
         ),
         "points": [
             await tuple_rows(
