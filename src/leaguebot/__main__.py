@@ -453,7 +453,21 @@ def _sign_up_to_fingerprint_areas_read(bot: LeagueBot) -> None:
     and the season's id. They sign up in the order a division's channels read (architecture.md,
     "How modules and core fit together"). The builder hands it to every caller of
     `take_fingerprint`."""
+    from leaguebot.attendance.services import fingerprint_areas as attendance_areas
+    from leaguebot.image.services import fingerprint_areas as image_areas
+    from leaguebot.results.services import fingerprint_areas as results_areas
+    from leaguebot.signup.services import fingerprint_areas as signup_areas
+    from leaguebot.weather.services import fingerprint_areas as weather_areas
+
     bot.fingerprint_areas_read = AwaitedHook()
+    # Weather, results and attendance read their channels by division, as the season service
+    # reads the divisions of the season; signup and image read the server's configuration.
+    for module_areas in (weather_areas, results_areas, attendance_areas):
+        bot.fingerprint_areas_read.subscribe(
+            partial(module_areas.fingerprint_areas, bot.season_service)
+        )
+    for module_areas in (signup_areas, image_areas):
+        bot.fingerprint_areas_read.subscribe(module_areas.fingerprint_areas)
 
 
 def _sign_up_to_driver_turned_down(bot: LeagueBot) -> None:

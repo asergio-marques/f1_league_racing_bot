@@ -544,7 +544,6 @@ async def _edit(season, sql: str) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason=_MODULES_ASKED)
 async def test_each_module_hands_its_own_areas_whatever_its_switch(season):
     """Every module is off. Asked for the season, weather hands its channels and its
     configuration, results its channels and its points, attendance its channels and its
@@ -557,7 +556,6 @@ async def test_each_module_hands_its_own_areas_whatever_its_switch(season):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_MODULES_ASKED)
 @pytest.mark.parametrize("edit", sorted(_MODULE_EDITS))
 async def test_an_edit_to_a_module_s_configuration_changes_what_that_module_hands_alone(
     season, edit,
