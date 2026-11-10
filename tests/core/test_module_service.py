@@ -6,6 +6,10 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 
+#: Why the tests marked with it fail until the build: each module's switch is still read by
+#: `ModuleService` from the module's own table or column, not asked of the module.
+NOT_YET_ASKED = "#283: ModuleService still reads each module's switch itself"
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -23,31 +27,78 @@ async def db_path(tmp_path):
     return path
 
 
+def _modules(db_path: str):
+    """The league's `ModuleService` on *db_path*, each module's switch reader signed up to it as
+    the builder signs them up."""
+    from leaguebot.__main__ import register_module_switches
+    from leaguebot.core.services.module_service import ModuleService
+
+    modules = ModuleService(db_path)
+    register_module_switches(modules)
+    return modules
+
+
 # ---------------------------------------------------------------------------
 # ModuleService tests
 # ---------------------------------------------------------------------------
 
 
-#: The two modules whose flag sits on core's `server_configs`, each read by a method of its own.
-MODULES = ["weather", "signup"]
+#: Every optional module, by the name its switch is asked by (`is_<name>_enabled`).
+MODULES = ["weather", "signup", "results", "attendance", "images"]
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.parametrize("module", MODULES)
 async def test_a_module_is_off_by_default(db_path, module):
-    from leaguebot.core.services.module_service import ModuleService
-    svc = ModuleService(db_path)
+    svc = _modules(db_path)
     assert await getattr(svc, f"is_{module}_enabled")() is False
 
 
-async def test_weather_and_signup_are_independent(db_path):
-    """Weather's flag on, then signup's, each written as its switch leaves it: each getter
-    reads its own module's flag alone."""
-    from leaguebot.core.services.module_service import ModuleService
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
+@pytest.mark.parametrize("module", MODULES)
+async def test_each_module_s_switch_reads_its_own_flag_alone(db_path, module):
+    """The module's flag turned on, as its switch leaves it: the module reads as on and every
+    other module still as off; turned off again, it reads as off."""
     from tests.support.season_league import set_module_flag
 
+    svc = _modules(db_path)
+
+    await set_module_flag(db_path, module, True)
+    assert {name: await getattr(svc, f"is_{name}_enabled")() for name in MODULES} == {
+        name: name == module for name in MODULES
+    }
+
+    await set_module_flag(db_path, module, False)
+    assert await getattr(svc, f"is_{module}_enabled")() is False
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
+@pytest.mark.parametrize("module", MODULES)
+async def test_each_switch_is_answered_by_the_reader_its_module_registered(db_path, module):
+    """`ModuleService` answers whether a module is on by asking the reader that module signed up,
+    handed a connection to the league's database, and reads no flag itself: with every flag in
+    the database off, a reader answering on is what the service says, and it was handed the
+    league's database open."""
+    from leaguebot.core.services.module_service import ModuleService
+
+    servers = []
+
+    async def reader(db) -> bool:
+        servers.append((await (await db.execute("SELECT server_id FROM server_configs")).fetchone())[0])
+        return True
+
     svc = ModuleService(db_path)
-    await set_module_flag(db_path, "weather", True)
-    assert await svc.is_signup_enabled() is False
-    await set_module_flag(db_path, "signup", True)
-    assert await svc.is_weather_enabled() is True
-    assert await svc.is_signup_enabled() is True
+    svc.register_switch(module, reader)
+
+    assert await getattr(svc, f"is_{module}_enabled")() is True
+    assert servers == [1]
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
+async def test_a_switch_no_module_signed_up_for_is_an_error_not_off(db_path):
+    """A module whose reader the builder never signed up is a fault in the bot's assembly, and
+    asking its switch raises naming it rather than reading it as off."""
+    from leaguebot.core.services.module_service import ModuleService
+
+    with pytest.raises(LookupError, match="images"):
+        await ModuleService(db_path).is_images_enabled()

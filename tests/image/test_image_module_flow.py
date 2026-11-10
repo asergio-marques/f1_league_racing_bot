@@ -24,6 +24,10 @@ from leaguebot.core.services.module_service import ModuleService
 from tests.support import KIND_TEMPLATES, saves
 from tests.support.change_queue import in_a_job
 
+#: Why the tests marked with it fail until the build: their module service has each module's
+#: switch reader signed up, as the builder signs them up, which it cannot be yet.
+NOT_YET_ASKED = "#283: ModuleService still reads each module's switch itself"
+
 SERVER_ID = 4242
 
 
@@ -49,7 +53,13 @@ def config_service(db_path):
 
 @pytest.fixture
 def module_service(db_path):
-    return ModuleService(db_path)
+    """The league's module service, each module's switch reader signed up as the builder signs
+    them up."""
+    from leaguebot.__main__ import register_module_switches
+
+    modules = ModuleService(db_path)
+    register_module_switches(modules)
+    return modules
 
 
 async def _enable(module_service, config_service):
@@ -168,6 +178,7 @@ async def test_disable_preserves_every_settable_column(tmp_path):
 # ── T013 ──────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_commands_gated_when_disabled(module_service, config_service):
     """A server that never enabled the module has no configuration to read."""
     assert await module_service.is_images_enabled() is False
@@ -448,6 +459,7 @@ def template_dir(tmp_path):
     return tmp_path
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_template_relocation(module_service, config_service, template_dir):
     from leaguebot.image.services.image_validity_service import evaluate_all_templates
 
@@ -489,6 +501,7 @@ async def test_template_relocation(module_service, config_service, template_dir)
         await saves.set_field(config_service, column, TEMPLATE_COLUMNS[column])
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_season_review_and_config_view_agree(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -651,6 +664,7 @@ def test_toggle_reply_keeps_blocking_reasons():
     assert "↳ the template is missing" in text
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_aspect_section_footer_names_only_pending_aspects(
     module_service, config_service, monkeypatch
 ):
@@ -751,6 +765,7 @@ def _render_service(config_service, module_service):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.rasteriser
 async def test_render_without_season(
     db_path, module_service, config_service, template_dir, monkeypatch, tmp_path,
@@ -856,6 +871,7 @@ async def test_wrapped_text_lands_inside_its_box_in_the_rasterised_png(tmp_path)
     assert above_box == 0, "text leaked above the box — shape-inside was left on the element"
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_absent_converter_is_reported_and_no_render_attempted(
     db_path, module_service, config_service, template_dir, monkeypatch, tmp_path
 ):
@@ -895,6 +911,7 @@ async def test_absent_converter_message_names_the_binary_and_the_env_var():
     assert "package" in message.lower()
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_absent_converter_makes_enabled_aspects_invalid_at_review(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -930,6 +947,7 @@ async def test_multi_variant_kinds_cover_two_templates():
     assert all(len(v) == 2 for v in multi.values())
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.rasteriser
 async def test_render_raises_notices_without_failing(
     db_path, module_service, config_service, template_dir, monkeypatch, tmp_path,
@@ -965,6 +983,7 @@ async def test_render_raises_notices_without_failing(
     assert all(n.detail for n in outcome.notices)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_render_problem_yields_no_image(
     db_path, module_service, config_service, template_dir, monkeypatch, tmp_path
 ):
@@ -984,6 +1003,7 @@ async def test_render_problem_yields_no_image(
     assert outcome.ok is False
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.rasteriser
 async def test_render_is_off_the_event_loop(
     db_path, module_service, config_service, template_dir, monkeypatch, tmp_path
@@ -1081,6 +1101,7 @@ def _race_template(background_markup: str) -> bytes:
     ).encode()
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_contrast_is_measured_against_the_declared_background(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1099,6 +1120,7 @@ async def test_contrast_is_measured_against_the_declared_background(
     assert reading.ratio == pytest.approx(21.0, abs=0.01)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_contrast_reads_the_stylesheet_not_just_the_attribute(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1122,6 +1144,7 @@ async def test_contrast_reads_the_stylesheet_not_just_the_attribute(
     assert reading.ratio == pytest.approx(21.0, abs=0.01)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_contrast_unmeasurable_when_template_is_invalid(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1136,6 +1159,7 @@ async def test_contrast_unmeasurable_when_template_is_invalid(
     assert "invalid" in reading.problem.lower()
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_contrast_unmeasurable_when_background_element_is_absent(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1159,6 +1183,7 @@ async def test_contrast_unmeasurable_when_background_element_is_absent(
     assert reports["results_race_template"].valid
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_contrast_unmeasurable_when_fill_is_a_gradient(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1176,6 +1201,7 @@ async def test_contrast_unmeasurable_when_fill_is_a_gradient(
     assert "not" in reading.problem.lower() and "plain colour" in reading.problem.lower()
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_contrast_unmeasurable_when_the_plate_has_no_fill(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1284,6 +1310,7 @@ async def test_fastest_lap_colour_warns_on_the_tier_hardest_to_read(
     assert "Division 1" not in reply
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_contrast_with_per_tier_colours_is_the_lowest_tier(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1305,6 +1332,7 @@ async def test_contrast_with_per_tier_colours_is_the_lowest_tier(
     assert reading.divisions == ("Division 2",)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_contrast_with_per_tier_colours_off_ignores_stored_palettes(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1327,6 +1355,7 @@ async def test_contrast_with_per_tier_colours_off_ignores_stored_palettes(
     assert reading.divisions == ()
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_each_tier_is_measured_on_its_own_copy_of_the_template(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1352,6 +1381,7 @@ async def test_each_tier_is_measured_on_its_own_copy_of_the_template(
     assert reading.ratio == pytest.approx(1.662, abs=0.001)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_contrast_reads_a_slot_declared_on_the_plates_group(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1377,6 +1407,7 @@ async def test_contrast_reads_a_slot_declared_on_the_plates_group(
     assert reading.every_division is False
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_contrast_reads_the_tiers_colour_whichever_order_the_plates_classes_are_written(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1406,6 +1437,7 @@ async def test_contrast_reads_the_tiers_colour_whichever_order_the_plates_classe
     assert reading.divisions == ("Division 1",)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_the_contrast_check_paints_each_tier_through_the_render_path(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1446,6 +1478,7 @@ async def test_the_contrast_check_paints_each_tier_through_the_render_path(
     [[], [("SETUP", [])]],
     ids=["no season", "a season with no division"],
 )
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_no_season_under_way_measures_as_authored_and_says_so(
     db_path, module_service, config_service, template_dir, monkeypatch, seasons
 ):
@@ -1473,6 +1506,7 @@ async def test_no_season_under_way_measures_as_authored_and_says_so(
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_per_tier_colours_off_say_nothing_of_a_season(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1489,6 +1523,7 @@ async def test_per_tier_colours_off_say_nothing_of_a_season(
     assert len(_lines(reading)) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_contrast_names_every_tier_sharing_the_lowest(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1517,6 +1552,7 @@ async def test_contrast_names_every_tier_sharing_the_lowest(
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_contrast_says_it_is_the_same_for_every_division(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1564,6 +1600,7 @@ def test_tiers_tied_on_different_colours_are_named_without_one():
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_a_tier_whose_plate_cannot_be_measured_is_named_with_the_reason(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1613,6 +1650,7 @@ def test_unmeasured_tiers_with_different_reasons_share_one_line():
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_every_tier_unmeasurable_is_reported_once(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
@@ -1653,6 +1691,7 @@ def test_the_reply_says_why_nothing_was_measured():
 # ── T040 — asset directories relocate independently (SC-002) ──────────────
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_asset_directory_independence(module_service, config_service, tmp_path, monkeypatch):
     from leaguebot.image.services.image_validity_service import evaluate_directories
 
@@ -1684,6 +1723,7 @@ async def test_asset_directory_independence(module_service, config_service, tmp_
         await saves.set_field(config_service, column, ASSET_DIRECTORIES[column][1])
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_asset_directory_escaping_root_is_reported(
     module_service, config_service, tmp_path, monkeypatch
 ):
@@ -1703,6 +1743,7 @@ async def test_asset_directory_escaping_root_is_reported(
 # ── T036 — the gate for the whole increment (FR-017a, SC-004) ─────────────
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_only_wired_aspects_read_their_toggle(
     module_service, config_service, template_dir
 ):
@@ -1758,6 +1799,7 @@ async def test_only_wired_aspects_read_their_toggle(
     )
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_no_source_module_posting_path_imports_the_render_service(
     module_service, config_service
 ):
@@ -1786,6 +1828,7 @@ async def test_no_source_module_posting_path_imports_the_render_service(
 # ── T037 — the third state when a source module is disabled ───────────────
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_aspect_enabled_while_source_module_disabled(
     module_service, config_service, template_dir, monkeypatch
 ):
@@ -1811,6 +1854,7 @@ async def test_aspect_enabled_while_source_module_disabled(
     assert any("results" in r.lower() for r in standings.blocking_reasons)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_toggle_state_survives_into_the_wiring_increment(
     module_service, config_service
 ):
@@ -1883,6 +1927,7 @@ async def configured(module_service, config_service, tmp_path):
     return tmp_path
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.asyncio
 async def test_wrong_extension_is_refused_and_nothing_written(config_service, configured):
     problem = await _store_if_valid(
@@ -1894,6 +1939,7 @@ async def test_wrong_extension_is_refused_and_nothing_written(config_service, co
     assert stored.calendar_template == "known_good.svg"
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.asyncio
 async def test_absent_file_is_refused_and_nothing_written(config_service, configured):
     problem = await _store_if_valid(
@@ -1906,6 +1952,7 @@ async def test_absent_file_is_refused_and_nothing_written(config_service, config
     assert stored.calendar_template == "known_good.svg"
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.asyncio
 async def test_malformed_file_is_refused_and_nothing_written(config_service, configured):
     (configured / "templates" / "broken.svg").write_bytes(
@@ -1922,6 +1969,7 @@ async def test_malformed_file_is_refused_and_nothing_written(config_service, con
     assert stored.calendar_template == "known_good.svg"
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.asyncio
 async def test_missing_mandatory_field_is_refused_and_nothing_written(
     config_service, configured, catalogue_slot
@@ -1941,6 +1989,7 @@ async def test_missing_mandatory_field_is_refused_and_nothing_written(
     assert stored.calendar_template == "known_good.svg"
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.asyncio
 async def test_a_sound_template_is_accepted_and_written(config_service, configured):
     (configured / "templates" / "replacement.svg").write_bytes(_GOOD_SVG)
@@ -1954,6 +2003,7 @@ async def test_a_sound_template_is_accepted_and_written(config_service, configur
     assert stored.calendar_template == "replacement.svg"
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.asyncio
 async def test_a_run_of_rejections_never_erodes_the_stored_value(
     config_service, configured
@@ -1966,6 +2016,7 @@ async def test_a_run_of_rejections_never_erodes_the_stored_value(
     assert stored.calendar_template == "known_good.svg"
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.asyncio
 async def test_rejection_of_one_template_leaves_the_others_alone(
     config_service, configured
@@ -1997,11 +2048,13 @@ async def _problem_lines(config_service, root, *, module_enabled=True):
     return [_describe(problem) for problem in _check_all(config, root=root)]
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.asyncio
 async def test_sound_templates_contribute_no_finding(config_service, configured):
     assert await _problem_lines(config_service, configured) == []
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.asyncio
 async def test_two_broken_templates_are_named_individually(config_service, configured):
     """FR-008 — both, separately, with distinct reasons. Not a count, not a group."""
@@ -2026,6 +2079,7 @@ async def test_two_broken_templates_are_named_individually(config_service, confi
     assert lines[0] != lines[1]
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.asyncio
 async def test_a_failing_template_names_itself_not_its_aspect(config_service, configured):
     """Weather has six templates behind one aspect; the report must name the one."""
@@ -2038,6 +2092,7 @@ async def test_a_failing_template_names_itself_not_its_aspect(config_service, co
     assert "phase 2" in lines[0].lower()
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.asyncio
 async def test_disabled_module_contributes_no_finding(config_service, configured):
     """FR-009 — with the module off, neither command verifies anything."""
@@ -2046,6 +2101,7 @@ async def test_disabled_module_contributes_no_finding(config_service, configured
     assert await _problem_lines(config_service, configured, module_enabled=False) == []
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.asyncio
 async def test_review_and_approval_read_the_same_evaluation(config_service, configured):
     """FR-008a — the two surfaces cannot disagree, because there is one computation."""
@@ -2057,6 +2113,7 @@ async def test_review_and_approval_read_the_same_evaluation(config_service, conf
     assert review == approval and review != []
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.asyncio
 async def test_missing_template_directory_reports_once_not_sixteen_times(
     config_service, configured
@@ -2109,6 +2166,7 @@ def failing_render_service(db_path, config_service, module_service, monkeypatch)
     return service
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.asyncio
 async def test_commanded_posting_rejects_and_posts_nothing(failing_render_service):
     decision = await failing_render_service.render_for_posting(
@@ -2122,6 +2180,7 @@ async def test_commanded_posting_rejects_and_posts_nothing(failing_render_servic
     assert "file not found" in decision.caller_message()
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.asyncio
 async def test_scheduled_posting_falls_back_to_text(failing_render_service):
     decision = await failing_render_service.render_for_posting(
@@ -2134,6 +2193,7 @@ async def test_scheduled_posting_falls_back_to_text(failing_render_service):
     assert decision.png_paths == []
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.asyncio
 async def test_the_two_origins_differ_on_the_identical_fault(failing_render_service):
     """SC-007 stated directly."""
@@ -2150,6 +2210,7 @@ async def test_the_two_origins_differ_on_the_identical_fault(failing_render_serv
     assert commanded.problem.detail == scheduled.problem.detail
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.asyncio
 async def test_posting_origin_is_required_and_never_inferred(failing_render_service):
     """A new call site must state which it is; there is no default to fall into."""
@@ -2165,6 +2226,7 @@ async def test_posting_origin_is_required_and_never_inferred(failing_render_serv
         )
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.asyncio
 async def test_an_internal_problem_tells_the_user_nothing_to_act_on(
     db_path, config_service, module_service, monkeypatch
@@ -2191,6 +2253,7 @@ async def test_an_internal_problem_tells_the_user_nothing_to_act_on(
     assert "operator" in message
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.asyncio
 @pytest.mark.rasteriser
 async def test_a_clean_render_posts_the_image(
@@ -2352,6 +2415,7 @@ class _RecordingChannel:
         self.sent.append((content, file))
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.rasteriser
 async def test_an_approved_penalty_posts_a_graphic_and_only_a_mention(
     db_path, module_service, config_service, template_dir, monkeypatch, tmp_path
@@ -2432,6 +2496,7 @@ async def test_an_approved_penalty_posts_a_graphic_and_only_a_mention(
     assert "Justification" not in content and "Ada Lovelace" not in content
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_the_verdict_toggle_off_posts_the_textual_announcement(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
