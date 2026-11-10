@@ -2016,7 +2016,6 @@ def _saves_outside_a_change() -> Counter[tuple[str, str]]:
 
 KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     # Core's pass
-    ("core/services/driver_service.py", "DriverService.set_former_driver"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "_delete_test_drivers_in_division"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "add_test_driver"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "add_test_drivers_in_bulk"): (1, PASS["core"]),

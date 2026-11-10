@@ -33,6 +33,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.services.test_mode_settings import NOT_IN_TEST_MODE
+from leaguebot.core.services.test_mode_former_driver_change import TEST_MODE_FORMER_DRIVER
 from leaguebot.core.services.test_mode_toggle_change import TEST_MODE_TOGGLE
 from leaguebot.core.services.test_mode_service import (
     PhaseEntry,
@@ -40,7 +41,6 @@ from leaguebot.core.services.test_mode_service import (
     AdvanceStatus,
     advance_next_step,
 )
-from leaguebot.core.models.refusal import Refused
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import backup_service
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
@@ -297,45 +297,16 @@ class TestModeCog(commands.Cog):
         user: discord.Member,
         value: bool,
     ) -> None:
-        """Set former_driver flag — only available when test mode is active."""
-        config = await self.bot.config_service.get_server_config(
+        """Ask the change that sets the flag of the driver holding the account picked.
 
-        )
-        if config is None or not config.test_mode_active:
-            await refuse(
-                interaction,
-                NOT_IN_TEST_MODE,
-                what=describe(interaction),
-            )
-            return
-
-        try:
-            old_val, new_val = await self.bot.driver_service.set_former_driver(
-                str(user.id),
-                value,
-                interaction.user.id,
-                str(interaction.user),
-                now=self.bot.change_queue.now(),
-            )
-        except Refused as exc:
-            await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
-            return
-
-        await interaction.response.send_message(
-            f"✅ former_driver flag updated.\n"
-            f"   User     : {user.display_name}\n"
-            f"   Old value: {old_val}\n"
-            f"   New value: {new_val}",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode set-former-driver | Success\n"
-            f"  user: {user.display_name} (<@{user.id}>)\n"
-            f"  former_driver: {old_val} -> {new_val}",
-        )
-        log.info(
-            "set-former-driver: user=%s %s→%s by %s",
-            user.id, old_val, new_val, interaction.user,
+        Test mode and the profile are judged by the change, as it is asked and as it starts
+        (`test_mode_former_driver_change`).
+        """
+        await self.bot.change_queue.ask(
+            TEST_MODE_FORMER_DRIVER,
+            {"user_id": str(user.id), "name": user.display_name, "value": value},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     # ------------------------------------------------------------------

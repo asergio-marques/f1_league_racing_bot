@@ -39,9 +39,6 @@ from tests.support.settings_league import interaction as member_asks
 from tests.support.setup_rounds import acknowledged
 from tests.support.undecorate import undecorate
 
-#: What is not yet true of the command.
-ON_THE_QUEUE = "#283: /test-mode set-former-driver is not yet a change on the queue"
-
 ACTOR_ID = 77
 _NAMED = f"Admin (`<@{ACTOR_ID}>`)"
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
@@ -119,7 +116,6 @@ def _doing(value: bool) -> str:
     return f"Setting **Racer**'s former-driver flag to **{value}**"
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 @pytest.mark.parametrize(
     "former, value, past_account",
     [
@@ -223,7 +219,6 @@ async def test_it_is_refused_at_the_ask(league, racer_held, meanwhile, refusal):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 @pytest.mark.parametrize("meanwhile", ["test mode turned off", "profile deleted"])
 async def test_it_is_judged_again_as_it_starts(league, meanwhile):
     """The server is in test mode; Racer holds a profile whose flag is false. Admin (77) runs the
@@ -255,7 +250,6 @@ async def test_it_is_judged_again_as_it_starts(league, meanwhile):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_fault_in_the_save_saves_neither_the_flag_nor_its_audit(league):
     """The server is in test mode; Racer holds a profile whose flag is false. Admin (77) runs the
     command for Racer with true, and the audit entry's write fails on the database as the queue
@@ -289,7 +283,6 @@ async def test_a_fault_in_the_save_saves_neither_the_flag_nor_its_audit(league):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_the_same_ask_while_the_first_waits_is_refused_as_a_repeat(league):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. The

@@ -250,8 +250,8 @@ async def set_former_drivers_on(db, former: Mapping[int, bool]) -> None:
     The flag is core's, so whoever works out who has raced, results, writes it through here and
     never into the table. Only a row whose value differs is written, and nothing is committed:
     the flag moves with whatever made the round final. No audit row is added; the flag is
-    derived from results, and `DriverService.set_former_driver` is the test-mode command that
-    sets it by hand, with its own save and its own audit row.
+    derived from results, and `/test-mode set-former-driver` sets it by hand, as a change of its own
+    with its own audit entry (`test_mode_former_driver_change`).
     """
     for profile_id, value in sorted(former.items()):
         await db.execute(
@@ -698,42 +698,3 @@ class DriverService:
             switched_back=judged.switched_back,
             merged_accounts=merged_accounts,
         )
-
-    # ------------------------------------------------------------------
-    # Former-driver flag override (US3)
-    # ------------------------------------------------------------------
-
-    async def set_former_driver(
-        self,
-        discord_user_id: str,
-        value: bool,
-        actor_id: int,
-        actor_name: str,
-        *,
-        now: datetime,
-    ) -> tuple[bool, bool]:
-        """Set the former_driver flag.  Returns (old_value, new_value).
-
-        Any account the driver has held names them. The audit entry is stamped *now*.
-        """
-        profile = await self.get_profile(
-            await self.current_account(discord_user_id)
-        )
-        if profile is None:
-            raise Refused(
-                f"No driver profile found for user {discord_user_id} on this server."
-            )
-        old_value = profile.former_driver
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE driver_profiles SET former_driver = ? WHERE id = ?",
-                (int(value), profile.id),
-            )
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'TEST_FORMER_DRIVER_FLAG_SET', ?, ?, ?)",
-                (actor_id, actor_name, str(old_value), str(value), now.isoformat()),
-            )
-            await db.commit()
-        return old_value, value

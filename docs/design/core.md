@@ -321,6 +321,7 @@ Every core change type runs on the league lane; none is a conversation's. Each i
 | `core.driver_*` (seven) | `/driver …` | the seats or the state, and the audit entry | role moves, lineups |
 | `core.team_*` (four) | `/team add`, `modify`, `remove`, `reserve-role` | the list and the role mapping, audited | role moves |
 | `core.test_mode_toggle` | `/test-mode toggle` | the flag, the modules' part, the audit entry; turned off, every fake driver deleted | forecasts cleared, the backup deleted |
+| `core.test_mode_former_driver` | `/test-mode set-former-driver` | the flag and the audit entry | — |
 | `hub.refresh` | the bot, wherever what the panel offers may change | none: the panel's id is its job's `record` | the old panel deleted where the hub moved |
 | `calendar.sync` | `/division calendar-sync` | `close`, last: a save writing the line | before it: the post, then the deletion of the calendar it replaced |
 | `lineup.post` | the bot, after a change made off the queue moves a driver | none: the lineup's id and audit entry are its post's `record` | the post, then the deletion of the lineup it replaced |
@@ -740,7 +741,10 @@ and the audit entry. Turning it off is one save too (`switch_test_mode_off_on`),
 driver through `delete_driver_profiles`, followed by jobs that clear the forecasts posted under test
 mode and delete the saved backup. A season's end switches it off in its own `end` save. Whether a
 real driver stands in the way is counted by `count_live_real_drivers`. `/test-mode nationality` is a
-`Setting`.
+`Setting`. `/test-mode set-former-driver` is a change of its own, `core.test_mode_former_driver`,
+carrying the account picked and the value, with test mode and the profile judged at the ask and
+as it starts, and one save of the flag and its audit entry; the flag it leaves for a discarded
+save is read into the payload at the ask (`fill`).
 
 **Fake drivers are seeded, not moved through the state machine.** `test_roster_service` inserts a
 fake driver at Assigned, flagged as a test driver, with a synthetic id above any real Discord id;
