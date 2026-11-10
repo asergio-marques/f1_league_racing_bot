@@ -84,9 +84,6 @@ LEAVING = {
     # The weather phases' callables bound at start-up: the bot's wiring, not the league's data.
     # Exempt while it stands; it goes when every kind is signed up in `_timer_callbacks` (#283).
     ("core/services/scheduler_service.py", "_phase_callbacks"): "#283 S7a",
-    # The hub's options, registered at import (#279): the bot's code, not the league's data. It
-    # goes when the builder signs every option up on the hub options it makes (#283).
-    ("core/services/hub_service.py", "_OPTIONS"): "#283 S22a",
 }
 
 #: Stores the plan moves with no change, by (file, name): the file each moves to and the commit

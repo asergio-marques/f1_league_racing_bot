@@ -1218,7 +1218,9 @@ def register_change_types(bot: LeagueBot) -> None:
             attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
         )
     )
-    bot.change_queue.register(hub_refresh_change(bot.change_queue, bot.config_service))
+    bot.change_queue.register(hub_refresh_change(
+        bot.change_queue, bot.config_service, hub_options=bot.hub_options
+    ))
     bot.change_queue.register(calendar_sync_change(bot.season_service, bot.image_drawing))
     bot.change_queue.register(
         lineup_post_change(bot.placement_service, now=lambda: bot.change_queue.now())
@@ -1995,7 +1997,7 @@ def _start_up_steps(bot: LeagueBot) -> "tuple[StartUpStep, ...]":
         # Route the hub's buttons again, and post its panel afresh where it was deleted (#279).
         from leaguebot.core.services.hub_service import recover_hub
 
-        await recover_hub(bot, queue=bot.change_queue)
+        await recover_hub(bot, queue=bot.change_queue, hub_options=bot.hub_options)
 
     async def recover_the_wizards() -> None:
         # Re-arm inactivity APScheduler jobs for any non-UNENGAGED wizard sessions that were

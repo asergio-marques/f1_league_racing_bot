@@ -4,11 +4,12 @@ Every command the bot has is a league manager's or a league admin's. The hub is 
 surface for everybody else: a channel set by `/bot hub-channel`, holding a single panel of
 buttons. A button asks no tier; who may see the channel is who may press it.
 
-**Core owns the channel and the panel; each module says what it adds.** A module registers a
-`HubOption` at import, naming when it is offered — typically while the module is enabled — and
-what a press does. This service knows none of them by name and registers nothing itself. Core
-adds one option of its own, About, from `core/services/about_service.py` and offered always (decided
-2026-09-22, #258); every other option is a module's. A panel offering nothing says so.
+**Core owns the channel and the panel; each module says what it adds.** The builder signs
+each module's `HubOption` up on the `HubOptions` it makes, naming when it is offered — typically
+while the module is enabled — and what a press does. This service knows none of them by name and
+signs nothing up itself. Core adds one option of its own, About, from
+`core/services/about_service.py` and offered always; every other option is a module's. A panel
+offering nothing says so.
 
 **A press is judged when it is made, not when the panel was posted.** A panel is refreshed
 whenever what it offers may have changed, but a press can still arrive on one posted before a
@@ -16,7 +17,7 @@ module was disabled. The option is looked up by its key and asked again whether 
 one that is not is refused, and the panel refreshed. The key is part of the button's custom id,
 `hub:<key>`, and so must never change once an option has shipped.
 
-**One persistent view carries every registered option.** Registered at start-up by
+**One persistent view carries every option signed up.** Routed at start-up by
 `recover_hub`, so a button survives a restart whether or not its option is offered at that
 moment: the refusal above is the better answer to a stale press than silence.
 
@@ -37,10 +38,10 @@ runs one refresh at a time on the league's lane, so two cannot both find the pan
 post two, and a burst of stale presses asks one while the first waits. The new message's id is
 saved in the save that marks the job done.
 
-**A panel's buttons reach the queue by being handed it.** The view the job posts and the view the
-start-up routes are built with the change queue, which the builder gives `hub_refresh_change` and
-`recover_hub`; a stale press asks the refresh of it. This service never looks the queue up on the
-bot.
+**A panel's buttons reach the queue and the options by being handed them.** The view the job
+posts and the view the start-up routes are built with the change queue and the hub options, which
+the builder gives `hub_refresh_change` and `recover_hub`; a press looks its option up in the one,
+and a stale press asks the refresh of the other. This service never looks either up on the bot.
 """
 
 from __future__ import annotations
@@ -86,8 +87,6 @@ __all__ = [
     "HubOptions",
     "HubPanelView",
     "CUSTOM_ID_PREFIX",
-    "register_option",
-    "registered_options",
     "offered_options",
     "render_panel",
     "refresh_panel",
@@ -159,88 +158,81 @@ class HubOptions:
         return self._options.get(key)
 
 
-_OPTIONS: dict[str, HubOption] = {}
-
-
-def register_option(option: HubOption) -> None:
-    """Add *option* to the panel's registry. A second option under one key is refused.
-
-    Registering the same option twice is harmless, as a module imported twice would do; two
-    options sharing a key would route one's presses to the other.
-    """
-    existing = _OPTIONS.get(option.key)
-    if existing is not None and existing is not option:
-        raise ValueError(f"a hub option is already registered as {option.key!r}")
-    _OPTIONS[option.key] = option
-
-
-def registered_options() -> list[HubOption]:
-    """Every registered option, in panel order."""
-    return sorted(_OPTIONS.values(), key=lambda option: (option.order, option.key))
-
-
 async def is_offered(bot: LeagueBot, option: HubOption) -> bool:
     return option.offered is None or bool(await option.offered(bot))
 
 
-async def offered_options(bot: LeagueBot) -> list[HubOption]:
-    """The options the panel carries now, in panel order."""
-    return [option for option in registered_options() if await is_offered(bot, option)]
+async def offered_options(bot: LeagueBot, *, hub_options: HubOptions) -> list[HubOption]:
+    """The options of *hub_options* the panel carries now, in panel order."""
+    return [option for option in hub_options.registered_options() if await is_offered(bot, option)]
 
 
 def render_panel(
-    options: list[HubOption], queue: ChangeQueue | None = None
+    options: list[HubOption], queue: ChangeQueue | None = None, *, hub_options: HubOptions
 ) -> tuple[str, "HubPanelView | None"]:
     """The panel's text, and its view — ``None`` where nothing is offered. A view carries *queue*,
-    which a stale press asks for the refresh; none, and a stale press only refuses."""
+    which a stale press asks for the refresh; none, and a stale press only refuses; and
+    *hub_options*, which a press looks its option up in."""
     if not options:
         return f"{PANEL_HEADING}\n{PANEL_EMPTY}", None
-    return f"{PANEL_HEADING}\n{PANEL_OFFERING}", HubPanelView(options, queue)
+    return f"{PANEL_HEADING}\n{PANEL_OFFERING}", HubPanelView(options, queue, hub_options=hub_options)
 
 
 class HubPanelView(LeagueView):
     """The hub's panel: one button per option, persistent, dispatching by the option's key.
 
     Built with the options offered when the panel is drawn, and at start-up with every option
-    registered, so that each key is routed after a restart. *queue* is the change queue, handed
-    by whoever builds the view (the refresh job, the start-up), for a stale press to ask the
-    refresh of.
+    signed up, so that each key is routed after a restart. *queue* is the change queue and
+    *hub_options* the options a press is looked up in, both handed by whoever builds the view
+    (the refresh job, the start-up): a stale press asks the queue for the refresh.
     """
 
-    def __init__(self, options: list[HubOption], queue: ChangeQueue | None = None) -> None:
+    def __init__(
+        self,
+        options: list[HubOption],
+        queue: ChangeQueue | None = None,
+        *,
+        hub_options: HubOptions,
+    ) -> None:
         super().__init__(timeout=None)
         for option in options:
             button = CallbackButton(
                 label=option.label,
                 style=discord.ButtonStyle.secondary,
                 custom_id=f"{CUSTOM_ID_PREFIX}{option.key}",
-                on_press=_callback_for(option.key, queue),
+                on_press=_callback_for(option.key, queue, hub_options),
             )
             self.add_item(button)
 
 
 def _callback_for(
-    key: str, queue: ChangeQueue | None
+    key: str, queue: ChangeQueue | None, hub_options: HubOptions
 ) -> Callable[[discord.Interaction], Awaitable[None]]:
     async def callback(interaction: discord.Interaction) -> None:
-        await press(interaction, key, queue)
+        await press(interaction, key, queue, hub_options=hub_options)
 
     return callback
 
 
 async def press(
-    interaction: discord.Interaction, key: str, queue: ChangeQueue | None = None
+    interaction: discord.Interaction,
+    key: str,
+    queue: ChangeQueue | None = None,
+    *,
+    hub_options: HubOptions,
 ) -> None:
     """Answer a press on the button keyed *key*, judging the option as it stands now.
 
+    The option is looked up in *hub_options*, handed by the view the press came from.
+
     A press on an option no longer offered is a refusal of a button that tries to act, so it is
     recorded in the log channel through `refuse`, the option named by its label, or by its key
-    where no module registers it any more. The member is answered as ever, and the panel's
+    where no module signs it up any more. The member is answered as ever, and the panel's
     refresh is asked of *queue*, the bot's own change: a second stale press before the first
     refresh starts is dropped as the repeat it is.
     """
     bot = bot_of(interaction)
-    option = _OPTIONS.get(key)
+    option = hub_options.option_for(key)
     if option is None or not await is_offered(bot, option):
         what = f"the hub's `{key}` option" if option is None else f"the hub's “{option.label}” option"
         await refuse(interaction, NO_LONGER_OFFERED, what=what)
@@ -300,6 +292,8 @@ async def refresh_panel(
     queue: ChangeQueue,
     config_service: ConfigService,
     kept: dict[str, Any] | None = None,
+    *,
+    hub_options: HubOptions,
 ) -> dict[str, Any] | None:
     """Bring the panel in line with what is offered now: the body of the `hub.refresh` job.
 
@@ -307,8 +301,8 @@ async def refresh_panel(
     through the standing-post handler, notifying nobody), and gives back
     `{"new": <id>, "channel_id": <id>}` for the job's record to save where it posted, and
     `{"edited": <id>, "channel_id": <id>}`, which saves nothing, where it edited. Gives None only
-    where no hub channel is set. The panel's buttons are handed *queue*, and the channel is read
-    through *config_service*. *kept* is what the job's last try posted and could not record,
+    where no hub channel is set. The panel's buttons are handed *queue* and *hub_options*, which
+    also says what is offered, and the channel is read through *config_service*. *kept* is what the job's last try posted and could not record,
     removed before the panel is posted again.
 
     Raises `StepFailedOnDiscord`, naming `/bot hub-channel`, where the channel set is no longer in
@@ -323,7 +317,9 @@ async def refresh_panel(
         if fault is None:
             raise GuildUnavailable("the league's server is not in the cache")
         raise StepFailedOnDiscord(f"{fault} Set one with `/bot hub-channel`, then press Retry.")
-    content, view = render_panel(await offered_options(bot), queue)
+    content, view = render_panel(
+        await offered_options(bot, hub_options=hub_options), queue, hub_options=hub_options
+    )
     if cfg.hub_message_id is not None:
         try:
             await edit_standing(
@@ -380,14 +376,17 @@ def hub_refresh_after(command: str) -> After:
     return After(step=Step(REFRESH_HUB, StepKind.ACT, run), fault_reply=fault_reply)
 
 
-def hub_refresh_change(queue: ChangeQueue, config_service: ConfigService) -> ChangeType:
+def hub_refresh_change(
+    queue: ChangeQueue, config_service: ConfigService, *, hub_options: HubOptions
+) -> ChangeType:
     """The change that brings the hub's panel up to date, asked for by the bot.
 
     Asked in the save of whatever may have changed what the panel offers, so that the panel is
     refreshed as a change of its own, after the steps of the change that asked for it. The payload's
     ``command`` names what caused it. A hub not set is not due. The panel is refreshed by one job,
-    `refresh_panel`, which a refusal stops the queue at; *queue* is handed to the panel's buttons
-    and *config_service* is what reads the hub channel. A hub that has moved names the panel it
+    `refresh_panel`, which a refusal stops the queue at; *queue* and *hub_options* are handed to the
+    panel's buttons, *hub_options* says what is offered, and *config_service* is what reads the hub
+    channel. A hub that has moved names the panel it
     left, ``old_channel_id`` and ``old_message_id``: the old panel is deleted by a job of its own
     after the new is posted, by the shared delete step, so that the league is never left without
     one and a refused deletion stops the queue.
@@ -404,7 +403,9 @@ def hub_refresh_change(queue: ChangeQueue, config_service: ConfigService) -> Cha
         return await _hub_is_set(ctx.bot, config_service)
 
     async def refresh(ctx: StepContext) -> StepResult:
-        posted = await refresh_panel(ctx.bot, queue, config_service, ctx.kept)
+        posted = await refresh_panel(
+            ctx.bot, queue, config_service, ctx.kept, hub_options=hub_options
+        )
         if posted is None:
             return StepResult()
         old_channel, old_message = ctx.payload.get("old_channel_id"), ctx.payload.get("old_message_id")
@@ -509,17 +510,17 @@ async def reapply_hub_permissions(bot: LeagueBot, config_service: ConfigService)
 # ── Start-up ──────────────────────────────────────────────────────────────
 
 
-async def recover_hub(bot: LeagueBot, *, queue: ChangeQueue) -> None:
-    """Route every registered option's button after a restart, and ask the queue to refresh the panel.
+async def recover_hub(bot: LeagueBot, *, queue: ChangeQueue, hub_options: HubOptions) -> None:
+    """Route every signed-up option's button after a restart, and ask the queue to refresh the panel.
 
-    Every option is registered, not only those offered now: a press on one a module has
+    Every option of *hub_options* is routed, not only those offered now: a press on one a module has
     since stopped offering is refused in words rather than failing in silence. The refresh is the
     bot's own change, asked before the queue starts; it is dropped where no hub is set. Routing
     a view is no post, so it is made here.
     """
-    options = registered_options()
+    options = hub_options.registered_options()
     if options:
-        bot.add_view(HubPanelView(options, queue))
+        bot.add_view(HubPanelView(options, queue, hub_options=hub_options))
     await queue.ask(
         HUB_REFRESH,
         {"command": "the bot starting"},

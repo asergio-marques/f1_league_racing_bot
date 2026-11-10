@@ -34,9 +34,6 @@ from tests.support.change_queue import built_bot
 MADE = datetime(2026, 9, 22, 12, 20, 6, tzinfo=timezone(timedelta(hours=1)))
 MADE_STAMP = "<t:1790076006:F>"
 
-#: Why a test fails until the hub's options are held on an object the builder makes.
-ON_THE_BOT = "#283: the hub's options are not yet held on an object the builder makes"
-
 
 def _hub_options(*options):
     """The hub's options as the builder makes them, each of *options* signed up on them."""
@@ -133,7 +130,6 @@ async def test_about_is_always_offered_and_after_every_module():
     assert [o.key for o in hub_options.registered_options()] == ["licence", "guides", "about"]
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_its_key_never_changes():
     """Part of the button's custom id: a panel already posted carries it. The panel is drawn from
     About, handed hub options holding it."""
@@ -146,7 +142,6 @@ async def test_its_key_never_changes():
     assert [(item.label, item.custom_id) for item in view.children] == [("About", "hub:about")]
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_a_press_on_the_panel_reaches_about():
     """About is on the hub options handed to the press; a press on its key is answered by About.
     The bot pressed on holds no hub options, so the press reads only the ones handed to it."""

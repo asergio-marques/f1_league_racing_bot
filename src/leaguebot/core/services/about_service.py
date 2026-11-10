@@ -18,6 +18,9 @@ their own time zone.
 there would break the channel's one purpose; and a press changes nothing, so nothing is
 recorded in the log channel.
 
+**The builder signs `ABOUT_OPTION` up** on the bot's hub options; this module registers nothing
+when it is imported.
+
 **`ABOUT_KEY` never changes.** It is part of the button's custom id, and a panel already
 posted carries it.
 """
@@ -27,7 +30,7 @@ from datetime import datetime
 
 import discord
 
-from leaguebot.core.services.hub_service import HubOption, register_option
+from leaguebot.core.services.hub_service import HubOption
 from leaguebot.core.utils.league_bot import bot_of
 
 PROJECT_NAME = "F1 League Racing Bot"
@@ -72,5 +75,3 @@ ABOUT_OPTION = HubOption(
     respond=respond,
     offered=None,
 )
-
-register_option(ABOUT_OPTION)

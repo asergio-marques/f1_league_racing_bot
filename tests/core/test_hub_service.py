@@ -56,9 +56,6 @@ from tests.support.change_queue import (
 from tests.support.mentions import NOBODY, notified
 
 
-#: Why a test fails until the hub's options are held on an object the builder makes.
-ON_THE_BOT = "#283: the hub's options are not yet held on an object the builder makes"
-
 
 def _options(*options):
     """The hub's options as the builder makes them, each of *options* signed up on them."""
@@ -103,7 +100,6 @@ def _interaction(client=None):
 # ── The options ───────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 def test_the_hub_service_registers_no_option_itself():
     """Neither the hub service nor About's module holds options at module level: neither has an
     `_OPTIONS` or a `register_option` of its own, and no value either keeps at module level is hub
@@ -158,7 +154,6 @@ def test_registering_the_same_option_again_is_harmless():
     assert hub_options.registered_options() == [option]
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_only_the_options_offered_are_on_the_panel():
     """The panel carries the options of the hub options handed to it that are offered now."""
     hub_options = _options(
@@ -175,7 +170,6 @@ async def test_only_the_options_offered_are_on_the_panel():
 # ── The panel ─────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_an_empty_panel_says_so_and_carries_no_buttons():
     """Hub options holding no option: the panel says nothing is offered, and has no view."""
     text, view = render_panel([], hub_options=_options())
@@ -184,7 +178,6 @@ async def test_an_empty_panel_says_so_and_carries_no_buttons():
     assert view is None
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_each_option_is_a_button_keyed_by_its_custom_id():
     """The custom id is what survives a restart, so it is the key and nothing else. The panel is
     drawn from two options, handed the hub options they are signed up on."""
@@ -199,7 +192,6 @@ async def test_each_option_is_a_button_keyed_by_its_custom_id():
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_the_panel_is_persistent_and_refuses_other_servers():
     """No timeout, a custom id on every button, and the league-server check every view the
     bot posts carries. The view is built from one option, handed the hub options it is on."""
@@ -214,7 +206,6 @@ async def test_the_panel_is_persistent_and_refuses_other_servers():
 # ── A press ───────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_a_press_is_answered_by_its_option():
     """The option pressed is found on the hub options the view was handed, and answers the
     press."""
@@ -244,7 +235,6 @@ async def test_a_press_is_answered_by_its_option():
         ),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_a_stale_press_is_recorded_in_the_log_channel(registered, named):
     """A press on a button that tries to act is refused in the log channel as well as to the
     member (the core specification's "The record of what changed"). The option is named by its
@@ -404,7 +394,6 @@ def _log(league) -> str:
     return "\n".join(league.bot.log_channel.sent)
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_a_standing_panel_is_edited_in_place(league):
     """The panel stands in the hub; a refresh asked once an option is signed up on the hub options
     the refresh is built on edits it in place, with the option's button, and posts nothing new."""
@@ -432,7 +421,6 @@ async def test_a_deleted_panel_is_posted_again(league):
     assert await _stored_panel(league) == league.hub.posted[0].id
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_the_hub_panel_posted_or_edited_notifies_nobody(league):
     """The hub is set, no panel stands and nothing is offered: a refresh posts it. An option is
     signed up on the hub options the refresh is built on and the panel refreshed again: it is
@@ -450,7 +438,6 @@ async def test_the_hub_panel_posted_or_edited_notifies_nobody(league):
     assert notified(panel.edit.await_args.kwargs.get("allowed_mentions")) == NOBODY
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_a_hub_panel_emptied_of_options_loses_its_buttons(league):
     """The hub options the refresh is built on hold one option, and the panel is posted with
     its button; the option then stops being offered and the panel is refreshed through the queue.
@@ -500,7 +487,6 @@ async def test_a_hub_channel_gone_stops_the_queue_naming_the_command(league):
     assert league.hub.sent == []
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_the_panel_s_id_is_saved_with_its_mark(league):
     """The hub is set, no panel stands and the hub options the refresh is built on hold no
     option; the refresh is asked and the queue run. The panel is posted; its id is kept, so that
@@ -537,7 +523,6 @@ async def _panel_with(league, option):
     return league.hub.posted[0].view
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_a_stale_press_refreshes_the_panel(league):
     """The panel still carried the option; Alex presses it after it stopped being offered. The
     press is refused and the refresh asked of the queue: the panel is unchanged until the queue
@@ -554,7 +539,6 @@ async def test_a_stale_press_refreshes_the_panel(league):
     assert "Nothing is offered here yet." in league.hub.posted[0].content
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_a_burst_of_stale_presses_asks_one_refresh(league):
     """Alex presses the stale option twice before the queue runs: one refresh is asked,
     the second press's request dropped while the first waits, and the panel is refreshed once."""
@@ -651,7 +635,6 @@ async def test_permissions_are_left_alone_while_no_hub_is_set(db_path):
 # ── Start-up ──────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_a_restart_routes_every_registered_option_and_refreshes(league):
     """Every option, offered or not: a stale press is refused in words, not in silence. The
     panel stands in the hub; after a restart every option on the hub options handed to the
@@ -671,7 +654,6 @@ async def test_a_restart_routes_every_registered_option_and_refreshes(league):
     assert [r["state"] for r in await _refreshes(league)] == ["QUEUED"]
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_the_start_up_asks_for_the_panel_before_the_queue_starts(league):
     """The hub is set, no panel stands and the hub options handed to the start-up hold no option.
     The start-up asks the queue for the panel, as the bot's, and posts nothing itself; the panel
@@ -687,7 +669,6 @@ async def test_the_start_up_asks_for_the_panel_before_the_queue_starts(league):
     assert await _stored_panel(league) == league.hub.posted[0].id
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_a_restart_with_no_option_registered_adds_no_view(league):
     """The hub options handed to the start-up hold no option: a restart routes no view."""
     hub_options = _offer(league)
