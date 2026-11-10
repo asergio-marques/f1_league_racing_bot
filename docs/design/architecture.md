@@ -1249,9 +1249,10 @@ in handing its areas among them) is a stated exception: it is signed as an empty
 an approval whose review was read, because a fingerprint that could not be read must not wave one
 through (its docstring says so); the factory reset's Discord clean-up (`bot_cog._clean_up`) is a
 stated exception: it says in the reset's last report and closing line that its clean-up stopped,
-because a reset must not end in silence (its docstring says so); and the scheduler's removal of one job (`SchedulerService._remove_job`) is a
-stated exception: every cancel is a clean-up, so a job that will not go is logged on the host and
-left, a teardown list going on past it (`SchedulerService` says so).
+because a reset must not end in silence (its docstring says so); and the scheduler's removal of one
+job (`SchedulerService._remove_job`) is a stated exception: every cancel is a clean-up, so a job
+that will not go is logged on the host and left, a teardown list going on past it
+(`SchedulerService` says so).
 
 In every case it keeps the full error details for the host's log. Beyond the first place's own
 catch-all, a command catches only the errors it expects by name, and only to turn them into a
