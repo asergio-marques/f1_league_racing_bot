@@ -339,7 +339,7 @@ class PlacementService:
     def _stamped(now: datetime | None) -> str | None:
         """*now* as a mapping's ``updated_at`` is kept; None where none is given and the schema's
         own default stamps a new row."""
-        return None if now is None else now.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        return None if now is None else now.astimezone(timezone.utc).isoformat()
 
     async def set_team_role_config_on(
         self, db: aiosqlite.Connection, team_name: str, role_id: int, *,
