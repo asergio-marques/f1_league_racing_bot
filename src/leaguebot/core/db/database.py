@@ -334,6 +334,13 @@ async def sole_row(cursor: aiosqlite.Cursor) -> aiosqlite.Row:
     return row
 
 
+async def tuple_rows(db: aiosqlite.Connection, sql: str, *params: Any) -> list[tuple[Any, ...]]:
+    """Every row *sql* returns on *db* as a plain tuple, so that a digest of the rows does not
+    depend on the row factory the connection carries."""
+    cursor = await db.execute(sql, params)
+    return [tuple(row) for row in await cursor.fetchall()]
+
+
 def inserted_id(cursor: aiosqlite.Cursor) -> int:
     """The id of the row *cursor*'s INSERT has just written.
 

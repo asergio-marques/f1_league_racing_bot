@@ -447,6 +447,15 @@ def _sign_up_to_division_channel_faults_read(bot: LeagueBot) -> None:
     )
 
 
+def _sign_up_to_fingerprint_areas_read(bot: LeagueBot) -> None:
+    """Make the hook a season's fingerprint is taken through, and sign each module's part up to
+    it: the rows of that module's own configuration, by area, handed the fingerprint's connection
+    and the season's id. They sign up in the order a division's channels read (architecture.md,
+    "How modules and core fit together"). The builder hands it to every caller of
+    `take_fingerprint`."""
+    bot.fingerprint_areas_read = AwaitedHook()
+
+
 def _sign_up_to_driver_turned_down(bot: LeagueBot) -> None:
     """Make the hook a driver turned down declares, and sign each module's part up to it: what a
     module lets go of from the driver, on the connection of the save that turns them down, given
@@ -1705,6 +1714,7 @@ async def build(settings: Settings) -> LeagueBot:
     _sign_up_to_driver_names_read(bot)
     _sign_up_to_division_channel_faults_read(bot)
     _sign_up_to_division_lines_read(bot)
+    _sign_up_to_fingerprint_areas_read(bot)
     _sign_up_to_driver_account_changed(bot)
     _sign_up_to_placements_confirmed(bot)
     _sign_up_to_season_completed(bot)

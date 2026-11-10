@@ -127,6 +127,14 @@ class LeagueBot(commands.Bot):
     #: core's review reads no module's table (architecture.md, "A hook core declares is a list of
     #: subscribers"); `read_division_lines` gathers what they hand back.
     division_lines_read: AwaitedHook
+    #: The moment a season's fingerprint is taken (a review's post, and every check that compares
+    #: the season with its review): each module signs up a function handing back the rows of its
+    #: own configuration, by the area each belongs to, whatever its switch, handed the connection
+    #: the fingerprint holds open and the season's id. The builder makes it and signs them up in
+    #: the order a division's channels read (weather, results, attendance, then signup and
+    #: images), so that core's fingerprint reads no module's table (architecture.md, "A hook core
+    #: declares is a list of subscribers"); `take_fingerprint` digests what they hand back.
+    fingerprint_areas_read: AwaitedHook
     #: The base role changed (`/bot base-role`), awaited from an `After` step once the queue has
     #: saved it, given the server, the role replaced and the role now set, and handing no
     #: connection: each subscriber opens its own (signup's move of the signup channel's overwrite
