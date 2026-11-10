@@ -6,6 +6,9 @@ other command in the cog, and exactly the sort of thing a later reader "corrects
 refusal listing one fault per row of a fifty-one row file exceeds Discord's 2000-character
 limit, which refuses the whole message rather than truncating it: the manager would get no
 reply at all.
+
+What a submission seats, refuses and records, on the change queue, is in
+test_test_mode_roster_add_bulk.
 """
 from __future__ import annotations
 
@@ -53,12 +56,6 @@ def _cog(*, test_mode: bool = True):
     return cog
 
 
-def _reply(interaction) -> str:
-    return "\n".join(
-        str(call.args[0]) for call in interaction.followup.send.await_args_list if call.args
-    )
-
-
 # ── The command ───────────────────────────────────────────────────────────
 
 
@@ -99,61 +96,6 @@ async def test_the_box_stays_within_discord_s_limits():
 
 
 # ── Submitting it ─────────────────────────────────────────────────────────
-
-
-async def test_a_parse_fault_is_reported_and_nothing_is_added(monkeypatch):
-    import leaguebot.core.services.test_roster_service as trs
-
-    seated = AsyncMock()
-    monkeypatch.setattr(trs, "add_test_drivers_in_bulk", seated)
-    modal = _RosterImportModal(_cog())
-    modal.csv_text._value = "not-an-id,Quicksilver,Alpine,Elite,British"
-    interaction = _interaction()
-
-    await modal.on_submit(interaction)
-
-    assert "No drivers were added" in _reply(interaction)
-    seated.assert_not_awaited(), "the database was reached despite a parse fault"
-
-
-async def test_the_roster_is_held_to_the_template_capacities(monkeypatch):
-    """#150: the bot's placement service goes with the roster, so a real season's
-    template capacities bound it."""
-    import leaguebot.core.services.test_roster_service as trs
-
-    seated = AsyncMock(return_value=(1, []))
-    monkeypatch.setattr(trs, "add_test_drivers_in_bulk", seated)
-    cog = _cog()
-    modal = _RosterImportModal(cog)
-    modal.csv_text._value = "9000000000000000001,Quicksilver,Alpine,Elite,British"
-    interaction = _interaction()
-
-    await modal.on_submit(interaction)
-
-    seated.assert_awaited_once()
-    assert seated.await_args.kwargs["placement_service"] is cog.bot.placement_service
-
-
-async def test_an_imported_roster_is_recorded(monkeypatch):
-    """Seating a roster changes the season, so it is recorded: one success line naming the
-    maintainer, how many drivers were seated and in which division (#482)."""
-    import leaguebot.core.services.test_roster_service as trs
-
-    monkeypatch.setattr(trs, "add_test_drivers_in_bulk", AsyncMock(return_value=(1, [])))
-    cog = _cog()
-    modal = _RosterImportModal(cog)
-    modal.csv_text._value = "9000000000000000001,Quicksilver,Alpine,Elite,British"
-    interaction = _interaction()
-    interaction.client = cog.bot
-    interaction.user.id = 77
-    interaction.user.display_name = "Maintainer"
-
-    await modal.on_submit(interaction)
-
-    [line] = [call.args[0] for call in cog.bot.output_router.post_log.await_args_list]
-    first = line.splitlines()[0]
-    assert first.startswith("Maintainer (<@77>) | ") and "Success" in first
-    assert "1" in line and "Elite" in line
 
 
 async def test_the_submission_defers_before_it_replies():
