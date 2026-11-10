@@ -60,6 +60,7 @@ from leaguebot.core.services.team_service import TeamService
 from leaguebot.core.utils.formatting import discord_ts
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.interaction_errors import report_failure
+from leaguebot.core.utils.league_bot import bot_of
 from leaguebot.core.utils.league_server import LeagueView
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
@@ -467,7 +468,7 @@ async def _record_backup_question_ended(
     The reply's own words go beneath the line, less the marks a message carries.
     """
     await record_abandoned(
-        interaction.client,
+        bot_of(interaction),
         interaction.user,
         what="`/season placements-review`",
         lapsed=lapsed,
@@ -511,14 +512,13 @@ async def approve_season(
     in; where it is not given, as the gate tests call this, the season is fingerprinted as
     it stands, so that the check at run is never an empty one.
 
-    **The press is not deferred here.** The queue's acknowledgement is the press's own
-    response and its outcome updates it; only the backup question, which waits on a person,
-    defers first (the backup question). A refusal below answers the press
-    itself. **The in-hand check comes after the gates and before the question**, so that a
-    second approval of the season, from any review, is refused at once without being asked
-    whether to save the databases, and without naming the job. Everything after it, the writes, the roles and the posts, is
-    the change's (`season_approval_change`), a job each, so that a stop leaves nothing
-    undone for good.
+    **The press is not deferred here.** The queue's acknowledgement is the press's own response
+    and its outcome updates it; only the backup question, which waits on a person, defers
+    first. A refusal below answers the press itself. **The in-hand check comes after the gates
+    and before the question**, so that a second approval of the season, from any review, is
+    refused at once without being asked whether to save the databases, and without naming the
+    job. Everything after it, the writes, the roles and the posts, is the change's
+    (`season_approval_change`), a job each, so that a stop leaves nothing undone for good.
     """
     # Every gate below refuses through `refuse`, naming the button pressed (*what*, the
     # review's own Approve button where the caller names none) in the log channel.

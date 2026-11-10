@@ -675,7 +675,9 @@ class SeasonCog(commands.Cog):
             # confirmation refuses on (#396). The section draws only the lineup and the
             # calendar, so a broken results or weather template, or a missing rasteriser
             # with both of those off, was named here as blocking and then approved.
-            approval_blockers += await approval_checks.image_configuration_faults(self.bot.image_drawing)
+            approval_blockers += await approval_checks.image_configuration_faults(
+                self.bot.image_drawing
+            )
             image_lines += await self._calendar_capacity_warning(
                 season.id
             )
@@ -683,11 +685,11 @@ class SeasonCog(commands.Cog):
                 season.id
             )
             lineup_problems = await approval_checks.lineup_problems(
-            season.id,
-            season_service=self.bot.season_service,
-            team_service=self.bot.team_service,
-            image_drawing=self.bot.image_drawing,
-        )
+                season.id,
+                season_service=self.bot.season_service,
+                team_service=self.bot.team_service,
+                image_drawing=self.bot.image_drawing,
+            )
             if lineup_problems:
                 image_lines.append(
                     "❌ **Lineup template** — these block approval:"
@@ -2836,7 +2838,7 @@ class _ConfirmMidSeasonPlacementsView(_ApproveView):
     _verb = "confirmed"
 
     async def _confirm_placements(
-        self, interaction: discord.Interaction, *, what: str, fingerprint: dict | None
+        self, interaction: discord.Interaction, *, what: str, fingerprint: dict | None = None
     ) -> bool:
         """The mid-season placements' confirmation, handed the bot's services."""
         bot = self._cog.bot
@@ -2879,7 +2881,7 @@ class _ConfirmConfigurationView(_ApproveView):
     _verb = "confirmed"
 
     async def _confirm_configuration(
-        self, interaction: discord.Interaction, *, what: str, fingerprint: dict | None
+        self, interaction: discord.Interaction, *, what: str, fingerprint: dict | None = None
     ) -> bool:
         """The configuration's confirmation, handed the bot's services."""
         bot = self._cog.bot
