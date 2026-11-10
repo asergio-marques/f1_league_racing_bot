@@ -977,16 +977,17 @@ def driver_reassign_change(
             raise RuntimeError("reassigning a driver is the act of a member, and none is recorded")
         old_user_id, new_user_id = str(ctx.payload["old_user_id"]), str(ctx.payload["new_user_id"])
         try:
-            outcome = await driver.reassign_user_id_on(
-                db, old_user_id, new_user_id, ctx.actor_id, ctx.actor_name,
-                profiles_merged=profiles_merged, now=now(),
-            )
+            judged = await driver.judge_reassign_on(db, old_user_id, new_user_id)
         except Refused as refusal:
             reply = f"⛔ {refusal}"
             return StepResult(
                 result={"refused": reply},
                 lines=(refusal_line(ctx.named, ctx.what, reply_reason(reply)),),
             )
+        outcome = await driver.reassign_judged_on(
+            db, judged, new_user_id, ctx.actor_id, ctx.actor_name,
+            profiles_merged=profiles_merged, now=now(),
+        )
         replaced = outcome.replaced_account
         profile = outcome.profile
         how = "switched back to a past account" if outcome.switched_back else "given a new account"

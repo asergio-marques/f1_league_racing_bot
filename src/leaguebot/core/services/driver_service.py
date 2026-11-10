@@ -434,7 +434,7 @@ def _refuse_a_signup_in_progress(row, who: str) -> None:
 
 
 @dataclass
-class _Judged:
+class ReassignJudgement:
     """What a reassign was judged against: the driver the old account names, the profile holding
     the new account (None where no driver holds it), the account replaced, whether the new account
     is one of the driver's own, and the accounts of each profile."""
@@ -447,7 +447,7 @@ class _Judged:
     owner_accounts: list[str] | None
 
 
-async def _judge_reassign(db, old_user_id: str, new_user_id: str) -> _Judged:
+async def _judge_reassign(db, old_user_id: str, new_user_id: str) -> ReassignJudgement:
     """Judge a reassign on *db*, writing nothing; raises Refused for each refusal in the order
     `DriverService.reassign_user_id_on` documents."""
     driver = await _profile_holding(db, old_user_id)
@@ -499,7 +499,7 @@ async def _judge_reassign(db, old_user_id: str, new_user_id: str) -> _Judged:
             await divisions_taken_part_in(db, None, [str(new_user_id)]),
             f"<@{new_user_id}>",
         )
-    return _Judged(driver, owner, replaced, switched_back, driver_accounts, owner_accounts)
+    return ReassignJudgement(driver, owner, replaced, switched_back, driver_accounts, owner_accounts)
 
 
 @dataclass
@@ -603,10 +603,11 @@ class DriverService:
 
     async def judge_reassign_on(
         self, db: aiosqlite.Connection, old_user_id: str, new_user_id: str
-    ) -> None:
+    ) -> ReassignJudgement:
         """Judge a reassign on *db*, writing nothing: raises Refused, in the words a league is
-        told, for what `reassign_user_id_on` would refuse."""
-        await _judge_reassign(db, old_user_id, new_user_id)
+        told, for what `reassign_user_id_on` would refuse, and hands back what it was judged
+        against, which `reassign_judged_on` writes."""
+        return await _judge_reassign(db, old_user_id, new_user_id)
 
     async def reassign_user_id_on(
         self,
@@ -653,6 +654,26 @@ class DriverService:
         the change's, in jobs after the save.
         """
         judged = await _judge_reassign(db, old_user_id, new_user_id)
+        return await self.reassign_judged_on(
+            db, judged, new_user_id, actor_id, actor_name, profiles_merged=profiles_merged,
+            now=now,
+        )
+
+    async def reassign_judged_on(
+        self,
+        db: aiosqlite.Connection,
+        judged: ReassignJudgement,
+        new_user_id: str,
+        actor_id: int,
+        actor_name: str,
+        *,
+        profiles_merged: AwaitedHook,
+        now: datetime,
+    ) -> ReassignOutcome:
+        """Write the reassign *judged* on *db* (`judge_reassign_on`), on that connection and
+        committing nothing: it refuses nothing, so a caller that catches the refusals of the
+        judge holds no module's hook inside that catch. Nothing may have been written on *db*
+        between the judgement and this call."""
         driver, owner = judged.driver, judged.owner
         kept = driver
         merged_accounts: list[str] | None = None
