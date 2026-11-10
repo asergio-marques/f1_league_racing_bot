@@ -26,6 +26,7 @@ from leaguebot.attendance.models.attendance import (
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.models.round import AttendanceWindows
+from leaguebot.core.services.review_sections import Review, ReviewSection
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot
 
@@ -719,6 +720,67 @@ async def round_window(
         last_notice_hours=config.rsvp_last_notice_hours,
         deadline_hours=config.rsvp_deadline_hours,
     )
+
+
+async def review_section(
+    service: AttendanceService,
+    modules: "ModuleService",
+    *,
+    review: Review,
+    season_id: int,
+    division_ids: list[int],
+) -> ReviewSection | None:
+    """Attendance's section of a season review: its configuration, and in the placements review
+    each division's RSVP and attendance channels; None where the module is off.
+
+    Subscribed to core's `review_sections_read`. A module never configured has no configuration
+    to show, its section then holding the divisions' channels alone. Reads only.
+    """
+    if not await modules.is_attendance_enabled():
+        return None
+    config = await service.get_config()
+    lines: list[str] = []
+    if config:
+        autoreserve = config.autoreserve_threshold
+        autosack = config.autosack_threshold
+        autoreserve_text = f"{autoreserve} pts" if autoreserve is not None else "*(not set)*"
+        autosack_text = f"{autosack} pts" if autosack is not None else "*(not set)*"
+        last_notice = (
+            f"{config.rsvp_last_notice_hours}h before deadline"
+            if config.rsvp_last_notice_hours
+            else "*(disabled)*"
+        )
+        lines = [
+            "**Attendance Config**",
+            f"  • RSVP notice: {config.rsvp_notice_days} day(s) before race",
+            f"  • Last notice: {last_notice}",
+            f"  • Deadline: {config.rsvp_deadline_hours}h before race",
+            f"  • No-RSVP penalty: {config.no_rsvp_penalty} pt(s)",
+            f"  • Absent penalty: {config.absent_penalty} pt(s)",
+            f"  • No-show penalty: {config.no_show_penalty} pt(s)",
+            f"  • Auto-reserve threshold: {autoreserve_text}",
+            f"  • Auto-sack threshold: {autosack_text}",
+            "",
+        ]
+    division_lines: dict[int, list[str]] = {}
+    if review is Review.PLACEMENTS:
+        for division_id in division_ids:
+            channels = await service.get_division_config(division_id)
+            rsvp = (
+                f"<#{channels.rsvp_channel_id}>"
+                if channels and channels.rsvp_channel_id
+                else "*(not set)*"
+            )
+            attendance = (
+                f"<#{channels.attendance_channel_id}>"
+                if channels and channels.attendance_channel_id
+                else "*(not set)*"
+            )
+            division_lines[division_id] = [
+                f"  RSVP channel: {rsvp}",
+                f"  Attendance channel: {attendance}",
+            ]
+    return ReviewSection(module="attendance", lines=lines, division_lines=division_lines)
 
 
 def _dra_from_row(row: aiosqlite.Row) -> DriverRoundAttendance:

@@ -11,8 +11,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-_NOT_YET = "#283: attendance hands no review section; the season cog writes it"
-
 _LINES = [
     "**Attendance Config**",
     "  • RSVP notice: 5 day(s) before race",
@@ -53,7 +51,6 @@ async def _section(service, on: bool, review: str, division_ids):
                                 division_ids=division_ids)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_attendance_hands_the_placements_review_its_configuration_and_channels():
     """Attendance on and configured, one division with its RSVP channel set and no attendance
     channel, another with neither: the Attendance Config section, and for each division its RSVP
@@ -69,7 +66,6 @@ async def test_attendance_hands_the_placements_review_its_configuration_and_chan
     }
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_attendance_hands_the_configuration_review_its_configuration_alone():
     """The configuration review shows no division: the Attendance Config section alone."""
     section = await _section(_service(), True, "CONFIGURATION", [])
@@ -78,7 +74,6 @@ async def test_attendance_hands_the_configuration_review_its_configuration_alone
     assert dict(section.division_lines) == {}
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_attendance_never_configured_shows_its_channels_alone():
     """Attendance on with no configuration stored: no Attendance Config section, as today, and
     each division's channel lines still."""
@@ -90,10 +85,7 @@ async def test_attendance_never_configured_shows_its_channels_alone():
     }
 
 
-@pytest.mark.parametrize("review", [
-    pytest.param("PLACEMENTS", marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
-    pytest.param("CONFIGURATION", marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
-])
+@pytest.mark.parametrize("review", ["PLACEMENTS", "CONFIGURATION"])
 async def test_attendance_hands_nothing_while_it_is_off(review):
     """Attendance off: no section and no channel lines, and nothing of attendance's is read."""
     service = _service()
