@@ -10,9 +10,15 @@ is for.
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, call, patch
+
+import pytest
 
 from leaguebot.core.cogs.retry_cog import RetryCog
+
+#: The change queue's clock, well before the host's, so that a time read from the host shows.
+NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
 
 
 # ---------------------------------------------------------------------------
@@ -34,9 +40,14 @@ def _pending(entries, error=None):
     )
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: the retry loop hands each try the change queue's time"
+)
 async def test_every_queued_message_is_retried():
-    """Constitution VII: messages that fail to post are retried until delivered."""
+    """Constitution VII: messages that fail to post are retried until delivered. Each try is
+    handed the change queue's clock, the bot's clock, as its "now"."""
     cog = _retry_cog()
+    cog._bot.change_queue.now = MagicMock(return_value=NOW)
     entries = [MagicMock(), MagicMock(), MagicMock()]
 
     with _pending(entries), patch(
@@ -44,7 +55,7 @@ async def test_every_queued_message_is_retried():
     ) as attempt:
         await cog.retry_loop()
 
-    assert attempt.await_count == 3
+    assert attempt.await_args_list == [call(entry, cog._bot, now=NOW) for entry in entries]
 
 
 async def test_an_empty_queue_does_nothing():

@@ -755,6 +755,10 @@ async def test_a_queued_line_refused_once_the_reply_has_lapsed_goes_to_the_host_
     assert any("/dummy | Success" in line for line in await queued_log_lines(env.db_path))
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the retry queue stamps its times from the now handed in, not the host's clock",
+)
 async def test_a_queued_log_line_is_delivered_once_with_the_retry_loop_beside_the_worker(env):
     """The retry loop finds the line while the worker is delivering it, and leaves it."""
     from leaguebot.core.services.retry_service import attempt_delivery, get_all_pending
@@ -768,7 +772,7 @@ async def test_a_queued_log_line_is_delivered_once_with_the_retry_loop_beside_th
             pending = await get_all_pending(env.db_path)
             beside["found"] = len(pending)
             beside["loop"] = asyncio.ensure_future(
-                asyncio.gather(*(attempt_delivery(entry, env.bot) for entry in pending))
+                asyncio.gather(*(attempt_delivery(entry, env.bot, now=env.clock()) for entry in pending))
             )
             for _ in range(5):
                 await asyncio.sleep(0)
