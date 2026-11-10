@@ -683,19 +683,19 @@ async def approve_season(
     #
     # A season's scheduled work is armed here, and every piece of it fires at some
     # configured distance *before* the round. Approve late enough and those moments are
-    # behind us — and what used to follow was silent. An overdue check-in call was never
-    # scheduled at all, so the round asked nobody whether they were racing, distributed
-    # no reserves, and was recorded afterwards as perfect attendance for the whole
-    # division, with nothing able to recover it. An overdue weather phase was armed
+    # behind us, and unrefused that would be silent. An overdue check-in call is never
+    # scheduled at all, so the round asks nobody whether they are racing, distributes
+    # no reserves, and is recorded afterwards as perfect attendance for the whole
+    # division, with nothing able to recover it. An overdue weather phase is armed
     # past-dated and thrown away for exceeding the scheduler's misfire grace, coming
-    # back only if the host happened to restart before the race.
+    # back only if the host happens to restart before the race.
     #
     # **And the round's own moment is judged, whatever the modules**. The windows
     # above are contributed by the modules that configure them, so a league running
-    # neither weather nor attendance offered none — and a season every round of which was
-    # already in the past was approved in silence, every round of it stuck at *not run*
-    # for good, because a result-submission job armed that far behind is thrown away by
-    # the misfire grace and nothing in production opens a submission channel afterwards.
+    # neither weather nor attendance has none, and a season every round of which is
+    # already in the past would be approved in silence, every round of it stuck at *not
+    # run* for good, because a result-submission job armed that far behind is thrown away
+    # by the misfire grace and nothing in production opens a submission channel afterwards.
     # `/round amend` refuses a backwards move on the same reasoning, so the two
     # doors agree about a round.
     #

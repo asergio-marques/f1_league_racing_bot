@@ -36,7 +36,7 @@ log = logging.getLogger(__name__)
 
 
 def not_done_section(not_done: list[str]) -> str:
-    """What a placements confirmation could not do, as a section of its reply (#387)."""
+    """What a placements confirmation could not do, as a section of its reply."""
     if not not_done:
         return ""
     return "\n\n⚠️ **Not everything could be done**\n" + "\n".join(
@@ -70,7 +70,7 @@ def date_refusal(
     weather: WeatherWindows | None,
 ) -> DatesRefusal | None:
     """The refusal for a season whose calendar holds a round already run or inside a window, or
-    None where every division's calendar is clean (Gate 2d, #121, #122, #181).
+    None where every division's calendar is clean (Gate 2d).
 
     **Both confirmations of a season's placements ask this**: the press, and the change queue's
     check as the approval comes up to run, where the clock has moved on. One bullet per division,
@@ -113,7 +113,7 @@ def date_refusal(
 
 
 async def channel_on_server(guild, channel_id: int) -> bool:
-    """Whether *channel_id* is still a channel of *guild*, only NotFound answering no (#374).
+    """Whether *channel_id* is still a channel of *guild*, only NotFound answering no.
 
     The cache is asked first and the API second, the cache holding no channel it has not
     seen. Any failure but NotFound answers yes: a check that could not tell must not be the
@@ -153,7 +153,7 @@ DIVISION_CHANNELS = (
 async def division_channel_faults(modules, db_path: str, season_id: int, guild=None) -> list[str]:
     """Every channel a division of the season posts to that is not set, or not on the server.
 
-    **Both confirmations ask this** (#374): the first, and the one mid-season. Nothing
+    **Both confirmations ask this**: the first, and the one mid-season. Nothing
     clears a channel's id when Discord deletes the channel, and no module can be enabled
     once a season is under way, so mid-season every channel is still *set*; the question
     worth asking is whether it is still *there*. Asked at both, so the two cannot come to
@@ -200,7 +200,7 @@ async def division_channel_faults(modules, db_path: str, season_id: int, guild=N
 
 
 async def unsettled_signups(db_path: str) -> list[str]:
-    """The signups not yet settled, named: what the review and the confirmation both list (#220)."""
+    """The signups not yet settled, named: what the review and the confirmation both list."""
     from leaguebot.core.services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL
     from leaguebot.core.services.season_lifecycle_service import UNSETTLED_STATES
 
@@ -253,7 +253,7 @@ async def points_ordering_problems(db_path: str, season_id: int) -> list[str]:
     Two checks, because the points a season will run on can arrive from two directions.
     The attached server-level configs are what a first approval copies in, and until it
     does the season's own table is empty — reading only that table is how this check came
-    to pass every first approval it was ever asked about (#131). The season's own table is
+    to pass every first approval it was ever asked about. The season's own table is
     read as well, because the snapshot writes with INSERT OR REPLACE and clears nothing
     first, so a season being approved a second time can be holding entries an earlier
     approval left behind that no attached config would mention.
@@ -272,15 +272,14 @@ async def missing_points_config_problems(db_path: str, season_id: int) -> list[s
 
     **One check because two surfaces ask the same question**, in the manner of
     `points_ordering_problems`: `/season placements-review` reports what would block an approval
-    and the approval refuses on it, and a review that listed the name as attached while the
-    approval choked on it is what made #132 unreadable.
+    and the approval refuses on it, so a review never lists as attached a name the
+    approval then chokes on.
 
-    The fault it names used to be silence. The attachment is a row in
-    `season_points_links` carrying no foreign key, so a name that was never created
-    counted towards the "a points configuration is attached" prerequisite and passed it,
-    and the first thing to notice was the points snapshot raising
-    `ConfigNotFoundError` — mid-command, after the defer, with no error handler on the
-    tree to say so. The season simply stayed in setup and nothing was ever sent.
+    The attachment is a row in `season_points_links` carrying no foreign key, so a name
+    that was never created would count towards the "a points configuration is attached"
+    prerequisite and pass it, and the first thing to notice would be the points snapshot
+    raising `ConfigNotFoundError` mid-command, after the defer, with no error handler on
+    the tree to say so.
     """
     return await season_points_service.missing_attached_configs(db_path, season_id)
 
@@ -288,15 +287,14 @@ async def missing_points_config_problems(db_path: str, season_id: int) -> list[s
 async def no_points_config_attached(db_path: str, season_id: int) -> bool:
     """Whether *season_id* has no points configuration attached at all.
 
-    **One check because three surfaces ask the same question** (#409): the configuration
+    **One check because three surfaces ask the same question**: the configuration
     review refuses on it, the approval refuses on it, and `/season placements-review`
-    withholds its button on it. The placements review once had no copy of the question,
-    and offered Approve to a season the press then refused — reachable because
-    `/results config detach` stays open in Placements.
+    withholds its button on it, so the review never offers Approve to a season the press
+    would refuse — which can happen because `/results config detach` stays open in
+    Placements.
 
     A link to a configuration that does not exist still counts as attached here; that
-    one is `missing_points_config_problems`' fault. Test mode is no exception (decided
-    2026-09-23): it attaches Standard and Half Points when it is enabled and at no other
+    one is `missing_points_config_problems`' fault. Test mode is no exception: it attaches Standard and Half Points when it is enabled and at no other
     moment, and a season that has had them detached is refused as any other.
     """
     return not await season_points_service.get_attached_config_names(db_path, season_id)
@@ -312,9 +310,7 @@ async def team_name_problems(team_service: TeamService, season_id: int | None) -
     **Not gated on the image module.** The normalised team name is the filename under
     which every graphic that draws a badge seeks that team's image, and Principle IX
     governs it as a structural invariant of teams rather than as an image-module
-    concern. It was once the *field identifier* a lineup template addressed the team's
-    block by; that rationale went with the keyed template at v6.0.0, and the rule
-    stands on the filename alone.
+    concern. The rule stands on the filename alone.
 
     Only a season in SETUP reaches here, so an already-approved season is never
     re-validated and no team is renamed or removed by this rule's introduction.
@@ -433,9 +429,7 @@ async def image_configuration_faults(image_drawing: ImageDrawing) -> list[str]:
     gate shares**: the configuration review and its confirmation, both placements reviews
     and both confirmations of placements. Each review withholds its button on exactly what
     its confirmation refuses, so a manager is never shown a fault as blocking and then
-    let past it — which the first placements review did (#396), reading only the
-    portrait settings while its confirmation read the colours and the portraits and
-    neither read the templates or the rasteriser.
+    let past it.
 
     A stated exception (architecture.md, "A catch-all error handler"): templates that
     cannot be read are a fault of their own, never a pass, so that fault is let through;
@@ -475,11 +469,11 @@ async def mid_season_configuration_faults(
     """The configuration review's checks that confirming mid-season placements repeats.
 
     Every check the configuration review makes is made again when placements are
-    confirmed mid-season (#374, decided 2026-09-22), save those whose answer the season
+    confirmed mid-season save those whose answer the season
     has already settled:
 
     * the league's two roles and the signup configuration, which confirming the
-      configuration fixed (issue #276);
+      configuration fixed;
     * the team names, the team list being fixed with them;
     * the points configurations, recorded upon the season when its placements were first
       confirmed and changed since only by an amendment of the season's points, which
@@ -516,10 +510,10 @@ async def season_has_divisions(season_id: int, *, season_service: SeasonService)
 async def placement_confirmation_faults(
     module_service: ModuleService, db_path: str, season_id: int, guild: discord.Guild | None = None
 ) -> tuple[list[str], list[str]]:
-    """What stops placements being confirmed that no older gate checks (issue #220).
+    """What stops placements being confirmed that no older gate checks.
 
     Returns ``(unsettled, channels)``: the unsettled signups, named, and every channel a
-    division posts to that is not set or no longer on the server (#374). The review
+    division posts to that is not set or no longer on the server. The review
     withholds its button on either, and the confirmation refuses on either, from this one
     reading — mid-season as at the first confirmation.
     """
@@ -545,9 +539,9 @@ async def configuration_faults(
     lineups, calendars and division channels. The placements review makes all of these
     again, the configuration of a module other than signup being free to change in
     between — save the league's two roles, which confirming the configuration fixes
-    until the season ends (issue #276), and so cannot have changed.
+    until the season ends, and so cannot have changed.
 
-    **The roles are judged upon the server, not merely as stored** (#374), where *guild*
+    **The roles are judged upon the server, not merely as stored**, where *guild*
     is given: both must still be on it, and the driver role must be one the bot can grant.
     Confirming fixes them, so this is the last moment a league can choose others freely.
 
@@ -558,7 +552,7 @@ async def configuration_faults(
     faults: list[str] = []
 
     # ── Signup ─────────────────────────────────────────────────────────────
-    # The two roles are the league's (issue #276), but only the signup module needs
+    # The two roles are the league's, but only the signup module needs
     # them, so they are faults only while it is enabled.
     if await module_service.is_signup_enabled():
         signup_cfg = await signup_module_service.get_config()
