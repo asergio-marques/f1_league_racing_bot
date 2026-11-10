@@ -169,7 +169,7 @@ def listed(saved: dict[str, Any]) -> str:
         [
             Division(
                 id=0, season_id=0, name=d["name"], mention_role_id=d["role_id"],
-                forecast_channel_id=None, tier=d["tier"],
+                tier=d["tier"],
             )
             for d in saved["divisions"]
         ]

@@ -94,9 +94,6 @@ class Round:
     format: RoundFormat
     track_name: str | None
     scheduled_at: datetime
-    phase1_done: bool = False
-    phase2_done: bool = False
-    phase3_done: bool = False
     status: str = RoundStatus.NOT_RUN.value
 
 

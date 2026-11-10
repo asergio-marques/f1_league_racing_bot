@@ -26,7 +26,7 @@ from leaguebot.core.services import approval_checks
 from leaguebot.core.services.cancellation_changes import SEASON_CANCEL
 from leaguebot.core.services.image_drawing import Held
 from leaguebot.core.services.module_service import SwitchNotSignedUp
-from leaguebot.core.services.round_moments import read_round_windows
+from leaguebot.core.services.round_moments import read_phases_drawn, read_round_windows
 from leaguebot.core.services.confirmation_refusals import Confirmation, read_refusals
 from leaguebot.core.services.review_sections import (
     Review,
@@ -1100,11 +1100,15 @@ class SeasonCog(commands.Cog):
         for div in divisions:
             rounds = await self.bot.season_service.get_division_rounds(div.id)
             active_rounds = [r for r in rounds if r.status != RoundStatus.CANCELLED.value]
+            # Which phases a round has had drawn is weather's record, asked of it.
+            drawn = await read_phases_drawn(
+                self.bot.phases_drawn_read, [r.id for r in active_rounds]
+            )
             next_round = next(
                 (
                     r for r in active_rounds
                     if r.format != RoundFormat.MYSTERY
-                    and not (r.phase1_done and r.phase2_done and r.phase3_done)
+                    and not all(drawn.get(r.id, {}).get(phase, False) for phase in (1, 2, 3))
                 ),
                 None,
             )

@@ -263,7 +263,6 @@ class SeasonService:
             season_id=season["id"],
             name=name,
             mention_role_id=role_id,
-            forecast_channel_id=None,
             status=DivisionStatus.SETUP.value,
             tier=tier,
         )
@@ -375,24 +374,6 @@ class SeasonService:
         if row is None or row[0] is None:
             return None
         return read_scheduled_at(row[0])
-
-    async def all_phases_complete(self) -> bool:
-        """True if every non-MYSTERY, non-CANCELLED round in the active season has all 3 phases done."""
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                """
-                SELECT COUNT(*) FROM rounds r
-                JOIN divisions d ON d.id = r.division_id
-                JOIN seasons   s ON s.id = d.season_id
-                WHERE s.status    = 'ACTIVE'
-                  AND r.format   != 'MYSTERY'
-                  AND r.status   != 'CANCELLED'
-                  AND d.status   != 'CANCELLED'
-                  AND (r.phase1_done = 0 OR r.phase2_done = 0 OR r.phase3_done = 0)
-                """,
-            )
-            row = await cursor.fetchone()
-        return row is not None and row[0] == 0
 
     async def get_outstanding_rounds(self) -> list[dict]:
         """Return division, round_number and track_name for every round still to be finalised.
@@ -554,7 +535,7 @@ class SeasonService:
                 return []
 
             cursor = await db.execute(
-                "SELECT id, season_id, name, mention_role_id, forecast_channel_id, status, tier, "
+                "SELECT id, season_id, name, mention_role_id, status, tier, "
                 "lineup_channel_id, calendar_channel_id, lineup_message_id, "
                 "calendar_message_id "
                 "FROM divisions WHERE season_id = ? ORDER BY tier",
@@ -572,7 +553,7 @@ class SeasonService:
         """`get_divisions` on *db*, a connection the caller holds: what a save has written there
         is read back with the rest."""
         cursor = await db.execute(
-            "SELECT id, season_id, name, mention_role_id, forecast_channel_id, status, tier, "
+            "SELECT id, season_id, name, mention_role_id, status, tier, "
             "lineup_channel_id, calendar_channel_id, lineup_message_id, "
             "calendar_message_id "
             "FROM divisions WHERE season_id = ? ORDER BY tier",
@@ -589,7 +570,7 @@ class SeasonService:
         """Return the division *division_id*, or None where there is none."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, season_id, name, mention_role_id, forecast_channel_id, status, tier, "
+                "SELECT id, season_id, name, mention_role_id, status, tier, "
                 "lineup_channel_id, calendar_channel_id, lineup_message_id, "
                 "calendar_message_id "
                 "FROM divisions WHERE id = ?",
@@ -755,7 +736,7 @@ class SeasonService:
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
                 "SELECT id, division_id, round_number, format, track_name, scheduled_at, "
-                "phase1_done, phase2_done, phase3_done, status FROM rounds WHERE id = ?",
+                "status FROM rounds WHERE id = ?",
                 (round_id,),
             )
             row = await cursor.fetchone()
@@ -773,7 +754,7 @@ class SeasonService:
         there is read back with the rest."""
         cursor = await db.execute(
             "SELECT id, division_id, round_number, format, track_name, scheduled_at, "
-            "phase1_done, phase2_done, phase3_done, status FROM rounds "
+            "status FROM rounds "
             "WHERE division_id = ? ORDER BY round_number",
             (division_id,),
         )
@@ -832,7 +813,7 @@ class SeasonService:
         """Return all sessions for *round_id*."""
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
-                "SELECT id, round_id, session_type, phase2_slot_type, phase3_slots "
+                "SELECT id, round_id, session_type "
                 "FROM sessions WHERE round_id = ?",
                 (round_id,),
             )
@@ -1346,7 +1327,7 @@ async def division_first_round(db_path: str, division_id: int) -> Round | None:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT id, division_id, round_number, format, track_name, scheduled_at, "
-            "phase1_done, phase2_done, phase3_done, status FROM rounds "
+            "status FROM rounds "
             "WHERE division_id = ? ORDER BY round_number LIMIT 1",
             (division_id,),
         )
@@ -1382,7 +1363,7 @@ async def round_by_id(db_path: str, division_id: int, round_id: int) -> Round | 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT id, division_id, round_number, format, track_name, scheduled_at, "
-            "phase1_done, phase2_done, phase3_done, status FROM rounds "
+            "status FROM rounds "
             "WHERE id = ? AND division_id = ?",
             (round_id, division_id),
         )
@@ -1434,7 +1415,6 @@ def _row_to_division(row: aiosqlite.Row) -> Division:
         season_id=row["season_id"],
         name=row["name"],
         mention_role_id=row["mention_role_id"],
-        forecast_channel_id=row["forecast_channel_id"],
         status=row["status"],
         tier=row["tier"] if "tier" in keys else 0,
         lineup_channel_id=row["lineup_channel_id"] if "lineup_channel_id" in keys else None,
@@ -1455,23 +1435,15 @@ def _row_to_round(row: aiosqlite.Row) -> Round:
         format=RoundFormat(row["format"]),
         track_name=row["track_name"],
         scheduled_at=read_scheduled_at(row["scheduled_at"]),
-        phase1_done=bool(row["phase1_done"]),
-        phase2_done=bool(row["phase2_done"]),
-        phase3_done=bool(row["phase3_done"]),
         status=row["status"],
     )
 
 
 def _row_to_session(row: aiosqlite.Row) -> Session:
-    import json
-
-    slots_raw = row["phase3_slots"]
     return Session(
         id=row["id"],
         round_id=row["round_id"],
         session_type=SessionType(row["session_type"]),
-        phase2_slot_type=row["phase2_slot_type"],
-        phase3_slots=json.loads(slots_raw) if slots_raw else None,
     )
 
 
