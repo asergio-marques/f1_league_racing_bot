@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest
@@ -25,6 +26,12 @@ SERVER = 4242
 
 #: The member who packs. Nothing but a member's command packs the bot, so it is required.
 ACTOR = {"actor_id": 7, "actor_name": "admin"}
+
+#: The time the command hands the pack, well before the host's clock, so that a stamp read from the
+#: host shows.
+NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
+
+_PACK_TAKES_NOW = "#283: the pack stamps its audit entry with the now handed in, not the host's clock"
 
 def _scheduler() -> MagicMock:
     scheduler = MagicMock()
@@ -128,6 +135,7 @@ async def _tables(db_path: str) -> dict[str, list[str]]:
 # ── Refused while a season is current ──────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_PACK_TAKES_NOW)
 @pytest.mark.parametrize(
     "stage",
     [s.value for s in SeasonStage if s not in (SeasonStage.COMPLETED, SeasonStage.CANCELLED)],
@@ -139,7 +147,7 @@ async def test_pack_is_refused_while_a_season_is_current(db_path, stage):
     scheduler = _scheduler()
 
     with pytest.raises(PackRefused) as refused:
-        await pack(db_path, scheduler, bot_packed=pack_hook(), **ACTOR)
+        await pack(db_path, scheduler, bot_packed=pack_hook(), now=NOW, **ACTOR)
 
     assert refused.value.stage == stage
     assert refused.value.season_number == 1
@@ -150,20 +158,22 @@ async def test_pack_is_refused_while_a_season_is_current(db_path, stage):
     assert [r["change_type"] for r in rows] == ["X"]
 
 
+@pytest.mark.xfail(strict=True, reason=_PACK_TAKES_NOW)
 @pytest.mark.parametrize("stage", ["COMPLETED", "CANCELLED"])
 async def test_pack_proceeds_once_the_season_is_over(db_path, stage):
     await _seed(db_path, stage=stage)
 
-    await pack(db_path, _scheduler(), bot_packed=pack_hook(), **ACTOR)
+    await pack(db_path, _scheduler(), bot_packed=pack_hook(), now=NOW, **ACTOR)
 
     assert (await _one(db_path, "SELECT server_id FROM server_configs"))[0] is None
 
 
+@pytest.mark.xfail(strict=True, reason=_PACK_TAKES_NOW)
 async def test_pack_proceeds_in_test_mode(db_path):
     """Decided 2026-09-19: test drivers travel with the league like every other profile."""
     await _seed(db_path, test_mode=1)
 
-    await pack(db_path, _scheduler(), bot_packed=pack_hook(), **ACTOR)
+    await pack(db_path, _scheduler(), bot_packed=pack_hook(), now=NOW, **ACTOR)
 
     assert (await _one(db_path, "SELECT test_mode_active FROM server_configs"))[0] == 1
     assert await _count(db_path, "driver_profiles") == 2
@@ -172,10 +182,11 @@ async def test_pack_proceeds_in_test_mode(db_path):
 # ── What stays with the server ────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_PACK_TAKES_NOW)
 async def test_pack_frees_the_claim_and_the_four_settings(db_path):
     await _seed(db_path)
 
-    await pack(db_path, _scheduler(), bot_packed=pack_hook(), **ACTOR)
+    await pack(db_path, _scheduler(), bot_packed=pack_hook(), now=NOW, **ACTOR)
 
     row = await _one(db_path, "SELECT * FROM server_configs")
     assert (
@@ -184,10 +195,11 @@ async def test_pack_frees_the_claim_and_the_four_settings(db_path):
     ) == (None, None, None, None, None)
 
 
+@pytest.mark.xfail(strict=True, reason=_PACK_TAKES_NOW)
 async def test_pack_clears_the_team_roles_and_the_signup_channel(db_path):
     await _seed(db_path)
 
-    result = await pack(db_path, _scheduler(), bot_packed=pack_hook(), **ACTOR)
+    result = await pack(db_path, _scheduler(), bot_packed=pack_hook(), now=NOW, **ACTOR)
 
     assert result.team_roles == 1
     assert await _count(db_path, "team_role_configs") == 0
@@ -198,32 +210,35 @@ async def test_pack_clears_the_team_roles_and_the_signup_channel(db_path):
     ) == (None, None, None)
 
 
+@pytest.mark.xfail(strict=True, reason=_PACK_TAKES_NOW)
 async def test_a_pack_clears_both_league_roles(db_path):
     """They are the league's (issue #276), but a role belongs to its server: kept, the next
     server's configuration would name roles that do not exist there."""
     await _seed(db_path)
 
-    await pack(db_path, _scheduler(), bot_packed=pack_hook(), **ACTOR)
+    await pack(db_path, _scheduler(), bot_packed=pack_hook(), now=NOW, **ACTOR)
 
     row = await _one(db_path, "SELECT base_role_id, driver_role_id FROM server_configs")
     assert (row["base_role_id"], row["driver_role_id"]) == (None, None)
 
 
+@pytest.mark.xfail(strict=True, reason=_PACK_TAKES_NOW)
 async def test_a_pack_clears_the_hub_and_the_record_of_its_panel(db_path):
     """The hub is a channel of the server left behind (issue #279), and its panel a message
     there: the next server's hub is set afresh."""
     await _seed(db_path)
 
-    await pack(db_path, _scheduler(), bot_packed=pack_hook(), **ACTOR)
+    await pack(db_path, _scheduler(), bot_packed=pack_hook(), now=NOW, **ACTOR)
 
     row = await _one(db_path, "SELECT hub_channel_id, hub_message_id FROM server_configs")
     assert (row["hub_channel_id"], row["hub_message_id"]) == (None, None)
 
 
+@pytest.mark.xfail(strict=True, reason=_PACK_TAKES_NOW)
 async def test_pack_clears_wizards_the_retry_queue_and_the_review_prompt(db_path):
     await _seed(db_path)
 
-    result = await pack(db_path, _scheduler(), bot_packed=pack_hook(), **ACTOR)
+    result = await pack(db_path, _scheduler(), bot_packed=pack_hook(), now=NOW, **ACTOR)
 
     assert (result.wizards, result.queued_messages) == (1, 1)
     assert await _count(db_path, "signup_wizard_records") == 0
@@ -231,10 +246,11 @@ async def test_pack_clears_wizards_the_retry_queue_and_the_review_prompt(db_path
     assert await _count(db_path, "season_review_prompts") == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_PACK_TAKES_NOW)
 async def test_pack_clears_the_message_ids_the_bot_edits_by(db_path):
     await _seed(db_path)
 
-    await pack(db_path, _scheduler(), bot_packed=pack_hook(), **ACTOR)
+    await pack(db_path, _scheduler(), bot_packed=pack_hook(), now=NOW, **ACTOR)
 
     assert await _count(db_path, "forecast_messages") == 0
     assert await _count(db_path, "rsvp_embed_messages") == 0
@@ -247,17 +263,19 @@ async def test_pack_clears_the_message_ids_the_bot_edits_by(db_path):
     assert submission["resubmit_prompt_message_id"] is None
 
 
+@pytest.mark.xfail(strict=True, reason=_PACK_TAKES_NOW)
 async def test_pack_clears_the_scheduled_work_but_the_portrait_refresh(db_path):
     await _seed(db_path)
     scheduler = _scheduler()
 
-    result = await pack(db_path, scheduler, bot_packed=pack_hook(), **ACTOR)
+    result = await pack(db_path, scheduler, bot_packed=pack_hook(), now=NOW, **ACTOR)
 
     scheduler.cancel_all.assert_called_once_with(keep=KEPT_JOBS)
     assert KEPT_JOBS == frozenset({PORTRAIT_REFRESH_JOB_ID})
     assert result.scheduled_jobs == 3
 
 
+@pytest.mark.xfail(strict=True, reason=_PACK_TAKES_NOW)
 async def test_pack_drops_the_league_state_held_in_memory(db_path, monkeypatch):
     """A pack clears what the bot holds in memory, handing the clear the hook every module's
     part of it is signed up to and the change queue, both as it was handed them (#439 slice 6b,
@@ -273,12 +291,13 @@ async def test_pack_drops_the_league_state_held_in_memory(db_path, monkeypatch):
 
     await pack(
         db_path, _scheduler(), in_memory_state_cleared=hook, queue=queue,
-        bot_packed=pack_hook(), **ACTOR,
+        bot_packed=pack_hook(), now=NOW, **ACTOR,
     )
 
     assert cleared == [(hook, queue)]
 
 
+@pytest.mark.xfail(strict=True, reason=_PACK_TAKES_NOW)
 async def test_a_fault_after_the_modules_have_cleared_their_rows_changes_nothing(db_path):
     """One transaction, the modules' parts included. A league with one past season and one of
     everything the pack clears; signup, weather, attendance and results have each cleared their
@@ -309,7 +328,7 @@ async def test_a_fault_after_the_modules_have_cleared_their_rows_changes_nothing
     scheduler = _scheduler()
 
     with pytest.raises(RuntimeError, match="a module's part failed"):
-        await pack(db_path, scheduler, bot_packed=hook, **ACTOR)
+        await pack(db_path, scheduler, bot_packed=hook, now=NOW, **ACTOR)
 
     assert left_when_it_failed == [0, 0, 0, 0, 0, 0]
     assert await _tables(db_path) == before
@@ -319,10 +338,11 @@ async def test_a_fault_after_the_modules_have_cleared_their_rows_changes_nothing
 # ── What travels with the league ──────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_PACK_TAKES_NOW)
 async def test_pack_keeps_every_driver_with_their_accounts_history_and_portrait(db_path):
     await _seed(db_path)
 
-    await pack(db_path, _scheduler(), bot_packed=pack_hook(), **ACTOR)
+    await pack(db_path, _scheduler(), bot_packed=pack_hook(), now=NOW, **ACTOR)
 
     assert await _count(db_path, "driver_profiles") == 2
     account = await _one(
@@ -333,10 +353,11 @@ async def test_pack_keeps_every_driver_with_their_accounts_history_and_portrait(
     assert await _count(db_path, "driver_portraits") == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_PACK_TAKES_NOW)
 async def test_pack_keeps_the_past_season_whole(db_path):
     await _seed(db_path)
 
-    await pack(db_path, _scheduler(), bot_packed=pack_hook(), **ACTOR)
+    await pack(db_path, _scheduler(), bot_packed=pack_hook(), now=NOW, **ACTOR)
 
     assert await _count(db_path, "seasons") == 1
     assert await _count(db_path, "divisions") == 1
@@ -346,12 +367,13 @@ async def test_pack_keeps_the_past_season_whole(db_path):
     assert await _count(db_path, "audit_entries WHERE change_type = 'X'") == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_PACK_TAKES_NOW)
 async def test_pack_keeps_the_teams_points_and_module_settings(db_path):
     """The server's team list travels with the league: Ferrari, and the Reserve team a new
     database holds."""
     await _seed(db_path)
 
-    await pack(db_path, _scheduler(), bot_packed=pack_hook(), **ACTOR)
+    await pack(db_path, _scheduler(), bot_packed=pack_hook(), now=NOW, **ACTOR)
 
     teams = await _all(db_path, "SELECT name FROM default_teams ORDER BY name")
     assert [row["name"] for row in teams] == ["Ferrari", "Reserve"]
@@ -367,6 +389,7 @@ async def test_pack_keeps_the_teams_points_and_module_settings(db_path):
 # ── The record of the pack ────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_PACK_TAKES_NOW)
 @pytest.mark.parametrize(
     ("signup_configured", "signup_channel", "wizards"),
     [(True, 80, 1), (False, None, 0)],
@@ -387,12 +410,13 @@ async def test_pack_is_audited_with_every_setting_and_role_it_cleared(
             await db.execute("DELETE FROM signup_module_config")
             await db.commit()
 
-    result = await pack(db_path, _scheduler(), bot_packed=pack_hook(), **ACTOR)
+    result = await pack(db_path, _scheduler(), bot_packed=pack_hook(), now=NOW, **ACTOR)
 
     assert result.wizards == wizards
 
     row = await _one(db_path, "SELECT * FROM audit_entries WHERE change_type = 'BOT_PACKED'")
     assert (row["actor_id"], row["actor_name"], row["division_id"]) == (7, "admin", None)
+    assert row["timestamp"] == NOW.isoformat()
     assert json.loads(row["old_value"]) == {
         "server_id": SERVER,
         "interaction_role_id": 1,
@@ -437,6 +461,7 @@ async def _queue_change(db_path: str, state: str) -> None:
         await db.commit()
 
 
+@pytest.mark.xfail(strict=True, reason=_PACK_TAKES_NOW)
 @pytest.mark.parametrize("state", ["QUEUED", "RUNNING"])
 async def test_pack_is_refused_while_the_queue_holds_a_job(db_path, state):
     """A job still to run, queued or in a change under way (a stopped job's change among them),
@@ -448,7 +473,7 @@ async def test_pack_is_refused_while_the_queue_holds_a_job(db_path, state):
     scheduler = _scheduler()
 
     with pytest.raises(PackRefused):
-        await pack(db_path, scheduler, bot_packed=pack_hook(), **ACTOR)
+        await pack(db_path, scheduler, bot_packed=pack_hook(), now=NOW, **ACTOR)
 
     scheduler.cancel_all.assert_not_called()
     assert (await _one(db_path, "SELECT server_id FROM server_configs"))[0] == SERVER
@@ -458,6 +483,7 @@ async def test_pack_is_refused_while_the_queue_holds_a_job(db_path, state):
     assert [r["change_type"] for r in rows] == ["X"]
 
 
+@pytest.mark.xfail(strict=True, reason=_PACK_TAKES_NOW)
 async def test_pack_keeps_every_finished_change(db_path):
     """A pack is refused while the queue holds a job, so the changes it finds are finished ones:
     history, kept with their jobs."""
@@ -465,7 +491,7 @@ async def test_pack_keeps_every_finished_change(db_path):
     for state in ("DONE", "REFUSED", "DROPPED", "DISCARDED"):
         await _queue_change(db_path, state)
 
-    await pack(db_path, _scheduler(), bot_packed=pack_hook(), **ACTOR)
+    await pack(db_path, _scheduler(), bot_packed=pack_hook(), now=NOW, **ACTOR)
 
     kept = [r[0] for r in await _all(db_path, "SELECT state FROM queued_changes ORDER BY id")]
     assert kept == ["DONE", "REFUSED", "DROPPED", "DISCARDED"]
@@ -495,6 +521,7 @@ async def _on_lane(db_path: str, lane: str, *, stopped: bool) -> int:
         return int(cursor.lastrowid)
 
 
+@pytest.mark.xfail(strict=True, reason=_PACK_TAKES_NOW)
 async def test_a_pack_is_refused_while_any_lane_holds_a_job_naming_it_and_its_lane(db_path):
     """The league's lane is empty, but a turn in channel 7 waits its turn there. The pack is
     refused all the same, naming that job and channel 7's lane, and nothing is cleared."""
@@ -503,7 +530,7 @@ async def test_a_pack_is_refused_while_any_lane_holds_a_job_naming_it_and_its_la
     scheduler = _scheduler()
 
     with pytest.raises(PackRefused) as refused:
-        await pack(db_path, scheduler, bot_packed=pack_hook(), **ACTOR)
+        await pack(db_path, scheduler, bot_packed=pack_hook(), now=NOW, **ACTOR)
 
     assert (refused.value.job_id, refused.value.stopped) == (job, False)
     assert refused.value.lane == "channel:7"
@@ -511,6 +538,7 @@ async def test_a_pack_is_refused_while_any_lane_holds_a_job_naming_it_and_its_la
     assert (await _one(db_path, "SELECT server_id FROM server_configs"))[0] == SERVER
 
 
+@pytest.mark.xfail(strict=True, reason=_PACK_TAKES_NOW)
 async def test_the_refusal_names_a_stopped_job_first(db_path):
     """A league change waits its turn, asked first; a turn in channel 8, asked after it, is
     stopped at a job Discord refused. The pack's refusal names the stopped job on channel 8's
@@ -520,7 +548,7 @@ async def test_the_refusal_names_a_stopped_job_first(db_path):
     job = await _on_lane(db_path, "channel:8", stopped=True)
 
     with pytest.raises(PackRefused) as refused:
-        await pack(db_path, _scheduler(), bot_packed=pack_hook(), **ACTOR)
+        await pack(db_path, _scheduler(), bot_packed=pack_hook(), now=NOW, **ACTOR)
 
     assert (refused.value.job_id, refused.value.stopped) == (job, True)
     assert refused.value.lane == "channel:8"

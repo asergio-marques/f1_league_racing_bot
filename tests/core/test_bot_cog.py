@@ -1385,6 +1385,8 @@ def _packing_bot(db_path: str) -> MagicMock:
     bot.scheduler_service.cancel_all = MagicMock(return_value=0)
     bot.bot_packed.call = AsyncMock(return_value=[])
     bot.get_cog = MagicMock(return_value=None)
+    # The change queue's clock, the bot's: what the command hands the pack and the reset as "now".
+    bot.change_queue.now = MagicMock(return_value=NOW)
     return bot
 
 
@@ -1701,8 +1703,10 @@ async def test_bot_pack_losing_a_race_to_a_queued_job_names_the_job_not_a_season
     assert lines[1] == f"⛔ `/bot pack` refused for admin (<@7>) — {_reason(reply)}"
 
 
+@pytest.mark.xfail(strict=True, reason="#283: /bot pack hands the pack the change queue's time")
 async def test_bot_pack_is_audited_as_the_member_who_ran_it(tmp_path):
-    """Issue #383. What the entry holds is the service's to pin; who it names is the cog's. The
+    """Issue #383. What the entry holds is the service's to pin; who it names and when, the change
+    queue's time, are the cog's. The
     pack clears what the bot holds in memory through the bot's own hook for it, called once, and
     has each module clear its own rows through the bot's own hook for the pack, called once on the
     pack's connection (#283)."""
@@ -1717,6 +1721,7 @@ async def test_bot_pack_is_audited_as_the_member_who_ran_it(tmp_path):
 
     (row,) = await _audit_rows(db_path)
     assert (row["change_type"], row["actor_id"]) == ("BOT_PACKED", 7)
+    assert row["timestamp"] == NOW.isoformat()
     bot.in_memory_state_cleared.call.assert_called_once_with()
     bot.bot_packed.call.assert_awaited_once()
     (handed,) = bot.bot_packed.call.await_args.args
@@ -1831,9 +1836,12 @@ async def test_bot_factory_reset_erases_nothing_without_a_backup(tmp_path, monke
     interaction.user.send.assert_not_awaited()
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: /bot factory-reset names its backup by the change queue's time"
+)
 async def test_bot_factory_reset_backs_up_then_wipes_then_reports_by_dm(tmp_path):
-    """The wipe clears what the bot holds in memory through the bot's own hook for it, called
-    once."""
+    """The backup is named by the change queue's time. The wipe clears what the bot holds in
+    memory through the bot's own hook for it, called once."""
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
     bot = _resetting_bot(db_path, tmp_path)
@@ -1843,7 +1851,7 @@ async def test_bot_factory_reset_backs_up_then_wipes_then_reports_by_dm(tmp_path
     await _run(cog, interaction)
 
     backups = sorted(p.name for p in tmp_path.iterdir() if ".factory-" in p.name)
-    assert len(backups) == 1 and backups[0].startswith("test.factory-")
+    assert backups == ["test.factory-20261022T120000Z.db"]
     assert await ConfigService(db_path).get_league_server_id() is None
     bot.scheduler_service.cancel_all.assert_called_once_with()
     reply = interaction.followup.send.call_args.args[0]
@@ -1919,8 +1927,9 @@ def _clean_up_ending(monkeypatch, bot: MagicMock, ending: str) -> dict:
 
     seen: dict = {}
 
-    async def clean(guild, bot_user_id, targets, report, **_kwargs):
+    async def clean(guild, bot_user_id, targets, report, **kwargs):
         seen["lines_while_cleaning"] = bot.output_router.post_log.await_count
+        seen["now"] = kwargs.get("now")
         if ending == "stopped":
             raise RuntimeError("gateway lost")
         outcome = factory_reset_service.CleanOutcome(
@@ -1970,13 +1979,17 @@ async def _pending_rows(db_path: str) -> int:
         ),
     ],
 )
+@pytest.mark.xfail(
+    strict=True, reason="#283: /bot factory-reset hands its clean-up the change queue's time"
+)
 async def test_a_factory_reset_that_goes_ahead_posts_one_line_once_its_clean_up_ends(
     tmp_path, monkeypatch, ending
 ):
     """One line, to the log channel found before the wipe, posted after the clean-up has ended
     and so left standing by it: it names the server owner, has what was erased beneath it, and
     says how the clean-up ended, a clean-up that stopped naming its kind of fault and never the
-    error itself (#482)."""
+    error itself (#482). The clean-up is handed the change queue's time, which it judges a
+    message's age by."""
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
     bot = _resetting_bot(db_path, tmp_path)
@@ -1989,6 +2002,7 @@ async def test_a_factory_reset_that_goes_ahead_posts_one_line_once_its_clean_up_
 
     assert asked["configured_when_asked"] == SERVER_ID
     assert cleaning["lines_while_cleaning"] == 0
+    assert cleaning["now"] == NOW
     [call] = bot.output_router.post_log.await_args_list
     assert call.kwargs["channel"] == CONFIGURED_LOG
     line = str(call.args[0])
