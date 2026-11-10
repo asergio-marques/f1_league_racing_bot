@@ -1,6 +1,13 @@
-"""ModuleService — reads the on/off flag of each optional module: weather, signup, results,
-attendance and images. Each flag is written by that module's own switch, a `Setting` on the
-change queue (`<module>/services/module_switch_settings.py`), never by this service."""
+"""ModuleService — answers whether each optional module is on: weather, signup, results,
+attendance and images. Each module's flag is written by that module's own switch, a `Setting` on
+the change queue (`<module>/services/module_switch_settings.py`), never by this service.
+
+**A module's switch is asked of the module.** The service reads no module's table or column: each
+module signs up the reader of its own switch (`register_switch`, from the builder), and
+`is_<module>_enabled` hands that reader a connection to the league's database and gives back its
+answer. A module that never signed up is a fault in the bot's assembly, and asking for it raises
+`LookupError` naming it, rather than reading as off.
+"""
 from __future__ import annotations
 
 import logging
@@ -11,7 +18,6 @@ import aiosqlite
 from leaguebot.core.db.database import get_connection
 
 log = logging.getLogger(__name__)
-
 
 #: A module's switch reader: whether the module is on, read on the connection it is handed.
 SwitchReader = Callable[[aiosqlite.Connection], Awaitable[bool]]
@@ -27,50 +33,24 @@ class ModuleService:
         module, before the bot connects."""
         self._switch_readers[module] = reader
 
-    async def is_weather_enabled(self) -> bool:
+    async def _is_enabled(self, module: str) -> bool:
+        reader = self._switch_readers.get(module)
+        if reader is None:
+            raise LookupError(f"no switch reader is signed up for the {module} module")
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT weather_module_enabled FROM server_configs",
-            )
-            row = await cursor.fetchone()
-        if row is None:
-            return False
-        return bool(row["weather_module_enabled"])
+            return await reader(db)
+
+    async def is_weather_enabled(self) -> bool:
+        return await self._is_enabled("weather")
 
     async def is_signup_enabled(self) -> bool:
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT signup_module_enabled FROM server_configs",
-            )
-            row = await cursor.fetchone()
-        if row is None:
-            return False
-        return bool(row["signup_module_enabled"])
+        return await self._is_enabled("signup")
 
     async def is_results_enabled(self) -> bool:
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT module_enabled FROM results_module_config",
-            )
-            row = await cursor.fetchone()
-        if row is None:
-            return False
-        return bool(row[0])
+        return await self._is_enabled("results")
 
     async def is_attendance_enabled(self) -> bool:
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute("SELECT module_enabled FROM attendance_config")
-            row = await cursor.fetchone()
-        if row is None:
-            return False
-        return bool(row[0])
+        return await self._is_enabled("attendance")
 
     async def is_images_enabled(self) -> bool:
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT module_enabled FROM image_config"
-            )
-            row = await cursor.fetchone()
-        if row is None:
-            return False
-        return bool(row[0])
+        return await self._is_enabled("images")

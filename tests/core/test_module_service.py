@@ -6,10 +6,6 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 
-#: Why the tests marked with it fail until the build: each module's switch is still read by
-#: `ModuleService` from the module's own table or column, not asked of the module.
-NOT_YET_ASKED = "#283: ModuleService still reads each module's switch itself"
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -77,7 +73,6 @@ async def test_each_module_s_switch_reads_its_own_flag_alone(db_path, module):
     assert await switches() == {name: name != module for name in MODULES}
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.parametrize("module", MODULES)
 async def test_each_switch_is_answered_by_the_reader_its_module_registered(db_path, module):
     """`ModuleService` answers whether a module is on by asking the reader that module signed up,
@@ -99,7 +94,6 @@ async def test_each_switch_is_answered_by_the_reader_its_module_registered(db_pa
     assert servers == [1]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_a_switch_no_module_signed_up_for_is_an_error_not_off(db_path):
     """A module whose reader the builder never signed up is a fault in the bot's assembly, and
     asking its switch raises naming it rather than reading it as off."""

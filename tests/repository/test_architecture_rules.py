@@ -2329,9 +2329,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/approval_checks.py", "unsettled_signups"): (1, PASS["core"]),
     ("core/services/driver_service.py", "<module>"): (1, PASS["core"]),
     ("core/services/driver_service.py", "divisions_taken_part_in"): (5, PASS["core"]),
-    ("core/services/module_service.py", "ModuleService.is_attendance_enabled"): (1, PASS["core"]),
-    ("core/services/module_service.py", "ModuleService.is_images_enabled"): (1, PASS["core"]),
-    ("core/services/module_service.py", "ModuleService.is_results_enabled"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.get_unassigned_drivers_for_export"):
         (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.get_unassigned_drivers_seeded"):
