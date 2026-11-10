@@ -285,7 +285,8 @@ async def test_it_is_judged_again_as_it_starts(league, meanwhile, refusal):
     season's placements are approved (Ongoing), or another driver is seated in McLaren's third
     seat in Am. The change judges again as it starts and is refused: no fake driver is created
     and nothing is audited, Admin's reply becomes the refusal the form gives at the ask, word for
-    word, the log channel takes that refusal as its only line, and the queue is not stopped."""
+    word, the log channel takes that refusal as its only line, and the queue is not stopped;
+    where driver 105 was seated meanwhile, 105 still holds that seat."""
     interaction = _asks(league)
 
     await _submit(league, interaction)
@@ -294,12 +295,17 @@ async def test_it_is_judged_again_as_it_starts(league, meanwhile, refusal):
     await run_queue(league.bot)
 
     assert last_said(interaction) == refusal
-    assert [row["discord_user_id"] for row in await _fake_drivers(league)] == (
-        ["105"] if meanwhile is _am_seated else []
-    )
+    assert await _fake_drivers(league) == []
     assert await audit_rows(league.db_path) == []
     assert _lines(league) == [_refused(refusal)]
     assert await stopped_job(league.db_path) is None
+    if meanwhile is _am_seated:
+        assert await league.rows(
+            "SELECT p.discord_user_id FROM team_seats s "
+            "JOIN driver_profiles p ON p.id = s.driver_profile_id "
+            "WHERE s.team_instance_id = ? AND s.seat_number = 3",
+            MCLAREN,
+        ) == [{"discord_user_id": "105"}]
 
 
 @pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
