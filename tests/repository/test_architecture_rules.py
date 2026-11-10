@@ -2233,18 +2233,6 @@ READS_OF_OWN_COLUMNS: dict[tuple[str, str], tuple[str, str]] = {
         "divisions",
         "reads `divisions.forecast_channel_id`, the weather module's own column",
     ),
-    ("weather/services/forecast_channel.py", "division_channel_faults"): (
-        "divisions",
-        "reads `divisions.forecast_channel_id`, the weather module's own column",
-    ),
-    ("weather/services/cancellation_notice.py", "_forecast_channel"): (
-        "divisions",
-        "reads `divisions.forecast_channel_id`, the weather module's own column",
-    ),
-    ("weather/services/test_mode_steps.py", "phases_done"): (
-        "rounds",
-        "reads `rounds.phase1_done` to `phase3_done`, the weather module's own columns",
-    ),
     ("attendance/services/test_mode_steps.py", "check_ins_cleared"): (
         "rounds",
         "reads `rounds.checkin_cleared`, the attendance module's own column",

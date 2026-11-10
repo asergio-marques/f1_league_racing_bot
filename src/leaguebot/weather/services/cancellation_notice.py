@@ -34,6 +34,7 @@ from leaguebot.core.services.season_lifecycle_service import require_guild
 from leaguebot.core.services.season_service import SeasonService
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot
+from leaguebot.weather.services.forecast_channel import forecast_channels_on
 
 if TYPE_CHECKING:
     from leaguebot.core.services.module_service import ModuleService
@@ -61,14 +62,10 @@ def weather_note(scope: str, division_name: str, round_number=None, track_name=N
 
 
 async def _forecast_channel(db_path: str, division_id: int) -> int | None:
-    """`divisions.forecast_channel_id`, weather's own column on core's `divisions` table
-    (architecture.md, "The database"; `forecast_channel.py`'s own read of it)."""
+    """The division's forecast channel, as `forecast_channels_on` reads it; None where it has none
+    set or does not exist."""
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT forecast_channel_id FROM divisions WHERE id = ?", (division_id,),
-        )
-        row = await cursor.fetchone()
-    return None if row is None else row["forecast_channel_id"]
+        return (await forecast_channels_on(db, [division_id])).get(division_id)
 
 
 @posts_in_a_job

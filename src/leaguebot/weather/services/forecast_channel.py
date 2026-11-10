@@ -97,8 +97,7 @@ async def division_channel_faults(
     if not await modules.is_weather_enabled():
         return {}
     async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT id, forecast_channel_id FROM divisions")
-        channels = {row["id"]: row["forecast_channel_id"] for row in await cursor.fetchall()}
+        channels = await forecast_channels_on(db, list(divisions))
     found: dict[int, list[str]] = {}
     for division_id, name in divisions.items():
         fault = await channel_fault(

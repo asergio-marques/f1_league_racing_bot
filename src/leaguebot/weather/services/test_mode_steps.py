@@ -30,7 +30,7 @@ from datetime import datetime
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection, tuple_rows_in
+from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import FORECAST, FORECAST_CLEAN_UP
 from leaguebot.core.services.change_queue import unfinished
 from leaguebot.core.services.test_mode_service import (
@@ -43,21 +43,10 @@ from leaguebot.core.services.test_mode_service import (
     phase_mark,
 )
 from leaguebot.weather.services.draw_guard import weather_enabled_on
+from leaguebot.weather.services.round_phases import phases_drawn_on
 
 #: The step that takes the forecasts of Phases 1 to 3 down, a day after the round.
 CLEAN_UP_PHASE = 8
-
-
-async def phases_done(
-    db: aiosqlite.Connection, round_ids: Sequence[int]
-) -> dict[int, tuple[bool, bool, bool]]:
-    """Whether each of Phases 1 to 3 is done, by round id, for the rounds *round_ids*."""
-    rows = await tuple_rows_in(
-        db,
-        "SELECT id, phase1_done, phase2_done, phase3_done FROM rounds WHERE id IN ({marks})",
-        round_ids,
-    )
-    return {int(r[0]): (bool(r[1]), bool(r[2]), bool(r[3])) for r in rows}
 
 
 async def _standing_forecasts(db: aiosqlite.Connection) -> set[int]:
@@ -68,12 +57,12 @@ async def _standing_forecasts(db: aiosqlite.Connection) -> set[int]:
     return {int(row["round_id"]) for row in await cursor.fetchall()}
 
 
-def _owed(rnd: ActiveRound, done: tuple[bool, bool, bool]) -> list[int]:
+def _owed(rnd: ActiveRound, done: dict[int, bool]) -> list[int]:
     """The weather steps of *rnd* not done, in order: a mystery round's notice (0) until it is
     posted, or each of Phases 1 to 3 not done."""
     if rnd.format.upper() == "MYSTERY":
-        return [] if done[0] else [0]
-    return [phase for phase in (1, 2, 3) if not done[phase - 1]]
+        return [] if done[1] else [0]
+    return [phase for phase in (1, 2, 3) if not done[phase]]
 
 
 async def pending_steps(
@@ -88,7 +77,7 @@ async def pending_steps(
     async with get_connection(db_path) as db:
         if not await weather_enabled_on(db):
             return ModuleSteps(pending=[], passed_over=[])
-        done = await phases_done(db, [r.round_id for r in rounds])
+        done = await phases_drawn_on(db, [r.round_id for r in rounds])
         standing = await _standing_forecasts(db)
     forecasts_in_hand = {
         (int(p["round_id"]), int(p["phase"])) for p in await unfinished(db_path, (FORECAST,))
@@ -125,14 +114,15 @@ async def review_marks(
     async with get_connection(db_path) as db:
         if not await weather_enabled_on(db):
             return {}
-        done = await phases_done(db, [r.round_id for r in rounds])
+        done = await phases_drawn_on(db, [r.round_id for r in rounds])
         standing = await _standing_forecasts(db)
 
     marks: ReviewMarks = {}
     for rnd in rounds:
         rid = rnd.round_id
         raced = rnd.scheduled_at <= now
-        p1, p2, p3 = done[rid]
+        drawn = done[rid]
+        p1, p2, p3 = drawn[1], drawn[2], drawn[3]
 
         def mark(is_done: bool, event: str) -> str:
             """A step's mark: passed over where undone on a raced round."""
