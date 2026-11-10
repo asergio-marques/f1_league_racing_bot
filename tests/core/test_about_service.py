@@ -8,8 +8,8 @@
 - **It goes to the presser alone**, and mentions nobody.
 - **The version and its date are the ones read at start-up**, held on the bot; a press reads
   nothing.
-- **About is core's one option**: registered at import, offered always, after every
-  module's, under a key that never changes.
+- **About is core's one option**: signed up by the builder on the bot's hub options, offered
+  always, after every module's, under a key that never changes.
 """
 from __future__ import annotations
 
@@ -28,16 +28,30 @@ from leaguebot.core.services.about_service import (
     respond,
 )
 from leaguebot.core.utils import version
+from tests.support.change_queue import built_bot
 
 
 MADE = datetime(2026, 9, 22, 12, 20, 6, tzinfo=timezone(timedelta(hours=1)))
 MADE_STAMP = "<t:1790076006:F>"
 
+#: Why a test fails until the hub's options are held on an object the builder makes.
+ON_THE_BOT = "#283: the hub's options are not yet held on an object the builder makes"
+
+
+def _hub_options(*options):
+    """The hub's options as the builder makes them, each of *options* signed up on them."""
+    from leaguebot.core.services.hub_service import HubOptions
+
+    hub_options = HubOptions()
+    for option in options:
+        hub_options.register_option(option)
+    return hub_options
+
 
 def _interaction(running_version="v0.4.0-234", made=MADE):
     interaction = MagicMock()
     interaction.client = MagicMock(
-        spec=["running_version", "running_version_date", "config_service"]
+        spec=["running_version", "running_version_date", "config_service", "hub_options"]
     )
     interaction.client.running_version = running_version
     interaction.client.running_version_date = made
@@ -105,20 +119,19 @@ async def test_a_bot_holding_no_version_answers_unknown():
     assert "Dated" not in answer
 
 
-async def test_about_is_always_offered_and_after_every_module(monkeypatch):
-    assert hub_service.registered_options().count(ABOUT_OPTION) == 1
-
+@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
+async def test_about_is_always_offered_and_after_every_module():
+    """About and two modules' options, ordered 10 and 999, signed up on one hub options: About
+    is offered always, and placed after both."""
     module_options = [
         hub_service.HubOption(key=key, label=key, order=order, respond=AsyncMock())
         for key, order in (("licence", 10), ("guides", 999))
     ]
-    monkeypatch.setattr(
-        hub_service, "_OPTIONS", {o.key: o for o in [ABOUT_OPTION, *module_options]}
-    )
+    hub_options = _hub_options(ABOUT_OPTION, *module_options)
 
     assert ABOUT_OPTION.offered is None
     assert await hub_service.is_offered(MagicMock(), ABOUT_OPTION) is True
-    assert [o.key for o in hub_service.registered_options()] == ["licence", "guides", "about"]
+    assert [o.key for o in hub_options.registered_options()] == ["licence", "guides", "about"]
 
 
 async def test_its_key_never_changes():
@@ -130,9 +143,11 @@ async def test_its_key_never_changes():
     assert [(item.label, item.custom_id) for item in view.children] == [("About", "hub:about")]
 
 
-async def test_a_press_on_the_panel_reaches_about(monkeypatch):
-    monkeypatch.setattr(hub_service, "_OPTIONS", {ABOUT_KEY: ABOUT_OPTION})
+@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
+async def test_a_press_on_the_panel_reaches_about():
+    """About is on the bot's hub options; a press on its key is answered by About."""
     interaction = _interaction()
+    interaction.client.hub_options = _hub_options(ABOUT_OPTION)
 
     await hub_service.press(interaction, ABOUT_KEY)
 
@@ -144,21 +159,11 @@ def test_both_forms_of_the_version_are_shown_as_read(version_):
     assert f"Version: {version_}\n" in about_text(version_)
 
 
-def test_the_bot_registers_about_before_the_hub_is_recovered():
-    """`build()` imports the option's module in its own body, so About is registered before
-    start-up, run later, recovers the hub."""
-    import ast
-    from pathlib import Path
+@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
+async def test_the_bot_registers_about_before_the_hub_is_recovered(tmp_path):
+    """Straight after `build`, before start-up, run later, recovers the hub, the bot's hub
+    options, which the builder makes, hold About and nothing else: the builder signs it up once,
+    and no module's option is signed up at import."""
+    bot = await built_bot(tmp_path, now=MADE)
 
-    source = (Path(__file__).resolve().parents[2] / "src" / "leaguebot" / "__main__.py").read_text(encoding="utf-8")
-    build = next(
-        node for node in ast.parse(source).body
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "build"
-    )
-    imported = [
-        alias.name
-        for statement in build.body
-        if isinstance(statement, ast.Import)
-        for alias in statement.names
-    ]
-    assert "leaguebot.core.services.about_service" in imported
+    assert bot.hub_options.registered_options() == [ABOUT_OPTION]

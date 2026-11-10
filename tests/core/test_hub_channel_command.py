@@ -70,16 +70,6 @@ NAMED = "Manager (`<@77>`)"
 SET = f"✅ **Hub channel** set to <#{HUB}>. Its panel follows on the change queue."
 
 
-@pytest.fixture(autouse=True)
-def empty_registry(monkeypatch):
-    """No option is offered on the panel. Core's About registers itself when first imported,
-    which the bot's build does, so it is imported before the registry is emptied: otherwise the
-    first test of a session to build the bot would find it registered."""
-    import leaguebot.core.services.about_service  # noqa: F401
-
-    monkeypatch.setattr(hub_service, "_OPTIONS", {})
-
-
 @pytest.fixture
 async def db_path(tmp_path):
     path = str(tmp_path / "hub_command.db")
@@ -199,7 +189,9 @@ async def test_the_hub_is_set_permissioned_and_given_its_panel(db_path):
 
     assert await _stored(db_path) == {"hub_channel_id": HUB, "hub_message_id": NEW_PANEL}
     assert "overwrites" in channel.edit.await_args.kwargs
-    assert "Nothing is offered here yet." in channel.send.await_args.args[0]
+    assert "Press an option below." in channel.send.await_args.args[0]
+    view = channel.send.await_args.kwargs["view"]
+    assert [b.custom_id for b in view.children] == ["hub:about"]
 
 
 async def test_the_reply_says_the_hub_was_set_and_its_panel_follows_on_the_queue(db_path):

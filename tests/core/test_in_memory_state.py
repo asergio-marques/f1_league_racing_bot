@@ -84,6 +84,9 @@ LEAVING = {
     # The weather phases' callables bound at start-up: the bot's wiring, not the league's data.
     # Exempt while it stands; it goes when every kind is signed up in `_timer_callbacks` (#283).
     ("core/services/scheduler_service.py", "_phase_callbacks"): "#283 S7a",
+    # The hub's options, registered at import (#279): the bot's code, not the league's data. It
+    # goes when the builder signs every option up on the hub options it makes (#283).
+    ("core/services/hub_service.py", "_OPTIONS"): "#283 S22a",
 }
 
 #: Stores the plan moves with no change, by (file, name): the file each moves to and the commit
@@ -113,6 +116,10 @@ ARRIVING_EXEMPT = {
     # and signs up beside each kind's timer handler: the bot's wiring, not the league's data
     # (#283 S21f2).
     ("core/services/test_mode_service.py", "_steps"): "#283 S21f2",
+    # The hub's options, held by the hub options the builder makes and signs each module's up on:
+    # the bot's wiring, not the league's data. A pack keeps the modules, so it keeps what they
+    # offer (#283 S22a).
+    ("core/services/hub_service.py", "_options"): "#283 S22a",
     # A hook's subscribers, signed up by the builder before the bot connects: the bot's wiring,
     # not the league's data (#283 S8a).
     ("core/utils/hooks.py", "_subscribers"): "#283 S8a",
@@ -137,9 +144,6 @@ EXEMPT = {
     # lives no longer than the render or check that parsed its template.
     ("image/utils/svg_document.py", "positions"),
     ("image/utils/svg_document.py", "_by_class"),
-    # The hub's options, registered by modules at import (#279): the bot's code, not the
-    # league's data. A pack keeps the modules, so it keeps what they offer.
-    ("core/services/hub_service.py", "_OPTIONS"),
     # The change types the builder registers at start-up: the bot's wiring, not the league's
     # data (#439).
     ("core/services/change_queue.py", "_types"),
