@@ -3,9 +3,9 @@ of its own.
 
 `DriverService.transition_on` moves a driver on the connection a change's save holds, committing
 nothing; a test of the transition table alone has no save around it, so `transitioned` opens one,
-moves the driver, and commits. `DriverService.reassign_user_id_on` is `/driver reassign`'s save
-in the same way, and `reassigned` opens one around it for a test of the reassign without the
-queue.
+moves the driver, and commits. `DriverService.reassign_user_id_on` judges and then writes a
+reassign, the two halves `/driver reassign`'s save runs in turn, and `reassigned` opens a save
+around it for a test of the reassign without the queue.
 """
 from __future__ import annotations
 

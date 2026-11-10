@@ -72,10 +72,10 @@ async def write_transition(
     """Write *profile_id*'s move from *current* to *new_state*, within the caller's transaction.
 
     The one place a driver's state is written (Constitution VIII: no code path sets a state
-    directly). A caller changing a state as part of a larger write — a sack freeing seats in
-    the same transaction, the driver pass ending a season — calls this rather than issuing
-    the UPDATE itself, so the transition table governs every route alike. Raises
-    InvalidDriverTransition for a transition the table does not allow, having written nothing. Does not commit.
+    directly). A caller changing a state as part of a larger write — a sack freeing seats in the
+    same transaction, the driver pass ending a season — calls this rather than issuing the UPDATE
+    itself, so the transition table governs every route alike. Raises InvalidDriverTransition for a
+    transition the table does not allow, having written nothing. Does not commit.
     """
     allowed = set(ALLOWED_TRANSITIONS.get(current, set()))
     if test_mode_active and current == DriverState.NOT_SIGNED_UP:

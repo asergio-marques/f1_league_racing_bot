@@ -12,9 +12,9 @@ changing nothing:
 - a test-mode driver on either side is refused (E19);
 - a signup in progress on either side is refused (E20).
 
-These run through the save's own form, `reassign_user_id_on`, on a connection of their own
-(`reassigned`); the reassign's audit entry is the change's, and the tests on the change queue
-below pin it.
+These run through `reassign_user_id_on`, which judges the reassign and then writes it, as the
+change's save does in two halves, on a connection of their own (`reassigned`); the reassign's
+audit entry is the change's, and the tests on the change queue below pin it.
 
 It also pins that an open placements review expires when a reassign lands (E41). The review
 names the driver by the account being replaced, so a reassign is a change to what would be
