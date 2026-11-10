@@ -612,7 +612,6 @@ async def test_check_sanction_refuses_a_full_reserve_block(tmp_path):
     assert await _state(db_path, MAX) == ("ASSIGNED", 1)
 
 
-
 @pytest.mark.xfail(
     strict=True, reason="#283: check_sanction still takes any ValueError for a refusal"
 )
@@ -634,6 +633,7 @@ async def test_an_unexpected_value_error_is_a_failure_not_a_refusal(tmp_path):
 
     assert type(raised.value) is ValueError
     assert await _state(db_path, MAX) == ("ASSIGNED", 1)
+
 
 async def test_a_sheet_discord_refuses_raises_and_is_not_put_on_the_retry_queue(tmp_path):
     """Defect 4: the sheet's failure stops the queue and is retried there, so it raises
