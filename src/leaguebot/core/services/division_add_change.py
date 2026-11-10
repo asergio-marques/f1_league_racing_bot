@@ -179,7 +179,7 @@ def division_add_change(
         doing=_doing,
         outcome=_outcome,
         lane=lambda _payload: LEAGUE_LANE,
-        writes=("divisions", "team_instances", "team_seats", "default_teams"),
+        writes=("divisions", "team_instances", "team_seats"),
     )
 
 

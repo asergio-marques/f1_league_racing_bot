@@ -244,7 +244,7 @@ def division_duplicate_change(
         outcome=_outcome,
         fill=fill,
         lane=lambda _payload: LEAGUE_LANE,
-        writes=("divisions", "rounds", "team_instances", "team_seats", "default_teams"),
+        writes=("divisions", "rounds", "team_instances", "team_seats"),
     )
 
 
