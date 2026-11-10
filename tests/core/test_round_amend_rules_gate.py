@@ -412,6 +412,9 @@ ROUND_AMEND_REFUSALS = [
     pytest.param("command", {"scheduled_at": "soon"}, "Invalid datetime", id="bad-datetime"),
     pytest.param("command", {"format": "DRAG"}, "Invalid format", id="bad-format"),
     pytest.param("started", {"track": NEW_TRACK}, "already started", id="the-rules-refuse"),
+    pytest.param("first forecast posted", {"track": NEW_TRACK},
+                 "first forecast for this round has already been posted",
+                 id="the-first-forecast-stands"),
     pytest.param("confirm by another", {}, "Not your action", id="confirm-not-your-action"),
     pytest.param("confirm round gone", {}, "no longer exists", id="confirm-round-gone"),
     pytest.param("confirm window passed", {}, "can no longer be amended",
@@ -426,10 +429,13 @@ async def test_every_round_amend_refusal_reaches_the_log_channel(tmp_path, case,
     started, say, refuses a track amendment rather than offering a confirmation of one."""
     started = case == "started"
     soon = case == "confirm window passed"
+    # Three days out, inside its first forecast's horizon, with that forecast posted.
+    forecast = case == "first forecast posted"
     when = datetime.now(timezone.utc) + (
-        timedelta(hours=-1) if started else timedelta(hours=1) if soon else timedelta(days=30)
+        timedelta(hours=-1) if started else timedelta(hours=1) if soon
+        else timedelta(days=3) if forecast else timedelta(days=30)
     )
-    path = await _db(tmp_path, scheduled_at=when)
+    path = await _db(tmp_path, scheduled_at=when, phase1_done=int(forecast))
     cog = await _cog(path)
     interaction = _interaction()
     _recording(cog, interaction)

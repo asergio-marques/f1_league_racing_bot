@@ -651,6 +651,35 @@ async def test_an_amendment_judged_again_when_it_runs_is_refused_in_today_s_word
     assert [row["state"] for row in am_4] == ["DONE"]
 
 
+async def test_a_track_amendment_whose_first_forecast_is_posted_while_it_waits_is_refused(tmp_path):
+    """Weather and attendance on; Pro's round 3 is three days out, its first forecast not yet
+    drawn, and the queue is stopped at Am's round 3 cancellation. Pro's round 3 is moved to the Hungaroring and
+    confirmed, and waits. While it waits, its Phase 1 forecast is posted (message 8001). Once the
+    queue goes on, the amendment is refused in today's words, that the first forecast was drawn
+    for its present circuit, nothing of it written: the phases drawn are asked of weather when the
+    amendment runs, not taken from when it was asked."""
+    league = await ongoing_league(tmp_path, weather=True, attendance=True, horizons=HORIZONS)
+    await league.write(
+        "UPDATE rounds SET scheduled_at = ? WHERE id = ?",
+        (league.clock.now + timedelta(days=3)).astimezone(timezone.utc).isoformat(), R3,
+    )
+    await _stopped_blocker(league)
+    [before] = await league.rows("SELECT track_name FROM rounds WHERE id = ?", R3)
+    press = await _amended(league, 3, track="Hungaroring")
+    await posted_forecast(league, R3, 1, 8001)
+
+    await _clear_blocker(league)
+
+    assert _outcome(press) == NO_LONGER + (
+        "The first forecast for this round has already been posted, and it was drawn for its "
+        "present circuit. Amend the round's moment as well to put the forecasts back in question."
+    ) + NOTHING_CHANGED
+    assert (await _change(league))["state"] == "REFUSED"
+    [after] = await league.rows("SELECT track_name FROM rounds WHERE id = ?", R3)
+    assert after["track_name"] == before["track_name"]
+    assert len(_amend_refusals(league)) == 1
+
+
 async def test_a_judgement_that_stopped_and_is_retried_after_the_window_passed_is_refused_by_the_save(
     tmp_path, monkeypatch,
 ):
