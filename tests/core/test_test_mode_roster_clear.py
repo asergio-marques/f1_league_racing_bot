@@ -111,6 +111,43 @@ async def _drivers(league) -> list[str]:
 _EVERYONE = [str(LEWIS), str(MAX), str(CHARLES), ALPHA, BETA, GAMMA]
 
 
+def _watch_deletions(league) -> list[list[int]]:
+    """Sign a module up to the bot's own delete hook, as attendance and results are, and return
+    the profile ids it is handed at each call. On the connection it is handed it renames every
+    driver it is told of, so that a test can see whether what a module wrote went with the
+    save."""
+    handed: list[list[int]] = []
+
+    async def deleting(db, profile_ids: list[int]) -> None:
+        handed.append(list(profile_ids))
+        await db.execute(
+            "UPDATE driver_profiles SET test_display_name = 'Erased' "
+            f"WHERE id IN ({','.join('?' for _ in profile_ids)})",
+            profile_ids,
+        )
+
+    league.bot.profiles_deleted.subscribe(deleting)
+    return handed
+
+
+async def _profile_ids(league, *user_ids: str) -> list[int]:
+    """The profile ids of *user_ids*, in id order."""
+    rows = await league.rows(
+        "SELECT id FROM driver_profiles WHERE discord_user_id IN "
+        f"({','.join('?' for _ in user_ids)}) ORDER BY id",
+        *user_ids,
+    )
+    return [row["id"] for row in rows]
+
+
+async def _names(league) -> list[str | None]:
+    """Every fake driver's name, in id order."""
+    rows = await league.rows(
+        "SELECT test_display_name FROM driver_profiles WHERE is_test_driver = 1 ORDER BY id"
+    )
+    return [row["test_display_name"] for row in rows]
+
+
 def _lines(league) -> list[str]:
     """Every line the log channel took, without the rule drawn beneath each."""
     return [unruled(str(line)) for line in league.bot.log_channel.sent]
@@ -131,9 +168,13 @@ async def test_a_clear_and_its_audit_entries_and_line_are_one_save(league):
     Once it has, Mock Alpha and Mock Beta are gone, and Charles, Lewis, Max and Mock Gamma, in
     another division, stand; one `TEST_DRIVER_REMOVED` audit entry for each driver removed, in
     the order they were added, by Admin, on Am, stamped with the queue's clock, records the
-    driver, id, team's full name, division and nationality, each unset after; the
-    acknowledgement reads today's reply, "Removed **2** fake driver(s) from **Am**."; and the
+    driver, id, team's full name, division and nationality, each unset after; the bot's own
+    delete hook, which each module signs up to so that it deletes its own rows of the drivers, is
+    called once, with Mock Alpha's and Mock Beta's profiles; the acknowledgement reads today's
+    reply, "Removed **2** fake driver(s) from **Am**."; and the
     log channel holds today's success line once, naming Am and the two removed."""
+    handed = _watch_deletions(league)
+    removed = await _profile_ids(league, ALPHA, BETA)
     interaction = _asks(league)
 
     await _ask(league, interaction)
@@ -143,9 +184,11 @@ async def test_a_clear_and_its_audit_entries_and_line_are_one_save(league):
     assert [row["kind"] for row in await change_rows(league.db_path)] == ["core.test_roster_clear"]
     assert await _drivers(league) == _EVERYONE
     assert await audit_rows(league.db_path) == []
+    assert handed == []
     await run_queue(league.bot)
 
     assert await _drivers(league) == [str(LEWIS), str(MAX), str(CHARLES), GAMMA]
+    assert handed == [removed]
     entries = [
         {"driver": "Mock Alpha", "user_id": ALPHA, "team": "McLaren F1 Team", "division": "Am",
          "nationality": "British"},
@@ -227,9 +270,11 @@ async def test_it_is_refused_at_the_ask(league, meanwhile, division, refusal):
     switched off, or the season's placements are approved (Ongoing), or neither. Admin (77) runs
     `/test-mode roster clear` of Am, or of Gold, which the season does not hold. They are refused
     at once, seen by them alone, in the words the command has always used; nothing is queued,
-    every driver stands, nothing is audited, and the log channel takes the refusal line."""
+    every driver stands, the bot's delete hook is not called, nothing is audited, and the log
+    channel takes the refusal line."""
     if meanwhile is not None:
         await meanwhile(league)
+    handed = _watch_deletions(league)
     interaction = _asks(league)
 
     await _ask(league, interaction, division)
@@ -239,6 +284,7 @@ async def test_it_is_refused_at_the_ask(league, meanwhile, division, refusal):
     assert reply.kwargs.get("ephemeral") is True
     assert await change_rows(league.db_path) == []
     assert await _drivers(league) == _EVERYONE
+    assert handed == []
     assert await audit_rows(league.db_path) == []
     assert _lines(league) == [_refused(refusal)]
 
@@ -255,9 +301,10 @@ async def test_it_is_judged_again_as_it_starts(league, meanwhile, refusal):
     """The season is in Placements under test mode, Mock Alpha and Mock Beta fake drivers at
     McLaren in Am. Admin (77) runs `/test-mode roster clear` of Am and is acknowledged; before
     the queue runs it, test mode is switched off or the season's placements are approved
-    (Ongoing). The change judges again as it starts and is refused: every driver stands, nothing
-    is audited, Admin's reply becomes the refusal the command gives at the ask, word for word,
+    (Ongoing). The change judges again as it starts and is refused: every driver stands, the
+    bot's delete hook is not called, nothing is audited, Admin's reply becomes the refusal the command gives at the ask, word for word,
     the log channel takes that refusal as its only line, and the queue is not stopped."""
+    handed = _watch_deletions(league)
     interaction = _asks(league)
 
     await _ask(league, interaction)
@@ -267,6 +314,7 @@ async def test_it_is_judged_again_as_it_starts(league, meanwhile, refusal):
 
     assert last_said(interaction) == refusal
     assert await _drivers(league) == _EVERYONE
+    assert handed == []
     assert await audit_rows(league.db_path) == []
     assert _lines(league) == [_refused(refusal)]
     assert await stopped_job(league.db_path) is None
@@ -277,14 +325,16 @@ async def test_a_fault_in_the_save_removes_nobody(league):
     """The season is in Placements under test mode, Mock Alpha and Mock Beta fake drivers at
     McLaren in Am. Admin (77) runs `/test-mode roster clear` of Am, and the audit entries' write
     fails on the database as the queue runs the change. Nothing of the clear is saved, the
-    deletions, their audit entries and the line being one save: every driver stands, no audit
-    entry stands, the log channel holds no success line, and the error's text reaches nobody.
+    deletions, their audit entries and the line being one save: every driver stands under their
+    own name, nothing a module wrote through the bot's delete hook standing, no audit entry
+    stands, the log channel holds no success line, and the error's text reaches nobody.
     The league's lane stops at the job. Once a league admin discards the stopped job, Admin's
     reply says "Nothing was removed: the fake drivers in **Am** are still seated. Run
     `/test-mode roster clear` again."; and the lane is clear."""
     from tests.support.change_queue import discard_job
     from tests.support.settings_league import fault_in
 
+    _watch_deletions(league)
     interaction = _asks(league)
 
     await _ask(league, interaction)
@@ -292,6 +342,7 @@ async def test_a_fault_in_the_save_removes_nobody(league):
         await run_queue(league.bot)
 
     assert await _drivers(league) == _EVERYONE
+    assert await _names(league) == ["Mock Alpha", "Mock Beta", "Mock Gamma"]
     assert await audit_rows(league.db_path) == []
     assert not any("| Success" in line for line in _lines(league))
     assert await stopped_job(league.db_path) is not None

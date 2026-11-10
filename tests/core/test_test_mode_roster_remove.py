@@ -101,6 +101,30 @@ _BOTH = [
 ]
 
 
+def _watch_deletions(league) -> list[list[int]]:
+    """Sign a module up to the bot's own delete hook, as attendance and results are, and return
+    the profile ids it is handed at each call. On the connection it is handed it renames every
+    driver it is told of, so that a test can see whether what a module wrote went with the
+    save."""
+    handed: list[list[int]] = []
+
+    async def deleting(db, profile_ids: list[int]) -> None:
+        handed.append(list(profile_ids))
+        await db.execute(
+            "UPDATE driver_profiles SET test_display_name = 'Erased' "
+            f"WHERE id IN ({','.join('?' for _ in profile_ids)})",
+            profile_ids,
+        )
+
+    league.bot.profiles_deleted.subscribe(deleting)
+    return handed
+
+
+async def _profile_id(league) -> int:
+    [row] = await league.rows("SELECT id FROM driver_profiles WHERE discord_user_id = ?", MOCK_ID)
+    return row["id"]
+
+
 def _lines(league) -> list[str]:
     """Every line the log channel took, without the rule drawn beneath each."""
     return [unruled(str(line)) for line in league.bot.log_channel.sent]
@@ -121,9 +145,13 @@ async def test_a_removal_and_its_audit_entry_and_line_are_one_save(league):
     it has, Mock Alpha's profile is gone and McLaren's second seat free, Charles untouched in the
     first; one audit entry, `TEST_DRIVER_REMOVED`, by Admin, on Am, stamped with the queue's
     clock, records the driver, id, team's full name, division and nationality, each unset after;
-    the acknowledgement reads today's reply, naming the driver and the team's full name; and the
-    log channel holds today's success line once, naming the driver, the team and the ID, the ID
-    being what a maintainer would need to add the driver back."""
+    the bot's own delete hook, which each module signs up to so that it deletes its own rows of
+    the driver, is called once, with Mock Alpha's profile; the acknowledgement reads today's
+    reply, naming the driver and the team's full name; and the log channel holds today's success
+    line once, naming the driver, the team and the ID, the ID being what a maintainer would need
+    to add the driver back."""
+    handed = _watch_deletions(league)
+    profile_id = await _profile_id(league)
     interaction = _asks(league)
 
     await _ask(league, interaction)
@@ -135,9 +163,11 @@ async def test_a_removal_and_its_audit_entry_and_line_are_one_save(league):
     ]
     assert await _drivers(league) == _BOTH
     assert await audit_rows(league.db_path) == []
+    assert handed == []
     await run_queue(league.bot)
 
     assert await _drivers(league) == _BOTH[:1]
+    assert handed == [[profile_id]]
     assert await league.rows(
         "SELECT 1 FROM team_seats WHERE team_instance_id = ? AND seat_number = 2 "
         "AND driver_profile_id IS NULL",
@@ -186,10 +216,11 @@ async def test_it_is_refused_at_the_ask(league, meanwhile, user_id, refusal):
     approved (Ongoing), or neither. Admin (77) runs `/test-mode roster remove` with Mock Alpha's
     ID, an ID no driver holds, or Charles's. They are refused at once, seen by them alone, in the
     words the command has always used, a real driver never being one test mode may remove;
-    nothing is queued, both drivers keep their seats, nothing is audited, and the log channel
-    takes the refusal line."""
+    nothing is queued, both drivers keep their seats, the bot's delete hook is not called,
+    nothing is audited, and the log channel takes the refusal line."""
     if meanwhile is not None:
         await meanwhile(league)
+    handed = _watch_deletions(league)
     interaction = _asks(league)
 
     await _ask(league, interaction, user_id)
@@ -199,6 +230,7 @@ async def test_it_is_refused_at_the_ask(league, meanwhile, user_id, refusal):
     assert reply.kwargs.get("ephemeral") is True
     assert await change_rows(league.db_path) == []
     assert await _drivers(league) == _BOTH
+    assert handed == []
     assert await audit_rows(league.db_path) == []
     assert _lines(league) == [_refused(refusal)]
 
@@ -231,8 +263,9 @@ async def test_it_is_judged_again_as_it_starts(league, meanwhile, refusal):
     Admin (77) runs `/test-mode roster remove` with Mock Alpha's ID and is acknowledged; before
     the queue runs it, test mode is switched off, the season's placements are approved (Ongoing),
     or Mock Alpha is deleted another way. The change judges again as it starts and is refused:
-    nothing is audited, Admin's reply becomes the refusal the command gives at the ask, word for
+    the bot's delete hook is not called, nothing is audited, Admin's reply becomes the refusal the command gives at the ask, word for
     word, the log channel takes that refusal as its only line, and the queue is not stopped."""
+    handed = _watch_deletions(league)
     interaction = _asks(league)
 
     await _ask(league, interaction)
@@ -241,6 +274,7 @@ async def test_it_is_judged_again_as_it_starts(league, meanwhile, refusal):
     await run_queue(league.bot)
 
     assert last_said(interaction) == refusal
+    assert handed == []
     assert await audit_rows(league.db_path) == []
     assert _lines(league) == [_refused(refusal)]
     assert await stopped_job(league.db_path) is None
@@ -252,13 +286,15 @@ async def test_a_fault_in_the_save_removes_nobody(league):
     seat in Am. Admin (77) runs `/test-mode roster remove` with Mock Alpha's ID, and the audit
     entry's write fails on the database as the queue runs the change. Nothing of the removal is
     saved, the deletion, its audit entry and its line being one save: Mock Alpha keeps their
-    profile and seat, no audit entry stands, the log channel holds no success line, and the
+    profile, name and seat, nothing a module wrote through the bot's delete hook stands, no audit
+    entry stands, the log channel holds no success line, and the
     error's text reaches nobody. The league's lane stops at the job. Once a league admin discards
     the stopped job, Admin's reply says "Nothing was removed: **Mock Alpha** is still seated in
     **Am**. Run `/test-mode roster remove` again."; and the lane is clear."""
     from tests.support.change_queue import discard_job
     from tests.support.settings_league import fault_in
 
+    _watch_deletions(league)
     interaction = _asks(league)
 
     await _ask(league, interaction)
@@ -266,6 +302,9 @@ async def test_a_fault_in_the_save_removes_nobody(league):
         await run_queue(league.bot)
 
     assert await _drivers(league) == _BOTH
+    assert await league.rows(
+        "SELECT test_display_name FROM driver_profiles WHERE discord_user_id = ?", MOCK_ID
+    ) == [{"test_display_name": "Mock Alpha"}]
     assert await audit_rows(league.db_path) == []
     assert not any("| Success" in line for line in _lines(league))
     assert await stopped_job(league.db_path) is not None
