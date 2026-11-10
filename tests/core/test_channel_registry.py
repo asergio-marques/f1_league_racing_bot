@@ -32,8 +32,22 @@ from leaguebot.core.services.channel_registry_service import (
     find_channel_use,
     refusal,
 )
+from leaguebot.core.utils.hooks import AwaitedHook
+from tests.support.channel_uses import channel_uses_given
 
 SERVER_ID = 4242
+
+#: Why the registry's asking of each module is not yet true.
+MODULES_ASKED = (
+    "#283: the registry reads each module's channel columns itself and takes no "
+    "channel_uses_read hook"
+)
+
+#: The settings a module holds, each in a table or column of its own.
+MODULE_SETTINGS = ["attendance", "results", "rsvp", "signup", "standings", "verdicts", "weather"]
+
+#: The settings core holds, on its own divisions and server configuration.
+CORE_SETTINGS = ["calendar", "hub", "interaction", "lineup", "log"]
 
 
 @pytest.fixture
@@ -125,6 +139,18 @@ async def _set(db_path, setting, channel_id, *, division_id=None, server_id=SERV
         await db.commit()
 
 
+async def _find(db_path, channel_id, **kwargs):
+    """`find_channel_use`, asking each module through the bot's own hook once the registry asks one
+    (tests/support/channel_uses.py)."""
+    return await find_channel_use(db_path, channel_id, **channel_uses_given(db_path), **kwargs)
+
+
+async def _refusal(db_path, channel, setting, **kwargs):
+    """`channel_refusal`, asking each module through the bot's own hook once the registry asks one
+    (tests/support/channel_uses.py)."""
+    return await channel_refusal(db_path, channel, setting, **channel_uses_given(db_path), **kwargs)
+
+
 # ── Every setting is found ────────────────────────────────────────────────
 
 
@@ -136,13 +162,13 @@ async def test_a_channel_in_use_is_found_whatever_uses_it(db_path, setting):
 
     await _set(db_path, setting, 500, division_id=division_id)
 
-    use = await find_channel_use(db_path, 500)
+    use = await _find(db_path, 500)
     assert use is not None, f"{setting} was not detected"
     assert use.setting == setting
 
 
 async def test_a_free_channel_is_free(db_path):
-    assert await find_channel_use(db_path, 999) is None
+    assert await _find(db_path, 999) is None
 
 
 async def test_the_label_names_the_division_for_a_per_division_setting(db_path):
@@ -150,7 +176,7 @@ async def test_the_label_names_the_division_for_a_per_division_setting(db_path):
     division_id = await _division(db_path, season_id, "Pro")
     await _set(db_path, "results", 500, division_id=division_id)
 
-    use = await find_channel_use(db_path, 500)
+    use = await _find(db_path, 500)
 
     assert use.division_name == "Pro"
     assert "**Pro**" in use.describe()
@@ -160,10 +186,38 @@ async def test_the_label_names_the_division_for_a_per_division_setting(db_path):
 async def test_a_server_setting_names_no_division(db_path, setting):
     await _set(db_path, setting, 500)
 
-    use = await find_channel_use(db_path, 500)
+    use = await _find(db_path, 500)
 
     assert use.division_name is None
     assert "**" not in use.describe()
+
+
+@pytest.mark.xfail(strict=True, reason=MODULES_ASKED)
+@pytest.mark.parametrize("setting", MODULE_SETTINGS)
+async def test_a_module_s_channel_is_found_only_by_asking_the_module(db_path, setting):
+    """Channel 500 set as Pro's *setting*, a module's own, and the registry asked with no module
+    signed up to its hook: nothing holds the channel, since core reads no module's columns. With
+    the bot's own hook, the module answers (`test_a_channel_in_use_is_found_whatever_uses_it`)."""
+    season_id = await _season(db_path)
+    division_id = await _division(db_path, season_id, "Pro")
+    await _set(db_path, setting, 500, division_id=division_id)
+
+    assert await find_channel_use(db_path, 500, channel_uses_read=AwaitedHook()) is None
+
+
+@pytest.mark.xfail(strict=True, reason=MODULES_ASKED)
+@pytest.mark.parametrize("setting", CORE_SETTINGS)
+async def test_core_finds_its_own_channels_with_no_module_asked(db_path, setting):
+    """Channel 500 set as *setting*, core's own (Pro's calendar or lineup, or the server's hub,
+    command or log channel), and the registry asked with no module signed up to its hook: the
+    setting is found all the same."""
+    season_id = await _season(db_path)
+    division_id = await _division(db_path, season_id, "Pro")
+    await _set(db_path, setting, 500, division_id=division_id)
+
+    use = await find_channel_use(db_path, 500, channel_uses_read=AwaitedHook())
+
+    assert use is not None and use.setting == setting
 
 
 # ── The rule is server-wide ───────────────────────────────────────────────
@@ -176,7 +230,7 @@ async def test_two_divisions_may_not_share_a_channel(db_path):
     await _division(db_path, season_id, "Academy")
     await _set(db_path, "results", 500, division_id=pro)
 
-    use = await find_channel_use(db_path, 500)
+    use = await _find(db_path, 500)
 
     assert use == ChannelUse("results", "Pro")
 
@@ -191,7 +245,7 @@ async def test_a_finished_seasons_channel_is_free_again(db_path, status):
     division_id = await _division(db_path, season_id, "Pro")
     await _set(db_path, "results", 500, division_id=division_id)
 
-    assert await find_channel_use(db_path, 500) is None
+    assert await _find(db_path, 500) is None
 
 
 # ── Ignoring the setting being written ────────────────────────────────────
@@ -204,7 +258,7 @@ async def test_a_setting_does_not_block_itself(db_path):
     division_id = await _division(db_path, season_id, "Pro")
     await _set(db_path, "results", 500, division_id=division_id)
 
-    ignored = await find_channel_use(
+    ignored = await _find(
         db_path, 500, ignore=ChannelUse("results", "Pro")
     )
 
@@ -216,7 +270,7 @@ async def test_ignoring_one_setting_does_not_hide_another(db_path):
     pro = await _division(db_path, season_id, "Pro")
     await _set(db_path, "calendar", 500, division_id=pro)
 
-    use = await find_channel_use(
+    use = await _find(
         db_path, 500, ignore=ChannelUse("results", "Pro")
     )
 
@@ -264,7 +318,7 @@ async def test_channel_refusal_passes_a_free_channel(db_path):
     season_id = await _season(db_path)
     await _division(db_path, season_id, "Pro")
 
-    assert await channel_refusal(
+    assert await _refusal(
         db_path, _text_channel(500), "weather", division_name="Pro"
     ) is None
 
@@ -275,7 +329,7 @@ async def test_channel_refusal_names_what_already_holds_the_channel(db_path):
     pro = await _division(db_path, season_id, "Pro")
     await _set(db_path, "results", 500, division_id=pro)
 
-    message = await channel_refusal(
+    message = await _refusal(
         db_path, _text_channel(500), "weather", division_name="Pro"
     )
 
@@ -288,7 +342,7 @@ async def test_channel_refusal_says_the_setting_already_holds_it_in_its_own_word
     pro = await _division(db_path, season_id, "Pro")
     await _set(db_path, "weather", 500, division_id=pro)
 
-    message = await channel_refusal(
+    message = await _refusal(
         db_path, _text_channel(500), "weather", division_name="Pro"
     )
 
@@ -302,7 +356,7 @@ async def test_channel_refusal_holds_one_divisions_setting_against_another_s(db_
     await _division(db_path, season_id, "Academy")
     await _set(db_path, "results", 500, division_id=pro)
 
-    message = await channel_refusal(
+    message = await _refusal(
         db_path, _text_channel(500), "results", division_name="Academy"
     )
 
@@ -318,7 +372,7 @@ async def test_the_hub_refuses_a_channel_a_division_posts_to(db_path):
     division_id = await _division(db_path, season_id, "Pro")
     await _set(db_path, "results", 600, division_id=division_id)
 
-    use = await find_channel_use(db_path, 600, ignore=ChannelUse("hub"))
+    use = await _find(db_path, 600, ignore=ChannelUse("hub"))
 
     assert use == ChannelUse("results", "Pro")
 
@@ -327,7 +381,7 @@ async def test_a_division_refuses_the_hub_channel(db_path):
     """The rule holds both ways: the hub's channel is held for the hub alone."""
     await _set(db_path, "hub", 601)
 
-    use = await find_channel_use(db_path, 601, ignore=ChannelUse("standings", "Pro"))
+    use = await _find(db_path, 601, ignore=ChannelUse("standings", "Pro"))
 
     assert use == ChannelUse("hub")
     assert use.describe() == "hub channel"

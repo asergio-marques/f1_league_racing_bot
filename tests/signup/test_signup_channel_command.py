@@ -20,6 +20,7 @@ import pytest
 
 from leaguebot.signup.cogs.signup_cog import SignupCog
 from leaguebot.core.db.database import get_connection, run_migrations
+from tests.support.channel_uses import sign_up_channel_uses_read
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 5511
@@ -84,6 +85,8 @@ def _cog(db_path):
     bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
     bot.signup_module_service = SignupModuleService(db_path)
     bot.output_router.post_log = AsyncMock()
+    # The registry asks each module for the channels it holds, through the bot's own hook.
+    sign_up_channel_uses_read(bot)
 
     cog = SignupCog.__new__(SignupCog)
     cog.bot = bot
