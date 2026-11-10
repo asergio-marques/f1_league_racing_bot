@@ -15,6 +15,7 @@ import pytest
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage
+from tests.support.review_workflows import run_workflow
 from tests.support.setup_reads import hold_setup
 
 from tests.support.undecorate import undecorate
@@ -22,6 +23,14 @@ from tests.support.undecorate import undecorate
 SERVER_ID = 22070
 SEASON_ID = 7
 USER_ID = 42
+
+#: The gate is still `SeasonCog._placement_confirmation_faults`.
+_GATE_ON_THE_COG = (
+    "#283: the placements gate is not yet approval_checks.placement_confirmation_faults"
+)
+
+#: The approval still runs as `SeasonCog._do_approve`.
+_APPROVAL_ON_THE_COG = "#283: the approval is not yet season_review_workflows.approve_season"
 
 
 @pytest.fixture
@@ -59,6 +68,21 @@ def _cog(db_path, *, weather=False, results=False, attendance=False) -> SeasonCo
     cog.bot.module_service.is_results_enabled = AsyncMock(return_value=results)
     cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
     return cog
+
+
+async def _faults(cog, guild=None) -> tuple[list[str], list[str]]:
+    """What stops the season's placements being confirmed: the gate both confirmations run,
+    handed the league's modules and database, and *guild* to look its channels up on."""
+    from leaguebot.core.services import approval_checks
+
+    return await approval_checks.placement_confirmation_faults(
+        cog.bot.module_service, cog.bot.db_path, SEASON_ID, guild
+    )
+
+
+async def _approve(cog, interaction) -> None:
+    """Press ✅ Approve: the approval's workflow, handed *cog*'s bot's services."""
+    await run_workflow("approve_season", cog.bot, interaction)
 
 
 def _guild(*, gone: tuple[int, ...] = (), unreadable: tuple[int, ...] = ()):
@@ -120,6 +144,7 @@ async def _driver(db_path, uid: str, state: str, name: str | None = None):
 # ── The faults ──────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 async def test_every_unsettled_signup_is_named(db_path):
     await _driver(db_path, "1", "UNASSIGNED", "Alice")
     await _driver(db_path, "2", "PENDING_ADMIN_APPROVAL", "Bob")
@@ -127,7 +152,7 @@ async def test_every_unsettled_signup_is_named(db_path):
     await _driver(db_path, "4", "ASSIGNED", "Placed")
     await _driver(db_path, "5", "NOT_SIGNED_UP", "Left")
 
-    unsettled, _ = await _cog(db_path)._placement_confirmation_faults(SEASON_ID)
+    unsettled, _ = await _faults(_cog(db_path))
 
     joined = "\n".join(unsettled)
     assert len(unsettled) == 3
@@ -136,12 +161,14 @@ async def test_every_unsettled_signup_is_named(db_path):
     assert "**3** — correcting their signup" in joined
 
 
+@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 async def test_a_division_missing_its_lineup_or_calendar_channel_is_named(db_path):
-    _, channels = await _cog(db_path)._placement_confirmation_faults(SEASON_ID)
+    _, channels = await _faults(_cog(db_path))
 
     assert channels == ["**Am** has no lineup channel — `/division lineup-channel`."]
 
 
+@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 @pytest.mark.parametrize(
     "module,labels",
     [
@@ -157,8 +184,8 @@ async def test_a_module_s_channels_are_needed_only_while_it_is_enabled(db_path, 
         await db.execute("UPDATE divisions SET lineup_channel_id = 200 WHERE id = 2")
         await db.commit()
 
-    _, off = await _cog(db_path)._placement_confirmation_faults(SEASON_ID)
-    _, on = await _cog(db_path, **{module: True})._placement_confirmation_faults(SEASON_ID)
+    _, off = await _faults(_cog(db_path))
+    _, on = await _faults(_cog(db_path, **{module: True}))
 
     assert off == []
     assert len(on) == 2 * len(labels), "each of the two live divisions lacks each of them"
@@ -166,6 +193,7 @@ async def test_a_module_s_channels_are_needed_only_while_it_is_enabled(db_path, 
         assert f"**Pro** has no {label}" in "\n".join(on)
 
 
+@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 @pytest.mark.parametrize(
     "label,command",
     [
@@ -187,20 +215,19 @@ async def test_a_missing_module_channel_is_named_with_the_command_that_now_sets_
         await db.commit()
     cog = _cog(db_path, weather=True, results=True, attendance=True)
 
-    _, channels = await cog._placement_confirmation_faults(SEASON_ID)
+    _, channels = await _faults(cog)
 
     assert f"**Pro** has no {label} — `{command}`." in channels
 
 
+@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 async def test_a_channel_deleted_from_the_server_is_named_with_its_command(db_path):
     """Nothing clears a channel's id when Discord deletes it, so mid-season every channel is
     still set — whether it is still there is the question worth asking (#374)."""
     await _set_module_channels(db_path)
     cog = _cog(db_path, weather=True, results=True, attendance=True)
 
-    _, channels = await cog._placement_confirmation_faults(
-        SEASON_ID, _guild(gone=(100, 222, 231))
-    )
+    _, channels = await _faults(cog, _guild(gone=(100, 222, 231)))
 
     assert channels == [
         "**Pro**'s lineup channel is no longer on the server — `/division lineup-channel`.",
@@ -210,35 +237,36 @@ async def test_a_channel_deleted_from_the_server_is_named_with_its_command(db_pa
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 async def test_a_channel_that_could_not_be_fetched_is_not_called_gone(db_path):
     """Only NotFound proves a channel gone; a check that could not tell refuses nothing."""
     await _set_module_channels(db_path)
     cog = _cog(db_path, weather=True, results=True, attendance=True)
 
-    _, channels = await cog._placement_confirmation_faults(
-        SEASON_ID, _guild(unreadable=(100, 120))
-    )
+    _, channels = await _faults(cog, _guild(unreadable=(100, 120)))
 
     assert channels == []
 
 
+@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 async def test_a_cancelled_division_is_not_asked_for_its_channels(db_path):
     """`Gone` is cancelled and holds none: it posts nothing."""
     await _set_module_channels(db_path)
     cog = _cog(db_path, weather=True, results=True, attendance=True)
 
-    _, channels = await cog._placement_confirmation_faults(SEASON_ID, _guild())
+    _, channels = await _faults(cog, _guild())
 
     assert channels == []
 
 
+@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 async def test_a_settled_season_with_its_channels_has_no_faults(db_path):
     async with get_connection(db_path) as db:
         await db.execute("UPDATE divisions SET lineup_channel_id = 200 WHERE id = 2")
         await db.commit()
     await _driver(db_path, "4", "ASSIGNED")
 
-    assert await _cog(db_path)._placement_confirmation_faults(SEASON_ID) == ([], [])
+    assert await _faults(_cog(db_path)) == ([], [])
 
 
 # ── The review and the confirmation refuse ─────────────────────────────────────────
@@ -265,6 +293,7 @@ async def test_the_review_is_refused_outside_placements(db_path, stage):
     interaction.response.defer.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 async def test_the_confirmation_refuses_an_unsettled_signup_and_commits_nothing(db_path):
     await _driver(db_path, "1", "UNASSIGNED", "Alice")
     cog = _cog(db_path)
@@ -281,12 +310,13 @@ async def test_the_confirmation_refuses_an_unsettled_signup_and_commits_nothing(
     interaction.response.defer = AsyncMock()
     interaction.followup.send = AsyncMock()
 
-    await SeasonCog._do_approve(cog, interaction)
+    await _approve(cog, interaction)
 
     assert "Alice" in interaction.followup.send.await_args.args[0]
     cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 async def test_the_confirmation_names_every_missing_channel_at_once_and_commits_nothing(db_path):
     """Four channels wrong is one refusal, not four attempts at starting a season. The
     results module's channels are judged here with every other division channel (#374); the
@@ -312,7 +342,7 @@ async def test_the_confirmation_names_every_missing_channel_at_once_and_commits_
     interaction.response.defer = AsyncMock()
     interaction.followup.send = AsyncMock()
 
-    await SeasonCog._do_approve(cog, interaction)
+    await _approve(cog, interaction)
 
     (call,) = interaction.followup.send.await_args_list
     refusal = call.args[0]
@@ -322,6 +352,7 @@ async def test_the_confirmation_names_every_missing_channel_at_once_and_commits_
     cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 @pytest.mark.parametrize("divisions", [[], [SimpleNamespace(status="CANCELLED")]])
 async def test_the_confirmation_refuses_a_season_with_no_division(db_path, divisions):
     """A season with nothing to race would never reach Pending completion (issue #220)."""
@@ -336,13 +367,14 @@ async def test_the_confirmation_refuses_a_season_with_no_division(db_path, divis
     interaction.response.defer = AsyncMock()
     interaction.followup.send = AsyncMock()
 
-    await SeasonCog._do_approve(cog, interaction)
+    await _approve(cog, interaction)
 
     reply = interaction.followup.send.await_args.args[0]
     assert "no divisions" in reply and "Nothing has been approved" in reply
     cog.bot.season_service.transition_to_active.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 async def test_the_confirmation_refuses_a_season_no_longer_in_placements(db_path):
     cog = _cog(db_path)
     hold_setup(cog.bot.season_service, SimpleNamespace(season_id=SEASON_ID))
@@ -354,7 +386,7 @@ async def test_the_confirmation_refuses_a_season_no_longer_in_placements(db_path
     interaction.response.defer = AsyncMock()
     interaction.followup.send = AsyncMock()
 
-    await SeasonCog._do_approve(cog, interaction)
+    await _approve(cog, interaction)
 
     assert "no longer in placements" in interaction.followup.send.await_args.args[0]
     cog.bot.change_queue.ask.assert_not_awaited()
