@@ -64,7 +64,7 @@ from leaguebot.core.services.setup_round_amend_change import (
     ROUND_AMEND_SETUP,
     amend_payload as amend_setup_payload,
 )
-from leaguebot.core.services.season_review_changes import POST as SEASON_REVIEW_POST
+from leaguebot.core.services.season_review_changes import POST as SEASON_REVIEW_POST, REVIEW_WINDOW
 from leaguebot.core.services.season_end_changes import (
     ABORT_ONLY_BEFORE,
     PRE_CONFIRMATION,
@@ -101,6 +101,9 @@ from leaguebot.core.utils.round_import import (
 )
 
 log = logging.getLogger(__name__)
+
+#: The review's five minutes, as its question says them.
+REVIEW_MINUTES = REVIEW_WINDOW // timedelta(minutes=1)
 
 # ---------------------------------------------------------------------------
 # Bulk round import
@@ -325,7 +328,7 @@ class SeasonCog(commands.Cog):
                 question = (
                     f"\U0001f4cb **Do you accept this season configuration?**\n"
                     f"Reviewed by <@{interaction.user.id}>. Approval is open to them or to a "
-                    f"server administrator for the next {APPROVAL_WINDOW_SECONDS // 60} minutes, "
+                    f"server administrator for the next {REVIEW_MINUTES} minutes, "
                     f"after which this review expires and must be run again."
                 )
         await self.bot.change_queue.ask(
@@ -1192,7 +1195,7 @@ class SeasonCog(commands.Cog):
             question=(
                 "\U0001f4cb **Do you confirm these placements?**\n"
                 f"Reviewed by <@{interaction.user.id}>. Confirmation is open to them or to a "
-                f"league admin for the next {APPROVAL_WINDOW_SECONDS // 60} minutes. Confirming "
+                f"league admin for the next {REVIEW_MINUTES} minutes. Confirming "
                 "grants the new drivers their roles and posts each affected lineup."
             ),
         )
@@ -1397,7 +1400,7 @@ class SeasonCog(commands.Cog):
             question=(
                 "📋 **Do you confirm this season's configuration?**\n"
                 f"Reviewed by <@{interaction.user.id}>. Confirmation is open to them or to a "
-                f"league admin for the next {APPROVAL_WINDOW_SECONDS // 60} minutes. Once "
+                f"league admin for the next {REVIEW_MINUTES} minutes. Once "
                 "confirmed, the team list, the game edition, test mode and the signup module "
                 "are fixed for this season."
             ),
@@ -2391,18 +2394,6 @@ class SeasonCog(commands.Cog):
 
 
 # ---------------------------------------------------------------------------
-# Approve button view
-# ---------------------------------------------------------------------------
-
-
-#: How long a review's Approve button stands. A review is a photograph of the season at
-#: the moment it was posted, and the button commits on the strength of it \u2014 so a manager
-#: who edits a round, moves a channel or reseats a driver and then presses a button from
-#: half an hour ago would approve a season nobody has actually reviewed. Five minutes is
-#: long enough to read the report and short enough that little can have changed.
-APPROVAL_WINDOW_SECONDS = 300
-
-# ---------------------------------------------------------------------------
 # Round amendment confirm view
 # ---------------------------------------------------------------------------
 
@@ -2434,7 +2425,6 @@ async def _judge_round_amendment(
     return judge_amendment(
         rnd, dict(amendments), now=now, attendance=attendance, weather=weather
     )
-
 
 
 def _round_amend_named(round_number: int | None, division_name: str | None = None) -> str:

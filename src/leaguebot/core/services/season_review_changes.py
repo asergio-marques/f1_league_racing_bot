@@ -104,7 +104,11 @@ log = logging.getLogger(__name__)
 
 POST = "season.review.post"
 TIMER = "review_expiry"
-#: How long a review's question can be answered, from when it appears.
+#: How long a review's question can be answered, from when it appears. A review is a photograph of
+#: the season at the moment it was posted, and its button commits on the strength of it, so a
+#: manager who edits a round, moves a channel or reseats a driver and then presses a button from
+#: half an hour ago would approve a season nobody has actually reviewed. Five minutes is long
+#: enough to read the report and short enough that little can have changed.
 REVIEW_WINDOW = timedelta(minutes=5)
 POST_DRAWING_NOTICE = "post_drawing_notice"
 DRAW_AND_POST = "draw_and_post"
