@@ -71,9 +71,9 @@ async def test_a_section_that_cannot_be_read_fails_the_review_as_today():
 
 async def test_the_builder_signs_results_division_lines_up_before_attendance_s(tmp_path):
     """Attendance on, and Pro holding its results channel 120 and its RSVP channel 130. The
-    builder signs results and then attendance up to the hook the placements review gathers each
+    builder signs results, attendance and then weather up to the hook the placements review gathers each
     division's module lines through, so results' three channel lines come back before
-    attendance's two, as the review has always laid them out."""
+    attendance's two, then weather's one, as the review has always laid them out."""
     from types import SimpleNamespace
     from unittest.mock import AsyncMock, MagicMock
 
@@ -117,4 +117,5 @@ async def test_the_builder_signs_results_division_lines_up_before_attendance_s(t
             "  Verdicts channel: *(not configured)*",
         ]},
         {10: ["  RSVP channel: <#130>", "  Attendance channel: *(not set)*"]},
+        {10: ["  Weather channel: *(none)*"]},
     ]

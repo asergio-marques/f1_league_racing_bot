@@ -412,17 +412,20 @@ def _sign_up_to_driver_names_read(bot: LeagueBot) -> None:
 def _sign_up_to_division_lines_read(bot: LeagueBot) -> None:
     """Make the hook the placements review gathers each division's module lines through, and sign
     each module up to it, in the order the review lays the lines out: results' three channels,
-    handed the database, then attendance's two, handed its service and the module service. Each
-    is handed the season and the divisions the review shows (architecture.md, "How modules and
+    handed the database, then attendance's two, handed its service and the module service, then
+    weather's one, handed the database. Each is handed the season and the divisions the review
+    shows (architecture.md, "How modules and
     core fit together")."""
     from leaguebot.attendance.services import attendance_service
     from leaguebot.results.services import division_channels
+    from leaguebot.weather.services import forecast_channel
 
     bot.division_lines_read = AwaitedHook()
     bot.division_lines_read.subscribe(partial(division_channels.division_lines, bot.db_path))
     bot.division_lines_read.subscribe(
         partial(attendance_service.division_lines, bot.attendance_service, bot.module_service)
     )
+    bot.division_lines_read.subscribe(partial(forecast_channel.division_lines, bot.db_path))
 
 
 def _sign_up_to_division_channel_faults_read(bot: LeagueBot) -> None:

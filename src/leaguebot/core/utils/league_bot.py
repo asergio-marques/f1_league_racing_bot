@@ -122,10 +122,10 @@ class LeagueBot(commands.Bot):
     #: The moment the placements review gathers the lines of each division's configuration message
     #: that belong to a module: each module signs up a function handing back, by division id, the
     #: lines naming its channels, handed the season and the divisions the review shows. Results'
-    #: lines come whatever its switch, attendance's only while it is on. The builder makes it and
-    #: signs them up in the order the review lays the lines out (results, attendance), so that
-    #: core's review reads no module's table (architecture.md, "A hook core declares is a list of
-    #: subscribers"); `read_division_lines` gathers what they hand back.
+    #: and weather's lines come whatever the switch, attendance's only while it is on. The builder
+    #: makes it and signs them up in the order the review lays the lines out (results, attendance,
+    #: weather), so that core's review reads no module's table (architecture.md, "A hook core
+    #: declares is a list of subscribers"); `read_division_lines` gathers what they hand back.
     division_lines_read: AwaitedHook
     #: The moment a season's fingerprint is taken (a review's post, and every check that compares
     #: the season with its review): each module signs up a function handing back the rows of its

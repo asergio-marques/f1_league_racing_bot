@@ -13,8 +13,6 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 
-NOT_YET = "#283: weather has no reader of its own columns yet; core's models still carry them"
-
 SERVER_ID = 9810
 
 
@@ -93,7 +91,6 @@ async def test_weather_reads_each_division_s_forecast_channel(tmp_path):
     assert channels == {11: 706, 12: None}
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_weather_gives_the_placements_review_each_division_s_weather_line(tmp_path):
     """The placements review asks weather for divisions 11 (channel 706) and 12 (none set):
     each is given its weather channel line in the review's words, the channel named or shown as

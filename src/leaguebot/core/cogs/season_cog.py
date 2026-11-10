@@ -600,7 +600,6 @@ class SeasonCog(commands.Cog):
             # ── Message 1: config (role + channels) ──────────────
             cal_chan = f"<#{div.calendar_channel_id}>" if div.calendar_channel_id else "*(not set)*"
             lineup_chan = f"<#{div.lineup_channel_id}>" if div.lineup_channel_id else "*(not set)*"
-            weather_chan = f"<#{div.forecast_channel_id}>" if div.forecast_channel_id else "*(none)*"
             cfg_lines: list[str] = [
                 "\U0001f4c2 **Configuration**",
                 f"  Role: <@&{div.mention_role_id}>",
@@ -609,7 +608,6 @@ class SeasonCog(commands.Cog):
             ]
             for lines_of_module in module_division_lines:
                 cfg_lines += lines_of_module.get(div.id, [])
-            cfg_lines.append(f"  Weather channel: {weather_chan}")
             report.append("\n".join(cfg_lines))
 
             # ── Message 2: calendar — the graphic, or the text ────

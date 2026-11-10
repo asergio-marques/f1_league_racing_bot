@@ -58,6 +58,27 @@ async def forecast_channels_on(
     return {int(row[0]): row[1] for row in rows}
 
 
+async def division_lines(
+    db_path: str, *, season_id: int, division_ids: Sequence[int]
+) -> dict[int, list[str]]:
+    """The weather channel line the placements review shows for each division in *division_ids*:
+    the channel named, or shown as none where none is set, as the review always showed it. Asked
+    no switch: the review shows it whether weather is on or off.
+
+    Subscribed to core's `division_lines_read`, which hands the season (as it does every
+    subscriber; the divisions named are what is read) and its divisions. Reads only.
+    """
+    async with get_connection(db_path) as db:
+        channels = await forecast_channels_on(db, division_ids)
+    return {
+        division_id: [
+            "  Weather channel: "
+            + (f"<#{channels[division_id]}>" if channels.get(division_id) else "*(none)*")
+        ]
+        for division_id in division_ids
+    }
+
+
 async def division_channel_faults(
     modules: "ModuleService",
     db_path: str,
