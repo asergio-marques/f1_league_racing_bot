@@ -105,16 +105,27 @@ def _interaction(client=None):
 
 @pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 def test_the_hub_service_registers_no_option_itself():
-    """The service names no option, and nothing is signed up at import: the hub service keeps no
-    registry of its own, and About's module, imported as the build imports it, signs nothing up.
-    Hub options made as the builder makes them hold no option until one is signed up on them;
-    core's one, About (#258), is signed up by the builder, and every other is a module's."""
+    """Neither the hub service nor About's module holds options at module level: neither has an
+    `_OPTIONS` or a `register_option` of its own, and no value either keeps at module level is hub
+    options, or a dict, list, tuple or set holding an option. Hub options newly made hold no
+    option. That the builder signs About up, and nothing else, is pinned in
+    `test_about_service.py`."""
     from leaguebot.core.services import about_service
     from leaguebot.core.services.hub_service import HubOptions
 
-    assert not hasattr(hub_service, "_OPTIONS")
-    assert not hasattr(hub_service, "register_option")
-    assert not hasattr(about_service, "register_option")
+    def holds_options(value):
+        if isinstance(value, HubOptions):
+            return True
+        if isinstance(value, dict):
+            value = list(value.values())
+        return isinstance(value, (list, tuple, set)) and any(
+            isinstance(item, HubOption) for item in value
+        )
+
+    for module in (hub_service, about_service):
+        assert not hasattr(module, "_OPTIONS"), module.__name__
+        assert not hasattr(module, "register_option"), module.__name__
+        assert [name for name, value in vars(module).items() if holds_options(value)] == []
     assert HubOptions().registered_options() == []
 
 
