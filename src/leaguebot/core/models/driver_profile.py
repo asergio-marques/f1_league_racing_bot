@@ -25,6 +25,15 @@ class DriverState(str, Enum):
     ASSIGNED                       = "ASSIGNED"
 
 
+class InvalidDriverTransition(ValueError):
+    """The state machine's refusal of a transition its table does not allow.
+
+    A fault, not a `Refused`: a caller judges a move before it writes one, so a transition that
+    reaches the table and is refused there is one that raced past the judgement. A caller that
+    expects the race catches this by name.
+    """
+
+
 @dataclass
 class DriverProfile:
     """A driver, as the league holds them.

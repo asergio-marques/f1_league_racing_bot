@@ -10,7 +10,9 @@ from typing import Any
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection, inserted_id
-from leaguebot.core.models.driver_profile import DriverProfile, DriverState
+from leaguebot.core.models.driver_profile import (
+    DriverProfile, DriverState, InvalidDriverTransition,
+)
 from leaguebot.core.utils.hooks import AwaitedHook
 
 log = logging.getLogger(__name__)
@@ -71,14 +73,14 @@ async def write_transition(
     The one place a driver's state is written (Constitution VIII: no code path sets a state
     directly). A caller changing a state as part of a larger write — a sack freeing seats in
     the same transaction, the driver pass ending a season — calls this rather than issuing
-    the UPDATE itself, so the transition table governs every route alike. Raises ValueError
-    for a transition the table does not allow, having written nothing. Does not commit.
+    the UPDATE itself, so the transition table governs every route alike. Raises
+    InvalidDriverTransition for a transition the table does not allow, having written nothing. Does not commit.
     """
     allowed = set(ALLOWED_TRANSITIONS.get(current, set()))
     if test_mode_active and current == DriverState.NOT_SIGNED_UP:
         allowed |= _TEST_MODE_EXTRA_FROM_NOT_SIGNED_UP
     if new_state not in allowed:
-        raise ValueError(
+        raise InvalidDriverTransition(
             f"Transition from {current.value} to {new_state.value} is not allowed. "
             f"Allowed targets: {sorted(s.value for s in allowed) or 'none'}."
         )
@@ -560,7 +562,7 @@ class DriverService:
         *new_state*, where the state machine allows it from Not Signed Up. Returns the updated
         DriverProfile. No transition deletes a profile: a driver without the former-driver flag
         who reaches NOT_SIGNED_UP is pending deletion, and is deleted by the driver pass that ends
-        the season. Raises ValueError for a disallowed transition.
+        the season. Raises InvalidDriverTransition for a disallowed transition.
         """
         cursor = await db.execute(
             "SELECT id, discord_user_id, current_state, former_driver "
@@ -573,7 +575,7 @@ class DriverService:
             if test_mode_active:
                 valid |= _TEST_MODE_EXTRA_FROM_NOT_SIGNED_UP
             if new_state not in valid:
-                raise ValueError(
+                raise InvalidDriverTransition(
                     f"No driver profile found for user {discord_user_id}; "
                     f"transition from NOT_SIGNED_UP to {new_state.value} is not allowed. "
                     f"Allowed targets: {sorted(s.value for s in valid) or 'none'}."

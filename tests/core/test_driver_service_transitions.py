@@ -6,13 +6,6 @@ import pytest
 
 from tests.support.driver_transitions import transitioned
 
-#: Why the state machine's refusal tests fail until #283's build names it.
-STATE_MACHINE_REFUSAL = (
-    "#283: the state machine still refuses a transition with a bare ValueError, "
-    "not InvalidDriverTransition"
-)
-
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -96,7 +89,6 @@ async def test_an_allowed_transition_lands_on_its_target(db_path, from_state, to
         pytest.param("PENDING_DRIVER_CORRECTION", "ASSIGNED", id="PDC to ASSIGNED"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=STATE_MACHINE_REFUSAL)
 async def test_a_transition_the_table_does_not_allow_raises(db_path, from_state, to_state):
     """The awaiting-correction-parameter state is reachable only from pending admin approval,
     not from pending signup completion, and a driver awaiting their correction cannot go
@@ -158,7 +150,6 @@ class TestSignupDataClearing:
         assert row["platform_id"] == "SteamUser123"
 
 
-@pytest.mark.xfail(strict=True, reason=STATE_MACHINE_REFUSAL)
 async def test_a_state_written_within_a_transaction_obeys_the_table(tmp_path):
     """`write_transition` is how a sack or the driver pass changes a state inside a larger
     write, and it refuses what the table refuses, writing nothing."""
