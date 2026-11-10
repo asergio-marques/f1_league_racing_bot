@@ -92,7 +92,6 @@ async def test_each_attendance_settings_command_records_its_audit_entry(
 @pytest.mark.parametrize("fault,value", [
     ("audit entry", 7), ("log line", 7), ("log line", 5),
 ], ids=["audit-entry", "log-line", "log-line-value-held"])
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_fault_in_the_save_leaves_neither_value_entry_nor_line(
     tmp_path, monkeypatch, fault, value
 ):
