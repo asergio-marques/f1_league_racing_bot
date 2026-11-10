@@ -406,6 +406,36 @@ async def test_a_command_s_own_refusal_records_one_line_naming_it(
     assert_one_refusal(league.bot, f"`/{name}`")
 
 
+#: Why a bug's `ValueError` in path resolution is answered as a refusal until #283's build.
+CAUGHT_AS_A_REFUSAL = "#283: image_cog still takes any ValueError from a path for a refusal"
+
+
+@pytest.mark.parametrize("name", [
+    pytest.param("images config template-directory", id="template-directory",
+                 marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
+    pytest.param("images config track-image-directory", id="asset-directory",
+                 marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
+])
+async def test_an_unexpected_value_error_is_a_failure_not_a_refusal(tmp_path, monkeypatch, name):
+    """The manager sets the league's template folder, or its track image folder, and resolving
+    the path raises a bug's `ValueError` rather than a refusal. It goes on as a fault, out of the
+    command, and is not answered to the manager as a refusal: the log channel takes no "⛔" line
+    and nothing is stored."""
+    from leaguebot.image.cogs import image_cog
+
+    league = await _league(tmp_path)
+    before = await _stored(league.db_path)
+    monkeypatch.setattr(image_cog, "resolve_within_project_root", MagicMock(
+        side_effect=ValueError("invalid literal for int() with base 10: 'x'"),
+    ))
+
+    with pytest.raises(ValueError, match="invalid literal") as raised:
+        await _run_with(league, name, TEMPLATE_DIRECTORY)
+    assert type(raised.value) is ValueError
+    assert not any(line.startswith("⛔") for line in logged(league.bot))
+    assert await _stored(league.db_path) == before
+
+
 async def test_a_pasted_palette_with_an_unreadable_line_is_refused_by_the_form(tmp_path):
     """The colour form refuses the whole palette, as today, and the line names the form."""
     league = await _league(tmp_path)
