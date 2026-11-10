@@ -2647,8 +2647,9 @@ def _module_lookups_in_core_among(nodes, attributes: frozenset[str]) -> Counter[
 KNOWN_MODULE_LOOKUPS_IN_CORE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/season_cog.py", "SeasonCog._attendance_review_lines"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._do_approve"): (1, PASS["core"]),
-    ("core/cogs/season_cog.py", "SeasonCog._do_confirm_configuration"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._signup_review_lines"): (3, PASS["core"]),
+    ("core/cogs/season_cog.py", "_ConfirmConfigurationView._confirm_configuration"):
+        (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.season_config_review"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.season_review"): (2, PASS["core"]),
 }

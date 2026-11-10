@@ -40,7 +40,8 @@ from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connect
 from leaguebot.core.models.round import Round as RoundModel
 from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services import approval_checks
+from leaguebot.core.services import approval_checks, season_review_workflows
+from leaguebot.core.services.season_review_workflows import review_button as _review_button
 from leaguebot.core.services.cancellation_changes import (
     DIVISION_CANCEL,
     ROUND_CANCEL,
@@ -51,7 +52,6 @@ from leaguebot.core.services.division_settings import NO_SEASON_REFUSAL, divisio
 from leaguebot.core.services.image_drawing import Held
 from leaguebot.core.services.configuration_confirm_change import (
     ALREADY_BEING_CONFIRMED as ALREADY_CONFIGURATION_BEING_CONFIRMED,
-    KIND as CONFIGURATION_CONFIRM_KIND,
     confirmation_in_hand as configuration_confirmation_in_hand,
 )
 from leaguebot.core.services.mid_season_confirm_change import (
@@ -1534,89 +1534,6 @@ class SeasonCog(commands.Cog):
                 "are fixed for this season."
             ),
         )
-
-    async def _do_confirm_configuration(
-        self,
-        interaction: discord.Interaction,
-        *,
-        what: str | None = None,
-        fingerprint: dict | None = None,
-    ) -> bool:
-        """Ask the change queue to confirm the configuration, the review taken down ahead of it.
-        Returns whether the queue accepted the request: False where the press was refused, which
-        leaves the button's review standing (`_ApproveView._settle_press`).
-
-        A refusal is recorded under *what*, the button pressed, which the button passes in;
-        the review's own Confirm configuration button where the caller names none. *fingerprint*
-        is the review's own, the areas of the season as the report described it, which the
-        confirmation is judged against again when it runs; where it is not given the season is
-        fingerprinted as it stands.
-
-        **The press is not deferred:** the queue's acknowledgement is the press's own response
-        and the confirmation's outcome updates it. The refusals below answer the press at once
-        in the words the confirmation's own check uses (`configuration_confirm_change`), which
-        judges them again when the confirmation runs, and the season no longer in Configuration
-        with them: a season changed while it waited must not be confirmed. Everything after the
-        request, the stage, signup's settings, the audit entry and the line, is the change's one
-        save, to Waiting where the signup module is enabled and test mode is off, or to Placements
-        otherwise.
-
-        The review comes down ahead of the confirmation, but only for a request the queue
-        accepts: one it refuses at once leaves the review standing.
-        """
-        if what is None:
-            what = _review_button("Confirm configuration", "/season config-review")
-        season = await self.bot.season_service.get_setup_season()
-        if season is None:
-            await refuse(interaction, "⛔ There is no season in configuration.", what=what)
-            return False
-
-        faults = await approval_checks.configuration_faults(
-            season.id,
-            interaction.guild,
-            module_service=self.bot.module_service,
-            signup_module_service=self.bot.signup_module_service,
-            config_service=self.bot.config_service,
-            team_service=self.bot.team_service,
-            db_path=self.bot.db_path,
-            image_drawing=self.bot.image_drawing,
-        )
-        if faults:
-            body = "\n".join(f"• {fault}" for fault in faults)
-            await refuse(
-                interaction,
-                f"⛔ The configuration cannot be confirmed:\n{body}\n"
-                "**Nothing has been confirmed.**",
-                what=what,
-                reason="the configuration cannot be confirmed:\n" + "\n".join(faults),
-            )
-            return False
-
-        if fingerprint is None:
-            from leaguebot.core.services.season_fingerprint_service import take_fingerprint
-
-            fingerprint = (
-                await take_fingerprint(
-                    self.bot.db_path, season.id, drawing=self.bot.image_drawing
-                )
-            ).areas
-        confirmation = {
-            "season_id": season.id,
-            "season_number": season.season_number,
-            "fingerprint": dict(fingerprint),
-        }
-        question = getattr(interaction.message, "id", None)
-        if isinstance(question, int):
-            change_id = await take_review_down_before(
-                self.bot.change_queue, self.bot.db_path, question, CONFIGURATION_CONFIRM_KIND,
-                confirmation, interaction=interaction, what=what,
-            )
-        else:
-            change_id = await self.bot.change_queue.ask(
-                CONFIGURATION_CONFIRM_KIND, confirmation, interaction=interaction, what=what
-            )
-        # None where the queue's own check refused the request and saved nothing.
-        return change_id is not None
 
     # No command confirms placements (decided 2026-09-07). They are confirmed from the button
     # `/season placements-review` posts and from nowhere else: the review is the evidence the
@@ -3199,11 +3116,6 @@ class _BackupBeforeApprovalView(LeagueView):
         self.stop()
 
 
-def _review_button(label: str, review: str) -> str:
-    """A review's button as the log channel names it: which button, of which review."""
-    return f"the \u2705 {label} button of `{review}`"
-
-
 class _ApproveView(LeagueView):
     """The standing question at the end of a review, and the button that answers it.
 
@@ -3622,6 +3534,25 @@ class _ConfirmConfigurationView(_ApproveView):
     _button_label = "Confirm configuration"
     _verb = "confirmed"
 
+    async def _confirm_configuration(
+        self, interaction: discord.Interaction, *, what: str, fingerprint: dict | None
+    ) -> bool:
+        """The configuration's confirmation, handed the bot's services."""
+        bot = self._cog.bot
+        return await season_review_workflows.confirm_configuration(
+            interaction,
+            season_service=bot.season_service,
+            module_service=bot.module_service,
+            signup_module_service=bot.signup_module_service,
+            config_service=bot.config_service,
+            team_service=bot.team_service,
+            db_path=bot.db_path,
+            image_drawing=bot.image_drawing,
+            change_queue=bot.change_queue,
+            what=what,
+            fingerprint=fingerprint,
+        )
+
     @discord.ui.button(
         label="✅ Confirm configuration", style=discord.ButtonStyle.success,
         custom_id="season_review:confirm_configuration",
@@ -3631,7 +3562,7 @@ class _ConfirmConfigurationView(_ApproveView):
     ) -> None:
         await self._confirm_press(
             interaction,
-            self._cog._do_confirm_configuration,
+            self._confirm_configuration,
             in_hand=(configuration_confirmation_in_hand, ALREADY_CONFIGURATION_BEING_CONFIRMED),
             evidence_to_confirm=True,
         )

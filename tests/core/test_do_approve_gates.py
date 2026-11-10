@@ -242,7 +242,6 @@ async def test_a_bad_tier_sequence_refuses_ephemerally(db_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_the_withdrawn_template_gate_is_not_called_again(db_path):
     """Gate 4 went with the approval's render pass, and its method with it. The templates
     are judged again since #396, but through `approval_checks.image_configuration_faults` — the

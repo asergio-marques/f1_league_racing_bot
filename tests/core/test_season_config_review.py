@@ -27,12 +27,6 @@ SEASON_ID = 31
 REVIEWER = 4242
 ADMIN_ROLE = 444
 
-#: The configuration's confirmation still runs as `SeasonCog._do_confirm_configuration`.
-_CONFIRMATION_ON_THE_COG = (
-    "#283: the configuration's confirmation is not yet "
-    "season_review_workflows.confirm_configuration"
-)
-
 #: The gates a test stands in, each a function of `approval_checks` that the review command and
 #: the confirmation's workflow call alike.
 _GATES = (
@@ -226,7 +220,6 @@ async def test_a_driver_role_the_bot_cannot_grant_is_a_fault():
     assert "Move my role above it" in fault
 
 
-@pytest.mark.xfail(strict=True, reason=_CONFIRMATION_ON_THE_COG)
 async def test_confirming_refuses_a_driver_role_gone_from_the_server(tmp_path):
     """The signup module is on, and the league's driver role (3) has been deleted from the server
     since the review. ✅ Confirm configuration is refused at the press, naming the driver role,
@@ -301,7 +294,6 @@ async def test_the_review_is_refused_outside_configuration(stage):
 # ── Confirming ─────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_CONFIRMATION_ON_THE_COG)
 async def test_confirming_refuses_on_a_fault_found_afresh(tmp_path):
     """The signup module is on and its signup channel has been cleared since the review.
     ✅ Confirm configuration is refused at the press, and nothing is asked of the change queue."""
@@ -360,12 +352,6 @@ async def _team_list_since_the_review(env, monkeypatch, now: str = "as reviewed"
 #: The workflow of `season_review_workflows` the ✅ Confirm configuration button hands a press on to.
 CONFIRM = "confirm_configuration"
 
-#: The ✅ Confirm configuration button still hands a press on to the season cog's method.
-_BUTTON_ON_THE_COG = (
-    "#283: the Confirm configuration button does not yet run "
-    "season_review_workflows.confirm_configuration"
-)
-
 
 def _confirm_view(env, monkeypatch, *, goes_through: bool = True):
     """Alex's review's ✅ Confirm configuration, built as the question's view is, whose
@@ -418,7 +404,6 @@ async def _prompt_rows(env) -> int:
     return count
 
 
-@pytest.mark.xfail(strict=True, reason=_BUTTON_ON_THE_COG)
 async def test_a_refused_confirmation_leaves_the_review_standing(tmp_path, monkeypatch):
     """Every review's button alike: Alex presses ✅ Confirm configuration a moment after the
     question appears, the season unchanged, and the confirmation is refused at its own check (a
@@ -483,7 +468,6 @@ async def test_a_confirmation_that_goes_through_takes_the_review_down(tmp_path, 
     assert [line for line in league.bot.log_channel.sent if line.startswith("⌛")] == []
 
 
-@pytest.mark.xfail(strict=True, reason=_BUTTON_ON_THE_COG)
 async def test_confirming_one_review_ends_another_of_the_same_season_when_pressed(
     tmp_path, monkeypatch
 ):
@@ -884,7 +868,6 @@ async def test_an_unreadable_colour_or_portrait_check_stands_aside(unreadable, k
 # ── The button, on a season unchanged since the report ─────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_BUTTON_ON_THE_COG)
 async def test_an_unchanged_configuration_is_handed_to_the_confirmation_with_its_evidence(
     tmp_path, monkeypatch
 ):
@@ -994,7 +977,6 @@ def _manager_confirming(bot):
     return interaction
 
 
-@pytest.mark.xfail(strict=True, reason=_CONFIRMATION_ON_THE_COG)
 async def test_confirming_with_no_season_in_configuration_is_refused_and_recorded(tmp_path):
     """The configuration review's question is pressed once no season is being set up: refused at
     once, one refusal line recorded, and nothing asked of the change queue."""
@@ -1018,7 +1000,6 @@ async def test_confirming_with_no_season_in_configuration_is_refused_and_recorde
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_CONFIRMATION_ON_THE_COG)
 async def test_confirming_a_configuration_with_faults_is_refused_with_every_fault_recorded(
     tmp_path,
 ):

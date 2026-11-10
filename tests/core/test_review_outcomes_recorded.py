@@ -53,10 +53,21 @@ _BUTTONS = [
     ),
 ]
 
-#: The review's buttons still hand a press on to the season cog's `_do_*` methods.
+#: The approval's and the mid-season confirmation's buttons still hand a press on to the season
+#: cog's `_do_*` methods.
 _BUTTONS_ON_THE_COG = (
     "#283: the review's buttons do not yet run the workflows of season_review_workflows"
 )
+
+#: `_BUTTONS`, those two expected to fail until the build.
+_PENDING_BUTTONS = [
+    pytest.param(
+        *button.values, id=button.id,
+        marks=() if button.id == "confirm_configuration"
+        else pytest.mark.xfail(strict=True, reason=_BUTTONS_ON_THE_COG),
+    )
+    for button in _BUTTONS
+]
 
 
 @pytest.fixture(autouse=True)
@@ -262,8 +273,7 @@ def _expiry_timer_touched(env) -> list:
 # ── A press refused ────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_BUTTONS_ON_THE_COG)
-@pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
+@pytest.mark.parametrize("view_class,label,review,helper,verb", _PENDING_BUTTONS)
 async def test_a_press_by_someone_who_may_not_answer_is_recorded(
     tmp_path, monkeypatch, view_class, label, review, helper, verb
 ):
@@ -300,8 +310,7 @@ async def test_a_press_by_someone_who_may_not_answer_is_recorded(
     assert reason.startswith("Only the person who ran this review, or a league admin"), line
 
 
-@pytest.mark.xfail(strict=True, reason=_BUTTONS_ON_THE_COG)
-@pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
+@pytest.mark.parametrize("view_class,label,review,helper,verb", _PENDING_BUTTONS)
 async def test_a_press_refused_because_the_season_changed_is_recorded_once(
     tmp_path, monkeypatch, view_class, label, review, helper, verb
 ):
@@ -389,8 +398,7 @@ async def test_a_review_left_for_its_five_minutes_records_its_lapse(
     assert review in detail and "again" in detail, detail
 
 
-@pytest.mark.xfail(strict=True, reason=_BUTTONS_ON_THE_COG)
-@pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
+@pytest.mark.parametrize("view_class,label,review,helper,verb", _PENDING_BUTTONS)
 async def test_a_review_whose_press_failed_says_so_when_it_lapses(
     tmp_path, monkeypatch, view_class, label, review, helper, verb
 ):
@@ -447,8 +455,7 @@ async def test_a_review_whose_press_failed_says_so_when_it_lapses(
 # a press after them is judged by the question's `posted_at`.
 
 
-@pytest.mark.xfail(strict=True, reason=_BUTTONS_ON_THE_COG)
-@pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
+@pytest.mark.parametrize("view_class,label,review,helper,verb", _PENDING_BUTTONS)
 async def test_a_refused_press_does_not_put_off_the_reviews_expiry(
     tmp_path, monkeypatch, view_class, label, review, helper, verb
 ):
@@ -487,8 +494,7 @@ async def test_a_refused_press_does_not_put_off_the_reviews_expiry(
     ), head
 
 
-@pytest.mark.xfail(strict=True, reason=_BUTTONS_ON_THE_COG)
-@pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
+@pytest.mark.parametrize("view_class,label,review,helper,verb", _PENDING_BUTTONS)
 async def test_a_press_after_the_five_minutes_confirms_nothing(
     tmp_path, monkeypatch, view_class, label, review, helper, verb
 ):
@@ -530,8 +536,7 @@ async def test_a_press_after_the_five_minutes_confirms_nothing(
 # notice and records no lapse: the review was answered.
 
 
-@pytest.mark.xfail(strict=True, reason=_BUTTONS_ON_THE_COG)
-@pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
+@pytest.mark.parametrize("view_class,label,review,helper,verb", _PENDING_BUTTONS)
 async def test_the_timer_firing_while_a_press_is_under_way_leaves_the_review_to_the_press(
     tmp_path, monkeypatch, view_class, label, review, helper, verb
 ):
@@ -567,8 +572,7 @@ async def test_the_timer_firing_while_a_press_is_under_way_leaves_the_review_to_
     assert _lines(env, "⛔ ") == [], _queue_lines(env)
 
 
-@pytest.mark.xfail(strict=True, reason=_BUTTONS_ON_THE_COG)
-@pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
+@pytest.mark.parametrize("view_class,label,review,helper,verb", _PENDING_BUTTONS)
 async def test_a_press_that_fails_after_the_timer_fired_leaves_the_review_to_expire_once_it_ends(
     tmp_path, monkeypatch, view_class, label, review, helper, verb
 ):
@@ -627,8 +631,7 @@ async def test_a_press_that_fails_after_the_timer_fired_leaves_the_review_to_exp
 # ── Found in review of the hand-built part (#482) ───────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_BUTTONS_ON_THE_COG)
-@pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
+@pytest.mark.parametrize("view_class,label,review,helper,verb", _PENDING_BUTTONS)
 async def test_the_timer_firing_while_a_finished_press_clears_the_review_records_no_lapse(
     tmp_path, monkeypatch, view_class, label, review, helper, verb
 ):
@@ -654,8 +657,7 @@ async def test_the_timer_firing_while_a_finished_press_clears_the_review_records
     assert _lines(env, "⌛ ") == [], _queue_lines(env)
 
 
-@pytest.mark.xfail(strict=True, reason=_BUTTONS_ON_THE_COG)
-@pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
+@pytest.mark.parametrize("view_class,label,review,helper,verb", _PENDING_BUTTONS)
 async def test_the_five_minutes_run_from_the_posting_of_the_question(
     tmp_path, monkeypatch, view_class, label, review, helper, verb
 ):
@@ -674,8 +676,7 @@ async def test_the_five_minutes_run_from_the_posting_of_the_question(
     assert _lines(env, "⛔ ") == [], _queue_lines(env)
 
 
-@pytest.mark.xfail(strict=True, reason=_BUTTONS_ON_THE_COG)
-@pytest.mark.parametrize("view_class,label,review,helper,verb", _BUTTONS)
+@pytest.mark.parametrize("view_class,label,review,helper,verb", _PENDING_BUTTONS)
 async def test_a_second_press_while_one_is_being_worked_is_refused(
     tmp_path, monkeypatch, view_class, label, review, helper, verb
 ):
