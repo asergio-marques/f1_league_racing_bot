@@ -883,7 +883,8 @@ class ChangeQueue:
         The change is saved, so nothing here raises to the request, as `_acknowledge` holds for the
         answer itself: a fault is logged on the host with its traceback and the change goes ahead.
         A fault looking up whether its lane is stopped still answers the member, without naming
-        the stop, which the stop notice and the log channel already carry.
+        the stop, which the stop notice and the log channel already carry. The queue's own telling
+        of a change's outcome never fails the change.
         """
         try:
             if interaction is None:
@@ -1053,7 +1054,8 @@ class ChangeQueue:
 
         The change is already saved, so a failed acknowledgement is not the request's failure:
         it is logged with its details, nothing is held and `acknowledged_at` stays unset, and the
-        change runs all the same, its outcome standing in the log channel alone.
+        change runs all the same, its outcome standing in the log channel alone. The queue's own
+        telling of a change's outcome never fails the change.
         """
         text = (
             f"⏳ {change_type.doing(payload)}. This message will be updated when it is "
@@ -1166,7 +1168,8 @@ class ChangeQueue:
         self, change: aiosqlite.Row, row: aiosqlite.Row, ctx: StepContext
     ) -> str:
         """What the job *row* is doing, as a line names it: its step's `describe`, or the
-        change's own words where there is none, or it cannot be had."""
+        change's own words where there is none, or it cannot be had: the queue's own telling of a
+        change's outcome never fails the change."""
         change_type = self._types.get(change["kind"])
         step = None if change_type is None else change_type.steps.get(row["name"])
         if step is None or step.describe is None:
@@ -1611,7 +1614,8 @@ class ChangeQueue:
         """End a member's change whose check raised as it started, where its type says to: REFUSED,
         in one save with the failure line (and the line clearing a stop it had, if any), the
         acknowledgement then updated with the reply `on_check_fault` forms. False, and nothing
-        done, where the change is not a member's, its type has no hook, or the hook raises."""
+        done, where the change is not a member's, its type has no hook, or the hook raises. A hook
+        that raises stops the lane, on the check's own fault."""
         hook = change_type.on_check_fault
         if hook is None or change["origin"] != ChangeOrigin.MEMBER.value:
             return False
@@ -1697,7 +1701,8 @@ class ChangeQueue:
         Where the check had stopped the queue on the change, the refusal clears the stop: a line
         says so, saved with the refusal, and the stop notice loses its buttons. The change type's
         `on_refused` is asked first, and the follow-ons it returns are saved with the refusal, so
-        that the two commit together or not at all.
+        that the two commit together or not at all. A hook that raises stops the lane, on the
+        hook's fault.
         """
         reply = _refusal_text(verdict)
         follow_ons: tuple[FollowOn, ...] = ()
@@ -2077,6 +2082,7 @@ class ChangeQueue:
         the lane goes on. Where the step had
         returned and what failed was the save that marks it (its record raising), *produced* is
         kept on the job as a partial result, so that the next try can remove what this one sent.
+        A hook that raises stops the lane, on the job's own fault.
         """
         if (
             produced is None
@@ -2252,7 +2258,8 @@ class ChangeQueue:
         Never raises: where the post fails the stop stands (the router has told the member), the
         attempt is noted and `_post_missing_notices` tries again on its schedule. The notice goes
         through the router's `post_notice`, which never puts it on the log lines' retry queue, as
-        that would send it again without its buttons.
+        that would send it again without its buttons. The queue's own telling of a change's
+        outcome never fails the change.
         """
         self._notice_tried[job_id] = self._clock()
         try:
@@ -2416,8 +2423,8 @@ class ChangeQueue:
 
     @staticmethod
     async def _tell(interaction: discord.Interaction, text: str) -> None:
-        """Answer the member who pressed, seen by them alone. Never raises: the press has done
-        what it did."""
+        """Answer the member who pressed, seen by them alone. Never raises: the queue's own telling
+        of a change's outcome never fails the change, and the press has done what it did."""
         try:
             if interaction.response.is_done():
                 await interaction.followup.send(text, ephemeral=True)
@@ -2778,7 +2785,11 @@ class ChangeQueue:
         return held
 
     async def _finish(self, change: aiosqlite.Row, step_rows: list[aiosqlite.Row]) -> None:
-        """Mark the change DONE and update its acknowledgement with the outcome."""
+        """Mark the change DONE and update its acknowledgement with the outcome.
+
+        Lines or an outcome that cannot be worded are logged and left out: the queue's own
+        telling of a change's outcome never fails the change.
+        """
         change_type = self._types[change["kind"]]
         lines: tuple[str, ...] = ()
         if change_type.finished_lines is not None:
@@ -2816,7 +2827,8 @@ class ChangeQueue:
     ) -> None:
         """Add the note a follow-on has for the reply of the change that asked for it
         (`ChangeType.tell_origin`), while that reply can still be updated. A reply not yet
-        updated carries the note when it is. A note that cannot be worded is logged and left."""
+        updated carries the note when it is. A note that cannot be worded is logged and left: the
+        queue's own telling of a change's outcome never fails the change."""
         lent = self._held.get(change["id"])
         if lent is None or lent.borrowed is None or lent.acknowledged is None:
             return
@@ -2843,7 +2855,8 @@ class ChangeQueue:
         """Update the acknowledgement with *text*, in as many parts as it needs.
 
         Only while the interaction is held and under 14 minutes old. A failed update is logged
-        and never fails the change. A reply carries the notes follow-ons added to it before it
+        and never fails the change: the queue's own telling of a change's outcome never does. A
+        reply carries the notes follow-ons added to it before it
         was first updated (`ChangeType.tell_origin`), and what it says is kept for the notes that
         follow; *onto* is the reply of the change that asked for *change*, which a note is added
         to without the reply being updated as its own.
