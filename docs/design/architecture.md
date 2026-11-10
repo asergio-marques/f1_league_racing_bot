@@ -1236,14 +1236,21 @@ A refusal whose words the refusing code writes is raised as `Refused` (`core/mod
 its text what the member reads, or as a refusal type of its own, caught by name; a refusal the
 command words itself from fields the error carries has a type of its own, not a `ValueError`
 (`PackRefused`). A catch that turns a refusal into a reply names its type around the call that
-refuses and holds no parse and no hook: parsing a payload or a row, or calling a hook, stays outside
-it, so a save that calls a hook judges inside the catch and calls the hook after it. Where the edge
-parses what the member typed, a catch may take that parse's own `ValueError` as the refusal, its try
-holding the parse alone. Anywhere else a bare `ValueError` is a fault, which Python raises for a bug
-(`int()` of a stored id, a bad enum value read from the database), and goes on as one, since no
-refusal catch takes it. `Refused` subclasses `ValueError` so that a caller with no cause to tell the
-two apart still catches it as one. The driver state machine's refusal of a transition the table does
-not allow is `InvalidDriverTransition`, a fault that a save expecting the race catches by name.
+refuses, and its own lines hold no parse of a stored value (a payload's ids, a row) and call no
+hook, directly or through what they call: a save that calls a hook judges inside the catch and calls
+the hook after it. A parse inside the call that refuses is harmless, as a catch that names a
+refusal's type cannot take a parse's `ValueError`. Where a command, or a change's check or save,
+parses what the member typed (a round's format), a catch may take that parse's own `ValueError` as
+the refusal, its try holding the parse alone. Anywhere else a bare `ValueError` is a fault, which
+Python raises for a bug (`int()` of a stored id, a bad enum value read from the database), and goes
+on as one, since no refusal catch takes it. `Refused` subclasses `ValueError` so that a caller with
+no cause to tell the two apart still catches it as a `ValueError`. The driver state machine's
+refusal of a transition the table does not allow is `InvalidDriverTransition`, a fault that a save
+expecting the race catches by name. `/bot pack` is the one catch around a hook: its refusals are
+judged in the transaction that clears the server, so that no change can start between the judging
+and the clear, and the modules' hook is called in that transaction after them; `PackRefused` is
+raised by `pack_service` alone, so no hook's fault can be taken for it (`pack_service.pack` says
+so).
 
 ---
 
@@ -1338,6 +1345,6 @@ later on its own.
 How the checks run, and how to work with the lists of today's breaches they hold, is CLAUDE.md's,
 under "Testing".
 
-Not every rule has its check yet. The rules about how things are built (the hooks, the one
-builder, start-up, the sweep) cannot be checked by reading the code until they exist, and the rule
-that a refusal is raised and caught by name ("Errors and failures") has no check yet.
+Not every rule has its check yet. The rules about how things are built (the hooks, the one builder,
+start-up, the sweep) cannot all be checked by reading the code, and the rule that a refusal is
+raised and caught by name ("Errors and failures") has no check yet.

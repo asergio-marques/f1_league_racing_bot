@@ -194,8 +194,11 @@ async def pack(
 ) -> PackResult:
     """Clear everything tied to this server and free the claim. Raises `PackRefused`.
 
-    *bot_packed* is the bot's hook for the modules' own clear, called once on the pack's
-    connection, after the refusals and before the claim is released.
+    The refusals are judged in the transaction that clears the server, so that no change can
+    start between the judging and the clear. *bot_packed* is the bot's hook for the modules' own
+    clear, called once on the pack's connection, after the refusals and before the claim is
+    released; the command's catch of `PackRefused` holds that hook, which is harmless because
+    `PackRefused` is raised by this module alone, so no hook's fault can be taken for it.
 
     *in_memory_state_cleared*, the bot's hook for the clear, where given with *queue*, has its
     in-memory league state dropped too; the command passes both, the queue being handed on to
