@@ -1,4 +1,5 @@
-"""Unit tests for PlacementService.get_unassigned_drivers_for_export.
+"""Unit tests for signup's listings of the unassigned drivers, the export's and the seeded list's
+(`SignupModuleService.get_unassigned_drivers_for_export` and `get_unassigned_drivers_seeded`).
 
 These tests drive the real service against a real migrated database. They used to
 drive a hand-copied reimplementation of the row-building logic instead, which is why
@@ -16,6 +17,9 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 
 SERVER_ID = 1
+
+#: Why every test here fails until the build: the listings are still core's placement service's.
+_IN_SIGNUP = "#283: the unassigned-driver listings are still PlacementService's, not signup's"
 
 
 # ---------------------------------------------------------------------------
@@ -70,9 +74,9 @@ async def _seed(tmp_path, drivers: list[dict], slots: list[tuple[int, str]] | No
 
 
 def _service(db_path):
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
 
-    return PlacementService(db_path)
+    return SignupModuleService(db_path)
 
 
 def _signup_service(db_path):
@@ -104,11 +108,13 @@ class TestSlotPresence:
                          id="absent marked false"),
         ],
     )
+    @pytest.mark.xfail(strict=True, reason=_IN_SIGNUP)
     async def test_slot_presence_is_marked(self, tmp_path, availability, slots, expected):
         db_path = await _seed(tmp_path, [{"availability": availability}], slots=slots)
         rows, _ = await _export(db_path)
         assert rows[0]["slot_presence"] == expected
 
+    @pytest.mark.xfail(strict=True, reason=_IN_SIGNUP)
     async def test_export_columns_survive_a_slot_removal(self, tmp_path):
         """The issue's worked example, end to end.
 
@@ -134,6 +140,7 @@ class TestSlotPresence:
         ]
         assert marked_after == ["Friday 21:00 UTC"]
 
+    @pytest.mark.xfail(strict=True, reason=_IN_SIGNUP)
     async def test_export_columns_survive_a_slot_being_added(self, tmp_path):
         """Inserting an earlier slot must not shift anyone's X one column left."""
         db_path = await _seed(
@@ -147,6 +154,7 @@ class TestSlotPresence:
         marked = [s.display_label for s in slots if rows[0]["slot_presence"][s.slot_sequence_id]]
         assert marked == ["Wednesday 20:00 UTC"]
 
+    @pytest.mark.xfail(strict=True, reason=_IN_SIGNUP)
     async def test_an_answer_for_a_removed_slot_marks_nothing(self, tmp_path):
         """A driver's only slot is deleted: no column is marked, and none is invented."""
         db_path = await _seed(
@@ -173,6 +181,7 @@ class TestExportRow:
             pytest.param(None, None, ("", ""), id="null becomes empty string"),
         ],
     )
+    @pytest.mark.xfail(strict=True, reason=_IN_SIGNUP)
     async def test_platform_id_exported(self, tmp_path, platform, platform_id, expected):
         db_path = await _seed(tmp_path, [{"platform": platform, "platform_id": platform_id}])
         rows, _ = await _export(db_path)
@@ -187,6 +196,7 @@ class TestExportRow:
                          id="fewer than three padded with empty strings"),
         ],
     )
+    @pytest.mark.xfail(strict=True, reason=_IN_SIGNUP)
     async def test_preferred_teams_split_into_three_columns(self, tmp_path, preferred, expected):
         db_path = await _seed(tmp_path, [{"preferred_teams": preferred}])
         rows, _ = await _export(db_path)
@@ -194,6 +204,7 @@ class TestExportRow:
             rows[0]["preferred_team_1"], rows[0]["preferred_team_2"], rows[0]["preferred_team_3"]
         ) == expected
 
+    @pytest.mark.xfail(strict=True, reason=_IN_SIGNUP)
     async def test_seed_ordering_by_total_lap_ms(self, tmp_path):
         """Lower total_lap_ms → lower seed (earlier in list → higher priority)."""
         from leaguebot.core.services.placement_service import _fmt_ms  # type: ignore
@@ -210,6 +221,7 @@ class TestExportRow:
         assert [r["seed"] for r in rows] == [1, 2]
         assert rows[0]["total_lap_fmt"] == _fmt_ms(83456)
 
+    @pytest.mark.xfail(strict=True, reason=_IN_SIGNUP)
     async def test_a_tie_goes_to_whoever_submitted_first_not_whoever_was_corrected_last(
         self, tmp_path
     ):
@@ -238,6 +250,7 @@ class TestExportRow:
         assert [r["discord_user_id"] for r in rows] == ["earlier_but_corrected", "later"]
         assert [r["discord_user_id"] for r in listed] == ["earlier_but_corrected", "later"]
 
+    @pytest.mark.xfail(strict=True, reason=_IN_SIGNUP)
     async def test_total_lap_ms_none_becomes_empty_string(self, tmp_path):
         db_path = await _seed(tmp_path, [{"total_lap_ms": None}])
         rows, _ = await _export(db_path)
@@ -250,6 +263,7 @@ class TestExportRow:
             pytest.param(None, "999", id="to the user id"),
         ],
     )
+    @pytest.mark.xfail(strict=True, reason=_IN_SIGNUP)
     async def test_display_name_fallback(self, tmp_path, discord_username, expected):
         db_path = await _seed(
             tmp_path,
@@ -271,9 +285,8 @@ class TestExportRow:
 @pytest.mark.parametrize(
     "state", ["PENDING_ADMIN_APPROVAL", "AWAITING_CORRECTION_PARAMETER", "PENDING_DRIVER_CORRECTION"]
 )
+@pytest.mark.xfail(strict=True, reason=_IN_SIGNUP)
 async def test_a_signup_still_in_review_follows_the_seeded_drivers_unseeded(tmp_path, state):
-    from leaguebot.core.services.placement_service import PlacementService
-
     db_path = await _seed(
         tmp_path,
         [
@@ -281,7 +294,7 @@ async def test_a_signup_still_in_review_follows_the_seeded_drivers_unseeded(tmp_
             {"discord_user_id": "1002", "total_lap_ms": 90_000},
         ],
     )
-    service = PlacementService(db_path)
+    service = _service(db_path)
 
     for rows in (
         await service.get_unassigned_drivers_seeded(),
@@ -292,9 +305,8 @@ async def test_a_signup_still_in_review_follows_the_seeded_drivers_unseeded(tmp_
         assert rows[1]["state"] == state
 
 
+@pytest.mark.xfail(strict=True, reason=_IN_SIGNUP)
 async def test_a_placed_or_departed_driver_is_not_listed(tmp_path):
-    from leaguebot.core.services.placement_service import PlacementService
-
     db_path = await _seed(
         tmp_path,
         [
@@ -303,4 +315,4 @@ async def test_a_placed_or_departed_driver_is_not_listed(tmp_path):
         ],
     )
 
-    assert await PlacementService(db_path).get_unassigned_drivers_seeded() == []
+    assert await _service(db_path).get_unassigned_drivers_seeded() == []

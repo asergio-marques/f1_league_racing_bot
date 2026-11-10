@@ -14,7 +14,6 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.image.services.image_verdict_post import _driver_nationality
-from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 async def _mark_approved(svc, db_path, discord_user_id):
@@ -25,6 +24,9 @@ async def _mark_approved(svc, db_path, discord_user_id):
 
 
 SERVER_ID = 2433
+
+#: Why the seeded list's tests fail until the build: the list is still core's placement service's.
+_LIST_IN_SIGNUP = "#283: the seeded list of unassigned drivers is still PlacementService's"
 A, B = "7101", "7102"
 
 
@@ -56,10 +58,11 @@ async def _make_db(tmp_path) -> tuple[str, int]:
     return db_path, profile_id
 
 
+@pytest.mark.xfail(strict=True, reason=_LIST_IN_SIGNUP)
 async def test_placement_still_finds_a_signup_made_on_a_past_account(tmp_path):
     db_path, _ = await _make_db(tmp_path)
 
-    drivers = await PlacementService(db_path).get_unassigned_drivers_seeded()
+    drivers = await SignupModuleService(db_path).get_unassigned_drivers_seeded()
 
     assert [(d["discord_user_id"], d["server_display_name"]) for d in drivers] == [
         (B, "Racer")
@@ -73,6 +76,7 @@ async def test_the_nationality_is_found_from_either_account(tmp_path):
     assert await _driver_nationality(db_path, int(B)) == "PT"
 
 
+@pytest.mark.xfail(strict=True, reason=_LIST_IN_SIGNUP)
 async def test_the_most_recent_signup_across_accounts_is_the_drivers(tmp_path):
     """E14: after the usual merge, the newer signup on B speaks for the driver."""
     db_path, _ = await _make_db(tmp_path)
@@ -84,7 +88,7 @@ async def test_the_most_recent_signup_across_accounts_is_the_drivers(tmp_path):
         )
         await db.commit()
 
-    drivers = await PlacementService(db_path).get_unassigned_drivers_seeded()
+    drivers = await SignupModuleService(db_path).get_unassigned_drivers_seeded()
 
     assert drivers[0]["server_display_name"] == "Racer Now"
     assert await _driver_nationality(db_path, int(A)) == "BR"
@@ -100,13 +104,14 @@ async def _newer_rejected_signup_on_b(db_path: str) -> None:
         await db.commit()
 
 
+@pytest.mark.xfail(strict=True, reason=_LIST_IN_SIGNUP)
 async def test_an_approved_signup_outranks_a_later_one_that_was_not(tmp_path):
     """The usual merge: A's signup approved, B's later one rejected. A's is the driver's."""
     db_path, _ = await _make_db(tmp_path)
     await _mark_approved(SignupModuleService(db_path), db_path, A)
     await _newer_rejected_signup_on_b(db_path)
 
-    drivers = await PlacementService(db_path).get_unassigned_drivers_seeded()
+    drivers = await SignupModuleService(db_path).get_unassigned_drivers_seeded()
 
     assert drivers[0]["server_display_name"] == "Racer"
     assert await _driver_nationality(db_path, int(B)) == "PT"
