@@ -868,14 +868,20 @@ async def test_a_mystery_round_s_phases_are_weather_s_to_decide(tmp_path, monkey
     from types import SimpleNamespace
 
     from leaguebot.__main__ import register_scheduler_callbacks
-    from leaguebot.core.services import scheduler_service
+    from leaguebot.core.services import scheduler_service, test_mode_service
 
     league = await _league(tmp_path, mystery=True)
     service = scheduler_service.SchedulerService(league.db_path, str(tmp_path / "jobs.db"))
+    # The bot's own advance steps, which the builder signs each kind's step up on beside its
+    # timer, once the test-mode service holds them on an object (#283).
+    steps = (
+        {"advance_steps": test_mode_service.AdvanceSteps()}
+        if hasattr(test_mode_service, "AdvanceSteps") else {}
+    )
     try:
         register_scheduler_callbacks(SimpleNamespace(
             change_queue=league.bot.change_queue, db_path=league.db_path,
-            scheduler_service=service,
+            scheduler_service=service, **steps,
         ))
         monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE", service)
 
