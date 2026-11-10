@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 
 import discord
 
@@ -180,7 +180,7 @@ class ApproveView(LeagueView):
         take-down has run, or behind a stopped queue. It confirms nothing, and the refusal is what
         the log records.
         """
-        if datetime.now(timezone.utc) < review.deadline:
+        if self._now() < review.deadline:
             return False
         await refuse(
             interaction,
@@ -251,7 +251,7 @@ class ApproveView(LeagueView):
             return
         if press.leave_standing and current.press != TIMER_FIRED:
             mark_press(review.question_id, None)
-        elif current.press == TIMER_FIRED or datetime.now(timezone.utc) >= current.deadline:
+        elif current.press == TIMER_FIRED or self._now() >= current.deadline:
             await take_review_down(self._change_queue, self._db_path, review.question_id, EXPIRED)
         elif await self._changed_since_review():
             await take_review_down(self._change_queue, self._db_path, review.question_id, REFUSED)

@@ -1153,7 +1153,8 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         season_review_changes.season_review_post_change(
             drawing=_review_drawing(bot), approve_view=_approve_view_for(bot),
-            scheduler=bot.scheduler_service, discard=discard_render,
+            scheduler=bot.scheduler_service, now=lambda: bot.change_queue.now(),
+            discard=discard_render,
         )
     )
     bot.change_queue.register(

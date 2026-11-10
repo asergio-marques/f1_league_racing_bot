@@ -49,10 +49,6 @@ _BUTTONS = [
 ]
 
 
-#: The press still judges the review's five minutes on the host's clock.
-_PRESS_ON_THE_HOST_S_CLOCK = "#283: the press judges the review's five minutes on the host's clock"
-
-
 def _member(user_id: int, name: str):
     member = MagicMock(spec=discord.Member)
     member.id = user_id
@@ -467,7 +463,6 @@ async def test_a_refused_press_does_not_put_off_the_reviews_expiry(
     ), head
 
 
-@pytest.mark.xfail(strict=True, reason=_PRESS_ON_THE_HOST_S_CLOCK)
 @pytest.mark.parametrize("kind,label,review,helper,verb", _BUTTONS)
 async def test_a_press_after_the_five_minutes_confirms_nothing(
     tmp_path, monkeypatch, kind, label, review, helper, verb
@@ -501,7 +496,6 @@ async def test_a_press_after_the_five_minutes_confirms_nothing(
     assert lines[0].startswith("⛔ ") and " refused for Alex (<@4242>) — " in lines[0], lines
 
 
-@pytest.mark.xfail(strict=True, reason=_PRESS_ON_THE_HOST_S_CLOCK)
 @pytest.mark.parametrize("kind,label,review,helper,verb", _BUTTONS)
 async def test_a_refused_press_during_which_the_five_minutes_pass_ends_the_review_as_expired(
     tmp_path, monkeypatch, kind, label, review, helper, verb

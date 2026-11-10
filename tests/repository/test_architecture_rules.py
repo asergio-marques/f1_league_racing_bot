@@ -2807,12 +2807,6 @@ KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/retry_service.py", "attempt_delivery"): (1, PASS["core"]),
     ("core/services/retry_service.py", "enqueue"): (1, PASS["core"]),
     ("core/services/retry_service.py", "mark_failed"): (1, PASS["core"]),
-    ("core/services/season_review_changes.py", "season_review_post_change.arm_expiry"):
-        (1, PASS["core"]),
-    ("core/services/season_review_changes.py", "season_review_post_change.post_question"):
-        (1, PASS["core"]),
-    ("core/services/season_review_views.py", "ApproveView._press_worked"): (1, PASS["core"]),
-    ("core/services/season_review_views.py", "ApproveView._refuse_if_expired"): (1, PASS["core"]),
     ("core/services/test_mode_service.py", "build_review_summary"): (1, PASS["core"]),
     ("core/services/test_mode_service.py", "get_next_pending_phase"): (1, PASS["core"]),
     ("core/services/test_mode_service.py", "get_passed_over_steps"): (1, PASS["core"]),
