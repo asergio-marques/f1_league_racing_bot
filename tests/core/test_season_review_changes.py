@@ -23,9 +23,10 @@ the queue"; decision 19):
   told why, in their reply or, once that can no longer be updated, the log channel.
 
 The factories are `season_review_take_down_change()` and `season_review_post_change(drawing=...,
-approve_view=..., scheduler=...)` in `leaguebot.core.services.season_review_changes`; the builder
-registers them with the image module's drawing, the season cog's view factory and the scheduler
-service, which `arm_expiry` arms its timer through (no step looks a service up on the bot).
+approve_view=..., scheduler=..., now=...)` in `leaguebot.core.services.season_review_changes`; the
+builder registers them with the image module's drawing, its own view factory, the scheduler service,
+which `arm_expiry` arms its timer through, and the queue's clock, which stamps the question's
+posting (no step looks a service up on the bot).
 
 The league: `league_double`'s, its review channel 700 found on the league's server, Alex (4242)
 the reviewer of season 1's placements.
