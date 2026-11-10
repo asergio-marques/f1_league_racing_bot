@@ -96,6 +96,9 @@ NOT_SAVED = (
 # ── Helpers ─────────────────────────────────────────────────────────────────────────
 
 
+_GATES_NOT_YET_SERVICES = "#283: the season's gates are not yet functions of approval_checks"
+
+
 async def _pressed(league: Any, **kwargs: Any) -> Any:
     """Press ✅ Approve, the press raising nothing."""
     press = await press_approve(league, **kwargs)
@@ -440,18 +443,24 @@ async def test_the_approval_s_check_takes_the_fingerprint_with_the_image_module_
         assert SEASON_ID in (*each["args"], each.get("season_id")), each
 
 
+@pytest.mark.xfail(strict=True, reason=_GATES_NOT_YET_SERVICES)
 async def test_the_press_runs_every_gate_before_asking_and_asks_nothing_when_one_refuses(
     tmp_path, monkeypatch,
 ):
+    from leaguebot.core.services import approval_checks
+
     league = await _league_for(tmp_path, monkeypatch)
-    league.cog._team_name_problems = AsyncMock(return_value=["**Pro** — Ferrari has no driver"])
+    monkeypatch.setattr(
+        approval_checks, "team_name_problems",
+        AsyncMock(return_value=["**Pro** — Ferrari has no driver"]),
+    )
 
     refused = await _pressed(league)
 
     assert "Ferrari has no driver" in reply(refused)
     assert await change_rows(league.db_path) == []
 
-    league.cog._team_name_problems = AsyncMock(return_value=[])
+    monkeypatch.setattr(approval_checks, "team_name_problems", AsyncMock(return_value=[]))
     await _pressed(league)
 
     assert (await _approval(league))["state"] == "QUEUED"
@@ -522,17 +531,50 @@ async def test_the_save_refuses_writing_nothing_where_the_season_left_placements
     assert _confirmed_lines(league) == []
 
 
+@pytest.mark.parametrize("gate, modules", [
+    pytest.param("team_name_problems", {}, id="team names",
+                 marks=pytest.mark.xfail(strict=True, reason=_GATES_NOT_YET_SERVICES)),
+    pytest.param("lineup_problems", {}, id="lineup",
+                 marks=pytest.mark.xfail(strict=True, reason=_GATES_NOT_YET_SERVICES)),
+    pytest.param("image_configuration_faults", {"images": True}, id="image configuration",
+                 marks=pytest.mark.xfail(strict=True, reason=_GATES_NOT_YET_SERVICES)),
+])
 async def test_the_backup_question_is_put_after_every_gate_and_before_the_approval_is_asked(
-    tmp_path, monkeypatch,
+    tmp_path, monkeypatch, gate, modules,
 ):
-    league = await _league_for(tmp_path, monkeypatch, test_mode=True)
-    league.cog._lineup_problems = AsyncMock(return_value=["**Pro** — Ferrari is short"])
-    await _pressed(league, backup="save")
+    """Earlier, the question saves a season that may prove unapprovable; later, one already
+    committed. Each of the last gates refusing puts no question; none refusing puts it before the
+    approval is asked of the change queue, which makes every write."""
+    from leaguebot.core.services import approval_checks
+
+    league = await _league_for(tmp_path, monkeypatch, test_mode=True, **modules)
+    monkeypatch.setattr(
+        approval_checks, gate, AsyncMock(return_value=["**Pro** — Ferrari is short"]))
+    refused = await _pressed(league, backup="save")
+    assert "Ferrari is short" in reply(refused)
     assert league.backup_answers == []
 
-    league.cog._lineup_problems = AsyncMock(return_value=[])
+    monkeypatch.setattr(approval_checks, gate, AsyncMock(return_value=[]))
     await _pressed(league, backup="save")
 
+    assert league.backup_answers == [("save", 0)]
+    assert (await _approval(league))["state"] == "QUEUED"
+
+
+async def test_a_second_press_while_the_approval_is_in_hand_puts_no_backup_question(
+    tmp_path, monkeypatch,
+):
+    """A second approval of the season, pressed while the first waits on the queue, is refused
+    without being asked whether to save the databases."""
+    from leaguebot.core.services.season_approval_change import ALREADY_BEING_APPROVED
+
+    league = await _league_for(tmp_path, monkeypatch, test_mode=True)
+    await _pressed(league, backup="save")
+    assert league.backup_answers == [("save", 0)]
+
+    again = await _pressed(league, backup="save")
+
+    assert ALREADY_BEING_APPROVED in reply(again)
     assert league.backup_answers == [("save", 0)]
     assert (await _approval(league))["state"] == "QUEUED"
 
