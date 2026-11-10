@@ -25,9 +25,6 @@ SRC = Path(__file__).resolve().parents[2] / "src"
 SERVER_ID = 5700
 SEASON_ID = 14
 
-#: The points gates are still the season cog's methods, the approval `SeasonCog._do_approve`.
-_GATE_ON_THE_COG = "#283: the points gates are not yet functions of approval_checks"
-
 
 @pytest.fixture
 async def db_path(tmp_path):
@@ -110,8 +107,7 @@ async def test_a_link_to_a_configuration_never_created_is_not_this_helpers_compl
 
 @pytest.mark.parametrize("surface, asks", [
     pytest.param("season_review", "approval_checks.no_points_config_attached("),
-    pytest.param("approve_season", "approval_checks.no_points_config_attached(",
-                 marks=pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)),
+    pytest.param("approve_season", "approval_checks.no_points_config_attached("),
     pytest.param("configuration_faults", "no_points_config_attached("),
 ])
 def test_every_surface_asks_the_helper_rather_than_counting_for_itself(surface, asks):

@@ -31,9 +31,6 @@ from tests.support.season_league import (
     season_league,
 )
 
-_WORKFLOWS_ON_THE_COG = "#283: the review's workflows and their gates are still SeasonCog methods"
-_PRESS_ON_THE_HOST_CLOCK = "#283: the approval's press reads the host's clock, not the queue's"
-
 #: Every workflow and gate the review's buttons run on `SeasonCog` today: work the press must not
 #: reach on the cog. All but `_approval_windows` move into core's services; `_approval_windows`
 #: stays for the review command, the workflow reading the windows through `read_round_windows`.
@@ -71,8 +68,7 @@ async def _configuration(league: Any) -> list[dict[str, Any]]:
 
 
 @pytest.mark.parametrize("build, post, asked", [
-    pytest.param(season_league, post_review, _approval, id="approval",
-                 marks=pytest.mark.xfail(strict=True, reason=_WORKFLOWS_ON_THE_COG)),
+    pytest.param(season_league, post_review, _approval, id="approval"),
     pytest.param(placing_league, post_mid_season_review, _mid_season, id="mid-season placements"),
     pytest.param(configuring_league, post_config_review, _configuration, id="configuration"),
 ])
@@ -117,7 +113,6 @@ async def test_the_configuration_change_s_check_needs_no_season_cog(tmp_path, mo
     assert (await league.season())["stage"] == "PLACEMENTS"
 
 
-@pytest.mark.xfail(strict=True, reason=_PRESS_ON_THE_HOST_CLOCK)
 async def test_the_approval_judges_the_dates_on_the_queue_s_clock(tmp_path, monkeypatch):
     """The queue's clock is 31 days on from the host's, so round 1 of each division, 30 days out
     by the host's clock, has gone by on the queue's. Admin presses ✅ Approve: the refusal is the
@@ -146,7 +141,6 @@ async def test_the_approval_judges_the_dates_on_the_queue_s_clock(tmp_path, monk
     assert all(now == league.clock.now for now in judged_at), judged_at
 
 
-@pytest.mark.xfail(strict=True, reason=_PRESS_ON_THE_HOST_CLOCK)
 async def test_the_backup_question_s_time_left_is_read_from_the_queue_s_clock(
     tmp_path, monkeypatch,
 ):

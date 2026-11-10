@@ -496,6 +496,13 @@ async def mid_season_configuration_faults(
     return await image_configuration_faults(image_drawing)
 
 
+#: Said by the placements review and its confirmation alike: a season with no division has
+#: nothing to race and would never reach Pending completion.
+NO_DIVISIONS_REFUSAL = (
+    "\u26d4 **This season has no divisions.** Add one with `/division add`."
+)
+
+
 async def season_has_divisions(season_id: int, *, season_service: SeasonService) -> bool:
     """Whether *season_id* holds a division that is not cancelled.
 

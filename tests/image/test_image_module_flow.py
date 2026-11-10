@@ -2287,10 +2287,6 @@ def test_the_render_service_writes_only_to_the_log_channel():
         assert forbidden not in source, f"render service reaches for {forbidden}"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: the approval's lineup gate is not yet in season_review_workflows.approve_season",
-)
 def test_the_season_approval_refusal_is_ephemeral():
     """An image gate refuses in front of the admin, not the league.
 

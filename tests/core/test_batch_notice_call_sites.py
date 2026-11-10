@@ -104,11 +104,7 @@ _APPROVAL = "core/services/season_approval_change.py"
 #: The press's approval, the workflow the review's Approve button hands a press on to.
 _PRESS = "core/services/season_review_workflows.py"
 
-#: The press's approval still runs as `SeasonCog._do_approve`.
-_PRESS_ON_THE_COG = "#283: the approval is not yet season_review_workflows.approve_season"
 
-
-@pytest.mark.xfail(strict=True, reason=_PRESS_ON_THE_COG)
 def test_the_approve_lineup_and_calendar_posting_is_wrapped():
     """The approval's notice is posted and deleted by jobs of its own, through the batch
     notice's raising halves, and no longer wraps the press."""
@@ -120,7 +116,6 @@ def test_the_approve_lineup_and_calendar_posting_is_wrapped():
     assert not _notices(_function(_PRESS, "approve_season"))
 
 
-@pytest.mark.xfail(strict=True, reason=_PRESS_ON_THE_COG)
 def test_the_approve_notice_goes_to_the_interaction_channel():
     """The approve button is ephemeral, so the channel the review was read in is the
     only home it has: the press keeps it in the approval's payload, which the notice's jobs

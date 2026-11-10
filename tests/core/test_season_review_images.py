@@ -26,12 +26,6 @@ SRC = Path(__file__).resolve().parents[2] / "src"
 #: The approval, which the review's Approve button hands a press on to, is a core service.
 WORKFLOWS = SRC / "leaguebot" / "core" / "services" / "season_review_workflows.py"
 
-#: The approval still runs as `SeasonCog._do_approve`, its gates and backup question the cog's.
-_APPROVAL_ON_THE_COG = (
-    "#283: the approval is not yet season_review_workflows.approve_season, its gates "
-    "approval_checks'"
-)
-
 
 # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -87,7 +81,6 @@ def test_the_approval_windows_are_read_once_for_the_whole_season():
 # already in hand.
 
 
-@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 def test_the_approval_draws_nothing_itself():
     """The render pass is gone, and must not creep back in."""
     approve = _function_source(WORKFLOWS, "approve_season", code_only=True)
@@ -96,7 +89,6 @@ def test_the_approval_draws_nothing_itself():
         assert drawn not in approve, f"{drawn} draws at approval; the review does that"
 
 
-@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 def test_approval_refuses_before_it_commits_anything():
     """The fingerprint stands where the render stood: ahead of everything committed. Who is
     pressing is settled first, so a press by somebody who may not approve costs no query."""
@@ -111,7 +103,6 @@ def test_approval_refuses_before_it_commits_anything():
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 def test_a_changed_season_approves_nothing():
     """The refusal returns rather than merely reporting."""
     source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "approve")
@@ -124,7 +115,6 @@ def test_a_changed_season_approves_nothing():
     # to pay for a rasterisation it was never going to keep (settled 2026-09-07).
 
 
-@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 def test_the_review_and_the_approval_read_the_same_evaluation():
     """Both must refuse on the same fault, or a manager can commit past the review."""
     review = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "season_review")
@@ -192,7 +182,6 @@ async def test_the_review_section_survives_a_configuration_it_cannot_read():
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 def test_the_approval_gate_returns_rather_than_merely_reporting():
     """The portrait settings refuse through the image configuration gate (#396), whose
     refusal must stop the approval rather than report and carry on, before the approval is
@@ -279,7 +268,6 @@ async def _take_downs(env) -> list[dict]:
     return await take_downs(env)
 
 
-@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 async def test_a_league_admin_may_approve_somebody_elses_review(tmp_path, monkeypatch):
     """Alex's placements review stands, the season unchanged. Sam, who holds the league's admin
     role but did not run the review, presses Approve: the approval is worked."""
@@ -292,7 +280,6 @@ async def test_a_league_admin_may_approve_somebody_elses_review(tmp_path, monkey
     workflows.approve_season.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 async def test_nobody_but_the_reviewer_may_approve_while_no_admin_role_is_set(
     tmp_path, monkeypatch,
 ):
@@ -534,7 +521,6 @@ async def test_a_press_refused_by_a_gate_leaves_the_review_standing(tmp_path, mo
     assert await _prompt_rows(cog) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 async def test_a_press_cancelled_at_the_backup_question_leaves_the_review_standing(
     tmp_path, monkeypatch
 ):
@@ -559,7 +545,6 @@ async def test_a_press_cancelled_at_the_backup_question_leaves_the_review_standi
     assert await _prompt_rows(cog) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 async def test_a_review_lapsed_at_the_backup_question_is_still_taken_down(
     tmp_path, monkeypatch
 ):

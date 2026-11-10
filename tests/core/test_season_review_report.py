@@ -61,9 +61,6 @@ USER_ID = 77
 #: The channel the manager runs the review in, where it is posted: the league's interaction channel.
 COMMAND_CHANNEL = 2
 
-#: The review's gates are still the season cog's methods.
-_GATES_ON_THE_COG = "#283: the review's gates are not yet functions of approval_checks"
-
 #: The gates a test stands in, each a function of `approval_checks` that the review command and
 #: the approval's workflow call alike.
 _GATES = (
@@ -924,7 +921,6 @@ async def test_a_lineup_the_template_cannot_draw_withholds_approval(db_path):
     assert f"Lineup template: {problem}" in _private(messages)
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_the_review_and_the_confirmation_refuse_on_the_same_image_faults(db_path):
     """One reading for both surfaces (#396). The review withholds its button on a fault of
     the image configuration, and a press that reached the confirmation anyway — a review

@@ -32,9 +32,6 @@ SERVER_ID = 12608
 SEASON_ID = 11
 USER_ID = 77
 
-#: The approval still runs as `SeasonCog._do_approve`, its gates the cog's methods.
-_ON_THE_COG = "#283: the approval is not yet season_review_workflows.approve_season"
-
 #: The gates stood in, each a function of `approval_checks` the workflow calls.
 _GATES = (
     "placement_confirmation_faults", "season_has_divisions", "team_name_problems",
@@ -243,7 +240,6 @@ def _replied(interaction) -> str:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_configured_signup_module_does_not_block_approval(db_path):
     cog = _cog(db_path, signup_enabled=True, signup_config=_signup_config())
     interaction = _interaction()
@@ -253,7 +249,6 @@ async def test_a_configured_signup_module_does_not_block_approval(db_path):
     _assert_asked(cog)
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_an_unconfigured_signup_module_blocks_approval(db_path):
     """Approving without a channel arms a season whose signups open into nothing — a module
     failing to produce output while switched on."""
@@ -268,7 +263,6 @@ async def test_an_unconfigured_signup_module_blocks_approval(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_the_league_s_roles_are_not_checked_again_at_placements(db_path):
     """Confirming the configuration required both roles while signup was enabled, and
     fixed them until the season ends (issue #276): they cannot have gone missing since."""
@@ -283,7 +277,6 @@ async def test_the_league_s_roles_are_not_checked_again_at_placements(db_path):
     _assert_asked(cog)
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_signup_module_with_no_configuration_row_does_not_block(db_path):
     """Nothing has been configured at all, which `/signup channel` will create — and a
     refusal naming three commands when the module was merely switched on and forgotten
@@ -296,7 +289,6 @@ async def test_a_signup_module_with_no_configuration_row_does_not_block(db_path)
     _assert_asked(cog)
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_disabled_signup_module_is_not_checked(db_path):
     """A league that does not run signups through the bot has no configuration to be
     missing."""
@@ -313,7 +305,6 @@ async def test_a_disabled_signup_module_is_not_checked(db_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_configured_attendance_module_does_not_block_approval(db_path):
     cog = _cog(
         db_path, attendance_enabled=True, attendance_config=_attendance_config()
@@ -330,7 +321,6 @@ async def test_a_configured_attendance_module_does_not_block_approval(db_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_season_with_no_points_configuration_attached_is_refused(db_path):
     """The results module cannot score a race it has no points table for, and the failure
     would otherwise arrive at the first submitted result."""
@@ -343,7 +333,6 @@ async def test_a_season_with_no_points_configuration_attached_is_refused(db_path
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_disabled_results_module_is_not_checked(db_path):
     """A league not running results is asked for none of its settings.
 

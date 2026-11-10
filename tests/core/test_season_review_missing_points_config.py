@@ -27,9 +27,6 @@ SRC = Path(__file__).resolve().parents[2] / "src"
 SERVER_ID = 5600
 SEASON_ID = 13
 
-#: The points gates are still the season cog's methods, the approval `SeasonCog._do_approve`.
-_GATE_ON_THE_COG = "#283: the points gates are not yet functions of approval_checks"
-
 
 @pytest.fixture
 async def db_path(tmp_path):
@@ -153,7 +150,6 @@ def test_the_review_asks_the_helper_rather_than_the_service_itself():
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 def test_the_approval_gate_asks_the_same_helper():
     source = _function_source("approve_season")
 

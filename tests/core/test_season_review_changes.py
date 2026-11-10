@@ -833,11 +833,6 @@ async def test_a_review_whose_take_down_is_in_hand_is_not_asked_again_at_a_secon
 PRO_ROUNDS = "Division Pro's rounds"
 
 
-#: The Approve button still hands a press on to `SeasonCog._do_approve`.
-_APPROVAL_ON_THE_COG = (
-    "#283: the Approve button does not yet run season_review_workflows.approve_season"
-)
-
 
 def _approve_view(env: Any, monkeypatch: Any) -> tuple[Any, Any]:
     """An Approve view for Alex's review, built as the question's view is, on a cog holding the
@@ -998,8 +993,7 @@ async def test_a_confirmation_asks_the_take_down_before_the_approval_and_the_rev
 
 @pytest.mark.parametrize("ending", [
     pytest.param("expired", id="five_minutes"),
-    pytest.param("refused", id="refused_press",
-                 marks=pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)),
+    pytest.param("refused", id="refused_press"),
 ])
 async def test_the_five_minutes_and_a_refused_press_ask_the_take_down(standing, monkeypatch, ending):
     """Alex's review stands in channel 700. Either its five minutes run out (the review's expiry
@@ -1028,7 +1022,6 @@ async def test_the_five_minutes_and_a_refused_press_ask_the_take_down(standing, 
     assert change["origin"] == "BOT"
 
 
-@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 async def test_approve_refuses_where_the_season_changed_while_the_review_waited(posting, monkeypatch):
     """The queue is stopped when Alex runs his review of season 1; its evidence is what the
     command computed the report from, Pro's rounds "before". While the review waits, Pro's
@@ -1085,7 +1078,6 @@ def _refused_as_expired(env: Any, interaction: Any) -> None:
     assert "Approve" in line and PLACEMENTS in line
 
 
-@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 async def test_a_press_on_a_review_whose_five_minutes_ran_is_refused_and_recorded(
     standing, monkeypatch,
 ):
@@ -1104,7 +1096,6 @@ async def test_a_press_on_a_review_whose_five_minutes_ran_is_refused_and_recorde
     assert standing.channel.deleted == [] and standing.channel.sent == []
 
 
-@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 @pytest.mark.parametrize("mark", ["UNDER_WAY", "TIMER_FIRED"])
 async def test_a_late_press_beside_one_under_way_leaves_the_review_to_it(
     standing, monkeypatch, mark,
@@ -1126,7 +1117,6 @@ async def test_a_late_press_beside_one_under_way_leaves_the_review_to_it(
     assert await _take_downs(standing) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 async def test_a_press_refused_while_an_approval_is_in_hand_leaves_no_review_past_its_timer(
         standing, monkeypatch):
     """Alex's review stands in channel 700, posted a moment ago. He presses Approve while an
@@ -1185,7 +1175,6 @@ async def test_a_review_standing_after_a_restart_refuses_a_press_and_records_it(
     assert standing.channel.deleted == []
 
 
-@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 async def test_a_press_hands_the_approval_what_remains_of_the_review_s_five_minutes(
         standing, monkeypatch):
     """Alex's review stands in channel 700, its question posted four minutes ago by its row, and
