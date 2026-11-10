@@ -777,7 +777,6 @@ async def test_a_faulty_configuration_is_reported_without_a_button(monkeypatch):
     assert not any("Do you confirm this season's configuration?" in m for m in messages)
 
 
-
 async def test_the_review_reports_the_faults_the_builder_hands_it(monkeypatch):
     """Signup is on and a fault stands in the configuration. The review asks the configuration's
     faults of the reader the builder puts on the bot, for season 31 on the manager's server, and
