@@ -2910,7 +2910,8 @@ CATCH_ALLS_ALLOWED = {
     ("core/services/change_queue.py", "ChangeQueue._run_step"):
         "the queue's catch of a step that raises, a failure path: it stops the lane or ends the job",
     ("core/services/change_queue.py", "ChangeQueue._start"):
-        "the queue's catch of a check that raises, a failure path: it stops the lane or ends the job",
+        "the queue's catch of a check that raises, a failure path: it stops the lane or ends the "
+        "change",
     ("core/utils/autocomplete.py", "bounded_autocomplete.decorate.wrapper"):
         "the autocompletes' failure path: no choices, and the error to the host's log",
     ("core/services/change_queue.py", "ChangeQueue._acknowledge"):
@@ -3137,12 +3138,12 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
 def test_a_catch_all_handler_sits_in_one_of_the_five_places():
     """A catch-all handler (`except Exception`) is allowed in five places only (architecture.md,
     "A catch-all error handler"): on a failure path, where `report_failure` is called; around a
-    list worked item by item, where it sits directly in the loop's body; around reporting a
-    failure; around a clean-up that raises the error again; and around work a specification gives
-    a fallback for. The shape tells the first, second and fourth; the failure paths of place 1 the
-    shape does not tell, the stated exceptions, place 3's guards around reporting and writing a log
-    line, and the fifth place's handlers are named for good in `CATCH_ALLS_ALLOWED`. Any other is a breach, listed
-    with the issue that will fix it."""
+    list worked item by item, where it sits directly in the loop's body; around reporting a failure;
+    around a clean-up that raises the error again; and around work a specification gives a fallback
+    for. The shape tells the first, second and fourth; the failure paths of place 1 the shape does
+    not tell, the stated exceptions, place 3's guards around reporting and writing a log line, and
+    the fifth place's handlers are named for good in `CATCH_ALLS_ALLOWED`. Any other is a breach,
+    listed with the issue that will fix it."""
     _check(
         "a catch-all sits in one of the five places",
         _catch_alls_outside_the_places_among(_nodes()),

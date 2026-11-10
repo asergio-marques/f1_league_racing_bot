@@ -2258,8 +2258,8 @@ class ChangeQueue:
         Never raises: where the post fails the stop stands (the router has told the member), the
         attempt is noted and `_post_missing_notices` tries again on its schedule. The notice goes
         through the router's `post_notice`, which never puts it on the log lines' retry queue, as
-        that would send it again without its buttons. The queue's own telling of a change's
-        outcome never fails the change.
+        that would send it again without its buttons. The queue's own telling, of an outcome, a
+        stop or a press, never undoes what it tells: the stop stands.
         """
         self._notice_tried[job_id] = self._clock()
         try:
@@ -2423,8 +2423,9 @@ class ChangeQueue:
 
     @staticmethod
     async def _tell(interaction: discord.Interaction, text: str) -> None:
-        """Answer the member who pressed, seen by them alone. Never raises: the queue's own telling
-        of a change's outcome never fails the change, and the press has done what it did."""
+        """Answer the member who pressed, seen by them alone. Never raises: the queue's own telling,
+        of an outcome, a stop or a press, never undoes what it tells, and the press has done what it
+        did."""
         try:
             if interaction.response.is_done():
                 await interaction.followup.send(text, ephemeral=True)

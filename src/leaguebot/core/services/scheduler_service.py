@@ -239,16 +239,15 @@ class SchedulerService:
 
     Every cancel is a clean-up, and removing a job never raises. A job that has already fired, or
     was never armed, is the ordinary case and what the caller wanted: APScheduler says so with
-    `JobLookupError`, which is caught by name and passed over in silence. Any other failure —
-    a job store that cannot be read or written — is a real fault, and is logged as a warning
-    with its traceback and then swallowed. That broad handler is a stated exception in
-    architecture.md's "Errors and failures": every cancel is a clean-up, so a job that will not
-    go is logged and left, whether the caller is a teardown list (a season cancelled, a module
-    switched off, signups closed, a pack), where it must not stop the rest, or a single cancel. `cancel_all` counts only the jobs that went. A cancel that
-    first lists the store (`cancel_round`, `cancel_rounds`, `cancel_all`, `cancel_season_end`)
-    or reads the league database (`cancel_all_weather`) does raise where that cannot be read,
-    before it removes anything.
-    """
+    `JobLookupError`, which is caught by name and passed over in silence. Any other failure — a job
+    store that cannot be read or written — is a real fault, and is logged as a warning with its
+    traceback and then swallowed. That broad handler is a stated exception in architecture.md's
+    "Errors and failures": every cancel is a clean-up, so a job that will not go is logged and left,
+    whether the caller is a teardown list (a season cancelled, a module switched off, signups
+    closed, a pack), where it must not stop the rest, or a single cancel. `cancel_all` counts only
+    the jobs that went. A cancel that first lists the store (`cancel_round`, `cancel_rounds`,
+    `cancel_all`, `cancel_season_end`) or reads the league database (`cancel_all_weather`) does
+    raise where that cannot be read, before it removes anything."""
 
     def __init__(self, db_path: str, jobstore_path: str | None = None) -> None:
         self._db_path = db_path

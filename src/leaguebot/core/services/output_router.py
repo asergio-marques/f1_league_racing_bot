@@ -253,8 +253,8 @@ class OutputRouter:
         """Take the buttons off the message *message_id* of channel *channel_id*.
 
         A message already gone is no failure; any other failure goes to the host's log. Never
-        raises: the buttons belong to a notice, and the queue's own telling of a change's outcome
-        never fails the change.
+        raises: the buttons belong to a notice, and the queue's own telling, of an outcome, a stop
+        or a press, never undoes what it tells.
         """
         try:
             channel = self._bot.get_channel(channel_id)
@@ -266,7 +266,7 @@ class OutputRouter:
             await channel.get_partial_message(message_id).edit(view=None)
         except discord.NotFound:
             return
-        except Exception:  # noqa: BLE001 — the buttons are cosmetic once the job has cleared
+        except Exception:  # noqa: BLE001 — the queue's own telling never undoes what it tells
             log.error("strip_view: could not take the buttons off message id=%s", message_id,
                       exc_info=True)
 
