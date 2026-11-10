@@ -2948,6 +2948,18 @@ CATCH_ALLS_ALLOWED = {
         "place 3, around recording that a confirmation ended",
     ("core/services/output_router.py", "OutputRouter._tell"):
         "place 3, around telling the member that the log channel failed, the router's own containment",
+    ("core/services/output_router.py", "OutputRouter._enqueue_if_configured"):
+        "place 3, around keeping for retry a log line that could not be posted, the router's own "
+        "containment",
+    ("core/services/output_router.py", "OutputRouter.strip_view"):
+        "a stated exception: the queue's own telling of a change's outcome never fails the change",
+    ("core/utils/log_lines.py", "record_refusal"):
+        "place 3, around recording a refusal already answered",
+    ("core/utils/log_lines.py", "name_of_member"):
+        "a stated exception: a member who cannot be looked up is named by mention alone, which "
+        "still names them",
+    ("core/services/scheduler_service.py", "SchedulerService._remove_job"):
+        "a stated exception: a teardown goes on past one job that will not go",
     ("core/services/season_review_changes.py", "season_review_post_change.draw_and_post"):
         "place 5, a picture that cannot be drawn is withheld and its fault is a line of the job",
     ("core/services/placement_service.py", "PlacementService._ask_drawing"):
@@ -3039,16 +3051,11 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
     ("core/services/amendment_service.py", "approval_faults"): (1, PASS["core"]),
     ("core/services/approval_checks.py", "channel_on_server"): (1, PASS["core"]),
-    ("core/services/output_router.py", "OutputRouter._enqueue_if_configured"): (1, PASS["core"]),
-    ("core/services/output_router.py", "OutputRouter.strip_view"): (1, PASS["core"]),
     ("core/services/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
     ("core/services/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),
-    ("core/services/scheduler_service.py", "SchedulerService._remove_job"): (1, PASS["core"]),
     ("core/services/scheduler_service.py", "_one_off_timer_job"): (1, BACKGROUND_FAILURES),
     ("core/services/season_fingerprint_service.py", "take_fingerprint"): (1, PASS["core"]),
     ("core/services/season_review_changes.py", "recover_expired_review_prompts"): (1, PASS["core"]),
-    ("core/utils/log_lines.py", "name_of_member"): (1, PASS["core"]),
-    ("core/utils/log_lines.py", "record_refusal"): (1, PASS["core"]),
     ("image/cogs/image_cog.py", "ImageCog._division_autocomplete"): (1, PASS["image"]),
     ("image/services/driver_portrait_service.py", "discard_portraits"): (1, PASS["image"]),
     ("image/services/driver_portrait_service.py", "portrait_aspect"): (1, PASS["image"]),

@@ -9,7 +9,9 @@ Covers:
 
 from __future__ import annotations
 
+import logging
 import os
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -131,6 +133,33 @@ class TestOutputRouterEnqueuesOnFailure:
         )
 
         assert await _row_count(db_path) == 0
+
+    @pytest.mark.asyncio
+    async def test_a_failed_line_that_cannot_be_kept_for_retry_is_logged_and_dropped(
+        self, tmp_path, caplog
+    ):
+        """A send fails and the retry table cannot be written either (the database is locked):
+        the send still returns its failure without raising, and the fault of keeping the line
+        goes to the host's log with its traceback."""
+        db_path = await _make_db(str(tmp_path))
+
+        mock_bot = MagicMock()
+        router = OutputRouter(mock_bot, mock_bot.config_service, retry_db_path=db_path, now=lambda: NOW)
+        mock_bot.get_channel.return_value = _make_text_channel_mock(
+            send_side_effect=discord.HTTPException(MagicMock(status=503), "error")
+        )
+        fault = sqlite3.OperationalError("database is locked")
+
+        with caplog.at_level(logging.ERROR), patch(
+            "leaguebot.core.services.retry_service.enqueue", AsyncMock(side_effect=fault)
+        ):
+            result = await router._send(  # must not raise
+                1234, "hello", enqueue_on_failure=True, fallback_label="forecast"
+            )
+
+        assert result is None
+        assert await _row_count(db_path) == 0
+        assert any(record.exc_info and record.exc_info[1] is fault for record in caplog.records)
 
 
 # ---------------------------------------------------------------------------

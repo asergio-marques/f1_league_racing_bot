@@ -116,3 +116,28 @@ async def test_a_database_fault_reading_the_log_channel_is_contained(call, caplo
 
     channel.send.assert_not_awaited()
     assert any(record.exc_info and record.exc_info[1] is fault for record in caplog.records)
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        pytest.param(discord.Forbidden(MagicMock(status=403), "missing access"), id="forbidden"),
+        pytest.param(RuntimeError("boom"), id="any other fault"),
+    ],
+)
+async def test_buttons_that_cannot_be_taken_off_a_message_are_left_and_the_fault_logged(
+    fault, caplog
+):
+    """Taking the buttons off a stop notice whose job has cleared fails: the buttons are left,
+    the call does not raise, and the fault goes to the host's log with its traceback, since the
+    buttons are cosmetic once the job has cleared."""
+    caplog.set_level(logging.ERROR)
+    router, channel = _router()
+    message = MagicMock()
+    message.edit = AsyncMock(side_effect=fault)
+    channel.get_partial_message = MagicMock(return_value=message)
+
+    await router.strip_view(LOG_CHANNEL_ID, 77)  # must not raise
+
+    message.edit.assert_awaited_once_with(view=None)
+    assert any(record.exc_info and record.exc_info[1] is fault for record in caplog.records)
