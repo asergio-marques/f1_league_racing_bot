@@ -477,7 +477,8 @@ async def test_a_press_after_the_five_minutes_confirms_nothing(
 
     The press is not taken as a confirmation: nothing is approved or confirmed, and the button
     deletes and posts nothing in the channel. Alex is answered privately that nothing has been
-    approved (or confirmed), and the log holds exactly one line, the refusal of his press.
+    approved (or confirmed) because the review's five minutes are up, and the log holds exactly
+    one line, the refusal of his press.
     """
     from tests.support.change_queue import acknowledgement
 
@@ -490,7 +491,9 @@ async def test_a_press_after_the_five_minutes_confirms_nothing(
 
     getattr(workflows, helper).assert_not_awaited()
     assert env.channel.deleted == [] and env.channel.sent == []
-    assert f"Nothing has been {verb}" in acknowledgement(interaction)
+    told = acknowledgement(interaction)
+    assert "⛔ This review's five minutes are up, so it can no longer be answered." in told
+    assert f"Nothing has been {verb}" in told
     assert interaction.response.send_message.await_args.kwargs["ephemeral"] is True
     lines = _queue_lines(env)
     assert len(lines) == 1, lines

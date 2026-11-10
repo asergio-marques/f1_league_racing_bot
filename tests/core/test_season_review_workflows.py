@@ -46,8 +46,6 @@ _COG_WORK = (
 
 #: The review's buttons are still the season cog's views, each holding a cog.
 _VIEWS_ON_THE_COG = "#283: the review's views are still the season cog's, each holding a cog"
-#: The press still judges the review's five minutes on the host's clock.
-_PRESS_ON_THE_HOST_S_CLOCK = "#283: the press judges the review's five minutes on the host's clock"
 
 PASSED_DATES = "❌ Season cannot be approved — its calendar holds dates that have already gone by:"
 
@@ -165,31 +163,3 @@ async def test_the_backup_question_s_time_left_is_read_from_the_queue_s_clock(
 
     assert league.errors == []
     assert league.backup_timeouts == [180.0]
-
-
-@pytest.mark.xfail(strict=True, reason=_PRESS_ON_THE_HOST_S_CLOCK)
-@pytest.mark.parametrize("build, post, asked, verb", [
-    pytest.param(season_league, post_review, _approval, "approved", id="approval"),
-    pytest.param(placing_league, post_mid_season_review, _mid_season, "confirmed",
-                 id="mid-season placements"),
-    pytest.param(configuring_league, post_config_review, _configuration, "confirmed",
-                 id="configuration"),
-])
-async def test_a_press_judges_the_review_s_five_minutes_on_the_queue_s_clock(
-    tmp_path, monkeypatch, build, post, asked, verb,
-):
-    """Season 3's review is posted at the queue's clock, nothing wrong with the season. The
-    queue's clock is then moved on six minutes, the host's left where it is. Admin presses the
-    review's button: the press is refused, the review's five minutes being up, Admin is told
-    nothing has been approved (or confirmed), and nothing is asked of the queue."""
-    league = await build(tmp_path, monkeypatch=monkeypatch)
-    review = await post(league)
-    league.clock.advance(minutes=6)
-
-    press = await press_approve(league, review)
-
-    assert league.errors == []
-    told = reply(press)
-    assert "⛔ This review's five minutes are up, so it can no longer be answered." in told
-    assert f"**Nothing has been {verb}.**" in told
-    assert await asked(league) == []
