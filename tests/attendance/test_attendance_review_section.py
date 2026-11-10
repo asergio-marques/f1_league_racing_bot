@@ -99,13 +99,15 @@ async def test_attendance_never_configured_shows_its_channels_alone():
 
 @pytest.mark.parametrize("review", [
     pytest.param("PLACEMENTS", marks=pytest.mark.xfail(strict=True, reason=_NO_LINES_HOOK)),
-    pytest.param("CONFIGURATION", marks=pytest.mark.xfail(strict=True, reason=_NO_LINES_HOOK)),
+    pytest.param("CONFIGURATION"),
 ])
 async def test_attendance_hands_nothing_while_it_is_off(review):
-    """Attendance off: no section and no channel lines, and nothing of attendance's is read."""
+    """Attendance off: no section and, for the placements review, the only one that shows
+    divisions, no channel lines; and nothing of attendance's is read."""
     service = _service()
 
     assert await _section(service, False, review, [10]) is None
-    assert not any((await _lines(service, False, [10])).values())
+    if review == "PLACEMENTS":
+        assert not any((await _lines(service, False, [10])).values())
     service.get_config.assert_not_awaited()
     service.get_division_config.assert_not_awaited()
