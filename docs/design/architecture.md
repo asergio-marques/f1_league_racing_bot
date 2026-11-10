@@ -176,7 +176,7 @@ a module added later signs up without core changing, the switch read aside (belo
 a kind takes one function for each key instead, as a kind of timed job takes its one handler (see
 "Timed work and restarts"). **A module's switch read is a keyed hook:** one reader for each module,
 keyed by the module's name, which the module's own work may also call; core asks for it by that name
-(`is_<module>_enabled`, or `is_enabled_on` on a connection a save holds), because core names the
+(`is_<module>_enabled`, or `is_enabled_on` on a connection the caller holds), because core names the
 modules and shows which are on in the reviews (the core specification's "Modules"), and keeps the
 dependency table (above). The key is the name the module's switch is asked by: `images` for the
 image module, the module's own name for the rest. So a module added later adds its
@@ -1232,9 +1232,10 @@ the error in the host's log alone and finds nothing wrong, so each review and co
 checks the names carries on with them unchecked, because the check only keeps a team name from
 becoming a bad artwork filename (its docstring says so); the season cog's own image review section
 (`SeasonCog._build_image_review_section`) is a stated exception beside
-`approval_checks.image_configuration_faults`: its catch-all puts the error in the host's log and
-states the section as unreadable in the review, because a review must never fail for this (its
-docstring says so); the image module's artwork signature (`ImageDrawing.artwork_signature`) is a
+`approval_checks.image_configuration_faults`: its catch-all (a switch nobody signed up for aside)
+puts the error in the host's log and states the section as unreadable in the review, because a
+review must never fail for this (its docstring says so); the image module's artwork signature
+(`ImageDrawing.artwork_signature`) is a
 stated exception too: its catch-all signs a configured directory it cannot resolve as
 `[column, value, "unresolvable"]`, with a warning to the host's log alone, and signs the rest all
 the same, because a fault that escaped it would empty the whole fingerprint and the review would
