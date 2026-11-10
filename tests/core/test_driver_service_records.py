@@ -277,10 +277,17 @@ async def test_a_transition_from_no_profile_creates_one(tmp_path):
     assert await _profile_count(db_path) == 1
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the state machine still refuses a transition with a bare ValueError, "
+    "not InvalidDriverTransition",
+)
 async def test_a_disallowed_transition_from_no_profile_names_what_is_allowed(tmp_path):
-    """The caller is usually a command, and the message reaches a manager."""
+    """A driver with no profile is given one only where the table allows the move from Not
+    Signed Up; otherwise the state machine refuses by its own name, saying what is allowed."""
+    from leaguebot.core.models.driver_profile import InvalidDriverTransition
     db_path = await _make_db(tmp_path)
-    with pytest.raises(ValueError, match="Allowed targets"):
+    with pytest.raises(InvalidDriverTransition, match="Allowed targets"):
         await transitioned(db_path, OLD_USER, DriverState.ASSIGNED)
 
 

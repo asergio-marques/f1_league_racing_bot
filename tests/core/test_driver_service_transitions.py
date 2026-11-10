@@ -6,6 +6,12 @@ import pytest
 
 from tests.support.driver_transitions import transitioned
 
+#: Why the state machine's refusal tests fail until #283's build names it.
+STATE_MACHINE_REFUSAL = (
+    "#283: the state machine still refuses a transition with a bare ValueError, "
+    "not InvalidDriverTransition"
+)
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -90,14 +96,19 @@ async def test_an_allowed_transition_lands_on_its_target(db_path, from_state, to
         pytest.param("PENDING_DRIVER_CORRECTION", "ASSIGNED", id="PDC to ASSIGNED"),
     ],
 )
+@pytest.mark.xfail(strict=True, reason=STATE_MACHINE_REFUSAL)
 async def test_a_transition_the_table_does_not_allow_raises(db_path, from_state, to_state):
     """The awaiting-correction-parameter state is reachable only from pending admin approval,
     not from pending signup completion, and a driver awaiting their correction cannot go
-    straight to Assigned."""
-    from leaguebot.core.models.driver_profile import DriverState
+    straight to Assigned. The state machine refuses by a name of its own, which is not a
+    refusal a member reads: a caller judges the move first, and catches this by name only where
+    a move raced past its judgement."""
+    from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
+    from leaguebot.core.models.refusal import Refused
     await _seed_driver(db_path, "u1", from_state)
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidDriverTransition) as refused:
         await transitioned(db_path, "u1", DriverState(to_state))
+    assert not isinstance(refused.value, Refused)
 
 
 # ---------------------------------------------------------------------------
@@ -147,11 +158,13 @@ class TestSignupDataClearing:
         assert row["platform_id"] == "SteamUser123"
 
 
+@pytest.mark.xfail(strict=True, reason=STATE_MACHINE_REFUSAL)
 async def test_a_state_written_within_a_transaction_obeys_the_table(tmp_path):
     """`write_transition` is how a sack or the driver pass changes a state inside a larger
     write, and it refuses what the table refuses, writing nothing."""
     from leaguebot.core.db.database import get_connection, run_migrations
     from leaguebot.core.models.driver_profile import DriverState
+    from leaguebot.core.models.driver_profile import InvalidDriverTransition
     from leaguebot.core.services.driver_service import write_transition
 
     path = str(tmp_path / "write_transition.db")
@@ -167,7 +180,7 @@ async def test_a_state_written_within_a_transaction_obeys_the_table(tmp_path):
         )
         await db.commit()
 
-        with pytest.raises(ValueError, match="not allowed"):
+        with pytest.raises(InvalidDriverTransition, match="not allowed"):
             await write_transition(
                 db, 9, DriverState.PENDING_SIGNUP_COMPLETION, DriverState.ASSIGNED
             )

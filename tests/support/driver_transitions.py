@@ -25,7 +25,8 @@ async def transitioned(
     db_path: str, discord_user_id: str, new_state: DriverState, *, test_mode_active: bool = False,
 ) -> DriverProfile:
     """Move the driver holding *discord_user_id* to *new_state* through `transition_on`, in a save
-    that commits; gives the profile as moved. Raises ValueError where the table refuses."""
+    that commits; gives the profile as moved. Raises the state machine's refusal where the
+    table refuses."""
     async with get_connection(db_path) as db:
         profile = await DriverService(db_path).transition_on(
             db, discord_user_id, new_state, test_mode_active=test_mode_active
