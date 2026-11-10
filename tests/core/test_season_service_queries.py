@@ -346,6 +346,28 @@ async def test_divisions_are_returned_in_tier_order(tmp_path):
     assert [d.name for d in divisions] == ["First", "Second"]
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: the tier check still refuses with a bare ValueError, not Refused"
+)
+async def test_tiers_with_a_gap_are_refused_in_the_member_s_words(tmp_path):
+    """Approving a season checks its divisions' tiers run 1, 2, 3 and so on with none missing,
+    and a gap is a refusal the manager reads. Season 1 is being set up with Division 1 at tier 1
+    and Division 3 at tier 3, and nothing at tier 2. The check refuses it as the member's refusal,
+    `Refused`, naming the tiers held and the one missing."""
+    from leaguebot.core.models.refusal import Refused
+
+    db_path = await _make_db(tmp_path)
+    await _seed_season(db_path, 1, "SETUP")
+    await _seed_division(db_path, 1, 1)
+    await _seed_division(db_path, 3, 1)
+
+    with pytest.raises(Refused) as refused:
+        await SeasonService(db_path).validate_division_tiers(1)
+    assert str(refused.value) == (
+        "Division tiers are not sequential. Current tiers: [1, 3]. Missing tier(s): [2]."
+    )
+
+
 async def test_a_division_with_a_driver_placed_in_it_is_not_deleted(tmp_path):
     """A division is deleted only once every driver placed in it has been unassigned
     (core specification, Divisions; decided 2026-09-25, #282). The deletion is destructive

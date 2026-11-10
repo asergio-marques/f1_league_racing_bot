@@ -263,6 +263,32 @@ async def _former_driver_set(tmp_path, monkeypatch) -> None:
     )
 
 
+async def _tiers_checked(tmp_path, monkeypatch) -> None:
+    """✅ Approve pressed on season 11's placements review, the tier check raising."""
+    from leaguebot.core.db.database import get_connection
+    from tests.core.test_do_approve_gates import (
+        SEASON_ID, SERVER_ID, _cog, _interaction, _run,
+    )
+
+    db_path = str(tmp_path / "approve.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO server_configs (server_id, interaction_role_id, "
+            "interaction_channel_id, log_channel_id) VALUES (?, 1, 2, 3)",
+            (SERVER_ID,),
+        )
+        await db.execute(
+            "INSERT INTO seasons (id, start_date, status, season_number) "
+            "VALUES (?, '2026-03-01', 'SETUP', 1)",
+            (SEASON_ID,),
+        )
+        await db.commit()
+    cog = _cog(db_path)
+    cog.bot.season_service.validate_division_tiers = AsyncMock(side_effect=ValueError(BUG))
+    await _run(cog, _interaction())
+
+
 #: One case per catch: what it guards, and how to raise a bug's `ValueError` inside it.
 CATCHES = [
     pytest.param(_placement_check("driver_move_change"), id="driver move check",
@@ -300,6 +326,7 @@ CATCHES = [
     pytest.param(_reassign_merge_hook_faulted, id="driver reassign save, a merge hook's fault",
                  marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
     pytest.param(_former_driver_set, id="test-mode set-former-driver",
+                 marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),    pytest.param(_tiers_checked, id="season approval's tier check",
                  marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
 ]
 
