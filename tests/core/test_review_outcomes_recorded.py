@@ -28,8 +28,9 @@ REVIEWER = 4242
 #: Sam, another league manager, who may not answer Alex's review.
 BYSTANDER = 99
 
-#: Each review button: its view, by the key the builder's factory makes it from, its label without the mark, the review it belongs to, the
-#: workflow of `season_review_workflows` a press hands on to, and the verb its replies use.
+#: Each review button: its view, by the key the builder's factory makes it from, its label
+#: without the mark, the review it belongs to, the workflow of `season_review_workflows` a press
+#: hands on to, and the verb its replies use.
 _BUTTONS = [
     pytest.param(
         "approve", "Approve", "/season placements-review", "approve_season", "approved",
@@ -73,8 +74,8 @@ REVIEW_CHANNEL = 700
 
 async def _standing(tmp_path, review: str):
     """The league's queue, and Alex's *review* of season 1 standing in channel 700: its report R1
-    and R2, then its question Q, posted now. "Now" is the host's clock as the league is built, to the
-    second, pinned as the queue's clock, `clock`, which a test moves on while the host's is left
+    and R2, then its question Q, posted now. "Now" is the host's clock as the league is built, to
+    the second, pinned as the queue's clock, `clock`, which a test moves on while the host's is left
     where it is; Q's row is stamped at it, as the review's post job stamps it. What the channel is
     sent is kept in `sent`; what is deleted, in `deleted`; every log line, in
     `bot.log_channel.sent`."""

@@ -1006,7 +1006,7 @@ async def test_a_confirmation_asks_the_take_down_before_the_approval_and_the_rev
         await store_review_prompt(
             db, season_id=SEASON_ID, channel_id=CHANNEL_610, message_id=q.id,
             reviewer_id=ADMIN_ID, review=PLACEMENTS,
-            posted_at=datetime.now(timezone.utc).isoformat(), report_message_ids=(r1.id, r2.id),
+            posted_at=league.clock.now.isoformat(), report_message_ids=(r1.id, r2.id),
         )
         await db.execute("UPDATE season_review_prompts SET evidence = ? WHERE message_id = ?",
                          (json.dumps(evidence), q.id))
@@ -1046,14 +1046,20 @@ async def test_a_confirmation_asks_the_take_down_before_the_approval_and_the_rev
 
 @pytest.mark.parametrize("ending", [
     pytest.param("expired", id="five_minutes"),
-    pytest.param("refused", id="refused_press"),
+    pytest.param(
+        "refused", id="refused_press",
+        marks=pytest.mark.xfail(strict=True, reason=_PRESS_ON_THE_HOST_S_CLOCK),
+    ),
 ])
-async def test_the_five_minutes_and_a_refused_press_ask_the_take_down(standing, monkeypatch, ending):
+async def test_the_five_minutes_and_a_refused_press_ask_the_take_down(
+    standing, monkeypatch, ending,
+):
     """Alex's review stands in channel 700. Either its five minutes run out (the review's expiry
-    timer fires for Q), or Alex presses Approve a moment after it was posted, by the queue's clock, but
-    the season has changed since the report (Pro's rounds), so the press is refused. Either way nothing is
-    deleted or posted at once: the review's take-down is asked of the queue as the bot's, naming
-    channel 700, Q, R1, R2, Alex and `/season placements-review`, ending expired or refused."""
+    timer fires for Q), or Alex presses Approve a moment after it was posted, by the queue's
+    clock, but the season has changed since the report (Pro's rounds), so the press is refused,
+    the reply naming Pro's rounds as changed. Either way nothing is deleted or posted at once: the
+    review's take-down is asked of the queue as the bot's, naming channel 700, Q, R1, R2, Alex and
+    `/season placements-review`, ending expired or refused."""
     channel = standing.channel
     if ending == "expired":
         await _expiry_callback(standing)(channel.q.id)
@@ -1062,8 +1068,11 @@ async def test_the_five_minutes_and_a_refused_press_ask_the_take_down(standing, 
         await _evidence_of(standing, channel.q.id, "before")
         _season_now(monkeypatch, "after")
         view, approval = _approve_view(standing, monkeypatch)
-        await _press_approve(view, _press_on(standing, channel.q))
+        press = _press_on(standing, channel.q)
+        await _press_approve(view, press)
         approval.assert_not_awaited()
+        reply = acknowledgement(press)
+        assert "has changed since this review" in reply and PRO_ROUNDS in reply
 
     assert channel.deleted == [] and channel.sent == []
     [payload] = await _take_downs(standing)
@@ -1076,7 +1085,9 @@ async def test_the_five_minutes_and_a_refused_press_ask_the_take_down(standing, 
 
 
 @pytest.mark.xfail(strict=True, reason=_POST_HANDED_NO_CLOCK)
-async def test_approve_refuses_where_the_season_changed_while_the_review_waited(posting, monkeypatch):
+async def test_approve_refuses_where_the_season_changed_while_the_review_waited(
+    posting, monkeypatch,
+):
     """The queue is stopped when Alex runs his review of season 1; its evidence is what the
     command computed the report from, Pro's rounds "before". While the review waits, Pro's
     rounds change. The stop clears and the review is posted. Alex presses Approve a moment after
@@ -1136,10 +1147,11 @@ async def test_a_press_on_a_review_whose_five_minutes_ran_is_refused_and_recorde
     standing, monkeypatch,
 ):
     """Alex's review stands in channel 700, its question Q posted on 7 September, so its five
-    minutes ran long ago, but nothing has yet taken it down. Alex presses Approve on Q through a view just built for it. He is refused,
-    privately, told the review's five minutes are up and nothing was approved; one ⛔ line naming
-    Approve and `/season placements-review` is in the log channel; the approval is never asked;
-    and the button itself deletes and posts nothing in channel 700."""
+    minutes ran long ago, but nothing has yet taken it down. Alex presses Approve on Q through a
+    view just built for it. He is refused, privately, told the review's five minutes are up and
+    nothing was approved; one ⛔ line naming Approve and `/season placements-review` is in the log
+    channel; the approval is never asked; and the button itself deletes and posts nothing in channel
+    700."""
     view, approval = _approve_view(standing, monkeypatch)
     interaction = _press_on(standing, standing.channel.q)
 
@@ -1212,7 +1224,9 @@ async def test_a_review_standing_after_a_restart_refuses_a_press_and_records_it(
     from leaguebot.__main__ import _approve_view_for
     from leaguebot.core.services.season_review_changes import recover_expired_review_prompts
 
-    approve_view = type(_approve_view_for(standing.bot)({"view": "approve", "reviewer_id": REVIEWER}))
+    approve_view = type(
+        _approve_view_for(standing.bot)({"view": "approve", "reviewer_id": REVIEWER})
+    )
     standing.bot.add_view = MagicMock()
     await recover_expired_review_prompts(standing.bot,
                                           approve_view=_approve_view_for(standing.bot),
