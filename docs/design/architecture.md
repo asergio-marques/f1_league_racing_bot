@@ -1139,14 +1139,15 @@ to it would switch off the one failure path for every command.
    for each lane) puts the error in the host's log, that lane's worker pauses and looks again, and
    the job runs again, so that its failure is recorded then; beside it, the dispatcher's own
    catch-all (`ChangeQueue._work`) puts a fault in starting the lanes in the host's log and pauses
-   before it looks again. The queue's catch of a step that raises is a failure path as well: it
-   stops the lane, or, for a step of a league's setting, `/bot init`'s save or a role move that
-   gives `Step.on_fault`, and for a check that raises as a member's change of a type that gives
-   `ChangeType.on_check_fault`, ends the job instead and the lane goes on (see "A job that fails
+   before it looks again. The queue's catch of a step that raises (`ChangeQueue._run_step`) is a failure path as well:
+   it stops the lane, or, for a step of a league's setting, `/bot init`'s save or a role move that
+   gives `Step.on_fault`, and for a check that raises as the job starts (`ChangeQueue._start`), as a
+   member's change of a type that gives `ChangeType.on_check_fault`, ends the job instead and the lane goes on (see "A job that fails
    stops its lane"). Either way the fault is logged on the host and recorded in the log channel as a
    failure, once — save a fault in `/bot init`'s save, which writes no line, and a fault in its
    check while no server holds the league, when there is no log channel to record it in; the
-   host's log holds either alone. The callback a change type may give for a Discard of a change
+   host's log holds either alone. The wrapper `bounded_autocomplete` puts round an autocomplete is
+   a failure path too: no choices, and the error in the host's log. The callback a change type may give for a Discard of a change
    before it started (`ChangeType.on_discarded`) is not a failure path but a stated exception: the
    catch-all around it
    (`ChangeQueue._discard_follow_ons`) puts the error in the host's log alone, with no line to the
@@ -1195,11 +1196,32 @@ to it would switch off the one failure path for every command.
    season cog's own image review section (`SeasonCog._build_image_review_section`) is a stated
    exception beside `approval_checks.image_configuration_faults`: its catch-all puts the error in
    the host's log and states the section as unreadable in the review, because a review must never
-   fail for this (its docstring says so); and the image module's artwork signature
+   fail for this (its docstring says so); the image module's artwork signature
    (`ImageDrawing.artwork_signature`) is a stated exception too: its catch-all signs a configured
    directory it cannot resolve as `[column, value, "unresolvable"]`, with a warning to the host's
    log alone, and signs the rest all the same, because a fault that escaped it would empty the whole
-   fingerprint and the review would read as changed in every area (its docstring says so);
+   fingerprint and the review would read as changed in every area (its docstring says so); the
+   queue's own telling of a change's outcome (`ChangeQueue._acknowledge`, `_acknowledge_saved`,
+   `_name_job`, `_post_notice`, `_tell`, `_tell_origin`, `_update_reply` and `_finish`, and
+   `OutputRouter.strip_view` beside them) is a stated exception as well: each catch-all puts the
+   error in the host's log and the change goes ahead, because telling a change's outcome must never
+   fail the change; the queue's catches of a hook that raises (`ChangeQueue._end_on_check_fault`,
+   `_refuse` and `_step_failed`) are stated exceptions likewise: each puts the error in the host's
+   log and stops the lane, on the fault of the check, the refusal or the job in hand; the log
+   writer's own catch-alls (`OutputRouter._enqueue_if_configured`, `log_lines.name_of_member` and
+   `log_lines.record_refusal`) are stated exceptions beside place 3: a line that can be neither
+   posted nor kept for retry is logged on the host and dropped, a member who cannot be looked up is
+   named by mention alone, and a refusal's record that fails is logged on the host and not answered
+   a second time, because a line to the log channel must not fail the work it records; the readers
+   that stand aside (`amendment_service.approval_faults`, `approval_checks.channel_on_server`,
+   `season_fingerprint_service.take_fingerprint` and `BotCog._clean_up`) are stated exceptions too:
+   the first two put the error in the host's log and read an attendance switch as off and a channel
+   as present, because a reader that cannot answer must not refuse an amendment or a season, the
+   third signs a fingerprint it cannot take as an empty one, which refuses an approval, and the
+   fourth says in the factory reset's last report and closing line that its clean-up stopped,
+   because a reset must not end in silence (each docstring says so); and the scheduler's removal of
+   one job (`SchedulerService._remove_job`) is a stated exception too: its catch-all puts the error
+   in the host's log and the teardown goes on past a job that will not go;
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a job: one that fails stops its lane until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
