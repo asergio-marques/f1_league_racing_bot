@@ -1902,3 +1902,72 @@ async def test_core_lays_out_the_marks_each_module_hands_the_review(tmp_path, sc
     assert summary == "\n".join(lines)
     queued = set() if stub is not None else None
     assert handed == [([1, 2, 3], NOW, queued), ([1, 2, 3], NOW, queued)]
+
+
+@pytest.mark.xfail(strict=True, reason=MARKS_ASKED_OF_THE_MODULES)
+async def test_the_review_leaves_out_cancelled_rounds_and_reads_a_round_without_a_track_as_tba(
+    tmp_path,
+) -> None:
+    """Division A has round 1, with no track yet, racing in three days; round 2, called off; and
+    round 3, cancelled because every session was entered as not held. Division B was cancelled,
+    with round 4 (Imola) in it. A stand-in module marks every round's P1 done. The review lists
+    round 1 alone, its track read as TBA, and no division B; and the module is handed round 1
+    alone."""
+    in_days = lambda days: (NOW + timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    db_path = str(tmp_path / "left_out.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [
+        {"division_id": 1, "scheduled_at": in_days(3), "track_name": None},
+        {"division_id": 1, "scheduled_at": in_days(5), "track_name": "Jeddah"},
+        {"division_id": 1, "scheduled_at": in_days(-1), "track_name": "Miami"},
+        {"division_id": 2, "scheduled_at": in_days(3), "track_name": "Imola"},
+    ])
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET status = 'CANCELLED' WHERE id = 2")
+        await db.execute("UPDATE rounds SET status = 'CANCELLED', not_held = 1 WHERE id = 3")
+        await db.execute("UPDATE divisions SET status = 'CANCELLED' WHERE id = 2")
+        await db.commit()
+    handed: list = []
+    hook = _marks_hook({rid: [("P1", "✅")] for rid in (1, 2, 3, 4)}, handed_to=handed)
+
+    summary = await build_review_summary(db_path, None, now=NOW, review_marks_read=hook)
+
+    assert summary == "\n".join([
+        "**Season: Season starting 2026-01-01 — ACTIVE**",
+        "",
+        "**Division A**",
+        f"  Round 1 · {'TBA':<15} · {(NOW + timedelta(days=3)).date().isoformat()}  P1: ✅",
+    ])
+    assert handed == [([1], NOW, None)]
+
+
+@pytest.mark.xfail(strict=True, reason=MARKS_ASKED_OF_THE_MODULES)
+@pytest.mark.parametrize("cancelled", [
+    pytest.param(False, id="no rounds at all"),
+    pytest.param(True, id="every round cancelled"),
+])
+async def test_the_review_of_an_active_season_without_rounds(tmp_path, cancelled) -> None:
+    """The active season, starting 1 January 2026, has no rounds at all; or only round 1, called
+    off, and round 2, cancelled because every session was entered as not held. A stand-in module
+    would mark any round's P1 done. The review, with a scheduler, reads the season's heading and
+    that no rounds have been configured yet, and nothing else, not even the legend; and no module
+    is handed a round."""
+    db_path = str(tmp_path / "no_rounds.db")
+    await run_migrations(db_path)
+    await _seed(db_path, [{}, {}] if cancelled else [])
+    if cancelled:
+        async with get_connection(db_path) as db:
+            await db.execute("UPDATE rounds SET status = 'CANCELLED' WHERE id = 1")
+            await db.execute("UPDATE rounds SET status = 'CANCELLED', not_held = 1 WHERE id = 2")
+            await db.commit()
+    handed: list = []
+    hook = _marks_hook({1: [("P1", "✅")], 2: [("P1", "✅")]}, handed_to=handed)
+
+    summary = await build_review_summary(
+        db_path, _StubScheduler(), now=NOW, review_marks_read=hook
+    )
+
+    assert summary == (
+        "**Season: Season starting 2026-01-01 — ACTIVE**\n\nNo rounds have been configured yet."
+    )
+    assert all(round_ids == [] for round_ids, _, _ in handed)
