@@ -10,6 +10,8 @@ Pure tests: no database, no Discord.
 """
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 
@@ -22,9 +24,12 @@ def _division(**overrides):
         "season_id": 1,
         "name": "Pro",
         "mention_role_id": 900,
-        "forecast_channel_id": None,
         "tier": 1,
     }
+    # The forecast channel is weather's own column, which core's Division stops carrying (#283);
+    # until it does, the field is required, so it is handed only where Division declares it.
+    if "forecast_channel_id" in {f.name for f in dataclasses.fields(Division)}:
+        fields["forecast_channel_id"] = None
     fields.update(overrides)
     return Division(**fields)
 

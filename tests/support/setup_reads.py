@@ -7,6 +7,7 @@ reads the setup it wants the command to find, here, rather than putting one in t
 """
 from __future__ import annotations
 
+import dataclasses
 from datetime import date
 from unittest.mock import AsyncMock
 
@@ -57,17 +58,21 @@ def hold_setup(
     if not divisions:
         return
 
+    # The forecast channel is weather's own column, which core's Division stops carrying (#283);
+    # until it does, the field is required, so it is handed only where Division declares it.
+    weather_field = "forecast_channel_id" in {f.name for f in dataclasses.fields(Division)}
     stored: list[Division] = []
     rounds: dict[int, list[Round]] = {}
     for number, div in enumerate(getattr(cfg, "divisions", None) or [], start=1):
+        forecast = {"forecast_channel_id": div.channel_id} if weather_field else {}
         stored.append(Division(
             id=number,
             season_id=sid,
             name=div.name,
             mention_role_id=div.role_id,
-            forecast_channel_id=div.channel_id,
             status="ACTIVE",
             tier=div.tier,
+            **forecast,
         ))
         rounds[number] = [
             Round(
