@@ -250,17 +250,6 @@ async def _reassign_merge_hook_faulted(tmp_path, monkeypatch) -> None:
         ))
 
 
-async def _former_driver_set(tmp_path, monkeypatch) -> None:
-    """`/test-mode set-former-driver` of Racer in test mode, the service raising."""
-    from tests.core.test_test_mode_cog_refusals import _cog, _command, _interaction, _member
-
-    cog = _cog()
-    cog.bot.driver_service.set_former_driver = AsyncMock(side_effect=ValueError(BUG))
-    await _command("set_former_driver", _member(), True)(
-        cog, _interaction(cog, "test-mode set-former-driver")
-    )
-
-
 async def _tiers_checked(tmp_path, monkeypatch) -> None:
     """✅ Approve pressed on season 11's placements review, the tier check raising."""
     from leaguebot.core.db.database import get_connection
@@ -307,7 +296,6 @@ CATCHES = [
                  id="team reserve-role save, a role id no number"),
     pytest.param(_reassign_checked, id="driver reassign check"),
     pytest.param(_reassign_merge_hook_faulted, id="driver reassign save, a merge hook's fault"),
-    pytest.param(_former_driver_set, id="test-mode set-former-driver"),
     pytest.param(_tiers_checked, id="season approval's tier check"),
 ]
 

@@ -164,14 +164,6 @@ def _submission_open(status: str):
     return setup
 
 
-def _former_driver_refused(cog, monkeypatch):
-    from leaguebot.core.models.refusal import Refused
-
-    cog.bot.driver_service.set_former_driver = AsyncMock(
-        side_effect=Refused("No driver profile found for that user.")
-    )
-
-
 def _locked(cog, monkeypatch):
     monkeypatch.setattr(
         backup_service,
@@ -270,12 +262,6 @@ _CASES = {
         _command("set_former_driver", _member(), True),
         _not_in_test_mode,
         "only available when test mode is enabled",
-    ),
-    "set-former-driver refused by the service": (
-        "test-mode set-former-driver",
-        _command("set_former_driver", _member(), True),
-        _former_driver_refused,
-        "No driver profile found for that user.",
     ),
     "backup save outside test mode": (
         "test-mode backup save",

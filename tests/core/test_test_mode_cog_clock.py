@@ -3,9 +3,9 @@
 
 architecture.md, "The time is always passed in": the change queue's clock is the bot's clock, and
 a cog hands a service its `now` from `bot.change_queue.now()`, never the host's. `/test-mode
-advance` is held to it in `test_test_mode_advance.py`; these are the review and the former-driver
-flag, and beside them the hook the review reads each module's marks through. Each queue's clock
-reads a moment years from the host's, so that a host reading cannot pass for it.
+advance` is held to it in `test_test_mode_advance.py`; this is the review, and beside it the hook
+the review reads each module's marks through. Each queue's clock reads a moment years from the
+host's, so that a host reading cannot pass for it.
 """
 from __future__ import annotations
 
@@ -72,22 +72,3 @@ async def test_the_review_asks_each_module_s_marks_of_the_bot_s_hook(monkeypatch
     await undecorate(_Cog.review)(cog, _interaction("test-mode review"))
 
     assert summary.await_args.kwargs.get("review_marks_read") is cog.bot.review_marks_read
-
-
-async def test_the_former_driver_flag_is_set_at_the_queue_s_time():
-    """With test mode on, Alex sets Racer's former-driver flag. The service is handed the change
-    queue's time, and Alex is told the old and new values."""
-    cog = _cog()
-    cog.bot.driver_service.set_former_driver = AsyncMock(return_value=(False, True))
-    member = MagicMock()
-    member.id = 5151
-    member.display_name = "Racer"
-    interaction = _interaction("test-mode set-former-driver")
-
-    await undecorate(_Cog.set_former_driver)(cog, interaction, member, True)
-
-    call = cog.bot.driver_service.set_former_driver.await_args
-    assert call.args[:2] == ("5151", True)
-    assert call.kwargs.get("now") == QUEUE_NOW
-    reply = interaction.response.send_message.await_args.args[0]
-    assert "Old value: False" in reply and "New value: True" in reply

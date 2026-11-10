@@ -2,7 +2,7 @@
 
 Issue #208. `tests/core/test_driver_service_transitions.py` covers which transitions the state
 machine allows. What it does not cover is what the allowed ones actually *do* to the database,
-nor the re-key (`reassign_user_id_on`, through `reassigned`) and `set_former_driver` at all.
+nor the re-key (`reassign_user_id_on`, through `reassigned`) at all.
 
 **Reaching `NOT_SIGNED_UP` destroys nothing** (issue #220, which reversed the deletion this
 file was first written against). A driver without the former-driver flag is *pending
@@ -18,16 +18,14 @@ the driver's list of accounts, and every record keeps the account it was written
 `test_driver_reassign.py` pins what refuses it and what merges; the refusals kept here are
 the ones about records, and each leaves everything as it was.
 
-**Re-flagging writes an audit entry carrying the old and the new value,** the league's only
-record of it. The re-key's entry is written by its change on the queue, and
-`test_driver_reassign.py` pins it there.
+The re-key's audit entry is written by its change on the queue, and `test_driver_reassign.py`
+pins it there; the former-driver flag set by hand is pinned with its own change in
+`test_test_mode_former_driver.py`.
 
 Everything runs against a real migrated database: the refusals reach the results through their
 division, and the audit inserts are raw SQL — none of which a double would check.
 """
 from __future__ import annotations
-
-from datetime import datetime, timezone
 
 import os
 
@@ -39,13 +37,11 @@ from leaguebot.core.services.driver_service import DriverService
 from tests.support.teams import seed_team_instances
 from tests.support.driver_transitions import reassigned, transitioned
 
-NOW = datetime(2031, 3, 4, 5, 6, 7, tzinfo=timezone.utc)
 
 
 SERVER_ID = 9108
 OLD_USER = "4242"
 NEW_USER = "5353"
-ACTOR_ID = 77
 
 #: The league's season, division, round and session are all seeded under this id, so that
 #: one number names the whole of its racing.
@@ -383,83 +379,22 @@ async def test_a_refused_re_key_over_racing_records_changes_nothing(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "former, value, reported",
-    [
-        pytest.param(False, True, (False, True), id="set"),
-        pytest.param(True, False, (True, False), id="cleared"),
-    ],
-)
-async def test_the_former_driver_flag_is_set_or_cleared_and_reports_both_values(
-    tmp_path, former, value, reported
-):
-    """The return value is what the command echoes back, so a manager can see it changed
-    rather than merely that the command ran. It can be cleared again: set by mistake, it would
-    otherwise keep a profile alive through every departure."""
-    db_path = await _make_db(tmp_path)
-    await _seed_profile(db_path, former=former)
-    service = DriverService(db_path)
-
-    old, new = await service.set_former_driver(
-        OLD_USER, value, ACTOR_ID, "Manager", now=NOW
-    )
-
-    assert (old, new) == reported
-    profile = await service.get_profile(OLD_USER)
-    assert profile.former_driver is value
-
-
-async def test_setting_the_flag_for_a_user_with_no_profile_is_refused(tmp_path):
-    from leaguebot.core.models.refusal import Refused
-    db_path = await _make_db(tmp_path)
-    service = DriverService(db_path)
-
-    with pytest.raises(Refused, match="No driver profile"):
-        await service.set_former_driver(
-            OLD_USER, True, ACTOR_ID, "Manager", now=NOW
-        )
-
-
-async def test_setting_the_flag_is_audited(tmp_path):
-    """The entry is written at the time the command hands in, never the host's clock."""
-    db_path = await _make_db(tmp_path)
-    await _seed_profile(db_path, former=False)
-
-    await DriverService(db_path).set_former_driver(
-        OLD_USER, True, ACTOR_ID, "Manager", now=NOW
-    )
-
-    entry = (await _audit(db_path))[0]
-    assert entry["change_type"] == "TEST_FORMER_DRIVER_FLAG_SET"
-    assert entry["old_value"] != entry["new_value"]
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT timestamp FROM audit_entries")
-        assert (await cursor.fetchone())["timestamp"] == NOW.isoformat()
-
-
 async def test_the_flag_decides_whether_a_departure_destroys_the_profile(tmp_path):
     """The two halves of this file meeting: setting the flag changes what the destructive
-    transition does to the same driver."""
+    transition does to the same driver. The flag is set through `set_former_drivers_on`, the
+    one writer of it a change's save calls; `/test-mode set-former-driver`, which sets it by
+    hand on the change queue, is pinned in `test_test_mode_former_driver.py`."""
+    from leaguebot.core.services.driver_service import set_former_drivers_on
+
     db_path = await _make_db(tmp_path)
-    await _seed_profile(db_path, state="UNASSIGNED", former=False)
-    service = DriverService(db_path)
-    await service.set_former_driver(OLD_USER, True, ACTOR_ID, "Manager", now=NOW)
+    profile_id = await _seed_profile(db_path, state="UNASSIGNED", former=False)
+    async with get_connection(db_path) as db:
+        await set_former_drivers_on(db, {profile_id: True})
+        await db.commit()
 
     await transitioned(db_path, OLD_USER, DriverState.NOT_SIGNED_UP)
 
     assert await _profile_count(db_path) == 1
-
-
-async def test_the_flag_is_set_through_a_past_account(tmp_path):
-    """Any account names the driver (issue #243), the test-mode command included."""
-    db_path = await _make_db(tmp_path)
-    await _seed_profile(db_path)
-    service = DriverService(db_path)
-    await reassigned(db_path, OLD_USER, NEW_USER)
-
-    assert await service.set_former_driver(
-        OLD_USER, True, ACTOR_ID, "Manager", now=NOW
-    ) == (False, True)
 
 
 # ---------------------------------------------------------------------------
