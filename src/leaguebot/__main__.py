@@ -486,6 +486,22 @@ def _sign_up_to_pending_steps_read(bot: LeagueBot) -> None:
         bot.pending_steps_read.subscribe(module_steps.pending_steps)
 
 
+def _sign_up_to_review_marks_read(bot: LeagueBot) -> None:
+    """Make the hook `/test-mode review` reads each module's marks through, and sign each module's
+    part up to it: its own marks of the rounds core hands it, from its own state, handed the
+    database path, the rounds, the moment the review judges at and the jobs the scheduler holds.
+    Weather, results and attendance sign up, in the order the review lays their marks out; core
+    lays out the divisions and rounds around them (architecture.md, "How modules and core fit
+    together"). The builder hands it to the command."""
+    from leaguebot.attendance.services import test_mode_steps as attendance_steps
+    from leaguebot.results.services import test_mode_steps as results_steps
+    from leaguebot.weather.services import test_mode_steps as weather_steps
+
+    bot.review_marks_read = AwaitedHook()
+    for module_steps in (weather_steps, results_steps, attendance_steps):
+        bot.review_marks_read.subscribe(module_steps.review_marks)
+
+
 def _sign_up_to_driver_turned_down(bot: LeagueBot) -> None:
     """Make the hook a driver turned down declares, and sign each module's part up to it: what a
     module lets go of from the driver, on the connection of the save that turns them down, given
@@ -1750,6 +1766,7 @@ async def build(settings: Settings) -> LeagueBot:
     _sign_up_to_division_lines_read(bot)
     _sign_up_to_fingerprint_areas_read(bot)
     _sign_up_to_pending_steps_read(bot)
+    _sign_up_to_review_marks_read(bot)
     _sign_up_to_driver_account_changed(bot)
     _sign_up_to_placements_confirmed(bot)
     _sign_up_to_season_completed(bot)

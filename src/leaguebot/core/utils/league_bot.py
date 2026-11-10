@@ -143,6 +143,14 @@ class LeagueBot(commands.Bot):
     #: they hand back by its own step order (architecture.md, "A hook core declares is a list of
     #: subscribers").
     pending_steps_read: AwaitedHook
+    #: The marks `/test-mode review` shows after each round's number, track and date: each module
+    #: signs up a function handing back its own marks of the rounds core hands it, by round, as
+    #: (label, mark) pairs, given the database's path, the rounds, the moment the review judges at
+    #: and the jobs the scheduler holds (None where there is none). The builder makes it and signs
+    #: up weather, results and attendance, in the order the review lays their marks out, so that
+    #: core lays out the divisions and rounds and reads no module's table (architecture.md, "A hook
+    #: core declares is a list of subscribers").
+    review_marks_read: AwaitedHook
     #: The base role changed (`/bot base-role`), awaited from an `After` step once the queue has
     #: saved it, given the server, the role replaced and the role now set, and handing no
     #: connection: each subscriber opens its own (signup's move of the signup channel's overwrite

@@ -25,12 +25,6 @@ from typing import TYPE_CHECKING, Any, TypedDict
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import (
-    CHECK_IN_CALL,
-    CHECK_IN_CLEAN_UP,
-    CHECK_IN_DEADLINE,
-    CHECK_IN_LAST_NOTICE,
-)
 from leaguebot.core.models.round import ROUND_JOB_PHASES, read_scheduled_at
 from leaguebot.core.utils.hooks import AwaitedHook
 
@@ -310,63 +304,26 @@ async def count_live_real_drivers(db_path: str) -> int:
 # Phase advancement queue
 # ---------------------------------------------------------------------------
 
-#: The scheduler's event type of each check-in step, by the change that asks for it.
-_CHECK_IN_EVENTS = {
-    CHECK_IN_CALL: "rsvp_notice",
-    CHECK_IN_LAST_NOTICE: "rsvp_last_notice",
-    CHECK_IN_DEADLINE: "rsvp_deadline",
-    CHECK_IN_CLEAN_UP: "rsvp_cleanup",
-}
-
-
-async def _check_ins_in_hand(db_path: str) -> set[tuple[int, str]]:
-    """Each check-in step asked of the change queue and not yet run, as (round, scheduler event):
-    asked by an earlier advance, whose scheduler job it cancelled, so that the database alone
-    would offer the same step again."""
-    from leaguebot.core.services.change_queue import unfinished
-
-    return {
-        (int(payload["round_id"]), _CHECK_IN_EVENTS[kind])
-        for kind in _CHECK_IN_EVENTS
-        for payload in await unfinished(db_path, (kind,))
-    }
-
-
-def _deadline_has_run(rsvp: Any) -> bool:
-    """Whether a round's RSVP deadline has run: it is marked (`deadline_run_at`, set in the save
-    that records the distribution, before the announcement is posted) or its announcement stands.
-    The mark is what the deadline's own job reads, so a deadline whose announcement was refused
-    is not run again by advance; the announcement alone covers a row written before the mark."""
-    return bool(rsvp["deadline_run_at"] or rsvp["distribution_msg_id"])
-
-
-def _race_run(scheduled_at: str, now: datetime) -> bool:
-    """Whether a round stored as scheduled at *scheduled_at* has been raced by *now*."""
-    return read_scheduled_at(scheduled_at) <= now
-
-
 #: The statuses of a round that has ended, or whose appeals are being judged.
 _ENDED_STATUSES = frozenset({"FINAL", "AWAITING_APPEAL_VERDICTS", "CANCELLED"})
 
 
-async def _active_rounds(db_path: str) -> list[ActiveRound]:
-    """The rounds of the active season as core reads them, by race time and then division: those
-    of a cancelled division are left out, and a cancelled round unless it ended so because every
-    session was entered as not held, which still has its clean-ups."""
+_ROUND_COLUMNS = """
+    SELECT r.id AS round_id, r.round_number, r.division_id, r.format, r.track_name,
+           r.status, r.scheduled_at, d.name AS division_name
+    FROM rounds r
+    JOIN divisions d ON d.id = r.division_id
+    JOIN seasons   s ON s.id = d.season_id
+    WHERE s.status    = 'ACTIVE'
+      AND d.status   != 'CANCELLED'
+"""
+
+
+async def _read_rounds(db_path: str, condition: str, order: str) -> list[ActiveRound]:
+    """The rounds of the active season's live divisions that meet *condition*, as core reads
+    them, in *order*."""
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT r.id AS round_id, r.round_number, r.division_id, r.format, r.track_name,
-                   r.status, r.scheduled_at, d.name AS division_name
-            FROM rounds r
-            JOIN divisions d ON d.id = r.division_id
-            JOIN seasons   s ON s.id = d.season_id
-            WHERE s.status    = 'ACTIVE'
-              AND d.status   != 'CANCELLED'
-              AND (r.status != 'CANCELLED' OR r.not_held = 1)
-            ORDER BY r.scheduled_at ASC, d.id ASC
-            """,
-        )
+        cursor = await db.execute(f"{_ROUND_COLUMNS} AND {condition} ORDER BY {order}")
         return [
             ActiveRound(
                 round_id=row["round_id"],
@@ -380,6 +337,15 @@ async def _active_rounds(db_path: str) -> list[ActiveRound]:
             )
             for row in await cursor.fetchall()
         ]
+
+
+async def _active_rounds(db_path: str) -> list[ActiveRound]:
+    """The rounds of the active season as core reads them, by race time and then division: those
+    of a cancelled division are left out, and a cancelled round unless it ended so because every
+    session was entered as not held, which still has its clean-ups."""
+    return await _read_rounds(
+        db_path, "(r.status != 'CANCELLED' OR r.not_held = 1)", "r.scheduled_at ASC, d.id ASC"
+    )
 
 
 def _entry(rnd: ActiveRound, step: PendingStep, job_id: str | None = None) -> PhaseEntry:
@@ -568,227 +534,72 @@ async def build_review_summary(
     scheduler_service: Any = None,
     *,
     now: datetime,
+    review_marks_read: AwaitedHook,
 ) -> str:
     """Return a formatted multi-line string summarising all rounds and phase status.
 
-    Groups results by division (insertion order), then by round (scheduled_at).
-    Covers weather phases (P1-P3) and the forecast cleanup, result submission, and RSVP
-    phases (notice / last-notice / deadline) and the check-in cleanup, based on DB state —
-    so it reflects actual progress regardless of whether scheduler jobs have fired or been
-    evicted. A module's steps are shown only while it is on — nothing of one that is off is
-    armed, and advance runs none of it.
+    Core lays out the season, its divisions (in the order they were made) and each division's
+    rounds (by race time), each a line of its number, track and date; every cancelled round and
+    every round of a cancelled division is left out. The marks after a round's date are the
+    modules': each is asked, through *review_marks_read* and in the order it signed up, for its
+    own marks of the rounds, from its own state, so the review reflects actual progress whether
+    or not scheduler jobs have fired or been evicted, and shows nothing of a module that is off.
+    A module's marks of a round are written as ``Label: mark`` cells, apart by two spaces, and
+    one module's marks are apart from the next's by a bar.
 
-    When *scheduler_service* is supplied, each pending phase is annotated:
+    When *scheduler_service* is supplied, the modules are handed the jobs it holds, and each
+    pending step is annotated:
       ⏳ = job is present in APScheduler (will fire automatically)
       ⚠️  = job is absent (misfired, evicted, or never created — needs /advance)
-
-    A weather step left undone on a round whose race has been run by *now* is marked ⏭️
-    (`PASSED_OVER`), scheduler or not: `get_next_pending_phase` passes it over, the change queue
-    dropping a forecast for a race already run (A25), so neither ⏳ nor "use /test-mode advance"
-    would be true of it. Such a round's clean-up is done once nothing of Phases 1 to 3 stands,
-    whether or not Phase 3 ever ran.
+    A step undone on a round whose race has been run by *now* is marked ⏭️ (`PASSED_OVER`) by
+    its module where advance passes it over, scheduler or not.
 
     Returns an informative message string if no active season exists.
     """
     async with get_connection(db_path) as db:
-        # Season header
         season_cursor = await db.execute(
             "SELECT start_date FROM seasons WHERE status = 'ACTIVE'",
         )
         season_row = await season_cursor.fetchone()
 
-        if season_row is None:
-            return "ℹ️ No active season found. Configure a season first."
+    if season_row is None:
+        return "ℹ️ No active season found. Configure a season first."
 
-        season_name = f"Season starting {season_row['start_date']}"
+    season_name = f"Season starting {season_row['start_date']}"
 
-        # Module-enabled flags
-        rmc_cursor = await db.execute(
-            "SELECT module_enabled FROM results_module_config",
-        )
-        rmc_row = await rmc_cursor.fetchone()
-        results_module_enabled = bool(rmc_row[0]) if rmc_row else False
-
-        att_cursor = await db.execute(
-            "SELECT module_enabled, rsvp_last_notice_hours FROM attendance_config"
-        )
-        att_row = await att_cursor.fetchone()
-        attendance_module_enabled = bool(att_row["module_enabled"]) if att_row else False
-        # A last notice set to 0 is never sent, and is left out like a step of a module that is
-        # off — the setting cannot change while a season runs, so no job was ever armed.
-        last_notice_enabled = bool(att_row["rsvp_last_notice_hours"]) if att_row else False
-
-        # The weather module's steps are shown only while it is on, as the others' are:
-        # nothing of it is armed while it is off, and advance runs none of it.
-        wm_cursor = await db.execute("SELECT weather_module_enabled FROM server_configs")
-        wm_row = await wm_cursor.fetchone()
-        weather_module_enabled = bool(wm_row[0]) if wm_row else False
-
-        # All non-cancelled rounds for the active season
-        cursor = await db.execute(
-            """
-            SELECT
-                r.id          AS round_id,
-                r.round_number,
-                r.format,
-                r.track_name,
-                r.scheduled_at,
-                r.phase1_done,
-                r.phase2_done,
-                r.phase3_done,
-                r.checkin_cleared,
-                r.status,
-                d.name        AS division_name,
-                d.id          AS division_id
-            FROM rounds r
-            JOIN divisions d ON d.id  = r.division_id
-            JOIN seasons   s ON s.id  = d.season_id
-            WHERE s.status    = 'ACTIVE'
-              AND d.status   != 'CANCELLED'
-              AND r.status   != 'CANCELLED'
-            ORDER BY d.id ASC, r.scheduled_at ASC
-            """,
-        )
-        rows = await cursor.fetchall()
-
-        # Rounds that have at least one ACTIVE session_result
-        sr_cursor = await db.execute(
-            """
-            SELECT DISTINCT sr.round_id
-            FROM session_results sr
-            JOIN rounds r ON r.id = sr.round_id
-            JOIN divisions d ON d.id = r.division_id
-            JOIN seasons s ON s.id = d.season_id
-            WHERE sr.status = 'ACTIVE'
-            """,
-        )
-        rounds_with_results: set[int] = {r["round_id"] for r in await sr_cursor.fetchall()}
-
-        # Rounds with a Phase 1 to 3 forecast still standing, for the forecast cleanup
-        forecast_cursor = await db.execute(
-            "SELECT DISTINCT round_id FROM forecast_messages WHERE phase_number IN (1, 2, 3)",
-        )
-        standing_forecasts: set[int] = {r["round_id"] for r in await forecast_cursor.fetchall()}
-
-        # RSVP embed message rows: keyed by (round_id, division_id)
-        rsvp_cursor = await db.execute(
-            """
-            SELECT rem.round_id, rem.division_id,
-                   rem.message_id, rem.last_notice_msg_id, rem.distribution_msg_id,
-                   rem.deadline_run_at
-            FROM rsvp_embed_messages rem
-            JOIN rounds r ON r.id = rem.round_id
-            JOIN divisions d ON d.id = r.division_id
-            JOIN seasons s ON s.id = d.season_id
-            """,
-        )
-        rsvp_rows = {
-            (r["round_id"], r["division_id"]): r
-            for r in await rsvp_cursor.fetchall()
-        }
-
-    if not rows:
+    rounds = await _read_rounds(db_path, "r.status != 'CANCELLED'", "d.id ASC, r.scheduled_at ASC")
+    if not rounds:
         return f"**Season: {season_name} — ACTIVE**\n\nNo rounds have been configured yet."
 
     # The jobs the scheduler holds, as (round_id, event_type) — when one is available.
-    round_ids: set[int] = {r["round_id"] for r in rows}
     queued: set[tuple[int, str]] | None = (
-        scheduler_service.get_queued_events_for_rounds(round_ids)
+        scheduler_service.get_queued_events_for_rounds({rnd.round_id for rnd in rounds})
         if scheduler_service is not None
         else None
     )
-    if queued is not None:
-        # A check-in step in hand on the change queue is pending, though its scheduler job was
-        # cancelled by the advance that asked for it.
-        queued |= await _check_ins_in_hand(db_path)
-
-    # Group by division
-    divisions: dict[str, list] = {}
-    for row in rows:
-        div_name = row["division_name"]
-        if div_name not in divisions:
-            divisions[div_name] = []
-        divisions[div_name].append(row)
+    answers: list[ReviewMarks] = await review_marks_read.call(
+        db_path, rounds, now=now, queued=queued
+    )
 
     lines: list[str] = [f"**Season: {season_name} — ACTIVE**\n"]
-
-    for div_name, div_rounds in divisions.items():
-        lines.append(f"**{div_name}**")
-        for row in div_rounds:
-            rid = row["round_id"]
-            rnum = row["round_number"]
-            track = row["track_name"] or "TBA"
-            date_str = read_scheduled_at(row["scheduled_at"]).date().isoformat()
-
-            fmt = str(row["format"]).upper()
-            is_mystery = fmt == "MYSTERY"
-
-            parts: list[str] = []
-            raced = _race_run(row["scheduled_at"], now)
-
-            def _weather(done: bool, event: str) -> str:
-                """A weather step's mark: passed over where undone on a raced round."""
-                if raced and not done:
-                    return PASSED_OVER
-                return phase_mark(done, (rid, event), queued)
-
-            # ── Weather / mystery notice phases ───────────────────────────
-            if weather_module_enabled and is_mystery:
-                # A mystery round's notice is armed as `weather_p1`: weather's
-                # `ask_forecast` reads the round's format as it fires.
-                notice = _weather(bool(row["phase1_done"]), "weather_p1")
-                parts.append(f"Notice: {notice}")
-            elif weather_module_enabled:
-                p1 = _weather(bool(row["phase1_done"]), "weather_p1")
-                p2 = _weather(bool(row["phase2_done"]), "weather_p2")
-                p3 = _weather(bool(row["phase3_done"]), "weather_p3")
-                # Done once Phase 3 has run, or the race has (Phase 3 passed over), and nothing
-                # of Phases 1 to 3 is left standing.
-                cleanup = phase_mark(
-                    (bool(row["phase3_done"]) or raced) and rid not in standing_forecasts,
-                    (rid, "cleanup"),
-                    queued,
-                )
-                parts.append(f"P1: {p1}  P2: {p2}  P3: {p3}  Cleanup: {cleanup}")
-
-            # ── Result submission ─────────────────────────────────────────
-            if results_module_enabled:
-                if row["status"] == "FINAL":
-                    res = "✅ finalized"
-                elif rid in rounds_with_results:
-                    res = "⏸️ pending review"
-                else:
-                    res = phase_mark(False, (rid, "results"), queued)
-                parts.append(f"Results: {res}")
-
-            # ── RSVP / attendance phases ──────────────────────────────────
-            if attendance_module_enabled:
-                check_in: list[tuple[str, str]]
-                if row["checkin_cleared"]:
-                    # Taken down a day after the round, and its record with it: every
-                    # step before the cleanup had run by then.
-                    check_in = [
-                        ("RSVP", "✅"), ("Last", "✅"), ("Deadline", "✅"), ("Cleared", "✅")
-                    ]
-                else:
-                    rsvp = rsvp_rows.get((rid, row["division_id"]))
-                    check_in = [
-                        ("RSVP", "✅" if rsvp is not None
-                         else phase_mark(False, (rid, "rsvp_notice"), queued)),
-                        ("Last", "✅" if (rsvp and rsvp["last_notice_msg_id"])
-                         else phase_mark(False, (rid, "rsvp_last_notice"), queued)),
-                        ("Deadline", "✅" if (rsvp and _deadline_has_run(rsvp))
-                         else phase_mark(False, (rid, "rsvp_deadline"), queued)),
-                        ("Cleared", phase_mark(False, (rid, "rsvp_cleanup"), queued)),
-                    ]
-                if not last_notice_enabled:
-                    check_in = [(name, mark) for name, mark in check_in if name != "Last"]
-                parts.append("  ".join(f"{name}: {mark}" for name, mark in check_in))
-
-            line = f"  Round {rnum} · {track:<15} · {date_str}  " + "  |  ".join(parts)
-            lines.append(line)
-
-        lines.append("")  # blank line between divisions
+    division_id: int | None = None
+    for rnd in rounds:
+        if rnd.division_id != division_id:
+            if division_id is not None:
+                lines.append("")  # blank line between divisions
+            division_id = rnd.division_id
+            lines.append(f"**{rnd.division_name}**")
+        parts = [
+            "  ".join(f"{label}: {mark}" for label, mark in answer[rnd.round_id])
+            for answer in answers
+            if answer.get(rnd.round_id)
+        ]
+        track = rnd.track_name or "TBA"
+        date_str = rnd.scheduled_at.date().isoformat()
+        lines.append(
+            f"  Round {rnd.round_number} · {track:<15} · {date_str}  " + "  |  ".join(parts)
+        )
+    lines.append("")
 
     if queued is not None:
         lines.append(

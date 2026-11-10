@@ -269,6 +269,7 @@ class TestModeCog(commands.Cog):
             self.bot.db_path,
             self.bot.scheduler_service,
             now=self.bot.change_queue.now(),
+            review_marks_read=self.bot.review_marks_read,
         )
         # Discord message limit is 2000 characters; chunk if needed.
         chunks = [summary[i:i + 2000] for i in range(0, len(summary), 2000)]

@@ -25,11 +25,6 @@ from tests.support.review_marks_hook import review_marks_read
 #: reading, so that the rounds seeded relative to it and the reads judging them agree.
 NOW = datetime.now(timezone.utc)
 
-#: Why each test building the review through the modules' marks as the builder signs them up
-#: fails until core asks them.
-MARKS_ASKED_OF_THE_MODULES = "#283: core does not yet ask the modules for the review's marks"
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -296,7 +291,6 @@ async def test_no_active_season_returns_none(tmp_path) -> None:
 # build_review_summary
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason=MARKS_ASKED_OF_THE_MODULES)
 async def test_review_no_active_season(tmp_path) -> None:
     """Returns informative string when no active season exists."""
     db_path = str(tmp_path / "bot.db")
@@ -308,7 +302,6 @@ async def test_review_no_active_season(tmp_path) -> None:
     assert "No active season" in summary
 
 
-@pytest.mark.xfail(strict=True, reason=MARKS_ASKED_OF_THE_MODULES)
 async def test_review_shows_phase_status(tmp_path) -> None:
     """Summary includes P1/P2/P3 completion indicators for non-Mystery rounds."""
     db_path = str(tmp_path / "bot.db")
@@ -325,7 +318,6 @@ async def test_review_shows_phase_status(tmp_path) -> None:
     assert "P3: ⏳" in summary
 
 
-@pytest.mark.xfail(strict=True, reason=MARKS_ASKED_OF_THE_MODULES)
 async def test_review_mystery_round_shows_notice_not_phases(tmp_path) -> None:
     """Mystery rounds show 'Notice' status, not P1/P2/P3."""
     db_path = str(tmp_path / "bot.db")
@@ -809,7 +801,6 @@ async def test_a_mystery_round_s_notice_is_offered_no_forecast_cleanup(tmp_path)
 # remains — the cleanups a day after the round among it.
 
 
-@pytest.mark.xfail(strict=True, reason=MARKS_ASKED_OF_THE_MODULES)
 @pytest.mark.parametrize(
     "phase3_done,forecast_phase,shown",
     [(0, None, "Cleanup: ⏳"), (1, 3, "Cleanup: ⏳"), (1, 2, "Cleanup: ⏳"), (1, None, "Cleanup: ✅")],
@@ -837,7 +828,6 @@ async def test_the_review_shows_the_forecast_cleanup(
     )
 
 
-@pytest.mark.xfail(strict=True, reason=MARKS_ASKED_OF_THE_MODULES)
 async def test_the_review_shows_a_standing_check_in_as_still_to_clear(tmp_path) -> None:
     db_path = str(tmp_path / "review_standing_call.db")
     await run_migrations(db_path)
@@ -851,7 +841,6 @@ async def test_the_review_shows_a_standing_check_in_as_still_to_clear(tmp_path) 
     assert "RSVP: ✅  Last: ✅  Deadline: ✅  Cleared: ⏳" in summary
 
 
-@pytest.mark.xfail(strict=True, reason=MARKS_ASKED_OF_THE_MODULES)
 async def test_the_review_shows_a_cleared_check_in_as_done_throughout(tmp_path) -> None:
     """Its record went with its messages, which would otherwise read as a call still to come."""
     db_path = str(tmp_path / "review_cleared.db")
@@ -947,7 +936,6 @@ def _round_row(summary: str, round_number: int) -> str:
     return rows[0]
 
 
-@pytest.mark.xfail(strict=True, reason=MARKS_ASKED_OF_THE_MODULES)
 async def test_the_review_lists_a_division_s_rounds_in_the_order_they_race(tmp_path) -> None:
     """Division A holds round 1 (Monza), a fortnight ahead, and round 2 (Bahrain), added after it
     but three days ahead, both moments stored in UTC with their offset. The review lists round 2
@@ -966,7 +954,6 @@ async def test_the_review_lists_a_division_s_rounds_in_the_order_they_race(tmp_p
     assert summary.index(_round_row(summary, 2)) < summary.index(_round_row(summary, 1))
 
 
-@pytest.mark.xfail(strict=True, reason=MARKS_ASKED_OF_THE_MODULES)
 async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_scheduler) -> None:
     """Every step of a season armed as approval arms it has its job queued, and reads ⏳."""
     db_path = await _season_armed_as_approval_arms_it(tmp_path, paused_scheduler)
@@ -981,7 +968,6 @@ async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_sche
     assert _round_row(summary, 3).endswith(f"P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  {check_in}")
 
 
-@pytest.mark.xfail(strict=True, reason=MARKS_ASKED_OF_THE_MODULES)
 @pytest.mark.parametrize(
     "round_id,event_type,cell",
     [
@@ -1020,7 +1006,6 @@ async def test_a_job_taken_from_the_store_reads_as_missing(
     assert row.count("⚠️") == 1, row
 
 
-@pytest.mark.xfail(strict=True, reason=MARKS_ASKED_OF_THE_MODULES)
 async def test_the_review_shows_no_weather_step_while_weather_is_off(tmp_path) -> None:
     """Nothing of the weather module is armed while it is off, and advance runs none of it, so
     the review shows none of it — as it shows no result submission or check-in while theirs are
@@ -1152,7 +1137,6 @@ async def test_a_switched_off_last_notice_is_never_offered(tmp_path, paused_sche
     assert (result["round_id"], result["phase_number"]) == (2, 5)
 
 
-@pytest.mark.xfail(strict=True, reason=MARKS_ASKED_OF_THE_MODULES)
 async def test_the_review_leaves_out_a_switched_off_last_notice(tmp_path) -> None:
     """A step the league has switched off is left out rather than marked, as a module's steps are
     while it is off (decided 2026-09-24, #426) — here, and where the check-in has come down."""
@@ -1334,7 +1318,6 @@ async def test_a_raced_round_s_result_submission_is_still_offered(tmp_path) -> N
     assert (result["round_id"], result["phase_number"], result["kind"]) == (1, 4, "results")
 
 
-@pytest.mark.xfail(strict=True, reason=MARKS_ASKED_OF_THE_MODULES)
 async def test_the_review_marks_a_raced_round_s_weather_steps_as_passed_over(tmp_path) -> None:
     """Weather is on, and it is noon on 12 October 2026; no job is queued. Round 1 (Bahrain) was
     raced an hour ago with none of its phases done; round 2 (Monza), raced an hour ago too, had
@@ -1801,7 +1784,6 @@ async def test_the_builder_signs_weather_attendance_and_results_up_for_their_ste
     ) == [(1, 1, "weather_p1"), (1, 4, "results"), (1, 5, "rsvp_notice")]
 
 
-@pytest.mark.xfail(strict=True, reason=MARKS_ASKED_OF_THE_MODULES)
 async def test_the_builder_signs_weather_results_and_attendance_up_for_their_review_marks(
     tmp_path, monkeypatch,
 ) -> None:
@@ -1856,7 +1838,6 @@ def _marks_hook(*modules, handed_to: list | None = None):
     return hook
 
 
-@pytest.mark.xfail(strict=True, reason=MARKS_ASKED_OF_THE_MODULES)
 @pytest.mark.parametrize("scheduler", ["a scheduler", "no scheduler"])
 async def test_core_lays_out_the_marks_each_module_hands_the_review(tmp_path, scheduler) -> None:
     """The season, starting 1 January 2026, has round 1 (Bahrain, Division A) and round 3 (Imola,
@@ -1904,7 +1885,6 @@ async def test_core_lays_out_the_marks_each_module_hands_the_review(tmp_path, sc
     assert handed == [([1, 2, 3], NOW, queued), ([1, 2, 3], NOW, queued)]
 
 
-@pytest.mark.xfail(strict=True, reason=MARKS_ASKED_OF_THE_MODULES)
 async def test_the_review_leaves_out_cancelled_rounds_and_reads_a_round_without_a_track_as_tba(
     tmp_path,
 ) -> None:
@@ -1941,7 +1921,6 @@ async def test_the_review_leaves_out_cancelled_rounds_and_reads_a_round_without_
     assert handed == [([1], NOW, None)]
 
 
-@pytest.mark.xfail(strict=True, reason=MARKS_ASKED_OF_THE_MODULES)
 @pytest.mark.parametrize("cancelled", [
     pytest.param(False, id="no rounds at all"),
     pytest.param(True, id="every round cancelled"),

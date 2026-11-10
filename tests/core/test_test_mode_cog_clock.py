@@ -13,8 +13,6 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from leaguebot.core.cogs import test_mode_cog as cog_module
 from leaguebot.core.cogs.test_mode_cog import TestModeCog as _Cog
 from tests.support.undecorate import undecorate
@@ -63,9 +61,6 @@ async def test_the_review_judges_the_season_at_the_queue_s_time(monkeypatch):
     interaction.response.send_message.assert_awaited_once_with("Season review", ephemeral=True)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: the review does not yet ask the modules' marks of the bot's hook"
-)
 async def test_the_review_asks_each_module_s_marks_of_the_bot_s_hook(monkeypatch):
     """With test mode on, Alex runs `/test-mode review`. The summary reads each module's marks
     through the hook the bot carries, which the builder signs each module up to, so that each
