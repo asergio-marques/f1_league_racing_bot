@@ -23,6 +23,7 @@ confirmed, and the season fingerprint catching it is right rather than a fault t
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -195,8 +196,10 @@ async def test_a_signup_in_progress_on_the_new_account_is_refused(tmp_path):
 
 
 async def test_a_reassign_expires_an_open_placements_review(tmp_path):
-    """E41: the review names the driver by the account the reassign replaces."""
-    from leaguebot.core.services.season_fingerprint_service import take_fingerprint
+    """E41: the review names the driver by the account the reassign replaces. The season is
+    fingerprinted as a review's post fingerprints it, with the readers the builder gives the bot."""
+    from tests.support.change_queue import built_bot
+    from tests.support.review_workflows import take_season_fingerprint
 
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
@@ -206,13 +209,14 @@ async def test_a_reassign_expires_an_open_placements_review(tmp_path):
         )
         await db.commit()
     await _profile(db_path, A)
-    drawing = SimpleNamespace(artwork_signature=AsyncMock(return_value=[]))
-    before = await take_fingerprint(db_path, 1, drawing=drawing)
+    bot = await built_bot(tmp_path, now=datetime(2026, 9, 17, tzinfo=timezone.utc))
+    bot.image_drawing = SimpleNamespace(artwork_signature=AsyncMock(return_value=[]))
+    before = await take_season_fingerprint(bot, db_path, 1)
 
     await _reassign(db_path, A, B)
 
     assert "the unsettled signups" in (
-        await take_fingerprint(db_path, 1, drawing=drawing)
+        await take_season_fingerprint(bot, db_path, 1)
     ).differs_from(before)
 
 

@@ -580,14 +580,14 @@ async def post_review(league: SeasonLeague) -> Review:
     prompt as the review's post job records it: its row, with the report's ids and the evidence the
     season's fingerprint gives, posted at the queue's clock."""
     from leaguebot.__main__ import _approve_view_for
-    from leaguebot.core.services.season_fingerprint_service import take_fingerprint
+    from tests.support.review_workflows import take_season_fingerprint
     from tests.support.review_prompts import store_review_prompt
 
     view = _approve_view_for(league.bot)({"view": "approve", "reviewer_id": ADMIN_ID})
     report = [await league.review_channel.send("📋 Season 3 placements review")]
     prompt = await league.review_channel.send("Approve these placements?", view=view)
     evidence = (
-        await take_fingerprint(league.db_path, SEASON_ID, drawing=league.bot.image_drawing)
+        await take_season_fingerprint(league.bot, league.db_path, SEASON_ID)
     ).areas
     async with get_connection(league.db_path) as db:
         await store_review_prompt(
@@ -732,14 +732,14 @@ async def post_mid_season_review(league: SeasonLeague) -> Review:
     """Post a mid-season `/season placements-review` report and its ✅ Confirm placements
     prompt in channel 610, recorded as `post_review` records an approval's."""
     from leaguebot.__main__ import _approve_view_for
-    from leaguebot.core.services.season_fingerprint_service import take_fingerprint
+    from tests.support.review_workflows import take_season_fingerprint
     from tests.support.review_prompts import store_review_prompt
 
     view = _approve_view_for(league.bot)({"view": "mid_season", "reviewer_id": ADMIN_ID})
     report = [await league.review_channel.send("📋 Season 3 mid-season placements review")]
     prompt = await league.review_channel.send("Confirm these placements?", view=view)
     evidence = (
-        await take_fingerprint(league.db_path, SEASON_ID, drawing=league.bot.image_drawing)
+        await take_season_fingerprint(league.bot, league.db_path, SEASON_ID)
     ).areas
     async with get_connection(league.db_path) as db:
         await store_review_prompt(
@@ -790,7 +790,7 @@ async def post_config_review(league: SeasonLeague) -> Review:
     """Post a `/season config-review` report and its ✅ Confirm configuration prompt in channel
     610, by the admin (77), recorded as `post_review` records an approval's."""
     from leaguebot.__main__ import _approve_view_for
-    from leaguebot.core.services.season_fingerprint_service import take_fingerprint
+    from tests.support.review_workflows import take_season_fingerprint
     from tests.support.review_prompts import store_review_prompt
 
     view = _approve_view_for(league.bot)({"view": "configuration", "reviewer_id": ADMIN_ID})
@@ -798,7 +798,7 @@ async def post_config_review(league: SeasonLeague) -> Review:
     prompt = await league.review_channel.send("Do you confirm this season's configuration?",
                                               view=view)
     evidence = (
-        await take_fingerprint(league.db_path, SEASON_ID, drawing=league.bot.image_drawing)
+        await take_season_fingerprint(league.bot, league.db_path, SEASON_ID)
     ).areas
     async with get_connection(league.db_path) as db:
         await store_review_prompt(

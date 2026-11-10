@@ -160,6 +160,18 @@ def build_view(name: str, bot: Any, **given: Any) -> Any:
     return view(**_services(view, bot, given), **given)
 
 
+async def take_season_fingerprint(bot: Any, db_path: str, season_id: int) -> Any:
+    """The fingerprint of season *season_id* in the database at *db_path*, taken as a review's post
+    takes it: handed the image module's drawing (`bot.image_drawing`), and every other service
+    `take_fingerprint` asks for off *bot* by name, as `run_workflow` hands a workflow its own, so
+    that a test never lists which readers the fingerprint asks."""
+    from leaguebot.core.services import season_fingerprint_service
+
+    take = season_fingerprint_service.take_fingerprint
+    given = {"drawing": bot.image_drawing}
+    return await take(db_path, season_id, **_services(take, bot, given), **given)
+
+
 async def run_check(name: str, bot: Any, *args: Any, **given: Any) -> Any:
     """Run the gate *name* of `approval_checks` on *args*, handing it every service it asks for
     off *bot* by name, and *given*."""

@@ -971,7 +971,7 @@ async def test_a_confirmation_asks_the_take_down_before_the_approval_and_the_rev
     row with it, before any of the approval's jobs is done."""
     from leaguebot.__main__ import _approve_view_for
     from leaguebot.core.services.season_approval_change import KIND as APPROVAL
-    from leaguebot.core.services.season_fingerprint_service import take_fingerprint
+    from tests.support.review_workflows import take_season_fingerprint
     from tests.support.season_league import ADMIN_ID, SEASON_ID, Review, press_approve, season_league
     from tests.support.season_league import REVIEW_CHANNEL as CHANNEL_610
 
@@ -982,7 +982,7 @@ async def test_a_confirmation_asks_the_take_down_before_the_approval_and_the_rev
     me = SimpleNamespace(id=league.bot.user.id, name="LeagueBot")
     r1, r2, q = (post_in(channel, me) for _ in range(3))
     evidence = (
-        await take_fingerprint(league.db_path, SEASON_ID, drawing=league.bot.image_drawing)
+        await take_season_fingerprint(league.bot, league.db_path, SEASON_ID)
     ).areas
     async with get_connection(league.db_path) as db:
         await store_review_prompt(
