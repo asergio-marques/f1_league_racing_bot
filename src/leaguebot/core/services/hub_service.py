@@ -175,7 +175,8 @@ def render_panel(
     *hub_options*, which a press looks its option up in."""
     if not options:
         return f"{PANEL_HEADING}\n{PANEL_EMPTY}", None
-    return f"{PANEL_HEADING}\n{PANEL_OFFERING}", HubPanelView(options, queue, hub_options=hub_options)
+    view = HubPanelView(options, queue, hub_options=hub_options)
+    return f"{PANEL_HEADING}\n{PANEL_OFFERING}", view
 
 
 class HubPanelView(LeagueView):
@@ -302,8 +303,8 @@ async def refresh_panel(
     `{"new": <id>, "channel_id": <id>}` for the job's record to save where it posted, and
     `{"edited": <id>, "channel_id": <id>}`, which saves nothing, where it edited. Gives None only
     where no hub channel is set. The panel's buttons are handed *queue* and *hub_options*, which
-    also says what is offered, and the channel is read through *config_service*. *kept* is what the job's last try posted and could not record,
-    removed before the panel is posted again.
+    also says what is offered, and the channel is read through *config_service*. *kept* is what the
+    job's last try posted and could not record, removed before the panel is posted again.
 
     Raises `StepFailedOnDiscord`, naming `/bot hub-channel`, where the channel set is no longer in
     the server, and where Discord refuses the edit or the post; `GuildUnavailable` where the
@@ -386,10 +387,10 @@ def hub_refresh_change(
     ``command`` names what caused it. A hub not set is not due. The panel is refreshed by one job,
     `refresh_panel`, which a refusal stops the queue at; *queue* and *hub_options* are handed to the
     panel's buttons, *hub_options* says what is offered, and *config_service* is what reads the hub
-    channel. A hub that has moved names the panel it
-    left, ``old_channel_id`` and ``old_message_id``: the old panel is deleted by a job of its own
-    after the new is posted, by the shared delete step, so that the league is never left without
-    one and a refused deletion stops the queue.
+    channel. A hub that has moved names the panel it left, ``old_channel_id`` and
+    ``old_message_id``: the old panel is deleted by a job of its own after the new is posted, by the
+    shared delete step, so that the league is never left without one and a refused deletion stops
+    the queue.
     Not repeatable: a refresh asked for a second time before the first starts is dropped, since the
     first will draw the panel as it stands then.
     """
@@ -511,7 +512,8 @@ async def reapply_hub_permissions(bot: LeagueBot, config_service: ConfigService)
 
 
 async def recover_hub(bot: LeagueBot, *, queue: ChangeQueue, hub_options: HubOptions) -> None:
-    """Route every signed-up option's button after a restart, and ask the queue to refresh the panel.
+    """Route every signed-up option's button after a restart, and ask the queue to refresh the
+    panel.
 
     Every option of *hub_options* is routed, not only those offered now: a press on one a module has
     since stopped offering is refused in words rather than failing in silence. The refresh is the
