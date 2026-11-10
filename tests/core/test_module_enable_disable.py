@@ -58,10 +58,8 @@ async def _make_db(tmp_path) -> str:
     return db_path
 
 
-def _division(div_id: int, name: str, *, forecast_channel_id: int | None = 5000):
-    return SimpleNamespace(
-        id=div_id, name=name, tier=1, forecast_channel_id=forecast_channel_id
-    )
+def _division(div_id: int, name: str):
+    return SimpleNamespace(id=div_id, name=name, tier=1)
 
 
 def _make_cog(

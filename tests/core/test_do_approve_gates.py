@@ -347,7 +347,7 @@ async def test_the_image_checks_are_not_read_with_the_module_off(db_path):
 
 
 def _division(name: str = "Premier", div_id: int = 1):
-    return SimpleNamespace(id=div_id, name=name, tier=1, forecast_channel_id="9")
+    return SimpleNamespace(id=div_id, name=name, tier=1)
 
 
 def _round_in(days_out: float, *, number: int = 1, div_id: int = 1):

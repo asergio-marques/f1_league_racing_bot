@@ -72,7 +72,6 @@ def _division(division_id: int, name: str, *, lineup=700, calendar=701, tier=1):
         mention_role_id=3000 + division_id,
         lineup_channel_id=lineup,
         calendar_channel_id=calendar,
-        forecast_channel_id=None,
     )
 
 

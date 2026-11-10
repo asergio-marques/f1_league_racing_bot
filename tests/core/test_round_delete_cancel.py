@@ -58,9 +58,7 @@ ACTOR_ID = 77
 
 
 def _division(name: str = "Division 1"):
-    return SimpleNamespace(
-        id=DIVISION_ID, name=name, tier=1, status="ACTIVE", forecast_channel_id=5000
-    )
+    return SimpleNamespace(id=DIVISION_ID, name=name, tier=1, status="ACTIVE")
 
 
 def _round(number: int = 5, status: str = RoundStatus.NOT_RUN.value):

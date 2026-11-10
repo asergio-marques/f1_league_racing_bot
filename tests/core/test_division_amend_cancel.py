@@ -93,14 +93,13 @@ async def _make_db(tmp_path, *, status: str = "SETUP", name: str = "division_ame
     return db_path
 
 
-def _division(name="Pro", tier=1, *, id=DIVISION_ID, status="ACTIVE", channel=None):
+def _division(name="Pro", tier=1, *, id=DIVISION_ID, status="ACTIVE"):
     return SimpleNamespace(
         id=id,
         name=name,
         tier=tier,
         status=status,
         mention_role_id=555,
-        forecast_channel_id=channel,
     )
 
 
