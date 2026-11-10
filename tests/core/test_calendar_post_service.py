@@ -125,12 +125,12 @@ def summer_time_host(monkeypatch):
 
 
 def test_a_round_stored_as_plain_utc_is_shown_at_its_utc_moment(summer_time_host):
-    """Rounds are stored as plain UTC, with no zone. On a host in British Summer Time, a round
+    """A round's moment is read back aware, in UTC. On a host in British Summer Time, a round
     at 20:00 UTC on 30 July shows that moment, not one an hour early."""
     import calendar
 
     rounds = [NS(round_number=4, track_name="Silverstone Circuit",
-                 scheduled_at=datetime(2026, 7, 30, 20, 0))]
+                 scheduled_at=datetime(2026, 7, 30, 20, 0, tzinfo=timezone.utc))]
     epoch = calendar.timegm((2026, 7, 30, 20, 0, 0))
 
     assert f"Round 4: Silverstone Circuit — <t:{epoch}:F>" in cps.textual_calendar(

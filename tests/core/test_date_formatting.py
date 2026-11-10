@@ -20,7 +20,7 @@ is what stops one going stale.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -35,8 +35,8 @@ from leaguebot.core.utils.date_formatting import (
     ordinal,
 )
 
-#: A Sunday, matching the worked examples in DATE_FORMATS.
-SUNDAY = datetime(2026, 6, 14, 15, 30)
+#: A Sunday, matching the worked examples in DATE_FORMATS, held in UTC as a round's moment is.
+SUNDAY = datetime(2026, 6, 14, 15, 30, tzinfo=timezone.utc)
 
 
 # ── The ordinal ───────────────────────────────────────────────────────────
@@ -144,19 +144,9 @@ def test_the_pair_names_the_zone_it_is_drawn_in():
     assert time_text.split(" ", 1)[1], "the zone abbreviation is missing"
 
 
-def test_a_naive_moment_is_read_as_utc():
-    """Round times are stored naive and mean UTC; reading them as local would shift them."""
-    naive = format_date_and_time(SUNDAY, ZoneInfo("UTC"), "YYYY_MM_DD", "24H")
-    aware = format_date_and_time(
-        SUNDAY.replace(tzinfo=ZoneInfo("UTC")), ZoneInfo("UTC"), "YYYY_MM_DD", "24H"
-    )
-
-    assert naive == aware
-
-
 def test_the_zone_actually_moves_the_date_where_it_should():
     """Late on one day in UTC is the next day further east — the date must follow."""
-    late = datetime(2026, 6, 14, 23, 30)
+    late = datetime(2026, 6, 14, 23, 30, tzinfo=timezone.utc)
 
     utc_date, _ = format_date_and_time(late, ZoneInfo("UTC"), "YYYY_MM_DD", "24H")
     tokyo_date, _ = format_date_and_time(late, ZoneInfo("Asia/Tokyo"), "YYYY_MM_DD", "24H")
