@@ -360,6 +360,19 @@ async def _mclaren_takes_alpine_s_role(league):
                        ALPINE_ROLE)
 
 
+def _gone(role_id: int) -> str:
+    """The refusal of a role deleted from the server while the change waited."""
+    return f"⛔ <@&{role_id}> is no longer a role on the server. Choose a role of the team's own."
+
+
+async def _alpine_s_role_deleted(league):
+    league.roles_gone.add(ALPINE_ROLE)
+
+
+async def _reserves_role_deleted(league):
+    league.roles_gone.add(RESERVES_ROLE)
+
+
 async def _alpine_added_meanwhile(league):
     await league.write(
         "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
@@ -381,12 +394,15 @@ async def _alpine_added_meanwhile(league):
             _alpine_added_meanwhile, '⛔ A default team named "Alpine" already exists.',
             {**_STANDING, "Alpine": ("Alpine F1", None)}, id="the-shorthand-taken",
         ),
+        pytest.param(_alpine_s_role_deleted, _gone(ALPINE_ROLE), _STANDING,
+                     id="the-role-deleted"),
     ],
 )
 async def test_a_team_add_is_judged_again_as_it_starts(tmp_path, meanwhile, reply, standing):
     """The season is in Configuration. Admin submits the "Add a team" form for Alpine, role 813,
     and is acknowledged; before the queue runs it, the season's configuration is confirmed,
-    McLaren is given 813, or another team takes the shorthand Alpine. The queue runs. The add is
+    McLaren is given 813, another team takes the shorthand Alpine, or 813 is deleted from the
+    server. The queue runs. The add is
     refused as it starts, in the words it would meet at the ask, its acknowledgement updated to
     them. The server's list stands as the meanwhile left it, no audit entry is written, the log
     channel holds the refusal, naming the form, alone, and the queue is not stopped."""
@@ -403,6 +419,21 @@ async def test_a_team_add_is_judged_again_as_it_starts(tmp_path, meanwhile, repl
     assert await _team_audits(league) == []
     assert await log_lines(league) == [_refusal(_ADD_FORM, reply)]
     assert await stopped_job(league.db_path) is None
+
+
+async def test_a_team_add_is_not_refused_its_role_where_the_server_is_not_in_the_cache(tmp_path):
+    """The season is in Configuration. Admin submits the "Add a team" form for Alpine, role 813,
+    and is acknowledged; before the queue runs it, the league's server drops out of the bot's
+    cache, so the role cannot be looked up. The change is not refused for the role, which cannot
+    be said to be gone: only the team holding it is checked, and Alpine is added, mapped to 813."""
+    from tests.support.change_queue import run_queue
+
+    league = await _team_league(tmp_path)
+    await _ask_add(league)
+    league.bot.get_guild.return_value = None
+    await run_queue(league.bot)
+
+    assert (await _server_list(league))["Alpine"] == ("Alpine Racing", ALPINE_ROLE)
 
 
 async def test_a_refusal_found_inside_the_save_ends_the_team_add_and_the_lane_goes_on(tmp_path):
@@ -1076,6 +1107,10 @@ async def test_a_failed_team_modify_changes_nothing(tmp_path):
             id="the-role-no-longer-grantable",
         ),
         pytest.param(
+            {"role_id": ALPINE_ROLE}, _alpine_s_role_deleted,
+            f"{_gone(ALPINE_ROLE)} Nothing was written.", _STANDING, id="the-role-deleted",
+        ),
+        pytest.param(
             {"shorthand": "MCL"}, _mcl_added_meanwhile,
             '⛔ A default team named "MCL" already exists.',
             {**_STANDING, "MCL": ("MCL Racing", None)}, id="the-shorthand-taken",
@@ -1097,8 +1132,8 @@ async def test_a_team_modify_is_judged_again_as_it_starts(tmp_path, fields, mean
     """The season is in Configuration. Admin submits the "Modify a team" form of McLaren, changing
     its full name to "McLaren Racing", its shorthand to MCL, or its role to Alpine's, 813, and is
     acknowledged; before the queue runs it, the season's configuration is confirmed, McLaren is
-    taken off the list by other means, Ferrari is given 813, an integration takes over 813,
-    another team takes the shorthand MCL or the full name "McLaren Racing", or every division is
+    taken off the list by other means, Ferrari is given 813, an integration takes over 813, 813 is
+    deleted from the server, another team takes the shorthand MCL or the full name "McLaren Racing", or every division is
     done (the season Pending completion). The queue runs. The change is refused as it starts, in
     the words it would meet at the ask, its acknowledgement updated to them. The server's list
     stands as the meanwhile left it, no audit entry is written, no role is given or taken, the log
@@ -1552,14 +1587,16 @@ async def test_a_failed_team_reserve_role_changes_nothing(tmp_path):
             "so Discord will not let me grant it. Choose a role of the team's own.",
             _RESERVE_STANDING, id="the-role-no-longer-grantable",
         ),
+        pytest.param(_reserves_role_deleted, _gone(RESERVES_ROLE), _RESERVE_STANDING,
+                     id="the-role-deleted"),
     ],
 )
 async def test_a_team_reserve_role_is_judged_again_as_it_starts(tmp_path, meanwhile, reply,
                                                                standing):
     """The season is in Configuration, and the Reserve team is mapped to 815. Admin runs
     `/team reserve-role` with 816 and is acknowledged; before the queue runs it, every division is
-    done (the season Pending completion), Ferrari is given 816, or an integration takes over 816.
-    The queue runs. The change is refused as it starts, in the words it would meet at the ask,
+    done (the season Pending completion), Ferrari is given 816, an integration takes over 816, or
+    816 is deleted from the server. The queue runs. The change is refused as it starts, in the words it would meet at the ask,
     its acknowledgement updated to them. The server's list stands as the meanwhile left it, the
     Reserve team keeping 815, no audit entry is written, no role is given or taken, the log
     channel holds the refusal, naming the command, alone, and the queue is not stopped."""

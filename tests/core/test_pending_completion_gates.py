@@ -180,7 +180,8 @@ async def _team_modify(bot, interaction):
 
 async def _team_reserve_role(bot, interaction):
     cog = _cog(TeamCog, bot)
-    role = MagicMock(id=902, mention="<@&902>", name="Reserves")
+    role = MagicMock(id=902, mention="<@&902>")
+    role.name = "Reserves"
     await undecorate(TeamCog.team_reserve_role)(cog, interaction, role)
 
 
