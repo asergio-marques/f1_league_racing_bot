@@ -726,6 +726,9 @@ async def test_a_fired_check_in_phase_is_logged_by_name(tmp_path, phase, name):
     ]
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: core does not yet read the steps through the modules' hook"
+)
 async def test_a_deadline_whose_announcement_was_refused_is_not_offered_again(tmp_path):
     """Test mode on, attendance and results on. Round 3's check-in deadline has run, its
     distribution saved and marked (`deadline_run_at`), but Discord refused its announcement, so
@@ -733,6 +736,7 @@ async def test_a_deadline_whose_announcement_was_refused_is_not_offered_again(tm
     advance moves on to the round's results phase (4), not the deadline (7) again, which would
     do nothing and hold every later step behind it (#439)."""
     from leaguebot.core.services.test_mode_service import get_next_pending_phase
+    from tests.support.pending_steps_hook import pending_steps_read
 
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
@@ -751,6 +755,7 @@ async def test_a_deadline_whose_announcement_was_refused_is_not_offered_again(tm
 
     entry = await get_next_pending_phase(
         db_path, scheduler, now=datetime(2026, 6, 2, tzinfo=timezone.utc),
+        pending_steps_read=pending_steps_read(),
     )
 
     assert entry is not None
@@ -1444,6 +1449,9 @@ async def test_an_advanced_deadline_places_the_reserves_on_every_answer_held(tmp
 # A round whose every session was entered as not held (#439, slice 8, Part E)
 # ---------------------------------------------------------------------------
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: core does not yet read the steps through the modules' hook"
+)
 async def test_advance_offers_only_the_clean_ups_of_a_round_whose_every_session_was_not_held(
     tmp_path,
 ):
@@ -1455,6 +1463,7 @@ async def test_advance_offers_only_the_clean_ups_of_a_round_whose_every_session_
     the deadline (7) nor the round's results submission (4): the round has ended (core :472,
     :475)."""
     from leaguebot.core.services.test_mode_service import get_next_pending_phase
+    from tests.support.pending_steps_hook import pending_steps_read
 
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
@@ -1486,18 +1495,24 @@ async def test_advance_offers_only_the_clean_ups_of_a_round_whose_every_session_
     ])
     now = datetime(2026, 6, 3, tzinfo=timezone.utc)
 
-    entry = await get_next_pending_phase(db_path, scheduler, now=now)
+    entry = await get_next_pending_phase(
+        db_path, scheduler, now=now, pending_steps_read=pending_steps_read(),
+    )
     assert entry is not None
     assert (entry["round_id"], entry["phase_number"]) == (ROUND_ID, 8)
 
     async with get_connection(db_path) as db:
         await db.execute("DELETE FROM forecast_messages WHERE round_id = ?", (ROUND_ID,))
         await db.commit()
-    entry = await get_next_pending_phase(db_path, scheduler, now=now)
+    entry = await get_next_pending_phase(
+        db_path, scheduler, now=now, pending_steps_read=pending_steps_read(),
+    )
     assert entry is not None
     assert (entry["round_id"], entry["phase_number"]) == (ROUND_ID, 9)
 
     async with get_connection(db_path) as db:
         await db.execute("DELETE FROM rsvp_embed_messages WHERE round_id = ?", (ROUND_ID,))
         await db.commit()
-    assert await get_next_pending_phase(db_path, scheduler, now=now) is None
+    assert await get_next_pending_phase(
+        db_path, scheduler, now=now, pending_steps_read=pending_steps_read(),
+    ) is None
