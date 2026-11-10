@@ -358,6 +358,45 @@ async def test_a_setup_round_amendment_is_judged_again_as_it_starts(tmp_path, me
     assert await stopped_job(league.db_path) is None
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: a refusal the save finds is raised as a fault, stopping the league's lane",
+)
+async def test_a_track_gone_by_the_save_ends_the_amendment_in_its_refusal(tmp_path, monkeypatch):
+    """Season #1 is being set up, in Placements, Pro's round 2 standing at the Hungaroring. The
+    manager runs `/round amend` for Pro's round 2, moving it to Silverstone Circuit; the
+    amendment is judged at the ask and again as it starts, the track known both times, and by the
+    time its save runs the bot no longer knows the track. The save refuses it, as the check would
+    have: the manager's reply is the refusal word for word, the log channel records the refusal
+    alone, Pro's rounds are as they were, no audit entry is written, and the league's lane is not
+    stopped."""
+    from leaguebot.core.services import track_service
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.settings_league import audit_rows, last_said, log_lines
+
+    league = await setup_league(tmp_path, divisions=_HELD)
+    before = await round_rows(league.db_path, "Pro")
+    asked = await _ask(league, round_number=2, track="Silverstone Circuit")
+    known = track_service.resolve_track_name
+    judged = []
+
+    async def gone_after_the_check(db, raw):
+        """The track as the bot knows it for the check as the change starts, gone after it."""
+        judged.append(raw)
+        return await known(db, raw) if len(judged) == 1 else None
+
+    monkeypatch.setattr(track_service, "resolve_track_name", gone_after_the_check)
+    await run_queue(league.bot)
+
+    reply = "❌ Unknown track `Silverstone Circuit`. Use autocomplete to pick a valid track."
+    assert len(judged) == 2
+    assert last_said(asked) == reply
+    assert await round_rows(league.db_path, "Pro") == before
+    assert await audit_rows(league.db_path) == []
+    assert await log_lines(league) == [refusal_line(WHAT, reply)]
+    assert await stopped_job(league.db_path) is None
+
+
 async def test_a_setup_round_amendment_asked_again_while_it_waits_is_refused_as_a_repeat(
     tmp_path,
 ):
