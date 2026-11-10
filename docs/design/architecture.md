@@ -170,19 +170,19 @@ own, and core calls each in the order they signed up. A subscriber may hand some
 the hook gathers in that order; what core does with them, if anything, is the moment's: a value to
 read or to keep, a line to write, a step to plan or to register, a refusal to give. The hook names
 no module and no module's operation, so a module's part of the moment is the module's own code, and
-a module added later signs up without core changing. A hook keyed by a kind takes one function for
-each key instead, as a kind of timed job takes its one handler (see "Timed work and restarts").
-**A module's switch read is a keyed hook:** one reader for each module, keyed by the module's
-name, which the module's own work also calls; core asks for it by that name (`is_<module>_enabled`,
-or `is_enabled_on` on a connection a save holds), because core names the modules and shows which
-are on in the reviews (the core specification's "Modules"), and keeps the dependency table (above).
-The key is the name the module's switch is asked by: `images` for the image module, the module's
-own name for the rest. So a module added later adds its `is_<module>_enabled` to core's module
-service as well as signing up; core knows its name for its switch and nothing more. A module that never
-signed up is a fault in the bot's assembly, and asking for it raises `LookupError`, which no reader
-that stands aside takes for an answer. A link the dependency table allows between two modules is not
-one of core's hooks: there the module depended on may name what it asks of its dependant, as results
-does of attendance (below).
+a module added later signs up without core changing, the switch read aside (below). A hook keyed by
+a kind takes one function for each key instead, as a kind of timed job takes its one handler (see
+"Timed work and restarts"). **A module's switch read is a keyed hook:** one reader for each module,
+keyed by the module's name, which the module's own work may also call; core asks for it by that name
+(`is_<module>_enabled`, or `is_enabled_on` on a connection a save holds), because core names the
+modules and shows which are on in the reviews (the core specification's "Modules"), and keeps the
+dependency table (above). The key is the name the module's switch is asked by: `images` for the
+image module, the module's own name for the rest. So a module added later adds its
+`is_<module>_enabled` to core's module service as well as signing up; core knows its name for its
+switch and nothing more. A module that never signed up is a fault in the bot's assembly, and asking
+for it raises `LookupError`, which no reader that stands aside takes for an answer. A link the
+dependency table allows between two modules is not one of core's hooks: there the module depended on
+may name what it asks of its dependant, as results does of attendance (below).
 
 *Rejected:* a hook as one object of named operations the builder fills in, one for each module's
 part, which leaves core knowing what each module does at that moment. *Rejected:* only writing the
@@ -1239,7 +1239,8 @@ puts the error in the host's log and what the queue was doing stands, the change
 press alike, a stop notice not posted being posted again, because telling what happened must never
 undo it (their docstrings say so); the readers that stand aside (`amendment_service.approval_faults`
 and `approval_checks.channel_on_server`) are stated exceptions too: each puts the error in the
-host's log and reads an attendance switch as off or a channel as present, because a reader that
+host's log and reads an attendance switch as off (a switch nobody signed up for aside) or a channel
+as present, because a reader that
 cannot answer must not refuse an amendment or a season (their docstrings say so); a season's
 fingerprint that cannot be taken (`season_fingerprint_service.take_fingerprint`) is a stated
 exception: it is signed as an empty one, which refuses an approval whose review was read, because a
@@ -1353,27 +1354,27 @@ later on its own.
   use may, as a cog does; `league_guild` is the one a service calls), a table written by a module
   that does not own it, a table read outside its owner (core's tables too; the scan sees tables, not
   columns, so a module's read of its own columns on a core table is named for good,
-  `READS_OF_OWN_COLUMNS`), a module's own column on a core table named in another module's file
-  (`KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER`; the check reads the column's name in a statement's text),
-  core reading a module's service on the bot (an attribute `LeagueBot`
-  types from a module's package, read from a file of core), SQLite's clock in a statement, a service
-  reading the wall clock (the change queue's own default clock is the one place allowed,
-  `WALL_CLOCK_ALLOWED`), a catch-all handler outside the five places (one that raises again, calls
-  `report_failure` as a statement directly in its body, or sits directly in the body of a `for`
-  loop, is in a place by its shape; `CATCH_ALLS_ALLOWED` names for good the failure paths of place
-  1, the stated exceptions, place 3's guards around reporting and writing a log line and
-  the fifth place's handlers), and a save outside a queued change. The job check and the check of
-  cogs handling their own errors are absolute, with no list of breaches left to grow, and the log
-  channel's check holds its six
-  places for good; every other check lists today's breaches, each under the work that removes it.
-  The check of a save outside a queued change counts each function's `.commit()` and
-  `.executescript()` calls, and a function writing on a handed connection commits nothing and is not
-  counted. It allows for good the migrations run at start-up (`run_migrations` and `_enable_wal`,
-  the journal mode set on the database file itself), the queue's own records, the retry queue for
-  log lines, `/bot pack` (above), and `backup_service._write_empty_database`, which writes the
-  scheduler's empty file and not the league's. The connection-state check refuses, outside the
-  database code, a SQL function added with `create_function`, an authoriser, an assignment to
-  `row_factory` or `isolation_level`, and a PRAGMA, ATTACH or temporary table
+  `READS_OF_OWN_COLUMNS`), a module's own column on a core table named in a file outside that
+  module, the entry point's included (`KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER`; the check counts the
+  column's name in any string outside a docstring, in SQL or as a row's key), core reading a
+  module's service on the bot (an attribute `LeagueBot` types from a module's package, read from a
+  file of core), SQLite's clock in a statement, a service reading the wall clock (the change queue's
+  own default clock is the one place allowed, `WALL_CLOCK_ALLOWED`), a catch-all handler outside the
+  five places (one that raises again, calls `report_failure` as a statement directly in its body, or
+  sits directly in the body of a `for` loop, is in a place by its shape; `CATCH_ALLS_ALLOWED` names
+  for good the failure paths of place 1, the stated exceptions, place 3's guards around reporting
+  and writing a log line and the fifth place's handlers), and a save outside a queued change. The
+  job check and the check of cogs handling their own errors are absolute, with no list of breaches
+  left to grow, and the log channel's check holds its six places for good; every other check lists
+  today's breaches, each under the work that removes it. The check of a save outside a queued change
+  counts each function's `.commit()` and `.executescript()` calls, and a function writing on a
+  handed connection commits nothing and is not counted. It allows for good the migrations run at
+  start-up (`run_migrations` and `_enable_wal`, the journal mode set on the database file itself),
+  the queue's own records, the retry queue for log lines, `/bot pack` (above), and
+  `backup_service._write_empty_database`, which writes the scheduler's empty file and not the
+  league's. The connection-state check refuses, outside the database code, a SQL function added with
+  `create_function`, an authoriser, an assignment to `row_factory` or `isolation_level`, and a
+  PRAGMA, ATTACH or temporary table
   (`test_a_lent_connection_carries_only_what_the_database_code_sets`); the few functions that set up
   a connection of their own, opened with `sqlite3.connect` and never lent, are named for good.
 - **`tests/repository/test_one_league_server.py`**, **`tests/core/test_schema_rules.py`** and

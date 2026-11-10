@@ -55,9 +55,9 @@ _DISABLE_COMMAND = "/module disable images"
 
 
 async def images_enabled_on(db: "aiosqlite.Connection") -> bool:
-    """Whether the image module is on, read on *db*: the module's switch reader, which the builder
-    signs up with `ModuleService` and the module's own work asks. A league that has never switched
-    it on has no row, and reads as off."""
+    """Whether the image module is on, read on *db*: the module's switch reader, signed up with
+    `ModuleService` by the builder, where the module's own work asks it. A league that has never
+    switched it on has no row, and reads as off."""
     row = await (await db.execute("SELECT module_enabled FROM image_config")).fetchone()
     return row is not None and bool(row["module_enabled"])
 
