@@ -1197,26 +1197,29 @@ its cancel share (`amend_end_changes._names_step`) is a stated exception as well
 the error in the host's log and completes the job with no names, so the revert goes ahead with a
 full tie ordered by user id, because a tie so ordered is the lesser fault than a round not put back
 (its docstring says so); the helper through which a placement's capacity guards count the seats and
-ask the image module (`PlacementService._ask_drawing`) is a stated exception too: its catch-all puts
-the error in the host's log in full, and the guard lets the placement through as if no problem were
-found, because a capacity check that cannot run must not block a placement (its docstring says so);
-the image module's calendar gate (`ImageDrawing.calendar_wanted`) is a stated exception likewise:
-its catch-all puts the error in the host's log alone, with no line to the log channel, and answers
-that the league does not draw its calendar, so the text calendar goes out, because a gate that
-cannot be read must not lose a league its calendar (its docstring says so); the image module's
-lineup gate (`ImageDrawing.lineup_wanted`) is a stated exception beside it: its catch-all puts the
-error in the host's log alone, with no line to the log channel, and answers that the league does not
-draw its lineup, so the text lineup goes out, because a gate that cannot be read must not lose a
-league its lineup (its docstring says so); the helper through which the season's own capacity checks
-count and ask the image module (`approval_checks.ask_drawing`) — the review's and the approval's
-(`lineup_problems`, and the review's calendar and attendance warnings) — is a stated exception
-beside `PlacementService._ask_drawing`'s: its catch-all puts the error in the host's log in full and
-lets the season through as if no problem were found, because a capacity check that cannot run must
-not block a season (its docstring says so); the round guard that `/round add` and the round imports
-share (`calendar_round_refusal`, in `core/services/round_add_changes.py`) is a stated exception
-beside it: the change types' checks call it when the change is asked for and again as it starts, and
-its catch-all puts the error in the host's log in full and lets the round through as if no problem
-were found, because a capacity check that cannot run must not block a round (its docstring says so);
+ask the image module (`PlacementService._ask_drawing`) is a stated exception too: its catch-all (a
+switch nobody signed up for aside) puts the error in the host's log in full, and the guard lets the
+placement through as if no problem were found, because a capacity check that cannot run must not
+block a placement (its docstring says so); the image module's calendar gate
+(`ImageDrawing.calendar_wanted`) is a stated exception likewise: its catch-all (a switch nobody
+signed up for aside) puts the error in the host's log alone, with no line to the log channel, and
+answers that the league does not draw its calendar, so the text calendar goes out, because a gate
+that cannot be read must not lose a league its calendar (its docstring says so); the image module's
+lineup gate (`ImageDrawing.lineup_wanted`) is a stated exception beside it: its catch-all (a switch
+nobody signed up for aside) puts the error in the host's log alone, with no line to the log channel,
+and answers that the league does not draw its lineup, so the text lineup goes out, because a gate
+that cannot be read must not lose a league its lineup (its docstring says so); the helper through
+which the season's own capacity checks count and ask the image module
+(`approval_checks.ask_drawing`) — the review's and the approval's (`lineup_problems`, and the
+review's calendar and attendance warnings) — is a stated exception beside
+`PlacementService._ask_drawing`'s: its catch-all (a switch nobody signed up for aside) puts the
+error in the host's log in full and lets the season through as if no problem were found, because a
+capacity check that cannot run must not block a season (its docstring says so); the round guard that
+`/round add` and the round imports share (`calendar_round_refusal`, in
+`core/services/round_add_changes.py`) is a stated exception beside it: the change types' checks call
+it when the change is asked for and again as it starts, and its catch-all (a switch nobody signed up
+for aside) puts the error in the host's log in full and lets the round through as if no problem were
+found, because a capacity check that cannot run must not block a round (its docstring says so);
 the season's reading of the image module's configuration faults
 (`approval_checks.image_configuration_faults`) is a stated exception too: each of its catch-alls
 puts the error in the host's log; a fault reading the templates is stated as a fault of its own,
