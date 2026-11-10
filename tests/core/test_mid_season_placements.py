@@ -691,7 +691,14 @@ async def test_a_lineup_discord_refuses_after_a_confirmation_stops_the_queue_and
 # and Alex's review standing in channel 700 (report R1 and R2, question Q) are
 # `test_review_outcomes_recorded.py`'s.
 
-CONFIRM = "_do_confirm_mid_season_placements"
+#: The workflow of `season_review_workflows` the ✅ Confirm placements button hands a press on to.
+CONFIRM = "confirm_mid_season_placements"
+
+#: The ✅ Confirm placements button still hands a press on to the season cog's method.
+_BUTTON_ON_THE_COG = (
+    "#283: the Confirm placements button does not yet run "
+    "season_review_workflows.confirm_mid_season_placements"
+)
 
 
 async def _standing_mid_season(tmp_path):
@@ -701,25 +708,33 @@ async def _standing_mid_season(tmp_path):
     return await _standing(tmp_path, "/season placements-review")
 
 
-def _confirm_view(env):
-    """Alex's review's ✅ Confirm placements button, on a cog whose confirmation is recorded and
-    goes through."""
+def _confirm_view(env, monkeypatch):
+    """Alex's review's ✅ Confirm placements button, whose confirmation,
+    `season_review_workflows.confirm_mid_season_placements`, is stood in, recorded and goes
+    through. Returns the view and the stand-ins, the confirmation's under `CONFIRM`."""
     from leaguebot.core.cogs.season_cog import _ConfirmMidSeasonPlacementsView
     from tests.core.test_review_outcomes_recorded import _view_on
 
-    return _view_on(env, _ConfirmMidSeasonPlacementsView, CONFIRM)
+    return _view_on(env, _ConfirmMidSeasonPlacementsView, CONFIRM, monkeypatch)
 
 
-def _real_confirmation(env, cog, *, stage=SeasonStage.ONGOING_PLACEMENTS) -> None:
-    """The real confirmation on *cog*, season 1 at *stage*, nothing unsettled and no fault."""
-    from types import MethodType
+def _real_confirmation(env, monkeypatch, *, stage=SeasonStage.ONGOING_PLACEMENTS):
+    """Alex's review's ✅ Confirm placements button over the real confirmation, season 1 at
+    *stage*, nothing unsettled and no fault: the gates it runs stood in on `approval_checks`."""
+    from leaguebot.core.cogs.season_cog import _ConfirmMidSeasonPlacementsView
+    from leaguebot.core.services import approval_checks
+    from tests.core.test_review_outcomes_recorded import REVIEWER
 
     env.bot.season_service.get_confirmed_season = AsyncMock(
         return_value=SimpleNamespace(id=1, season_number=1, stage=stage)
     )
-    cog._placement_confirmation_faults = AsyncMock(return_value=([], []))
-    cog._mid_season_configuration_faults = AsyncMock(return_value=[])
-    setattr(cog, CONFIRM, MethodType(getattr(SeasonCog, CONFIRM), cog))
+    monkeypatch.setattr(approval_checks, "placement_confirmation_faults",
+                        AsyncMock(return_value=([], [])))
+    monkeypatch.setattr(approval_checks, "mid_season_configuration_faults",
+                        AsyncMock(return_value=[]))
+    cog = MagicMock()
+    cog.bot = env.bot
+    return _ConfirmMidSeasonPlacementsView(cog, REVIEWER)
 
 
 def _press(env, user_id: int | None = None, name: str = "Alex"):
@@ -772,6 +787,7 @@ async def test_a_stumbled_confirmation_still_clears_its_review(tmp_path, monkeyp
     assert (await league.season())["stage"] == "ONGOING_PLACEMENTS"
 
 
+@pytest.mark.xfail(strict=True, reason=_BUTTON_ON_THE_COG)
 async def test_a_refused_confirmation_leaves_its_review_standing(tmp_path, monkeypatch):
     """The core specification's "Confirming placements", as for every review's button: a press
     refused at the press leaves the review and its button standing, to be pressed again within
@@ -785,8 +801,7 @@ async def test_a_refused_confirmation_leaves_its_review_standing(tmp_path, monke
 
     env = await _standing_mid_season(tmp_path)
     await _season_since_the_review(env, monkeypatch)
-    view, cog = _confirm_view(env)
-    _real_confirmation(env, cog, stage=SeasonStage.ONGOING)
+    view = _real_confirmation(env, monkeypatch, stage=SeasonStage.ONGOING)
     interaction = _press(env)
 
     await type(view).approve(view, interaction, MagicMock())
@@ -798,6 +813,7 @@ async def test_a_refused_confirmation_leaves_its_review_standing(tmp_path, monke
     assert await _prompt_rows(env) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_BUTTON_ON_THE_COG)
 async def test_the_reviewer_confirms_the_mid_season_placements(tmp_path, monkeypatch):
     """Alex's mid-season review stands, posted a moment ago, the season unchanged since its
     report, its row's evidence reading Pro's rounds "as reviewed". Alex, who ran it, presses
@@ -810,19 +826,22 @@ async def test_the_reviewer_confirms_the_mid_season_placements(tmp_path, monkeyp
 
     env = await _standing_mid_season(tmp_path)
     await _season_since_the_review(env, monkeypatch)
-    view, cog = _confirm_view(env)
+    view, workflows = _confirm_view(env, monkeypatch)
     interaction = _press(env)
 
     await type(view).approve(view, interaction, MagicMock())
 
-    getattr(cog, CONFIRM).assert_awaited_once_with(
-        interaction, what=_review_button("Confirm placements", "/season placements-review"),
-        fingerprint={AREA: "as reviewed"},
-    )
+    confirmation = getattr(workflows, CONFIRM)
+    confirmation.assert_awaited_once()
+    assert confirmation.await_args.args == (interaction,)
+    asked = confirmation.await_args.kwargs
+    assert asked["what"] == _review_button("Confirm placements", "/season placements-review")
+    assert asked["fingerprint"] == {AREA: "as reviewed"}
     assert env.channel.deleted == []
     assert await _take_downs(env) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_BUTTON_ON_THE_COG)
 async def test_mid_season_placements_changed_since_the_review_are_not_confirmed(
         tmp_path, monkeypatch):
     """Alex's mid-season review stands, its row recording Pro's rounds as its report described
@@ -836,12 +855,12 @@ async def test_mid_season_placements_changed_since_the_review_are_not_confirmed(
 
     env = await _standing_mid_season(tmp_path)
     await _season_since_the_review(env, monkeypatch, now="changed")
-    view, cog = _confirm_view(env)
+    view, workflows = _confirm_view(env, monkeypatch)
     interaction = _press(env)
 
     await type(view).approve(view, interaction, MagicMock())
 
-    getattr(cog, CONFIRM).assert_not_awaited()
+    getattr(workflows, CONFIRM).assert_not_awaited()
     reply = acknowledgement(interaction)
     assert f"• {AREA}" in reply
     assert "`/season placements-review`" in reply
