@@ -15,8 +15,8 @@ whether the step came from the job store or from database state.
 `test_advance_runs_the_kinds_own_step` holds it.
 
 **Each kind's step is its module's.** Advance runs the step its module signed up for the entry's
-kind (`register_advance`), as the scheduler runs the handler signed up for a job's kind; the
-reply, the log line and the change asked are the module's.
+kind on the bot's `advance_steps`, which the builder makes, as the scheduler runs the handler signed
+up for a job's kind; the reply, the log line and the change asked are the module's.
 
 **An unhandled error in a phase is reported, not raised.** The maintainer is stepping through a
 season and needs to know which round failed; an exception escaping into the interaction handler
@@ -331,6 +331,11 @@ async def test_an_empty_queue_says_so_and_names_what_comes_next(tmp_path):
 # Each kind's own step
 # ---------------------------------------------------------------------------
 
+#: Not yet true of `/test-mode advance` (#283).
+_STEPS_ON_THE_BUILDER = "#283: the advance steps are signed up in a registry the module keeps, not on an object the builder makes"
+
+
+@pytest.mark.xfail(strict=True, reason=_STEPS_ON_THE_BUILDER)
 @pytest.mark.parametrize("job_id", ["queued_job", None], ids=["from-the-job-store", "from-state"])
 @pytest.mark.parametrize(
     "phase_number",
@@ -340,13 +345,13 @@ async def test_an_empty_queue_says_so_and_names_what_comes_next(tmp_path):
 async def test_advance_runs_the_kinds_own_step(tmp_path, monkeypatch, phase_number, job_id):
     """Round 3 of Division 1's step of each kind is next (its job queued, or found from database
     state), a mystery round's notice among them under the `weather_p1` it is armed as, and a
-    stand-in step is signed up for that kind alone. Advance takes the round's job of that kind
+    stand-in step is signed up for that kind alone, on the bot's own advance steps. Advance takes
+    the round's job of that kind
     down, then runs that step once, handed the entry; it sends the step's reply to the
     maintainer and writes the step's fields to the log channel under the success line, and asks
     nothing of the change queue itself. A notice found from database state whose job is still
     queued is taken down so, and cannot post a second time (#426)."""
-    from leaguebot.core.services import test_mode_service
-    from leaguebot.core.services.test_mode_service import AdvanceOutcome, register_advance
+    from leaguebot.core.services.test_mode_service import AdvanceOutcome, AdvanceSteps
 
     kind = KIND_OF_PHASE[phase_number]
     cog = _make_cog(await _make_db(tmp_path))
@@ -361,8 +366,8 @@ async def test_advance_runs_the_kinds_own_step(tmp_path, monkeypatch, phase_numb
         return AdvanceOutcome.asked(f"⏩ {kind} is on the change queue.", f"  phase: {kind}")
 
     stand_in = AsyncMock(side_effect=step)
-    monkeypatch.setattr(test_mode_service, "_ADVANCE_STEPS", {})
-    register_advance(kind, stand_in)
+    cog.bot.advance_steps = AdvanceSteps()
+    cog.bot.advance_steps.register_step(kind, stand_in)
     entry = _entry(phase_number, job_id=job_id)
 
     await _advance(cog, interaction, entry, sign_up=False)
@@ -381,17 +386,19 @@ async def test_advance_runs_the_kinds_own_step(tmp_path, monkeypatch, phase_numb
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=_STEPS_ON_THE_BUILDER)
 async def test_advance_reports_a_kind_with_no_step_signed_up(tmp_path, monkeypatch):
-    """Round 3 of Division 1's Phase 2 is next, and no step is signed up for `weather_p2`.
+    """Round 3 of Division 1's Phase 2 is next, and the bot's advance steps hold none for
+    `weather_p2`.
     Advance raises nothing: the maintainer gets the standard failure reply and the log channel
     one failure line, each naming the kind, the division and the round, and nothing is asked of
     the change queue."""
-    from leaguebot.core.services import test_mode_service
+    from leaguebot.core.services.test_mode_service import AdvanceSteps
 
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
     interaction.client = cog.bot
-    monkeypatch.setattr(test_mode_service, "_ADVANCE_STEPS", {})
+    cog.bot.advance_steps = AdvanceSteps()
 
     await _advance(cog, interaction, _entry(2), sign_up=False)
 

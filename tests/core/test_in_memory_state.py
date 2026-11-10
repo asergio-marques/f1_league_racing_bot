@@ -84,6 +84,10 @@ LEAVING = {
     # The weather phases' callables bound at start-up: the bot's wiring, not the league's data.
     # Exempt while it stands; it goes when every kind is signed up in `_timer_callbacks` (#283).
     ("core/services/scheduler_service.py", "_phase_callbacks"): "#283 S7a",
+    # Each round job kind's `/test-mode advance` step, in a registry the module kept for the
+    # process: the bot's wiring, not the league's data. It goes when the steps are held by an
+    # object the builder makes (#283 S21f2).
+    ("core/services/test_mode_service.py", "_ADVANCE_STEPS"): "#283 S21f2",
 }
 
 #: Stores the plan moves with no change, by (file, name): the file each moves to and the commit
@@ -109,9 +113,10 @@ ARRIVING_EXEMPT = {
     # Each running lane's worker task, keyed by lane: the queue's own tasks, cancelled by
     # `stop()`, never the league's data (6b L10).
     ("core/services/change_queue.py", "_workers"): "#439 6b L10",
-    # Each round job kind's `/test-mode advance` step, signed up by the builder beside its timer
-    # handler: the bot's wiring, not the league's data (#283 S7c).
-    ("core/services/test_mode_service.py", "_ADVANCE_STEPS"): "#283 S7c",
+    # Each round job kind's `/test-mode advance` step, held by the advance steps the builder makes
+    # and signs up beside each kind's timer handler: the bot's wiring, not the league's data
+    # (#283 S21f2).
+    ("core/services/test_mode_service.py", "_steps"): "#283 S21f2",
     # A hook's subscribers, signed up by the builder before the bot connects: the bot's wiring,
     # not the league's data (#283 S8a).
     ("core/utils/hooks.py", "_subscribers"): "#283 S8a",

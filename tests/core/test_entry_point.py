@@ -207,16 +207,26 @@ async def test_every_kind_is_registered_before_the_scheduler_starts(tmp_path):
     assert sorted(kinds - set(scheduler._timer_callbacks)) == []
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the advance steps are signed up in a registry the module keeps, not on an object the builder makes",
+)
 async def test_every_round_kind_has_its_advance_step_after_build(tmp_path):
     """Straight after `build`, every kind of a round's jobs (the three weather phases, the
     forecast clean-up, the result submission and the four check-in jobs) has the step
-    `/test-mode advance` runs for it signed up, by the module whose job it is."""
+    `/test-mode advance` runs for it signed up on the bot's advance steps, which the builder
+    makes, by the module whose job it is."""
     from leaguebot.core.models.round import ROUND_JOB_KINDS
-    from leaguebot.core.services import test_mode_service
 
-    await built_bot(tmp_path, now=_NOW)
+    bot = await built_bot(tmp_path, now=_NOW)
 
-    assert sorted(ROUND_JOB_KINDS - set(test_mode_service._ADVANCE_STEPS)) == []
+    missing = []
+    for kind in sorted(ROUND_JOB_KINDS):
+        try:
+            bot.advance_steps.step_for(kind)
+        except LookupError:
+            missing.append(kind)
+    assert missing == []
 
 
 #: Each module's part of a cancellation of rounds, as the module names it: the moment's hook on

@@ -147,21 +147,20 @@ def _submission_open(status: str):
         monkeypatch.setattr(
             test_mode_service, "round_result_status", AsyncMock(return_value=status)
         )
-        if hasattr(test_mode_service, "register_advance"):
-            from leaguebot.core.services.test_mode_service import AdvanceOutcome
+        from leaguebot.core.services.test_mode_service import AdvanceOutcome, AdvanceSteps
 
-            where = "**Pro** — **Round 2**"
-            reply = (
-                f"⏸️ Result submission for {where} is already in progress. Please submit "
-                f"results in the submission channel before advancing."
-                if status == "FINAL" else
-                f"⏸️ {where} is awaiting penalty review approval. Please complete the penalty "
-                f"review in the submission channel before advancing."
-            )
-            monkeypatch.setattr(test_mode_service, "_ADVANCE_STEPS", {})
-            test_mode_service.register_advance(
-                "results", AsyncMock(return_value=AdvanceOutcome.refused(reply))
-            )
+        where = "**Pro** — **Round 2**"
+        reply = (
+            f"⏸️ Result submission for {where} is already in progress. Please submit "
+            f"results in the submission channel before advancing."
+            if status == "FINAL" else
+            f"⏸️ {where} is awaiting penalty review approval. Please complete the penalty "
+            f"review in the submission channel before advancing."
+        )
+        cog.bot.advance_steps = AdvanceSteps()
+        cog.bot.advance_steps.register_step(
+            "results", AsyncMock(return_value=AdvanceOutcome.refused(reply))
+        )
     return setup
 
 
@@ -371,7 +370,20 @@ _CASES = {
 }
 
 
-@pytest.mark.parametrize("case", sorted(_CASES))
+#: The cases whose stand-in step is signed up on the bot's own advance steps, and not yet true of
+#: `/test-mode advance` (#283).
+_STEPS_ON_THE_BUILDER = "#283: the advance steps are signed up in a registry the module keeps, not on an object the builder makes"
+_SIGNED_UP_ON_THE_BUILDER = {"advance awaiting review", "advance with a submission in progress"}
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(case, marks=pytest.mark.xfail(strict=True, reason=_STEPS_ON_THE_BUILDER))
+        if case in _SIGNED_UP_ON_THE_BUILDER else case
+        for case in sorted(_CASES)
+    ],
+)
 async def test_a_refusal_of_the_test_mode_cog_is_recorded_in_the_log_channel(case, monkeypatch):
     """A league admin the test-mode cog's own checks turn away is answered as today, seen by
     them alone, and one standard line records the refusal; on the import form it names the
