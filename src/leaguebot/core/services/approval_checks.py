@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Protocol, TypeVar
 
 import discord
@@ -58,10 +58,8 @@ class DatesRefusal:
 
 
 def _stamp(moment: datetime) -> str:
-    """A Discord dynamic timestamp, full form, a naive moment taken as UTC. Written here and not
-    imported from the weather module's message builder, which core may not reach from a service."""
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=timezone.utc)
+    """A Discord dynamic timestamp, full form, of an aware moment. Written here and not imported
+    from the weather module's message builder, which core may not reach from a service."""
     return f"<t:{int(moment.timestamp())}:F>"
 
 

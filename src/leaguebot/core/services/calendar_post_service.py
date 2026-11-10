@@ -25,7 +25,6 @@ from __future__ import annotations
 import dataclasses
 import logging
 from dataclasses import dataclass, field
-from datetime import timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -109,12 +108,7 @@ def textual_calendar(division_name: str, rounds) -> str:
     # replaced used. Byte-identical output when the module is off is the contract (SC-006),
     # so the sort key is preserved rather than swapped for the round number.
     for entry in sorted(rounds, key=lambda r: r.scheduled_at):
-        # Stored as plain UTC: a naive time read as the host's own would show each round an
-        # hour early on a host in summer time (`discord_ts` reads it the same way).
-        moment = entry.scheduled_at
-        if moment.tzinfo is None:
-            moment = moment.replace(tzinfo=timezone.utc)
-        unix = int(moment.timestamp())
+        unix = int(entry.scheduled_at.timestamp())
         track = entry.track_name or "Mystery"
         line = f"Round {entry.round_number}: {track} — <t:{unix}:F>"
         if getattr(entry, "status", None) == CANCELLED_STATUS:
