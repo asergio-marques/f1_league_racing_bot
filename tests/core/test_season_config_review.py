@@ -13,10 +13,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog, _ConfirmConfigurationView
+from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.models.server_config import ServerConfig
-from tests.support.review_workflows import run_check, run_workflow
+from tests.support.review_workflows import record_review_views, run_check, run_workflow
 from tests.support.season_league import reply as _told
 from tests.support.setup_reads import hold_setup
 
@@ -354,13 +354,13 @@ CONFIRM = "confirm_configuration"
 
 
 def _confirm_view(env, monkeypatch, *, goes_through: bool = True):
-    """Alex's review's ✅ Confirm configuration, built as the question's view is, whose
-    confirmation, `season_review_workflows.confirm_configuration`, is stood in and recorded, and
-    goes through or is refused at its own check. Returns the view and the stand-ins, the
-    confirmation's under `CONFIRM`."""
+    """Alex's review's ✅ Confirm configuration, the view the builder's factory makes for the
+    question, whose confirmation, `season_review_workflows.confirm_configuration`, is stood in and
+    recorded, and goes through or is refused at its own check. Returns the view and the
+    stand-ins, the confirmation's under `CONFIRM`."""
     from tests.core.test_review_outcomes_recorded import _view_on
 
-    view, workflows = _view_on(env, _ConfirmConfigurationView, CONFIRM, monkeypatch)
+    view, workflows = _view_on(env, "configuration", CONFIRM, monkeypatch)
     getattr(workflows, CONFIRM).return_value = goes_through
     return view, workflows
 
@@ -416,7 +416,7 @@ async def test_a_refused_confirmation_leaves_the_review_standing(tmp_path, monke
     await _team_list_since_the_review(env, monkeypatch)
     view, workflows = _confirm_view(env, monkeypatch, goes_through=False)
 
-    await _ConfirmConfigurationView.approve(view, _press(env), MagicMock())
+    await type(view).approve(view, _press(env), MagicMock())
 
     getattr(workflows, CONFIRM).assert_awaited_once()
     assert env.channel.deleted == [] and env.channel.sent == []
@@ -495,7 +495,7 @@ async def test_confirming_one_review_ends_another_of_the_same_season_when_presse
     await _team_list_since_the_review(env, monkeypatch)
     view, workflows = _confirm_view(env, monkeypatch)
     asking_the_take_down(env, workflows)
-    await _ConfirmConfigurationView.approve(view, _press(env, question=newer), MagicMock())
+    await type(view).approve(view, _press(env, question=newer), MagicMock())
     await run_queue(env.bot)
     assert [m.id for m in channel.deleted] == [newer.id]
     assert channel.sent == []
@@ -503,7 +503,7 @@ async def test_confirming_one_review_ends_another_of_the_same_season_when_presse
     older_view, older_workflows = _confirm_view(env, monkeypatch)
     pressing = _press(env)
 
-    await _ConfirmConfigurationView.approve(older_view, pressing, MagicMock())
+    await type(older_view).approve(older_view, pressing, MagicMock())
 
     getattr(older_workflows, CONFIRM).assert_not_awaited()
     assert "Nothing has been confirmed" in acknowledgement(pressing)
@@ -530,21 +530,6 @@ POST = "season.review.post"
 COMMAND_CHANNEL = 111
 
 
-class _RecordedView:
-    """Stands in for the confirm view, recording any the command builds itself: since #439 the
-    question's view is made by the review's change, so a command that builds one has posted its
-    question itself."""
-
-    made: list["_RecordedView"] = []
-
-    def __init__(self, cog, reviewer_id):
-        self.reviewer_id = reviewer_id
-        self.record_fingerprint = AsyncMock()
-        self.bind = AsyncMock()
-        self.carries = MagicMock()
-        _RecordedView.made.append(self)
-
-
 def _report_bot(**kwargs) -> MagicMock:
     bot = _bot(**kwargs)
     bot.team_service.get_teams_with_roles = AsyncMock(
@@ -569,14 +554,12 @@ async def _review_asked(cog, interaction, monkeypatch) -> dict:
     """Run `/season config-review` as the manager in channel 111, the season's evidence the team
     list "as reported", and return the review it asked the queue to post: one request, of
     `season.review.post`, carrying the manager's interaction."""
-    import leaguebot.core.cogs.season_cog as season_cog
     from leaguebot.core.services import season_fingerprint_service as sfs
 
     async def _evidence(*_args, **_kwargs):
         return sfs.SeasonFingerprint({"the team list": "as reported"})
 
-    _RecordedView.made = []
-    monkeypatch.setattr(season_cog, "_ConfirmConfigurationView", _RecordedView)
+    made = record_review_views(monkeypatch)
     monkeypatch.setattr(sfs, "take_fingerprint", _evidence)
     interaction.client = cog.bot
     interaction.channel_id = COMMAND_CHANNEL
@@ -588,7 +571,7 @@ async def _review_asked(cog, interaction, monkeypatch) -> dict:
     assert len(asked) == 1, cog.bot.change_queue.ask.await_args_list
     [call] = asked
     assert call.kwargs.get("interaction") is interaction
-    assert _RecordedView.made == []
+    assert made == []
     return call.kwargs.get("payload") or call.args[1]
 
 
@@ -756,9 +739,6 @@ async def test_the_followup_is_restored_after_the_report(monkeypatch):
     interaction = _interaction()
     interaction.client = cog.bot
 
-    import leaguebot.core.cogs.season_cog as season_cog
-
-    monkeypatch.setattr(season_cog, "_ConfirmConfigurationView", _RecordedView)
     original = AsyncMock(return_value=MagicMock())
     interaction.followup.send = original
 
@@ -876,20 +856,20 @@ async def test_an_unchanged_configuration_is_handed_to_the_confirmation_with_its
     records any refusal under) and the review's evidence, which the confirmation is judged against
     again when it runs. The button deletes nothing and asks no take-down itself: that is the
     confirmation's, asked of the queue with it."""
-    from leaguebot.core.cogs.season_cog import _review_button
+    from leaguebot.core.services.season_review_workflows import review_button
 
     env = await _standing_review(tmp_path)
     await _team_list_since_the_review(env, monkeypatch)
     view, workflows = _confirm_view(env, monkeypatch)
     interaction = _press(env)
 
-    await _ConfirmConfigurationView.approve(view, interaction, MagicMock())
+    await type(view).approve(view, interaction, MagicMock())
 
     confirmation = getattr(workflows, CONFIRM)
     confirmation.assert_awaited_once()
     assert confirmation.await_args.args == (interaction,)
     asked = confirmation.await_args.kwargs
-    assert asked["what"] == _review_button("Confirm configuration", CONFIG_REVIEW)
+    assert asked["what"] == review_button("Confirm configuration", CONFIG_REVIEW)
     assert asked["fingerprint"] == {TEAM_LIST: "as reviewed"}
     assert env.channel.deleted == []
     assert await _take_downs(env) == []

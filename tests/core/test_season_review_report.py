@@ -49,7 +49,7 @@ import pytest
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.utils.hooks import AwaitedHook
-from tests.support.review_workflows import run_workflow
+from tests.support.review_workflows import record_review_views, run_workflow
 from tests.support.setup_reads import hold_setup
 
 from tests.support.undecorate import undecorate
@@ -1039,35 +1039,19 @@ async def test_every_placements_review_refusal_is_recorded(db_path, arrange, rep
     ]
 
 
-class _RecordedApproveView:
-    """Stands in for the approve view, recording what the review did with it."""
-
-    made: list["_RecordedApproveView"] = []
-
-    def __init__(self, cog, reviewer_id):
-        self.reviewer_id = reviewer_id
-        self.record_fingerprint = AsyncMock()
-        self.bind = AsyncMock()
-        self.carries = MagicMock()
-        _RecordedApproveView.made.append(self)
-
-
 async def test_a_posted_placements_review_writes_no_line_of_its_own_and_asks_the_review_as_the_manager_s(
         db_path, monkeypatch):
     """Alex runs a clean placements review. The command builds no approve view and writes no
     line naming `/season placements-review` itself: the review's change writes the line once
     its question is posted (#482, criterion 6; `test_season_review_changes.py`). It asks the
     review of the queue with Alex's interaction, the question offered."""
-    import leaguebot.core.cogs.season_cog as season_cog
-
-    _RecordedApproveView.made = []
-    monkeypatch.setattr(season_cog, "_ApproveView", _RecordedApproveView)
+    made = record_review_views(monkeypatch)
     cog = _cog(db_path)
     interaction = _run_by_alex(cog, _interaction())
 
     await _review(cog, interaction)
 
-    assert _RecordedApproveView.made == []
+    assert made == []
     assert [line for line in _logged(cog) if "/season placements-review" in line] == []
     assert _offered(cog)
 

@@ -15,6 +15,10 @@ The gates the workflows run are functions of `leaguebot.core.services.approval_c
 through the module, so that a test standing one in patches `approval_checks.<gate>`. A gate that
 reads several of the league's services, as `configuration_faults` does, takes them as keyword
 arguments named as the bot carries them, and `run_check` hands them over as `run_workflow` does.
+
+A review command builds no view of its question: the review's change has the builder's factory
+make it. `record_review_views` records any view of a review's question built, so a test can say
+none was.
 """
 from __future__ import annotations
 
@@ -59,3 +63,34 @@ async def run_check(name: str, bot: Any, *args: Any, **given: Any) -> Any:
 
     check = getattr(approval_checks, name)
     return await check(*args, **_services(check, bot, given), **given)
+
+
+#: Each family of review question the builder's factory makes a view for.
+REVIEW_FAMILIES = ("approve", "mid_season", "configuration")
+
+
+def record_review_views(monkeypatch: Any) -> list[Any]:
+    """Record every view of a review's question built while *monkeypatch* holds, and return the
+    list they are recorded in.
+
+    The view classes are found by building one of each family through the builder's factory
+    (`_approve_view_for`) on a bot that is a mock, so a test reads no module the views live in;
+    each class's constructor is then wrapped to record the view and build it as before. A view
+    of a class deriving from another is recorded once."""
+    from unittest.mock import MagicMock
+
+    from leaguebot.__main__ import _approve_view_for
+
+    made: list[Any] = []
+    make = _approve_view_for(MagicMock())
+    classes = [type(make({"view": family, "reviewer_id": 1})) for family in REVIEW_FAMILIES]
+    for cls in classes:
+        original = cls.__init__
+
+        def __init__(self: Any, *args: Any, __original: Any = original, **kwargs: Any) -> None:
+            if not any(view is self for view in made):
+                made.append(self)
+            __original(self, *args, **kwargs)
+
+        monkeypatch.setattr(cls, "__init__", __init__)
+    return made

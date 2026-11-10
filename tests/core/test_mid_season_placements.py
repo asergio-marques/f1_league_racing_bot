@@ -20,7 +20,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.placement_service import PlacementService
 from tests.support.change_queue import acknowledgement
-from tests.support.review_workflows import run_workflow
+from tests.support.review_workflows import record_review_views, run_workflow
 from tests.support.season_league import PLACEMENTS_CONFIRM_KIND as KIND
 from tests.support.setup_reads import hold_setup
 from tests.support.undecorate import undecorate
@@ -305,18 +305,6 @@ _TODAY_S_DRAWING = (
 )
 
 
-class _RecordedView:
-    """Stands in for the mid-season review's view, which the command no longer builds."""
-
-    made: list["_RecordedView"] = []
-
-    def __init__(self, cog, reviewer_id):
-        self.record_fingerprint = AsyncMock()
-        self.bind = AsyncMock()
-        self.carries = MagicMock()
-        _RecordedView.made.append(self)
-
-
 def _report_cog(*, placements, unsettled=(), channels=(), configuration=(), divisions=None,
                 images=False):
     import leaguebot.core.cogs.season_cog as season_cog
@@ -366,10 +354,7 @@ async def _mid_season_report(cog, monkeypatch, interaction=None):
     asked the queue to post (its report's sections, then its question where it is offered),
     then its private follow-ups. It must ask `season.review.post` exactly once, with the
     manager's interaction, and post nothing public itself; the request is kept on the cog."""
-    import leaguebot.core.cogs.season_cog as season_cog
-
-    _RecordedView.made = []
-    monkeypatch.setattr(season_cog, "_ConfirmMidSeasonPlacementsView", _RecordedView)
+    cog.views_made = record_review_views(monkeypatch)
     # The review's database is `:memory:`, which holds no season to fingerprint: the evidence the
     # report was computed from is given, as `test_season_review_report.py` gives it.
     from leaguebot.core.services import season_fingerprint_service as sfs
@@ -440,7 +425,7 @@ async def test_the_mid_season_review_names_each_driver_to_confirm_and_offers_the
     assert (review["channel_id"], review["season_id"]) == (interaction.channel_id, 1)
     assert review["reviewer_id"] == 42
     assert review["evidence"]
-    assert _RecordedView.made == []
+    assert cog.views_made == []
 
 
 async def test_a_mid_season_review_with_nothing_new_says_so(monkeypatch):
@@ -486,9 +471,6 @@ async def test_a_deleted_channel_withholds_the_mid_season_button(monkeypatch):
 
 async def test_the_channels_are_judged_upon_the_review_s_own_server(monkeypatch):
     cog = _report_cog(placements=[_placement("1002")])
-    import leaguebot.core.cogs.season_cog as season_cog
-
-    monkeypatch.setattr(season_cog, "_ConfirmMidSeasonPlacementsView", _RecordedView)
     interaction = _interaction()
     interaction.followup.send = AsyncMock(return_value=MagicMock())
 
@@ -680,16 +662,16 @@ def _confirm_view(env, monkeypatch):
     """Alex's review's ✅ Confirm placements button, whose confirmation,
     `season_review_workflows.confirm_mid_season_placements`, is stood in, recorded and goes
     through. Returns the view and the stand-ins, the confirmation's under `CONFIRM`."""
-    from leaguebot.core.cogs.season_cog import _ConfirmMidSeasonPlacementsView
     from tests.core.test_review_outcomes_recorded import _view_on
 
-    return _view_on(env, _ConfirmMidSeasonPlacementsView, CONFIRM, monkeypatch)
+    return _view_on(env, "mid_season", CONFIRM, monkeypatch)
 
 
 def _real_confirmation(env, monkeypatch, *, stage=SeasonStage.ONGOING_PLACEMENTS):
-    """Alex's review's ✅ Confirm placements button over the real confirmation, season 1 at
-    *stage*, nothing unsettled and no fault: the gates it runs stood in on `approval_checks`."""
-    from leaguebot.core.cogs.season_cog import _ConfirmMidSeasonPlacementsView
+    """Alex's review's ✅ Confirm placements button, the view the builder's factory makes for the
+    question, over the real confirmation, season 1 at *stage*, nothing unsettled and no fault: the
+    gates it runs stood in on `approval_checks`."""
+    from leaguebot.__main__ import _approve_view_for
     from leaguebot.core.services import approval_checks
     from tests.core.test_review_outcomes_recorded import REVIEWER
 
@@ -700,9 +682,7 @@ def _real_confirmation(env, monkeypatch, *, stage=SeasonStage.ONGOING_PLACEMENTS
                         AsyncMock(return_value=([], [])))
     monkeypatch.setattr(approval_checks, "mid_season_configuration_faults",
                         AsyncMock(return_value=[]))
-    cog = MagicMock()
-    cog.bot = env.bot
-    return _ConfirmMidSeasonPlacementsView(cog, REVIEWER)
+    return _approve_view_for(env.bot)({"view": "mid_season", "reviewer_id": REVIEWER})
 
 
 def _press(env, user_id: int | None = None, name: str = "Alex"):
@@ -787,7 +767,7 @@ async def test_the_reviewer_confirms_the_mid_season_placements(tmp_path, monkeyp
     name (which it records any refusal under) and the review's evidence, which the confirmation
     is judged against again when it runs. The button deletes nothing and asks no take-down
     itself: that is the confirmation's, asked of the queue with it."""
-    from leaguebot.core.cogs.season_cog import _review_button
+    from leaguebot.core.services.season_review_workflows import review_button
     from tests.core.test_review_outcomes_recorded import AREA, _season_since_the_review
 
     env = await _standing_mid_season(tmp_path)
@@ -801,7 +781,7 @@ async def test_the_reviewer_confirms_the_mid_season_placements(tmp_path, monkeyp
     confirmation.assert_awaited_once()
     assert confirmation.await_args.args == (interaction,)
     asked = confirmation.await_args.kwargs
-    assert asked["what"] == _review_button("Confirm placements", "/season placements-review")
+    assert asked["what"] == review_button("Confirm placements", "/season placements-review")
     assert asked["fingerprint"] == {AREA: "as reviewed"}
     assert env.channel.deleted == []
     assert await _take_downs(env) == []
@@ -937,7 +917,7 @@ async def test_a_posted_mid_season_review_writes_no_line_of_its_own_and_asks_the
 
     await _mid_season_report(cog, monkeypatch, interaction)
 
-    assert _RecordedView.made == []
+    assert cog.views_made == []
     logged = [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
     assert [line for line in logged if "/season placements-review" in line] == []
     assert _offered(cog)
