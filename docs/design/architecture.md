@@ -1217,6 +1217,13 @@ catch-all, a command catches only the errors it expects by name, and only to tur
 refusal the member can act on, or to hand them to `report_failure` itself with context or an
 outcome, as `/test-mode backup save` does with a backup fault, saying that the previous backup is unchanged.
 
+A refusal a member reads is raised as `Refused` (`core/models/refusal.py`), its text what the member
+reads, and a catch that turns one into a reply names `Refused` around the call that refuses and
+nothing else: parsing a payload, or calling a hook, stays outside it. `Refused` subclasses
+`ValueError`, which Python raises for a bug (`int("x")`, a bad enum value), so a fault keeps the
+bare `ValueError` and goes on as one. The driver state machine's refusal of a transition the table
+does not allow is `InvalidDriverTransition`, a fault that a save expecting the race catches by name.
+
 *Rejected:* narrowing the capacity guards' catch to the errors they expect by name, in the
 placement guard or the season's own capacity checks alike: a fault of any other kind would then
 block a placement, a round or a season, when a check that cannot run must not.
