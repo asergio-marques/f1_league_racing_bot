@@ -76,12 +76,10 @@ def _function_source(name: str) -> str:
 # ── The helper ────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_season_with_nothing_attached_has_none(db_path):
     assert await _none_attached(db_path) is True
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_season_with_a_configuration_attached_has_one(db_path):
     await saves.create_config(db_path, "Standard")
     await saves.set_session_points(
@@ -92,7 +90,6 @@ async def test_a_season_with_a_configuration_attached_has_one(db_path):
     assert await _none_attached(db_path) is False
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_link_to_a_configuration_never_created_is_not_this_helpers_complaint(db_path):
     """Something is attached; that it does not exist is `_missing_points_config_problems`'
     fault (#132), and naming it twice would tell a manager to attach what they already have."""
@@ -110,8 +107,7 @@ async def test_a_link_to_a_configuration_never_created_is_not_this_helpers_compl
 
 
 @pytest.mark.parametrize("surface, asks", [
-    pytest.param("review_section", "no_points_config_attached(",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
+    pytest.param("review_section", "no_points_config_attached("),
     pytest.param("confirmation_refusals", "no_points_config_attached(",
                  marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
 ])

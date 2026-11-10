@@ -286,64 +286,6 @@ async def signup_prerequisite_problems(
     return ["**Signup channel** (use `/signup channel`)"]
 
 
-async def points_ordering_problems(db_path: str, season_id: int) -> list[str]:
-    """Every place this season's points would score a lower position above a higher one.
-
-    **One check because two surfaces ask the same question.** `/season placements-review` reports
-    what would block an approval and the approval refuses on it; the review must look for every
-    fault the approval refuses on, or a manager is sent to an approval that refuses for a fault
-    the report told them nothing about.
-
-    Two checks, because the points a season will run on can arrive from two directions. The
-    attached server-level configs are what a first approval copies in, and until it does the
-    season's own table is empty, so the season's table alone would pass every first approval.
-    The season's own table is read as well, because the snapshot writes with INSERT OR REPLACE
-    and clears nothing first, so a season being approved a second time can be holding entries
-    an earlier approval left behind that no attached config would mention.
-
-    Merged rather than concatenated: a re-approval sees the same fault from both sides,
-    and a manager should read each broken position once.
-    """
-    return list(dict.fromkeys(
-        await season_points_service.validate_attached_config_ordering(db_path, season_id)
-        + await season_points_service.validate_monotonic_ordering(db_path, season_id)
-    ))
-
-
-async def missing_points_config_problems(db_path: str, season_id: int) -> list[str]:
-    """Every points configuration this season is attached to that no longer exists.
-
-    **One check because two surfaces ask the same question**, in the manner of
-    `points_ordering_problems`: `/season placements-review` reports what would block an approval
-    and the approval refuses on it, so a review never lists as attached a name the
-    approval then chokes on.
-
-    The attachment is a row in `season_points_links` carrying no foreign key, so a name
-    that was never created would count towards the "a points configuration is attached"
-    prerequisite and pass it, and the first thing to notice would be the points snapshot
-    raising `ConfigNotFoundError` mid-command, after the defer, with no error handler on
-    the tree to say so.
-    """
-    return await season_points_service.missing_attached_configs(db_path, season_id)
-
-
-async def no_points_config_attached(db_path: str, season_id: int) -> bool:
-    """Whether *season_id* has no points configuration attached at all.
-
-    **One check because three surfaces ask the same question**: the configuration
-    review refuses on it, the approval refuses on it, and `/season placements-review`
-    withholds its button on it, so the review never offers Approve to a season the press
-    would refuse — which can happen because `/results config detach` stays open in
-    Placements.
-
-    A link to a configuration that does not exist still counts as attached here; that one is
-    `missing_points_config_problems`' fault. Test mode is no exception: it attaches Standard and
-    Half Points when it is enabled and at no other moment, and a season that has had them
-    detached is refused as any other.
-    """
-    return not await season_points_service.get_attached_config_names(db_path, season_id)
-
-
 async def team_name_problems(team_service: TeamService, season_id: int | None) -> list[str]:
     """Every team whose name cannot become an asset filename (047 FR-032).
 
@@ -623,19 +565,19 @@ async def configuration_faults(
 
     # ── Results: points configurations ────────────────────────────────────
     if await module_service.is_results_enabled():
-        if await no_points_config_attached(db_path, season_id):
+        if await season_points_service.no_points_config_attached(db_path, season_id):
             faults.append(
                 "No points configuration is attached to this season — "
                 "`/results config append`."
             )
-        for name in await missing_points_config_problems(db_path, season_id):
+        for name in await season_points_service.missing_points_config_problems(db_path, season_id):
             faults.append(
                 f"The attached points configuration **{name}** does not exist — build "
                 f"it with `/results config add`, or drop it with `/results config detach`."
             )
         faults += [
             f"Points table out of order: {fault}"
-            for fault in await points_ordering_problems(db_path, season_id)
+            for fault in await season_points_service.points_ordering_problems(db_path, season_id)
         ]
 
     # ── Images: rasteriser, templates, colours, portraits ─────────────────

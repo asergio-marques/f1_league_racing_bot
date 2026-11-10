@@ -3,16 +3,21 @@ from __future__ import annotations
 
 import logging
 from itertools import groupby
+from typing import TYPE_CHECKING
 
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import AuditRecord
+from leaguebot.core.services.review_sections import Review, ReviewSection
 from leaguebot.core.services.setting_change import Saved
 from leaguebot.results.models.points_changed import PointsChanged, ValueChange
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.results.services import points_config_service
 from leaguebot.results.utils.points_ordering import ordering_message, ordering_violations
+
+if TYPE_CHECKING:
+    from leaguebot.core.services.module_service import ModuleService
 
 log = logging.getLogger(__name__)
 
@@ -227,6 +232,128 @@ async def validate_attached_config_ordering(
             )
     return errors
 
+
+
+async def points_ordering_problems(db_path: str, season_id: int) -> list[str]:
+    """Every place this season's points would score a lower position above a higher one.
+
+    **One check because two surfaces ask the same question.** `/season placements-review` reports
+    what would block an approval and the approval refuses on it; the review must look for every
+    fault the approval refuses on, or a manager is sent to an approval that refuses for a fault
+    the report told them nothing about.
+
+    Two checks, because the points a season will run on can arrive from two directions. The
+    attached server-level configs are what a first approval copies in, and until it does the
+    season's own table is empty, so the season's table alone would pass every first approval.
+    The season's own table is read as well, because the snapshot writes with INSERT OR REPLACE
+    and clears nothing first, so a season being approved a second time can be holding entries
+    an earlier approval left behind that no attached config would mention.
+
+    Merged rather than concatenated: a re-approval sees the same fault from both sides,
+    and a manager should read each broken position once.
+    """
+    return list(dict.fromkeys(
+        await validate_attached_config_ordering(db_path, season_id)
+        + await validate_monotonic_ordering(db_path, season_id)
+    ))
+
+
+async def missing_points_config_problems(db_path: str, season_id: int) -> list[str]:
+    """Every points configuration this season is attached to that no longer exists.
+
+    **One check because two surfaces ask the same question**, in the manner of
+    `points_ordering_problems`: `/season placements-review` reports what would block an approval
+    and the approval refuses on it, so a review never lists as attached a name the
+    approval then chokes on.
+
+    The attachment is a row in `season_points_links` carrying no foreign key, so a name
+    that was never created would count towards the "a points configuration is attached"
+    prerequisite and pass it, and the first thing to notice would be the points snapshot
+    raising `ConfigNotFoundError` mid-command, after the defer, with no error handler on
+    the tree to say so.
+    """
+    return await missing_attached_configs(db_path, season_id)
+
+
+async def no_points_config_attached(db_path: str, season_id: int) -> bool:
+    """Whether *season_id* has no points configuration attached at all.
+
+    **One check because three surfaces ask the same question**: the configuration
+    review refuses on it, the approval refuses on it, and `/season placements-review`
+    withholds its button on it, so the review never offers Approve to a season the press
+    would refuse — which can happen because `/results config detach` stays open in
+    Placements.
+
+    A link to a configuration that does not exist still counts as attached here; that one is
+    `missing_points_config_problems`' fault. Test mode is no exception: it attaches Standard and
+    Half Points when it is enabled and at no other moment, and a season that has had them
+    detached is refused as any other.
+    """
+    return not await get_attached_config_names(db_path, season_id)
+
+
+async def review_section(
+    modules: "ModuleService",
+    db_path: str,
+    *,
+    review: Review,
+    season_id: int,
+    division_ids: list[int],
+) -> ReviewSection | None:
+    """Results' section of a season review: the points configurations attached to the season and,
+    in the placements review, what of them blocks approval.
+
+    Subscribed to core's `review_sections_read`. The placements review names the attached
+    configurations whether results is on or off; only while it is on does it go on to report what
+    stands in the way of approving, read through the helpers `confirmation_refusals` refuses on,
+    so the report and the refusal cannot drift. The configuration review has a section only while
+    results is on, and it names the configurations alone: its faults are reported with the
+    confirmation's. Nothing is promised under test mode: it attaches Standard and Half Points
+    when it is enabled and at no other moment, so a test season with none has a fault as any
+    other season's does. Reads only.
+    """
+    results_on = await modules.is_results_enabled()
+    if review is Review.CONFIGURATION and not results_on:
+        return None
+    config_names = await get_season_config_names(db_path, season_id)
+    lines = [
+        "**Points Configs:** " + ", ".join(config_names)
+        if config_names
+        else "**Points Configs:** *(none attached)*"
+    ]
+    if review is Review.CONFIGURATION:
+        return ReviewSection(module="results", lines=lines)
+    if results_on:
+        # `/results config detach` stays open in Placements, so nothing attached is a fault the
+        # review has to name beside the approval's refusal of it.
+        if await no_points_config_attached(db_path, season_id):
+            lines.append("")
+            lines.append("❌ **No points configuration attached** — this blocks approval.")
+            lines.append("  Attach one with `/results config append`, then review again.")
+        # Named before the ordering faults, because a configuration that is not there is the
+        # reason the names above may not mean what they appear to: the list of attached names is
+        # printed from the links alone, so a mistyped one reads exactly like a real one.
+        phantom_configs = await missing_points_config_problems(db_path, season_id)
+        if phantom_configs:
+            lines.append("")
+            lines.append("❌ **Attached but never created** — these block approval:")
+            lines += [f"  • **{name}**" for name in phantom_configs]
+            lines.append(
+                "  The name above is attached to this season and no such "
+                "configuration exists on the server. Build it with "
+                "`/results config add`, or drop it with `/results config detach`."
+            )
+        ordering_faults = await points_ordering_problems(db_path, season_id)
+        if ordering_faults:
+            lines.append("")
+            lines.append("❌ **Points tables out of order** — these block approval:")
+            lines += [f"  • {fault}" for fault in ordering_faults]
+            lines.append(
+                "  A lower position cannot be worth as much as the one above it. "
+                "Repair them with `/results config session`, then review again."
+            )
+    lines.append("")
+    return ReviewSection(module="results", lines=lines)
 
 
 async def get_season_points_view(

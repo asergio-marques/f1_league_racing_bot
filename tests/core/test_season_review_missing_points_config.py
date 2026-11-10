@@ -100,7 +100,6 @@ def _function_source(name: str) -> str:
 # ── The shared helper ─────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.asyncio
 async def test_a_season_whose_configs_all_exist_raises_nothing(db_path):
     await _attach_real(db_path, "Standard")
@@ -108,7 +107,6 @@ async def test_a_season_whose_configs_all_exist_raises_nothing(db_path):
     assert await _problems(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.asyncio
 async def test_a_mistyped_name_is_found(db_path):
     """The whole of #132, at the surface that was supposed to warn about it."""
@@ -120,7 +118,6 @@ async def test_a_mistyped_name_is_found(db_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.asyncio
 async def test_a_config_removed_from_under_the_season_is_found(db_path):
     """The second way in: the season was fine and became unapprovable untouched."""
@@ -136,7 +133,6 @@ async def test_a_config_removed_from_under_the_season_is_found(db_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.asyncio
 async def test_a_season_with_nothing_attached_raises_nothing_here(db_path):
     """"Nothing attached" is the prerequisite gate's complaint, not this one's."""
@@ -146,7 +142,6 @@ async def test_a_season_with_nothing_attached_raises_nothing_here(db_path):
 # ── The two surfaces read the same helper ─────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 def test_the_review_asks_the_helper_rather_than_the_service_itself():
     source = _function_source("review_section")
 

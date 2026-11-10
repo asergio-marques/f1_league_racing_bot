@@ -66,6 +66,7 @@ from leaguebot.core.utils.league_bot import bot_of
 from leaguebot.core.utils.league_server import LeagueView
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
+from leaguebot.results.services import season_points_service
 
 __all__ = [
     "BackupBeforeApprovalView",
@@ -612,14 +613,14 @@ async def approve_season(
         # Points when it is enabled, and a test season that has had them detached is
         # refused here as any other rather than having them attached again behind it.
         errors: list[str] = []
-        if await approval_checks.no_points_config_attached(db_path, season.id):
+        if await season_points_service.no_points_config_attached(db_path, season.id):
             errors.append("no points configuration is attached to this season")
 
         # Counting the links is not the same as having the configurations they name.
         # A link is a bare name, so one that was mistyped — or one whose configuration
         # has since been removed — satisfies the count above and then breaks the
         # snapshot further down, which is exactly the silence a snapshot that cannot be taken makes.
-        for phantom in await approval_checks.missing_points_config_problems(db_path, season.id):
+        for phantom in await season_points_service.missing_points_config_problems(db_path, season.id):
             errors.append(
                 f"points configuration **{phantom}** is attached to this season but "
                 f"does not exist — create it with `/results config add`, or drop it "
@@ -640,7 +641,7 @@ async def approve_season(
         #
         # Through the same helper `/season placements-review` reports from, so the report a
         # manager was given and the refusal they then meet cannot disagree.
-        mono_errors = await approval_checks.points_ordering_problems(db_path, season.id)
+        mono_errors = await season_points_service.points_ordering_problems(db_path, season.id)
         if mono_errors:
             bullet_list = "\n\u2022 ".join(mono_errors)
             await refuse(

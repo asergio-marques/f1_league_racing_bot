@@ -16,7 +16,6 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from tests.support import saves
 
-_NOT_YET = "#283: results hands no review section; the season cog writes it"
 SEASON_ID = 13
 
 
@@ -64,10 +63,7 @@ async def _section(db_path, *, on: bool, review: str):
                                 division_ids=[10])
 
 
-@pytest.mark.parametrize("on", [
-    pytest.param(True, marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
-    pytest.param(False, marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
-])
+@pytest.mark.parametrize("on", [True, False])
 async def test_the_placements_review_names_the_attached_configurations(db_path, on):
     """Standard attached and sound: the placements review names it, results on or off, and
     reports no fault."""
@@ -81,7 +77,6 @@ async def test_the_placements_review_names_the_attached_configurations(db_path, 
     assert dict(section.division_lines) == {}
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_the_placements_review_says_nothing_is_attached(db_path):
     """Results on and nothing attached: the section says none is attached, and that this blocks
     approval, naming the command that attaches one."""
@@ -96,7 +91,6 @@ async def test_the_placements_review_says_nothing_is_attached(db_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_the_placements_review_names_a_configuration_attached_and_never_created(db_path):
     """Results on, Standard attached and "Sprnt" attached though never created: the section names
     "Sprnt" as attached but never created, blocking approval, with the two commands that put it
@@ -114,7 +108,6 @@ async def test_the_placements_review_names_a_configuration_attached_and_never_cr
     ) in lines
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_the_configuration_review_names_the_attached_configurations_while_results_is_on(
     db_path,
 ):

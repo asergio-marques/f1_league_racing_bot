@@ -152,6 +152,7 @@ def _sign_up_to_review_sections(bot: LeagueBot) -> None:
     weather's. Each is handed which review is gathered, the season and its divisions, and checks
     its own switch."""
     from leaguebot.attendance.services import attendance_service
+    from leaguebot.results.services import season_points_service
     from leaguebot.signup.services import signup_module_service
     from leaguebot.weather.services import weather_config_service
 
@@ -161,6 +162,9 @@ def _sign_up_to_review_sections(bot: LeagueBot) -> None:
     ))
     bot.review_sections_read.subscribe(partial(
         attendance_service.review_section, bot.attendance_service, bot.module_service
+    ))
+    bot.review_sections_read.subscribe(partial(
+        season_points_service.review_section, bot.module_service, bot.db_path
     ))
     bot.review_sections_read.subscribe(partial(
         weather_config_service.review_section, bot.module_service, bot.db_path

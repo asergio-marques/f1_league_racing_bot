@@ -89,7 +89,6 @@ def _function_source(name: str) -> str:
 # ── The shared helper ─────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.asyncio
 async def test_a_well_built_table_raises_nothing(db_path):
     await _attach(db_path, "GOOD", [(1, 25), (2, 18), (3, 15)])
@@ -97,7 +96,6 @@ async def test_a_well_built_table_raises_nothing(db_path):
     assert await _problems(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.asyncio
 async def test_a_table_the_season_has_not_copied_yet_is_still_found(db_path):
     """The whole of #131: the season's own table is empty until approval copies into it."""
@@ -109,7 +107,6 @@ async def test_a_table_the_season_has_not_copied_yet_is_still_found(db_path):
     assert "BROKEN" in faults[0]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.asyncio
 async def test_entries_left_by_an_earlier_approval_are_found_too(db_path):
     """The snapshot clears nothing, so a re-approval can hold rows no config mentions."""
@@ -129,7 +126,6 @@ async def test_entries_left_by_an_earlier_approval_are_found_too(db_path):
     assert any("GONE" in fault for fault in faults)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.asyncio
 async def test_a_fault_visible_from_both_sides_is_named_once(db_path):
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
@@ -143,7 +139,6 @@ async def test_a_fault_visible_from_both_sides_is_named_once(db_path):
 # ── The two surfaces read the same helper ─────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 def test_the_review_asks_the_helper_rather_than_the_services_itself():
     source = _function_source("review_section")
 

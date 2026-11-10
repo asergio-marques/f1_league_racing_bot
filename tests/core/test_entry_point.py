@@ -926,8 +926,6 @@ _REVIEW_SECTION_PARTS = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason="#283: no hook gathers the review's sections; the season "
-                   "cog reads each module itself")
 async def test_the_builder_signs_every_module_up_to_the_review_sections(tmp_path, monkeypatch):
     """Straight after `build`, each module's section of a season review is signed up to the hook
     a review gathers its lines through, nothing called yet: signup's, attendance's, results' then

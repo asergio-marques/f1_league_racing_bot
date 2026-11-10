@@ -258,10 +258,6 @@ async def test_team_names_of_the_server_list_are_checked():
     assert faults == ["Team name: **!!!** reduces to nothing"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: results has no points gates of its own; core reads them in approval_checks",
-)
 async def test_the_results_module_needs_a_points_configuration(tmp_path):
     from leaguebot.core.db.database import run_migrations
 
@@ -551,12 +547,6 @@ async def test_confirming_one_review_ends_another_of_the_same_season_when_presse
 # queue records what it is asked, and read the review from the request.
 
 POST = "season.review.post"
-#: Why a test whose stand-in bot has each module's section signed up as the builder does fails
-#: until the builder signs them up and the review reads its sections through the hook.
-_NO_SECTIONS_HOOK = (
-    "#283: the builder signs no module's section up to a review sections hook; the season cog "
-    "reads each module itself"
-)
 #: The channel the manager runs the command in, where the review is posted.
 COMMAND_CHANNEL = 111
 
@@ -620,7 +610,6 @@ async def _report(cog, interaction, monkeypatch) -> list[str]:
     return _texts(await _review_asked(cog, interaction, monkeypatch))
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(monkeypatch):
     """Manager runs `/season config-review` in channel 111 on a sound configuration of season 31
     (test mode on, signup on, results off; teams Alpha with its role, Reserve with none). The
@@ -657,7 +646,6 @@ async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(mo
     assert not any(line.startswith("⛔") for line in _logged(bot))
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
     tmp_path, monkeypatch
 ):
@@ -685,7 +673,6 @@ async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
 
 
 @pytest.mark.parametrize("signup", [True, False])
-@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_the_configuration_review_reports_the_league_s_roles(monkeypatch, signup):
     """The one review that reports them (issue #276). They are the league's, so the review asked
     of the queue shows them whether or not signup is on, and confirming the configuration fixes
@@ -698,7 +685,6 @@ async def test_the_configuration_review_reports_the_league_s_roles(monkeypatch, 
     assert "Driver role: <@&3>" in messages[0]
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     """The placements review's subsections, save the divisions, in the same words (#220): with
     signup, results, attendance, weather and images on, the review asked of the queue carries each
@@ -748,7 +734,6 @@ async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     assert messages[-1] == "**Image outputs**\n  lineup: on"
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_disabled_modules_configuration_is_not_reported(monkeypatch):
     """With every module off, the review asked of the queue carries no module's configuration."""
     cog = _cog(_report_bot())
@@ -759,7 +744,6 @@ async def test_a_disabled_modules_configuration_is_not_reported(monkeypatch):
         assert heading not in text
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_the_image_outputs_are_reported_when_the_module_is_on(monkeypatch):
     """With the image module on, the review asked of the queue carries its outputs."""
     bot = _report_bot(images=True)
@@ -772,7 +756,6 @@ async def test_the_image_outputs_are_reported_when_the_module_is_on(monkeypatch)
     assert any("**Image outputs**" in m and "lineup: on" in m for m in messages)
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_faulty_configuration_is_reported_without_a_button(monkeypatch):
     """Signup is on and the league's base role is unset. The review asked of the queue ends in
     the faults, naming the base role and `/bot base-role`, and saying to run
@@ -788,7 +771,6 @@ async def test_a_faulty_configuration_is_reported_without_a_button(monkeypatch):
     assert not any("Do you confirm this season's configuration?" in m for m in messages)
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_the_followup_is_restored_after_the_report(monkeypatch):
     """The review wraps the followup to collect what it says privately; a later reply must not be
     caught."""

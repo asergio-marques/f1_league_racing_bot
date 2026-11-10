@@ -705,7 +705,7 @@ class SeasonCog(commands.Cog):
             # Nothing attached is refused by the approval as surely as a phantom is, and
             # `/results config detach` stays open in Placements (#409). Test mode is no
             # exception (decided 2026-09-23): it attaches its two only when enabled.
-            no_points_attached = await approval_checks.no_points_config_attached(self.bot.db_path, season.id)
+            no_points_attached = await season_points_service.no_points_config_attached(self.bot.db_path, season.id)
             if no_points_attached:
                 points_lines.append("")
                 points_lines.append(
@@ -719,7 +719,7 @@ class SeasonCog(commands.Cog):
             # The list of attached names is printed from the links alone, so a mistyped
             # one reads exactly like a real one — which is what let #132 pass a review
             # and then stop an approval dead.
-            phantom_configs = await approval_checks.missing_points_config_problems(self.bot.db_path, season.id)
+            phantom_configs = await season_points_service.missing_points_config_problems(self.bot.db_path, season.id)
             if phantom_configs:
                 points_lines.append("")
                 points_lines.append(
@@ -731,7 +731,7 @@ class SeasonCog(commands.Cog):
                     "configuration exists on the server. Build it with "
                     "`/results config add`, or drop it with `/results config detach`."
                 )
-            points_faults = await approval_checks.points_ordering_problems(self.bot.db_path, season.id)
+            points_faults = await season_points_service.points_ordering_problems(self.bot.db_path, season.id)
             if points_faults:
                 points_lines.append("")
                 points_lines.append(
