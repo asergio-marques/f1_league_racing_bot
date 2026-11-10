@@ -227,22 +227,74 @@ async def test_the_channels_the_bot_created_are_gathered_apart(db_path):
     assert not set(targets.created) & set(targets.channels)
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the reset still reads signup's, results' and attendance's tables itself",
+)
 async def test_a_module_s_channels_are_gathered_only_by_asking_the_module(db_path):
     """The same two seasons, and the reset asked with no module signed up to its hook: only core's
-    own channels are gathered, since core reads no module's columns. They are the interaction and
-    log channels, each season's lineup and calendar channels, and the channels no setting names
-    (a check-in call's, a review prompt's, an undelivered message's). The forecast, results,
-    standings, verdicts, RSVP, attendance and signup channels are each module's to name, and
-    with the bot's own hook they are gathered (`test_every_channel_the_bot_posts_to_is_gathered`).
-    The channels the bot created are gathered as before."""
+    own channels are gathered, since core reads no module's table or column. They are the
+    interaction and log channels, each season's lineup and calendar channels, a review prompt's
+    and an undelivered message's. The forecast, results, standings, verdicts, RSVP, attendance
+    and signup channels, the channel a check-in call was posted in, and the channels the bot
+    created (a signup wizard's, a round's submission and amendment channels) are each module's to
+    name, and with the bot's own hook they are gathered
+    (`test_every_channel_the_bot_posts_to_is_gathered`,
+    `test_the_channels_the_bot_created_are_gathered_apart`)."""
     await _seed_channels(db_path)
 
     targets = await factory_reset_service.gather_targets(
         db_path, setting_channels_read=AwaitedHook()
     )
 
-    assert targets.channels == (2, 3, 11, 12, 21, 22, 28, 31, 32)
-    assert targets.created == (40, 41, 42)
+    assert targets.channels == (2, 3, 11, 12, 21, 22, 31, 32)
+    assert targets.created == ()
+
+
+#: Not yet true of any module's answer to the reset (#283).
+_HANDS_THEM_APART = "#283: the module hands the reset a set of channel ids, not created and posted apart"
+
+
+@pytest.mark.parametrize(
+    ("reader", "created", "channels"),
+    [
+        pytest.param(
+            "leaguebot.weather.services.forecast_channel", (), (10, 20),
+            id="weather", marks=pytest.mark.xfail(strict=True, reason=_HANDS_THEM_APART),
+        ),
+        pytest.param(
+            "leaguebot.results.services.division_channels", (40, 41), (23, 24, 25),
+            id="results", marks=pytest.mark.xfail(strict=True, reason=_HANDS_THEM_APART),
+        ),
+        pytest.param(
+            "leaguebot.attendance.services.division_channels", (), (26, 27, 28),
+            id="attendance", marks=pytest.mark.xfail(strict=True, reason=_HANDS_THEM_APART),
+        ),
+        pytest.param(
+            "leaguebot.signup.services.channel_uses", (42,), (30,),
+            id="signup", marks=pytest.mark.xfail(strict=True, reason=_HANDS_THEM_APART),
+        ),
+    ],
+)
+async def test_each_module_hands_the_reset_the_channels_it_created_apart(
+    db_path, reader, created, channels
+):
+    """The same two seasons, and each module asked, as the reset's hook asks it, for the channels
+    it holds across both seasons' divisions. Each hands back the channels it created, which the
+    reset deletes, apart from the channels its settings name and the channels it posted to, from
+    which the reset deletes only the bot's messages: weather its two forecast channels; results
+    the round's submission and amendment channels it created, apart from the results, standings
+    and verdicts channels; attendance the RSVP and attendance channels and the channel its
+    check-in call was posted in, creating none; signup the open wizard's channel it created (the
+    wizard with no channel naming none), apart from the signup channel."""
+    import importlib
+
+    await _seed_channels(db_path)
+    module = importlib.import_module(reader)
+
+    held = await module.setting_channels(db_path, division_ids=[1, 2])
+
+    assert held == factory_reset_service.DiscordTargets(created=created, channels=channels)
 
 
 async def test_a_fresh_install_has_nothing_to_clean(tmp_path):

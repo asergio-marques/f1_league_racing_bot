@@ -32,9 +32,9 @@ def channel_uses_given(db_path: str) -> dict[str, Any]:
 
 
 def sign_up_setting_channels_read(bot: Any) -> None:
-    """Give *bot* the hook the factory reset asks each module through for every channel its
-    settings hold in any season, made by the builder's own sign-up, which reads *bot*'s `db_path`
-    alone."""
+    """Give *bot* the hook the factory reset asks each module through for every channel it holds
+    in any season (those its settings name, those it posted to and those it created), made by the
+    builder's own sign-up, which reads *bot*'s `db_path` alone."""
     from leaguebot.__main__ import _sign_up_to_setting_channels_read
 
     _sign_up_to_setting_channels_read(bot)
