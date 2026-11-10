@@ -833,15 +833,22 @@ async def test_a_review_whose_take_down_is_in_hand_is_not_asked_again_at_a_secon
 PRO_ROUNDS = "Division Pro's rounds"
 
 
-def _approve_view(env: Any) -> tuple[Any, Any]:
-    """An Approve view for Alex's review, built as the question's view is, on a cog whose approval
-    (`_do_approve`) is recorded and goes through."""
+#: The Approve button still hands a press on to `SeasonCog._do_approve`.
+_APPROVAL_ON_THE_COG = "#283: the Approve button does not yet run season_review_workflows.approve_season"
+
+
+def _approve_view(env: Any, monkeypatch: Any) -> tuple[Any, Any]:
+    """An Approve view for Alex's review, built as the question's view is, on a cog holding the
+    bot, whose approval (`season_review_workflows.approve_season`) is stood in, recorded and goes
+    through. Returns the view and the stand-in."""
     from leaguebot.core.cogs.season_cog import _ApproveView
+    from leaguebot.core.services import season_review_workflows
 
     cog = MagicMock()
     cog.bot = env.bot
-    cog._do_approve = AsyncMock(return_value=True)
-    return _ApproveView(cog, REVIEWER), cog
+    approval = AsyncMock(return_value=True)
+    monkeypatch.setattr(season_review_workflows, "approve_season", approval)
+    return _ApproveView(cog, REVIEWER), approval
 
 
 def _press_on(env: Any, question: Any) -> Any:
@@ -989,7 +996,8 @@ async def test_a_confirmation_asks_the_take_down_before_the_approval_and_the_rev
 
 @pytest.mark.parametrize("ending", [
     pytest.param("expired", id="five_minutes"),
-    pytest.param("refused", id="refused_press"),
+    pytest.param("refused", id="refused_press",
+                 marks=pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)),
 ])
 async def test_the_five_minutes_and_a_refused_press_ask_the_take_down(standing, monkeypatch, ending):
     """Alex's review stands in channel 700. Either its five minutes run out (the review's expiry
@@ -1004,9 +1012,9 @@ async def test_the_five_minutes_and_a_refused_press_ask_the_take_down(standing, 
         await _posted_a_moment_ago(standing, channel.q.id)
         await _evidence_of(standing, channel.q.id, "before")
         _season_now(monkeypatch, "after")
-        view, cog = _approve_view(standing)
+        view, approval = _approve_view(standing, monkeypatch)
         await _press_approve(view, _press_on(standing, channel.q))
-        cog._do_approve.assert_not_awaited()
+        approval.assert_not_awaited()
 
     assert channel.deleted == [] and channel.sent == []
     [payload] = await _take_downs(standing)
@@ -1018,6 +1026,7 @@ async def test_the_five_minutes_and_a_refused_press_ask_the_take_down(standing, 
     assert change["origin"] == "BOT"
 
 
+@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 async def test_approve_refuses_where_the_season_changed_while_the_review_waited(posting, monkeypatch):
     """The queue is stopped when Alex runs his review of season 1; its evidence is what the
     command computed the report from, Pro's rounds "before". While the review waits, Pro's
@@ -1045,11 +1054,11 @@ async def test_approve_refuses_where_the_season_changed_while_the_review_waited(
 
     question = _question(posting.channel)
     await _posted_a_moment_ago(posting, question.id)
-    view, cog = _approve_view(posting)
+    view, approval = _approve_view(posting, monkeypatch)
     press = _press_on(posting, question)
     await _press_approve(view, press)
 
-    cog._do_approve.assert_not_awaited()
+    approval.assert_not_awaited()
     reply = acknowledgement(press)
     assert "has changed since this review" in reply and PRO_ROUNDS in reply
     assert "Nothing has been approved" in reply
@@ -1074,24 +1083,26 @@ def _refused_as_expired(env: Any, interaction: Any) -> None:
     assert "Approve" in line and PLACEMENTS in line
 
 
-async def test_a_press_on_a_review_whose_five_minutes_ran_is_refused_and_recorded(standing):
+@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
+async def test_a_press_on_a_review_whose_five_minutes_ran_is_refused_and_recorded(standing, monkeypatch):
     """Alex's review stands in channel 700, its question Q posted on 7 September, so its five
     minutes ran long ago, but nothing has yet taken it down. Alex presses Approve on Q through a view just built for it. He is refused,
     privately, told the review's five minutes are up and nothing was approved; one ⛔ line naming
     Approve and `/season placements-review` is in the log channel; the approval is never asked;
     and the button itself deletes and posts nothing in channel 700."""
-    view, cog = _approve_view(standing)
+    view, approval = _approve_view(standing, monkeypatch)
     interaction = _press_on(standing, standing.channel.q)
 
     await _press_approve(view, interaction)
 
-    cog._do_approve.assert_not_awaited()
+    approval.assert_not_awaited()
     _refused_as_expired(standing, interaction)
     assert standing.channel.deleted == [] and standing.channel.sent == []
 
 
+@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 @pytest.mark.parametrize("mark", ["UNDER_WAY", "TIMER_FIRED"])
-async def test_a_late_press_beside_one_under_way_leaves_the_review_to_it(standing, mark):
+async def test_a_late_press_beside_one_under_way_leaves_the_review_to_it(standing, monkeypatch, mark):
     """Alex's review stands past its five minutes and his first press is being worked (or the
     timer has fired and waits for it). A second press is refused as expired, privately, and
     recorded, but asks no take-down: the first press settles how the review ends, so its approval
@@ -1099,16 +1110,17 @@ async def test_a_late_press_beside_one_under_way_leaves_the_review_to_it(standin
     from leaguebot.core.services import season_review_changes
 
     season_review_changes.mark_press(standing.channel.q.id, getattr(season_review_changes, mark))
-    view, cog = _approve_view(standing)
+    view, approval = _approve_view(standing, monkeypatch)
     interaction = _press_on(standing, standing.channel.q)
 
     await _press_approve(view, interaction)
 
-    cog._do_approve.assert_not_awaited()
+    approval.assert_not_awaited()
     _refused_as_expired(standing, interaction)
     assert await _take_downs(standing) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 async def test_a_press_refused_while_an_approval_is_in_hand_leaves_no_review_past_its_timer(
         standing, monkeypatch):
     """Alex's review stands in channel 700, posted a moment ago. He presses Approve while an
@@ -1128,12 +1140,12 @@ async def test_a_press_refused_while_an_approval_is_in_hand_leaves_no_review_pas
         return True
 
     monkeypatch.setattr("leaguebot.core.cogs.season_cog.approval_in_hand", _in_hand)
-    view, cog = _approve_view(standing)
+    view, approval = _approve_view(standing, monkeypatch)
     interaction = _press_on(standing, channel.q)
 
     await _press_approve(view, interaction)
 
-    cog._do_approve.assert_not_awaited()
+    approval.assert_not_awaited()
     assert acknowledgement(interaction) == ALREADY_BEING_APPROVED
     [payload] = await _take_downs(standing)
     assert (payload["ending"], payload["question_id"]) == ("expired", channel.q.id)
@@ -1167,6 +1179,7 @@ async def test_a_review_standing_after_a_restart_refuses_a_press_and_records_it(
     assert standing.channel.deleted == []
 
 
+@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 async def test_a_press_hands_the_approval_what_remains_of_the_review_s_five_minutes(
         standing, monkeypatch):
     """Alex's review stands in channel 700, its question posted four minutes ago by its row, and
@@ -1187,12 +1200,12 @@ async def test_a_press_hands_the_approval_what_remains_of_the_review_s_five_minu
         await db.commit()
     await _evidence_of(standing, standing.channel.q.id, "as reviewed")
     _season_now(monkeypatch, "as reviewed")
-    view, cog = _approve_view(standing)
+    view, approval = _approve_view(standing, monkeypatch)
 
     await _press_approve(view, _press_on(standing, standing.channel.q))
 
-    cog._do_approve.assert_awaited_once()
-    deadline = cog._do_approve.await_args.kwargs["deadline"]
+    approval.assert_awaited_once()
+    deadline = approval.await_args.kwargs["deadline"]
     expected = posted + timedelta(seconds=APPROVAL_WINDOW_SECONDS)
     assert abs((deadline - expected).total_seconds()) < 2, (deadline, expected)
 
