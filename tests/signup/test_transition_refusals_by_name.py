@@ -253,9 +253,10 @@ async def _leaving_after_moving_on(tmp_path, monkeypatch) -> None:
 
 
 async def _close_after_one_moved_on(tmp_path, monkeypatch) -> None:
-    """The signup window closed with 4242 and 4343 still filling in the wizard, and 4242 moved on
-    to Not Signed Up between the close's read and its write: the state machine refuses 4242's
-    return, which is skipped, and 4343 is returned as ever."""
+    """The signup window closed with 4242 and 4343 still filling in the wizard. The close reads
+    both at Pending Signup Completion, but the state machine is told 4242 is already at Not Signed
+    Up, as if 4242 had moved on since the read, and refuses 4242's return: 4242 is skipped and stays
+    stored at Pending Signup Completion, nothing written for them, and 4343 is returned as ever."""
     from leaguebot.core.models.driver_profile import DriverState
     from leaguebot.signup.services import window_changes
 
