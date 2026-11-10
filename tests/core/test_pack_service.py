@@ -134,10 +134,6 @@ async def _tables(db_path: str) -> dict[str, list[str]]:
 # ── Refused while a season is current ──────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: what stops a pack is read in the cog, not asked of the pack's service",
-)
 @pytest.mark.parametrize(
     ("stage", "queued", "expected"),
     [

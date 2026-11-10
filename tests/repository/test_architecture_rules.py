@@ -179,7 +179,6 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "_recover_signup_close_timers"): (1, PASS["signup"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.sync"): (2, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.test_rsvp"): (1, PASS["attendance"]),
-    ("core/cogs/bot_cog.py", "BotCog.handle_pack"): (1, PASS["core"]),
     ("core/cogs/round_cog.py", "RoundCog._track_autocomplete"): (1, PASS["core"]),
     ("core/cogs/round_cog.py", "RoundCog.round_amend"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.season_review"): (2, PASS["core"]),

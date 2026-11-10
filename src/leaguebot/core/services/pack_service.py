@@ -145,6 +145,20 @@ async def current_season(db) -> tuple[int, str | None] | None:
     return None if row is None else (int(row["season_number"]), row["stage"])
 
 
+async def what_stops_a_pack(
+    db_path: str,
+) -> tuple[tuple[int, str | None] | None, tuple[int, bool, str] | None]:
+    """The refusals a pack would meet, read-only, on a connection of its own: the current
+    season as (number, stage) and the job it would wait on as (number, stopped, lane), each
+    None where nothing stops it.
+
+    `/bot pack` asks these before it writes its log line, which the pack would clear. The pack
+    asks again inside its own transaction.
+    """
+    async with get_connection(db_path) as db:
+        return await current_season(db), await pending_job(db)
+
+
 #: The settings a league set that pack clears from `server_configs`, as the audit names them.
 #: The hub's panel is left out: a message id is the bot's record of its own post.
 _AUDITED_SETTINGS: tuple[str, ...] = (

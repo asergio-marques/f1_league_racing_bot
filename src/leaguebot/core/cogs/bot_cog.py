@@ -38,7 +38,6 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import LEAGUE_LANE
 from leaguebot.core.services import backup_service, factory_reset_service, pack_service
 from leaguebot.core.services.bot_init_change import ANOTHER_SERVER as _ANOTHER_SERVER
@@ -487,9 +486,7 @@ class BotCog(commands.Cog):
             )
             return
 
-        async with get_connection(self.bot.db_path) as db:
-            season = await pack_service.current_season(db)
-            job = await pack_service.pending_job(db)
+        season, job = await pack_service.what_stops_a_pack(self.bot.db_path)
         if season is not None:
             await refuse(
                 interaction, _current_season_refusal(*season), what=describe(interaction)
