@@ -16,8 +16,8 @@ discarded them for being past its five-minute misfire grace — recoverable, but
 host happened to restart before the race.
 
 This module is the check that makes both unreachable from approval. It computes nothing and
-decides nothing about what to do; it reports which windows have passed, and `_do_approve`
-refuses on the answer. The league's remedy is to move the round or shorten the window, and
+decides nothing about what to do; it reports which windows have passed, and
+`season_review_workflows.approve_season` refuses on the answer. The league's remedy is to move the round or shorten the window, and
 that is a choice only they can make.
 
 **A round's own moment is judged too, and whatever the modules are** (#181, decided

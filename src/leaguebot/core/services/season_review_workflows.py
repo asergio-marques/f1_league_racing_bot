@@ -14,6 +14,12 @@ the review's *fingerprint*). It answers `True` where the queue accepted the requ
 where the press was refused, which leaves the button's review standing. The gates it runs are
 `approval_checks`', called through that module.
 
+**The approval's backup question** (`offer_backup_before_approving`, its view
+`BackupBeforeApprovalView`) is put under test mode, after every gate and before every write, and
+is given what is left of the review's window. The time left, and the dates the approval's calendar
+gate judges, are read from the change queue's clock (`ChangeQueue.now`), as the change's own check
+reads it, so the press and the change judge time alike.
+
 The check of the change a workflow asks is the same gates again, judged as the change runs, so the
 refusal at the press and the refusal at the run cannot disagree.
 """

@@ -1,11 +1,11 @@
-"""Approving a season's placements, carried out on the change queue (#439, slice 4a).
+"""Approving a season's placements, carried out on the change queue.
 
 ✅ Approve on `/season placements-review` runs its gates and, under test mode, the backup question
-at the press, in the season cog, then asks the queue for this change. It used to do everything
-inside the button: the sessions, the points snapshot, the arming, the commitment of the placements
-and the move to Ongoing each in a commit of their own, then every role grant and every posting,
-none of it recorded, so a stop after the season was Ongoing left the rest undone for good. This
-module holds the change; the cog holds the press.
+at the press (`season_review_workflows.approve_season`), then asks the queue for this change. The
+sessions, the points snapshot, the arming, the commitment of the placements and the move to Ongoing
+are one save, then every role grant and every posting a job each, so that a stop after the season
+is Ongoing leaves nothing undone for good. This module holds the change; the workflow holds the
+press.
 
 **The check, at the press and again when the change runs** (`check`), refuses in this order, the
 first that fails being the refusal: another approval of the season in hand, queued, running or

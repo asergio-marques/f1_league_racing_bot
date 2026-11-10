@@ -1,10 +1,11 @@
-"""Confirming a season's placements mid-season, carried out on the change queue (#439, slice 8).
+"""Confirming a season's placements mid-season, carried out on the change queue.
 
-✅ Confirm placements on a mid-season `/season placements-review` gates the press in the season
-cog, acknowledges it at once and asks the queue for this change, the review taken down ahead of
-it. It used to commit the placements, grant the roles, ask for the lineups and move the season back
-to Ongoing in separate steps off the queue, with Discord's refusals swallowed, so a stop part-way
-left drivers without roles and nobody told. This module holds the change; the cog holds the press.
+✅ Confirm placements on a mid-season `/season placements-review` gates the press
+(`season_review_workflows.confirm_mid_season_placements`), acknowledges it at once and asks the
+queue for this change, the review taken down ahead of it. The placements and the season's return
+to Ongoing are one save, then each driver's roles and each lineup a job each, so that a stop
+part-way leaves nothing undone for good. This module holds the change; the workflow holds the
+press.
 
 **The check, at the press and again when the change runs** (`check`), refuses in this order, the
 first that fails being the refusal: another confirmation of the season in hand, queued, running or
