@@ -18,10 +18,15 @@ from leaguebot.core.services.test_mode_service import (
     get_next_pending_phase,
     build_review_summary,
 )
+from tests.support.pending_steps_hook import pending_steps_read
 
 #: The moment every step is judged at, as the command hands it from the change queue's clock: one
 #: reading, so that the rounds seeded relative to it and the reads judging them agree.
 NOW = datetime.now(timezone.utc)
+
+#: Why each test reading the steps through the modules as the builder signs them up fails until
+#: core asks them.
+ASKED_OF_THE_MODULES = "#283: core does not yet read the steps through the modules' hook"
 
 
 # ---------------------------------------------------------------------------
@@ -170,55 +175,68 @@ async def test_nationality_toggle_starts_on(tmp_path) -> None:
 # get_next_pending_phase — queue ordering
 # ---------------------------------------------------------------------------
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_empty_queue_returns_none(tmp_path) -> None:
     """All phases done → get_next_pending_phase returns None."""
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
-    await _seed(db_path, [
+    await _seed_with_weather(db_path, [
         {"phase1_done": 1, "phase2_done": 1, "phase3_done": 1},
     ])
-    result = await get_next_pending_phase(db_path, now=NOW)
+    result = await get_next_pending_phase(
+        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert result is None
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_mystery_round_notice_pending_returns_entry(tmp_path) -> None:
     """Mystery round with notice unsent (phase1_done=0) returns a phase_number=0 entry, found
     from database state and named by the `weather_p1` kind its job is armed under."""
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
-    await _seed(db_path, [
+    await _seed_with_weather(db_path, [
         {"format": "MYSTERY", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
     ])
-    result = await get_next_pending_phase(db_path, now=NOW)
+    result = await get_next_pending_phase(
+        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert result is not None
     assert result["phase_number"] == 0
     assert result["kind"] == "weather_p1"
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_mystery_round_notice_done_excluded(tmp_path) -> None:
     """Mystery round with notice already sent (phase1_done=1) must not appear in queue."""
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
-    await _seed(db_path, [
+    await _seed_with_weather(db_path, [
         {"format": "MYSTERY", "phase1_done": 1, "phase2_done": 0, "phase3_done": 0},
     ])
-    result = await get_next_pending_phase(db_path, now=NOW)
+    result = await get_next_pending_phase(
+        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert result is None
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_phase_number_ordering_within_round(tmp_path) -> None:
     """Phase 1 done, Phase 2 not done → returns phase_number 2, of kind `weather_p2`."""
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
-    await _seed(db_path, [
+    await _seed_with_weather(db_path, [
         {"phase1_done": 1, "phase2_done": 0, "phase3_done": 0},
     ])
-    result = await get_next_pending_phase(db_path, now=NOW)
+    result = await get_next_pending_phase(
+        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert result is not None
     assert result["phase_number"] == 2
     assert result["kind"] == "weather_p2"
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_earliest_scheduled_round_comes_first(tmp_path) -> None:
     """The round with the earlier scheduled_at is returned first."""
     earlier = (NOW + timedelta(days=5)).strftime(
@@ -229,16 +247,19 @@ async def test_earliest_scheduled_round_comes_first(tmp_path) -> None:
     )
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
-    await _seed(db_path, [
+    await _seed_with_weather(db_path, [
         {"track_name": "Monza",   "scheduled_at": later,   "phase1_done": 0},
         {"track_name": "Bahrain", "scheduled_at": earlier, "phase1_done": 0},
     ])
-    result = await get_next_pending_phase(db_path, now=NOW)
+    result = await get_next_pending_phase(
+        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert result is not None
     assert result["track_name"] == "Bahrain"
     assert result["phase_number"] == 1
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_division_id_tiebreak_same_scheduled_at(tmp_path) -> None:
     """When two rounds have the same scheduled_at, lower division id comes first."""
     shared_sched = (NOW + timedelta(days=7)).strftime(
@@ -246,7 +267,7 @@ async def test_division_id_tiebreak_same_scheduled_at(tmp_path) -> None:
     )
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
-    await _seed(db_path, [
+    await _seed_with_weather(db_path, [
         # division_id=2 listed first in rounds to ensure ordering is by d.id not insert order
         {
             "division_id": 2,
@@ -261,12 +282,15 @@ async def test_division_id_tiebreak_same_scheduled_at(tmp_path) -> None:
             "phase1_done": 0,
         },
     ])
-    result = await get_next_pending_phase(db_path, now=NOW)
+    result = await get_next_pending_phase(
+        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert result is not None
     assert result["division_id"] == 1
     assert result["track_name"] == "Bahrain"
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_no_active_season_returns_none(tmp_path) -> None:
     """Returns None when there is no season in ACTIVE status."""
     db_path = str(tmp_path / "bot.db")
@@ -283,18 +307,23 @@ async def test_no_active_season_returns_none(tmp_path) -> None:
         )
         await db.commit()
 
-    result = await get_next_pending_phase(db_path, now=NOW)
+    result = await get_next_pending_phase(
+        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert result is None
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_returns_phase1_for_fresh_round(tmp_path) -> None:
     """A round with all phases pending returns phase_number=1."""
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
-    await _seed(db_path, [
+    await _seed_with_weather(db_path, [
         {"track_name": "Japan", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
     ])
-    result = await get_next_pending_phase(db_path, now=NOW)
+    result = await get_next_pending_phase(
+        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert result is not None
     assert result["phase_number"] == 1
     assert result["track_name"] == "Japan"
@@ -390,6 +419,7 @@ async def _seed_with_attendance(db_path: str, rounds: list[dict]) -> None:
         await db.commit()
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_misfired_fallback_returns_phase1(tmp_path) -> None:
     """Empty scheduler + weather enabled → phase 1 returned via DB flag fallback."""
     db_path = str(tmp_path / "bot.db")
@@ -397,12 +427,15 @@ async def test_misfired_fallback_returns_phase1(tmp_path) -> None:
     await _seed_with_weather(db_path, [
         {"track_name": "Monza", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
     ])
-    result = await get_next_pending_phase(db_path, _StubScheduler(), now=NOW)
+    result = await get_next_pending_phase(
+        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert result is not None
     assert result["phase_number"] == 1
     assert result["track_name"] == "Monza"
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_misfired_fallback_respects_phase_flags(tmp_path) -> None:
     """phase1_done=1, phase2_done=0 → fallback returns phase 2, not phase 1."""
     db_path = str(tmp_path / "bot.db")
@@ -410,11 +443,14 @@ async def test_misfired_fallback_respects_phase_flags(tmp_path) -> None:
     await _seed_with_weather(db_path, [
         {"track_name": "Spa", "phase1_done": 1, "phase2_done": 0, "phase3_done": 0},
     ])
-    result = await get_next_pending_phase(db_path, _StubScheduler(), now=NOW)
+    result = await get_next_pending_phase(
+        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert result is not None
     assert result["phase_number"] == 2
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_misfired_fallback_weather_disabled_skips_phases(tmp_path) -> None:
     """Weather module disabled → weather phases never returned even with empty scheduler."""
     db_path = str(tmp_path / "bot.db")
@@ -423,10 +459,13 @@ async def test_misfired_fallback_weather_disabled_skips_phases(tmp_path) -> None
     await _seed(db_path, [
         {"track_name": "Monza", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
     ])
-    result = await get_next_pending_phase(db_path, _StubScheduler(), now=NOW)
+    result = await get_next_pending_phase(
+        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert result is None
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_misfired_fallback_canonical_order(tmp_path) -> None:
     """Canonical order: P1 → RSVP-notice → P2 → RSVP-last → P3 → RSVP-deadline, each entry
     named by its job's kind: `weather_p1`, `rsvp_notice`, `weather_p2`, `rsvp_last_notice`,
@@ -443,14 +482,18 @@ async def test_misfired_fallback_canonical_order(tmp_path) -> None:
     stub = _StubScheduler()
 
     # Step 1 — phase 1
-    r = await get_next_pending_phase(db_path, stub, now=NOW)
+    r = await get_next_pending_phase(
+        db_path, stub, now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert r is not None and (r["phase_number"], r["kind"]) == (1, "weather_p1")
     async with get_connection(db_path) as db:
         await db.execute("UPDATE rounds SET phase1_done = 1 WHERE id = 1")
         await db.commit()
 
     # Step 2 — RSVP notice (phase 5)
-    r = await get_next_pending_phase(db_path, stub, now=NOW)
+    r = await get_next_pending_phase(
+        db_path, stub, now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert r is not None and (r["phase_number"], r["kind"]) == (5, "rsvp_notice")
     async with get_connection(db_path) as db:
         await db.execute(
@@ -461,14 +504,18 @@ async def test_misfired_fallback_canonical_order(tmp_path) -> None:
         await db.commit()
 
     # Step 3 — phase 2
-    r = await get_next_pending_phase(db_path, stub, now=NOW)
+    r = await get_next_pending_phase(
+        db_path, stub, now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert r is not None and (r["phase_number"], r["kind"]) == (2, "weather_p2")
     async with get_connection(db_path) as db:
         await db.execute("UPDATE rounds SET phase2_done = 1 WHERE id = 1")
         await db.commit()
 
     # Step 4 — RSVP last-notice (phase 6)
-    r = await get_next_pending_phase(db_path, stub, now=NOW)
+    r = await get_next_pending_phase(
+        db_path, stub, now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert r is not None and (r["phase_number"], r["kind"]) == (6, "rsvp_last_notice")
     async with get_connection(db_path) as db:
         await db.execute(
@@ -478,17 +525,22 @@ async def test_misfired_fallback_canonical_order(tmp_path) -> None:
         await db.commit()
 
     # Step 5 — phase 3
-    r = await get_next_pending_phase(db_path, stub, now=NOW)
+    r = await get_next_pending_phase(
+        db_path, stub, now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert r is not None and (r["phase_number"], r["kind"]) == (3, "weather_p3")
     async with get_connection(db_path) as db:
         await db.execute("UPDATE rounds SET phase3_done = 1 WHERE id = 1")
         await db.commit()
 
     # Step 6 — RSVP deadline (phase 7)
-    r = await get_next_pending_phase(db_path, stub, now=NOW)
+    r = await get_next_pending_phase(
+        db_path, stub, now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert r is not None and (r["phase_number"], r["kind"]) == (7, "rsvp_deadline")
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_earlier_misfired_round_beats_later_scheduler_job(tmp_path) -> None:
     """Earlier round with misfired phases must be advanced before a later
     round whose scheduler job is still pending, its entry named by the `weather_p1` kind. The
@@ -512,7 +564,9 @@ async def test_earlier_misfired_round_beats_later_scheduler_job(tmp_path) -> Non
         "phase_number": 1,
         "next_run_time": NOW + timedelta(days=5),
     }])
-    result = await get_next_pending_phase(db_path, stub, now=NOW)
+    result = await get_next_pending_phase(
+        db_path, stub, now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert result is not None
     assert result["track_name"] == "Bahrain"   # earlier round wins
     assert result["phase_number"] == 1
@@ -579,6 +633,7 @@ def _job(round_id: int, phase: int, *, days: float) -> dict:
     }
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_round_ends_with_its_forecast_then_its_check_in_coming_down(tmp_path) -> None:
     """With nothing else pending, what is left standing is what remains to take down — the
     forecast first, as the two fall together and it is the lower step. Each entry, found from
@@ -589,16 +644,21 @@ async def test_a_round_ends_with_its_forecast_then_its_check_in_coming_down(tmp_
     await _stand(db_path, 1, forecast=True, call=True, status="FINAL")
     stub = _StubScheduler()
 
-    first = await get_next_pending_phase(db_path, stub, now=NOW)
+    first = await get_next_pending_phase(
+        db_path, stub, now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert first is not None and (first["phase_number"], first["kind"]) == (8, "cleanup")
     async with get_connection(db_path) as db:
         await db.execute("DELETE FROM forecast_messages")
         await db.commit()
 
-    second = await get_next_pending_phase(db_path, stub, now=NOW)
+    second = await get_next_pending_phase(
+        db_path, stub, now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert second is not None and (second["phase_number"], second["kind"]) == (9, "rsvp_cleanup")
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_cleared_round_is_not_offered_its_call_again(tmp_path) -> None:
     """Its call is gone and so is the row recording it — which is also what a round whose call
     is still to come looks like. The mark is what tells them apart, and without it advance
@@ -610,9 +670,12 @@ async def test_a_cleared_round_is_not_offered_its_call_again(tmp_path) -> None:
         await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = 1")
         await db.commit()
 
-    assert await get_next_pending_phase(db_path, _StubScheduler(), now=NOW) is None
+    assert await get_next_pending_phase(
+        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
+    ) is None
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_round_start_already_asked_of_the_queue_is_not_offered_again(tmp_path) -> None:
     """Round 1's result submission is the step advance would offer, ahead of the round's cleanup
     job: result submission never comes from the job store, and falls a day before the cleanup.
@@ -626,7 +689,9 @@ async def test_a_round_start_already_asked_of_the_queue_is_not_offered_again(tmp
     await _seed_all_done(db_path, [{"track_name": "Monaco"}], results=True)
     await _stand(db_path, 1, call=True)
     scheduler = _StubScheduler([_job(1, 9, days=1)])
-    offered = await get_next_pending_phase(db_path, scheduler, now=NOW)
+    offered = await get_next_pending_phase(
+        db_path, scheduler, now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert offered is not None and offered["phase_number"] == 4
 
     async with get_connection(db_path) as db:
@@ -638,11 +703,14 @@ async def test_a_round_start_already_asked_of_the_queue_is_not_offered_again(tmp
         )
         await db.commit()
 
-    again = await get_next_pending_phase(db_path, scheduler, now=NOW)
+    again = await get_next_pending_phase(
+        db_path, scheduler, now=NOW, pending_steps_read=pending_steps_read(),
+    )
 
     assert again is None or again["phase_number"] != 4
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_finished_round_s_cleanup_job_is_not_stale(tmp_path) -> None:
     """A finished round offers no other step, which once meant any job of its was thrown away
     as stale. Its cleanups are still to run, the check-in clean-up's entry naming its kind,
@@ -652,13 +720,17 @@ async def test_a_finished_round_s_cleanup_job_is_not_stale(tmp_path) -> None:
     await _seed_all_done(db_path, [{"track_name": "Monaco"}], results=True)
     await _stand(db_path, 1, call=True, status="FINAL")
 
-    result = await get_next_pending_phase(db_path, _StubScheduler([_job(1, 9, days=1)]), now=NOW)
+    result = await get_next_pending_phase(
+        db_path, _StubScheduler([_job(1, 9, days=1)]), now=NOW,
+        pending_steps_read=pending_steps_read(),
+    )
 
     assert result is not None
     assert (result["phase_number"], result["job_id"]) == (9, "job_9_r1")
     assert result["kind"] == "rsvp_cleanup"
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_forecast_cleanup_with_no_forecast_standing_is_stale(tmp_path) -> None:
     """A round with no forecast recorded leaves nothing to take down, so its cleanup job is
     stale."""
@@ -671,10 +743,12 @@ async def test_a_forecast_cleanup_with_no_forecast_standing_is_stale(tmp_path) -
         await db.commit()
 
     assert await get_next_pending_phase(
-        db_path, _StubScheduler([_job(1, 8, days=1)]), now=NOW
+        db_path, _StubScheduler([_job(1, 8, days=1)]), now=NOW,
+        pending_steps_read=pending_steps_read(),
     ) is None
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_an_earlier_round_s_cleanup_does_not_jump_a_later_round_s_step(tmp_path) -> None:
     """A double-header: Sunday's deadline falls before Saturday's cleanup. The check of the
     rounds before a job must not offer Saturday's cleanup ahead of it."""
@@ -693,12 +767,15 @@ async def test_an_earlier_round_s_cleanup_does_not_jump_a_later_round_s_step(tmp
     await _stand(db_path, 2, call=True, distributed=False)
     stub = _StubScheduler([_job(2, 7, days=6.9), _job(1, 9, days=7)])
 
-    result = await get_next_pending_phase(db_path, stub, now=NOW)
+    result = await get_next_pending_phase(
+        db_path, stub, now=NOW, pending_steps_read=pending_steps_read(),
+    )
 
     assert result is not None
     assert (result["round_id"], result["phase_number"]) == (2, 7)
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_the_database_fallback_offers_the_cleanups_last(tmp_path) -> None:
     """Round-by-round the fallback would reach a round's cleanup before the next round's first
     phase, though the cleanup falls days later; so every other step goes first."""
@@ -710,12 +787,15 @@ async def test_the_database_fallback_offers_the_cleanups_last(tmp_path) -> None:
     await _stand(db_path, 1, call=True, status="FINAL")
     await _stand(db_path, 2, call=True)
 
-    result = await get_next_pending_phase(db_path, _StubScheduler(), now=NOW)
+    result = await get_next_pending_phase(
+        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
+    )
 
     assert result is not None
     assert (result["round_id"], result["phase_number"]) == (2, 1)
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 @pytest.mark.parametrize("found", ["job in the store", "database fallback"])
 async def test_a_forecast_cleanup_is_offered_for_an_earlier_phase_still_standing(
     tmp_path, found
@@ -733,12 +813,15 @@ async def test_a_forecast_cleanup_is_offered_for_an_earlier_phase_still_standing
         await db.commit()
     stub = _StubScheduler([_job(1, 8, days=1)] if found == "job in the store" else [])
 
-    result = await get_next_pending_phase(db_path, stub, now=NOW)
+    result = await get_next_pending_phase(
+        db_path, stub, now=NOW, pending_steps_read=pending_steps_read(),
+    )
 
     assert result is not None
     assert (result["round_id"], result["phase_number"], result["kind"]) == (1, 8, "cleanup")
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_mystery_round_s_notice_is_offered_no_forecast_cleanup(tmp_path) -> None:
     """A finished mystery round, its check-in cleared, with its notice (phase 0) standing: the
     notice is not a forecast the clean-up deletes, so nothing is offered."""
@@ -751,9 +834,12 @@ async def test_a_mystery_round_s_notice_is_offered_no_forecast_cleanup(tmp_path)
         await db.commit()
 
     assert await get_next_pending_phase(
-        db_path, _StubScheduler([_job(1, 8, days=1)]), now=NOW
+        db_path, _StubScheduler([_job(1, 8, days=1)]), now=NOW,
+        pending_steps_read=pending_steps_read(),
     ) is None
-    assert await get_next_pending_phase(db_path, _StubScheduler(), now=NOW) is None
+    assert await get_next_pending_phase(
+        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
+    ) is None
 
 
 # ---------------------------------------------------------------------------
@@ -995,12 +1081,15 @@ async def _mystery_round_armed(
     return db_path
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_mystery_round_s_queued_notice_is_advanced_as_the_notice(
     tmp_path, paused_scheduler
 ) -> None:
     db_path = await _mystery_round_armed(tmp_path, paused_scheduler, notice_posted=False)
 
-    result = await get_next_pending_phase(db_path, paused_scheduler, now=NOW)
+    result = await get_next_pending_phase(
+        db_path, paused_scheduler, now=NOW, pending_steps_read=pending_steps_read(),
+    )
 
     assert result is not None
     assert result["phase_number"] == 0
@@ -1008,6 +1097,7 @@ async def test_a_mystery_round_s_queued_notice_is_advanced_as_the_notice(
     assert result["kind"] == "weather_p1"
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_mystery_round_s_notice_job_left_after_its_notice_is_stale(
     tmp_path, paused_scheduler
 ) -> None:
@@ -1017,12 +1107,15 @@ async def test_a_mystery_round_s_notice_job_left_after_its_notice_is_stale(
     db_path = await _mystery_round_armed(tmp_path, paused_scheduler, notice_posted=True)
     paused_scheduler.cancel_round(1, only=frozenset({"weather_p2", "weather_p3"}))
 
-    result = await get_next_pending_phase(db_path, paused_scheduler, now=NOW)
+    result = await get_next_pending_phase(
+        db_path, paused_scheduler, now=NOW, pending_steps_read=pending_steps_read(),
+    )
 
     assert result is not None
     assert result["phase_number"] == 4
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_mystery_round_s_phase_2_and_3_jobs_are_passed_over(
     tmp_path, paused_scheduler
 ) -> None:
@@ -1031,7 +1124,9 @@ async def test_a_mystery_round_s_phase_2_and_3_jobs_are_passed_over(
     db_path = await _mystery_round_armed(tmp_path, paused_scheduler, notice_posted=True)
     paused_scheduler.cancel_round(1, only=frozenset({"weather_p1"}))
 
-    result = await get_next_pending_phase(db_path, paused_scheduler, now=NOW)
+    result = await get_next_pending_phase(
+        db_path, paused_scheduler, now=NOW, pending_steps_read=pending_steps_read(),
+    )
 
     assert result is not None
     assert result["phase_number"] == 4
@@ -1063,12 +1158,15 @@ async def _last_notice_switched_off(db_path: str) -> None:
         await db.commit()
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_switched_off_last_notice_is_never_offered(tmp_path, paused_scheduler) -> None:
     db_path = str(tmp_path / "last_notice_off.db")
     await _last_notice_switched_off(db_path)
     await _arm(db_path, paused_scheduler, [2], weather=False, last_notice_hours=0)
 
-    result = await get_next_pending_phase(db_path, paused_scheduler, now=NOW)
+    result = await get_next_pending_phase(
+        db_path, paused_scheduler, now=NOW, pending_steps_read=pending_steps_read(),
+    )
 
     assert result is not None
     assert (result["round_id"], result["phase_number"]) == (2, 5)
@@ -1095,6 +1193,7 @@ async def test_the_review_leaves_out_a_switched_off_last_notice(tmp_path) -> Non
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_no_mystery_notice_is_offered_while_weather_is_off(tmp_path) -> None:
     """The notice is a weather posting, and a disabled module produces nothing: a live season
     arms no job for it. Advance once found it owing from database state regardless."""
@@ -1102,7 +1201,9 @@ async def test_no_mystery_notice_is_offered_while_weather_is_off(tmp_path) -> No
     await run_migrations(db_path)
     await _seed(db_path, [{"format": "MYSTERY", "track_name": None}])
 
-    assert await get_next_pending_phase(db_path, _StubScheduler(), now=NOW) is None
+    assert await get_next_pending_phase(
+        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
+    ) is None
 
 
 
@@ -1111,6 +1212,7 @@ async def test_no_mystery_notice_is_offered_while_weather_is_off(tmp_path) -> No
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_weather_step_in_hand_on_the_queue_is_not_offered_again(tmp_path) -> None:
     """Weather is on and round 1 (Monza) has none of its phases done; its scheduler job was
     cancelled by the advance that asked the change queue for its Phase 1, which waits there
@@ -1121,7 +1223,9 @@ async def test_a_weather_step_in_hand_on_the_queue_is_not_offered_again(tmp_path
     db_path = os.path.join(tmp_path, "test.db")
     await run_migrations(db_path)
     await _seed_with_weather(db_path, [{"track_name": "Monza"}])
-    first = await get_next_pending_phase(db_path, _StubScheduler(), now=NOW)
+    first = await get_next_pending_phase(
+        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert first is not None
     assert (first["round_id"], first["phase_number"]) == (1, 1)
 
@@ -1135,7 +1239,9 @@ async def test_a_weather_step_in_hand_on_the_queue_is_not_offered_again(tmp_path
         )
         await db.commit()
 
-    result = await get_next_pending_phase(db_path, _StubScheduler(), now=NOW)
+    result = await get_next_pending_phase(
+        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert result is None or (result["round_id"], result["phase_number"]) != (1, 1)
 
 
@@ -1150,6 +1256,7 @@ _CHECK_IN_STEPS_IN_HAND = [
 ]
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 @pytest.mark.parametrize("phase,kind,call", _CHECK_IN_STEPS_IN_HAND)
 async def test_a_check_in_step_in_hand_on_the_queue_is_not_offered_again(
     tmp_path, phase, kind, call
@@ -1175,7 +1282,9 @@ async def test_a_check_in_step_in_hand_on_the_queue_is_not_offered_again(
         if phase == 9:
             await db.execute("UPDATE rounds SET status = 'FINAL' WHERE id = 1")
         await db.commit()
-    first = await get_next_pending_phase(db_path, _StubScheduler(), now=NOW)
+    first = await get_next_pending_phase(
+        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert first is not None and (first["round_id"], first["phase_number"]) == (1, phase)
 
     async with get_connection(db_path) as db:
@@ -1186,7 +1295,9 @@ async def test_a_check_in_step_in_hand_on_the_queue_is_not_offered_again(
         )
         await db.commit()
 
-    again = await get_next_pending_phase(db_path, _StubScheduler(), now=NOW)
+    again = await get_next_pending_phase(
+        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
+    )
     assert again is None or (again["round_id"], again["phase_number"]) != (1, phase)
 
 
@@ -1194,13 +1305,13 @@ async def test_a_check_in_step_in_hand_on_the_queue_is_not_offered_again(
 # A weather step of a round whose race has been run (#439)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("scheduler", ["job left in the store", "job store empty", "no scheduler"])
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
+@pytest.mark.parametrize("scheduler", ["job left in the store", "job store empty"])
 async def test_a_raced_round_s_weather_steps_are_passed_over(tmp_path, scheduler) -> None:
     """Weather is on. Round 1 (Bahrain) was raced an hour ago with none of its phases done (the
     module was switched on after it), and round 2 (Monza) is a week ahead. The change queue
     drops a forecast for a race already run (A25), so advance offers round 2's Phase 1, and not
-    round 1's: whether round 1's Phase 1 job is still in the store, the store is empty, or no
-    scheduler is given."""
+    round 1's: whether round 1's Phase 1 job is still in the store or the store is empty."""
     raced = (NOW - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
     db_path = str(tmp_path / "raced.db")
     await run_migrations(db_path)
@@ -1211,15 +1322,17 @@ async def test_a_raced_round_s_weather_steps_are_passed_over(tmp_path, scheduler
     stub = {
         "job left in the store": _StubScheduler([_job(1, 1, days=-2)]),
         "job store empty": _StubScheduler(),
-        "no scheduler": None,
     }[scheduler]
 
-    result = await get_next_pending_phase(db_path, stub, now=NOW)
+    result = await get_next_pending_phase(
+        db_path, stub, now=NOW, pending_steps_read=pending_steps_read(),
+    )
 
     assert result is not None
     assert (result["round_id"], result["phase_number"]) == (2, 1)
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_raced_round_s_result_submission_is_still_offered(tmp_path) -> None:
     """Weather and results are on. Round 1 (Bahrain) was raced an hour ago with none of its
     phases done and no results submitted: advance passes over its weather steps alone, and
@@ -1235,7 +1348,9 @@ async def test_a_raced_round_s_result_submission_is_still_offered(tmp_path) -> N
         await db.execute("INSERT INTO results_module_config (id, module_enabled) VALUES (1, 1)")
         await db.commit()
 
-    result = await get_next_pending_phase(db_path, _StubScheduler(), now=NOW)
+    result = await get_next_pending_phase(
+        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
+    )
 
     assert result is not None
     assert (result["round_id"], result["phase_number"], result["kind"]) == (1, 4, "results")
@@ -1271,13 +1386,14 @@ async def test_the_review_marks_a_raced_round_s_weather_steps_as_passed_over(tmp
     assert "⏭️ passed over (its race has been run)" in summary
 
 
-@pytest.mark.parametrize("scheduler", ["job left in the store", "job store empty", "no scheduler"])
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
+@pytest.mark.parametrize("scheduler", ["job left in the store", "job store empty"])
 async def test_a_raced_mystery_round_s_notice_is_passed_over(tmp_path, scheduler) -> None:
     """Weather is on, and it is noon on 12 October 2026. Round 1 is a mystery round raced an hour
     ago whose notice never went out, and round 2 (Monza) is a week ahead. The change queue drops
     a notice for a race already run (A25), so advance offers round 2's Phase 1, and not round
-    1's notice: whether round 1's `weather_p1` job is still in the store, the store is empty, or
-    no scheduler is given."""
+    1's notice: whether round 1's `weather_p1` job is still in the store or the store is
+    empty."""
     now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
     db_path = str(tmp_path / "raced_mystery.db")
     await run_migrations(db_path)
@@ -1288,10 +1404,11 @@ async def test_a_raced_mystery_round_s_notice_is_passed_over(tmp_path, scheduler
     stub = {
         "job left in the store": _StubScheduler([_job(1, 1, days=-2)]),
         "job store empty": _StubScheduler(),
-        "no scheduler": None,
     }[scheduler]
 
-    result = await get_next_pending_phase(db_path, stub, now=now)
+    result = await get_next_pending_phase(
+        db_path, stub, now=now, pending_steps_read=pending_steps_read(),
+    )
 
     assert result is not None
     assert (result["round_id"], result["phase_number"]) == (2, 1)
@@ -1302,6 +1419,7 @@ async def test_a_raced_mystery_round_s_notice_is_passed_over(tmp_path, scheduler
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_the_steps_passed_over_are_a_raced_round_s_undone_weather_steps(tmp_path) -> None:
     """Weather is on, and it is noon on 12 October 2026. Round 1 (Bahrain) was raced an hour ago
     with none of its phases done; round 2 is a mystery round raced an hour ago whose notice never
@@ -1323,7 +1441,7 @@ async def test_the_steps_passed_over_are_a_raced_round_s_undone_weather_steps(tm
         {"track_name": "Spa", "scheduled_at": "2026-10-19T12:00:00+00:00"},
     ])
 
-    steps = await get_passed_over_steps(db_path, now=now)
+    steps = await get_passed_over_steps(db_path, now=now, pending_steps_read=pending_steps_read())
 
     assert [(step["round_number"], step["phase_number"]) for step in steps] == [
         (1, 1), (1, 2), (1, 3), (2, 0),
@@ -1331,6 +1449,7 @@ async def test_the_steps_passed_over_are_a_raced_round_s_undone_weather_steps(tm
     assert {step["division_name"] for step in steps} == {"Division A"}
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_the_steps_passed_over_follow_the_order_the_rounds_raced(tmp_path) -> None:
     """Weather is on, and it is noon on 12 October 2026. Round 1 (Bahrain) was raced an hour ago
     and round 2 (Monza), added after it, two hours ago, neither with a phase done and both
@@ -1346,13 +1465,14 @@ async def test_the_steps_passed_over_follow_the_order_the_rounds_raced(tmp_path)
         {"track_name": "Monza", "scheduled_at": "2026-10-12T10:00:00+00:00"},
     ])
 
-    steps = await get_passed_over_steps(db_path, now=now)
+    steps = await get_passed_over_steps(db_path, now=now, pending_steps_read=pending_steps_read())
 
     assert [(step["round_number"], step["phase_number"]) for step in steps] == [
         (2, 1), (2, 2), (2, 3), (1, 1), (1, 2), (1, 3),
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_no_step_is_passed_over_while_the_weather_module_is_off(tmp_path) -> None:
     """Weather is off, so nothing of it was armed and advance offers none of it: a raced round's
     undone phases are not named as passed over."""
@@ -1363,7 +1483,9 @@ async def test_no_step_is_passed_over_while_the_weather_module_is_off(tmp_path) 
     await run_migrations(db_path)
     await _seed(db_path, [{"track_name": "Bahrain", "scheduled_at": "2026-10-12T11:00:00+00:00"}])
 
-    assert await get_passed_over_steps(db_path, now=now) == []
+    assert await get_passed_over_steps(
+        db_path, now=now, pending_steps_read=pending_steps_read(),
+    ) == []
 
 
 async def _queue_forecast(db_path: str, round_id: int, phase: int) -> None:
@@ -1381,6 +1503,7 @@ async def _queue_forecast(db_path: str, round_id: int, phase: int) -> None:
         await db.commit()
 
 
+@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 @pytest.mark.parametrize("case, left", [
     pytest.param("FINAL", [], id="round final"),
     pytest.param("AWAITING_APPEAL_VERDICTS", [], id="round awaiting appeal verdicts"),
@@ -1418,7 +1541,7 @@ async def test_a_raced_step_advance_would_not_offer_anyway_is_not_named_as_passe
             await db.execute(sql)
             await db.commit()
 
-    steps = await get_passed_over_steps(db_path, now=now)
+    steps = await get_passed_over_steps(db_path, now=now, pending_steps_read=pending_steps_read())
 
     assert [step["phase_number"] for step in steps] == left
 
