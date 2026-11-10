@@ -24,7 +24,7 @@ import pytest
 from leaguebot.core.cogs import test_mode_cog
 from leaguebot.core.services.placement_service import PlacementService
 from tests.support.change_queue import change_rows, member, run_queue, step_rows, stopped_job
-from tests.support.season_league import AM, MCLAREN, SEASON_ID, season_league
+from tests.support.season_league import AM, FERRARI, MCLAREN, PRO, SEASON_ID, season_league
 from tests.support.settings_league import audit_rows, last_said, said, unruled
 from tests.support.settings_league import interaction as member_asks
 from tests.support.setup_rounds import acknowledged
@@ -36,12 +36,21 @@ ACTOR_ID = 77
 _NAMED = f"Admin (`<@{ACTOR_ID}>`)"
 
 ALPHA, BETA = "9000000000000000001", "9000000000000000002"
+GAMMA = "9000000000000000003"
 
 #: Mock Alpha (British, given as a country) and Mock Beta (no nationality), both to McLaren in Am.
 ROSTER = (
     "ID,Driver name,Team,Division,Nationality\n"
     f"{ALPHA},Mock Alpha,McLaren,Am,united kingdom\n"
     f"{BETA},Mock Beta,McLaren,Am,\n"
+)
+
+#: Mock Gamma (no nationality) to Ferrari in Pro, then Mock Alpha (British, given as a country) to
+#: McLaren in Am: a grid across two divisions, Pro written first.
+ROSTER_ACROSS = (
+    "ID,Driver name,Team,Division,Nationality\n"
+    f"{GAMMA},Mock Gamma,Ferrari,Pro,\n"
+    f"{ALPHA},Mock Alpha,McLaren,Am,united kingdom\n"
 )
 
 _AUDIT_TYPE = "TEST_DRIVER_ADDED"
@@ -77,6 +86,14 @@ async def league(tmp_path):
     cog.bot = built.bot
     built.cog = cog
     return built
+
+
+async def _pro_emptied(league) -> None:
+    """Lewis and Max out of Ferrari and the season's Pro, Ferrari's two seats left free."""
+    await league.write("DELETE FROM driver_season_assignments WHERE division_id = ?", PRO)
+    await league.write(
+        "UPDATE team_seats SET driver_profile_id = NULL WHERE team_instance_id = ?", FERRARI
+    )
 
 
 def _asks(league):
@@ -118,11 +135,49 @@ def _refused(refusal: str) -> str:
     )
 
 
+_ALPHA_SEATED = {"discord_user_id": ALPHA, "test_display_name": "Mock Alpha",
+                 "test_nationality": "British", "current_state": "ASSIGNED",
+                 "team_instance_id": MCLAREN, "seat_number": 1, "division_id": AM}
+_ALPHA_ENTRY = {"driver": "Mock Alpha", "user_id": ALPHA, "team": "McLaren F1 Team",
+                "division": "Am", "nationality": "British"}
+
+
 @pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
-async def test_a_roster_and_its_audit_entries_and_line_are_one_save(league):
+@pytest.mark.parametrize(
+    "setup, text, doing, seated, entries, reply, divisions",
+    [
+        pytest.param(
+            None, ROSTER, _DOING,
+            [_ALPHA_SEATED,
+             {**_ALPHA_SEATED, "discord_user_id": BETA, "test_display_name": "Mock Beta",
+              "test_nationality": None, "seat_number": 2}],
+            [(AM, _ALPHA_ENTRY),
+             (AM, {**_ALPHA_ENTRY, "driver": "Mock Beta", "user_id": BETA,
+                   "nationality": None})],
+            _SEATED, "Am",
+            id="one division",
+        ),
+        pytest.param(
+            _pro_emptied, ROSTER_ACROSS, "Seating 2 test drivers in **Pro**, **Am**",
+            [_ALPHA_SEATED,
+             {"discord_user_id": GAMMA, "test_display_name": "Mock Gamma",
+              "test_nationality": None, "current_state": "ASSIGNED",
+              "team_instance_id": FERRARI, "seat_number": 1, "division_id": PRO}],
+            [(PRO, {"driver": "Mock Gamma", "user_id": GAMMA, "team": "Scuderia Ferrari",
+                    "division": "Pro", "nationality": None}),
+             (AM, _ALPHA_ENTRY)],
+            _SEATED.replace("across 1 division(s): Am.", "across 2 division(s): Pro, Am."),
+            "Pro, Am",
+            id="two divisions",
+        ),
+    ],
+)
+async def test_a_roster_and_its_audit_entries_and_line_are_one_save(
+    league, setup, text, doing, seated, entries, reply, divisions
+):
     """The core specification's test roster, changed by hand under test mode, and its record of
-    what changed. The season is in Placements under test mode, Am empty and McLaren's three seats
-    free. Admin (77) submits `/test-mode roster add-bulk`'s form naming Mock Alpha (nationality
+    what changed, each entry in the division its driver is seated in. The season is in Placements
+    under test mode, Am empty and McLaren's three seats free. Admin (77) submits `/test-mode roster add-bulk`'s form naming Mock Alpha (nationality
     "united kingdom") and Mock Beta (none) at McLaren in Am, with the IDs 9000000000000000001
     and 9000000000000000002. They are answered at once with the queue's acknowledgement,
     "Seating 2 test drivers in **Am**", naming its first job, and nothing is written until the
@@ -133,13 +188,23 @@ async def test_a_roster_and_its_audit_entries_and_line_are_one_save(league):
     stamped with the queue's clock, records the driver, id, team, division and nationality, each
     unset before; the acknowledgement reads today's reply, "Seated **2** test driver(s) across 1
     division(s): Am."; and the log channel holds today's success line once, naming the two
-    seated and Am."""
+    seated and Am.
+
+    Across two divisions, Lewis and Max are out of Ferrari and Pro, leaving Ferrari's two seats
+    free, and the form names Mock Gamma (no nationality) at Ferrari in Pro, then Mock Alpha at
+    McLaren in Am. The acknowledgement is "Seating 2 test drivers in **Pro**, **Am**", the
+    divisions in the file's order as the reply names them; Mock Gamma holds Ferrari's first seat
+    in Pro and Mock Alpha McLaren's first in Am; Mock Gamma's entry is on Pro, naming "Scuderia
+    Ferrari" and Pro, and Mock Alpha's on Am; the reply says "across 2 division(s): Pro, Am", and
+    the line "divisions: Pro, Am"."""
+    if setup is not None:
+        await setup(league)
     interaction = _asks(league)
 
-    await _submit(league, interaction)
+    await _submit(league, interaction, text)
 
     first_job = (await step_rows(league.db_path))[0]["id"]
-    assert said(interaction)[0] == f"{acknowledged(_DOING)} It begins with job #{first_job}."
+    assert said(interaction)[0] == f"{acknowledged(doing)} It begins with job #{first_job}."
     assert [row["kind"] for row in await change_rows(league.db_path)] == [
         "core.test_roster_add_bulk"
     ]
@@ -147,32 +212,22 @@ async def test_a_roster_and_its_audit_entries_and_line_are_one_save(league):
     assert await audit_rows(league.db_path) == []
     await run_queue(league.bot)
 
-    seated = {"current_state": "ASSIGNED", "team_instance_id": MCLAREN, "division_id": AM}
-    assert await _fake_drivers(league) == [
-        {"discord_user_id": ALPHA, "test_display_name": "Mock Alpha",
-         "test_nationality": "British", "seat_number": 1, **seated},
-        {"discord_user_id": BETA, "test_display_name": "Mock Beta",
-         "test_nationality": None, "seat_number": 2, **seated},
-    ]
-    entries = [
-        {"driver": "Mock Alpha", "user_id": ALPHA, "team": "McLaren F1 Team", "division": "Am",
-         "nationality": "British"},
-        {"driver": "Mock Beta", "user_id": BETA, "team": "McLaren F1 Team", "division": "Am",
-         "nationality": None},
-    ]
+    assert sorted(
+        await _fake_drivers(league), key=lambda row: row["discord_user_id"]
+    ) == seated
     assert [
         (row["change_type"], row["old_value"], row["new_value"],
          row["actor_id"], row["division_id"], row["timestamp"])
         for row in await audit_rows(league.db_path)
     ] == [
-        (_AUDIT_TYPE, dict.fromkeys(new), new, ACTOR_ID, AM, league.clock.now.isoformat())
-        for new in entries
+        (_AUDIT_TYPE, dict.fromkeys(new), new, ACTOR_ID, division, league.clock.now.isoformat())
+        for division, new in entries
     ]
-    assert last_said(interaction) == _SEATED
+    assert last_said(interaction) == reply
     assert _lines(league) == [
         f"{_NAMED} | /test-mode roster add-bulk | Success\n"
         "  drivers_seated: 2\n"
-        "  divisions: Am"
+        f"  divisions: {divisions}"
     ]
 
 
@@ -313,7 +368,14 @@ async def test_it_is_judged_again_as_it_starts(league, meanwhile, refusal):
 
 
 @pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
-async def test_a_fault_in_the_save_seats_nobody(league):
+@pytest.mark.parametrize(
+    "setup, text, divisions",
+    [
+        pytest.param(None, ROSTER, "**Am**", id="one division"),
+        pytest.param(_pro_emptied, ROSTER_ACROSS, "**Pro**, **Am**", id="two divisions"),
+    ],
+)
+async def test_a_fault_in_the_save_seats_nobody(league, setup, text, divisions):
     """The season is in Placements under test mode, Am empty and McLaren's three seats free.
     Admin (77) submits `/test-mode roster add-bulk`'s form naming Mock Alpha and Mock Beta at
     McLaren in Am, and an audit entry's write fails on the database as the queue runs the
@@ -322,13 +384,18 @@ async def test_a_fault_in_the_save_seats_nobody(league):
     entry stands, the log channel holds no success line, and the error's text reaches nobody.
     The league's lane stops at the job. Once a league admin discards the stopped job, Admin's
     reply says "Nothing was added: no test driver is seated in **Am**. Run `/test-mode roster
-    add-bulk` again."; and the lane is clear."""
+    add-bulk` again."; and the lane is clear. Across two divisions, Ferrari's two seats in Pro,
+    left free with Lewis and Max out, and the form naming Mock Gamma at Ferrari in Pro and Mock
+    Alpha at McLaren in Am, Ferrari's two seats are free as well, and the reply after the discard
+    names both divisions in the file's order: "no test driver is seated in **Pro**, **Am**"."""
     from tests.support.change_queue import discard_job
     from tests.support.settings_league import fault_in
 
+    if setup is not None:
+        await setup(league)
     interaction = _asks(league)
 
-    await _submit(league, interaction)
+    await _submit(league, interaction, text)
     with fault_in("leaguebot.core.services.change_queue.record_change_on"):
         await run_queue(league.bot)
 
@@ -338,6 +405,11 @@ async def test_a_fault_in_the_save_seats_nobody(league):
         "AND driver_profile_id IS NULL ORDER BY seat_number",
         MCLAREN,
     ) == [{"seat_number": 1}, {"seat_number": 2}, {"seat_number": 3}]
+    assert await league.rows(
+        "SELECT seat_number FROM team_seats WHERE team_instance_id = ? "
+        "AND driver_profile_id IS NOT NULL",
+        FERRARI,
+    ) == ([] if setup is _pro_emptied else [{"seat_number": 1}, {"seat_number": 2}])
     assert await audit_rows(league.db_path) == []
     assert not any("| Success" in line for line in _lines(league))
     assert await stopped_job(league.db_path) is not None
@@ -345,7 +417,7 @@ async def test_a_fault_in_the_save_seats_nobody(league):
     await discard_job(league.bot)
 
     assert last_said(interaction) == (
-        "Nothing was added: no test driver is seated in **Am**. "
+        f"Nothing was added: no test driver is seated in {divisions}. "
         "Run `/test-mode roster add-bulk` again."
     )
     assert not any("database or disk is full" in text for text in said(interaction))
