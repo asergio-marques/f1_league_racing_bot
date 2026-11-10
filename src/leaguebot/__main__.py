@@ -474,9 +474,9 @@ def _sign_up_to_pending_steps_read(bot: LeagueBot) -> None:
     """Make the hook `/test-mode advance` reads the pending steps through, and sign each module's
     part up to it: the steps of the rounds core hands it that the module still has pending, and
     those advance passes over, from its own state, handed the database path, the rounds and the
-    moment advance judges at. Weather, attendance and results sign up in the order the steps of a
-    round fall; core orders what they hand back (architecture.md, "How modules and core fit
-    together"). The builder hands it to the command."""
+    moment advance judges at. Weather, attendance and results sign up; core orders what they hand
+    back by its own step order (architecture.md, "How modules and core fit together"). The builder
+    hands it to the command."""
     from leaguebot.attendance.services import test_mode_steps as attendance_steps
     from leaguebot.results.services import test_mode_steps as results_steps
     from leaguebot.weather.services import test_mode_steps as weather_steps
