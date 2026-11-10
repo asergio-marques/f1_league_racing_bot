@@ -11,9 +11,10 @@ placement not yet committed. Each division's results and standings channels are 
 The season scores on `Standard`, attached and well ordered. The modules are as asked: results on
 and the others off unless said otherwise.
 
-"Now" is the host's clock as the league is built, to the second, and is then pinned: the press
-reads the host's clock (the review's five minutes, the dates gate), and the queue reads the
-league's `clock`, which a test moves on (`league.clock.advance`).
+"Now" is the host's clock as the league is built, to the second, and is then pinned as the queue's
+clock, `league.clock`, which a test moves on (`league.clock.advance`) while the host's is left where
+it is. A review is posted at the queue's clock, as its post job stamps it, and its button is the
+view the builder's factory makes (`_approve_view_for`), as the queue's post job attaches it.
 
 The bot is `league_bot`'s: the one the entry point's `build` makes, every service and change type
 the builder's (`league_queue`). It reads the enabled modules' windows as the builder has it read
@@ -190,6 +191,8 @@ class SeasonLeague:
         self._removed: dict[int, Any] = {}
         #: Each backup question answered: (the answer, how many changes were asked by then).
         self.backup_answers: list[tuple[str, int]] = []
+        #: How long each backup question was given to stand, in seconds, in order.
+        self.backup_timeouts: list[float | None] = []
         #: The roles each member holds on the server (`ongoing_league`'s *held*), by user id.
         self.roles_held: dict[int, set[int]] = {}
         #: The roles taken back from each member, in order (slice 5).
@@ -568,14 +571,14 @@ class Review:
 
 
 async def post_review(league: SeasonLeague) -> Review:
-    """Post a review's report and its ✅ Approve prompt, and record the prompt as the review's
-    post job records it: its row, with the report's ids and the evidence the season's fingerprint
-    gives, posted now."""
-    from leaguebot.core.cogs.season_cog import _ApproveView
+    """Post a review's report and its ✅ Approve prompt, the builder's view of it, and record the
+    prompt as the review's post job records it: its row, with the report's ids and the evidence the
+    season's fingerprint gives, posted at the queue's clock."""
+    from leaguebot.__main__ import _approve_view_for
     from leaguebot.core.services.season_fingerprint_service import take_fingerprint
     from tests.support.review_prompts import store_review_prompt
 
-    view = _ApproveView(league.cog, ADMIN_ID)
+    view = _approve_view_for(league.bot)({"view": "approve", "reviewer_id": ADMIN_ID})
     report = [await league.review_channel.send("📋 Season 3 placements review")]
     prompt = await league.review_channel.send("Approve these placements?", view=view)
     evidence = (
@@ -584,7 +587,7 @@ async def post_review(league: SeasonLeague) -> Review:
     async with get_connection(league.db_path) as db:
         await store_review_prompt(
             db, season_id=SEASON_ID, channel_id=REVIEW_CHANNEL, message_id=prompt.id,
-            reviewer_id=ADMIN_ID, posted_at=datetime.now(timezone.utc).isoformat(),
+            reviewer_id=ADMIN_ID, posted_at=league.clock.now.isoformat(),
             report_message_ids=[message.id for message in report], evidence=evidence,
             verb="approved",
         )
@@ -599,7 +602,8 @@ async def press_approve(league: SeasonLeague, review: Review | None = None, *,
     The press is an interaction of its own in the review's channel, a league admin's (user 77)
     unless *user*; it is returned, its reply read through `reply`. Under test mode the backup
     question is answered *backup* ("save", "skip" or "cancel"; "skip" where None), each answer
-    recorded in `league.backup_answers` with how many changes had been asked by then.
+    recorded in `league.backup_answers` with how many changes had been asked by then, and the
+    time the question was given to stand in `league.backup_timeouts`.
     """
     from leaguebot.core.utils.league_server import LeagueView
 
@@ -614,6 +618,7 @@ async def press_approve(league: SeasonLeague, review: Review | None = None, *,
     async def _answer(view: Any) -> bool:
         view.answer = backup or "skip"
         league.backup_answers.append((view.answer, len(await change_rows(league.db_path))))
+        league.backup_timeouts.append(view.timeout)
         return False
 
     # The backup question is the one view the press waits on.
@@ -721,11 +726,11 @@ async def placing_league(
 async def post_mid_season_review(league: SeasonLeague) -> Review:
     """Post a mid-season `/season placements-review` report and its ✅ Confirm placements
     prompt in channel 610, recorded as `post_review` records an approval's."""
-    from leaguebot.core.cogs.season_cog import _ConfirmMidSeasonPlacementsView
+    from leaguebot.__main__ import _approve_view_for
     from leaguebot.core.services.season_fingerprint_service import take_fingerprint
     from tests.support.review_prompts import store_review_prompt
 
-    view = _ConfirmMidSeasonPlacementsView(league.cog, ADMIN_ID)
+    view = _approve_view_for(league.bot)({"view": "mid_season", "reviewer_id": ADMIN_ID})
     report = [await league.review_channel.send("📋 Season 3 mid-season placements review")]
     prompt = await league.review_channel.send("Confirm these placements?", view=view)
     evidence = (
@@ -734,7 +739,7 @@ async def post_mid_season_review(league: SeasonLeague) -> Review:
     async with get_connection(league.db_path) as db:
         await store_review_prompt(
             db, season_id=SEASON_ID, channel_id=REVIEW_CHANNEL, message_id=prompt.id,
-            reviewer_id=ADMIN_ID, posted_at=datetime.now(timezone.utc).isoformat(),
+            reviewer_id=ADMIN_ID, posted_at=league.clock.now.isoformat(),
             report_message_ids=[message.id for message in report], evidence=evidence,
             verb="confirmed",
         )
@@ -779,11 +784,11 @@ async def configuring_league(
 async def post_config_review(league: SeasonLeague) -> Review:
     """Post a `/season config-review` report and its ✅ Confirm configuration prompt in channel
     610, by the admin (77), recorded as `post_review` records an approval's."""
-    from leaguebot.core.cogs.season_cog import _ConfirmConfigurationView
+    from leaguebot.__main__ import _approve_view_for
     from leaguebot.core.services.season_fingerprint_service import take_fingerprint
     from tests.support.review_prompts import store_review_prompt
 
-    view = _ConfirmConfigurationView(league.cog, ADMIN_ID)
+    view = _approve_view_for(league.bot)({"view": "configuration", "reviewer_id": ADMIN_ID})
     report = [await league.review_channel.send("📋 Season 3 configuration review")]
     prompt = await league.review_channel.send("Do you confirm this season's configuration?",
                                               view=view)
@@ -793,7 +798,7 @@ async def post_config_review(league: SeasonLeague) -> Review:
     async with get_connection(league.db_path) as db:
         await store_review_prompt(
             db, season_id=SEASON_ID, channel_id=REVIEW_CHANNEL, message_id=prompt.id,
-            reviewer_id=ADMIN_ID, posted_at=datetime.now(timezone.utc).isoformat(),
+            reviewer_id=ADMIN_ID, posted_at=league.clock.now.isoformat(),
             report_message_ids=[message.id for message in report], evidence=evidence,
             review="/season config-review", verb="confirmed",
         )

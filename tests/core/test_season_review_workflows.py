@@ -44,11 +44,12 @@ _COG_WORK = (
     "_approval_windows",
 )
 
+#: The review's buttons are still the season cog's views, each holding a cog.
+_VIEWS_ON_THE_COG = "#283: the review's views are still the season cog's, each holding a cog"
+#: The press still judges the review's five minutes on the host's clock.
+_PRESS_ON_THE_HOST_S_CLOCK = "#283: the press judges the review's five minutes on the host's clock"
+
 PASSED_DATES = "❌ Season cannot be approved — its calendar holds dates that have already gone by:"
-EXPIRED = (
-    "⏱️ This review expired before the season could be approved. Run "
-    "`/season placements-review` again. **Nothing has been approved.**"
-)
 
 
 async def _asked(league: Any, kind: str) -> list[dict[str, Any]]:
@@ -67,6 +68,7 @@ async def _configuration(league: Any) -> list[dict[str, Any]]:
     return await _asked(league, CONFIGURATION_CONFIRM_KIND)
 
 
+@pytest.mark.xfail(strict=True, reason=_VIEWS_ON_THE_COG)
 @pytest.mark.parametrize("build, post, asked", [
     pytest.param(season_league, post_review, _approval, id="approval"),
     pytest.param(placing_league, post_mid_season_review, _mid_season, id="mid-season placements"),
@@ -75,17 +77,24 @@ async def _configuration(league: Any) -> list[dict[str, Any]]:
 async def test_each_review_button_runs_its_workflow_with_nothing_of_the_season_cog(
     tmp_path, monkeypatch, build, post, asked,
 ):
-    """Season 3's review stands, nothing wrong with the season. Every workflow and gate method is
-    taken off `SeasonCog`, and the bot finds no season cog loaded. Admin presses the review's
-    button: the press raises nothing and asks its one change of the queue."""
+    """Every workflow and gate method is taken off `SeasonCog`, the bot finds no season cog
+    loaded, and no season cog can be built. Season 3's review is then posted, nothing wrong with
+    the season, its button the view the builder's factory makes. The view holds no season cog.
+    Admin presses the review's button: the press raises nothing and asks its one change of the
+    queue."""
     from leaguebot.core.cogs.season_cog import SeasonCog
 
+    def _no_cog(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("the review's view built a season cog")
+
     league = await build(tmp_path, monkeypatch=monkeypatch)
-    review = await post(league)
     for name in _COG_WORK:
         monkeypatch.delattr(SeasonCog, name, raising=False)
     league.bot.get_cog = MagicMock(return_value=None)
+    monkeypatch.setattr(SeasonCog, "__init__", _no_cog)
+    review = await post(league)
 
+    assert not any(isinstance(held, SeasonCog) for held in vars(review.view).values())
     await press_approve(league, review)
 
     assert league.errors == []
@@ -144,17 +153,43 @@ async def test_the_approval_judges_the_dates_on_the_queue_s_clock(tmp_path, monk
 async def test_the_backup_question_s_time_left_is_read_from_the_queue_s_clock(
     tmp_path, monkeypatch,
 ):
-    """Test mode is on and season 3's review was posted on the host's clock, with five minutes to
-    stand. The queue's clock is six minutes on. Admin presses ✅ Approve: by the queue's clock the
-    review has expired, so the backup question is never put, Admin is told the review expired,
-    and nothing is asked of the queue. Until now the time left was read from the host's clock,
-    which still gave the question five minutes."""
+    """Test mode is on and season 3's review is posted at the queue's clock, with five minutes to
+    stand. The queue's clock is then moved on two minutes, the host's left where it is. Admin
+    presses ✅ Approve: the backup question is put once and given the three minutes left by the
+    queue's clock, not the five the host's clock would leave."""
     league = await season_league(tmp_path, monkeypatch=monkeypatch, test_mode=True)
-    league.clock.advance(minutes=6)
+    review = await post_review(league)
+    league.clock.advance(minutes=2)
 
-    press = await press_approve(league, backup="save")
+    await press_approve(league, review, backup="skip")
 
     assert league.errors == []
-    assert EXPIRED in reply(press)
-    assert league.backup_answers == []
-    assert await approval_changes(league) == []
+    assert league.backup_timeouts == [180.0]
+
+
+@pytest.mark.xfail(strict=True, reason=_PRESS_ON_THE_HOST_S_CLOCK)
+@pytest.mark.parametrize("build, post, asked, verb", [
+    pytest.param(season_league, post_review, _approval, "approved", id="approval"),
+    pytest.param(placing_league, post_mid_season_review, _mid_season, "confirmed",
+                 id="mid-season placements"),
+    pytest.param(configuring_league, post_config_review, _configuration, "confirmed",
+                 id="configuration"),
+])
+async def test_a_press_judges_the_review_s_five_minutes_on_the_queue_s_clock(
+    tmp_path, monkeypatch, build, post, asked, verb,
+):
+    """Season 3's review is posted at the queue's clock, nothing wrong with the season. The
+    queue's clock is then moved on six minutes, the host's left where it is. Admin presses the
+    review's button: the press is refused, the review's five minutes being up, Admin is told
+    nothing has been approved (or confirmed), and nothing is asked of the queue."""
+    league = await build(tmp_path, monkeypatch=monkeypatch)
+    review = await post(league)
+    league.clock.advance(minutes=6)
+
+    press = await press_approve(league, review)
+
+    assert league.errors == []
+    told = reply(press)
+    assert "⛔ This review's five minutes are up, so it can no longer be answered." in told
+    assert f"**Nothing has been {verb}.**" in told
+    assert await asked(league) == []
