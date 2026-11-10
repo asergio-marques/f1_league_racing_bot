@@ -1217,14 +1217,15 @@ catch-all, a command catches only the errors it expects by name, and only to tur
 refusal the member can act on, or to hand them to `report_failure` itself with context or an
 outcome, as `/test-mode backup save` does with a backup fault, saying that the previous backup is unchanged.
 
-A refusal whose words the refusing code writes is raised as `Refused` (`core/models/refusal.py`), its
-text what the member reads, and a catch that turns one into a reply names `Refused` around the call
-that refuses and nothing else: parsing a payload, or calling a hook, stays outside it, so a save
-that calls a hook judges inside the catch and calls the hook after it. `Refused` subclasses `ValueError`,
-which Python raises for a bug (`int("x")`, a bad enum value), so a fault keeps the bare
-`ValueError` and goes on as one. A refusal the command words itself from fields the error carries
-has a type of its own, not a `ValueError` (`PackRefused`), and is not converted.
-The driver state machine's refusal of a transition the table does not allow is
+A refusal whose words the refusing code writes is raised as `Refused` (`core/models/refusal.py`),
+its text what the member reads, and a catch that turns one into a reply names `Refused` around the
+call that refuses and nothing else: parsing a payload, or calling a hook, stays outside it, so a
+save that calls a hook judges inside the catch and calls the hook after it. A fault keeps the bare
+`ValueError`, which Python raises for a bug (`int("x")`, a bad enum value), and goes on as one,
+since no refusal catch takes it. `Refused` subclasses `ValueError` so that a caller with no cause to
+tell the two apart still catches it as one. A refusal the command words itself from fields the error
+carries has a type of its own, not a `ValueError` (`PackRefused`), and is not a `Refused`. The
+driver state machine's refusal of a transition the table does not allow is
 `InvalidDriverTransition`, a fault that a save expecting the race catches by name.
 
 *Rejected:* narrowing the capacity guards' catch to the errors they expect by name, in the
