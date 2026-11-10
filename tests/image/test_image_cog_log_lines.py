@@ -406,15 +406,9 @@ async def test_a_command_s_own_refusal_records_one_line_naming_it(
     assert_one_refusal(league.bot, f"`/{name}`")
 
 
-#: Why a bug's `ValueError` in path resolution is answered as a refusal until #283's build.
-CAUGHT_AS_A_REFUSAL = "#283: image_cog still takes any ValueError from a path for a refusal"
-
-
 @pytest.mark.parametrize("name", [
-    pytest.param("images config template-directory", id="template-directory",
-                 marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
-    pytest.param("images config track-image-directory", id="asset-directory",
-                 marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
+    pytest.param("images config template-directory", id="template-directory"),
+    pytest.param("images config track-image-directory", id="asset-directory"),
 ])
 async def test_an_unexpected_value_error_is_a_failure_not_a_refusal(tmp_path, monkeypatch, name):
     """The manager sets the league's template folder, or its track image folder, and resolving

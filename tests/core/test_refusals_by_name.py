@@ -23,9 +23,6 @@ from leaguebot.core.db.database import run_migrations
 #: The fault each case raises, as `int()` words one.
 BUG = "invalid literal for int() with base 10: 'x'"
 
-#: Why each case fails until #283's build catches refusals by name.
-CAUGHT_AS_A_REFUSAL = "#283: a catch still takes any ValueError for a member's refusal"
-
 #: A placement check's payload, every id a number, as the cog asks it.
 _PAYLOAD = {
     "season_id": 1, "division_id": 11, "division": "Pro", "from_division_id": 11,
@@ -310,8 +307,7 @@ CATCHES = [
     pytest.param(_reassign_checked, id="driver reassign check"),
     pytest.param(_reassign_merge_hook_faulted, id="driver reassign save, a merge hook's fault"),
     pytest.param(_former_driver_set, id="test-mode set-former-driver"),
-    pytest.param(_tiers_checked, id="season approval's tier check",
-                 marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
+    pytest.param(_tiers_checked, id="season approval's tier check"),
 ]
 
 

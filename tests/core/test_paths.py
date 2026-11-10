@@ -71,11 +71,6 @@ def test_symlinked_parent_escaping_root_is_rejected(root, tmp_path_factory, monk
         resolve_within_project_root("resources/escape/templates", root=root)
 
 
-#: Why a path refusal test fails until #283's build raises the member's refusal by name.
-PATH_REFUSAL = "#283: path resolution still refuses with a bare ValueError, not Refused"
-
-
-@pytest.mark.xfail(strict=True, reason=PATH_REFUSAL)
 def test_empty_input_is_rejected(root):
     """An empty directory is the member's refusal, in the words they are shown."""
     from leaguebot.core.models.refusal import Refused
@@ -84,7 +79,6 @@ def test_empty_input_is_rejected(root):
         resolve_within_project_root("   ", root=root)
 
 
-@pytest.mark.xfail(strict=True, reason=PATH_REFUSAL)
 def test_error_carries_both_given_and_resolved(root):
     """A path outside the root is the member's refusal, carrying what was given and where it
     resolves."""
