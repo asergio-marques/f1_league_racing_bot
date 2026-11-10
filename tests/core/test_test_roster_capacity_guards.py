@@ -246,51 +246,63 @@ async def test_a_driver_past_the_standings_rows_is_refused_but_a_reserve_is_not(
     assert isinstance(reserve, dict), "a reserve adds no entry to the classification"
 
 
-@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
-async def test_the_command_refuses_it_in_placements(tmp_path):
-    """Through the cog, in the one stage the roster may change in (issue #220).
+async def test_the_command_refuses_it_in_placements(tmp_path, monkeypatch):
+    """Through the cog, on the bot the builder makes, in the one stage the roster may change in.
 
-    Nothing about the stage is stubbed: the season is in Placements, the roster change is
-    allowed there, and it is the template that refuses it — with the bot's own placement
-    service, handed the image module's drawing, as the builder wires it. The refusal is logged,
-    as every refusal of a command that changes something is.
+    `season_league`'s season 3 is in Placements under test mode, McLaren in Am holding Charles in
+    its first seat and its second seat free, and the driver standings template holds one row, so
+    Am's standings could not draw a second driver. Admin (77) runs `/test-mode roster add` of Mock
+    to McLaren in Am. Nothing about the stage is stubbed: the roster change is allowed there, and
+    it is the template that refuses it, measured by the image module's drawing as the bot's
+    placement service measures it. Admin is refused at once, seen by them alone, the reply saying
+    the driver was **not** assigned; nothing is queued, no fake driver is created, nothing is
+    audited, and the log channel takes the refusal as its only line, naming the command and Admin.
     """
-    from types import SimpleNamespace
-
-    from leaguebot.core.cogs.test_mode_cog import TestModeCog
+    from leaguebot.core.cogs import test_mode_cog
+    from leaguebot.core.services.placement_service import PlacementService
+    from tests.support.change_queue import change_rows, member
+    from tests.support.season_league import AM, MCLAREN, season_league
+    from tests.support.settings_league import audit_rows, said, unruled
+    from tests.support.settings_league import interaction as member_asks
     from tests.support.undecorate import undecorate
 
-    path, _divisions = await _seed(tmp_path)
-    assert isinstance(await _add(path, None, TEAMS[0], name="First"), dict)
-    bot = MagicMock()
-    bot.db_path = path
-    bot.config_service.get_server_config = AsyncMock(
-        return_value=SimpleNamespace(
-            test_mode_active=True, test_mode_nationality_required=True
-        )
+    league = await season_league(tmp_path, test_mode=True)
+    await league.write(
+        "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 2)", MCLAREN
     )
-    bot.output_router.post_log = AsyncMock()
-    bot.placement_service = _service(path, {DRIVERS: _standings(tmp_path, rows=1)})
-    cog = TestModeCog.__new__(TestModeCog)
-    cog.bot = bot
-    interaction = MagicMock()
-    interaction.user.id = 77
-    interaction.user.display_name = "Admin"
-    interaction.client = bot
-    interaction.command.qualified_name = "test-mode roster add"
-    interaction.response.is_done = MagicMock(return_value=False)
-    interaction.response.send_message = AsyncMock()
+    templated = _service(league.db_path, {DRIVERS: _standings(tmp_path, rows=1)})
+    measure = PlacementService.guard_roster_capacity
 
-    await undecorate(TestModeCog.roster_add)(cog, interaction, "Mock", TEAMS[0], "Alpha")
+    async def _measured(service, division_id, added):
+        """The bot's placement service, measuring against the one-row standings template."""
+        await measure(templated, division_id, added)
 
-    reply = interaction.response.send_message.await_args.args[0]
-    assert reply.startswith("⛔")
+    monkeypatch.setattr(PlacementService, "guard_roster_capacity", _measured)
+    cog = test_mode_cog.TestModeCog.__new__(test_mode_cog.TestModeCog)
+    cog.bot = league.bot
+    interaction = member_asks(
+        league.bot, "test-mode roster add", user=member(77, "Admin", "Admin#0001")
+    )
+
+    await undecorate(test_mode_cog.TestModeCog.roster_add)(
+        cog, interaction, "Mock", "McLaren", "Am", None
+    )
+
+    [reply] = said(interaction)
+    assert reply.startswith("⛔ ")
     assert "**not** assigned" in reply
-    assert await _seated(path) == 1
-    [line] = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
-    assert line.startswith("⛔ ")
-    assert "/test-mode roster add" in line
-    assert "refused for Admin (<@77>)" in line
+    [sent] = interaction.response.send_message.await_args_list
+    assert sent.kwargs.get("ephemeral") is True
+    assert await change_rows(league.db_path) == []
+    assert await league.rows("SELECT 1 FROM driver_profiles WHERE is_test_driver = 1") == []
+    assert await league.rows(
+        "SELECT 1 FROM driver_season_assignments WHERE division_id = ? "
+        "AND driver_profile_id IN (SELECT id FROM driver_profiles WHERE is_test_driver = 1)", AM
+    ) == []
+    assert await audit_rows(league.db_path) == []
+    assert [unruled(str(line)) for line in league.bot.log_channel.sent] == [
+        f"⛔ `/test-mode roster add` refused for Admin (`<@77>`) — {reply[2:]}"
+    ]
 
 
 # ── /test-mode roster add-bulk ────────────────────────────────────────────
