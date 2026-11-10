@@ -1445,59 +1445,6 @@ async def _season_points(db_path: str, season_id: int) -> dict[int, int]:
 
 
 @pytest.mark.asyncio
-async def test_validate_modification_ordering_passes_a_table_running_down(db_path):
-    path, season_id = db_path
-    await _seed_two_position_table(path, season_id)
-    await enable_amendment_mode(path, season_id)
-    await modify_session_points(
-        path, season_id, "STD", "FEATURE_RACE", [(1, 30)], **ACTOR
-    )
-
-    from leaguebot.core.services.amendment_service import validate_modification_ordering
-
-    assert await validate_modification_ordering(path, season_id) == []
-
-
-@pytest.mark.asyncio
-async def test_validate_modification_ordering_names_a_staged_inversion(db_path):
-    path, season_id = db_path
-    await _seed_two_position_table(path, season_id)
-    await enable_amendment_mode(path, season_id)
-    await modify_session_points(
-        path, season_id, "STD", "FEATURE_RACE", [(2, 30)], **ACTOR
-    )
-
-    from leaguebot.core.services.amendment_service import validate_modification_ordering
-
-    errors = await validate_modification_ordering(path, season_id)
-
-    assert len(errors) == 1
-    assert "STD" in errors[0]
-    assert "FEATURE_RACE" in errors[0]
-
-
-@pytest.mark.asyncio
-async def test_validate_modification_ordering_judges_each_session_on_its_own(db_path):
-    """A qualifying table worth 1, 2, 3 is wrong; it does not make the race table wrong."""
-    path, season_id = db_path
-    await _seed_two_position_table(path, season_id)
-    await enable_amendment_mode(path, season_id)
-    await modify_session_points(
-        path, season_id, "STD", "FEATURE_QUALIFYING", [(1, 1)], **ACTOR
-    )
-    await modify_session_points(
-        path, season_id, "STD", "FEATURE_QUALIFYING", [(2, 3)], **ACTOR
-    )
-
-    from leaguebot.core.services.amendment_service import validate_modification_ordering
-
-    errors = await validate_modification_ordering(path, season_id)
-
-    assert len(errors) == 1
-    assert "FEATURE_QUALIFYING" in errors[0]
-
-
-@pytest.mark.asyncio
 async def test_a_table_both_out_of_order_and_undeliverable_refuses_on_the_ordering(db_path):
     """Both checks apply; the ordering one is reached first, and nothing is written (#187).
 

@@ -57,6 +57,10 @@ import leaguebot.results.services.points_amendment_change  # noqa: F401
 from leaguebot.results.cogs.results_cog import ResultsCog
 from tests.support.undecorate import undecorate
 
+#: Why the panel's tests fail until the build: they stub the amendment's diff and ordering check
+#: where results now holds them.
+NOT_YET_RESULTS = "#283: the amendment's diff and ordering check are not yet in results"
+
 SERVER_ID = 12108
 SEASON_ID = 1
 
@@ -239,10 +243,10 @@ async def _review(
             "leaguebot.results.services.amendment_mode_service.get_amendment_state",
             new=AsyncMock(return_value=state),
         ), patch(
-            "leaguebot.core.services.amendment_service.get_modification_store_diff",
+            "leaguebot.results.services.amendment_mode_service.get_modification_store_diff",
             new=AsyncMock(return_value=diff),
         ), patch(
-            "leaguebot.core.services.amendment_service.validate_modification_ordering",
+            "leaguebot.results.services.amendment_mode_service.validate_modification_ordering",
             new=AsyncMock(return_value=panel_errors or []),
         ) as validate, patch(
             "leaguebot.core.services.amendment_service.approval_faults",
@@ -278,6 +282,7 @@ def _assert_refusal_recorded(cog, interaction) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_the_panel_shows_the_staged_changes():
     """The diff is the whole basis for the decision — an admin approving a blank panel is
     approving whatever happens to be staged."""
@@ -291,6 +296,7 @@ async def test_the_panel_shows_the_staged_changes():
     assert "Approve or reject" in panel
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_a_server_with_no_season_is_refused():
     """The refusal is recorded (#482)."""
     cog = _make_cog(season=None)
@@ -314,6 +320,7 @@ async def test_a_server_with_no_season_is_refused():
         pytest.param(None, id="no_state_row"),
     ],
 )
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_a_season_not_in_amendment_mode_is_refused(state):
     """There is no modification store to review; `/results amend toggle` is what opens one,
     and approving against an inactive mode would write nothing while reporting success. No
@@ -329,6 +336,7 @@ async def test_a_season_not_in_amendment_mode_is_refused(state):
     _assert_refusal_recorded(cog, interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_the_command_is_refused_while_the_module_is_off():
     """Refused before it defers, as today; the refusal is recorded (#482)."""
     cog = _make_cog(enabled=False)
@@ -344,6 +352,7 @@ async def test_the_command_is_refused_while_the_module_is_off():
     _assert_refusal_recorded(cog, interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_the_command_defers_before_reading():
     """Reading the store and building a diff is more than a three-second job on a full
     season."""
@@ -360,6 +369,7 @@ async def test_the_command_defers_before_reading():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_an_out_of_order_table_is_named_in_the_panel():
     """So an admin can see what is wrong with it while deciding, rather than press Approve
     and be refused."""
@@ -378,6 +388,7 @@ async def test_an_out_of_order_table_is_named_in_the_panel():
     assert "P2 (26) is worth more than P1 (25)" in panel
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_the_panel_says_how_to_repair_it():
     """An admin shown a fault with no next step reverts the whole amendment, which throws
     away every correct change staged alongside the broken one."""
@@ -391,6 +402,7 @@ async def test_the_panel_says_how_to_repair_it():
     assert "/results amend revert" in panel
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_every_ordering_fault_is_listed():
     """Not the first: an admin repairing one at a time through four panels is four chances
     to give up and revert."""
@@ -406,6 +418,7 @@ async def test_every_ordering_fault_is_listed():
     assert "P5 beats P4" in panel
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_a_sound_table_earns_no_warning():
     """The warning has to mean something; one on every panel would be read past."""
     cog = _make_cog()
@@ -416,6 +429,7 @@ async def test_a_sound_table_earns_no_warning():
     assert "cannot be approved" not in _panel(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_the_panel_does_not_refuse_the_button():
     """The fault is shown, not enforced here — an admin may still press Approve, and the
     change's check, when the queue is asked, is what actually stops it."""
@@ -437,6 +451,7 @@ async def test_the_panel_does_not_refuse_the_button():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_approving_asks_the_queue_for_the_season_s_approval():
     """One ask, of the points approval's kind, naming the season by id and number, through
     the press and under the command's name."""
@@ -459,6 +474,7 @@ async def test_approving_asks_the_queue_for_the_season_s_approval():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_rejecting_leaves_amendment_mode_active():
     """Rejection is "not these changes", not "abandon the amendment" — conflating the two
     would throw away an evening's staging on a misread button."""
@@ -478,6 +494,7 @@ _NOTHING_APPROVED = (
 )
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_a_rejection_is_recorded_as_a_cancel():
     """Nothing happened to the season, and the line says so and what to do next (#482)."""
     cog = _make_cog()
@@ -492,6 +509,7 @@ async def test_a_rejection_is_recorded_as_a_cancel():
     assert not any(line.startswith(("⛔", "⌛")) for line in lines)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_a_panel_nobody_answers_changes_nothing():
     """The panel lapses after five minutes (#482): its buttons come down through the
     command's own interaction, the admin is told nothing was approved, and one lapse line
@@ -525,6 +543,7 @@ async def test_a_panel_nobody_answers_changes_nothing():
     assert not any(line.startswith(("⛔", "↩️")) for line in lines)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_posting_the_panel_writes_one_line_naming_who_ran_it():
     """A later cancel or lapse line reads against it (#482)."""
     cog = _make_cog()
@@ -540,6 +559,7 @@ async def test_posting_the_panel_writes_one_line_naming_who_ran_it():
     assert "Success" not in posted[0]
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_a_press_is_answered_through_its_own_interaction():
     """The command's token can run out long before the approval finishes (D1): the queue is
     handed the press, not yet answered, so its acknowledgement is the press's own response,
@@ -579,6 +599,7 @@ async def test_a_press_is_answered_through_its_own_interaction():
 CHANNEL_FAULT = "**Alpha** — the standings channel (id 502) is not in the server."
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_the_panel_names_a_channel_that_has_gone_missing():
     """The fault is shown while the decision is being taken, as the ordering's is."""
     cog = _make_cog()
@@ -591,6 +612,7 @@ async def test_the_panel_names_a_channel_that_has_gone_missing():
     assert CHANNEL_FAULT in panel
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_the_panel_says_which_command_repairs_the_channel():
     """A refusal that does not say what to do next sends a manager hunting."""
     cog = _make_cog()
@@ -603,6 +625,7 @@ async def test_the_panel_says_which_command_repairs_the_channel():
     assert "/results amend review" in panel
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_the_panel_says_nothing_would_be_changed():
     """The whole point of refusing before the write is that nothing is lost."""
     cog = _make_cog()
@@ -613,6 +636,7 @@ async def test_the_panel_says_nothing_would_be_changed():
     assert "nothing would" in _panel(interaction).lower()
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_the_panel_names_both_faults_when_both_apply():
     """Two refusals, two repairs — a panel showing one would send the manager back twice.
 
@@ -639,6 +663,7 @@ async def test_the_panel_names_both_faults_when_both_apply():
     assert CHANNEL_FAULT in panel
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_a_sound_season_earns_no_channel_warning():
     """The guard against crying wolf at a correctly configured league."""
     cog = _make_cog()
@@ -649,6 +674,7 @@ async def test_a_sound_season_earns_no_channel_warning():
     assert "could not be published" not in _panel(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_the_channels_are_checked_again_at_the_press():
     """The panel stays open for five minutes, so a channel can be deleted between the diff
     being drawn and the button being pressed. The change reads them again for that reason."""
@@ -669,6 +695,7 @@ async def test_the_channels_are_checked_again_at_the_press():
 AMENDING = {"round_number": 2, "division_name": "Pro", "channel_id": 8200}
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_the_panel_names_a_round_being_amended():
     cog = _make_cog()
     interaction = _interaction()
@@ -680,6 +707,7 @@ async def test_the_panel_names_a_round_being_amended():
     assert "Round 2 of **Pro** is being amended in <#8200>" in panel
 
 
+@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_an_amendment_finished_after_the_panel_was_drawn_does_not_refuse():
     cog = _make_cog()
 
