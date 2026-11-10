@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 from collections import Counter
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
@@ -129,21 +129,17 @@ def _check(seasons: "SeasonService") -> Callable[[CheckContext], Awaitable[Verdi
 
 def _warnings(moments: list[datetime], now: datetime) -> list[str]:
     """The warnings the copy's *moments* earn, judged against *now*, each given once."""
-
-    def aware(moment: datetime) -> datetime:
-        return moment.replace(tzinfo=timezone.utc) if moment.tzinfo is None else moment
-
     warnings: list[str] = []
     for moment in moments:
-        if aware(moment) < now:
+        if moment < now:
             warnings.append(
-                f"⚠️ One or more shifted datetimes are in the past: {discord_ts(aware(moment))}"
+                f"⚠️ One or more shifted datetimes are in the past: {discord_ts(moment)}"
             )
             break
     for moment, count in Counter(moments).items():
         if count > 1:
             warnings.append(
-                f"⚠️ Multiple rounds share the same shifted datetime: {discord_ts(aware(moment))}"
+                f"⚠️ Multiple rounds share the same shifted datetime: {discord_ts(moment)}"
             )
             break
     return warnings
