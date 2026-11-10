@@ -533,3 +533,32 @@ async def test_a_re_key_keeps_the_old_account_listed(tmp_path):
             (profile_id, OLD_USER),
             (profile_id, NEW_USER),
         ]
+
+
+async def test_drivers_are_listed_by_state_oldest_profile_first(tmp_path):
+    """Four drivers, two Unassigned, one Pending Signup Completion and one Assigned: asked for the
+    first two states, the three in them come back oldest profile first, each with its account and
+    state; asked for no state, none come back."""
+    from leaguebot.core.services.driver_service import drivers_in_states
+
+    path = str(tmp_path / "states.db")
+    await run_migrations(path)
+    async with get_connection(path) as db:
+        for pid, user, state in [
+            (1, "11", "UNASSIGNED"), (2, "22", "ASSIGNED"),
+            (3, "33", "PENDING_SIGNUP_COMPLETION"), (4, "44", "UNASSIGNED"),
+        ]:
+            await db.execute(
+                "INSERT INTO driver_profiles (id, discord_user_id, current_state) VALUES (?, ?, ?)",
+                (pid, user, state),
+            )
+        await db.commit()
+        listed = await drivers_in_states(db, ("UNASSIGNED", "PENDING_SIGNUP_COMPLETION"))
+        none = await drivers_in_states(db, ())
+
+    assert listed == [
+        {"id": 1, "discord_user_id": "11", "current_state": "UNASSIGNED"},
+        {"id": 3, "discord_user_id": "33", "current_state": "PENDING_SIGNUP_COMPLETION"},
+        {"id": 4, "discord_user_id": "44", "current_state": "UNASSIGNED"},
+    ]
+    assert none == []

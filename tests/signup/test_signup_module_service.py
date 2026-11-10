@@ -666,3 +666,15 @@ async def test_the_drivers_mid_signup_are_listed_oldest_first_with_the_channel_t
         ("1", pending, 501), ("2", review, None), ("4", pending, None),
     ]
     assert await svc.drivers_mid_signup(set()) == []
+
+
+async def test_a_driver_with_no_account_has_no_signup(db_path):
+    """A signup on the books, asked for a driver with no account: there is no signup to give."""
+    from leaguebot.signup.services.signup_module_service import (
+        SignupModuleService,
+        driver_signup_on,
+    )
+
+    await _save_record(SignupModuleService(db_path), db_path, _make_record("u1"))
+    async with get_connection(db_path) as db:
+        assert await driver_signup_on(db, []) is None

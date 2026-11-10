@@ -197,19 +197,24 @@ class TestExportRow:
         ) == expected
 
     async def test_seed_ordering_by_total_lap_ms(self, tmp_path):
-        """Lower total_lap_ms → lower seed (earlier in list → higher priority)."""
+        """Lower total_lap_ms → lower seed (earlier in list → higher priority). A driver with no
+        time on record, though they signed up first, is seeded last, in the export and the list
+        alike (the signup specification: "Drivers with no recorded time shall be seeded last")."""
         from leaguebot.signup.services.signup_module_service import _fmt_ms  # type: ignore
 
         db_path = await _seed(
             tmp_path,
             [
+                {"discord_user_id": "no_time", "total_lap_ms": None},
                 {"discord_user_id": "slow", "total_lap_ms": 90000},
                 {"discord_user_id": "fast", "total_lap_ms": 83456},
             ],
         )
         rows, _ = await _export(db_path)
-        assert [r["discord_user_id"] for r in rows] == ["fast", "slow"]
-        assert [r["seed"] for r in rows] == [1, 2]
+        listed = await _service(db_path).get_unassigned_drivers_seeded()
+        assert [r["discord_user_id"] for r in rows] == ["fast", "slow", "no_time"]
+        assert [r["discord_user_id"] for r in listed] == ["fast", "slow", "no_time"]
+        assert [r["seed"] for r in rows] == [1, 2, 3]
         assert rows[0]["total_lap_fmt"] == _fmt_ms(83456)
 
     async def test_a_tie_goes_to_whoever_submitted_first_not_whoever_was_corrected_last(
