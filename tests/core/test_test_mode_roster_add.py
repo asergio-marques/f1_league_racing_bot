@@ -35,7 +35,7 @@ _NAMED = f"Admin (`<@{ACTOR_ID}>`)"
 MOCK_ID = "9000000000000000001"
 
 _AUDIT_TYPE = "TEST_DRIVER_ADDED"
-_DOING = "Adding fake driver **Mock Alpha** to **McLaren** in **Am**"
+_DOING = "Adding fake driver **Mock Alpha** to **McLaren F1 Team** in **Am**"
 _NOT_IN_TEST_MODE = "⛔ This command is only available when test mode is enabled."
 _NOT_PLACING = "⛔ The test roster can only be changed while the season is in placements."
 _NO_SEAT = "⛔ No free seats available in team 'McLaren'."
