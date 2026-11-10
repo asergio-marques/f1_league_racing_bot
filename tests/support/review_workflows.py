@@ -30,9 +30,8 @@ def sign_up_confirmation_refused(bot: Any) -> None:
     """Give *bot* the hook a season's confirmation is refused through (`confirmation_refused`),
     results' refusals signed up to it as the builder signs them: handed *bot*'s module service and
     database, then what the hook is called with. Results' function is looked up as the hook is
-    called, so a stand-in bot carries the hook whether or not any workflow asks it yet. This copies
-    the builder's sign-up, as no builder function for it exists before the build; once one does,
-    this calls it."""
+    called, so a stand-in bot carries the hook whether or not any workflow asks it yet. It mirrors
+    the builder's `_sign_up_to_confirmation_refused`."""
     from leaguebot.core.utils.hooks import AwaitedHook
 
     async def results_refusals(*args: Any, **kwargs: Any) -> Any:
@@ -50,7 +49,8 @@ def sign_up_driver_names_read(bot: Any) -> None:
     """Give *bot* the hook a driver's name is read through (`driver_names_read`), signup's names
     signed up as the builder signs them: signup's module service over *bot*'s database, then the
     drivers' profile ids. Signup's function is looked up as the hook is called, so a stand-in bot
-    carries the hook whether or not any check asks it yet."""
+    carries the hook whether or not any check asks it yet. It mirrors the builder's
+    `_sign_up_to_driver_names_read`."""
     from leaguebot.core.utils.hooks import AwaitedHook
 
     async def signup_names(*args: Any, **kwargs: Any) -> Any:
@@ -71,8 +71,8 @@ def sign_up_division_channel_faults_read(bot: Any) -> None:
     then attendance's two. Weather and results are handed *bot*'s module service and database,
     attendance its service over that database and the module service; then each is handed the
     divisions judged and the server. Each module's function is looked up as the hook is called, so
-    a stand-in bot carries the hook whether or not any check asks it yet. This copies the
-    builder's sign-up, as no builder function for it exists before the build."""
+    a stand-in bot carries the hook whether or not any check asks it yet. It mirrors the
+    builder's `_sign_up_to_division_channel_faults_read`."""
     from leaguebot.core.utils.hooks import AwaitedHook
 
     async def weather_faults(*args: Any, **kwargs: Any) -> Any:
@@ -109,8 +109,8 @@ def sign_up_division_lines_read(bot: Any) -> None:
     attendance's two, handed its service and the module service; then each is handed the season
     and its divisions. What each is handed is taken off *bot* as it signs up, as the builder's
     partials take it; each module's function is looked up as the hook is called, so a stand-in
-    bot carries the hook whether or not the review asks it yet. This copies the builder's
-    sign-up, as no builder function for it exists before the build."""
+    bot carries the hook whether or not the review asks it yet. It mirrors the
+    builder's `_sign_up_to_division_lines_read`."""
     from leaguebot.core.utils.hooks import AwaitedHook
 
     db_path, service, modules = bot.db_path, bot.attendance_service, bot.module_service

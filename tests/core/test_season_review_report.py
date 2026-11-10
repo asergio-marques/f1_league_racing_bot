@@ -161,9 +161,6 @@ def _division(**overrides):
         mention_role_id=555,
         calendar_channel_id=701,
         lineup_channel_id=702,
-        results_channel_id=703,
-        standings_channel_id=704,
-        penalty_channel_id=705,
         forecast_channel_id=706,
     )
     fields.update(overrides)
@@ -276,15 +273,10 @@ def _cog(
     bot.team_service.get_division_teams = AsyncMock(
         return_value=teams if teams is not None else [{"name": "Red", "full_name": "Red"}]
     )
-    # The divisions the review shows, read with the season's divisions; until the reader of
-    # them with results' channels goes, through it too.
-    from leaguebot.core.services.season_service import SeasonService
-
+    # The divisions the review shows, read with the season's divisions.
     bot.season_service.get_divisions = AsyncMock(
         return_value=divisions if divisions is not None else [_division()]
     )
-    if hasattr(SeasonService, "get_divisions_with_results_config"):
-        bot.season_service.get_divisions_with_results_config = bot.season_service.get_divisions
     bot.season_service.get_division_rounds = AsyncMock(
         return_value=rounds if rounds is not None else [_round()]
     )
@@ -655,7 +647,7 @@ async def test_an_unset_channel_says_so_rather_than_being_left_out(db_path):
     async with get_connection(db_path) as db:
         await db.execute("UPDATE division_results_config SET penalty_channel_id = NULL")
         await db.commit()
-    cog = _cog(db_path, divisions=[_division(penalty_channel_id=None, lineup_channel_id=None)])
+    cog = _cog(db_path, divisions=[_division(lineup_channel_id=None)])
     messages = await _review(cog, _interaction())
 
     public = _public(messages)
