@@ -601,8 +601,6 @@ class TestModeCog(commands.Cog):
             what=describe(interaction),
         )
 
-    # /test-mode roster remove --------------------------------------------
-
     # /test-mode roster add-bulk -------------------------------------------
 
     @roster.command(
@@ -613,9 +611,10 @@ class TestModeCog(commands.Cog):
     async def roster_add_bulk(self, interaction: discord.Interaction) -> None:
         """Open the box a roster is pasted into.
 
-        **Does not defer.** `send_modal` has to be the interaction's first response, which
-        inverts the rule the rest of this cog follows — see `roster_add` above, which
-        defers as normal. Do not "correct" it.
+        **Does not defer.** `send_modal` has to be the interaction's first response, so nothing
+        before it may answer or defer but a refusal that ends the command. `roster_add` hands
+        the interaction to the change queue, which answers it; this command asks nothing until
+        the form is submitted. Do not "correct" it.
         """
         config = await self.bot.config_service.get_server_config(
 
@@ -631,6 +630,8 @@ class TestModeCog(commands.Cog):
             return
 
         await interaction.response.send_modal(_RosterImportModal(self))
+
+    # /test-mode roster remove --------------------------------------------
 
     @roster.command(
         name="remove",

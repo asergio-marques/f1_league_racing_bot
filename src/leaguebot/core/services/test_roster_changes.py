@@ -1,8 +1,14 @@
-"""`core.test_roster_add`: `/test-mode roster add`, on the change queue.
+"""The test roster's four commands on the change queue: `core.test_roster_add`,
+`core.test_roster_add_bulk`, `core.test_roster_remove` and `core.test_roster_clear`.
 
-A change type of its own on the league lane, registered by the builder, **carrying the fake driver's
-name, the team as typed (its shorthand), the division as typed and the nationality as typed** (None
-where none was given). The acknowledgement names the team by its full name, which the ask reads
+Each is a change type of its own on the league lane, registered by the builder, judged without a
+write at the ask and again as the change starts, and one SAVE of its rows and its audit entries on
+the connection the queue hands it. A fault in a save stops the lane, and the discard reply says
+nothing was changed. What the add-bulk, remove and clear kinds judge and write is in their
+factories' docstrings; what follows is `core.test_roster_add`'s.
+
+`/test-mode roster add` is **a change carrying the fake driver's name, the team as typed (its
+shorthand), the division as typed and the nationality as typed** (None where none was given). The acknowledgement names the team by its full name, which the ask reads
 into the payload (`team_full_name`).
 
 **The refusals are the check's**, judged at the ask and again as the change starts, in the league's

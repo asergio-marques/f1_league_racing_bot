@@ -367,10 +367,10 @@ async def judge_bulk_on(
     half-applied import is a state no script can work against, and pasting the file again after
     fixing one line would duplicate everything that landed the first time.
 
-    **The IDs the file names are the IDs written.** `add_test_driver` allocates
-    `MAX(existing) + 1`, which lines up with the generator's own numbering only on a clean
-    season; the sibling scripts key on those IDs absolutely, so here the file is
-    authoritative. See `core/utils/roster_import.py`.
+    **The IDs the file names are the IDs written.** The single add (`judge_add_on`, then
+    `seat_on`) allocates `MAX(existing) + 1`, which lines up with the generator's own numbering
+    only on a clean season; the sibling scripts key on those IDs absolutely, so here the file
+    is authoritative. See `core/utils/roster_import.py`.
 
     **A division that already holds drivers is refused**, rather than appended to. The CSV
     describes a whole grid, and importing it twice — or over a roster seated by hand —

@@ -467,7 +467,8 @@ class PlacementService:
         the classification — and a driver joins exactly one of them. Neither guard can tell
         which without this, and both run in a change's check (`guard_assign`, `guard_move`),
         before its save opens a transaction, where the same flag is read again from the row it
-        needs in hand anyway.
+        needs in hand anyway. `guard_roster_capacity` also runs inside the roster changes' save,
+        which judges once more on its own connection.
         """
         async with get_connection(self._db_path) as db:
             row = await (
