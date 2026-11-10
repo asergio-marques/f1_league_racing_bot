@@ -246,14 +246,14 @@ async def points_ordering_problems(db_path: str, season_id: int) -> list[str]:
     """Every place this season's points would score a lower position above a higher one.
 
     **One check because two surfaces ask the same question.** `/season placements-review` reports
-    what would block an approval and the approval refuses on it; a review that promised to
-    surface the blockers and did not look for this one sent a manager to an approval that then
-    refused, for a fault the report had just told them nothing about.
+    what would block an approval and the approval refuses on it; the review must look for every
+    fault the approval refuses on, or a manager is sent to an approval that refuses for a fault
+    the report told them nothing about.
 
     Two checks, because the points a season will run on can arrive from two directions.
     The attached server-level configs are what a first approval copies in, and until it
-    does the season's own table is empty — reading only that table is how this check came
-    to pass every first approval it was ever asked about. The season's own table is
+    does the season's own table is empty, so the season's table alone would pass every first
+    approval. The season's own table is
     read as well, because the snapshot writes with INSERT OR REPLACE and clears nothing
     first, so a season being approved a second time can be holding entries an earlier
     approval left behind that no attached config would mention.
@@ -313,7 +313,7 @@ async def team_name_problems(team_service: TeamService, season_id: int | None) -
     concern. The rule stands on the filename alone.
 
     Only a season in SETUP reaches here, so an already-approved season is never
-    re-validated and no team is renamed or removed by this rule's introduction.
+    re-validated.
 
     A stated exception (architecture.md, "A catch-all error handler"): the check only keeps a
     team name from becoming a bad artwork filename, so where the teams cannot be read it finds
