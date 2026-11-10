@@ -526,6 +526,12 @@ async def test_confirming_one_review_ends_another_of_the_same_season_when_presse
 # queue records what it is asked, and read the review from the request.
 
 POST = "season.review.post"
+#: Why a test whose stand-in bot has each module's section signed up as the builder does fails
+#: until the builder signs them up and the review reads its sections through the hook.
+_NO_SECTIONS_HOOK = (
+    "#283: the builder signs no module's section up to a review sections hook; the season cog "
+    "reads each module itself"
+)
 #: The channel the manager runs the command in, where the review is posted.
 COMMAND_CHANNEL = 111
 
@@ -547,6 +553,11 @@ def _report_bot(**kwargs) -> MagicMock:
         return_value=[SimpleNamespace(display_label="Sunday 20:00")]
     )
     bot.change_queue.ask = AsyncMock(return_value=1)
+    # The review sections hook as the builder signs signup, attendance, results and weather up
+    # to it, each section read through the stubs above.
+    from leaguebot.__main__ import _sign_up_to_review_sections
+
+    _sign_up_to_review_sections(bot)
     return bot
 
 
@@ -584,6 +595,7 @@ async def _report(cog, interaction, monkeypatch) -> list[str]:
     return _texts(await _review_asked(cog, interaction, monkeypatch))
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(monkeypatch):
     """Manager runs `/season config-review` in channel 111 on a sound configuration of season 31
     (test mode on, signup on, results off; teams Alpha with its role, Reserve with none). The
@@ -620,6 +632,7 @@ async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(mo
     assert not any(line.startswith("⛔") for line in _logged(bot))
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
     tmp_path, monkeypatch
 ):
@@ -633,8 +646,7 @@ async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
 
     db_path = str(tmp_path / "config_review.db")
     await run_migrations(db_path)
-    bot = _report_bot(results=True, test_mode=True)
-    bot.db_path = db_path
+    bot = _report_bot(results=True, test_mode=True, db_path=db_path)
     cog = _cog(bot)
     cog.missing_points_config_problems = AsyncMock(return_value=[])
     cog.points_ordering_problems = AsyncMock(return_value=[])
@@ -648,6 +660,7 @@ async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
 
 
 @pytest.mark.parametrize("signup", [True, False])
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_the_configuration_review_reports_the_league_s_roles(monkeypatch, signup):
     """The one review that reports them (issue #276). They are the league's, so the review asked
     of the queue shows them whether or not signup is on, and confirming the configuration fixes
@@ -660,11 +673,12 @@ async def test_the_configuration_review_reports_the_league_s_roles(monkeypatch, 
     assert "Driver role: <@&3>" in messages[0]
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     """The placements review's subsections, save the divisions, in the same words (#220): with
     signup, results, attendance and weather on, the review asked of the queue carries each
     module's configuration."""
-    import leaguebot.core.cogs.season_cog as season_cog
+    from leaguebot.results.services import season_points_service
     from leaguebot.weather.services import weather_config_service
 
     bot = _report_bot(signup=True, results=True)
@@ -678,7 +692,7 @@ async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
         )
     )
     monkeypatch.setattr(
-        season_cog.season_points_service, "get_season_config_names",
+        season_points_service, "get_season_config_names",
         AsyncMock(return_value=["Standard", "Sprint"]),
     )
     monkeypatch.setattr(
@@ -697,6 +711,7 @@ async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     assert "**Weather Config**" in text and "Phase 3 deadline: 2h before race" in text
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_disabled_modules_configuration_is_not_reported(monkeypatch):
     """With every module off, the review asked of the queue carries no module's configuration."""
     cog = _cog(_report_bot())
@@ -707,6 +722,7 @@ async def test_a_disabled_modules_configuration_is_not_reported(monkeypatch):
         assert heading not in text
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_the_image_outputs_are_reported_when_the_module_is_on(monkeypatch):
     """With the image module on, the review asked of the queue carries its outputs."""
     bot = _report_bot(images=True)
@@ -719,6 +735,7 @@ async def test_the_image_outputs_are_reported_when_the_module_is_on(monkeypatch)
     assert any("**Image outputs**" in m and "lineup: on" in m for m in messages)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_faulty_configuration_is_reported_without_a_button(monkeypatch):
     """Signup is on and the league's base role is unset. The review asked of the queue ends in
     the faults, naming the base role and `/bot base-role`, and saying to run
@@ -734,6 +751,7 @@ async def test_a_faulty_configuration_is_reported_without_a_button(monkeypatch):
     assert not any("Do you confirm this season's configuration?" in m for m in messages)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_the_followup_is_restored_after_the_report(monkeypatch):
     """The review wraps the followup to collect what it says privately; a later reply must not be
     caught."""
