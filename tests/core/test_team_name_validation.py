@@ -149,10 +149,13 @@ def test_the_key_and_the_asset_filename_come_from_one_rule():
 # feature rewrote.
 # ══════════════════════════════════════════════════════════════════════════
 
-from unittest.mock import MagicMock as _MagicMock  # noqa: E402
+import logging  # noqa: E402
 
-from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
 from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.team_service import TeamService  # noqa: E402
+
+#: The check still sits on the season cog, as `SeasonCog._team_name_problems`.
+_NOT_YET_A_SERVICE = "#283: the team-name check is not yet approval_checks.team_name_problems"
 
 
 async def _seed(path, server_teams, division_teams):
@@ -183,16 +186,19 @@ async def _seed(path, server_teams, division_teams):
 async def _review_problems(tmp_path, server_teams, division_teams):
     path = tmp_path / "review.db"
     await _seed(path, server_teams, division_teams)
-    cog = _MagicMock(bot=_MagicMock(db_path=str(path)))
-    return await SeasonCog._team_name_problems(cog, season_id=1)
+    from leaguebot.core.services import approval_checks
+
+    return await approval_checks.team_name_problems(TeamService(str(path)), 1)
 
 
 @pytest.mark.parametrize(
     "server_teams, division_teams",
     [
-        pytest.param(["Red Bull", "Ferrari"], ["Haas"], id="sound"),
+        pytest.param(["Red Bull", "Ferrari"], ["Haas"], id="sound",
+                     marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)),
         # FR-031 reaching the review, not the command alone.
-        pytest.param(["2Fast Motorsport"], ["9ers"], id="digit-led"),
+        pytest.param(["2Fast Motorsport"], ["9ers"], id="digit-led",
+                     marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)),
     ],
 )
 @pytest.mark.asyncio
@@ -202,6 +208,7 @@ async def test_season_review_passes_a_sound_team_list(tmp_path, server_teams, di
     assert problems == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 @pytest.mark.asyncio
 async def test_season_review_names_every_offending_team_not_just_the_first(tmp_path):
     """A manager fixing them one review at a time is a manager the check is failing."""
@@ -213,6 +220,7 @@ async def test_season_review_names_every_offending_team_not_just_the_first(tmp_p
     assert any("Reserve!" in p for p in problems)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 @pytest.mark.asyncio
 async def test_season_review_reports_the_scope_a_fault_was_found_in(tmp_path):
     problems = await _review_problems(tmp_path, ["!!!"], ["???"])
@@ -221,6 +229,7 @@ async def test_season_review_reports_the_scope_a_fault_was_found_in(tmp_path):
     assert any("Elite" in p for p in problems)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 @pytest.mark.asyncio
 async def test_season_review_catches_two_teams_normalising_alike(tmp_path):
     """No longer fatal at render (047), so the review is where it must be caught."""
@@ -229,6 +238,27 @@ async def test_season_review_catches_two_teams_normalising_alike(tmp_path):
     assert len(problems) == 1
     assert "red_bull" in problems[0]
 
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
+@pytest.mark.asyncio
+async def test_a_team_name_check_that_cannot_read_the_teams_stands_aside(tmp_path, caplog):
+    """A stated exception (architecture.md, "A catch-all error handler"): the check only keeps
+    a team name from becoming a bad artwork filename, so where the teams cannot be read it finds
+    nothing wrong, and the review and the approval carry on with the names unchecked. The fault
+    goes to the host's log and nowhere else."""
+    from leaguebot.core.services import approval_checks
+
+    unreadable = TeamService(str(tmp_path))  # a directory, which no connection can open
+
+    with caplog.at_level(logging.ERROR):
+        problems = await approval_checks.team_name_problems(unreadable, 1)
+
+    assert problems == []
+    assert any(
+        "team name check failed" in record.getMessage() and record.exc_info
+        for record in caplog.records
+    )
 
 # ── The rules every typed name is held to (#362) ──────────────────────────
 
