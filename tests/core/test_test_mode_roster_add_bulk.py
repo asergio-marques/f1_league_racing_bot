@@ -422,3 +422,40 @@ async def test_a_fault_in_the_save_seats_nobody(league, setup, text, divisions):
     )
     assert not any("database or disk is full" in text for text in said(interaction))
     assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
+async def test_the_same_roster_while_the_first_waits_is_refused_as_a_repeat(league):
+    """The core specification's "How a change is carried out": a request repeating a change that
+    has not started, with nothing else asked for since on its lane, is refused, saying so. The
+    season is in Placements under test mode, Am empty and McLaren's three seats free. Admin (77)
+    submits `/test-mode roster add-bulk`'s form naming Mock Alpha and Mock Beta at McLaren in Am
+    and is acknowledged; before the queue runs it, they submit the same roster again. The second
+    is refused at once, seen by them alone, in the queue's words ("... has already been asked for
+    and has not started yet, so it was not asked for again."), and the log channel takes that
+    refusal as a line; only the one change is queued. The queue runs it: Mock Alpha and Mock Beta
+    are the only fake drivers, with one audit entry each, and the log channel holds the refusal
+    and then the one success line."""
+    from leaguebot.core.utils.log_lines import reply_reason
+    from tests.support.setup_rounds import repeated
+
+    first, repeat = _asks(league), _asks(league)
+
+    await _submit(league, first)
+    await _submit(league, repeat)
+
+    assert said(first)[0].startswith(acknowledged(_DOING))
+    assert said(repeat) == [repeated(_DOING)]
+    calls = repeat.response.send_message.await_args_list + repeat.followup.send.await_args_list
+    assert calls and all(call.kwargs.get("ephemeral") is True for call in calls)
+    assert len(await change_rows(league.db_path)) == 1
+    await run_queue(league.bot)
+
+    assert [row["discord_user_id"] for row in await _fake_drivers(league)] == [ALPHA, BETA]
+    assert [row["change_type"] for row in await audit_rows(league.db_path)] == [_AUDIT_TYPE] * 2
+    refusal, success = _lines(league)
+    assert refusal == (
+        f"⛔ the “Import a test roster” form refused for {_NAMED} — "
+        f"{reply_reason(repeated(_DOING))}"
+    )
+    assert success.startswith(f"{_NAMED} | /test-mode roster add-bulk | Success")

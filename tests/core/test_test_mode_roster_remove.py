@@ -317,3 +317,39 @@ async def test_a_fault_in_the_save_removes_nobody(league):
     )
     assert not any("database or disk is full" in text for text in said(interaction))
     assert await stopped_job(league.db_path) is None
+
+
+@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
+async def test_the_same_ask_while_the_first_waits_is_refused_as_a_repeat(league):
+    """The core specification's "How a change is carried out": a request repeating a change that
+    has not started, with nothing else asked for since on its lane, is refused, saying so. The
+    season is in Placements under test mode, Mock Alpha a fake driver in McLaren's second seat in
+    Am beside Charles. Admin (77) runs `/test-mode roster remove` with Mock Alpha's ID and is
+    acknowledged; before the queue runs it, they run it again, the same. The second is refused at
+    once, seen by them alone, in the queue's words ("... has already been asked for and has not
+    started yet, so it was not asked for again."), and the log channel takes that refusal as a
+    line; only the one change is queued. The queue runs it: Mock Alpha is gone and Charles stays,
+    with one audit entry, and the log channel holds the refusal and then the one success line."""
+    from leaguebot.core.utils.log_lines import reply_reason
+    from tests.support.setup_rounds import repeated
+
+    first, repeat = _asks(league), _asks(league)
+
+    await _ask(league, first)
+    await _ask(league, repeat)
+
+    assert said(first)[0].startswith(acknowledged(_DOING))
+    assert said(repeat) == [repeated(_DOING)]
+    calls = repeat.response.send_message.await_args_list + repeat.followup.send.await_args_list
+    assert calls and all(call.kwargs.get("ephemeral") is True for call in calls)
+    assert len(await change_rows(league.db_path)) == 1
+    await run_queue(league.bot)
+
+    assert await _drivers(league) == _BOTH[:1]
+    assert [row["change_type"] for row in await audit_rows(league.db_path)] == [_AUDIT_TYPE]
+    refusal, success = _lines(league)
+    assert refusal == (
+        f"⛔ `/test-mode roster remove` refused for {_NAMED} — "
+        f"{reply_reason(repeated(_DOING))}"
+    )
+    assert success.startswith(f"{_NAMED} | /test-mode roster remove | Success")
