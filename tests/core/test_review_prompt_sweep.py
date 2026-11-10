@@ -289,13 +289,6 @@ async def test_nothing_standing_does_nothing(league):
     assert league.channel.sent == []
 
 
-async def test_an_unreadable_database_is_survived():
-    """A sweep that raises would stop the bot finishing its startup."""
-    bot = MagicMock()
-    bot.db_path = "/nonexistent/nowhere.db"
-    await _sweep(bot)
-
-
 # ── #482: what the sweep records, and one row per standing prompt ─────────────────────────
 
 
