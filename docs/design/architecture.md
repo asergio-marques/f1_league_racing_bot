@@ -154,7 +154,9 @@ opening rules). Stewarding adds a second [STW-MOD-007].
 falling due, a round amended or its timed work armed again, a round's timing windows read, a round,
 a division or a season cancelled, a round's results made final, placements confirmed, a season's
 configuration confirmed, a review gathering its lines, the placements review gathering each
-division's lines, a division's channel faults read, a driver's name read, the divisions a driver's
+division's lines, a division's channel faults read, the use a channel is already put to read when a
+command sets it, the channels every module's settings hold read for the factory reset, which phases
+a round has had drawn read, a driver's name read, the divisions a driver's
 accounts raced in read, a driver's standing in a division read for the season's history, a season's
 fingerprint taken, a season's pending test-mode steps read, the test-mode review's marks read, a
 season's confirmation judged, a division's final round read, a season ending, a season, division,
