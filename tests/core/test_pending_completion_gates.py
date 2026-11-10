@@ -35,7 +35,7 @@ import pytest
 
 from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
 from leaguebot.results.cogs.results_cog import ResultsCog
-from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.cogs.division_cog import DivisionCog
 from leaguebot.core.cogs.team_cog import TeamCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage, status_of_stage
@@ -188,7 +188,7 @@ async def _team_reserve_role(bot, interaction):
 async def _calendar_sync(bot, interaction):
     """The sync is asked of the change queue once its gates pass (#439), so the queue's `ask`
     is recorded rather than run."""
-    cog = _cog(SeasonCog, bot)
+    cog = _cog(DivisionCog, bot)
     bot.change_queue.ask = AsyncMock(return_value=1)
     with patch("leaguebot.core.services.calendar_post_service.tracks_by_name", new=AsyncMock(return_value={})), \
             patch(
@@ -197,7 +197,7 @@ async def _calendar_sync(bot, interaction):
                     problem=None, notices=[], posted_as_image=False
                 )),
             ):
-        await undecorate(SeasonCog.division_calendar_sync)(cog, interaction, "Pro")
+        await undecorate(DivisionCog.division_calendar_sync)(cog, interaction, "Pro")
 
 
 async def _reserves_toggle(bot, interaction):

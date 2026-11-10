@@ -36,7 +36,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.cogs.division_cog import DivisionCog
 from leaguebot.core.db.database import run_migrations
 from leaguebot.core.models.season import Season, SeasonStage, SeasonStatus
 from leaguebot.core.services.calendar_post_service import CalendarPosting
@@ -106,7 +106,7 @@ async def _make_cog(*, season=_UNSET, divisions=None):
     bot.get_guild = MagicMock(return_value=MagicMock())
     # Whether `_queue_for` has built the database and attached the queue yet.
     bot.calendar_sync_queue_attached = False
-    cog = SeasonCog.__new__(SeasonCog)
+    cog = DivisionCog.__new__(DivisionCog)
     cog.bot = bot
     return cog
 
@@ -152,7 +152,7 @@ async def _sync(cog, interaction, *, name="Pro", posting=None):
         "leaguebot.core.services.calendar_post_service.post_division_calendar",
         new=AsyncMock(return_value=posting or _posting()),
     ) as post:
-        await undecorate(SeasonCog.division_calendar_sync)(cog, interaction, name)
+        await undecorate(DivisionCog.division_calendar_sync)(cog, interaction, name)
         await run_queue(cog.bot)
     return post
 

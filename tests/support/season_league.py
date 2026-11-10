@@ -217,6 +217,7 @@ class SeasonLeague:
 
     async def build(self) -> None:
         """The league's bot (`league_bot`), its server, services, cog and queue."""
+        from leaguebot.core.cogs.division_cog import DivisionCog
         from leaguebot.core.cogs.season_cog import SeasonCog
         from leaguebot.core.services.module_service import ModuleService
 
@@ -268,6 +269,8 @@ class SeasonLeague:
         bot.image_config_service.get_toggles = AsyncMock(return_value={})
         bot.image_validity_service.colour_shortfall = AsyncMock(return_value={})
         self.cog = SeasonCog(bot)
+        #: The cog of `/division`, the season's setup being the other's.
+        self.division_cog = DivisionCog(bot)
         bot.get_cog = MagicMock(side_effect=lambda name: self.cog if name == "SeasonCog" else None)
         league_queue(bot, db_path, now=self.clock)
 
@@ -1002,10 +1005,10 @@ async def cancel_round(league: SeasonLeague, division: str, number: int, *,
 async def cancel_division(league: SeasonLeague, name: str, *, confirm: str = "CONFIRM") -> Any:
     """Run `/division cancel` for *name*, as admin 77; the queue is not run. Gives the
     interaction."""
-    from leaguebot.core.cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.division_cog import DivisionCog
 
     interaction = _admin_interaction(league, "division cancel")
-    await undecorate(SeasonCog.division_cancel)(league.cog, interaction, name, confirm)
+    await undecorate(DivisionCog.division_cancel)(league.division_cog, interaction, name, confirm)
     return interaction
 
 

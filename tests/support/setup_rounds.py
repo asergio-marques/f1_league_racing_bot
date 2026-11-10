@@ -104,7 +104,7 @@ async def ask_duplicate(league: Any, source: str = "Pro", new_name: str = "Am", 
 
     import discord
 
-    from leaguebot.core.cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.division_cog import DivisionCog
     from tests.support.settings_league import interaction
     from tests.support.undecorate import undecorate
 
@@ -112,8 +112,8 @@ async def ask_duplicate(league: Any, source: str = "Pro", new_name: str = "Am", 
     role.id = role_id
     role.mention = f"<@&{role_id}>"
     asked = interaction(league.bot, "division duplicate")
-    await undecorate(SeasonCog.division_duplicate)(
-        SeasonCog(league.bot), asked, source, new_name, role, tier, day_offset, hour_offset
+    await undecorate(DivisionCog.division_duplicate)(
+        DivisionCog(league.bot), asked, source, new_name, role, tier, day_offset, hour_offset
     )
     return asked
 

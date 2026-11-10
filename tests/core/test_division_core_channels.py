@@ -44,7 +44,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.cogs.division_cog import DivisionCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     Clock,
@@ -118,12 +118,12 @@ async def _make_db(tmp_path, name: str = "module_channels", *, season: bool = Tr
     return db_path
 
 
-async def _make_cog(db_path: str) -> SeasonCog:
+async def _make_cog(db_path: str) -> DivisionCog:
     """The cog on the league's bot (`league_bot`), with the league's log channel and its real
     change queue, "now" pinned to `NOW`."""
     bot = await league_bot(db_path)
     league_queue(bot, db_path, now=Clock(NOW))
-    cog = SeasonCog.__new__(SeasonCog)
+    cog = DivisionCog.__new__(DivisionCog)
     cog.bot = bot
     return cog
 
@@ -157,7 +157,7 @@ def _lines(cog) -> list[str]:
 async def _ask(cog, which, interaction, *, name="Division 1", channel=None):
     """The manager runs the command, and nothing more: the queue is not run."""
     attr = COMMANDS[which][0]
-    body = undecorate(getattr(SeasonCog, attr))
+    body = undecorate(getattr(DivisionCog, attr))
     return await body(cog, interaction, name, channel or _channel())
 
 

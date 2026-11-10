@@ -45,7 +45,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.cogs.division_cog import DivisionCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.season_service import SeasonImmutableError
 from tests.support.setup_rounds import (
@@ -113,7 +113,7 @@ def _make_cog(
     ),
     immutable: bool = False,
     rounds=None,
-) -> SeasonCog:
+) -> DivisionCog:
     bot = MagicMock()
     bot.db_path = db_path
     bot.season_service = MagicMock()
@@ -136,7 +136,7 @@ def _make_cog(
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
 
-    return SeasonCog(bot)
+    return DivisionCog(bot)
 
 
 def _interaction(*, channel=None):
@@ -189,7 +189,7 @@ async def _cancel(cog, interaction, *, name="Pro", confirm="CONFIRM"):
     """Run the command. What the change does once asked is the change queue's, and is tested in
     `test_division_cancel_change.py`; here the command is held to asking it, once, for the right
     division."""
-    await undecorate(SeasonCog.division_cancel)(cog, interaction, name, confirm)
+    await undecorate(DivisionCog.division_cancel)(cog, interaction, name, confirm)
 
 
 def _asked(cog) -> tuple[str, dict]:
@@ -244,7 +244,7 @@ async def _ask_rename(league, current: str = "Pro", new: str = "Elite"):
     from tests.support.settings_league import interaction
 
     asked = interaction(league.bot, "division rename")
-    await undecorate(SeasonCog.division_rename)(SeasonCog(league.bot), asked, current, new)
+    await undecorate(DivisionCog.division_rename)(DivisionCog(league.bot), asked, current, new)
     return asked
 
 
@@ -254,8 +254,8 @@ async def _ask_amend(league, name: str = "Pro", *, new_name=None, tier=None, rol
     from tests.support.settings_league import interaction
 
     asked = interaction(league.bot, "division amend")
-    await undecorate(SeasonCog.division_amend)(
-        SeasonCog(league.bot), asked, name, new_name, tier, role
+    await undecorate(DivisionCog.division_amend)(
+        DivisionCog(league.bot), asked, name, new_name, tier, role
     )
     return asked
 
@@ -265,7 +265,7 @@ async def _ask_delete(league, name: str = "Pro"):
     from tests.support.settings_league import interaction
 
     asked = interaction(league.bot, "division delete")
-    await undecorate(SeasonCog.division_delete)(SeasonCog(league.bot), asked, name)
+    await undecorate(DivisionCog.division_delete)(DivisionCog(league.bot), asked, name)
     return asked
 
 
@@ -976,7 +976,7 @@ def test_division_rename_describes_itself_as_a_placements_command():
     """`/division rename` runs in Placements alone, as `/division amend` does, and the description
     Discord shows a manager beside the command says so, as amend's does, rather than "(setup
     only)": a season being set up but not yet in Placements refuses it."""
-    assert SeasonCog.division_rename.description == (
+    assert DivisionCog.division_rename.description == (
         "Rename a division while the season is in placements."
     )
 

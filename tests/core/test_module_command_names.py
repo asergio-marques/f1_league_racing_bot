@@ -29,7 +29,7 @@ from discord import app_commands
 from discord.ext import commands as discord_commands
 
 from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
-from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.cogs.division_cog import DivisionCog
 from leaguebot.results.cogs.results_cog import ResultsCog
 from leaguebot.weather.cogs.weather_cog import WeatherCog
 
@@ -232,6 +232,6 @@ def test_core_keeps_its_own_two_channel_commands(name, description):
     either."""
     assert name in DECLARED, f"no cog declares /{name}"
     cog, command = DECLARED[name]
-    assert cog is SeasonCog
+    assert cog is DivisionCog
     assert isinstance(command, app_commands.Command)
     assert command.description == description

@@ -130,7 +130,7 @@ async def test_a_stopped_lineup_lands_once_the_lineup_channel_is_set_and_retried
     lineup: it runs past it, saves 600 as Pro's lineup channel and tells Alex the channel was
     set, while the lineup still stops the league's lane. Alex presses Retry: the lineup lands
     once in 600, and nothing stops the queue."""
-    from leaguebot.core.cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.division_cog import DivisionCog
 
     league = await ongoing_league(tmp_path)
     await league.write("UPDATE divisions SET lineup_channel_id = NULL WHERE id = ?", PRO)
@@ -141,7 +141,7 @@ async def test_a_stopped_lineup_lands_once_the_lineup_channel_is_set_and_retried
     assert "`/division lineup-channel`" in await _said(league)
 
     manager = await run_division_channel_command(
-        league, SeasonCog, SeasonCog.division_lineup_channel, "division lineup-channel",
+        league, DivisionCog, DivisionCog.division_lineup_channel, "division lineup-channel",
         LINEUP[PRO],
     )
     assert acknowledgement(manager).startswith("⏳ ")

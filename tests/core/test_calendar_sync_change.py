@@ -49,7 +49,7 @@ PRO_CALENDAR = DIVISIONS[PRO][3].calendar
 async def _sync(league: Any, name: str = "Pro") -> Any:
     """Run `/division calendar-sync` for *name* as admin 77; the queue is not run. Gives the
     interaction, its acknowledgement's message able to be edited."""
-    from leaguebot.core.cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.division_cog import DivisionCog
 
     interaction = member_interaction(
         league.bot, user=tier_member("admin", member_id=ADMIN_ID, display_name="Admin"),
@@ -57,7 +57,7 @@ async def _sync(league: Any, name: str = "Pro") -> Any:
     interaction.guild = league.guild
     interaction.command = SimpleNamespace(qualified_name="division calendar-sync")
     interaction.followup.send.return_value = MagicMock(edit=AsyncMock())
-    await undecorate(SeasonCog.division_calendar_sync)(league.cog, interaction, name)
+    await undecorate(DivisionCog.division_calendar_sync)(league.division_cog, interaction, name)
     return interaction
 
 

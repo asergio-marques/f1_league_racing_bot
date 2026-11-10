@@ -40,7 +40,7 @@ from unittest.mock import MagicMock
 import discord
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.cogs.division_cog import DivisionCog
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.utils.formatting import discord_ts
 from tests.support.setup_rounds import (
@@ -158,8 +158,8 @@ async def _ask_add(league, name: str, tier: int, role_id: int = 555):
     from tests.support.settings_league import interaction
 
     asked = interaction(league.bot, "division add")
-    await undecorate(SeasonCog.division_add)(
-        SeasonCog(league.bot), asked, name=name, role=_role(role_id), tier=tier
+    await undecorate(DivisionCog.division_add)(
+        DivisionCog(league.bot), asked, name=name, role=_role(role_id), tier=tier
     )
     return asked
 
@@ -706,7 +706,7 @@ def test_division_duplicate_describes_itself_as_a_placements_command():
     """`/division duplicate` runs in Placements alone, as `/division rename` and `/division amend`
     do, and the description Discord shows a manager beside the command says so, as theirs do,
     rather than "(setup only)": a season being set up but not yet in Placements refuses it."""
-    assert SeasonCog.division_duplicate.description == (
+    assert DivisionCog.division_duplicate.description == (
         "Copy a division's rounds with a datetime offset while the season is in placements."
     )
 
