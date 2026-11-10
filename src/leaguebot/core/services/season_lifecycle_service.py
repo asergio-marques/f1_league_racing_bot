@@ -740,8 +740,7 @@ async def confirm_placements_on(db: aiosqlite.Connection, season_id: int) -> Pla
     return PlacementsConfirmed(committed=await commit_placements_on(db, season_id))
 
 
-#: The states the driver pass returns to Not Signed Up. Season Banned and League
-#: Banned are left untouched: bans are to be specified on their own.
+#: The states the driver pass returns to Not Signed Up.
 DRIVER_PASS_STATES: tuple[str, ...] = (
     "UNASSIGNED",
     "ASSIGNED",

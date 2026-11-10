@@ -2240,7 +2240,7 @@ async def _recover_missed_check_in_calls(
     nothing itself: the call's change posts it, telling the log channel that it went out late, or,
     where the deadline has passed as well, gives it up (`give_up`), closing the round's check-in so
     that the next start does not ask again. A call already in hand on the queue is not asked for
-    twice. Its last notice and its deadline need no arming: the confirmation of placements armed
+    twice. Its last notice and its deadline need no arming: the season's approval armed
     them with the call, the job store outlives a restart, and both are still ahead of a call posted
     in time to be answered.
 

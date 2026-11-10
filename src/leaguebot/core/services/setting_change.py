@@ -1,11 +1,11 @@
 """One settings change, built from a `Setting`: the value, its audit entry and its line, saved together (bar a step that carries the line).
 
-Every settings command of results, weather, attendance, images and signup declares a `Setting`, and
-`setting_change` turns it into a `ChangeType` for the change queue (`change_queue`), so that the
-line, the audit entry's being written, the answer for a value already held and the answer for a
-fault are decided in one place (each setting's save builds the audit record itself).
-`docs/design/architecture.md`, "How a change is carried out", designs the queue; the core
-specification's section of that name holds the rules a league sees. This module holds the
+Every settings command, core's own and those of results, weather, attendance, images and signup,
+declares a `Setting`, and `setting_change` turns it into a `ChangeType` for the change queue
+(`change_queue`), so that the line, the audit entry's being written, the answer for a value already
+held and the answer for a fault are decided in one place (each setting's save builds the audit
+record itself). `docs/design/architecture.md`, "How a change is carried out", designs the queue; the
+core specification's section of that name holds the rules a league sees. This module holds the
 engineering decisions, each pinned by a test in `tests/core/test_setting_change.py`.
 
 **"Nothing changed" is judged in the save,** on the connection that writes, never at the ask: a

@@ -70,8 +70,7 @@ def phases_due(
 ) -> list[int]:
     """The forecast phases to draw at once at *at*: each not yet drawn (*drawn*, by phase number,
     as `read_phases_drawn` gives it for the round) whose horizon has passed, for a round whose
-    moment is still ahead and which is no mystery round, as the start-up recovery judges a missed
-    phase (`_recover_missed_phases`)."""
+    moment is still ahead and which is no mystery round."""
     moment = rnd.scheduled_at
     if rnd.format == RoundFormat.MYSTERY or moment <= at:
         return []
