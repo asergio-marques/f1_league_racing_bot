@@ -1,9 +1,9 @@
 """The test-mode command surface for driver nationality.
 
 `/test-mode nationality` is the test-mode counterpart of `/signup nationality`, and
-`/test-mode roster add` takes a nationality the way the signup wizard takes one. These
-tests run the callbacks against a migrated database with Discord stubbed — no gateway, no
-server, no running bot.
+`/test-mode roster list` prints the nationality each fake driver holds; `/test-mode roster add`
+takes one on the change queue, in test_test_mode_roster_add. These tests run the callbacks
+against a migrated database with Discord stubbed — no gateway, no server, no running bot.
 
 The guards are unwrapped as the other cog suites unwrap them: the tier guards have their
 own cover, and a stubbed interaction is not a `discord.Member`.
@@ -152,22 +152,16 @@ def cog(db_path):
     )
 
 
-async def _switch_off(db_path):
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE server_configs SET test_mode_nationality_required = 0 "
-            "WHERE server_id = ?",
-            (SERVER_ID,),
-        )
-        await db.commit()
+async def _add(cog, *, name="Mock Alpha", nationality=None, team="Redline"):
+    """Mock driver *name* seated at *team* in Division 1 by the roster's writer: the listing's
+    tests need fake drivers seated, not the command that seats them."""
+    from leaguebot.core.services.test_roster_service import add_test_driver
 
-
-async def _add(cog, *, name="Mock Alpha", nationality=None):
-    interaction = _Interaction()
-    await _unwrap(test_mode_cog.TestModeCog.roster_add)(
-        cog, interaction, name, "Redline", DIVISION, nationality
+    result = await add_test_driver(
+        driver_name=name, team_name=team, division_name=DIVISION, db_path=cog.bot.db_path,
+        nationality=nationality,
     )
-    return interaction
+    assert not isinstance(result, str), result
 
 
 # ── /test-mode nationality ────────────────────────────────────────────────
@@ -463,74 +457,6 @@ class TestTheNationalityCommand:
         assert await stopped_job(league.db_path) is None
 
 
-# ── /test-mode roster add ─────────────────────────────────────────────────
-
-
-class TestRosterAddTakesANationality:
-    async def test_the_reply_names_the_canonical_nationality(self, cog):
-        interaction = await _add(cog, nationality="united kingdom")
-
-        assert "Nationality: **British**" in interaction.reply
-
-    async def test_an_invalid_one_is_refused(self, cog):
-        interaction = await _add(cog, nationality="Martian")
-
-        assert "Invalid nationality" in interaction.reply
-
-    async def test_it_is_optional(self, cog):
-        interaction = await _add(cog)
-
-        assert "Added fake driver" in interaction.reply
-        assert "Nationality:" not in interaction.reply
-
-    async def test_the_reply_names_the_division_the_driver_landed_in(self, cog):
-        """Every division is seeded from the same server team list, so a team name
-        repeats across all of them. The team alone therefore does not say where the
-        driver went, which is the one thing the command is choosing — and it matters
-        more to a manager building a roster than the nationality does."""
-        interaction = await _add(cog, name="Mock Alpha", nationality="Dutch")
-
-        assert DIVISION in interaction.reply
-        assert "Redline" in interaction.reply
-        assert interaction.reply.index("Redline") < interaction.reply.index(DIVISION)
-
-    async def test_it_reaches_the_log(self, cog):
-        await _add(cog, nationality="Dutch")
-
-        assert "nationality: Dutch" in cog.bot.output_router.post_log.await_args.args[0]
-
-
-class TestRosterAddWhileTheSwitchIsOff:
-    """The signup wizard drops the question rather than collecting an unkept answer."""
-
-    async def test_giving_one_is_refused(self, cog, db_path):
-        await _switch_off(db_path)
-
-        interaction = await _add(cog, nationality="British")
-
-        assert "Nationality is switched off for test mode" in interaction.reply
-
-    async def test_no_driver_is_created_by_the_refused_command(self, cog, db_path):
-        await _switch_off(db_path)
-
-        await _add(cog, nationality="British")
-
-        async with get_connection(db_path) as db:
-            row = await (
-                await db.execute(
-                    "SELECT COUNT(*) AS n FROM driver_profiles WHERE is_test_driver = 1"
-                )
-            ).fetchone()
-        assert row["n"] == 0
-
-    async def test_a_driver_may_still_be_added_without_one(self, cog, db_path):
-        await _switch_off(db_path)
-
-        interaction = await _add(cog)
-
-        assert "Added fake driver" in interaction.reply
-
-
 # ── /test-mode roster list ────────────────────────────────────────────────
 
 
@@ -592,10 +518,7 @@ class TestRosterListShowsIt:
             await db.commit()
 
         for i in range(25):
-            interaction = _Interaction()
-            await _unwrap(test_mode_cog.TestModeCog.roster_add)(
-                cog, interaction, f"Mock Driver {i:02d}", "Reserve", DIVISION, "Dutch"
-            )
+            await _add(cog, name=f"Mock Driver {i:02d}", nationality="Dutch", team="Reserve")
 
         interaction = _Interaction()
         await _unwrap(test_mode_cog.TestModeCog.roster_list)(
@@ -609,31 +532,3 @@ class TestRosterListShowsIt:
         whole = "\n".join(interaction.sent)
         for i in range(25):
             assert f"Mock Driver {i:02d}" in whole
-
-
-# ── A driver that cannot be written (#442) ────────────────────────────────
-
-
-async def test_a_roster_add_that_cannot_be_written_says_the_driver_was_not_added(cog):
-    """The service raises on a database fault. The command answers with the standard failure
-    reply, saying the test driver was not added and how to retry, with no error text, and one
-    failure line is logged."""
-    import sqlite3
-    from unittest.mock import patch
-
-    interaction = _Interaction()
-    with patch(
-        "leaguebot.core.services.test_roster_service.add_test_driver",
-        new=AsyncMock(side_effect=sqlite3.OperationalError("database is locked")),
-    ):
-        await _unwrap(test_mode_cog.TestModeCog.roster_add)(
-            cog, interaction, "Mock Alpha", "Redline", DIVISION, None
-        )
-
-    reply = interaction.reply
-    assert "stopped on a fault in the bot, not on anything you entered" in reply
-    assert "The test driver was not added." in reply
-    assert "Run `/test-mode roster add` again to retry." in reply
-    assert "database is locked" not in reply
-    [line] = [str(c.args[0]) for c in interaction.client.output_router.post_log.await_args_list]
-    assert "failed for Tester (<@1>)" in line
