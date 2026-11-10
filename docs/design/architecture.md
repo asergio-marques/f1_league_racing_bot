@@ -1189,16 +1189,16 @@ to it would switch off the one failure path for every command.
    because a reader that cannot answer must not be the thing that refuses a season (its docstring
    says so); the season's team-name check (`approval_checks.team_name_problems`) is a stated
    exception too: its catch-all puts the error in the host's log alone and finds nothing wrong, so
-   every review and confirmation carries on with the names unchecked, because the check only
-   keeps a team name from becoming a bad artwork filename (its docstring says so); the season cog's
-   own image review section (`SeasonCog._build_image_review_section`) is a stated exception beside
-   it: its catch-all puts the error in the host's log and states the section as unreadable in the
-   review, because a review must never fail for this (its docstring says so); and the image module's
-   artwork signature (`ImageDrawing.artwork_signature`) is a stated exception too: its catch-all
-   signs a configured directory it cannot resolve as `[column, value, "unresolvable"]`, with a
-   warning to the host's log alone, and signs the rest all the same, because a fault that escaped it
-   would empty the whole fingerprint and the review would read as changed in every area (its
-   docstring says so);
+   each review and confirmation that checks the names carries on with them unchecked, because the
+   check only keeps a team name from becoming a bad artwork filename (its docstring says so); the
+   season cog's own image review section (`SeasonCog._build_image_review_section`) is a stated
+   exception beside `approval_checks.image_configuration_faults`: its catch-all puts the error in
+   the host's log and states the section as unreadable in the review, because a review must never
+   fail for this (its docstring says so); and the image module's artwork signature
+   (`ImageDrawing.artwork_signature`) is a stated exception too: its catch-all signs a configured
+   directory it cannot resolve as `[column, value, "unresolvable"]`, with a warning to the host's
+   log alone, and signs the rest all the same, because a fault that escaped it would empty the whole
+   fingerprint and the review would read as changed in every area (its docstring says so);
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a job: one that fails stops its lane until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
