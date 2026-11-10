@@ -813,6 +813,12 @@ async def test_the_history_holds_each_driver_s_final_standing_as_the_bot_is_buil
         charles = (1, 25, 0)
     else:
         league = await ongoing_league(tmp_path)
+        await league.write(
+            "INSERT INTO session_results (round_id, division_id, session_type, status, "
+            "config_name, submitted_by, submitted_at) "
+            "VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE', 'Standard', 77, '2026-01-01T00:00:00+00:00')",
+            round_id(PRO, 1), PRO,
+        )
         for position, user_id in enumerate((LEWIS, MAX), start=1):
             await league.write(
                 "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
