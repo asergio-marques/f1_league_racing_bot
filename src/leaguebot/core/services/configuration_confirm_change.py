@@ -10,10 +10,12 @@ kept and nothing recorded. This module holds the change; the cog holds the press
 first that fails being the refusal: another confirmation of the season in hand, queued, running or
 stopped, **naming no job**; the season no longer in Configuration; the season changed since the
 review (the review's own fingerprint); then every fault the review withholds its button on
-(`faults`, the cog's one reading of them, which the builder hands in). The press keeps the same
+(`approval_checks.configuration_faults`, the one reading of them, which the review command and the
+confirmation's workflow call too). The press keeps the same
 refusals in its own words, so a refusal there answers the member at once; the check is what stands
 between a season changed while the confirmation waited on the queue and its confirmation. It
-imports no module and no cog; `ctx.bot` is used for the server alone.
+imports no module and no cog; the builder hands it the services the faults read, and `ctx.bot` is
+used for the server alone.
 
 **The stage, signup's settings, the audit entry and the line are one job** (`apply`,
 architecture.md, "All or nothing in one step"): saved together or not at all, reading nothing but
@@ -29,7 +31,7 @@ season with the stage that fixes them. A retry judges the confirmation again bef
 """
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -46,6 +48,8 @@ from leaguebot.core.models.change import (
     VerdictKind,
 )
 from leaguebot.core.models.season import SeasonStage
+from leaguebot.core.services import approval_checks
+from leaguebot.core.services.approval_checks import SignupModuleSettings
 from leaguebot.core.services.change_queue import (
     ChangeType,
     CheckContext,
@@ -55,8 +59,12 @@ from leaguebot.core.services.change_queue import (
     StepView,
     unfinished,
 )
+from leaguebot.core.services.config_service import ConfigService
+from leaguebot.core.services.image_drawing import ImageDrawing
+from leaguebot.core.services.module_service import ModuleService
 from leaguebot.core.services.season_fingerprint_service import SeasonFingerprint, take_fingerprint
 from leaguebot.core.services.season_lifecycle_service import confirm_configuration_on
+from leaguebot.core.services.team_service import TeamService
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
@@ -109,16 +117,19 @@ async def confirmation_in_hand(
 
 def configuration_confirm_change(
     *,
-    drawing: Any,
-    faults: Callable[[int, Any], Awaitable[list[str]]],
+    drawing: ImageDrawing,
+    modules: ModuleService,
+    signup_module: SignupModuleSettings,
+    configs: ConfigService,
+    teams: TeamService,
     configuration_confirmed: AwaitedHook,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that confirms a season's configuration; see the module.
 
-    The builder hands in the image module's own drawing (*drawing*, which the fingerprint reads),
-    *faults* (every fault that stops a configuration being confirmed, given the season's id and the
-    server), the *configuration_confirmed* hook each module's part is kept through, called inside
+    The builder hands in the image module's own drawing (*drawing*, which the fingerprint reads and
+    the faults read), the services the faults read (*modules*, *signup_module*, *configs* and
+    *teams*), the *configuration_confirmed* hook each module's part is kept through, called inside
     the save on its connection, and *now* (the queue's clock).
     """
 
@@ -146,7 +157,16 @@ def configuration_confirm_change(
                 f"the season has changed since this review:\n{bullets}",
             )
 
-        found = await faults(season_id, await league_guild(ctx.bot))
+        found = await approval_checks.configuration_faults(
+            season_id,
+            await league_guild(ctx.bot),
+            module_service=modules,
+            signup_module_service=signup_module,
+            config_service=configs,
+            team_service=teams,
+            db_path=ctx.db_path,
+            image_drawing=drawing,
+        )
         if found:
             bullets = "\n".join(f"• {fault}" for fault in found)
             return Verdict.refuse(

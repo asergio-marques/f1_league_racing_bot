@@ -24,11 +24,6 @@ SERVER_ID = 22070
 SEASON_ID = 7
 USER_ID = 42
 
-#: The gate is still `SeasonCog._placement_confirmation_faults`.
-_GATE_ON_THE_COG = (
-    "#283: the placements gate is not yet approval_checks.placement_confirmation_faults"
-)
-
 #: The approval still runs as `SeasonCog._do_approve`.
 _APPROVAL_ON_THE_COG = "#283: the approval is not yet season_review_workflows.approve_season"
 
@@ -144,7 +139,6 @@ async def _driver(db_path, uid: str, state: str, name: str | None = None):
 # ── The faults ──────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 async def test_every_unsettled_signup_is_named(db_path):
     await _driver(db_path, "1", "UNASSIGNED", "Alice")
     await _driver(db_path, "2", "PENDING_ADMIN_APPROVAL", "Bob")
@@ -161,14 +155,12 @@ async def test_every_unsettled_signup_is_named(db_path):
     assert "**3** — correcting their signup" in joined
 
 
-@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 async def test_a_division_missing_its_lineup_or_calendar_channel_is_named(db_path):
     _, channels = await _faults(_cog(db_path))
 
     assert channels == ["**Am** has no lineup channel — `/division lineup-channel`."]
 
 
-@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 @pytest.mark.parametrize(
     "module,labels",
     [
@@ -193,7 +185,6 @@ async def test_a_module_s_channels_are_needed_only_while_it_is_enabled(db_path, 
         assert f"**Pro** has no {label}" in "\n".join(on)
 
 
-@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 @pytest.mark.parametrize(
     "label,command",
     [
@@ -220,7 +211,6 @@ async def test_a_missing_module_channel_is_named_with_the_command_that_now_sets_
     assert f"**Pro** has no {label} — `{command}`." in channels
 
 
-@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 async def test_a_channel_deleted_from_the_server_is_named_with_its_command(db_path):
     """Nothing clears a channel's id when Discord deletes it, so mid-season every channel is
     still set — whether it is still there is the question worth asking (#374)."""
@@ -237,7 +227,6 @@ async def test_a_channel_deleted_from_the_server_is_named_with_its_command(db_pa
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 async def test_a_channel_that_could_not_be_fetched_is_not_called_gone(db_path):
     """Only NotFound proves a channel gone; a check that could not tell refuses nothing."""
     await _set_module_channels(db_path)
@@ -248,7 +237,6 @@ async def test_a_channel_that_could_not_be_fetched_is_not_called_gone(db_path):
     assert channels == []
 
 
-@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 async def test_a_cancelled_division_is_not_asked_for_its_channels(db_path):
     """`Gone` is cancelled and holds none: it posts nothing."""
     await _set_module_channels(db_path)
@@ -259,7 +247,6 @@ async def test_a_cancelled_division_is_not_asked_for_its_channels(db_path):
     assert channels == []
 
 
-@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 async def test_a_settled_season_with_its_channels_has_no_faults(db_path):
     async with get_connection(db_path) as db:
         await db.execute("UPDATE divisions SET lineup_channel_id = 200 WHERE id = 2")

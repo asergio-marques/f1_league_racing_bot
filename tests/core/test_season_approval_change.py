@@ -96,9 +96,6 @@ NOT_SAVED = (
 # ── Helpers ─────────────────────────────────────────────────────────────────────────
 
 
-_GATES_NOT_YET_SERVICES = "#283: the season's gates are not yet functions of approval_checks"
-
-
 async def _pressed(league: Any, **kwargs: Any) -> Any:
     """Press ✅ Approve, the press raising nothing."""
     press = await press_approve(league, **kwargs)
@@ -443,7 +440,6 @@ async def test_the_approval_s_check_takes_the_fingerprint_with_the_image_module_
         assert SEASON_ID in (*each["args"], each.get("season_id")), each
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_NOT_YET_SERVICES)
 async def test_the_press_runs_every_gate_before_asking_and_asks_nothing_when_one_refuses(
     tmp_path, monkeypatch,
 ):
@@ -532,12 +528,9 @@ async def test_the_save_refuses_writing_nothing_where_the_season_left_placements
 
 
 @pytest.mark.parametrize("gate, modules", [
-    pytest.param("team_name_problems", {}, id="team names",
-                 marks=pytest.mark.xfail(strict=True, reason=_GATES_NOT_YET_SERVICES)),
-    pytest.param("lineup_problems", {}, id="lineup",
-                 marks=pytest.mark.xfail(strict=True, reason=_GATES_NOT_YET_SERVICES)),
-    pytest.param("image_configuration_faults", {"images": True}, id="image configuration",
-                 marks=pytest.mark.xfail(strict=True, reason=_GATES_NOT_YET_SERVICES)),
+    pytest.param("team_name_problems", {}, id="team names"),
+    pytest.param("lineup_problems", {}, id="lineup"),
+    pytest.param("image_configuration_faults", {"images": True}, id="image configuration"),
 ])
 async def test_the_backup_question_is_put_after_every_gate_and_before_the_approval_is_asked(
     tmp_path, monkeypatch, gate, modules,

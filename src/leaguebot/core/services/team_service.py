@@ -458,6 +458,33 @@ class TeamService:
             rows = await cursor.fetchall()
         return {r["name"] for r in rows}
 
+    async def division_race_team_names(self, season_id: int) -> list[tuple[str, list[str]]]:
+        """Each division of the season, in tier order, with the names of its race teams (the
+        reserve team left out) in name order: what the season review checks the names of."""
+        async with get_connection(self._db_path) as db:
+            divisions = await (
+                await db.execute(
+                    "SELECT id, name FROM divisions WHERE season_id = ? ORDER BY tier",
+                    (season_id,),
+                )
+            ).fetchall()
+            return [
+                (
+                    division["name"],
+                    [
+                        row["name"]
+                        for row in await (
+                            await db.execute(
+                                "SELECT name FROM team_instances "
+                                "WHERE division_id = ? AND is_reserve = 0 ORDER BY name",
+                                (division["id"],),
+                            )
+                        ).fetchall()
+                    ],
+                )
+                for division in divisions
+            ]
+
     # ------------------------------------------------------------------
     # Read helpers for review output (US6)
     # ------------------------------------------------------------------

@@ -154,9 +154,6 @@ import logging  # noqa: E402
 from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
 from leaguebot.core.services.team_service import TeamService  # noqa: E402
 
-#: The check still sits on the season cog, as `SeasonCog._team_name_problems`.
-_NOT_YET_A_SERVICE = "#283: the team-name check is not yet approval_checks.team_name_problems"
-
 
 async def _seed(path, server_teams, division_teams):
     """Season 1 in setup, its one division Elite (id 10), and the two team lists.
@@ -194,11 +191,9 @@ async def _review_problems(tmp_path, server_teams, division_teams):
 @pytest.mark.parametrize(
     "server_teams, division_teams",
     [
-        pytest.param(["Red Bull", "Ferrari"], ["Haas"], id="sound",
-                     marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)),
+        pytest.param(["Red Bull", "Ferrari"], ["Haas"], id="sound"),
         # FR-031 reaching the review, not the command alone.
-        pytest.param(["2Fast Motorsport"], ["9ers"], id="digit-led",
-                     marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)),
+        pytest.param(["2Fast Motorsport"], ["9ers"], id="digit-led"),
     ],
 )
 @pytest.mark.asyncio
@@ -208,7 +203,6 @@ async def test_season_review_passes_a_sound_team_list(tmp_path, server_teams, di
     assert problems == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 @pytest.mark.asyncio
 async def test_season_review_names_every_offending_team_not_just_the_first(tmp_path):
     """A manager fixing them one review at a time is a manager the check is failing."""
@@ -220,7 +214,6 @@ async def test_season_review_names_every_offending_team_not_just_the_first(tmp_p
     assert any("Reserve!" in p for p in problems)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 @pytest.mark.asyncio
 async def test_season_review_reports_the_scope_a_fault_was_found_in(tmp_path):
     problems = await _review_problems(tmp_path, ["!!!"], ["???"])
@@ -229,7 +222,6 @@ async def test_season_review_reports_the_scope_a_fault_was_found_in(tmp_path):
     assert any("Elite" in p for p in problems)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 @pytest.mark.asyncio
 async def test_season_review_catches_two_teams_normalising_alike(tmp_path):
     """No longer fatal at render (047), so the review is where it must be caught."""
@@ -240,7 +232,6 @@ async def test_season_review_catches_two_teams_normalising_alike(tmp_path):
 
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 @pytest.mark.asyncio
 async def test_a_team_name_check_that_cannot_read_the_teams_stands_aside(tmp_path, caplog):
     """A stated exception (architecture.md, "A catch-all error handler"): the check only keeps

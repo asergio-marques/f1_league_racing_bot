@@ -1168,9 +1168,9 @@ to it would switch off the one failure path for every command.
    catch-all puts the error in the host's log alone, with no line to the log channel, and answers
    that the league does not draw its lineup, so the text lineup goes out, because a gate that
    cannot be read must not lose a league its lineup (its docstring says so); the helper through
-   which the season cog's own capacity checks count and ask the image module
-   (`SeasonCog._ask_drawing`) — the review's and the approval's (`_lineup_problems`,
-   `_calendar_capacity_warning`, `_attendance_capacity_warning`) — is a stated exception beside
+   which the season's own capacity checks count and ask the image module
+   (`approval_checks.ask_drawing`) — the review's and the approval's (`lineup_problems`, and the
+   review's calendar and attendance warnings) — is a stated exception beside
    `PlacementService._ask_drawing`'s: its catch-all puts the error in the host's log in full and
    lets the season through as if no problem were found, because a capacity check that cannot run
    must not block a season (its docstring says so); the round guard that `/round add` and the
@@ -1178,13 +1178,18 @@ to it would switch off the one failure path for every command.
    stated exception beside it: the change types' checks call it when the change is asked for and
    again as it starts, and its catch-all puts the error in the host's log in full and lets the
    round through as if no problem were found, because a capacity check that cannot run must not
-   block a round (its docstring says so); the season cog's reading of the image module's
-   configuration faults (`SeasonCog._image_configuration_faults`) is a stated exception too: each
+   block a round (its docstring says so); the season's reading of the image module's
+   configuration faults (`approval_checks.image_configuration_faults`) is a stated exception too: each
    of its catch-alls puts the error in the host's log; a fault reading the templates is stated as
    a fault of its own, which refuses the season, because a check that never ran is not a pass,
    while a fault reading the per-tier colours or the portrait settings stands aside and lets the
    season through, because a reader that cannot answer must not be the thing that refuses a season
-   (its docstring says so); the season cog's own image review section
+   (its docstring says so); the season's team-name check (`approval_checks.team_name_problems`) is
+   a stated exception beside it: its catch-all puts the error in the host's log alone and finds
+   nothing wrong, so the review and the approval carry on with the names unchecked, because the
+   check only keeps a team name from becoming a bad artwork filename and a reader that cannot
+   answer must not be the thing that refuses a season (its docstring says so); the season cog's
+   own image review section
    (`SeasonCog._build_image_review_section`) is a stated exception beside it: its catch-all puts
    the error in the host's log and states the section as unreadable in the review, because a
    review must never fail for this (its docstring says so); and the image module's artwork

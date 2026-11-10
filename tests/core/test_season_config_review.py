@@ -33,9 +33,6 @@ _CONFIRMATION_ON_THE_COG = (
     "season_review_workflows.confirm_configuration"
 )
 
-#: The configuration review's gates are still the season cog's methods.
-_GATES_ON_THE_COG = "#283: the configuration's gates are not yet functions of approval_checks"
-
 #: The gates a test stands in, each a function of `approval_checks` that the review command and
 #: the confirmation's workflow call alike.
 _GATES = (
@@ -179,7 +176,6 @@ def _interaction() -> MagicMock:
 # ── What the configuration review checks ────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_the_signup_module_needs_its_channel_and_both_roles():
     """Each fault names the command that sets it: the roles are the league's, set under
     `/bot`, not under `/signup` (issue #276)."""
@@ -199,7 +195,6 @@ async def test_the_signup_module_needs_its_channel_and_both_roles():
     pytest.param(None, (None, None), None, id="its channel and roles unset"),
     pytest.param(1, (2, 3), (2, 3), id="its roles gone from the server"),
 ])
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_a_disabled_signup_module_is_not_checked(channel, roles, gone):
     """Nor are the league's roles, whether unset or no longer upon the server: only the signup
     module needs them. A plain configuration has no faults."""
@@ -213,7 +208,6 @@ async def test_a_disabled_signup_module_is_not_checked(channel, roles, gone):
     "gone,expected",
     [(2, "**base role** is no longer on the server"), (3, "**driver role** is no longer on the server")],
 )
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_a_league_role_gone_from_the_server_is_a_fault(gone, expected):
     """Confirming fixes both roles, so this is the last moment a league can choose another
     freely (#374). Stored is not enough."""
@@ -224,7 +218,6 @@ async def test_a_league_role_gone_from_the_server_is_a_fault(gone, expected):
     assert expected in fault
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_a_driver_role_the_bot_cannot_grant_is_a_fault():
     cog = _cog(_bot(signup=True))
 
@@ -250,7 +243,6 @@ async def test_confirming_refuses_a_driver_role_gone_from_the_server(tmp_path):
     assert bot.change_queue.method_calls == []
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_team_names_of_the_server_list_are_checked():
     cog = _cog(_bot())
     cog.team_name_problems = AsyncMock(return_value=["**!!!** reduces to nothing"])
@@ -261,7 +253,6 @@ async def test_team_names_of_the_server_list_are_checked():
     assert faults == ["Team name: **!!!** reduces to nothing"]
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_the_results_module_needs_a_points_configuration(tmp_path):
     from leaguebot.core.db.database import run_migrations
 
@@ -280,7 +271,6 @@ async def test_the_results_module_needs_a_points_configuration(tmp_path):
     assert any("out of order" in f for f in faults)
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_the_image_module_faults_are_included():
     bot = _bot(images=True)
     cog = _cog(bot)
@@ -627,7 +617,6 @@ async def _report(cog, interaction, monkeypatch) -> list[str]:
     return _texts(await _review_asked(cog, interaction, monkeypatch))
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(monkeypatch):
     """Manager runs `/season config-review` in channel 111 on a sound configuration of season 31
     (test mode on, signup on, results off; teams Alpha with its role, Reserve with none). The
@@ -662,7 +651,6 @@ async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(mo
     assert not any(line.startswith("⛔") for line in _logged(bot))
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
     tmp_path, monkeypatch
 ):
@@ -691,7 +679,6 @@ async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
 
 
 @pytest.mark.parametrize("signup", [True, False])
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_the_configuration_review_reports_the_league_s_roles(monkeypatch, signup):
     """The one review that reports them (issue #276). They are the league's, so the review asked
     of the queue shows them whether or not signup is on, and confirming the configuration fixes
@@ -704,7 +691,6 @@ async def test_the_configuration_review_reports_the_league_s_roles(monkeypatch, 
     assert "Driver role: <@&3>" in messages[0]
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     """The placements review's subsections, save the divisions, in the same words (#220): with
     signup, results, attendance and weather on, the review asked of the queue carries each
@@ -742,7 +728,6 @@ async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     assert "**Weather Config**" in text and "Phase 3 deadline: 2h before race" in text
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_a_disabled_modules_configuration_is_not_reported(monkeypatch):
     """With every module off, the review asked of the queue carries no module's configuration."""
     cog = _cog(_report_bot())
@@ -753,7 +738,6 @@ async def test_a_disabled_modules_configuration_is_not_reported(monkeypatch):
         assert heading not in text
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_the_image_outputs_are_reported_when_the_module_is_on(monkeypatch):
     """With the image module on, the review asked of the queue carries its outputs."""
     bot = _report_bot(images=True)
@@ -766,7 +750,6 @@ async def test_the_image_outputs_are_reported_when_the_module_is_on(monkeypatch)
     assert any("**Image outputs**" in m and "lineup: on" in m for m in messages)
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_a_faulty_configuration_is_reported_without_a_button(monkeypatch):
     """Signup is on and the league's base role is unset. The review asked of the queue ends in
     the faults, naming the base role and `/bot base-role`, and saying to run
@@ -782,7 +765,6 @@ async def test_a_faulty_configuration_is_reported_without_a_button(monkeypatch):
     assert not any("Do you confirm this season's configuration?" in m for m in messages)
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_the_followup_is_restored_after_the_report(monkeypatch):
     """The review wraps the followup to collect what it says privately; a later reply must not be
     caught."""
@@ -831,7 +813,6 @@ def _image_cog(
     return _cog(bot)
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_a_sound_image_configuration_has_no_faults():
     cog = _image_cog()
 
@@ -839,7 +820,6 @@ async def test_a_sound_image_configuration_has_no_faults():
     cog.bot.image_drawing.template_faults.assert_awaited_once_with()
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_every_image_fault_that_needs_no_division_is_named():
     """The drawing program, a broken template a switched-on output draws, a per-tier colour and
     the portrait settings, each in the image module's words, in that order; core adds the
@@ -860,7 +840,6 @@ async def test_every_image_fault_that_needs_no_division_is_named():
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_templates_that_cannot_be_read_are_a_fault_not_a_pass():
     cog = _image_cog(
         rasteriser=_RASTERISER,
@@ -887,7 +866,6 @@ async def test_templates_that_cannot_be_read_are_a_fault_not_a_pass():
         ),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_an_unreadable_colour_or_portrait_check_stands_aside(unreadable, kept):
     """A per-tier colour check, or a portrait settings check, that cannot be read never refuses
     a season: it is dropped, and every other fault is still named. Takes the place of

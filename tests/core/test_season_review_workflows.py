@@ -33,7 +33,6 @@ from tests.support.season_league import (
 
 _WORKFLOWS_ON_THE_COG = "#283: the review's workflows and their gates are still SeasonCog methods"
 _PRESS_ON_THE_HOST_CLOCK = "#283: the approval's press reads the host's clock, not the queue's"
-_CHECK_BUILDS_A_COG = "#283: the configuration change's check calls SeasonCog._configuration_faults"
 
 #: Every workflow and gate the review's buttons run on `SeasonCog` today: work the press must not
 #: reach on the cog. All but `_approval_windows` move into core's services; `_approval_windows`
@@ -99,7 +98,6 @@ async def test_each_review_button_runs_its_workflow_with_nothing_of_the_season_c
     assert len(await asked(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_CHECK_BUILDS_A_COG)
 async def test_the_configuration_change_s_check_needs_no_season_cog(tmp_path, monkeypatch):
     """Admin presses ✅ Confirm configuration on season 3's review, the signup module off. Before
     the queue runs, the bot loses its season cog and no season cog can be built. The queue runs:

@@ -57,9 +57,6 @@ _CONFIRMATION_ON_THE_COG = (
     "season_review_workflows.confirm_mid_season_placements"
 )
 
-#: The gates the mid-season review and its confirmation run are still the season cog's methods.
-_GATES_ON_THE_COG = "#283: the mid-season gates are not yet functions of approval_checks"
-
 #: The gates a test stands in, each a function of `approval_checks` that the review command and
 #: the confirmation's workflow call alike.
 _GATES = (
@@ -427,7 +424,6 @@ def _lineup_wanted(cog, wanted: bool = True) -> None:
     cog.bot.image_drawing.lineup_wanted = AsyncMock(return_value=wanted)
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_the_mid_season_review_names_each_driver_to_confirm_and_offers_the_button(monkeypatch):
     """Season 1 is placing two drivers mid-season, a member (1002) to Alpha Racing and the test
     driver Test Bravo to Reserve, both in Pro; Old is cancelled. The review asked of the queue,
@@ -459,7 +455,6 @@ async def test_the_mid_season_review_names_each_driver_to_confirm_and_offers_the
     assert _RecordedView.made == []
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_a_mid_season_review_with_nothing_new_says_so(monkeypatch):
     cog = _report_cog(placements=[])
 
@@ -468,7 +463,6 @@ async def test_a_mid_season_review_with_nothing_new_says_so(monkeypatch):
     assert "*No new placement to confirm.*" in messages[0][0]
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_an_unsettled_signup_withholds_the_mid_season_button(monkeypatch):
     cog = _report_cog(placements=[], unsettled=["**Racer** — awaiting approval"])
 
@@ -489,7 +483,6 @@ def _private(messages) -> str:
     return "\n".join(text for text, private in messages if private)
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_a_deleted_channel_withholds_the_mid_season_button(monkeypatch):
     """Nothing clears a channel's id when Discord deletes it, and the confirmation posts each
     affected lineup: a lineup channel gone would take the post with it, the log alone told."""
@@ -503,7 +496,6 @@ async def test_a_deleted_channel_withholds_the_mid_season_button(monkeypatch):
     assert not _offered(cog)
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_the_channels_are_judged_upon_the_review_s_own_server(monkeypatch):
     cog = _report_cog(placements=[_placement("1002")])
     import leaguebot.core.cogs.season_cog as season_cog
@@ -520,7 +512,6 @@ async def test_the_channels_are_judged_upon_the_review_s_own_server(monkeypatch)
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_an_image_fault_withholds_the_mid_season_button(monkeypatch):
     """Templates, artwork and image settings may all change while a season is raced."""
     cog = _report_cog(
@@ -535,7 +526,6 @@ async def test_an_image_fault_withholds_the_mid_season_button(monkeypatch):
     assert not _offered(cog)
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_every_fault_is_named_at_once(monkeypatch):
     cog = _report_cog(
         placements=[_placement("1002")],
@@ -551,7 +541,6 @@ async def test_every_fault_is_named_at_once(monkeypatch):
     assert "Inkscape is not installed" in private
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_the_new_drivers_lineup_is_drawn_with_them_in_it_and_in_place_of_its_text(
     monkeypatch,
 ):
@@ -579,7 +568,6 @@ async def test_the_new_drivers_lineup_is_drawn_with_them_in_it_and_in_place_of_i
     assert _offered(cog)
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_nothing_is_drawn_or_announced_where_the_lineup_graphic_is_off(monkeypatch):
     """With the image module on but the lineup picture switched off, the review asks the queue
     for no picture, and Pro's lineup, once confirmed, is in its report as text."""
@@ -592,7 +580,6 @@ async def test_nothing_is_drawn_or_announced_where_the_lineup_graphic_is_off(mon
     assert "**Pro** — lineup once confirmed" in "\n".join(m for m, _ in messages)
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_only_the_image_checks_of_the_configuration_review_are_repeated():
     """The season settled the rest (#374): its roles, its signup configuration and its team
     list are fixed, and its points were recorded upon it. A server points configuration
@@ -611,7 +598,6 @@ async def test_only_the_image_checks_of_the_configuration_review_are_repeated():
     cog.points_ordering_problems.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_no_image_check_is_made_while_the_module_is_off():
     cog = _cog(":memory:", SeasonStage.ONGOING_PLACEMENTS)
     cog.image_configuration_faults = AsyncMock(return_value=["Inkscape is not installed."])
@@ -957,7 +943,6 @@ async def test_every_mid_season_confirmation_refusal_is_recorded(
         assert item in line, (item, line)
 
 
-@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_a_posted_mid_season_review_writes_no_line_of_its_own_and_asks_the_review_as_the_manager_s(
         monkeypatch):
     """Manager (id 42) runs /season placements-review on a season being raced whose closed

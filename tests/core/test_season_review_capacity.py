@@ -189,11 +189,7 @@ def _cog(db_path, drawing):
 
 # ── The lineup (047 FR-022) ───────────────────────────────────────────────
 
-#: The lineup gate is still `SeasonCog._lineup_problems`.
-_LINEUP_ON_THE_COG = "#283: the lineup gate is not yet approval_checks.lineup_problems"
 
-
-@pytest.mark.xfail(strict=True, reason=_LINEUP_ON_THE_COG)
 async def test_the_lineup_check_asks_of_each_division_s_race_teams_in_tier_order(tmp_path):
     """Each division in tier order, its race teams in the order they were made and the drivers
     seated in each: an empty seat is not counted and the reserve team is not handed. What the
@@ -362,8 +358,6 @@ CHECKS = [
 FAULTS = [
     pytest.param(
         fault, *case[1:], id=f"{fault}-{case[0]}",
-        marks=(pytest.mark.xfail(strict=True, reason=_LINEUP_ON_THE_COG)
-               if case[0] == "lineup" else ()),
     )
     for fault in ("drawing", "counts")
     for case in CHECKS

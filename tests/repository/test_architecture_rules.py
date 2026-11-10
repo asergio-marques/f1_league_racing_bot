@@ -180,7 +180,6 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.sync"): (2, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.test_rsvp"): (1, PASS["attendance"]),
     ("core/cogs/bot_cog.py", "BotCog.handle_pack"): (1, PASS["core"]),
-    ("core/cogs/season_cog.py", "SeasonCog._team_name_problems"): (3, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._track_autocomplete"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.round_amend"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.season_review"): (2, PASS["core"]),
@@ -2647,9 +2646,10 @@ def _module_lookups_in_core_among(nodes, attributes: frozenset[str]) -> Counter[
 
 KNOWN_MODULE_LOOKUPS_IN_CORE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/season_cog.py", "SeasonCog._attendance_review_lines"): (1, PASS["core"]),
-    ("core/cogs/season_cog.py", "SeasonCog._configuration_faults"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._do_approve"): (1, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog._do_confirm_configuration"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._signup_review_lines"): (3, PASS["core"]),
+    ("core/cogs/season_cog.py", "SeasonCog.season_config_review"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.season_review"): (2, PASS["core"]),
 }
 
@@ -2952,12 +2952,15 @@ CATCH_ALLS_ALLOWED = {
         "place 5, a picture that cannot be drawn is withheld and its fault is a line of the job",
     ("core/services/placement_service.py", "PlacementService._ask_drawing"):
         "a stated exception: a capacity guard that cannot run lets the placement through",
-    ("core/cogs/season_cog.py", "SeasonCog._ask_drawing"):
+    ("core/services/approval_checks.py", "ask_drawing"):
         "a stated exception: a capacity check that cannot run lets the season through",
+    ("core/services/approval_checks.py", "team_name_problems"):
+        "a stated exception: a team-name check that cannot read the teams finds nothing wrong, and "
+        "the review and the approval carry on with the names unchecked",
     ("core/services/round_add_changes.py", "calendar_round_refusal"):
         "a stated exception: a round guard that cannot run lets the round through, at the ask "
         "and as the change starts",
-    ("core/cogs/season_cog.py", "SeasonCog._image_configuration_faults"):
+    ("core/services/approval_checks.py", "image_configuration_faults"):
         "a stated exception: templates that cannot be read refuse the season, and a per-tier "
         "colour or portrait check that cannot be read stands aside",
     ("core/cogs/season_cog.py", "SeasonCog._build_image_review_section"):
@@ -3034,7 +3037,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/rsvp_service.py", "_checkin_attachment"): (2, PASS["attendance"]),
     ("core/cogs/bot_cog.py", "_clean_up"): (1, PASS["core"]),
     ("core/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
-    ("core/cogs/season_cog.py", "SeasonCog._team_name_problems"): (1, PASS["core"]),
     ("core/services/amendment_service.py", "approval_faults"): (1, PASS["core"]),
     ("core/services/approval_checks.py", "channel_on_server"): (1, PASS["core"]),
     ("core/services/change_queue.py", "ChangeQueue._acknowledge"): (1, PASS["core"]),

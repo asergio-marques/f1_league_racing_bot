@@ -30,7 +30,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal
 
 import discord
 from discord import app_commands
@@ -48,7 +48,7 @@ from leaguebot.core.services.cancellation_changes import (
     cancellation_holding_amendment,
 )
 from leaguebot.core.services.division_settings import NO_SEASON_REFUSAL, division_not_found
-from leaguebot.core.services.image_drawing import DivisionTeams, Held, TeamSeats
+from leaguebot.core.services.image_drawing import Held
 from leaguebot.core.services.configuration_confirm_change import (
     ALREADY_BEING_CONFIRMED as ALREADY_CONFIGURATION_BEING_CONFIRMED,
     KIND as CONFIGURATION_CONFIRM_KIND,
@@ -120,7 +120,6 @@ from leaguebot.core.utils.channel_guard import (
     is_league_admin,
     league_admin_only,
     league_manager_only,
-    league_role_faults,
     changes_nothing,
 )
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
@@ -141,11 +140,6 @@ if TYPE_CHECKING:
     from leaguebot.core.services.season_fingerprint_service import SeasonFingerprint
 
 log = logging.getLogger(__name__)
-
-#: `SeasonCog._ask_drawing`'s count and its answer: the count a check reads before asking the
-#: drawing, and what it hands back once asked (or where there is nothing to ask).
-_T = TypeVar("_T")
-_R = TypeVar("_R")
 
 # ---------------------------------------------------------------------------
 # Bulk round import
@@ -324,139 +318,6 @@ class SeasonCog(commands.Cog):
             what=describe(interaction),
         )
 
-    async def _points_ordering_problems(self, season_id: int) -> list[str]:
-        """Every place this season's points would score a lower position above a higher one.
-
-        **One helper because two surfaces ask the same question.** `/season placements-review` reports
-        what would block an approval and `_do_approve` refuses on it; a review that promised
-        to surface the blockers and did not look for this one sent a manager to an approval
-        that then refused, for a fault the report had just told them nothing about.
-
-        Two checks, because the points a season will run on can arrive from two directions.
-        The attached server-level configs are what a first approval copies in, and until it
-        does the season's own table is empty — reading only that table is how this check came
-        to pass every first approval it was ever asked about (#131). The season's own table is
-        read as well, because the snapshot writes with INSERT OR REPLACE and clears nothing
-        first, so a season being approved a second time can be holding entries an earlier
-        approval left behind that no attached config would mention.
-
-        Merged rather than concatenated: a re-approval sees the same fault from both sides,
-        and a manager should read each broken position once.
-        """
-        return list(dict.fromkeys(
-            await season_points_service.validate_attached_config_ordering(
-                self.bot.db_path, season_id
-            )
-            + await season_points_service.validate_monotonic_ordering(
-                self.bot.db_path, season_id
-            )
-        ))
-
-    async def _missing_points_config_problems(
-        self, season_id: int
-    ) -> list[str]:
-        """Every points configuration this season is attached to that no longer exists.
-
-        **One helper because two surfaces ask the same question**, in the manner of
-        `_points_ordering_problems`: `/season placements-review` reports what would block an approval
-        and `_do_approve` refuses on it, and a review that listed the name as attached while
-        the approval choked on it is what made #132 unreadable.
-
-        The fault it names used to be silence. The attachment is a row in
-        `season_points_links` carrying no foreign key, so a name that was never created
-        counted towards the "a points configuration is attached" prerequisite and passed it,
-        and the first thing to notice was the points snapshot raising
-        `ConfigNotFoundError` — mid-command, after the defer, with no error handler on the
-        tree to say so. The season simply stayed in setup and nothing was ever sent.
-        """
-        return await season_points_service.missing_attached_configs(
-            self.bot.db_path, season_id
-        )
-
-    async def _no_points_config_attached(self, season_id: int) -> bool:
-        """Whether *season_id* has no points configuration attached at all.
-
-        **One helper because three surfaces ask the same question** (#409): the configuration
-        review refuses on it, `_do_approve` refuses on it, and `/season placements-review`
-        withholds its button on it. The placements review once had no copy of the question,
-        and offered Approve to a season the press then refused — reachable because
-        `/results config detach` stays open in Placements.
-
-        A link to a configuration that does not exist still counts as attached here; that
-        one is `_missing_points_config_problems`' fault. Test mode is no exception (decided
-        2026-09-23): it attaches Standard and Half Points when it is enabled and at no other
-        moment, and a season that has had them detached is refused as any other.
-        """
-        return not await season_points_service.get_attached_config_names(
-            self.bot.db_path, season_id
-        )
-
-    async def _team_name_problems(self, season_id: int | None) -> list[str]:
-        """Every team whose name cannot become an asset filename (047 FR-032).
-
-        Checks the server's team configuration and every division of the season under
-        setup, naming **every** offending team rather than stopping at the first — a
-        manager fixing them one review at a time is a manager the check is failing.
-
-        **Not gated on the image module.** The normalised team name is the filename under
-        which every graphic that draws a badge seeks that team's image, and Principle IX
-        governs it as a structural invariant of teams rather than as an image-module
-        concern. It was once the *field identifier* a lineup template addressed the team's
-        block by; that rationale went with the keyed template at v6.0.0, and the rule
-        stands on the filename alone.
-
-        Only a season in SETUP reaches here, so an already-approved season is never
-        re-validated and no team is renamed or removed by this rule's introduction.
-        """
-        from leaguebot.core.db.database import get_connection
-        from leaguebot.core.services.team_service import validate_team_name
-        from leaguebot.core.utils.asset_slug import normalise
-
-        problems: list[str] = []
-        try:
-            async with get_connection(self.bot.db_path) as db:
-                scopes: list[tuple[str, str, tuple]] = [
-                    (
-                        "the server's team list",
-                        "SELECT name FROM default_teams WHERE is_reserve = 0 ORDER BY name",
-                        (),
-                    )
-                ]
-                if season_id is not None:
-                    rows = await (
-                        await db.execute(
-                            "SELECT id, name FROM divisions WHERE season_id = ? ORDER BY tier",
-                            (season_id,),
-                        )
-                    ).fetchall()
-                    scopes.extend(
-                        (
-                            f"division **{row['name']}**",
-                            "SELECT name FROM team_instances "
-                            "WHERE division_id = ? AND is_reserve = 0 ORDER BY name",
-                            (row["id"],),
-                        )
-                        for row in rows
-                    )
-
-                for label, query, args in scopes:
-                    names = [
-                        r["name"]
-                        for r in await (await db.execute(query, args)).fetchall()
-                    ]
-                    seen: dict[str, str] = {}
-                    for name in names:
-                        fault = validate_team_name(name, seen)
-                        if fault is not None:
-                            problems.append(f"{label}: {fault}")
-                        key = normalise(name or "")
-                        if key:
-                            seen.setdefault(key, name)
-        except Exception as exc:  # noqa: BLE001 — never fail a season on this reader
-            log.error("season: team name check failed: %s", exc, exc_info=True)
-            return []
-        return problems
-
     async def _review_picture_gates(self) -> tuple[bool, bool]:
         """Whether the league conveys its calendar, and its lineup, as pictures: the gates the
         review draws by, read once for the whole review. Both gates are stated exceptions of
@@ -523,72 +384,6 @@ class SeasonCog(commands.Cog):
             what=describe(interaction),
         )
 
-    async def _ask_drawing(
-        self,
-        guard: str,
-        count: Callable[[], Awaitable[_T | None]],
-        ask: Callable[[_T], Awaitable[_R]],
-        *,
-        nothing: _R,
-    ) -> _R:
-        """Read the guard's own count with *count*, *ask* the image module's drawing about
-        it, and hand back what it says, or *nothing* where no count applies (None), or
-        either step could not run. *guard* names the guard in the host's log.
-
-        One catch for the season cog's three capacity checks, the review's and the approval's
-        (`_lineup_problems`, `_calendar_capacity_warning`, `_attendance_capacity_warning`). A
-        capacity check that cannot run must not block an approval or a season, only a genuine
-        over-capacity may, so the fault goes to the host's log in full and the check that asked
-        answers as if told nothing was wrong (architecture.md, "A catch-all error handler", a
-        stated exception beside `PlacementService._ask_drawing`'s). The round guard of `/round add`
-        and the round imports is the change type's own (`calendar_round_refusal`).
-        """
-        try:
-            counted = await count()
-            if counted is None:
-                return nothing
-            return await ask(counted)
-        except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
-            log.error("%s capacity check could not run: %s", guard, exc, exc_info=True)
-            return nothing
-
-    async def _lineup_problems(self, season_id: int) -> list[str]:
-        """Where the lineup template cannot draw a division of this season (047 FR-022).
-
-        Counts each division's race teams, in tier order, and the drivers seated in each —
-        an empty seat uncounted, the reserve team unhanded — and asks the drawing on the
-        bot. The image module measures its own template and answers each problem as a
-        sentence, unchanged.
-
-        A check that cannot run lets the approval through (`_ask_drawing`'s stated
-        exception, architecture.md, "A catch-all error handler").
-        """
-        async def held() -> list[DivisionTeams]:
-            divisions = await self.bot.season_service.get_divisions(season_id)
-            out: list[DivisionTeams] = []
-            for division in sorted(divisions, key=lambda d: d.tier):
-                entries = await self.bot.team_service.get_division_teams(division.id)
-                teams = tuple(
-                    TeamSeats(
-                        entry["name"],
-                        sum(
-                            1 for seat in entry.get("seats", [])
-                            if seat.get("discord_user_id")
-                        ),
-                    )
-                    for entry in entries
-                    if not entry.get("is_reserve")
-                )
-                out.append(DivisionTeams(division.name, teams))
-            return out
-
-        return await self._ask_drawing(
-            "season: lineup",
-            held,
-            self.bot.image_drawing.lineup_review_problems,
-            nothing=[],
-        )
-
     async def _calendar_capacity_warning(
         self, season_id: int
     ) -> list[str]:
@@ -600,7 +395,7 @@ class SeasonCog(commands.Cog):
         it here as a failure would refuse a season that may well draw perfectly.
 
         Counts in a core service and asks the drawing on the bot. A check that cannot run —
-        its own count, or the drawing — lets the season through (`_ask_drawing`'s stated
+        its own count, or the drawing — lets the season through (`approval_checks.ask_drawing`'s stated
         exception, architecture.md, "A catch-all error handler").
         """
         async def longest() -> Held | None:
@@ -613,7 +408,7 @@ class SeasonCog(commands.Cog):
                 return []
             return [f"  ⚠️ {problem.problem}. {problem.remedy}", ""]
 
-        return await self._ask_drawing(
+        return await approval_checks.ask_drawing(
             "season review: calendar", longest, warning, nothing=[]
         )
 
@@ -636,7 +431,7 @@ class SeasonCog(commands.Cog):
 
         One check, as `_calendar_capacity_warning` is: a fault in the season's own counts or
         in asking the drawing drops the sheet, the standings and the check-in call together
-        and lets the review through (`_ask_drawing`'s stated exception, architecture.md, "A
+        and lets the review through (`approval_checks.ask_drawing`'s stated exception, architecture.md, "A
         catch-all error handler").
         """
         async def counted() -> SeasonCapacityCounts:
@@ -671,7 +466,7 @@ class SeasonCog(commands.Cog):
                 lines.append("")
             return lines
 
-        return await self._ask_drawing(
+        return await approval_checks.ask_drawing(
             "season review: attendance", counted, warnings, nothing=[]
         )
 
@@ -887,16 +682,19 @@ class SeasonCog(commands.Cog):
             # confirmation refuses on (#396). The section draws only the lineup and the
             # calendar, so a broken results or weather template, or a missing rasteriser
             # with both of those off, was named here as blocking and then approved.
-            approval_blockers += await self._image_configuration_faults()
+            approval_blockers += await approval_checks.image_configuration_faults(self.bot.image_drawing)
             image_lines += await self._calendar_capacity_warning(
                 season.id
             )
             image_lines += await self._attendance_capacity_warning(
                 season.id
             )
-            lineup_problems = await self._lineup_problems(
-                season.id
-            )
+            lineup_problems = await approval_checks.lineup_problems(
+            season.id,
+            season_service=self.bot.season_service,
+            team_service=self.bot.team_service,
+            image_drawing=self.bot.image_drawing,
+        )
             if lineup_problems:
                 image_lines.append(
                     "❌ **Lineup template** — these block approval:"
@@ -911,9 +709,7 @@ class SeasonCog(commands.Cog):
         # ── Team names (038, FR-013) ──────────────────────────────
         # Outside the `images_on` branch deliberately: a team name must address a
         # lineup field whether or not the league draws one today (FR-012).
-        name_problems = await self._team_name_problems(
-            season.id
-        )
+        name_problems = await approval_checks.team_name_problems(self.bot.team_service, season.id)
         if name_problems:
             header_lines.append(
                 "❌ **Team names** — these cannot become lineup template fields, "
@@ -943,7 +739,7 @@ class SeasonCog(commands.Cog):
             # Nothing attached is refused by the approval as surely as a phantom is, and
             # `/results config detach` stays open in Placements (#409). Test mode is no
             # exception (decided 2026-09-23): it attaches its two only when enabled.
-            no_points_attached = await self._no_points_config_attached(season.id)
+            no_points_attached = await approval_checks.no_points_config_attached(self.bot.db_path, season.id)
             if no_points_attached:
                 points_lines.append("")
                 points_lines.append(
@@ -957,9 +753,7 @@ class SeasonCog(commands.Cog):
             # The list of attached names is printed from the links alone, so a mistyped
             # one reads exactly like a real one — which is what let #132 pass a review
             # and then stop an approval dead.
-            phantom_configs = await self._missing_points_config_problems(
-                season.id
-            )
+            phantom_configs = await approval_checks.missing_points_config_problems(self.bot.db_path, season.id)
             if phantom_configs:
                 points_lines.append("")
                 points_lines.append(
@@ -971,9 +765,7 @@ class SeasonCog(commands.Cog):
                     "configuration exists on the server. Build it with "
                     "`/results config add`, or drop it with `/results config detach`."
                 )
-            points_faults = await self._points_ordering_problems(
-                season.id
-            )
+            points_faults = await approval_checks.points_ordering_problems(self.bot.db_path, season.id)
             if points_faults:
                 points_lines.append("")
                 points_lines.append(
@@ -1197,8 +989,8 @@ class SeasonCog(commands.Cog):
         # ── Server-level unsettled signups (issue #220) ──────────
         # Named in the public report, every one of them, so that whoever reads the review
         # sees who is still to be placed or turned down — not merely how many.
-        unsettled, channel_faults = await self._placement_confirmation_faults(
-            season.id, interaction.guild
+        unsettled, channel_faults = await approval_checks.placement_confirmation_faults(
+            self.bot.module_service, self.bot.db_path, season.id, interaction.guild
         )
         if unsettled:
             report.extend(chunk_message(
@@ -1294,7 +1086,9 @@ class SeasonCog(commands.Cog):
             )
         if channel_faults:
             await self._send_channel_faults(poster, channel_faults)
-        no_divisions = not await self._season_has_divisions(season.id)
+        no_divisions = not await approval_checks.season_has_divisions(
+            season.id, season_service=self.bot.season_service
+        )
         if no_divisions:
             await poster.reply(
                 NO_DIVISIONS_REFUSAL + " Then run `/season placements-review` again.",
@@ -1315,38 +1109,6 @@ class SeasonCog(commands.Cog):
             interaction, "/season placements-review", season.id, report, pictures,
             offered=offered, view="approve",
         )
-
-    async def _season_has_divisions(self, season_id: int) -> bool:
-        """Whether *season_id* holds a division that is not cancelled.
-
-        A season with none has nothing to race, and would never reach Pending completion —
-        so its placements are not confirmed.
-        """
-        divisions = await self.bot.season_service.get_divisions(season_id)
-        return any(division.status != "CANCELLED" for division in divisions)
-
-    async def _division_channel_faults(self, season_id: int, guild=None) -> list[str]:
-        """Every channel a division of the season posts to that is not set, or not on the server.
-
-        Read by `approval_checks.division_channel_faults`, which the change queue's check of the
-        approval reads too (#439).
-        """
-        return await approval_checks.division_channel_faults(
-            self.bot.module_service, self.bot.db_path, season_id, guild
-        )
-
-    async def _placement_confirmation_faults(
-        self, season_id: int, guild=None
-    ) -> tuple[list[str], list[str]]:
-        """What stops placements being confirmed that no older gate checks (issue #220).
-
-        Returns ``(unsettled, channels)``: the unsettled signups, named, and every channel a
-        division posts to that is not set or no longer on the server (#374). The review
-        withholds its button on either, and the confirmation refuses on either, from this one
-        reading — mid-season as at the first confirmation.
-        """
-        unsettled = await approval_checks.unsettled_signups(self.bot.db_path)
-        return unsettled, await self._division_channel_faults(season_id, guild)
 
     @staticmethod
     async def _send_channel_faults(poster: _ReviewPoster, channel_faults: list[str]) -> None:
@@ -1431,10 +1193,12 @@ class SeasonCog(commands.Cog):
             else:
                 report.extend(chunk_message("\n".join(block)))
 
-        unsettled, channel_faults = await self._placement_confirmation_faults(
-            season.id, interaction.guild
+        unsettled, channel_faults = await approval_checks.placement_confirmation_faults(
+            self.bot.module_service, self.bot.db_path, season.id, interaction.guild
         )
-        configuration_faults = await self._mid_season_configuration_faults()
+        configuration_faults = await approval_checks.mid_season_configuration_faults(
+            self.bot.module_service, self.bot.image_drawing
+        )
         if unsettled:
             report.extend(chunk_message(
                 "⚠️ **Unsettled signups** — each is to be placed with "
@@ -1515,13 +1279,15 @@ class SeasonCog(commands.Cog):
         # the server meanwhile changes nothing the fingerprint reads. The lineups are not
         # drawn again: the fingerprint proves the images configuration and the artwork
         # unchanged since the review drew them.
-        unsettled, channel_faults = await self._placement_confirmation_faults(
-            season.id, interaction.guild
+        unsettled, channel_faults = await approval_checks.placement_confirmation_faults(
+            self.bot.module_service, self.bot.db_path, season.id, interaction.guild
         )
         faults = [
             *(f"Unsettled signup: {line}" for line in unsettled),
             *channel_faults,
-            *await self._mid_season_configuration_faults(),
+            *await approval_checks.mid_season_configuration_faults(
+            self.bot.module_service, self.bot.image_drawing
+        ),
         ]
         if faults:
             bullets = "\n".join(f"\u2022 {line}" for line in faults)
@@ -1567,100 +1333,6 @@ class SeasonCog(commands.Cog):
     # /season config-review — confirming the configuration (issue #220)
     # ------------------------------------------------------------------
 
-    async def _configuration_faults(self, season_id: int, guild=None) -> list[str]:
-        """Every fault that stops a season's configuration being confirmed.
-
-        The configuration review checks everything that can be checked before the season has
-        divisions: every check the placements review makes, save those concerning divisions,
-        lineups, calendars and division channels. The placements review makes all of these
-        again, the configuration of a module other than signup being free to change in
-        between — save the league's two roles, which confirming the configuration fixes
-        until the season ends (issue #276), and so cannot have changed.
-
-        **The roles are judged upon the server, not merely as stored** (#374), where *guild*
-        is given: both must still be on it, and the driver role must be one the bot can grant.
-        Confirming fixes them, so this is the last moment a league can choose others freely.
-
-        **One helper for the review and the confirmation**, so the button is withheld on
-        exactly what the confirmation refuses. Each fault is a line a league manager reads,
-        naming what to run to put it right.
-        """
-        faults: list[str] = []
-
-        # ── Signup ─────────────────────────────────────────────────────────────
-        # The two roles are the league's (issue #276), but only the signup module needs
-        # them, so they are faults only while it is enabled.
-        if await self.bot.module_service.is_signup_enabled():
-            signup_cfg = await self.bot.signup_module_service.get_config()
-            server_cfg = await self.bot.config_service.get_server_config()
-            base_role_id = server_cfg.base_role_id if server_cfg is not None else None
-            driver_role_id = server_cfg.driver_role_id if server_cfg is not None else None
-            if signup_cfg is None or signup_cfg.signup_channel_id is None:
-                faults.append("The signup module has no **signup channel** — `/signup channel`.")
-            if base_role_id is None:
-                faults.append(
-                    "The signup module needs the league's **base role** — `/bot base-role`."
-                )
-            if driver_role_id is None:
-                faults.append(
-                    "The signup module needs the league's **driver role** — `/bot driver-role`."
-                )
-            faults += league_role_faults(guild, base_role_id, driver_role_id)
-
-        # ── Team names ─────────────────────────────────────────────────────────
-        # The server's list alone: a season in configuration has no division to check.
-        faults += [
-            f"Team name: {problem}"
-            for problem in await self._team_name_problems(None)
-        ]
-
-        # ── Results: points configurations ────────────────────────────────────
-        if await self.bot.module_service.is_results_enabled():
-            if await self._no_points_config_attached(season_id):
-                faults.append(
-                    "No points configuration is attached to this season — "
-                    "`/results config append`."
-                )
-            for name in await self._missing_points_config_problems(season_id):
-                faults.append(
-                    f"The attached points configuration **{name}** does not exist — build "
-                    f"it with `/results config add`, or drop it with `/results config detach`."
-                )
-            faults += [
-                f"Points table out of order: {fault}"
-                for fault in await self._points_ordering_problems(season_id)
-            ]
-
-        # ── Images: rasteriser, templates, colours, portraits ─────────────────
-        if await self.bot.module_service.is_images_enabled():
-            faults += await self._image_configuration_faults()
-
-        return faults
-
-    async def _mid_season_configuration_faults(self) -> list[str]:
-        """The configuration review's checks that confirming mid-season placements repeats.
-
-        Every check the configuration review makes is made again when placements are
-        confirmed mid-season (#374, decided 2026-09-22), save those whose answer the season
-        has already settled:
-
-        * the league's two roles and the signup configuration, which confirming the
-          configuration fixed (issue #276);
-        * the team names, the team list being fixed with them;
-        * the points configurations, recorded upon the season when its placements were first
-          confirmed and changed since only by an amendment of the season's points, which
-          judges its own table. The review's check reads the server's configurations instead,
-          which the season no longer uses — and one removed from the server would refuse
-          with a remedy, `/results config detach`, that is refused once a season is
-          confirmed.
-
-        What is left is the image module's, whose templates, artwork and settings may all
-        change while a season is raced.
-        """
-        if not await self.bot.module_service.is_images_enabled():
-            return []
-        return await self._image_configuration_faults()
-
     async def _weather_review_lines(self) -> list[str]:
         """The weather deadlines, as both reviews report them."""
         from leaguebot.weather.services.weather_config_service import (
@@ -1676,7 +1348,7 @@ class SeasonCog(commands.Cog):
 
         Shown whatever modules are enabled, the roles being the league's rather than the
         signup module's (issue #276). Whether their absence is a fault is the signup
-        module's to say; see `_configuration_faults`.
+        module's to say; see `approval_checks.configuration_faults`.
 
         **The configuration review alone.** Confirming the configuration fixes both roles
         until the season ends, so the placements review has nothing to say of them that the
@@ -1753,52 +1425,6 @@ class SeasonCog(commands.Cog):
         if config_names:
             return ["**Points Configs:** " + ", ".join(config_names)]
         return ["**Points Configs:** *(none attached)*"]
-
-    async def _image_configuration_faults(self) -> list[str]:
-        """The image module's faults that need no division, round, lineup or calendar.
-
-        The rasteriser, every template a switched-on output draws, the per-tier colours and
-        the driver portrait settings, each in the image module's own words
-        (`ImageDrawing.rasteriser_fault`, `.template_faults`, `.colour_shortfall_problems`,
-        `.portrait_fault`; core/services/image_drawing.py). **The one reading of them every
-        gate shares**: the configuration review and its confirmation, both placements reviews
-        and both confirmations of placements. Each review withholds its button on exactly what
-        its confirmation refuses, so a manager is never shown a fault as blocking and then
-        let past it — which the first placements review did (#396), reading only the
-        portrait settings while its confirmation read the colours and the portraits and
-        neither read the templates or the rasteriser.
-
-        A stated exception (architecture.md, "A catch-all error handler"): templates that
-        cannot be read are a fault of their own, never a pass, so that fault is let through;
-        the colour and portrait checks stand aside on a failure of theirs, since a reader that
-        cannot answer must not be the thing that refuses a season. The caller decides whether
-        the module is enabled; this assumes it is.
-        """
-        drawing = self.bot.image_drawing
-        faults: list[str] = []
-        rasteriser_fault = drawing.rasteriser_fault()
-        if rasteriser_fault is not None:
-            faults.append(rasteriser_fault)
-        try:
-            faults += await drawing.template_faults()
-        except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
-            log.error("config review: the templates could not be read: %s", exc, exc_info=True)
-            return [*faults, "The image templates could not be read."]
-        try:
-            faults += [
-                f"Tier colour: {problem}"
-                for problem in await drawing.colour_shortfall_problems()
-            ]
-        except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
-            log.error("config review: the per-tier colours could not be read: %s", exc, exc_info=True)
-        try:
-            portrait_fault = await drawing.portrait_fault()
-        except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
-            log.error("config review: the portrait settings could not be read: %s", exc, exc_info=True)
-            portrait_fault = None
-        if portrait_fault is not None:
-            faults.append(portrait_fault)
-        return faults
 
     @season.command(
         name="config-review",
@@ -1880,7 +1506,16 @@ class SeasonCog(commands.Cog):
                 continue
             report.extend(chunk_message(body))
 
-        faults = await self._configuration_faults(season.id, interaction.guild)
+        faults = await approval_checks.configuration_faults(
+            season.id,
+            interaction.guild,
+            module_service=self.bot.module_service,
+            signup_module_service=self.bot.signup_module_service,
+            config_service=self.bot.config_service,
+            team_service=self.bot.team_service,
+            db_path=self.bot.db_path,
+            image_drawing=self.bot.image_drawing,
+        )
         if faults:
             body = "\n".join(f"• {fault}" for fault in faults)
             report.extend(chunk_message(
@@ -1936,7 +1571,16 @@ class SeasonCog(commands.Cog):
             await refuse(interaction, "⛔ There is no season in configuration.", what=what)
             return False
 
-        faults = await self._configuration_faults(season.id, interaction.guild)
+        faults = await approval_checks.configuration_faults(
+            season.id,
+            interaction.guild,
+            module_service=self.bot.module_service,
+            signup_module_service=self.bot.signup_module_service,
+            config_service=self.bot.config_service,
+            team_service=self.bot.team_service,
+            db_path=self.bot.db_path,
+            image_drawing=self.bot.image_drawing,
+        )
         if faults:
             body = "\n".join(f"• {fault}" for fault in faults)
             await refuse(
@@ -3110,7 +2754,9 @@ class SeasonCog(commands.Cog):
             )
             return False
 
-        if not await self._season_has_divisions(season.id):
+        if not await approval_checks.season_has_divisions(
+            season.id, season_service=self.bot.season_service
+        ):
             await refuse(
                 interaction, NO_DIVISIONS_REFUSAL + " **Nothing has been approved.**", what=what
             )
@@ -3118,8 +2764,8 @@ class SeasonCog(commands.Cog):
 
         # ── Gate S: every signup settled, and every channel a division posts to set and on
         # the server (#220, #374) ──
-        unsettled, channel_faults = await self._placement_confirmation_faults(
-            season.id, interaction.guild
+        unsettled, channel_faults = await approval_checks.placement_confirmation_faults(
+            self.bot.module_service, self.bot.db_path, season.id, interaction.guild
         )
         if unsettled or channel_faults:
             bullets = "\n".join(f"\u2022 {line}" for line in [*unsettled, *channel_faults])
@@ -3188,16 +2834,14 @@ class SeasonCog(commands.Cog):
             # Points when it is enabled, and a test season that has had them detached is
             # refused here as any other rather than having them attached again behind it.
             errors: list[str] = []
-            if await self._no_points_config_attached(season.id):
+            if await approval_checks.no_points_config_attached(self.bot.db_path, season.id):
                 errors.append("no points configuration is attached to this season")
 
             # Counting the links is not the same as having the configurations they name.
             # A link is a bare name, so one that was mistyped — or one whose configuration
             # has since been removed — satisfies the count above and then breaks the
             # snapshot further down, which is exactly the silence #132 reported.
-            for phantom in await self._missing_points_config_problems(
-                season.id
-            ):
+            for phantom in await approval_checks.missing_points_config_problems(self.bot.db_path, season.id):
                 errors.append(
                     f"points configuration **{phantom}** is attached to this season but "
                     f"does not exist — create it with `/results config add`, or drop it "
@@ -3218,7 +2862,7 @@ class SeasonCog(commands.Cog):
             #
             # Through the same helper `/season placements-review` reports from, so the report a
             # manager was given and the refusal they then meet cannot disagree.
-            mono_errors = await self._points_ordering_problems(season.id)
+            mono_errors = await approval_checks.points_ordering_problems(self.bot.db_path, season.id)
             if mono_errors:
                 bullet_list = "\n\u2022 ".join(mono_errors)
                 await refuse(
@@ -3307,7 +2951,7 @@ class SeasonCog(commands.Cog):
         # Not gated on the image module: a team name is a structural invariant of teams
         # (Principle IX), constrained at the one moment it is set so that a league
         # enabling the module later is not left with names it cannot correct.
-        name_problems = await self._team_name_problems(season.id)
+        name_problems = await approval_checks.team_name_problems(self.bot.team_service, season.id)
         if name_problems:
             bullet_list = "\n• ".join(name_problems)
             await refuse(
@@ -3325,7 +2969,12 @@ class SeasonCog(commands.Cog):
         # Season review holds the data that will actually be drawn, so a divergence here
         # refuses rather than warns (Constitution XIV.9). A warning would let a league
         # approve a season every lineup of which then falls back to text.
-        lineup_problems = await self._lineup_problems(season.id)
+        lineup_problems = await approval_checks.lineup_problems(
+            season.id,
+            season_service=self.bot.season_service,
+            team_service=self.bot.team_service,
+            image_drawing=self.bot.image_drawing,
+        )
         if lineup_problems:
             bullet_list = "\n• ".join(lineup_problems)
             await refuse(
@@ -3342,7 +2991,7 @@ class SeasonCog(commands.Cog):
         #
         # Every check the configuration review makes of the image module, made again: the
         # rasteriser, every template a switched-on output draws, the per-tier colours and
-        # the driver portrait settings. Read through `_image_configuration_faults`, the
+        # the driver portrait settings. Read through `approval_checks.image_configuration_faults`, the
         # helper `/season placements-review` withholds its button on, so the report a
         # manager was given and the refusal they then meet cannot disagree.
         #
@@ -3352,7 +3001,7 @@ class SeasonCog(commands.Cog):
         # first tries to post it. The gate on templates was withdrawn on 2026-09-07 on the
         # contrary belief, and approved exactly those seasons until #396 restored it.
         if await self.bot.module_service.is_images_enabled():
-            image_faults = await self._image_configuration_faults()
+            image_faults = await approval_checks.image_configuration_faults(self.bot.image_drawing)
             if image_faults:
                 bullet_list = "\n• ".join(image_faults)
                 await refuse(

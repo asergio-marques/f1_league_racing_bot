@@ -78,12 +78,10 @@ def _function_source(name: str) -> str:
 # ── The helper ────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 async def test_a_season_with_nothing_attached_has_none(db_path):
     assert await _none_attached(db_path) is True
 
 
-@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 async def test_a_season_with_a_configuration_attached_has_one(db_path):
     await saves.create_config(db_path, "Standard")
     await saves.set_session_points(
@@ -94,7 +92,6 @@ async def test_a_season_with_a_configuration_attached_has_one(db_path):
     assert await _none_attached(db_path) is False
 
 
-@pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)
 async def test_a_link_to_a_configuration_never_created_is_not_this_helpers_complaint(db_path):
     """Something is attached; that it does not exist is `_missing_points_config_problems`'
     fault (#132), and naming it twice would tell a manager to attach what they already have."""
@@ -112,12 +109,10 @@ async def test_a_link_to_a_configuration_never_created_is_not_this_helpers_compl
 
 
 @pytest.mark.parametrize("surface, asks", [
-    pytest.param("season_review", "approval_checks.no_points_config_attached(",
-                 marks=pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)),
+    pytest.param("season_review", "approval_checks.no_points_config_attached("),
     pytest.param("approve_season", "approval_checks.no_points_config_attached(",
                  marks=pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)),
-    pytest.param("configuration_faults", "no_points_config_attached(",
-                 marks=pytest.mark.xfail(strict=True, reason=_GATE_ON_THE_COG)),
+    pytest.param("configuration_faults", "no_points_config_attached("),
 ])
 def test_every_surface_asks_the_helper_rather_than_counting_for_itself(surface, asks):
     source = _function_source(surface)
