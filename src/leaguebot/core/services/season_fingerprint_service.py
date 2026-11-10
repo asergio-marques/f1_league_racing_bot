@@ -86,7 +86,13 @@ class SeasonFingerprint:
 
         An area present in one fingerprint and absent from the other counts as changed:
         that is a season that has gained or lost something wholesale.
+
+        A fingerprint that could not be taken (empty) differs from every fingerprint, another
+        empty one included, every area named: a fault at both the review and the press must
+        refuse the approval, not read as a season unchanged.
         """
+        if not self.areas or not other.areas:
+            return [AREA_LABELS[area] for area in sorted(AREA_LABELS)]
         changed: list[str] = []
         for area in sorted(set(self.areas) | set(other.areas)):
             if self.areas.get(area) != other.areas.get(area):
@@ -120,10 +126,11 @@ async def take_fingerprint(
     *drawing* is the image module's own drawing (`bot.image_drawing`), asked for the league's
     artwork signature, the one area a database read cannot see.
 
-    One connection for the lot. Never raises: a fingerprint that could not be taken is an
-    empty one, and an empty fingerprint differs from every other, so a fault here, a module's
-    included, refuses an approval whose review was read rather than waving it through: its
-    catch-all logs the fault on the host and gives that empty one.
+    One connection for the lot. A fingerprint that could not be taken is an empty one, and an
+    empty fingerprint differs from every fingerprint, another empty one included, so a fault here,
+    a module's included, refuses an approval whose review was read rather than waving it through:
+    its catch-all logs the fault on the host and gives that empty one. The one error it raises is a
+    switch nobody signed up for (`LookupError`), a fault in the bot's assembly and not a reading.
     """
     areas: dict[str, str] = {}
     try:
@@ -271,6 +278,8 @@ async def take_fingerprint(
                 areas[area] = _digest(values)
 
         areas["artwork"] = _digest(await drawing.artwork_signature())
+    except LookupError:
+        raise  # a module that never signed up is a fault in the bot's assembly, not a reading
     except Exception as exc:  # noqa: BLE001 — an unreadable season is a changed one
         log.error("season fingerprint: could not be taken: %s", exc, exc_info=True)
         return SeasonFingerprint({})
