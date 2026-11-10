@@ -500,6 +500,45 @@ async def test_a_press_after_the_five_minutes_confirms_nothing(
     assert lines[0].startswith("⛔ ") and " refused for Alex (<@4242>) — " in lines[0], lines
 
 
+@pytest.mark.xfail(strict=True, reason=_PRESS_ON_THE_HOST_S_CLOCK)
+@pytest.mark.parametrize("kind,label,review,helper,verb", _BUTTONS)
+async def test_a_refused_press_during_which_the_five_minutes_pass_ends_the_review_as_expired(
+    tmp_path, monkeypatch, kind, label, review, helper, verb
+):
+    """Alex's review stands in channel 700, posted at the queue's clock a moment ago. Alex
+    presses its button; while the approval (or confirmation) is being worked, the queue's clock
+    moves on five minutes and a second, the host's left where it is, and the review's expiry
+    timer has not fired. The approval (or confirmation) is then refused and nothing goes through.
+
+    The press having ended past the review's five minutes, the review's take-down is asked of the
+    queue once, ending expired. Once the queue runs, Q, R1 and R2 are deleted and today's notice
+    pinging Alex is posted."""
+    from tests.support.change_queue import run_queue
+
+    env = await _standing(tmp_path, review)
+    channel = env.channel
+    view, workflows = _view_on(env, kind, helper, monkeypatch)
+
+    async def _refused_once_the_five_minutes_pass(*_args, **_kwargs):
+        env.clock.advance(minutes=5, seconds=1)
+        return False
+
+    getattr(workflows, helper).side_effect = _refused_once_the_five_minutes_pass
+
+    await type(view).approve(view, _press_on(env), MagicMock())
+
+    getattr(workflows, helper).assert_awaited_once()
+    [take_down] = await _take_downs(env)
+    assert (take_down["ending"], take_down["question_id"]) == ("expired", channel.q.id)
+
+    await run_queue(env.bot)
+
+    assert sorted(m.id for m in channel.deleted) == sorted([channel.q.id, channel.r1.id,
+                                                            channel.r2.id])
+    [notice] = channel.sent
+    assert "<@4242> your review has expired" in notice
+
+
 # ── A press under way is not expired under it (#482, F11) ──────────────────
 #
 # Once a press is accepted, the review's take-down is asked, ending confirmed, before the approval
