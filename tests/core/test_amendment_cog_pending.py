@@ -13,7 +13,7 @@ The amendment of a round of a season being raced, with its confirmation and its 
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -99,7 +99,7 @@ def _success_line(number: int, division: str, *changed: str) -> str:
 def _clash(number: int, at: datetime) -> str:
     """The refusal of an amendment to the moment Pro's round *number* holds, at *at*."""
     return (
-        f"❌ **Pro** already holds round {number} at {discord_ts(at)}. Two rounds of one division "
+        f"❌ **Pro** already holds round {number} at {discord_ts(at.replace(tzinfo=timezone.utc))}. Two rounds of one division "
         "cannot share a moment — the season could not be approved. The round was **not** amended."
     )
 

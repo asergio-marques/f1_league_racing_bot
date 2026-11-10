@@ -48,7 +48,7 @@ def phases_due(rnd: Round, weather: WeatherWindows, at: datetime) -> list[int]:
     """The forecast phases to draw at once at *at*: each not yet drawn whose horizon has passed,
     for a round whose moment is still ahead and which is no mystery round, as the start-up recovery
     judges a missed phase (`_recover_missed_phases`)."""
-    moment = as_utc(rnd.scheduled_at)
+    moment = rnd.scheduled_at
     if rnd.format == RoundFormat.MYSTERY or moment <= at:
         return []
     moments = round_event_moments(moment, weather=weather, attendance=None)
@@ -61,7 +61,8 @@ def phases_due(rnd: Round, weather: WeatherWindows, at: datetime) -> list[int]:
 
 
 def as_utc(moment: datetime) -> datetime:
-    """A moment with a zone is itself; a naive one, as the database hands it out, is UTC."""
+    """A moment with a zone is itself; a naive one is UTC. The queue's clock is read through it: a
+    round's moment is aware already, and goes through no such conversion."""
     if moment.tzinfo is None:
         return moment.replace(tzinfo=timezone.utc)
     return moment
@@ -74,7 +75,7 @@ def clean_up_moment(scheduled_at: datetime) -> datetime:
     that need only this, the arming of a clean-up and the amendment's test of one due, ask for
     it here and `round_event_moments` places both clean-ups by it.
     """
-    return as_utc(scheduled_at) + POST_RACE_CLEANUP_DELAY
+    return scheduled_at + POST_RACE_CLEANUP_DELAY
 
 
 def round_event_moments(
@@ -90,13 +91,13 @@ def round_event_moments(
     clean-up `POST_RACE_CLEANUP_DELAY` after it. Where *attendance* is handed, the check-in's
     call, last notice and deadline fall at theirs before it and its clean-up
     `POST_RACE_CLEANUP_DELAY` after: a last notice of 0 hours is no last notice and is left
-    out, and a deadline of 0 hours is the round's own moment. A naive *scheduled_at* is UTC, and
+    out, and a deadline of 0 hours is the round's own moment. A round's moment is aware, and
     every moment given is in UTC.
 
     No moment is judged here, neither past nor ahead: whether one still falls ahead is the
     caller's to ask of the `now` it holds.
     """
-    at = as_utc(scheduled_at)
+    at = scheduled_at.astimezone(timezone.utc)
     moments: dict[str, datetime] = {}
     if weather is not None:
         moments["weather_p1"] = at - timedelta(days=weather.phase_1_days)

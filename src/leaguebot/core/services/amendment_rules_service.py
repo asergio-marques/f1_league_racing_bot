@@ -43,8 +43,8 @@ the caller's job; this module is given a ``now`` and answers for that moment alo
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from collections.abc import Mapping
+from datetime import datetime, timezone
 from typing import Any
 
 from leaguebot.core.models.round import (
@@ -54,6 +54,7 @@ from leaguebot.core.models.round import (
     RoundFormat,
     RoundStatus,
     WeatherWindows,
+    read_scheduled_at,
 )
 from leaguebot.core.services.round_moments import as_utc, round_event_moments
 
@@ -127,8 +128,8 @@ def _amended_moment(rnd: Round, changes: dict[str, Any]) -> datetime:
     """The round's moment once *changes* are in — the new one, or its present one."""
     moment = changes.get("scheduled_at", rnd.scheduled_at)
     if not isinstance(moment, datetime):
-        moment = datetime.fromisoformat(str(moment))
-    return as_utc(moment)
+        moment = read_scheduled_at(str(moment))
+    return moment.astimezone(timezone.utc)
 
 
 def amendment_changes_nothing(standing: Mapping[str, Any], changes: Mapping[str, Any]) -> bool:
@@ -153,7 +154,7 @@ def amendment_changes_nothing(standing: Mapping[str, Any], changes: Mapping[str,
     for field, value in changes.items():
         held = standing.get(field)
         if isinstance(value, datetime) and isinstance(held, datetime):
-            if as_utc(value) != as_utc(held):
+            if value != held:
                 return False
         elif value != held:
             return False
@@ -213,7 +214,7 @@ def judge_amendment(
     if rnd.status not in ROUND_CANCELLABLE:
         refusals.append(status_refusal(rnd.status))
 
-    new_moment = _amended_moment(rnd, changes) if not unknown else as_utc(rnd.scheduled_at)
+    new_moment = _amended_moment(rnd, changes) if not unknown else rnd.scheduled_at
     moment_moved = "scheduled_at" in changes
 
     # ── Where the round may be moved to ────────────────────────────────────────────────────

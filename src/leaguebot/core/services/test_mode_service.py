@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, TypedDict
 
@@ -31,7 +31,7 @@ from leaguebot.core.models.change import (
     FORECAST,
     FORECAST_CLEAN_UP,
 )
-from leaguebot.core.models.round import ROUND_JOB_PHASES
+from leaguebot.core.models.round import ROUND_JOB_PHASES, read_scheduled_at
 from leaguebot.core.utils.hooks import AwaitedHook
 
 if TYPE_CHECKING:
@@ -320,11 +320,8 @@ def _deadline_has_run(rsvp: Any) -> bool:
 
 
 def _race_run(scheduled_at: str, now: datetime) -> bool:
-    """Whether a round scheduled at *scheduled_at* (naive means UTC) has been raced by *now*."""
-    moment = datetime.fromisoformat(scheduled_at)
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=timezone.utc)
-    return moment <= now
+    """Whether a round stored as scheduled at *scheduled_at* has been raced by *now*."""
+    return read_scheduled_at(scheduled_at) <= now
 
 
 async def get_next_pending_phase(

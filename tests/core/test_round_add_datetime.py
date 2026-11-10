@@ -17,7 +17,7 @@ the ask judges loads the calendar template, which can outlast Discord's three se
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -62,7 +62,7 @@ async def _ask(league, division_name: str = "Pro", format: str = "MYSTERY",
 
 def _doing(division: str, at: datetime) -> str:
     """How the queue words `/round add` of a round on *division* at *at*."""
-    return f"Adding a round to **{division}** at {discord_ts(at)}"
+    return f"Adding a round to **{division}** at {discord_ts(at.replace(tzinfo=timezone.utc))}"
 
 
 def _added(number: int, division: str, fmt: str, track: str | None, at: datetime,
@@ -79,7 +79,7 @@ def _added(number: int, division: str, fmt: str, track: str | None, at: datetime
     ]
     return (
         f"✅ Round **{number}** added to **{division}**.\n"
-        f"Format: {fmt} | Track: {track or 'Mystery'} | {discord_ts(at)}\n\n"
+        f"Format: {fmt} | Track: {track or 'Mystery'} | {discord_ts(at.replace(tzinfo=timezone.utc))}\n\n"
         + format_round_list(listed)
     )
 

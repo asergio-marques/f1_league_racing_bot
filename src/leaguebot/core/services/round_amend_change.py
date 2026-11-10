@@ -414,7 +414,7 @@ def _round_change(
             round_number=int(row["round_number"]),
             format=RoundFormat(row["format"]),
             track_name=row["track_name"],
-            scheduled_at=datetime.fromisoformat(row["scheduled_at"]),
+            scheduled_at=read_scheduled_at(row["scheduled_at"]),
             phase1_done=bool(row["phase1_done"]),
             phase2_done=bool(row["phase2_done"]),
             phase3_done=bool(row["phase3_done"]),

@@ -19,6 +19,7 @@ from leaguebot.core.models.round import (
     Round,
     RoundFormat,
     RoundStatus,
+    read_scheduled_at,
     stored_scheduled_at,
 )
 from leaguebot.core.models.season import (
@@ -372,7 +373,7 @@ class SeasonService:
             row = await cursor.fetchone()
         if row is None or row[0] is None:
             return None
-        return datetime.fromisoformat(row[0])
+        return read_scheduled_at(row[0])
 
     async def all_phases_complete(self) -> bool:
         """True if every non-MYSTERY, non-CANCELLED round in the active season has all 3 phases done."""
@@ -1478,7 +1479,7 @@ def _row_to_round(row: aiosqlite.Row) -> Round:
         round_number=row["round_number"],
         format=RoundFormat(row["format"]),
         track_name=row["track_name"],
-        scheduled_at=datetime.fromisoformat(row["scheduled_at"]),
+        scheduled_at=read_scheduled_at(row["scheduled_at"]),
         phase1_done=bool(row["phase1_done"]),
         phase2_done=bool(row["phase2_done"]),
         phase3_done=bool(row["phase3_done"]),

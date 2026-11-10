@@ -109,7 +109,7 @@ def overdue_windows(
         if rnd.status == RoundStatus.CANCELLED.value:
             continue
 
-        scheduled_at = as_utc(rnd.scheduled_at)
+        scheduled_at = rnd.scheduled_at
         moments = round_event_moments(scheduled_at, weather=weather, attendance=attendance)
         windows: list[tuple[str, str, datetime]] = []
 
@@ -211,9 +211,9 @@ def calendar_faults(
     # Ordered by moment, and by round number where two share one, so that three hosts whose
     # databases need not agree about row order still reach the same answer.
     def _order(rnd: Round) -> tuple[datetime, int]:
-        return (as_utc(rnd.scheduled_at), rnd.round_number)
+        return (rnd.scheduled_at, rnd.round_number)
 
-    past = [rnd for rnd in live if as_utc(rnd.scheduled_at) <= now]
+    past = [rnd for rnd in live if rnd.scheduled_at <= now]
     latest_past = max(past, key=_order) if past else None
 
     # The windows are the same evaluation `overdue_windows` performs for the report — asked

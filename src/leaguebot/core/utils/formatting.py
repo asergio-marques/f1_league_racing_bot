@@ -8,7 +8,7 @@ them.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -19,12 +19,10 @@ if TYPE_CHECKING:
 def discord_ts(dt: datetime, fmt: str = "F") -> str:
     """Return a Discord dynamic timestamp string ``<t:UNIX:fmt>``.
 
-    ``dt`` is assumed UTC if naïve.  ``fmt`` defaults to ``"F"``
+    ``dt`` is an aware moment.  ``fmt`` defaults to ``"F"``
     (long date + time, e.g. "Wednesday, 4 April 2026 20:00").
     Common format codes: ``F`` full, ``f`` short, ``R`` relative, ``D`` date.
     """
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
     return f"<t:{int(dt.timestamp())}:{fmt}>"
 
 
