@@ -528,14 +528,19 @@ async def test_the_confirmation_is_audited(tmp_path, monkeypatch):
 # ── The checks when it runs ─────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: the fingerprint does not yet ask each module for its own areas"
+)
 async def test_the_confirmation_s_check_takes_the_fingerprint_with_the_image_module_s_drawing(
     tmp_path, monkeypatch,
 ):
     """Season 3 is placing drivers mid-season and its review stands. The admin presses Confirm
     placements and the queue runs. Each time the confirmation's check compares the season with
-    the review, it takes the season's fingerprint of season 3 with the bot's image drawing,
-    which the builder hands the confirmation, so the artwork on disk is judged as the image
-    module signs it."""
+    the review, it takes the season's fingerprint of season 3 with the bot's image drawing, its
+    module service and the hook each module hands its own areas through, which the builder hands
+    the confirmation, so the artwork on disk is judged as the image module signs it, which modules
+    are on as each module's switch says, and each module's configuration as that module hands
+    it."""
     from leaguebot.core.services import mid_season_confirm_change
     from tests.support.season_league import fingerprints_taken
 
@@ -548,6 +553,8 @@ async def test_the_confirmation_s_check_takes_the_fingerprint_with_the_image_mod
     assert taken, "the confirmation's check took no fingerprint"
     for each in taken:
         assert each.get("drawing") is league.bot.image_drawing, each
+        assert each.get("module_service") is league.bot.module_service, each
+        assert each.get("fingerprint_areas_read") is league.bot.fingerprint_areas_read, each
         assert SEASON_ID in (*each["args"], each.get("season_id")), each
 
 

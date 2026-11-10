@@ -418,13 +418,18 @@ async def test_a_role_discord_refuses_stops_the_queue_and_once_discarded_is_name
 # ── The checks ──────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: the fingerprint does not yet ask each module for its own areas"
+)
 async def test_the_approval_s_check_takes_the_fingerprint_with_the_image_module_s_drawing(
     tmp_path, monkeypatch,
 ):
     """Season 3 is in placements and its review stands. The admin presses Approve and the queue
     runs. Each time the approval's check compares the season with the review, it takes the
-    season's fingerprint of season 3 with the bot's image drawing, which the builder hands the
-    approval, so the artwork on disk is judged as the image module signs it."""
+    season's fingerprint of season 3 with the bot's image drawing, its module service and the
+    hook each module hands its own areas through, which the builder hands the approval, so the
+    artwork on disk is judged as the image module signs it, which modules are on as each module's
+    switch says, and each module's configuration as that module hands it."""
     from leaguebot.core.services import season_approval_change
     from tests.support.season_league import fingerprints_taken
 
@@ -437,6 +442,8 @@ async def test_the_approval_s_check_takes_the_fingerprint_with_the_image_module_
     assert taken, "the approval's check took no fingerprint"
     for each in taken:
         assert each.get("drawing") is league.bot.image_drawing, each
+        assert each.get("module_service") is league.bot.module_service, each
+        assert each.get("fingerprint_areas_read") is league.bot.fingerprint_areas_read, each
         assert SEASON_ID in (*each["args"], each.get("season_id")), each
 
 

@@ -9,26 +9,40 @@ slips through with nothing failing, so each is changed in turn and asserted to b
 detected *and named*. That is the whole value of the per-area digest over one hash, and it
 is the test that stops the coverage rotting.
 
-The artwork on disk is the one area core cannot read itself: it asks the image module's drawing
-what the league's artwork looks like now, and digests the answer. Here the drawing is a stand-in
-whose answer each test sets; the answer itself is pinned against image's own drawing in
+Each module's own areas are asked of the module, through the hook the builder signs each up to,
+and which modules are on is asked of each module's switch reader; so the season here is
+fingerprinted with the bot the builder makes, as a review's post fingerprints it.
+
+The artwork on disk is asked of the image module's drawing, which says what the league's artwork
+looks like now, and the fingerprint digests the answer. Here the drawing is a stand-in whose answer
+each test sets; the answer itself is pinned against image's own drawing in
 `tests/image/test_image_drawing_artwork.py`.
 """
 from __future__ import annotations
 
+import logging
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
 
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.season_fingerprint_service import (
     AREA_LABELS,
     SeasonFingerprint,
     _digest,
-    take_fingerprint,
 )
+from tests.support.review_workflows import take_season_fingerprint
 
 SERVER_ID = 8811
+_NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
+
+#: Why each test of the fingerprint asking the modules fails until it does.
+_MODULES_ASKED = "#283: the fingerprint does not yet ask each module for its own areas"
+_SWITCHES_ASKED = "#283: the modules area is not yet answered by each module's switch reader"
+
+#: The modules, by the name each signs its switch reader up under.
+_MODULES = ("weather", "signup", "results", "attendance", "images")
 
 
 class _ArtworkStandIn:
@@ -47,10 +61,13 @@ class _ArtworkStandIn:
 
 @pytest.fixture
 async def season(tmp_path):
-    """A configured server with one season, one division, a team, a seat and a round, and a
-    stand-in for the image module's drawing."""
-    path = str(tmp_path / "fingerprint.db")
-    await run_migrations(path)
+    """A configured server with one season, one division, a team, a seat and a round, every module
+    off, on the bot the builder makes, its image module's drawing a stand-in."""
+    from tests.support.change_queue import built_bot
+
+    bot = await built_bot(tmp_path, now=_NOW)
+    bot.image_drawing = _ArtworkStandIn()
+    path = bot.db_path
     async with get_connection(path) as db:
         await db.execute(
             "INSERT INTO server_configs (server_id, interaction_role_id, "
@@ -98,12 +115,13 @@ async def season(tmp_path):
         await db.commit()
 
     return SimpleNamespace(
-        path=path, season_id=season_id, division_id=division_id, drawing=_ArtworkStandIn()
+        path=path, season_id=season_id, division_id=division_id, drawing=bot.image_drawing,
+        bot=bot,
     )
 
 
 async def _take(season) -> SeasonFingerprint:
-    return await take_fingerprint(season.path, season.season_id, drawing=season.drawing)
+    return await take_season_fingerprint(season.bot, season.path, season.season_id)
 
 
 async def _change(season, sql: str, *params) -> None:
@@ -137,9 +155,9 @@ async def test_a_fingerprint_that_could_not_be_taken_differs_from_everything(sea
     assert empty.differs_from(await _take(season))
 
 
-async def test_an_unreadable_season_yields_an_empty_fingerprint():
+async def test_an_unreadable_season_yields_an_empty_fingerprint(season):
     """Same reasoning, reached through the real failure path."""
-    taken = await take_fingerprint("/nonexistent/nowhere.db", 1, drawing=_ArtworkStandIn())
+    taken = await take_season_fingerprint(season.bot, "/nonexistent/nowhere.db", 1)
 
     assert taken.areas == {}
 
@@ -219,6 +237,39 @@ async def test_the_channels_area(season):
     )
 
 
+#: Each module's own channel set or changed, a seed standing first where the edit changes a row:
+#: the seed, the edit, both handed the division.
+_MODULE_CHANNELS = {
+    "weather's forecast channel": (
+        None, "UPDATE divisions SET forecast_channel_id = 555 WHERE id = ?",
+    ),
+    "results' results channel": (
+        None,
+        "INSERT INTO division_results_config (division_id, results_channel_id) VALUES (?, 120)",
+    ),
+    "results' reserves in the standings": (
+        "INSERT INTO division_results_config (division_id) VALUES (?)",
+        "UPDATE division_results_config SET reserves_in_standings = 0 WHERE division_id = ?",
+    ),
+    "attendance's RSVP channel": (
+        None,
+        "INSERT INTO attendance_division_config (division_id, rsvp_channel_id) VALUES (?, '130')",
+    ),
+}
+
+
+@pytest.mark.parametrize("edit", sorted(_MODULE_CHANNELS))
+async def test_a_module_s_channel_is_part_of_the_channels_area(season, edit):
+    """Pro's weather channel set, its results channel set, its reserves left out of the
+    standings, or its RSVP channel set, between the review and the button: each is named as the
+    channels changing, and nothing else, as a division's own lineup or calendar channel is."""
+    seed, sql = _MODULE_CHANNELS[edit]
+    if seed is not None:
+        await _change(season, seed, season.division_id)
+    before = await _take(season)
+    await _assert_only(season, before, "channels", sql, season.division_id)
+
+
 async def test_the_modules_area(season):
     before = await _take(season)
     await _assert_only(
@@ -226,6 +277,49 @@ async def test_the_modules_area(season):
         "UPDATE server_configs SET weather_module_enabled = 1 WHERE server_id = ?",
         SERVER_ID,
     )
+
+
+@pytest.mark.parametrize("module", ["signup", "results", "attendance", "images"])
+async def test_a_module_switched_on_is_part_of_the_modules_area(season, module):
+    """Signup, results, attendance or images switched on between the review and the button is
+    named as which modules are enabled changing. Attendance's and images' switches stand in their
+    own configurations, which the review reports too, so those are named with it."""
+    from tests.support.season_league import set_module_flag
+
+    before = await _take(season)
+    await set_module_flag(season.path, module, True)
+
+    changed = before.differs_from(await _take(season))
+
+    also = {"attendance": ["attendance"], "images": ["images"]}.get(module, [])
+    assert changed == [AREA_LABELS[area] for area in sorted(["modules", *also])]
+
+
+@pytest.mark.xfail(strict=True, reason=_SWITCHES_ASKED)
+async def test_the_modules_area_is_answered_by_each_module_s_switch_reader(season):
+    """Every module's flag in the database stays off; each module's switch reader is a stand-in
+    answering what the test sets. Images' reader answering on between the review and the button
+    is named as which modules are enabled changing, and nothing else: the fingerprint asks each of
+    the five modules' readers, all of them on the one connection it holds, and reads no flag
+    itself."""
+    answers = dict.fromkeys(_MODULES, False)
+    handed: list[tuple[str, object]] = []
+    for module in _MODULES:
+        async def reader(db, module=module) -> bool:
+            handed.append((module, db))
+            return answers[module]
+        season.bot.module_service.register_switch(module, reader)
+
+    before = await _take(season)
+    asked = list(handed)
+    handed.clear()
+    answers["images"] = True
+    changed = before.differs_from(await _take(season))
+
+    assert changed == [AREA_LABELS["modules"]]
+    for each in (asked, handed):
+        assert sorted(module for module, _db in each) == sorted(_MODULES)
+        assert len({id(db) for _module, db in each}) == 1
 
 
 async def test_a_signup_settled_after_the_report_is_part_of_the_unsettled_signups_area(season):
@@ -341,8 +435,8 @@ async def test_changing_a_league_role_is_named_as_the_roles_changing(season, col
 
 
 async def test_the_attendance_area(season):
-    """Changed on an existing row, so the module switch it shares with `modules` is not
-    also disturbed — inserting the row would move both, correctly but less precisely."""
+    """Changed on an existing row, its module switch left as it was, so the attendance
+    configuration alone is named."""
     await _change(
         season,
         "INSERT INTO attendance_config (id, rsvp_notice_days) VALUES (1, 5)",
@@ -375,6 +469,161 @@ async def test_an_aspect_toggle_is_part_of_the_images_area(season):
     await _assert_only(
         season, before, "images",
         "INSERT INTO image_aspect_toggles (aspect, enabled) VALUES ('calendar', 1)",
+    )
+
+
+# ── Each module's own areas ───────────────────────────────────────────────
+#
+# Core reads no module's table: each module hands the fingerprint its own areas, on the
+# connection the fingerprint holds, through the hook the builder signs each up to.
+
+
+#: The areas each module hands the fingerprint, by the module.
+_MODULE_AREAS = {
+    "weather": {"channels", "weather"},
+    "results": {"channels", "points"},
+    "attendance": {"channels", "attendance"},
+    "signup": {"signup"},
+    "images": {"images"},
+}
+
+#: An edit to one module's own configuration: the module, the one area of its own it changes, a
+#: seed standing first where the edit changes a row, and the edit. `:division` and `:season` are
+#: the season's division and the season.
+_MODULE_EDITS = {
+    "weather's forecast channel": (
+        "weather", "channels", None,
+        "UPDATE divisions SET forecast_channel_id = 555 WHERE id = :division",
+    ),
+    "weather's phases": (
+        "weather", "weather", None,
+        "INSERT INTO weather_pipeline_config (id, phase_1_days) VALUES (1, 7)",
+    ),
+    "results' results channel": (
+        "results", "channels", None,
+        "INSERT INTO division_results_config (division_id, results_channel_id) "
+        "VALUES (:division, 120)",
+    ),
+    "results' reserves in the standings": (
+        "results", "channels",
+        "INSERT INTO division_results_config (division_id) VALUES (:division)",
+        "UPDATE division_results_config SET reserves_in_standings = 0 "
+        "WHERE division_id = :division",
+    ),
+    "results' points configuration": (
+        "results", "points", None,
+        "INSERT INTO season_points_links (season_id, config_name) VALUES (:season, 'Standard')",
+    ),
+    "attendance's RSVP channel": (
+        "attendance", "channels", None,
+        "INSERT INTO attendance_division_config (division_id, rsvp_channel_id) "
+        "VALUES (:division, '130')",
+    ),
+    "attendance's notice": (
+        "attendance", "attendance",
+        "INSERT INTO attendance_config (id, rsvp_notice_days) VALUES (1, 5)",
+        "UPDATE attendance_config SET rsvp_notice_days = 9",
+    ),
+    "signup's channel": (
+        "signup", "signup", None,
+        "INSERT INTO signup_module_config (id, signup_channel_id) VALUES (1, 77)",
+    ),
+    "signup's settings": (
+        "signup", "signup", None,
+        "INSERT INTO signup_module_settings (id, nationality_required) VALUES (1, 0)",
+    ),
+    "signup's availability slots": (
+        "signup", "signup", None,
+        "INSERT INTO signup_availability_slots (day_of_week, time_hhmm) VALUES (3, '20:00')",
+    ),
+    "image's date format": (
+        "images", "images", None, "UPDATE image_config SET date_format = 'YYYY_MM_DD'",
+    ),
+    "image's aspect toggles": (
+        "images", "images", None,
+        "INSERT INTO image_aspect_toggles (aspect, enabled) VALUES ('calendar', 1)",
+    ),
+}
+
+
+async def _handed(season) -> list:
+    """What each module hands the fingerprint of the season, on a connection held open."""
+    async with get_connection(season.path) as db:
+        return await season.bot.fingerprint_areas_read.call(db, season.season_id)
+
+
+async def _edit(season, sql: str) -> None:
+    async with get_connection(season.path) as db:
+        await db.execute(sql, {"division": season.division_id, "season": season.season_id})
+        await db.commit()
+
+
+@pytest.mark.xfail(strict=True, reason=_MODULES_ASKED)
+async def test_each_module_hands_its_own_areas_whatever_its_switch(season):
+    """Every module is off. Asked for the season, weather hands its channels and its
+    configuration, results its channels and its points, attendance its channels and its
+    configuration, signup its configuration and images its configuration: each module its own
+    areas, its switch off or not."""
+    handed = await _handed(season)
+
+    assert sorted(sorted(each) for each in handed) == sorted(
+        sorted(areas) for areas in _MODULE_AREAS.values()
+    )
+
+
+@pytest.mark.xfail(strict=True, reason=_MODULES_ASKED)
+@pytest.mark.parametrize("edit", sorted(_MODULE_EDITS))
+async def test_an_edit_to_a_module_s_configuration_changes_what_that_module_hands_alone(
+    season, edit,
+):
+    """Every module off. One module's own configuration is edited: Pro's weather channel or the
+    weather phases; Pro's results channel, its reserves left out of the standings, or a points
+    configuration attached to the season; Pro's RSVP channel or attendance's notice days; the
+    signup channel, settings or an availability slot; the image date format or an aspect toggle.
+    What that module hands changes, in that one area alone, and what every other module hands
+    does not."""
+    module, area, seed, sql = _MODULE_EDITS[edit]
+    if seed is not None:
+        await _edit(season, seed)
+    before = await _handed(season)
+
+    await _edit(season, sql)
+    after = await _handed(season)
+
+    changed = [
+        (set(was), {key for key in was if was[key] != now.get(key)})
+        for was, now in zip(before, after)
+        if was != now
+    ]
+    assert changed == [(_MODULE_AREAS[module], {area})]
+
+
+@pytest.mark.xfail(strict=True, reason=_MODULES_ASKED)
+@pytest.mark.parametrize("fault", ["a module's read fails", "no module hands its areas"])
+async def test_a_module_s_areas_not_read_leave_an_empty_fingerprint_logged(
+    season, caplog, fault,
+):
+    """A module whose read fails while the fingerprint is taken, or a bot whose modules hand no
+    areas at all, gives an empty fingerprint, which differs from every other, so an approval is
+    refused rather than waved through; the fault is logged on the host."""
+    from leaguebot.core.utils.hooks import AwaitedHook
+
+    if fault == "a module's read fails":
+        async def broken(*_args, **_kwargs):
+            raise RuntimeError("no such table: image_config")
+
+        season.bot.fingerprint_areas_read.subscribe(broken)
+    else:
+        season.bot.fingerprint_areas_read = AwaitedHook()
+
+    with caplog.at_level(logging.ERROR):
+        taken = await _take(season)
+
+    assert taken.areas == {}
+    assert any(
+        record.levelno == logging.ERROR
+        and record.name == "leaguebot.core.services.season_fingerprint_service"
+        for record in caplog.records
     )
 
 
