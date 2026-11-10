@@ -236,10 +236,12 @@ class TeamService:
         )
         return [_row_to_default_team(r) for r in await cursor.fetchall()]
 
-    async def add_default_team(
-        self, name: str, *, full_name: str, max_seats: int = 2
+    async def add_default_team_on(
+        self, db: aiosqlite.Connection, name: str, *, full_name: str, max_seats: int = 2
     ) -> DefaultTeam:
-        """Add a team to the server's list under its shorthand *name* and its *full_name*.
+        """Add a team to the server's list under its shorthand *name* and its *full_name*, on
+        *db*, a connection the caller holds: commits nothing and writes no audit entry, which the
+        change that calls it records.
 
         Raises ValueError on a duplicate or the Reserve name.
         """
@@ -247,33 +249,122 @@ class TeamService:
             raise ValueError(
                 f'The team name "{_RESERVE_NAME}" is protected and cannot be managed.'
             )
+        await self._ensure_reserve(db)
+        existing = await db.execute("SELECT 1 FROM default_teams WHERE name = ?", (name,))
+        if await existing.fetchone():
+            raise ValueError(f'A default team named "{name}" already exists.')
+
+        # The normalised name must serve as a lineup template's field identifier
+        # (Principle IX). Scope: the server's own team list.
+        problem = validate_team_name(
+            name, await self._server_keys(db, exclude=name)
+        ) or validate_full_name(full_name, await self._server_full_names(db))
+        if problem is not None:
+            raise ValueError(problem)
+
+        cursor = await db.execute(
+            "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
+            "VALUES (?, ?, ?, 0)",
+            (name, full_name, max_seats),
+        )
+        return DefaultTeam(
+            id=inserted_id(cursor), name=name, full_name=full_name, max_seats=max_seats,
+            is_reserve=False,
+        )
+
+    async def add_default_team(
+        self, name: str, *, full_name: str, max_seats: int = 2
+    ) -> DefaultTeam:
+        """`add_default_team_on` on a connection of its own, committed."""
         async with get_connection(self._db_path) as db:
-            await self._ensure_reserve(db)
-            existing = await db.execute(
-                "SELECT 1 FROM default_teams WHERE name = ?",
+            team = await self.add_default_team_on(db, name, full_name=full_name, max_seats=max_seats)
+            await db.commit()
+        return team
+
+    async def server_team_on(self, db: aiosqlite.Connection, name: str) -> dict | None:
+        """The team of the server's list whose shorthand is *name*, with its mapped role, read on
+        *db*: ``{name, full_name, max_seats, is_reserve, role_id}``, or None where none is."""
+        row = await (
+            await db.execute(
+                """
+                SELECT dt.name, dt.full_name, dt.max_seats, dt.is_reserve, trc.role_id
+                FROM default_teams dt
+                LEFT JOIN team_role_configs trc ON trc.team_name = dt.name
+                WHERE dt.name = ?
+                """,
                 (name,),
             )
-            if await existing.fetchone():
-                raise ValueError(f'A default team named "{name}" already exists.')
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "name": row["name"],
+            "full_name": row["full_name"],
+            "max_seats": row["max_seats"],
+            "is_reserve": bool(row["is_reserve"]),
+            "role_id": row["role_id"],
+        }
 
-            # The normalised name must serve as a lineup template's field identifier
-            # (Principle IX). Scope: the server's own team list.
+    async def modify_default_team_on(
+        self,
+        db: aiosqlite.Connection,
+        current_name: str,
+        *,
+        shorthand: str | None = None,
+        full_name: str | None = None,
+    ) -> dict:
+        """Change a team's shorthand, its full name, or both (#381), on *db*, a connection the
+        caller holds. Returns both as they stand.
+
+        Everything is checked before anything is written, so a refusal leaves the team exactly
+        as it was. As on a rename, only the **new** names are validated: a team named before a
+        rule existed must still be correctable (FR-011). The Reserve team is protected.
+
+        Commits nothing and writes no audit entry: the change that calls it records the names
+        (`TEAM_NAMES`) and re-keys the role mapping (`rename_team_role_config_on`).
+        """
+        if current_name == _RESERVE_NAME:
+            raise ValueError(
+                f'The team name "{_RESERVE_NAME}" is protected and cannot be managed.'
+            )
+        row = await (
+            await db.execute(
+                "SELECT id, name, full_name, is_reserve FROM default_teams WHERE name = ?",
+                (current_name,),
+            )
+        ).fetchone()
+        if row is None:
+            raise ValueError(f'No default team named "{current_name}" found.')
+        if row["is_reserve"]:
+            raise ValueError(f'The team "{current_name}" is protected and cannot be managed.')
+
+        new_shorthand = (shorthand or row["name"]).strip()
+        new_full_name = (full_name or row["full_name"]).strip()
+
+        if new_shorthand != row["name"]:
+            conflict = await (
+                await db.execute("SELECT 1 FROM default_teams WHERE name = ?", (new_shorthand,))
+            ).fetchone()
+            if conflict:
+                raise ValueError(f'A default team named "{new_shorthand}" already exists.')
             problem = validate_team_name(
-                name, await self._server_keys(db, exclude=name)
-            ) or validate_full_name(full_name, await self._server_full_names(db))
+                new_shorthand, await self._server_keys(db, exclude=current_name)
+            )
             if problem is not None:
                 raise ValueError(problem)
 
-            cursor = await db.execute(
-                "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
-                "VALUES (?, ?, ?, 0)",
-                (name, full_name, max_seats),
+        if new_full_name != row["full_name"]:
+            problem = validate_full_name(
+                new_full_name, await self._server_full_names(db, exclude_id=row["id"])
             )
-            await db.commit()
-            row_id = inserted_id(cursor)
-        return DefaultTeam(
-            id=row_id, name=name, full_name=full_name, max_seats=max_seats, is_reserve=False
+            if problem is not None:
+                raise ValueError(problem)
+
+        await db.execute(
+            "UPDATE default_teams SET name = ?, full_name = ? WHERE id = ?",
+            (new_shorthand, new_full_name, row["id"]),
         )
+        return {"name": new_shorthand, "full_name": new_full_name}
 
     async def modify_default_team(
         self,
@@ -284,64 +375,16 @@ class TeamService:
         actor_id: int = 0,
         actor_name: str = "system",
     ) -> dict:
-        """Change a team's shorthand, its full name, or both (#381). Returns both as they stand.
-
-        Everything is checked before anything is written, so a refusal leaves the team exactly
-        as it was. As on a rename, only the **new** names are validated: a team named before a
-        rule existed must still be correctable (FR-011). The Reserve team is protected.
-
-        The change is recorded in the audit log. A role change is recorded by
-        ``PlacementService.set_team_role_config``, and a team whose shorthand changes has its
-        role mapping re-keyed by ``rename_team_role_config`` — this writes neither.
-        """
-        if current_name == _RESERVE_NAME:
-            raise ValueError(
-                f'The team name "{_RESERVE_NAME}" is protected and cannot be managed.'
-            )
+        """`modify_default_team_on` on a connection of its own, with its `TEAM_NAMES` audit entry
+        where the names changed, committed."""
         async with get_connection(self._db_path) as db:
-            row = await (
-                await db.execute(
-                    "SELECT id, name, full_name, is_reserve FROM default_teams WHERE name = ?",
-                    (current_name,),
-                )
-            ).fetchone()
-            if row is None:
-                raise ValueError(f'No default team named "{current_name}" found.')
-            if row["is_reserve"]:
-                raise ValueError(
-                    f'The team "{current_name}" is protected and cannot be managed.'
-                )
-
-            new_shorthand = (shorthand or row["name"]).strip()
-            new_full_name = (full_name or row["full_name"]).strip()
-
-            if new_shorthand != row["name"]:
-                conflict = await (
-                    await db.execute(
-                        "SELECT 1 FROM default_teams WHERE name = ?", (new_shorthand,)
-                    )
-                ).fetchone()
-                if conflict:
-                    raise ValueError(f'A default team named "{new_shorthand}" already exists.')
-                problem = validate_team_name(
-                    new_shorthand, await self._server_keys(db, exclude=current_name)
-                )
-                if problem is not None:
-                    raise ValueError(problem)
-
-            if new_full_name != row["full_name"]:
-                problem = validate_full_name(
-                    new_full_name, await self._server_full_names(db, exclude_id=row["id"])
-                )
-                if problem is not None:
-                    raise ValueError(problem)
-
-            await db.execute(
-                "UPDATE default_teams SET name = ?, full_name = ? WHERE id = ?",
-                (new_shorthand, new_full_name, row["id"]),
+            was = await self.server_team_on(db, current_name)
+            named = await self.modify_default_team_on(
+                db, current_name, shorthand=shorthand, full_name=full_name
             )
-            if (new_shorthand, new_full_name) != (row["name"], row["full_name"]):
-                now = datetime.now(timezone.utc).isoformat()
+            if was is not None and (named["name"], named["full_name"]) != (
+                was["name"], was["full_name"]
+            ):
                 await db.execute(
                     "INSERT INTO audit_entries "
                     "(actor_id, actor_name, division_id, change_type, "
@@ -349,35 +392,36 @@ class TeamService:
                     "VALUES (?, ?, NULL, 'TEAM_NAMES', ?, ?, ?)",
                     (
                         actor_id, actor_name,
-                        json.dumps({"shorthand": row["name"], "full_name": row["full_name"]}),
-                        json.dumps({"shorthand": new_shorthand, "full_name": new_full_name}),
-                        now,
+                        json.dumps({"shorthand": was["name"], "full_name": was["full_name"]}),
+                        json.dumps({"shorthand": named["name"], "full_name": named["full_name"]}),
+                        datetime.now(timezone.utc).isoformat(),
                     ),
                 )
             await db.commit()
-        return {"name": new_shorthand, "full_name": new_full_name}
+        return named
 
-    async def remove_default_team(self, name: str) -> None:
-        """Remove a default team.  Raises ValueError if protected or not found."""
+    async def remove_default_team_on(self, db: aiosqlite.Connection, name: str) -> None:
+        """Remove a default team on *db*, a connection the caller holds: commits nothing and
+        writes no audit entry. Raises ValueError if protected or not found."""
         if name == _RESERVE_NAME:
             raise ValueError(
                 f'The team name "{_RESERVE_NAME}" is protected and cannot be managed.'
             )
+        row = await (
+            await db.execute(
+                "SELECT id, is_reserve FROM default_teams WHERE name = ?", (name,),
+            )
+        ).fetchone()
+        if row is None:
+            raise ValueError(f'No default team named "{name}" found.')
+        if row["is_reserve"]:
+            raise ValueError(f'The team "{name}" is protected and cannot be managed.')
+        await db.execute("DELETE FROM default_teams WHERE id = ?", (row["id"],))
+
+    async def remove_default_team(self, name: str) -> None:
+        """`remove_default_team_on` on a connection of its own, committed."""
         async with get_connection(self._db_path) as db:
-            row = await (
-                await db.execute(
-                    "SELECT id, is_reserve FROM default_teams "
-                    "WHERE name = ?",
-                    (name,),
-                )
-            ).fetchone()
-            if row is None:
-                raise ValueError(f'No default team named "{name}" found.')
-            if row["is_reserve"]:
-                raise ValueError(
-                    f'The team "{name}" is protected and cannot be managed.'
-                )
-            await db.execute("DELETE FROM default_teams WHERE id = ?", (row["id"],))
+            await self.remove_default_team_on(db, name)
             await db.commit()
 
     # ------------------------------------------------------------------

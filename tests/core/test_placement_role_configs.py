@@ -30,9 +30,6 @@ SERVER_ID = 9408
 ROLE_ID = 4242
 OTHER_ROLE_ID = 5353
 
-#: Why the tests of the role mapping's writers fail until the build.
-_ON_FORMS = "#283: the role mapping's writers have no _on forms yet"
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -115,7 +112,6 @@ async def test_a_team_with_no_role_reads_as_none(tmp_path):
     assert await service.get_team_role_config("Alpha") is None
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_role_is_mapped_to_a_team(tmp_path):
     """Alpha, with no role, is given 4242 as a `/team` change's save gives it. The mapping
     holds Alpha with 4242, and the writer leaves the audit entry to the change, writing none."""
@@ -131,7 +127,6 @@ async def test_a_role_is_mapped_to_a_team(tmp_path):
     assert await _audit(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_remapping_a_team_replaces_rather_than_duplicates(tmp_path):
     """Two rows for one team would make which role a driver is given depend on row order."""
     db_path = await _make_db(tmp_path)
@@ -155,7 +150,6 @@ async def test_every_mapping_is_listed(tmp_path):
     assert {c.team_name for c in configs} == {"Alpha", "Beta"}
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_mapping_is_deleted(tmp_path):
     """Alpha, mapped to 4242, has its mapping deleted as `/team remove`'s save deletes it; the
     writer leaves the audit entry to the change, writing none."""
@@ -169,7 +163,6 @@ async def test_a_mapping_is_deleted(tmp_path):
     assert await _audit(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_deleting_a_mapping_that_does_not_exist_is_a_no_op(tmp_path):
     """`/team remove` calls this for every team whether or not it had a role, so raising
     would make the common case an error. Ghost has no mapping: deleting it raises nothing and
@@ -182,7 +175,6 @@ async def test_deleting_a_mapping_that_does_not_exist_is_a_no_op(tmp_path):
     assert await _audit(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_mapping_follows_its_team_through_a_rename(tmp_path):
     """Otherwise renaming a team would silently strip its drivers' role."""
     db_path = await _make_db(tmp_path)
@@ -197,7 +189,6 @@ async def test_a_mapping_follows_its_team_through_a_rename(tmp_path):
     assert renamed.role_id == ROLE_ID
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_renaming_a_team_with_no_mapping_is_a_no_op(tmp_path):
     """Ghost has no mapping: renaming it to Beta raises nothing and writes nothing."""
     db_path = await _make_db(tmp_path)
@@ -213,7 +204,6 @@ async def test_renaming_a_team_with_no_mapping_is_a_no_op(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_role_another_team_holds_is_refused_and_nothing_written(tmp_path):
     """A submission names a team by its role, so a role two teams held would name either.
     Alpha holds 4242 and Beta 5353; giving Beta 4242 is refused naming Alpha, and Beta keeps
@@ -230,7 +220,6 @@ async def test_a_role_another_team_holds_is_refused_and_nothing_written(tmp_path
     assert await _audit(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_the_reserve_s_role_is_one_no_other_team_may_hold(tmp_path):
     db_path = await _make_db(tmp_path)
     await _map(db_path, "Reserve", ROLE_ID)
@@ -239,7 +228,6 @@ async def test_the_reserve_s_role_is_one_no_other_team_may_hold(tmp_path):
         await _write(db_path, lambda s, db: s.set_team_role_config_on(db, "Alpha", ROLE_ID))
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_team_may_be_given_the_role_it_already_holds(tmp_path):
     db_path = await _make_db(tmp_path)
     service = PlacementService(db_path)

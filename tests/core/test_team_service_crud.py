@@ -47,8 +47,6 @@ RESERVE = "Reserve"
 _SEEDED = "#283: a new database does not yet hold the Reserve team"
 #: Why the test of a read writing nothing fails until the build.
 _READ_WRITES = "#283: reading the team list still writes the Reserve team back"
-#: Why the tests of the server list's writers fail until the build.
-_ON_FORMS = "#283: the team list's writers have no _on forms yet"
 #: Why the test of the Reserve row renamed by hand fails until the build.
 _SEEDED_ON = (
     "#283: a new database does not yet hold the Reserve team, and the team list's writers have "
@@ -229,7 +227,6 @@ async def test_the_reserve_team_sorts_last(tmp_path):
     assert [t.name for t in teams] == ["Alpha", "Zeta", RESERVE]
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 @pytest.mark.parametrize(
     "call",
     [
@@ -275,7 +272,6 @@ async def test_a_reserve_team_cannot_be_renamed_by_its_row_either(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_team_is_added_with_its_seat_count(tmp_path):
     """Alpha is added with three seats, as a `/team add` change's save adds it. The team the
     writer returns, and the list, carry it as a team of three seats that is not the Reserve; the
@@ -294,7 +290,6 @@ async def test_a_team_is_added_with_its_seat_count(tmp_path):
     assert await _audit_rows(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_duplicate_team_name_is_refused(tmp_path):
     db_path = await _make_db(tmp_path)
     await _add_team(db_path, "Alpha")
@@ -303,7 +298,6 @@ async def test_a_duplicate_team_name_is_refused(tmp_path):
         await _write(db_path, lambda s, db: s.add_default_team_on(db, "Alpha", full_name="Alpha"))
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_name_colliding_once_normalised_is_refused(tmp_path):
     """The normalised name is a lineup template's field identifier, so two teams that
     normalise alike cannot both be drawn. The collision is invisible in the raw names,
@@ -317,7 +311,6 @@ async def test_a_name_colliding_once_normalised_is_refused(tmp_path):
         ))
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_team_s_shorthand_is_changed(tmp_path):
     db_path = await _make_db(tmp_path)
     await _add_team(db_path, "Alpha", full_name="Alpha Racing")
@@ -331,7 +324,6 @@ async def test_a_team_s_shorthand_is_changed(tmp_path):
     assert "Alpha" not in await _names(db_path)
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_team_s_full_name_is_changed_on_its_own(tmp_path):
     """Either name may change without the other (#381): Alpha's full name, "Alpha Racing", is
     changed to "Alpha Grand Prix" and its shorthand left as it was. The writer leaves the
@@ -350,7 +342,6 @@ async def test_a_team_s_full_name_is_changed_on_its_own(tmp_path):
     assert await _audit_rows(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_modifying_a_team_that_does_not_exist_says_so(tmp_path):
     db_path = await _make_db(tmp_path)
 
@@ -358,7 +349,6 @@ async def test_modifying_a_team_that_does_not_exist_says_so(tmp_path):
         await _write(db_path, lambda s, db: s.modify_default_team_on(db, "Ghost", shorthand="Beta"))
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_shorthand_already_taken_is_refused(tmp_path):
     db_path = await _make_db(tmp_path)
     for name in ("Alpha", "Beta"):
@@ -368,7 +358,6 @@ async def test_a_shorthand_already_taken_is_refused(tmp_path):
         await _write(db_path, lambda s, db: s.modify_default_team_on(db, "Alpha", shorthand="Beta"))
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_full_name_already_taken_is_refused_and_nothing_is_written(tmp_path):
     db_path = await _make_db(tmp_path)
     for name in ("Alpha", "Beta"):
@@ -382,7 +371,6 @@ async def test_a_full_name_already_taken_is_refused_and_nothing_is_written(tmp_p
     assert "Alpha" in await _names(db_path)
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_team_whose_existing_name_breaks_the_rule_can_still_be_changed(tmp_path):
     """Only the *new* names are validated, deliberately. A team named before the naming rule
     existed must remain fixable — validating the current name would refuse the very command
@@ -395,7 +383,6 @@ async def test_a_team_whose_existing_name_breaks_the_rule_can_still_be_changed(t
     assert "Alpha" in await _names(db_path)
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_team_is_removed(tmp_path):
     """Alpha is removed from the list, as a `/team remove` change's save removes it; the writer
     leaves the audit entry to the change, writing none itself."""
@@ -408,7 +395,6 @@ async def test_a_team_is_removed(tmp_path):
     assert await _audit_rows(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_removing_a_team_that_does_not_exist_says_so(tmp_path):
     db_path = await _make_db(tmp_path)
 
@@ -479,7 +465,6 @@ async def test_seeding_pre_creates_a_seat_for_every_place_in_a_team(tmp_path):
     assert await _seat_count(db_path, 1, "Alpha") == 3
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 async def test_a_team_is_added_with_its_full_name_beside_its_shorthand(tmp_path):
     """A team's shorthand is typed and names its artwork; its full name is what is shown
     (#381). Both are kept, and neither stands in for the other."""
@@ -494,7 +479,6 @@ async def test_a_team_is_added_with_its_full_name_beside_its_shorthand(tmp_path)
     assert listed.full_name == "Oracle Red Bull Racing"
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_FORMS)
 @pytest.mark.parametrize("full_name", ["oracle RED BULL racing", "reserve"])
 async def test_a_team_is_refused_a_full_name_another_team_shows(tmp_path, full_name):
     """Full names are unique across the server's list ignoring case, the Reserve team's
