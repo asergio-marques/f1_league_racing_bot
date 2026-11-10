@@ -8,7 +8,6 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.db.database import get_connection
 import leaguebot.core.services.track_service as track_service
 from leaguebot.core.utils.channel_guard import league_manager_only, changes_nothing
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -44,8 +43,7 @@ class TrackCog(commands.Cog):
         interaction: discord.Interaction,
     ) -> None:
         await interaction.response.defer(ephemeral=True)
-        async with get_connection(self.bot.db_path) as db:
-            rows = await track_service.get_all_tracks(db)
+        rows = await track_service.list_tracks(self.bot.db_path)
         table = "\n".join(f"{r['id']:02d} | {r['name']} | {r['gp_name']}" for r in rows)
         await interaction.followup.send(
             f"**Tracks ({len(rows)})**\n```\n{table}\n```",

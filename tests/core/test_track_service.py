@@ -136,10 +136,6 @@ class TestResolveTrackName:
 # Read on a connection of the service's own, from the database's path
 # ---------------------------------------------------------------------------
 
-#: The tracks a cog reads it asks of the service by the database's path, and opens no connection
-#: of its own (#283).
-_NOT_BY_PATH = "#283: the cogs read the tracks on a connection of their own"
-
 
 @pytest.fixture
 async def db_file(tmp_path) -> str:
@@ -152,7 +148,6 @@ async def db_file(tmp_path) -> str:
 
 
 class TestReadByPath:
-    @pytest.mark.xfail(strict=True, reason=_NOT_BY_PATH)
     async def test_every_track_is_listed_in_id_order(self, db_file) -> None:
         """What `/track list` and the circuit autocomplete show: every track, by id."""
         from leaguebot.core.db.database import get_connection
@@ -166,7 +161,6 @@ class TestReadByPath:
         assert [tuple(r) for r in rows] == expected
         assert [r["id"] for r in rows] == sorted(r["id"] for r in rows)
 
-    @pytest.mark.xfail(strict=True, reason=_NOT_BY_PATH)
     async def test_a_track_is_resolved_from_the_label_or_found_unknown(self, db_file) -> None:
         """What `/round amend track:` resolves: the autocomplete's label names its track, and
         a number naming none is unknown."""

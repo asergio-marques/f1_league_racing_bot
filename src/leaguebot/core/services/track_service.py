@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from leaguebot.core.db.database import get_connection
+
 if TYPE_CHECKING:
     import aiosqlite
 
@@ -22,6 +24,16 @@ async def get_all_tracks(db: "aiosqlite.Connection") -> list:
         "SELECT id, name, gp_name, location, country, mu, sigma FROM tracks ORDER BY id"
     )
     return list(await cursor.fetchall())
+
+
+async def list_tracks(db_path: str, *, timeout: float | None = None) -> list:
+    """Every track (see :func:`get_all_tracks`), read on a connection of the service's own.
+
+    *timeout* is how long SQLite waits for a lock; the circuit autocomplete passes its shorter
+    wait, since it has three seconds to answer.
+    """
+    async with get_connection(db_path, timeout=timeout) as db:
+        return await get_all_tracks(db)
 
 
 async def get_track_by_name(db: "aiosqlite.Connection", name: str):
@@ -91,3 +103,9 @@ async def get_track_name_map(db: "aiosqlite.Connection") -> dict[str, str]:
     rows = await cursor.fetchall()
     return {str(r["id"]): r["name"] for r in rows}
 
+
+async def resolve_track(db_path: str, raw: str) -> str | None:
+    """The canonical track name *raw* refers to (see :func:`resolve_track_name`), or None,
+    read on a connection of the service's own."""
+    async with get_connection(db_path) as db:
+        return await resolve_track_name(db, raw)
