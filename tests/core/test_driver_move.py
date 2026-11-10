@@ -15,6 +15,9 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.placement_service import PlacementService
 
+#: Why a placement refusal test fails until #283's build raises the member's refusal by name.
+PLACEMENT_REFUSAL = "#283: placement still refuses with a bare ValueError, not Refused"
+
 SERVER_ID = 22090
 SEASON_ID = 1
 PRO, AM = 11, 12
@@ -167,31 +170,39 @@ async def test_the_seat_left_is_freed(db_path):
         assert (await cursor.fetchone())["n"] == 0
 
 
+@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_an_uncommitted_placement_is_refused(db_path):
+    from leaguebot.core.models.refusal import Refused
     await _seat(db_path, PRO, "Alpha", committed=0)
 
-    with pytest.raises(ValueError, match="not yet confirmed"):
+    with pytest.raises(Refused, match="not yet confirmed"):
         await _move(_service(db_path), PRO, "Reserve")
 
     assert await _where(db_path) == [(PRO, "Alpha")]
 
 
+@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_a_move_into_a_division_already_held_is_refused(db_path):
+    from leaguebot.core.models.refusal import Refused
     await _seat(db_path, PRO, "Alpha")
     await _seat(db_path, AM, "Alpha")
 
-    with pytest.raises(ValueError, match="already holds a seat"):
+    with pytest.raises(Refused, match="already holds a seat"):
         await _move(_service(db_path), AM, "Bravo")
 
 
+@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_a_move_into_the_team_already_sat_in_is_refused(db_path):
+    from leaguebot.core.models.refusal import Refused
     await _seat(db_path, PRO, "Alpha")
 
-    with pytest.raises(ValueError, match="already sits in"):
+    with pytest.raises(Refused, match="already sits in"):
         await _move(_service(db_path), PRO, "Alpha")
 
 
+@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_a_move_into_a_full_team_is_refused_and_changes_nothing(db_path):
+    from leaguebot.core.models.refusal import Refused
     await _seat(db_path, PRO, "Alpha")
     async with get_connection(db_path) as db:
         for profile_id in (6, 7):
@@ -204,7 +215,7 @@ async def test_a_move_into_a_full_team_is_refused_and_changes_nothing(db_path):
     await _seat(db_path, PRO, "Bravo", 6)
     await _seat(db_path, PRO, "Bravo", 7)
 
-    with pytest.raises(ValueError, match="no available seats"):
+    with pytest.raises(Refused, match="no available seats"):
         await _move(_service(db_path), PRO, "Bravo")
 
     assert await _where(db_path) == [(PRO, "Alpha")]
@@ -234,10 +245,12 @@ async def test_the_command_is_refused_outside_the_ongoing_stages(stage_name):
     assert cog.bot.change_queue.method_calls == []
 
 
+@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_a_move_for_a_profile_that_does_not_exist_is_refused(db_path):
+    from leaguebot.core.models.refusal import Refused
     service = _service(db_path)
 
-    with pytest.raises(ValueError, match="Driver profile not found"):
+    with pytest.raises(Refused, match="Driver profile not found"):
         await service.move_driver(
             driver_profile_id=999, season_id=SEASON_ID,
             from_division_id=PRO, to_division_id=PRO, team_name="Reserve",
@@ -246,10 +259,12 @@ async def test_a_move_for_a_profile_that_does_not_exist_is_refused(db_path):
         )
 
 
+@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_a_move_from_a_division_the_driver_does_not_sit_in_is_refused(db_path):
+    from leaguebot.core.models.refusal import Refused
     await _seat(db_path, AM, "Alpha")
 
-    with pytest.raises(ValueError, match="holds no seat in the division they are moved from"):
+    with pytest.raises(Refused, match="holds no seat in the division they are moved from"):
         await _move(_service(db_path), PRO, "Reserve", from_division=PRO)
 
 

@@ -38,6 +38,9 @@ from leaguebot.core.services.placement_service import PlacementService
 from tests.core.test_driver_move import _end_the_races, _unconfirm_lewis
 from tests.support.teams import seed_team_instances
 
+#: Why a placement refusal test fails until #283's build raises the member's refusal by name.
+PLACEMENT_REFUSAL = "#283: placement still refuses with a bare ValueError, not Refused"
+
 SERVER_ID = 10708
 SEASON_ID = 1
 PRIOR_SEASON_ID = 2
@@ -218,14 +221,16 @@ async def _profile_state(db_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_a_driver_with_no_confirmed_placement_is_refused(tmp_path):
     """Issue #220: an uncommitted placement is unassigned, an Unassigned driver rejected."""
+    from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path, name="sack_uncommitted")
     async with get_connection(db_path) as db:
         await db.execute("UPDATE driver_season_assignments SET committed = 0")
         await db.commit()
 
-    with pytest.raises(ValueError, match="placement is confirmed"):
+    with pytest.raises(Refused, match="placement is confirmed"):
         await _sack(_service(db_path), _guild())
 
     assert await _profile_state(db_path) == DriverState.ASSIGNED.value
@@ -240,15 +245,17 @@ async def test_a_driver_with_no_confirmed_placement_is_refused(tmp_path):
         DriverState.PENDING_DRIVER_CORRECTION,
     ],
 )
+@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_any_other_state_is_refused(tmp_path, state):
     """Someone mid-signup has nothing to revoke, and someone at Not Signed Up is already
     out — sacking either would do nothing but move a driver the season no longer holds. The
     refusal names the state it found: a manager who meets it needs to know which state they
     hit, not merely that they hit one — a driver still in review and one already gone call for
     different next steps."""
+    from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path, name=f"refuse_{state.value}", state=state)
 
-    with pytest.raises(ValueError, match=f"Unassigned or Assigned.*{state.value}"):
+    with pytest.raises(Refused, match=f"Unassigned or Assigned.*{state.value}"):
         await _sack(_service(db_path), _guild())
 
     assert await _profile_state(db_path) == state.value

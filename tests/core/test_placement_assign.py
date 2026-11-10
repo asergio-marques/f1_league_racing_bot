@@ -34,6 +34,9 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.placement_service import PlacementService
 
+#: Why a placement refusal test fails until #283's build raises the member's refusal by name.
+PLACEMENT_REFUSAL = "#283: placement still refuses with a bare ValueError, not Refused"
+
 SERVER_ID = 11008
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -180,30 +183,36 @@ async def test_an_already_assigned_driver_may_take_a_second_division(tmp_path):
         "PENDING_DRIVER_CORRECTION",
     ],
 )
+@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_a_driver_not_yet_through_signup_cannot_be_placed(tmp_path, state):
     """A seat would contradict the state, and the refusal quotes it back so a manager can
     see which."""
+    from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path, state=state)
 
-    with pytest.raises(ValueError, match="Unassigned or Assigned"):
+    with pytest.raises(Refused, match="Unassigned or Assigned"):
         await _assign(_service(db_path))
 
 
+@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_a_driver_who_does_not_exist_is_refused(tmp_path):
+    from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
 
-    with pytest.raises(ValueError, match="not found"):
+    with pytest.raises(Refused, match="not found"):
         await _assign(_service(db_path), profile_id=9999)
 
 
+@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_a_driver_may_hold_only_one_seat_per_division(tmp_path):
     """The refusal names the division rather than the team, because a manager placing
     somebody twice has usually forgotten *where* they already are."""
+    from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
     service = _service(db_path)
     await _assign(service)
 
-    with pytest.raises(ValueError, match="Division 1"):
+    with pytest.raises(Refused, match="Division 1"):
         await _assign(service)
 
 
@@ -233,16 +242,18 @@ async def test_the_next_driver_takes_the_next_seat(tmp_path):
     assert await _seat_of(db_path, 102) == (2, "Alpha")
 
 
+@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_a_full_race_team_refuses_the_next_driver(tmp_path):
     """The seats are finite and were created when the division was seeded; there is no
     seat to make. The save refuses before it writes anything, so a refusal has to leave the
     division exactly as it stood — a half-placed driver has no command to finish or undo it."""
+    from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path, team_seats=1)
     service = _service(db_path)
     await _add_driver(db_path, 102)
     await _assign(service, profile_id=PROFILE_ID)
 
-    with pytest.raises(ValueError, match="no available seats"):
+    with pytest.raises(Refused, match="no available seats"):
         await _assign(service, profile_id=102)
 
     async with get_connection(db_path) as db:
@@ -252,10 +263,12 @@ async def test_a_full_race_team_refuses_the_next_driver(tmp_path):
         assert (await cursor.fetchone())["n"] == 0
 
 
+@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_a_team_that_does_not_exist_is_refused_by_name(tmp_path):
+    from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
 
-    with pytest.raises(ValueError, match="Ferrari"):
+    with pytest.raises(Refused, match="Ferrari"):
         await _assign(_service(db_path), team="Ferrari")
 
 

@@ -47,6 +47,9 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.services.penalty_wizard import StagedPardon
 from tests.support.change_queue import http_error, in_a_job
 
+#: Why the sanction check's refusal test fails until #283's build names the member's refusal.
+PLACEMENT_REFUSAL = "#283: placement still refuses with a bare ValueError, not Refused"
+
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
 SEASON_ID = 51
 DIVISION_ID = 61
@@ -586,17 +589,19 @@ async def test_a_sanction_s_roles_are_changed_even_once_attendance_is_off(tmp_pa
     assert taken == {PRO_ROLE, ALPHA_ROLE}
 
 
+@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_check_sanction_refuses_a_full_reserve_block(tmp_path):
     """Max is owed an autoreserve, and the placement service's guard refuses the move to the
     Reserve team of Pro (its block in the lineup picture is full). The check made before the
     sanction is saved raises `StepFailedOnDiscord` carrying the guard's refusal, for the queue
     to stop on, and nothing is moved."""
     from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.core.models.refusal import Refused
 
     db_path = await _db(tmp_path, autosack=None)
     await _totals(db_path, LATEST_ROUND, {MAX: 12})
     placement = _real_placement(db_path)
-    placement.guard_move = AsyncMock(side_effect=ValueError("The Reserve block of Pro is full."))
+    placement.guard_move = AsyncMock(side_effect=Refused("The Reserve block of Pro is full."))
     hook = _hook(_bot(db_path), placement)
     [owed] = await hook.sanction_candidates(LATEST_ROUND, DIVISION_ID)
 
@@ -606,6 +611,29 @@ async def test_check_sanction_refuses_a_full_reserve_block(tmp_path):
     placement.guard_move.assert_awaited_once()
     assert await _state(db_path, MAX) == ("ASSIGNED", 1)
 
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#283: check_sanction still takes any ValueError for a refusal"
+)
+async def test_an_unexpected_value_error_is_a_failure_not_a_refusal(tmp_path):
+    """Max is owed an autoreserve, and the placement service's guard raises a bug's `ValueError`
+    rather than a refusal. The check made before the sanction is saved lets it go on as a fault,
+    in its own words, rather than wording it as a failure on Discord's side; nothing is moved."""
+    db_path = await _db(tmp_path, autosack=None)
+    await _totals(db_path, LATEST_ROUND, {MAX: 12})
+    placement = _real_placement(db_path)
+    placement.guard_move = AsyncMock(
+        side_effect=ValueError("invalid literal for int() with base 10: 'x'")
+    )
+    hook = _hook(_bot(db_path), placement)
+    [owed] = await hook.sanction_candidates(LATEST_ROUND, DIVISION_ID)
+
+    with pytest.raises(ValueError, match="invalid literal") as raised:
+        await hook.check_sanction(LATEST_ROUND, DIVISION_ID, owed)
+
+    assert type(raised.value) is ValueError
+    assert await _state(db_path, MAX) == ("ASSIGNED", 1)
 
 async def test_a_sheet_discord_refuses_raises_and_is_not_put_on_the_retry_queue(tmp_path):
     """Defect 4: the sheet's failure stops the queue and is retried there, so it raises

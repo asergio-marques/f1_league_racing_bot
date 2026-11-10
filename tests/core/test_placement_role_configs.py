@@ -28,6 +28,9 @@ from leaguebot.core.services.placement_service import (
     _fmt_ms,
 )
 
+#: Why a placement refusal test fails until #283's build raises the member's refusal by name.
+PLACEMENT_REFUSAL = "#283: placement still refuses with a bare ValueError, not Refused"
+
 SERVER_ID = 9408
 ROLE_ID = 4242
 OTHER_ROLE_ID = 5353
@@ -213,27 +216,31 @@ async def test_renaming_a_team_with_no_mapping_is_a_no_op(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_a_role_another_team_holds_is_refused_and_nothing_written(tmp_path):
     """A submission names a team by its role, so a role two teams held would name either.
     Alpha holds 4242 and Beta 5353; giving Beta 4242 is refused naming Alpha, and Beta keeps
     5353."""
+    from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
     service = PlacementService(db_path)
     await _map(db_path, "Alpha", ROLE_ID)
     await _map(db_path, "Beta", OTHER_ROLE_ID)
 
-    with pytest.raises(ValueError, match='already the role of "Alpha"'):
+    with pytest.raises(Refused, match='already the role of "Alpha"'):
         await _write(db_path, lambda s, db: s.set_team_role_config_on(db, "Beta", ROLE_ID, now=NOW))
 
     assert (await service.get_team_role_config("Beta")).role_id == OTHER_ROLE_ID
     assert await _audit(db_path) == []
 
 
+@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_the_reserve_s_role_is_one_no_other_team_may_hold(tmp_path):
+    from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
     await _map(db_path, "Reserve", ROLE_ID)
 
-    with pytest.raises(ValueError, match='"Reserve"'):
+    with pytest.raises(Refused, match='"Reserve"'):
         await _write(db_path, lambda s, db: s.set_team_role_config_on(db, "Alpha", ROLE_ID, now=NOW))
 
 
