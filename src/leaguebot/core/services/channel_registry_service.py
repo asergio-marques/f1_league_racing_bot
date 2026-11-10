@@ -8,10 +8,9 @@ forecasts. Worse, several posting paths *edit or delete* the message they posted
 they find it by an id stored against the channel, so two purposes sharing a channel is how
 a lineup ends up deleting a standings message.
 
-The rule is therefore **server-wide** (decided 2026-09-06): a channel serving one purpose
-anywhere on the server cannot be given a second, not even in another division. Two
-divisions posting their results to one channel would produce two sets of tables nobody can
-tell apart.
+The rule is therefore **server-wide**: a channel serving one purpose anywhere on the server cannot
+be given a second, not even in another division. Two divisions posting their results to one channel
+would produce two sets of tables nobody can tell apart.
 
 Read at the moment a channel is set, never cached: a manager can clear a channel by other
 routes, and a stale answer would refuse a channel that is genuinely free.
@@ -298,8 +297,8 @@ def as_text_channel(channel: object) -> discord.TextChannel | None:
     ``discord.TextChannel`` — one per setting — and the only channels the bot makes are text
     channels, so one resolved from a stored id is a text channel by construction. discord.py
     types a lookup by id as any kind of channel, since it cannot know that; this says what the
-    configuration guarantees, once, rather than at every post (#228). None stays None: a
-    channel deleted since it was set is the caller's to report.
+    configuration guarantees, once, rather than at every post. None stays None: a channel deleted
+    since it was set is the caller's to report.
 
     A cast rather than an ``isinstance`` check. The tests hand stand-in channels through every
     path that posts, and a check would quietly turn each of them into a missing channel.

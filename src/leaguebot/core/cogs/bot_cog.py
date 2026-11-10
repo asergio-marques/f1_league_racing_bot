@@ -1,8 +1,7 @@
 """BotCog — the `/bot` group: the bot upon its server.
 
-`/bot init` and the four settings beside it configure the bot upon the league's server.
-They were five top-level `/bot-…` commands, and were gathered into one group with the
-commands that release the server (decided 2026-09-19, issue #247).
+`/bot init` and the four settings beside it configure the bot upon the league's server, and
+share one group with the commands that release the server.
 
 Every setup command here is exempt from the interaction-channel rule, and each accepts Discord's
 Administrator permission as well as the league admin role. For `/bot init` that is the
@@ -13,14 +12,15 @@ settings they exist to repair would lock a league out of the exact failure they 
 deleted interaction channel, or a league admin role removed from the server, would otherwise
 be unrecoverable short of wiping the configuration.
 
-`/bot base-role` and `/bot driver-role` set the league's two roles (issue #276), which were the
-signup module's until a second module needed the base role. They are a league manager's, as
-they were under `/signup`, and are given in the interaction channel like any other: they
-repair nothing the guards read. Confirming a season's configuration fixes both until the
+`/bot base-role` and `/bot driver-role` set the league's two roles, which are core's rather than
+the signup module's because a module besides signup needs the base role. They are a league
+manager's, and are given in the interaction channel like any other: they repair nothing the
+guards read. Confirming a season's configuration fixes both until the
 season ends.
 
-`/bot hub-channel` sets the hub (issue #279): the one channel every member may use, holding the
-panel `leaguebot.core.services.hub_service` keeps. It is a league manager's, like every other channel command.
+`/bot hub-channel` sets the hub: the one channel every member may use, holding the panel
+`leaguebot.core.services.hub_service` keeps. It is a league manager's, like every other channel
+command.
 
 `/bot pack` is a league admin's command and is given in the interaction channel like any
 other: it releases the settings rather than repairing them. `/bot factory-reset` is the server
@@ -58,7 +58,7 @@ from leaguebot.core.utils.log_lines import lane_name, refuse
 
 log = logging.getLogger(__name__)
 
-#: The word `/bot pack` asks to be typed, as the reset it replaced did.
+#: The word `/bot pack` asks to be typed.
 _CONFIRM_WORD = "CONFIRM"
 
 
@@ -67,7 +67,7 @@ async def _refuse_on_host(interaction: discord.Interaction, reply: str) -> None:
     log alone.
 
     For a refusal made on another server, or before the bot is set up: there is no log channel
-    of the league's to write to (owner, #482: "Host log only").
+    of the league's to write to.
     """
     log.info(
         "%s refused for %s (%s): %s",
@@ -248,7 +248,7 @@ class BotCog(commands.Cog):
         await self._ask_setting(interaction, "core.setting.admin_role", role.id)
 
     # ------------------------------------------------------------------
-    # The league's two roles (issue #276)
+    # The league's two roles
     # ------------------------------------------------------------------
 
     async def _set_league_role(
@@ -261,7 +261,7 @@ class BotCog(commands.Cog):
         kind: str,
     ) -> None:
         """Shared body of `/bot base-role` and `/bot driver-role`: ask the change queue for one
-        of `bot_settings`'s two league role `Setting`s (#283).
+        of `bot_settings`'s two league role `Setting`s.
 
         Not `_set_one`, whose commands repair the settings the guards read and so run from
         any channel on the Administrator permission. These are ordinary league manager
@@ -275,12 +275,12 @@ class BotCog(commands.Cog):
         the write, the audit entry, the line, and a role already held answered "Nothing
         changed" — is `setting_change`'s and `bot_settings`'s.
 
-        **A role gone from the server may be replaced while it is fixed** (decided 2026-09-22,
-        #374). The roles are fixed so that no driver is left holding one the season's end will
-        not revoke; nobody holds a deleted role, so that reason is spent, and refusing would
-        leave a season unable to open a window until it ended. The ask judges this against the
-        server only for its own refusal; the setting judges it again as the change starts, and
-        reads the role it replaces as it saves, so the payload carries no judgement of the ask's.
+        **A role gone from the server may be replaced while it is fixed.** The roles are fixed
+        so that no driver is left holding one the season's end will not revoke; nobody holds a
+        deleted role, so that reason is spent, and refusing would leave a season unable to open
+        a window until it ended. The ask judges this against the server only for its own
+        refusal; the setting judges it again as the change starts, and reads the role it
+        replaces as it saves, so the payload carries no judgement of the ask's.
         """
         from leaguebot.core.services.bot_settings import season_fixed_refusal
         from leaguebot.core.services.season_lifecycle_service import configuration_fixed
@@ -309,7 +309,7 @@ class BotCog(commands.Cog):
             return
 
         # The driver role is granted at every approval, and the `signup.approve` change
-        # only logs a grant Discord refuses (#374). The base role is granted by the league.
+        # only logs a grant Discord refuses. The base role is granted by the league.
         if column == "driver_role_id":
             refusal = role_grant_refusal(
                 role,

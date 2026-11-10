@@ -1,4 +1,4 @@
-"""Moving a season through its lifecycle as the events that drive it happen (issue #220).
+"""Moving a season through its lifecycle as the events that drive it happen.
 
 ``models.season.ALLOWED_STAGE_TRANSITIONS`` says which transitions are legal. This module decides
 which transition an event calls for — a signup window opening or closing, and later placements
@@ -80,8 +80,8 @@ def uncommitted_seat_excluded(seat_alias: str = "ts") -> str:
     """SQL predicate: the seat *seat_alias* is not held by an uncommitted driver mid-season.
 
     A driver placed in Ongoing, placements stands outside the championship until placements
-    are confirmed (issue #220): no check-in, no attendance, no results, no standings, no
-    lineup. Every reader of the championship that walks the seats adds this predicate.
+    are confirmed: no check-in, no attendance, no results, no standings, no lineup. Every reader of
+    the championship that walks the seats adds this predicate.
 
     Written as the absence of an *uncommitted* placement in a confirmed season, rather than
     the presence of a committed one, so a seat whose occupant holds no placement row reads as
@@ -573,7 +573,7 @@ def wind_down_steps(
     """The job that takes a season whose every division is done out of its ongoing stages.
 
     Shared by the change that winds a season down and by the completion, which winds one down
-    first where it finds one (#439): `turn_down`, one save that turns down the pending placements,
+    first where it finds one: `turn_down`, one save that turns down the pending placements,
     returns their drivers to Not Signed Up, moves the season on to Pending completion and writes
     its line. The jobs that close what the modules hold open come before it
     (`close_jobs`), and the jobs that tell and close each driver's signup
@@ -637,8 +637,8 @@ async def configuration_fixed(db_path: str) -> int | None:
     what that season's signups were made under.
 
     The league's base role and driver role are fixed by the same rule, though they are core's
-    and not the module's (issue #276). A driver role changed mid-season would leave every
-    driver holding the old one for good, the season's end revoking only the new.
+    and not the module's. A driver role changed mid-season would leave every driver holding the old
+    one for good, the season's end revoking only the new.
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -667,9 +667,8 @@ async def modules_frozen_for_completion(db_path: str) -> bool:
     """True while the server's season stands in Pending completion.
 
     Nothing but repairing a division's channels, amending the results of a round already
-    final, and completing the season may be done then (issue #224, decided 2026-09-20 — the
-    season's points amendment was once permitted here too and no longer is), so no module may
-    be disabled.
+    final, and completing the season may be done then — not the season's points amendment — so
+    no module may be disabled.
     """
     found = await live_season_stage(db_path)
     return found is not None and found[1] is SeasonStage.PENDING_COMPLETION
@@ -697,7 +696,7 @@ async def _stage_and_whether_done_on(
 
 
 async def advance_to_pending_completion_on(db: aiosqlite.Connection, season_id: int) -> bool:
-    """Move a season in Ongoing to Pending completion once every division is done (issue #220).
+    """Move a season in Ongoing to Pending completion once every division is done.
 
     A division is done when it is finished or cancelled. Only a season in plain Ongoing is
     moved here, this needing nothing but the database. A season with a signup window open or
@@ -729,20 +728,19 @@ class PlacementsConfirmed:
 async def confirm_placements_on(db: aiosqlite.Connection, season_id: int) -> PlacementsConfirmed:
     """Commit a season's uncommitted placements and return it to Ongoing, on *db*, committing nothing.
 
-    The mid-season confirmation's one save holds this (issue #439): the placements and the
-    season's return from Ongoing, placements to Ongoing are saved together or not at all. The
-    stage is moved first, conditioned on the season still being in Ongoing, placements, so
-    that a season in any other stage raises :class:`InvalidStageTransition` with nothing
-    written. It never moves the season on to Pending completion: a season whose every
-    division is done is refused before the confirmation is carried out, and the wind-down
-    that moves it on discards the placements not yet committed (core specification, Pending
-    completion).
+    The mid-season confirmation's one save holds this: the placements and the season's return from
+    Ongoing, placements to Ongoing are saved together or not at all. The stage is moved first,
+    conditioned on the season still being in Ongoing, placements, so that a season in any other
+    stage raises :class:`InvalidStageTransition` with nothing written. It never moves the season on
+    to Pending completion: a season whose every division is done is refused before the confirmation
+    is carried out, and the wind-down that moves it on discards the placements not yet committed
+    (core specification, Pending completion).
     """
     await _move_on(db, season_id, SeasonStage.ONGOING_PLACEMENTS, SeasonStage.ONGOING)
     return PlacementsConfirmed(committed=await commit_placements_on(db, season_id))
 
 
-#: The states the driver pass returns to Not Signed Up (issue #220). Season Banned and League
+#: The states the driver pass returns to Not Signed Up. Season Banned and League
 #: Banned are left untouched: bans are to be specified on their own.
 DRIVER_PASS_STATES: tuple[str, ...] = (
     "UNASSIGNED",
@@ -775,7 +773,7 @@ async def delete_driver_profiles(
     Returns every Discord account the deleted profiles held, current and past, sorted. They are
     read first, the cascade taking `driver_accounts` with the profiles. Their portraits are
     keyed by account and go nowhere with the profile, so a caller able to reach the league's
-    image configuration discards them once its transaction commits (issue #235).
+    image configuration discards them once its transaction commits.
     """
     if not profile_ids:
         return []
@@ -827,7 +825,7 @@ async def run_driver_pass_on(
     """The database side of the driver pass that ends a season, on the connection handed.
 
     The pass runs inside the save that records a season's end (completion, cancellation and
-    abort alike, #220), so this commits nothing. Its Discord side (each driver's signup channel
+    abort alike), so this commits nothing. Its Discord side (each driver's signup channel
     and driver role) and the discarding of the deleted drivers' portraits are jobs of their own
     after that save, and are not done here.
 

@@ -16,7 +16,7 @@ class RoundFormat(str, Enum):
 
         Text a league reads names a format through this, never by interpolating the member.
         A ``str`` enum in an f-string formats as ``RoundFormat.SPRINT`` from Python 3.12 on,
-        which is what the submission channel's opening message said until #360.
+        which is no way to name a format to a league.
         """
         return _ROUND_FORMAT_LABELS[self]
 
@@ -37,10 +37,10 @@ class RoundStatus(str, Enum):
     Each intermediate state is named for what the round is waiting on rather than for what has
     already happened to it, because what comes next is what a league manager needs to know.
 
-    A round once carried two columns — one saying whether it was on, another how
-    settled its results were. Only six of their combinations were ever reachable, and the old
-    `PROVISIONAL` covered three of them at once: not yet due, due but unentered, and entered but
-    unjudged. That last distinction is the one that matters, and is why cancelling misbehaved.
+    Rejected: two columns, one saying whether the round is on and another how settled its
+    results are. Only six of their combinations are reachable, and a single `PROVISIONAL`
+    covers three of them at once: not yet due, due but unentered, and entered but unjudged.
+    That last distinction is the one that matters, and blurring it makes cancelling misbehave.
     """
 
     NOT_RUN = "NOT_RUN"
@@ -62,7 +62,7 @@ ROUND_CANCELLABLE = frozenset({RoundStatus.NOT_RUN.value, RoundStatus.AWAITING_R
 #: The states only the results module can move a round out of. Every one of them waits on a
 #: results command — the submission wizard, the report verdicts, the appeal verdicts — so with
 #: the module switched off nothing will ever move them and the round waits for ever, its
-#: division never finishes and its season can never be completed (issue #167). Disabling the
+#: division never finishes and its season can never be completed. Disabling the
 #: module therefore has to close these rounds itself.
 #:
 #: NOT_RUN is deliberately not among them: that round is waiting on the clock, not on results,
@@ -79,7 +79,7 @@ ROUND_AWAITING_RESULTS_MODULE = frozenset({
 #: has results entered, so cancelling a season may not call it off — "a cancellation shall never
 #: discard a result", and "a round further along shall keep its place and its results"
 #: (``core_specification.md``, Cancelling a season). Cancellation closes them as FINAL instead,
-#: which is what makes their results final and their drivers former drivers (#216).
+#: which is what makes their results final and their drivers former drivers.
 ROUND_RACED_AWAITING_VERDICTS = frozenset({
     RoundStatus.AWAITING_REPORT_VERDICTS.value,
     RoundStatus.AWAITING_APPEAL_VERDICTS.value,

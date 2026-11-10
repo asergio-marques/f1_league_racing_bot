@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from leaguebot.image.services.image_lineup_post import LineupPostOutcome
 
 #: The oldest discord.py the bot runs on. `/team add` and `/team modify` take their input in a
-#: modal carrying a role picker, which needs ``discord.ui.Label`` — new in 2.6 (#381). A host
+#: modal carrying a role picker, which needs ``discord.ui.Label`` — new in 2.6. A host
 #: installing discord.py from apt rather than into a virtualenv gets an older one, and would
 #: otherwise fail deep inside the team cog with an AttributeError naming no cause.
 MINIMUM_DISCORD_PY: tuple[int, int] = (2, 6)
@@ -105,12 +105,12 @@ def create_bot() -> LeagueBot:
     intents.members = True
     intents.message_content = True  # required for signup wizard on_message dispatch
 
-    # The tree refuses every command from a server that is not the league's (issue #244).
-    # Every attribute attached below is declared on `LeagueBot` first (issue #228).
+    # The tree refuses every command from a server that is not the league's.
+    # Every attribute attached below is declared on `LeagueBot` first.
     bot = LeagueBot(
         command_prefix="!", intents=intents, help_command=None, tree_cls=LeagueCommandTree
     )
-    # Tell the host whenever the bot finds itself in more than one server (issue #244).
+    # Tell the host whenever the bot finds itself in more than one server.
     async def _warn_if_serving_several(*_: object) -> None:
         warn_if_serving_several(bot)
 
@@ -221,8 +221,7 @@ def _sign_up_to_confirmation_refused(bot: LeagueBot) -> None:
 
 def _sign_up_to_base_role_changed(bot: LeagueBot) -> None:
     """Make the hook the base role changed declares, and sign signup's move of the signup
-    channel's overwrite up to it, so core never reaches into the signup module itself
-    (#283)."""
+    channel's overwrite up to it, so core never reaches into the signup module itself."""
     bot.base_role_changed = AwaitedHook()
     bot.base_role_changed.subscribe(bot.signup_module_service.move_base_role_overwrite)
 
@@ -271,12 +270,12 @@ def _sign_up_to_cancellations(bot: LeagueBot) -> None:
     in the order core calls them: what stands in the way (results' refusal of a round whose
     submission accepted results), the rounds called off (results closes their empty submissions,
     in the save, then attendance's take-down of their calls), the notices told of a division
-    (attendance's check-in notice, then weather's forecast note, then results' results note,
-    #283), and the steps a module plans (results' deletion of a submission channel, attendance's
+    (attendance's check-in notice, then weather's forecast note, then results' results note),
+    and the steps a module plans (results' deletion of a submission channel, attendance's
     take-down of a call, attendance's reading of a round's check-in record, then each module's
     own notice, attendance's, weather's, then results'). Results' not-held round end is handed
     `round_ended_not_held` too, to which attendance signs up the reading of a round's check-in
-    record (#283)."""
+    record."""
     from leaguebot.attendance.services import cancellation_notice as attendance_cancellation_notice
     from leaguebot.attendance.services import check_in_changes, check_in_record
     from leaguebot.results.services import cancellation_notice as results_cancellation_notice
@@ -628,7 +627,7 @@ def _sign_up_to_season_standing_read(bot: LeagueBot) -> None:
 def _sign_up_to_season_completed(bot: LeagueBot) -> None:
     """Make the hooks a division's final round read and a season completed declare, and sign
     each module's final post up to them: results' read of its own `session_results` and its
-    final standings, then attendance's final sheet (#283). The builder hands them to
+    final standings, then attendance's final sheet. The builder hands them to
     `season_complete_change`."""
     from leaguebot.attendance.services import sheet_posting
     from leaguebot.results.services import season_standings_posts
@@ -700,11 +699,10 @@ def _sign_up_to_season_end(bot: LeagueBot) -> None:
 async def _draw_review_picture(bot: LeagueBot, picture: Mapping[str, Any]) -> "Path":
     """Draw one picture of a season review to a file, and give where it is.
 
-    A lineup is the image module's, drawn obtaining each seated driver's missing portrait first
-    (#407), so a review is not judged on a placeholder the league will not see, and, mid-season,
-    with its uncommitted drivers in it (#374). A calendar is core's, of the division's rounds as
-    they stand when it is drawn. A picture the renderer will not draw raises, with the renderer's
-    message.
+    A lineup is the image module's, drawn obtaining each seated driver's missing portrait first,
+    so a review is not judged on a placeholder the league will not see, and, mid-season, with its
+    uncommitted drivers in it. A calendar is core's, of the division's rounds as they stand when it
+    is drawn. A picture the renderer will not draw raises, with the renderer's message.
     """
     kind, division_id = str(picture["kind"]), int(picture["division_id"])
     if kind == "lineup":
@@ -1692,7 +1690,7 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
 
     scheduler.register_timer("portrait_refresh", _portrait_refresh_cb)
 
-    # The standing sweep that undoes an amendment nobody carried through (#345); start-up arms it.
+    # The standing sweep that undoes an amendment nobody carried through; start-up arms it.
     async def _amendment_sweep_cb() -> None:
         from leaguebot.results.services.result_submission_service import sweep_expired_amendments
         await sweep_expired_amendments(bot, queue=bot.change_queue)
@@ -1717,9 +1715,9 @@ async def build(settings: Settings) -> LeagueBot:
 
     Registers every change type, timer kind and scheduler callback, loads the cogs and the
     persistent views, and adds the owner's `!sync` command and the disconnect log line, before
-    the bot connects and before the scheduler starts, so a press on a
-    persistent button arriving while start-up is still recovering finds all of it in place
-    (#228). Reads no environment: the settings are handed in (:func:`read_settings`).
+    the bot connects and before the scheduler starts, so a press on a persistent button arriving
+    while start-up is still recovering finds all of it in place. Reads no environment: the
+    settings are handed in (:func:`read_settings`).
     """
     from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.services.season_service import SeasonService
@@ -1729,7 +1727,7 @@ async def build(settings: Settings) -> LeagueBot:
     bot = create_bot()
     bot.db_path = settings.db_path
 
-    # The version is read once, here, and never when a command runs (#258): it belongs to
+    # The version is read once, here, and never when a command runs: it belongs to
     # the code this process loaded. See `core/utils/version.py`.
     from leaguebot.core.utils.paths import PROJECT_ROOT
     from leaguebot.core.utils.version import read_version, read_version_date
@@ -1825,7 +1823,7 @@ async def build(settings: Settings) -> LeagueBot:
     from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
 
     # Attendance's share of a round's review, handed the placement service it moves seats
-    # through; results' change types reach attendance through it alone (#439).
+    # through; results' change types reach attendance through it alone.
     bot.attendance_after_review = AttendanceAfterReview(bot, bot.placement_service)
     _sign_up_to_round_windows(bot)
     _sign_up_to_review_sections(bot)
@@ -1982,7 +1980,7 @@ def _start_up_steps(bot: LeagueBot) -> "tuple[StartUpStep, ...]":
     """
 
     async def arm_the_amendment_sweep() -> None:
-        # The standing sweep that undoes an amendment nobody carried through (#345), its callback
+        # The standing sweep that undoes an amendment nobody carried through, its callback
         # registered by `build`. Armed unconditionally rather than behind a setting: the
         # amendment's first stage commits, so a league running the results module at all can leave
         # a round half-amended, and the sweep is what makes that recoverable without anybody
@@ -1990,7 +1988,7 @@ def _start_up_steps(bot: LeagueBot) -> "tuple[StartUpStep, ...]":
         bot.scheduler_service.schedule_amendment_sweep()
 
     async def recover_the_hub() -> None:
-        # Route the hub's buttons again, and post its panel afresh where it was deleted (#279).
+        # Route the hub's buttons again, and post its panel afresh where it was deleted.
         from leaguebot.core.services.hub_service import recover_hub
 
         await recover_hub(bot, queue=bot.change_queue, hub_options=bot.hub_options)
@@ -2003,10 +2001,10 @@ def _start_up_steps(bot: LeagueBot) -> "tuple[StartUpStep, ...]":
     return (
         ("amendment sweep", arm_the_amendment_sweep),
         ("portrait refresh job", lambda: _recover_portrait_refresh_job(bot)),
-        # A signup close timer lost on restart (T021); its callback is registered by `build`.
+        # A signup close timer lost on restart; its callback is registered by `build`.
         ("signup close timer", lambda: _recover_signup_close_timers(bot)),
         # Results-amend channels left open by a previous run. **Before the submission channels,
-        # not after** (#345). An amendment open at the restart has its corrections in the
+        # not after**. An amendment open at the restart has its corrections in the
         # database, unapproved; recovering a submission channel whose results were saved but never
         # posted posts its standings from that database. Reverting the amendments first means
         # those standings are built from the round as it raced, wherever the revert succeeds.
@@ -2019,13 +2017,13 @@ def _start_up_steps(bot: LeagueBot) -> "tuple[StartUpStep, ...]":
          lambda: recover_expired_review_prompts(
              bot, approve_view=_approve_view_for(bot), queue=bot.change_queue)),
         ("missed phases", lambda: _recover_missed_phases(bot)),
-        # The check-in calls that fell due while the bot was down, their deadline still ahead
-        # (#429), posted late. Before the deadlines below, as a call comes before its deadline.
+        # The check-in calls that fell due while the bot was down, their deadline still ahead,
+        # posted late. Before the deadlines below, as a call comes before its deadline.
         ("missed check-in calls", lambda: _recover_missed_check_in_calls(bot)),
-        # Persistent RSVP embed views re-armed for all stored embed messages (T010), and missed
-        # RSVP deadline jobs run for rounds whose deadline already passed (T019).
+        # Persistent RSVP embed views re-armed for all stored embed messages, and missed RSVP
+        # deadline jobs run for rounds whose deadline already passed.
         ("RSVP views and deadlines", lambda: _recover_rsvp_views_and_deadlines(bot)),
-        # The forecasts and check-in messages due to come down while the bot was stopped (#425).
+        # The forecasts and check-in messages due to come down while the bot was stopped.
         # After the deadlines above, so a check-in is distributed before it goes.
         ("missed clean-ups", lambda: _recover_missed_cleanups(bot)),
         ("hub", recover_the_hub),
@@ -2148,15 +2146,16 @@ async def _recover_missed_phases(bot: LeagueBot) -> None:
     change's check.
 
     The horizons are the league's own, read from ``weather_pipeline_config``, not the packaged
-    5 / 2 / 2 (issue #111). Every other path that decides whether a phase is overdue reads that
-    config — the confirmation of placements and a round amendment's judgement — and a restart judging by the defaults made the same league see one set of
-    timings on an enable and another on a restart: a longer phase 1 was never published at all,
-    a shorter one was published days early.
+    5 / 2 / 2. Every other path that decides whether a phase is overdue reads that config — the
+    confirmation of placements and a round amendment's judgement — and a restart judging by the
+    defaults would make the same league see one set of timings on an enable and another on a
+    restart: a longer phase 1 would never be published at all, a shorter one would be published
+    days early.
 
     The config is resolved once rather than once per round, since the league has one, and only
     after the module gate, so a league with weather switched off is never queried for it.
 
-    Only a round still to be run is recovered (issue #272): never a cancelled round, a round of a
+    Only a round still to be run is recovered: never a cancelled round, a round of a
     cancelled division, or a round whose race time has passed. Cancellation is filtered in the
     query. The race time is judged here, on the aware moment the one reader hands back, and not in
     SQL, which would compare the stored text against a timestamp. It is the race time rather
@@ -2222,28 +2221,28 @@ async def _recover_missed_phases(bot: LeagueBot) -> None:
 async def _recover_missed_check_in_calls(
     bot: LeagueBot, *, now: datetime | None = None
 ) -> None:
-    """Post late the check-in calls that fell due while the bot was down (#429).
+    """Post late the check-in calls that fell due while the bot was down.
 
     A call's job is one of those the scheduler discards when the bot comes back more than its
     misfire grace after it, and nothing else posted it: the round asked nobody whether they
-    were racing, opened no attendance rows, and counted nothing against anyone. Decided
-    2026-09-24: a call that came due is posted late, provided the round's check-in deadline is
-    still ahead, and the drivers answer in the time left. The deadline boundary is the one
-    `/attendance post-check-in` holds to — with a deadline of zero, the round's own moment.
+    were racing, opened no attendance rows, and counted nothing against anyone. A call that came
+    due is posted late, provided the round's check-in deadline is still ahead, and the drivers
+    answer in the time left. The deadline boundary is the one `/attendance post-check-in` holds to —
+    with a deadline of zero, the round's own moment.
 
     A round is owed a late call where its season is in one of the three ongoing stages, neither
     it nor its division is cancelled, the attendance module is enabled, no call for it stands
     and its check-in is not over (``checkin_cleared``), and the moment its call was due has
-    passed. **Nothing is posted while test mode is on** (decided 2026-09-24): `/test-mode
-    advance` posts a test season's calls in their turn.
+    passed. **Nothing is posted while test mode is on**: `/test-mode advance` posts a test season's
+    calls in their turn.
 
     The restart asks the change queue for each call owed, before the queue starts, and posts
-    nothing itself (#439, slice 6b): the call's change posts it, telling the log channel that it
-    went out late, or, where the deadline has passed as well, gives it up (`give_up`), closing the
-    round's check-in so that the next start does not ask again. A call already in hand on the queue
-    is not asked for twice. Its last notice and its deadline need no arming: the confirmation of
-    placements armed them with the call, the job store outlives a restart, and both are still
-    ahead of a call posted in time to be answered.
+    nothing itself: the call's change posts it, telling the log channel that it went out late, or,
+    where the deadline has passed as well, gives it up (`give_up`), closing the round's check-in so
+    that the next start does not ask again. A call already in hand on the queue is not asked for
+    twice. Its last notice and its deadline need no arming: the confirmation of placements armed
+    them with the call, the job store outlives a restart, and both are still ahead of a call posted
+    in time to be answered.
 
     Runs before `_recover_rsvp_views_and_deadlines` in start-up, the call coming before its
     deadline. *now* is the wall clock unless a test pins it.
@@ -2317,26 +2316,27 @@ async def _recover_missed_check_in_calls(
 async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
     """Re-arm RsvpView buttons and run missed RSVP deadline jobs on bot restart.
 
-    T010: Re-arm persistent RsvpView for every row in rsvp_embed_messages so
-    button interactions survive bot restarts (FR-007).
+    Re-arm persistent RsvpView for every row in rsvp_embed_messages so button interactions survive
+    bot restarts (FR-007).
 
-    T019: For any call whose rsvp_deadline fire time has already passed and which carries no
+    For any call whose rsvp_deadline fire time has already passed and which carries no
     mark of its deadline having run, ask the change queue for the deadline (FR-027).
 
-    **The call's own mark decides, never the drivers' placements** (#429). A deadline writes its
+    **The call's own mark decides, never the drivers' placements**. A deadline writes its
     distribution and marks the call (`deadline_run_at`) in one save, before it posts its
     announcement or its no-reserve notice; that is how `AttendanceService.get_current_embed_message`
     tells a deadline that has run as well, and the two must agree. The placements cannot: a
-    deadline with no reserve to place writes none, so it was run again at every start and its
-    notice posted again, and a call posted again after an amendment carries over the placements
-    of the call it replaced, so its own deadline was never caught up. The announcement's id cannot
-    either: a discarded announcement leaves none, and the deadline has run all the same.
+    deadline with no reserve to place writes none, so it would be run again at every start and
+    its notice posted again, and a call posted again after an amendment carries over the
+    placements of the call it replaced, so its own deadline would never be caught up. The
+    announcement's id cannot either: a discarded announcement leaves none, and the deadline has
+    run all the same.
 
-    T023: For any round whose rsvp_last_notice fire time has already passed,
-    silently skip — do NOT fire retroactively (FR-029 edge case).
+    For any round whose rsvp_last_notice fire time has already passed, silently skip — do NOT fire
+    retroactively (FR-029 edge case).
 
     A restart is one of the three paths the core specification names, so none of this runs
-    for a server whose attendance module is switched off (issue #114). Re-arming the buttons
+    for a server whose attendance module is switched off. Re-arming the buttons
     would revive check-in for a league that had turned it off, and the missed-deadline
     catch-up would distribute its reserves into seats hours after the fact.
     """
@@ -2458,9 +2458,9 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
     A round's forecast (whichever of Phases 1 to 3 still stands, which the host's log line names),
     and its check-in call with its last notice and its distribution message, come down
     `POST_RACE_CLEANUP_DELAY` after the round's start, by the ``cleanup`` and ``rsvp_cleanup``
-    jobs (#425). A job falling due while the bot is stopped is discarded by the
-    scheduler's misfire grace rather than run late, and nothing else would take those messages
-    down: a forecast whose cleanup was missed used to stay for good.
+    jobs. A job falling due while the bot is stopped is discarded by the scheduler's misfire
+    grace rather than run late, and nothing else would take those messages down: a forecast
+    whose cleanup was missed would stay for good.
 
     A round called off, or of a division called off, is left alone. Its cancellation removed both
     jobs, and the weather module keeps the forecasts of a round called off. A round that ended
@@ -2565,9 +2565,9 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
     queue is left to it. This runs before the queue starts.
 
     Reviews are not decided here: `review_recovery.recover_review` leaves a round whose review a
-    change on the queue is carrying out to it, and otherwise asks the queue to put the review back
-    (#439). A resubmission a restart cut short is ended by the review's opening, its collection being lost
-    though the round's results are not (issue #210).
+    change on the queue is carrying out to it, and otherwise asks the queue to put the review
+    back. A resubmission a restart cut short is ended by the review's opening, its collection
+    being lost though the round's results are not.
     """
     from leaguebot.core.db.database import get_connection
 
@@ -2595,7 +2595,7 @@ async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
         guild = await league_guild(bot)
 
         # A round that is a review is put back, or left to the change carrying it out, by the
-        # results service (#439). What is left is a first paste cut short, which is no review.
+        # results service. What is left is a first paste cut short, which is no review.
         if await recover_review(
             bot, row, guild, queue=bot.change_queue,
         ):
@@ -2637,13 +2637,12 @@ async def _recover_portrait_refresh_job(bot: LeagueBot) -> None:
 async def _recover_orphaned_amend_channels(bot: LeagueBot) -> None:
     """Ask the change queue to end every amendment left open by a previous bot process.
 
-    An amendment's pastes were once waited for in the command, which died with the process. They
-    are turns on the queue now, so an amendment open at a restart has, at most, its waiting turns
-    and its timer; but it was abandoned all the same, and a league manager whose amendment vanished
-    needs to know to run the command again. Each amendment row is asked for as a
-    ``results.amend.lapse`` of the restart's kind, as the bot, **before the queue starts**
-    (core specification, "What survives a restart"): its jobs put the round back where stage one
-    had written, delete the channel and close the row, and write the line, each amendment's own.
+    An amendment's pastes are turns on the queue, so an amendment open at a restart has, at
+    most, its waiting turns and its timer; but it was abandoned all the same, and a league manager
+    whose amendment vanished needs to know to run the command again. Each amendment row is asked for
+    as a ``results.amend.lapse`` of the restart's kind, as the bot, **before the queue starts**
+    (core specification, "What survives a restart"): its jobs put the round back where stage one had
+    written, delete the channel and close the row, and write the line, each amendment's own.
     Nothing is put back, deleted or written here.
 
     What the line says depends on what the restart found, and the row cannot always say:

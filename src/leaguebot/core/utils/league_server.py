@@ -2,7 +2,7 @@
 
 **The league's server is the one `server_configs` row.** The first `/bot init` claims it, and
 `ConfigService.claim_on` refuses to claim a second, so whichever server was set up
-first is the league's until `/bot pack` clears the claim again (issue #247). No setting names
+first is the league's until `/bot pack` clears the claim again. No setting names
 the server in advance: a bot that is invited only where its host puts it — Discord's *Public Bot*
 switch off, as the README requires — never meets a second server anyway, and this is the
 safeguard for the mistake, not the mechanism a league relies on.
@@ -13,7 +13,7 @@ safeguard for the mistake, not the mechanism a league relies on.
 new listener to it. Past that point nothing in the bot scopes by
 server: the tables carry no `server_id`, the services take none, and a query reads the
 league's data because the database holds no other. A per-query scope that could never fail
-would only suggest to a reader that it might (decided 2026-09-18, issue #244).
+would only suggest to a reader that it might.
 
 **Buttons, menus and modals are checked too**, by `LeagueView` and `LeagueModal`, which every
 view and modal in the bot derives from. The tree does not see them, and "the bot only posts in
@@ -33,7 +33,7 @@ while no server is claimed; see `LeagueView`.
 
 **The same three classes are where a failure is answered.** A command, button or form that
 raises is reported to its member, the log channel and the host's log by
-`leaguebot.core.utils.interaction_errors.report_failure`, which each class's `on_error` calls (issue #156).
+`leaguebot.core.utils.interaction_errors.report_failure`, which each class's `on_error` calls.
 
 **A failed Discord event is answered by `on_event_error`**, which the builder attaches to the bot
 as its `on_error`. An event has no member to tell, so the full error goes to the host's log and
@@ -62,7 +62,7 @@ log = logging.getLogger(__name__)
 
 REFUSAL = "⛔ This bot serves another server's league and takes no commands here."
 
-#: What a button or form is told while the bot serves no server at all (issue #247).
+#: What a button or form is told while the bot serves no server at all.
 UNCLAIMED_REFUSAL = (
     "⛔ This bot is between servers and acts on nothing until `/bot init` claims one."
 )
@@ -88,7 +88,7 @@ def guild_of(interaction: discord.Interaction) -> discord.Guild:
     league's command channel — so an interaction that reaches a body has a server. discord.py
     types it as optional because an interaction in general need not. A None here means a body
     ran with no guard in front of it, and that is raised by name rather than left to surface
-    as an ``AttributeError`` on ``None`` somewhere further in (#228).
+    as an ``AttributeError`` on ``None`` somewhere further in.
     """
     guild = interaction.guild
     if guild is None:
@@ -106,7 +106,7 @@ def channel_id_of(interaction: discord.Interaction) -> int:
 
     A command, a press or a submission always comes from a channel. discord.py types the id as
     optional because an interaction in general need not carry one, so a None here is raised by
-    name rather than stored as a key or looked up (#228).
+    name rather than stored as a key or looked up.
     """
     channel_id = interaction.channel_id
     if channel_id is None:
@@ -193,10 +193,10 @@ class LeagueView(discord.ui.View):
     Discord asks a view's `interaction_check` before any of its buttons or menus runs. A view
     that overrides it must call this one first.
 
-    **While no server is claimed, every press is refused** (decided 2026-09-19, issue #247).
-    Between `/bot pack` and the next `/bot init` no server is foreign, and the buttons the
-    bot left on the server it moved from would otherwise act on the league's data from
-    there. Before the first `/bot init` the bot has posted nothing, so nothing is lost.
+    **While no server is claimed, every press is refused.** Between `/bot pack` and the next `/bot
+    init` no server is foreign, and the buttons the bot left on the server it moved from would
+    otherwise act on the league's data from there. Before the first `/bot init` the bot has posted
+    nothing, so nothing is lost.
     """
 
     async def interaction_check(self, interaction: discord.Interaction, /) -> bool:
@@ -224,7 +224,7 @@ class LeagueModal(discord.ui.Modal):
     ) -> None:
         # A modal's failure names no item, and discord.py passes none. `item` is declared
         # because discord.py's own `Modal` narrows `BaseView.on_error`, and a subclass has to
-        # satisfy both (#228).
+        # satisfy both.
         await report_failure(interaction, error, what=describe_form(self))
 
 
@@ -270,8 +270,8 @@ class CallbackButton(discord.ui.Button):
 
     discord.py's own way to give a button made in a loop its behaviour is to assign to its
     ``callback`` — a method, which the type check cannot follow an assignment to, and so could
-    not check the handler against (#228). This takes the handler when the button is made and
-    calls it from the ``callback`` discord.py calls: the same button, pressed the same way.
+    not check the handler against. This takes the handler when the button is made and calls it
+    from the ``callback`` discord.py calls: the same button, pressed the same way.
     """
 
     def __init__(

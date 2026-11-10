@@ -45,11 +45,10 @@ AUTOCOMPLETE_TIMEOUT_SECONDS = 1.0
 #:
 #: Pinned by `test_no_more_than_four_idle_connections_are_kept`. Four covers the most that run
 #: at once in practice (a step's save, a service it reads through inside that block, and a reader
-#: or two); one asking beyond that opens its own and closes it on return, as every caller did before
-#: connections were lent. Zero switches lending off. Lending was kept on what it measured: the
-#: change-queue tests of `test_season_approval_change.py`, in one process on the Pi, took 55 s with
-#: four kept against 161 s with none (2026-11-01), the schema read by every fresh connection being
-#: most of the difference.
+#: or two); one asking beyond that opens its own and closes it on return. Zero switches lending
+#: off. Lending is kept for what it saves: the change-queue tests of
+#: `test_season_approval_change.py`, in one process on the Pi, take 55 s with four kept against
+#: 161 s with none, the schema read by every fresh connection being most of the difference.
 _IDLE_CONNECTIONS_KEPT = 4
 
 #: Who has called ``never_lend``: connections that are closed on return, whatever else is true.
@@ -326,7 +325,7 @@ async def sole_row(cursor: aiosqlite.Cursor) -> aiosqlite.Row:
     For an aggregate — ``COUNT``, ``MAX`` — which always returns a row, and for a lookup by a
     key the caller has just taken from the database, or just written. aiosqlite types every
     ``fetchone`` as optional; a None here means that certainty was wrong, and it is raised by
-    name rather than indexed (#228).
+    name rather than indexed.
     """
     row = await cursor.fetchone()
     if row is None:
@@ -354,7 +353,7 @@ def inserted_id(cursor: aiosqlite.Cursor) -> int:
 
     SQLite sets it after every INSERT into a rowid table; aiosqlite types it as optional because
     a cursor in general need not have run one. None here means the statement wrote no row, and
-    that is raised by name rather than stored as an id (#228).
+    that is raised by name rather than stored as an id.
     """
     row_id = cursor.lastrowid
     if row_id is None:
@@ -412,9 +411,8 @@ _DANGLING_ROWS_NAMED = 3
 async def run_migrations(db_path: str) -> None:
     """Apply all pending SQL migration files in order.
 
-    **The schema starts from one baseline** (issue #254). The 61 migrations that built it
-    before the bot went live were squashed into ``001_baseline.sql``; git keeps them. Until
-    go-live, which is release ``v1.0.0`` (#259), the baseline may be edited in place.
+    **The schema starts from one baseline**, ``001_baseline.sql``. Until go-live, which is
+    release ``v1.0.0``, the baseline may be edited in place.
 
     **At go-live**, in one place so nothing is missed on the day:
 

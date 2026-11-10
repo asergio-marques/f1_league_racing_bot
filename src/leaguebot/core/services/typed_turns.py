@@ -1,4 +1,4 @@
-"""A message typed into a conversation's channel, answered as a turn of a change (#439, 6b).
+"""A message typed into a conversation's channel, answered as a turn of a change.
 
 A listener that receives a message it would act on does one of two things. Where a turn is still
 waiting in the message's channel (`turn_waiting`), it turns the message away (`turn_away`). Where

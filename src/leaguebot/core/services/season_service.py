@@ -49,7 +49,7 @@ log = logging.getLogger(__name__)
 
 
 def validate_division_name(name: str) -> str | None:
-    """Why *name* cannot name a division, or None where it can (#362).
+    """Why *name* cannot name a division, or None where it can.
 
     A division's name heads every posting and every graphic of the division, so it is held to
     the rules every name a league types is held to: no group mention, no emoji and no markup.
@@ -129,10 +129,8 @@ class SeasonService:
         """Return the ACTIVE season, or None.
 
         ACTIVE is every stage from the first confirmation of placements to the season's
-        completion or cancellation: the three ongoing stages and Pending completion. This was
-        ``get_active_season``, renamed once the specification came to call a season *active*
-        from the moment it is set up (issue #220). Read ``Season.stage`` where the stage
-        within ACTIVE matters.
+        completion or cancellation: the three ongoing stages and Pending completion. Read
+        ``Season.stage`` where the stage within ACTIVE matters.
         """
         async with get_connection(self._db_path) as db:
             cursor = await db.execute(
@@ -409,7 +407,7 @@ class SeasonService:
         """Delete one season and everything under it, on the connection handed to it.
 
         What `/season abort` leaves of a season whose placements were never confirmed: nothing
-        at all, its signups included (issue #220).
+        at all, its signups included.
 
         It writes on *db* and commits nothing, for the abort's one save to commit. Each module
         deletes its own rows of the season through a hook, on that connection: *rounds_deleted*
@@ -420,8 +418,8 @@ class SeasonService:
 
         Raises ``ValueError`` for a season not in SETUP, before anything is deleted. Its number
         is committed from the moment it leaves SETUP, and that number is how a league names
-        its own history: removing one would leave a gap nothing explains (issue #153). A season
-        id that names no season is not an error.
+        its own history: removing one would leave a gap nothing explains. A season id that names no
+        season is not an error.
         """
         cursor = await db.execute(
             "SELECT status FROM seasons WHERE id = ?", (season_id,)
@@ -464,7 +462,7 @@ class SeasonService:
 
             # The season's fake (test-mode) drivers go with it, by the deletion test mode
             # itself takes: it lets go of every row holding them, in this season or any
-            # other, and keeps their history (issue #268).
+            # other, and keeps their history.
             from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
 
             cursor = await db.execute(
@@ -508,11 +506,11 @@ class SeasonService:
     ) -> list[Division]:
         """The divisions of the season an `/images test` preview draws, in one connection.
 
-        Exactly `get_previewable_season` followed by `get_divisions`, which is what the
-        preview autocomplete used to call in turn — two checkouts of a connection, each with its
-        `PRAGMA foreign_keys` and, when none is idle to be lent, an open and a close, on a path with
-        three seconds to answer Discord in. Doing both on one connection halves that, and the
-        second query is only reached when the first found a season.
+        Exactly `get_previewable_season` followed by `get_divisions`, on one connection: the two
+        called in turn take two checkouts of a connection, each with its `PRAGMA foreign_keys` and,
+        when none is idle to be lent, an open and a close, on a path with three seconds to answer
+        Discord in. Doing both on one connection halves that, and the second query is only reached
+        when the first found a season.
 
         Empty where the server holds no previewable season, which is the same answer the
         pair gave and is why the preview's division parameter is optional.
@@ -848,11 +846,11 @@ async def create_sessions_for_round_on(
     placements, takes the points snapshot and moves the season to Ongoing, so the sessions are
     written on the connection that save holds and committed with it, or not at all.
 
-    **Replaced, not added to** (issue #408). A confirmation that writes the sessions and then
-    fails before the season goes active used to leave them behind, and the next confirmation
-    wrote a full second set, every session of which the phases then forecast twice. However
-    often a save is tried, the round holds one set: the one its format defines now. The old rows
-    go with whatever phase data they held, so this is for a round no phase has been drawn for.
+    **Replaced, not added to.** A confirmation that writes the sessions and then fails before the
+    season goes active leaves them behind, and were they added to, the next confirmation would write
+    a full second set, every session of which the phases would forecast twice. However often a save
+    is tried, the round holds one set: the one its format defines now. The old rows go with whatever
+    phase data they held, so this is for a round no phase has been drawn for.
     """
     session_types: list[SessionType] = SESSIONS_BY_FORMAT.get(fmt, [])
     sessions: list[Session] = []
@@ -869,10 +867,9 @@ async def create_sessions_for_round_on(
 async def commit_placements_on(db: aiosqlite.Connection, season_id: int) -> int:
     """Commit every placement of *season_id* not yet committed on *db*; returns how many.
 
-    Committed as placements are confirmed (issue #220), and nothing is committed here: the
-    season's approval holds the save. A committed placement is part of the championship: it
-    holds its roles, stands in its lineup, is called to check-in and scored in results and
-    standings.
+    Committed as placements are confirmed, and nothing is committed here: the season's approval
+    holds the save. A committed placement is part of the championship: it holds its roles, stands in
+    its lineup, is called to check-in and scored in results and standings.
     """
     cursor = await db.execute(
         "UPDATE driver_season_assignments SET committed = 1 "
@@ -889,10 +886,10 @@ async def transition_to_active_on(db: aiosqlite.Connection, season_id: int) -> b
     as it is, and its divisions with it, and ``False`` is returned. The trigger
     ``seasons_stage_follow_status`` takes the stage to Ongoing with the status.
 
-    The divisions move SETUP -> ACTIVE in the same save. Until issue #154 nothing ever wrote
-    'ACTIVE' to a division at all, so every division sat in setup for its whole life and
-    `/season cancel` posted its notice to none of them. A cancelled division is left alone: a
-    division called off during setup does not start racing because the season did.
+    The divisions move SETUP -> ACTIVE in the same save: a division left in setup would sit there
+    for its whole life, and `/season cancel` would post its notice to none of them. A cancelled
+    division is left alone: a division called off during setup does not start racing because the
+    season did.
     """
     cursor = await db.execute(
         "UPDATE seasons SET status = ? WHERE id = ? AND status = 'SETUP' AND stage = 'PLACEMENTS'",
@@ -917,19 +914,18 @@ async def set_round_status_on(
     """Set a round's status on *db*, committing nothing, and say whether it moved.
 
     The status alone: nothing else about the round is written, and this imports nothing of any
-    module, so the results module sets a round's place in its review through core's own writer
-    and the write is part of whatever save it is handed (issue #439). What else moves with the
-    status, a round's former drivers becoming marked as it turns FINAL, is the caller's: results'
-    own paths (the appeals approval, an amendment, the revert) mark them through results' own
-    recompute, and the two closers of core's that make a round FINAL hand the rounds to the hook
-    a round made final calls (`rounds_made_final`), in the same save.
+    module, so the results module sets a round's place in its review through core's own writer and
+    the write is part of whatever save it is handed. What else moves with the status, a round's
+    former drivers becoming marked as it turns FINAL, is the caller's: results' own paths (the
+    appeals approval, an amendment, the revert) mark them through results' own recompute, and the
+    two closers of core's that make a round FINAL hand the rounds to the hook a round made final
+    calls (`rounds_made_final`), in the same save.
 
-    The write is guarded, as every write of a round's status here is, so that a stale caller
-    cannot drag a round backwards. With *only_from* the round must stand in one of those states
+    The write is guarded, as every write of a round's status here is, so that a stale caller cannot
+    drag a round backwards. With *only_from* the round must stand in one of those states
     (``ROUND_CANCELLABLE`` for a review opening, which a resubmission must not drag back from
-    appeals); without it the round must not be terminal, since a settled round is never
-    reopened (issue #167). A round that fails the guard is left as it is and ``False`` is
-    returned.
+    appeals); without it the round must not be terminal, since a settled round is never reopened. A
+    round that fails the guard is left as it is and ``False`` is returned.
     """
     if only_from is None:
         guard = f"status NOT IN ({_TERMINAL_SQL})"
@@ -963,7 +959,7 @@ async def cancel_round_on(
     on *db* in the plain-string form ``end_rounds_awaiting_results_on`` writes its own in.
     Cancelling the last outstanding round is what finishes a division, so the division is
     refreshed here too, and the season moved on where that was the last it waited on, all in the
-    caller's save (issue #439).
+    caller's save.
 
     Returns the status the round was cancelled from, or ``None`` where nothing was moved.
     """
@@ -1017,10 +1013,10 @@ async def end_round_not_held_on(
 
     A round whose every session is entered as CANCELLED takes no results and no review, so it
     never becomes final; ending it cancelled is what lets its division finish and its season be
-    completed (issue #439, slice 8). It is not a round called off: ``rounds.not_held`` is set,
-    and is the one thing that tells the two apart, for the check-in call and the forecasts of
-    such a round come down a day after its start as any raced round's do, where a round called
-    off keeps them (attendance and weather read the column; this is the only writer of it).
+    completed. It is not a round called off: ``rounds.not_held`` is set, and is the one thing that
+    tells the two apart, for the check-in call and the forecasts of such a round come down a day
+    after its start as any raced round's do, where a round called off keeps them (attendance and
+    weather read the column; this is the only writer of it).
 
     Only a round awaiting its results (a first submission) or its report verdicts (a
     resubmission) is moved; the write is guarded on that status, so a round that moved on since
@@ -1081,7 +1077,7 @@ async def cancel_division_on(
     Returns the ids of the rounds called off, in round order. The season is left as it is: moving
     it on where this was its last running division is the division's cancellation's, in its own
     save, because `/season cancel` shares this function and must never leave the season it
-    cancels at Pending completion (#439).
+    cancels at Pending completion.
     """
     cursor = await db.execute(
         "SELECT status FROM divisions WHERE id = ?", (division_id,)
@@ -1153,17 +1149,16 @@ async def refresh_division_status_on(db: aiosqlite.Connection, division_id: int)
     Stored state can drift from the rounds it summarises, so this is called from every place a
     round's outcome settles — a round made FINAL or CANCELLED, by core's closers (all but
     `cancel_division_on`, which cancels the division itself, and `close_raced_rounds_on`, whose
-    season's cancellation then cancels the divisions) or by the
-    results module's own changes (the appeals approval, a round that starts with results off) — and
-    again from the completion's first save, which cannot afford to strand a league on a stale
-    row a second time (issue #154).
+    season's cancellation then cancels the divisions) or by the results module's own changes (the
+    appeals approval, a round that starts with results off) — and again from the completion's first
+    save, which cannot afford to strand a league on a stale row.
 
     The `status = 'ACTIVE'` guard is what makes it safe to call anywhere: a division still in
     SETUP has not started, and a CANCELLED one was called off deliberately. Neither is a division
     that has *finished*, and neither is ever touched here.
 
-    A division finishing may be the last one its season waited on (issue #220), so where it
-    moves the season is moved on in the same save, on the same connection (issue #439).
+    A division finishing may be the last one its season waited on, so where it moves the
+    season is moved on in the same save, on the same connection.
 
     Returns True if this call is what moved it.
     """
@@ -1211,8 +1206,7 @@ async def end_rounds_awaiting_results_on(
     states in ``ROUND_AWAITING_RESULTS_MODULE`` each wait on a results command, so with the
     module gone nothing will ever move them: the division never finishes, `/season complete`
     refuses for the rest of the season, and — because enabling is refused while a season is
-    active — the league cannot undo it either. That was issue #167, and it left `/season
-    cancel` as the only way out.
+    active — the league cannot undo it either, leaving `/season cancel` as the only way out.
 
     The rounds are closed as FINAL rather than CANCELLED. They were raced; it is their
     scoring that has been abandoned, and a cancelled round would tell the attendance module
@@ -1222,13 +1216,12 @@ async def end_rounds_awaiting_results_on(
     the round's start closes it as FINAL at its own moment with the module off.
 
     Everything is written on *db*, the rounds, the ``round.status`` audit and each division the
-    closing finishes, with the season it was the last of; nothing is committed, so that the
-    caller saves it with the switch-off (issue #439). Nothing here opens a connection of its own
-    or awaits Discord.
+    closing finishes, with the season it was the last of; nothing is committed, so that the caller
+    saves it with the switch-off. Nothing here opens a connection of its own or awaits Discord.
 
     The rounds are then handed, once, with *rounds_made_final*, the hook a round made final
     calls, on *db* and in the same save: the modules sign their parts up to it, and results'
-    marks the drivers who raced them as former drivers (#216), the first pass's own finaliser
+    marks the drivers who raced them as former drivers, the first pass's own finaliser
     being a results command that will never run for them. **Usually that marks nobody**, and
     that is correct rather than wasteful: turning the module off erases the season's results in
     the same save, before reaching here, and a driver whose results have been erased has raced
@@ -1282,7 +1275,7 @@ async def end_rounds_awaiting_results_on(
         await rounds_made_final.call(db, [row["id"] for row in rows])
 
     # Each of those rounds may have been the last thing its division was waiting on, and a
-    # division finishing is what lets `/season complete` run at all (issue #154).
+    # division finishing is what lets `/season complete` run at all.
     for division_id in sorted({row["division_id"] for row in rows}):
         await refresh_division_status_on(db, division_id)
 
@@ -1488,9 +1481,9 @@ async def completion_refusal_on(db: aiosqlite.Connection, season_id: int) -> str
     Read on *db*, so that a completion's save judges the divisions it has just refreshed.
 
     - Rounds still to be finalised are named, the first twenty.
-    - Otherwise a division neither finished nor cancelled is named: a refusal naming nothing is
-      what stranded leagues in issue #154. A division still ``ACTIVE`` with nothing outstanding
-      refuses nothing, the completion's refresh finishing it.
+    - Otherwise a division neither finished nor cancelled is named: a refusal naming nothing
+      would leave the league stranded, with nothing to act on. A division still ``ACTIVE`` with
+      nothing outstanding refuses nothing, the completion's refresh finishing it.
     """
     pending = await outstanding_rounds_on(db, season_id)
     if pending:
@@ -1578,7 +1571,7 @@ async def close_raced_rounds_on(
     is: "a cancellation shall never discard a result". But nothing else will move it either,
     the verdict commands it waits on being refused once the season is cancelled.
 
-    The former-driver flag is set at the FINAL transition (#216). A driver whose only round is
+    The former-driver flag is set at the FINAL transition. A driver whose only round is
     one of these is flagless when the driver pass runs, and the pass deletes a flagless profile
     at Not Signed Up, which would discard the results this rule forbids discarding. Closing the
     rounds first marks their drivers, and the pass keeps them: the rounds closed are handed,
@@ -1630,8 +1623,8 @@ async def close_raced_rounds_on(
 async def discard_uncommitted_placements_on(db: aiosqlite.Connection, season_id: int) -> int:
     """Delete every placement of *season_id* not yet committed, freeing its seat, on *db*.
 
-    Cancelling a season discards them (issue #220): the drivers placed stood outside the
-    championship and earn no history of it. Committing nothing. Gives how many were discarded.
+    Cancelling a season discards them: the drivers placed stood outside the championship and earn no
+    history of it. Committing nothing. Gives how many were discarded.
     """
     await db.execute(
         "UPDATE team_seats SET driver_profile_id = NULL WHERE id IN ("

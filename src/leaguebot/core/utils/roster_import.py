@@ -11,7 +11,7 @@ when the import lands on a clean season. That is a fragile thing for the sibling
 depend on, and they depend on it entirely: a results file naming driver
 9000000000000000007 means nothing if the bot seated that driver as 9000000000000000009.
 So the import writes the IDs the file states, and the CSV is authoritative rather than
-hopeful (decided 2026-09-07).
+hopeful.
 
 Pure and synchronous — no `discord`, no database. The division, the team and the
 nationality are carried through as written and resolved by the caller, which is what lets

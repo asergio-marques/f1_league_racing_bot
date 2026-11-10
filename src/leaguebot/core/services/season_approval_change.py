@@ -190,7 +190,7 @@ async def tell_channel(bot: Any, channel_id: int, text: str, actor_id: int | Non
 
 
 def ungranted_line(user_ids: list[str]) -> str:
-    """The drivers whose roles a league admin discarded the granting of (#387).
+    """The drivers whose roles a league admin discarded the granting of.
 
     The confirmation is saved by then and no command grants them again, so the manager grants
     them by hand.
@@ -203,7 +203,7 @@ def ungranted_line(user_ids: list[str]) -> str:
 
 
 def unposted_lineup_line(division_name: str) -> str:
-    """A division whose lineup a placements confirmation could not post (#387).
+    """A division whose lineup a placements confirmation could not post.
 
     No command posts a lineup again, so the line says when it will be: every change to the
     division's drivers — assign, unassign, release, move, sack — posts it anew.
@@ -233,11 +233,11 @@ def driver_roles_step(placement: Any, name: str = GRANT_ROLES) -> Step:
     """The one job that gives a driver the roles of their division and their team.
 
     The season's approval and the mid-season confirmation both plan it, one per driver, with the
-    payload ``{user_id, division_id, division_name, team_name}`` (issue #439). It raises where
-    Discord will not (:meth:`PlacementService.grant_roles`), so the queue stops, and passes over
-    a member Discord reports absent. A driver seated with no team, or whose team has no role
-    set, is given their division's role alone, and one with no role to give is given nothing:
-    Discord is not reached for it.
+    payload ``{user_id, division_id, division_name, team_name}``. It raises where Discord will not
+    (:meth:`PlacementService.grant_roles`), so the queue stops, and passes over a member Discord
+    reports absent. A driver seated with no team, or whose team has no role set, is given their
+    division's role alone, and one with no role to give is given nothing: Discord is not reached for
+    it.
     """
 
     async def grant_roles(ctx: StepContext) -> StepResult:

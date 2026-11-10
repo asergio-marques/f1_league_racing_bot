@@ -30,7 +30,7 @@ from leaguebot.core.services.season_service import SeasonImmutableError
 
 log = logging.getLogger(__name__)
 
-#: The stages `/driver assign` and `/driver unassign` are available in (issue #220): while the
+#: The stages `/driver assign` and `/driver unassign` are available in: while the
 #: season is built, and mid-season for the drivers of the window just closed.
 _PLACING_STAGES = frozenset({SeasonStage.PLACEMENTS, SeasonStage.ONGOING_PLACEMENTS})
 
@@ -49,7 +49,7 @@ class DriverCog(commands.Cog):
     async def _current_member(
         self, interaction: discord.Interaction, user: discord.Member
     ) -> discord.Member | None:
-        """The member behind the current account of the driver *user* names (issue #243).
+        """The member behind the current account of the driver *user* names.
 
         Any account a driver has held names them, so a manager may give a command one the
         driver has since left. Everything the command does — the roles, the lineup, the
@@ -100,17 +100,17 @@ class DriverCog(commands.Cog):
         old_user: discord.Member | None = None,
         old_user_id: str | None = None,
     ) -> None:
-        """Make *new_user* the current account of the driver the old account names (#243).
+        """Make *new_user* the current account of the driver the old account names.
 
         The account it replaces joins the driver's past accounts, and every account the driver
         has held goes on identifying them. Nothing the league holds is rewritten.
 
-        **Only while drivers are being placed** — Placements, or Ongoing, placements (issue
-        #224). Re-keying a profile onto another Discord account is part of settling who sits
-        where; everywhere else `/driver move` is the command for changing where a driver
-        sits, and this one had no stage check at all. The consequence is accepted: a person
-        who changes account between seasons is re-keyed once the next season reaches
-        placements, which is the moment they would be placed anyway.
+        **Only while drivers are being placed** — Placements, or Ongoing, placements.
+        Re-keying a profile onto another Discord account is part of settling who sits where;
+        everywhere else `/driver move` is the command for changing where a driver sits. The
+        consequence is accepted: a person who changes account between seasons is re-keyed
+        once the next season reaches placements, which is the moment they would be placed
+        anyway.
         """
         from leaguebot.core.utils.season_gate import PLACEMENT_STAGES, season_for_command
 
@@ -191,7 +191,7 @@ class DriverCog(commands.Cog):
             return
         user = current
 
-        # Resolve season, and the stage placements may be made in (issue #220)
+        # Resolve season, and the stage placements may be made in
         season = await self.bot.season_service.get_setup_or_active_season()
         if season is None or season.stage not in _PLACING_STAGES:
             await refuse(
@@ -224,7 +224,7 @@ class DriverCog(commands.Cog):
             return
         division_id, division_name = resolved
 
-        # A team is typed by its shorthand (#381).
+        # A team is typed by its shorthand.
         reference = await self.bot.team_service.resolve_division_team(
             division_id, team
         )
@@ -366,7 +366,7 @@ class DriverCog(commands.Cog):
         team: str,
         to_division: str | None = None,
     ) -> None:
-        """Move a committed driver in one step (issue #220).
+        """Move a committed driver in one step.
 
         Full-time to Reserve, team to team, or a promotion or relegation between divisions,
         with the roles swapped and each lineup touched posted once. Available in the three
@@ -412,7 +412,7 @@ class DriverCog(commands.Cog):
                 return
             resolved_to = found_to
 
-        # A team is typed by its shorthand (#381), in the division moved into.
+        # A team is typed by its shorthand, in the division moved into.
         reference = await self.bot.team_service.resolve_division_team(
             resolved_to[0], team
         )
@@ -467,7 +467,7 @@ class DriverCog(commands.Cog):
         user: discord.Member,
         division: str,
     ) -> None:
-        """Release a committed driver from one division (issue #220), in the ongoing stages."""
+        """Release a committed driver from one division, in the ongoing stages."""
         await interaction.response.defer(ephemeral=True)
         current = await self._current_member(interaction, user)
         if current is None:
@@ -529,7 +529,7 @@ class DriverCog(commands.Cog):
     @app_commands.describe(user="The Unassigned driver to turn down.")
     @league_manager_only
     async def reject(self, interaction: discord.Interaction, user: discord.Member) -> None:
-        """Turn down an Unassigned driver (issue #220).
+        """Turn down an Unassigned driver.
 
         Available while the season is in Placements or Ongoing, placements — where the
         drivers of a window are settled. The driver returns to Not Signed Up and loses the
@@ -598,9 +598,9 @@ class DriverCog(commands.Cog):
             return
         user = current
 
-        # Sacking is available only while the season is ongoing (issue #220). Between seasons
-        # every driver has already been returned to Not Signed Up by the season's end, and a
-        # season still being built has no confirmed placement to sack anyone from.
+        # Sacking is available only while the season is ongoing. Between seasons every driver has
+        # already been returned to Not Signed Up by the season's end, and a season still being built
+        # has no confirmed placement to sack anyone from.
         season = await self.bot.season_service.get_confirmed_season()
         if season is None or season.stage not in ONGOING_STAGES:
             await refuse(
@@ -635,7 +635,7 @@ class DriverCog(commands.Cog):
         )
 
     # ------------------------------------------------------------------
-    # The team parameter's autocomplete (#381)
+    # The team parameter's autocomplete
     # ------------------------------------------------------------------
 
     @bounded_autocomplete()

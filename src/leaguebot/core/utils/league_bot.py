@@ -3,9 +3,9 @@
 `__main__.py` builds one bot and hangs every service on it — `bot.season_service`,
 `bot.output_router` and the rest — and every cog, view and service reaches them back through
 that one object. discord.py's `commands.Bot` declares none of them, so to a type checker each
-read was an error, and each error was silenced with `# type: ignore[attr-defined]`. A silenced
-expression is `Any`, and `Any` spreads: nothing a service returned was ever checked, which is
-how #226 read an attribute a `DriverProfile` does not have and reached `main` (issue #228).
+read would be an error, and silencing it with `# type: ignore[attr-defined]` makes the expression
+`Any`, which spreads: nothing a service returned would be checked, and a read of an attribute a
+model does not have would reach `main` unseen.
 
 **`LeagueBot` declares them, and does one thing besides.** It is a subclass rather than a
 `Protocol` so that `create_bot()` builds the real thing and the checker holds every assignment
@@ -78,7 +78,7 @@ class LeagueBot(commands.Bot):
     signup_module_service: SignupModuleService
     wizard_service: WizardService
     attendance_service: AttendanceService
-    #: Attendance's share of a round's review, handed to results' change types (#439).
+    #: Attendance's share of a round's review, handed to results' change types.
     attendance_after_review: AttendanceAfterReview
     #: Core's drawing protocol, the image module's own implementation, handed to
     #: `placement_service`.

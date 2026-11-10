@@ -237,7 +237,7 @@ def admin_role_setting(*, config: "ConfigService") -> Setting:
 
 
 # ----------------------------------------------------------------------------
-# The league's two roles (issue #276, #283) — not repair settings
+# The league's two roles — not repair settings
 # ----------------------------------------------------------------------------
 
 #: The command as its line names it, and the label its reply gives the role, by column.
@@ -309,7 +309,7 @@ def _replaced_reply(season_number: int) -> str:
 def season_fixed_refusal(command: str, season_number: int) -> str:
     """Why *command* is refused while Season *season_number*'s configuration is fixed, word for
     word as `_set_league_role` (`bot_cog.py`) refuses it at the ask, and as the setting's own
-    `check` refuses it again as the change starts (#283)."""
+    `check` refuses it again as the change starts."""
     return (
         f"❌ The league's roles are fixed for Season {season_number} now that its "
         f"configuration has been confirmed. `{command}` is available again once the "
@@ -479,7 +479,7 @@ def _move_signup_overwrite() -> After:
 
 def _grant_to_drivers(placement: "PlacementService", *, is_base_role: bool) -> After:
     """The `After` step a role replaced because it is gone from the server plans: grant the new
-    role to every driver who lost the old one with it (decided 2026-09-22, #374).
+    role to every driver who lost the old one with it.
 
     `carries_line=True`: the given/not-given detail is written beneath the save's own line only
     once this step has run, so a fault here leaves the role saved and the log channel only the

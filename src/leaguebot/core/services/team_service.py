@@ -23,13 +23,12 @@ RESERVE_NAME = "Reserve"
 #: would seek the same badge file (Constitution IX, XIV.11).
 _RESERVE_KEY = "reserve"
 
-#: The longest a team's shorthand may be (decided 2026-09-22, #381). A shorthand is a short alias
-#: typed wherever a team is entered, and names the team's artwork file.
+#: The longest a team's shorthand may be. A shorthand is a short alias typed wherever a team is
+#: entered, and names the team's artwork file.
 SHORTHAND_MAX = 16
 
-#: The longest a team's full name may be (decided 2026-09-22, #381, lowered from 64 the same
-#: day). It is what every post and graphic shows, and a name longer than this was set down on a
-#: results row until it could not be read — the templates carry a team column sized for exactly
+#: The longest a team's full name may be. It is what every post and graphic shows, and a longer name
+#: set down on a results row cannot be read — the templates carry a team column sized for exactly
 #: this much. The signup wizard's buttons, whose labels Discord caps at 80, are nowhere near it.
 FULL_NAME_MAX = 32
 
@@ -37,7 +36,7 @@ FULL_NAME_MAX = 32
 def validate_team_name(name: str, existing_keys: dict[str, str] | None = None) -> str | None:
     """Why *name* cannot be a team's **shorthand**, or None where it can.
 
-    The shorthand is the team's short alias (#381): typed wherever a team is entered, and the
+    The shorthand is the team's short alias: typed wherever a team is entered, and the
     name of its artwork file. So it is held to two rules of its own besides the filename rules
     below — at most ``SHORTHAND_MAX`` characters, and no comma, because a shorthand is typed
     into the comma-separated rows of a results submission and a test roster.
@@ -65,7 +64,7 @@ def validate_team_name(name: str, existing_keys: dict[str, str] | None = None) -
 
     Before any of them, the name is held to the rules every name a league types is held to
     (``NAME``): no group mention, no emoji and no markup, being posted as text and drawn on
-    graphics (#362), and no mention of a member (#381).
+    graphics, and no mention of a member.
 
     Returns a message ready to show a user, or None.
     """
@@ -115,7 +114,7 @@ def validate_team_name(name: str, existing_keys: dict[str, str] | None = None) -
 def validate_full_name(full_name: str, taken: dict[str, str] | None = None) -> str | None:
     """Why *full_name* cannot be a team's **full name**, or None where it can.
 
-    The full name is what every post and graphic shows (#381). It is never typed to name a
+    The full name is what every post and graphic shows. It is never typed to name a
     team, so it holds no rule of a reference: only the rules every name a league types is held
     to (``NAME``), a length, and uniqueness — two teams showing the same name could not be told
     apart in a standings table.
@@ -313,7 +312,7 @@ class TeamService:
         shorthand: str | None = None,
         full_name: str | None = None,
     ) -> dict:
-        """Change a team's shorthand, its full name, or both (#381), on *db*, a connection the
+        """Change a team's shorthand, its full name, or both, on *db*, a connection the
         caller holds. Returns both as they stand.
 
         Everything is judged before anything is written (`judge_modify_on`), so a refusal leaves
@@ -495,11 +494,11 @@ class TeamService:
     ) -> list[dict]:
         """Return team instances with their seats for a division, in **insertion** order.
 
-        Ordered by ``id``, not by name. A lineup graphic addresses a team by the ordinal of
-        its position in this list (XIV.11), and a team added must take the *next free*
-        position so that the teams already drawn do not move (047 FR-008). Sorted by name,
-        adding a team whose name sorts early would shift every later team to a new block,
-        and renaming one would move it — the coupling ordinal addressing exists to remove.
+        Ordered by ``id``, not by name. A lineup graphic addresses a team by the ordinal of its
+        position in this list (XIV.11), and a team added must take the *next free* position so that
+        the teams already drawn do not move. Sorted by name, adding a team whose name sorts early
+        would shift every later team to a new block, and renaming one would move it — the coupling
+        ordinal addressing exists to remove.
 
         The lineup posting path and the ``/images test`` preview path order identically, so
         the ordinal a team occupies on the graphic is its position in the text beside it
@@ -519,7 +518,7 @@ class TeamService:
             teams = []
             for inst in instance_rows:
                 # *committed_only* reads a seat held by a driver whose placement is not yet
-                # confirmed as empty: that driver is outside the championship (issue #220).
+                # confirmed as empty: that driver is outside the championship.
                 seat_rows = await (
                     await db.execute(
                         "SELECT ts.seat_number, dp.id AS driver_profile_id, dp.discord_user_id "
@@ -549,7 +548,7 @@ class TeamService:
 
 
 # ---------------------------------------------------------------------------
-# Finding a team from what a league typed (#381)
+# Finding a team from what a league typed
 # ---------------------------------------------------------------------------
 
 #: A Discord ID typed out: 17 to 20 digits. Longer than any shorthand may be, so never one.
@@ -571,10 +570,9 @@ def resolve_team_reference(
 ) -> TeamReference:
     """The team of *teams* whose shorthand *text* is, ignoring case, or why it names none.
 
-    A team is typed by its **shorthand** and by nothing else (decided 2026-09-22, #381): the
-    commands offer it by autocomplete, and pasted text — a results submission, a test roster —
-    takes it alone. The full name is only ever shown, and the role is only for mentioning the
-    team, so neither names one here.
+    A team is typed by its **shorthand** and by nothing else: the commands offer it by autocomplete,
+    and pasted text — a results submission, a test roster — takes it alone. The full name is only
+    ever shown, and the role is only for mentioning the team, so neither names one here.
 
     A role mention, ``@everyone``, ``@here``, a mention of a member and a Discord ID typed out
     each look like something a league might type for a team, and each is refused saying what
@@ -656,14 +654,14 @@ async def resolve_division_team(db_path: str, division_id: int, text: str | None
 async def team_names_for_instances(db_path: str, instance_ids) -> dict[int, str]:
     """The full name of each division team in *instance_ids*, keyed by its id.
 
-    The full name is what every post and graphic shows (#381). A graphic finds the team's
+    The full name is what every post and graphic shows. A graphic finds the team's
     artwork by its shorthand instead, from ``team_artwork_keys_for_instances``.
 
-    A result, and a constructors row, record the division's **team**, never its Discord role
-    (issue #375): a role is resolved to the team once, when a submission types it, and a
-    league may replace it mid-season. So every post and graphic names a recorded team from
-    here, and none asks Discord about a role that may since have been deleted. An id holding
-    no team is simply absent from the answer.
+    A result, and a constructors row, record the division's **team**, never its Discord role:
+    a role is resolved to the team once, when a submission types it, and a league may replace it
+    mid-season. So every post and graphic names a recorded team from here, and none asks Discord
+    about a role that may since have been deleted. An id holding no team is simply absent from the
+    answer.
     """
     ids = sorted({int(i) for i in instance_ids})
     if not ids:
@@ -682,7 +680,7 @@ async def team_names_for_instances(db_path: str, instance_ids) -> dict[int, str]
 async def team_artwork_keys_for_instances(db_path: str, instance_ids) -> dict[int, str]:
     """The shorthand of each division team in *instance_ids*, keyed by its id.
 
-    The shorthand names the team's artwork file (#381): a graphic draws the full name, from
+    The shorthand names the team's artwork file: a graphic draws the full name, from
     ``team_names_for_instances``, and finds the badge by this. An id holding no team is simply
     absent from the answer.
     """

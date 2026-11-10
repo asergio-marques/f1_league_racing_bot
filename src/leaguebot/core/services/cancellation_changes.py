@@ -1,53 +1,51 @@
-"""Cancelling a round, a division or a season on the change queue (#439, slices 4b and 5).
+"""Cancelling a round, a division or a season on the change queue.
 
 `/round cancel` checks its confirmation word, the season and the names at the press, in the season
-cog, then asks the queue for this change. Every other gate it had is the change type's `check`,
-which judges the request when it is asked and again when it comes up to run, in the words the
-command used, so that a round whose results were entered, or whose submission accepted a session,
-while the cancellation waited is refused with the same reply. It imports nothing from a module and
-no cog: what the modules take part in (what stands in a cancellation's way, the rounds called off,
-the notices a division told is owed, and the steps a module plans) reaches it as hooks the
-builder signs them up to, and it reads the season through the service it is handed.
+cog, then asks the queue for this change. Every other gate is the change type's `check`, which
+judges the request when it is asked and again when it comes up to run, in the command's words, so
+that a round whose results were entered, or whose submission accepted a session, while the
+cancellation waited is refused with the same reply. It imports nothing from a module and no cog:
+what the modules take part in (what stands in a cancellation's way, the rounds called off, the
+notices a division told is owed, and the steps a module plans) reaches it as hooks the builder signs
+them up to, and it reads the season through the service it is handed.
 
-**Cancellation notices.** Each division told is also told by `cancellation_notices`, called
-inside the save, after the modules' `rounds_called_off` steps are planned for it: every
-subscriber hands back a `CancellationNotices`, whose `steps` are placed before the
-rounds-called-off modules' `with_division` steps for that division and whose
-`after_with_division` are placed after them, so that today's order survives without this module
-naming which job is whose. A job the hook plans says in its own payload or result which target
-it is (`notice_target`, "check-in channel" and so on), so that `not_notified` can name it
-without naming the module; a channel a job could not delete (`channel_target`) and a call
-Discord would not delete (`call_target`) are named the same way, from the job's own payload
-rather than its result, without naming the job that plans either (#283).
+**Cancellation notices.** Each division told is also told by `cancellation_notices`, called inside
+the save, after the modules' `rounds_called_off` steps are planned for it: every subscriber hands
+back a `CancellationNotices`, whose `steps` are placed before the rounds-called-off modules'
+`with_division` steps for that division and whose `after_with_division` are placed after them, so
+that the notices keep their order without this module naming which job is whose. A job the hook
+plans says in its own payload or result which target it is (`notice_target`, "check-in channel" and
+so on), so that `not_notified` can name it without naming the module; a channel a job could not
+delete (`channel_target`) and a call Discord would not delete (`call_target`) are named the same
+way, from the job's own payload rather than its result, without naming the job that plans either.
 
-**A round whose submission stands open is cancelled only while it has accepted nothing** (owner,
-2026-10-08, amending Constitution XII): any `session_results` row, of either status, is data the
-cancellation would lose, and refuses it, at ask, as it runs and in the save as a backstop (`unarm`
-lies between the check and the save). With nothing accepted, the save closes the submission, and
-deleting its channel is results' own `delete_channel` job, the first after the save, because the
-channel is where a manager pastes.
+**A round whose submission stands open is cancelled only while it has accepted nothing**
+(Constitution XII): any `session_results` row, of either status, is data the cancellation would
+lose, and refuses it, at ask, as it runs and in the save as a backstop (`unarm` lies between the
+check and the save). With nothing accepted, the save closes the submission, and deleting its channel
+is results' own `delete_channel` job, the first after the save, because the channel is where a
+manager pastes.
 
-**The timed work is removed first, then everything the cancellation writes is one save**
-(`apply`, architecture.md, "All or nothing in one step"): the round recorded cancelled with the
-status it was cancelled from, its division finished and the season moved on where that was the
-last it waited on, reading nothing but the connection it is handed. The removal goes first, as the
-command did it, because a cancelled round whose weather jobs stood would have its forecasts
-posted; a stop there means the scheduler itself failed, and the removal of a division's or a
-season's rounds lists every round before it takes any, so that a stopped removal has taken none.
-**The save cannot be discarded** (owner, 2026-10-23): with the timed work off, dropping it would
-leave the rounds neither cancelled nor ever run, so a stopped save can only be retried. **A save
-that refuses arms the timed work again** (owner, 2026-10-23): the check lies before the removal and
-the save after it, so a session accepted on a round's submission between them, or a round that
-moved on, refuses the save with the timed work already off. The refusal then asks, in its own save,
-one `season.round.rearm` (`round_amend_change`) for each round the removal took jobs from: the
-whole of its timed work for a round still to be run or awaiting its results, as it stood, and only
-the next-day clean-ups for one already raced. The reply and the refusal's log line name the rounds
-being armed again. A refusal at the check lies before the removal and owes none. **Everything
-else follows the save as a job of its own**, each of which stops the queue where it fails: each
-enabled module's notice, the check-in call's take-down, the calendar's repost, and a closing job
-that writes the one line. The wind-down is a change of its own, asked in the save where the
-division finished. A job is planned whether or not its module is on, and drops itself as it runs
-where it is not; a notice job whose channel was never set is done, and named in the reply.
+**The timed work is removed first, then everything the cancellation writes is one save** (`apply`,
+architecture.md, "All or nothing in one step"): the round recorded cancelled with the status it was
+cancelled from, its division finished and the season moved on where that was the last it waited on,
+reading nothing but the connection it is handed. The removal goes first because a cancelled round
+whose weather jobs stood would have its forecasts posted; a stop there means the scheduler itself
+failed, and the removal of a division's or a season's rounds lists every round before it takes any,
+so that a stopped removal has taken none. **The save cannot be discarded**: with the timed work off,
+dropping it would leave the rounds neither cancelled nor ever run, so a stopped save can only be
+retried. **A save that refuses arms the timed work again**: the check lies before the removal and
+the save after it, so a session accepted on a round's submission between them, or a round that moved
+on, refuses the save with the timed work already off. The refusal then asks, in its own save, one
+`season.round.rearm` (`round_amend_change`) for each round the removal took jobs from: the whole of
+its timed work for a round still to be run or awaiting its results, as it stood, and only the
+next-day clean-ups for one already raced. The reply and the refusal's log line name the rounds being
+armed again. A refusal at the check lies before the removal and owes none. **Everything else follows
+the save as a job of its own**, each of which stops the queue where it fails: each enabled module's
+notice, the check-in call's take-down, the calendar's repost, and a closing job that writes the one
+line. The wind-down is a change of its own, asked in the save where the division finished. A job is
+planned whether or not its module is on, and drops itself as it runs where it is not; a notice job
+whose channel was never set is done, and named in the reply.
 
 **A division's cancellation is the same change over a whole division** (`division_cancel_change`):
 the timed work of every round of it is removed, read as the job runs; the save cancels the division
@@ -58,41 +56,41 @@ while that submission has accepted nothing: it is refused, naming the lowest-num
 any round of the division has one that has (a round in its review counts), and it closes the empty
 ones in the save and deletes their channels, in round order, first after it.
 
-**A second cancellation is refused at once, naming the job** (owner, 2026-10-08): a cancellation
-of the round or of its division in hand refuses a round's, and one of the division a division's,
-read through `cancellation_in_hand`. The refusal is made only as the change is asked for
+**A second cancellation is refused at once, naming the job**: a cancellation of the round or of its
+division in hand refuses a round's, and one of the division a division's, read through
+`cancellation_in_hand`. The refusal is made only as the change is asked for
 (`CheckContext.change_id` is None), never as it runs: a division's cancellation asked after a
-round's of that division is legitimate and runs behind it, and the check made as the round's
-starts would find the division's later change and refuse itself. Run behind a cancellation of the
-same round, "already cancelled" is what refuses it. `cancellation_in_hand` is read, too, by
-`/round amend` (`cancellation_holding_amendment`), which refuses every amendment of any round of
-a division, whatever it changes, while a cancellation of the division or of any round of it is in
+round's of that division is legitimate and runs behind it, and the check made as the round's starts
+would find the division's later change and refuse itself. Run behind a cancellation of the same
+round, "already cancelled" is what refuses it. `cancellation_in_hand` is read, too, by
+`/round amend` (`cancellation_holding_amendment`), which refuses every amendment of any round of a
+division, whatever it changes, while a cancellation of the division or of any round of it is in
 hand: chiefly because an amended time renumbers the rounds under the cancellation.
 
-**The other way round, a cancellation is refused while an amendment is in hand** (owner,
-2026-10-08): a `/round amend` of a round of the division that is queued, running or stopped on the
-queue refuses a cancellation of the division, or of any round of it, naming the job. It is read
-from the queue, through the *amendment_in_hand* the builder hands both change types (the amendment
-change imports this module, so this one cannot import it), never from a flag kept in memory
-(architecture.md), so a restart forgets nothing. Like the second cancellation it is made only as
-the change is asked for, never as it runs: the queue runs one change at a time and leaves nothing
-overtaking a stopped job, so whatever amendment was ahead of this cancellation has finished, its
-renumbering included, and the cancellation reads the round's number as it then stands.
+**The other way round, a cancellation is refused while an amendment is in hand**: a `/round amend`
+of a round of the division that is queued, running or stopped on the queue refuses a cancellation of
+the division, or of any round of it, naming the job. It is read from the queue, through the
+*amendment_in_hand* the builder hands both change types (the amendment change imports this module,
+so this one cannot import it), never from a flag kept in memory (architecture.md), so a restart
+forgets nothing. Like the second cancellation it is made only as the change is asked for, never as
+it runs: the queue runs one change at a time and leaves nothing overtaking a stopped job, so
+whatever amendment was ahead of this cancellation has finished, its renumbering included, and the
+cancellation reads the round's number as it then stands.
 
-**A season's cancellation is the same change over every division** (`season_cancel_change`, slice
-5), in the order the core specification sets: the timed work of every round removed (`unarm`); then
-one save, `apply`, that records the cancellation (each empty open submission closed, the
-uncommitted placements discarded, the raced rounds awaiting verdicts made final, and every division
-not cancelled cancelled with its rounds that may still be cancelled), **leaving the season itself
+**A season's cancellation is the same change over every division** (`season_cancel_change`), in the
+order the core specification sets: the timed work of every round removed (`unarm`); then one save,
+`apply`, that records the cancellation (each empty open submission closed, the uncommitted
+placements discarded, the raced rounds awaiting verdicts made final, and every division not
+cancelled cancelled with its rounds that may still be cancelled), **leaving the season itself
 ongoing**, so that its channels stay readable while it is announced; the notices, the calls taken
 down and the calendars of every division that was still running, in the season's words; each real
 driver's roles taken back, after the notices, since the check-in notice mentions the division role;
 the signup window closed and the forecasts posted under test mode cleared; and then a second save,
 `end`, that writes the history marked cancelled, runs the driver pass, switches test mode off and
 marks the season cancelled, **last**. The saved test-mode state is kept: a season cancelled is one
-abandoned, not run to its end. The jobs the other ends of a season share
-(`season_end_changes`) carry out the rest. A run that stops at `end` and is discarded is run again, and tells no
-division twice, since by then none is still running.
+abandoned, not run to its end. The jobs the other ends of a season share (`season_end_changes`)
+carry out the rest. A run that stops at `end` and is discarded is run again, and tells no division
+twice, since by then none is still running.
 """
 from __future__ import annotations
 
@@ -297,13 +295,12 @@ async def cancellation_holding_amendment(db_path: str, rnd: Round) -> str | None
     or None where none is.
 
     An amendment confirmed meanwhile would arm the round's timed work again, after the
-    cancellation removed it, and forecasts would be posted for a round that is then cancelled
-    (owner, 2026-10-08). An amended date of another round would renumber the division, and the
-    round being cancelled would be announced by a number it no longer bears: so every round of
-    the division is held (owner, 2026-10-08, "Hold amends in the division"). A season's
-    completion, cancellation or abort in hand holds it too, ahead of the rest (slice 5, owner,
-    2026-10-09, answer B). Asked at the offer and again at the confirmation, as the rules are. It
-    names the job, and leaves the name out where only the cancellation's close is left.
+    cancellation removed it, and forecasts would be posted for a round that is then cancelled.
+    An amended date of another round would renumber the division, and the round being cancelled
+    would be announced by a number it no longer bears: so every round of the division is held.
+    A season's completion, cancellation or abort in hand holds it too, ahead of the rest. Asked
+    at the offer and again at the confirmation, as the rules are. It names the job, and leaves
+    the name out where only the cancellation's close is left.
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -381,7 +378,7 @@ async def _notices_planned_by_the_modules(
 ) -> tuple[tuple[PlannedStep, ...], tuple[PlannedStep, ...]]:
     """Each module's own steps for *target*'s notice, told inside the save on *db*
     (`cancellation_notices`), together in the order the modules signed up: attendance's
-    check-in notice, weather's forecast note, then results' results note (#175, #283).
+    check-in notice, weather's forecast note, then results' results note.
 
     Returns the steps planned before the rounds-called-off modules' `with_division` steps, and
     those planned after, each in that order: today, attendance's check-in notice before, and
@@ -674,11 +671,11 @@ def _follow_steps(*, seasons: SeasonService, drawing: ImageDrawing) -> dict[str,
     """The jobs core carries out after the save: the calendar's repost. Every notice of the
     cancellation is now its own module's step, planned through `cancellation_notices` and
     registered on `cancellation_steps` (`attendance.services.cancellation_notice`,
-    `weather.services.cancellation_notice`, `results.services.cancellation_notice`, #283). A job
+    `weather.services.cancellation_notice`, `results.services.cancellation_notice`). A job
     reads its division from its own payload (`division_id`, `division_name`, `season_id`).
 
     *drawing* is the image module's own answer to core's drawing protocol, handed on to
-    `calendar_steps` (#283).
+    `calendar_steps`.
     """
     return {**calendar_steps(seasons, drawing)}
 
@@ -701,7 +698,7 @@ def round_cancel_change(
     "season_number"}``. It names no season: a payload that does is read as holding every division
     of that season (`review_changes.division_job_in_hand`); the season a job needs travels on the
     jobs' own payloads. The builder hands in the *seasons* service, the *scheduler*, the image
-    module's drawing (*drawing*, #283), the hooks the modules sign up to (*cancellation_refused*,
+    module's drawing (*drawing*), the hooks the modules sign up to (*cancellation_refused*,
     *rounds_called_off*, *cancellation_notices* and *cancellation_steps*, whose steps are
     registered), *amendment_in_hand* (the job a `/round amend` of a round of a division waits on,
     or None) and the queue's clock *now*.
@@ -711,8 +708,8 @@ def round_cancel_change(
         payload = ctx.payload
         season = await seasons.get_confirmed_season()
         if season is not None and ctx.change_id is None:
-            # **While the season's own end is in hand** (owner, 2026-10-09, answer B): refused
-            # at once, naming the job, ahead of any stage gate. Only as it is asked.
+            # **While the season's own end is in hand**: refused at once, naming the job, ahead
+            # of any stage gate. Only as it is asked.
             hand = await season_end_in_hand(ctx.db_path, season.id)
             if hand is not None:
                 return Verdict.refuse(season_end_refusal(None, hand, season.season_number))
@@ -985,19 +982,19 @@ def division_cancel_change(
     The payload is ``{"division_id", "division_name", "season_number"}``. It is the round's
     cancellation over a whole division: the same jobs, with the timed work of every round
     removed first. A round whose results submission stands open is cancelled with the rest only
-    while that submission has accepted nothing (owner, 2026-10-08, amending Constitution XII):
-    any round of the division whose open submission has accepted a session refuses the whole
-    cancellation, at ask, as it runs and in the save as a backstop, naming the lowest-numbered
-    such round. In the save the empty submissions of the rounds called off are closed, and the
-    deletion of each channel is a job, in round order, first after it.
+    while that submission has accepted nothing (Constitution XII): any round of the division whose
+    open submission has accepted a session refuses the whole cancellation, at ask, as it runs and in
+    the save as a backstop, naming the lowest-numbered such round. In the save the empty submissions
+    of the rounds called off are closed, and the deletion of each channel is a job, in round order,
+    first after it.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
         payload = ctx.payload
         season = await seasons.get_confirmed_season()
         if season is not None and ctx.change_id is None:
-            # **While the season's own end is in hand** (owner, 2026-10-09, answer B): refused
-            # at once, naming the job, ahead of any stage gate. Only as it is asked.
+            # **While the season's own end is in hand**: refused at once, naming the job, ahead
+            # of any stage gate. Only as it is asked.
             hand = await season_end_in_hand(ctx.db_path, season.id)
             if hand is not None:
                 return Verdict.refuse(season_end_refusal(None, hand, season.season_number))
@@ -1232,7 +1229,7 @@ def season_cancel_change(
 
     The payload is ``{"season_id", "season_number"}``. The builder hands in the *seasons*
     service, the *scheduler*, the *placement* service (which takes back roles), the image
-    module's drawing (*drawing*, #283), the hooks the modules sign up to (*cancellation_refused*,
+    module's drawing (*drawing*), the hooks the modules sign up to (*cancellation_refused*,
     *rounds_called_off*, *cancellation_notices*, *rounds_made_final*, *cancellation_steps*,
     *season_end_refused*, *season_standing_read*, *season_end_closes*, *drivers_returned*,
     *driver_returned_jobs*, *season_end_steps*, *test_mode_flushed*, *drivers_deleted*), the hook
@@ -1244,9 +1241,8 @@ def season_cancel_change(
         if season is None or season.id != int(ctx.payload["season_id"]):
             return Verdict.refuse(SEASON_NO_SEASON)
 
-        # **A second cancellation, asked while the first is in hand** (owner, 2026-10-09):
-        # refused at once, naming the job. Only as it is asked: as the change runs, it would find
-        # itself.
+        # **A second cancellation, asked while the first is in hand**: refused at once, naming the
+        # job. Only as it is asked: as the change runs, it would find itself.
         if ctx.change_id is None:
             hand = await season_end_in_hand(ctx.db_path, season.id)
             if hand is not None:
@@ -1256,18 +1252,18 @@ def season_cancel_change(
         if season.stage not in ONGOING_STAGES:
             return Verdict.refuse(SEASON_NOT_ONGOING)
 
-        # **Not while a round is being amended** (#345, decided 2026-09-21): cancelling writes
-        # every driver's history from the standings, which hold an open amendment's corrections
-        # before they are approved, and the history is never rewritten.
+        # **Not while a round is being amended**: cancelling writes every driver's history from the
+        # standings, which hold an open amendment's corrections before they are approved, and the
+        # history is never rewritten.
         held = await refusal_of_the_modules(
             season_end_refused, ctx.db_path, season.id, CANCELLATION
         )
         if held is not None:
             return Verdict.refuse(held)
 
-        # **Not while a submission holds accepted results** (owner, 2026-10-08, amending
-        # Constitution XII): a session accepted, or entered as not held, is data the cancellation
-        # would lose, and a round in its review counts.
+        # **Not while a submission holds accepted results** (Constitution XII): a session accepted,
+        # or entered as not held, is data the cancellation would lose, and a round in its review
+        # counts.
         standing: list[CancellationRound] = []
         for division in await seasons.get_divisions(season.id):
             if division.status == "CANCELLED":
@@ -1355,8 +1351,7 @@ def season_cancel_change(
 
         # The empty open submissions are closed first, then the placements not yet confirmed
         # discarded so that they earn no history, then the rounds raced and awaiting verdicts made
-        # final: the driver pass at the end would otherwise delete the drivers of those rounds
-        # (#216).
+        # final: the driver pass at the end would otherwise delete the drivers of those rounds.
         after = await _planned_by_the_modules(rounds_called_off, db, SCOPE_SEASON, standing)
         await discard_uncommitted_placements_on(db, season_id)
         await close_raced_rounds_on(

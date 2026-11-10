@@ -104,8 +104,8 @@ def _row_to_profile(row) -> DriverProfile:
 async def resolve_driver_profile_id(discord_user_id: int, db) -> int | None:
     """Return the id of the driver who holds *discord_user_id*, or None.
 
-    Any account the driver has held identifies them, not only the current one (issue #243).
-    Accepts an open aiosqlite connection so callers can reuse an existing transaction.
+    Any account the driver has held identifies them, not only the current one. Accepts an open
+    aiosqlite connection so callers can reuse an existing transaction.
     """
     cursor = await db.execute(
         "SELECT driver_profile_id FROM driver_accounts "
@@ -117,7 +117,7 @@ async def resolve_driver_profile_id(discord_user_id: int, db) -> int | None:
 
 
 # ---------------------------------------------------------------------------
-# A driver's accounts (issue #243)
+# A driver's accounts
 # ---------------------------------------------------------------------------
 #
 # A driver owns every Discord account they have raced under; `driver_accounts` lists them
@@ -294,7 +294,7 @@ async def divisions_taken_part_in(
     identity raced in none.
 
     A division belongs to one season, so two identities sharing one is one person in one
-    season's standings twice — which is what a merge must not produce (decided 2026-09-18).
+    season's standings twice — which is what a merge must not produce.
     *profile_id* is None for an account no driver holds, whose leftover records are all there
     is of it.
     """
@@ -343,7 +343,7 @@ async def _profile_holding(db, discord_user_id):
 
 
 #: The states in which a driver holds a signup or a seat in the live season. Two profiles both
-#: in one of these cannot become one driver (issue #243).
+#: in one of these cannot become one driver.
 _HOLDS_THE_LIVE_SEASON = frozenset({DriverState.UNASSIGNED.value, DriverState.ASSIGNED.value})
 
 
@@ -717,7 +717,7 @@ class DriverService:
     ) -> tuple[bool, bool]:
         """Set the former_driver flag.  Returns (old_value, new_value).
 
-        Any account the driver has held names them (issue #243). The audit entry is stamped *now*.
+        Any account the driver has held names them. The audit entry is stamped *now*.
         """
         profile = await self.get_profile(
             await self.current_account(discord_user_id)

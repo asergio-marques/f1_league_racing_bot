@@ -71,11 +71,11 @@ class _ReviewPoster:
     """Sends a season review's private messages: the faults a manager has to put right.
 
     A review's public messages are not sent from the command at all: the change queue posts them
-    (`season.review.post`, #439), so a refused post stops the queue and the review comes down by
+    (`season.review.post`), so a refused post stops the queue and the review comes down by
     its take-down. What the command still says itself is said to the reviewer alone, an ephemeral
     followup that cannot be deleted by id, and the fault reports among them are the reason a
     manager knows what to fix. Every one is handed this rather than the interaction, so the type
-    check sees every send (#228); `tests/core/test_season_review_images.py` holds that nothing in
+    check sees every send; `tests/core/test_season_review_images.py` holds that nothing in
     a review sends around it.
     """
 
@@ -326,7 +326,7 @@ class SeasonCog(commands.Cog):
         and a league with eight of them would otherwise pay eight times over for two configs
         that cannot have changed in between. They are read through the bot's hook
         (`LeagueBot.round_windows_read`, signed up to by the modules in the builder), so that the
-        change queue's check of the approval reads the same windows without a cog (#439).
+        change queue's check of the approval reads the same windows without a cog.
         """
         return await read_round_windows(self.bot.round_windows_read)
 
@@ -367,14 +367,14 @@ class SeasonCog(commands.Cog):
         name="placements-review",
         description="Review the season's divisions, calendar and lineups before confirming placements.",
     )
-    # A league manager's, deliberately (2026-09-07). Reading what a season is configured to
+    # A league manager's, deliberately. Reading what a season is configured to
     # be is not an administrative act: the report is what the review is for. Approving it is
     # the narrower right, and `ApproveView` is where that is enforced.
     @league_manager_only
     async def season_review(self, interaction: discord.Interaction) -> None:
         confirmed = await self.bot.season_service.get_confirmed_season()
         if confirmed is not None:
-            # Mid-season, the review covers the drivers of the window just closed (#220).
+            # Mid-season, the review covers the drivers of the window just closed.
             if confirmed.stage is SeasonStage.ONGOING_PLACEMENTS:
                 await self._review_mid_season_placements(interaction, confirmed)
             else:
@@ -395,7 +395,7 @@ class SeasonCog(commands.Cog):
             )
             return
 
-        # Placements are reviewed only once the season is in Placements (issue #220).
+        # Placements are reviewed only once the season is in Placements.
         if (
             await self.bot.season_service.get_stage(season.id)
         ) is not SeasonStage.PLACEMENTS:
@@ -411,17 +411,17 @@ class SeasonCog(commands.Cog):
 
         # The public review is not posted here: its sections are collected, in the order a
         # manager reads them, and asked of the change queue with the pictures that stand in for
-        # some of them (`season.review.post`, decision 5). Only the private faults are replies.
+        # some of them (`season.review.post`). Only the private faults are replies.
         poster = _ReviewPoster(interaction)
         report: list[str] = []
         pictures: list[dict[str, Any]] = []
 
         season_num = f" (Season #{season.season_number} — F1 {season.game_edition})" if season.season_number > 0 else (f" (F1 {season.game_edition})" if season.game_edition > 0 else "")
-        # The review is sent as one message per subsection rather than as one block.
-        # It outgrew Discord's 2000-character limit once every not-OK image output began
-        # stating its cause and its remedy, and an over-long send loses the whole review
-        # rather than its tail. Splitting by subject also means a manager can scroll back
-        # to the part they are working on instead of hunting through one wall of text.
+        # The review is sent as one message per subsection rather than as one block. With
+        # every not-OK image output stating its cause and its remedy it outgrows Discord's
+        # 2000-character limit, and an over-long send loses the whole review rather than its
+        # tail. Splitting by subject also means a manager can scroll back to the part they
+        # are working on instead of hunting through one wall of text.
         header_lines = [
             f"**Season Review{season_num}**",
             "",
@@ -486,9 +486,10 @@ class SeasonCog(commands.Cog):
             # Every fault of the image configuration the section above names as blocking
             # — the rasteriser, a template a switched-on output draws, a per-tier colour,
             # the portrait settings — withholds the button, read through the helper the
-            # confirmation refuses on (#396). The section draws only the lineup and the
-            # calendar, so a broken results or weather template, or a missing rasteriser
-            # with both of those off, was named here as blocking and then approved.
+            # confirmation refuses on, not read from the section, which draws only the lineup
+            # and the calendar: a broken results or weather template, or a missing rasteriser
+            # with both of those off, would otherwise be named here as blocking and then
+            # approved.
             approval_blockers += await approval_checks.image_configuration_faults(
                 self.bot.image_drawing
             )
@@ -510,7 +511,7 @@ class SeasonCog(commands.Cog):
                 )
                 image_lines += [f"  • {problem}" for problem in lineup_problems]
                 image_lines.append("")
-                # And they do (#396): the confirmation refuses on the same helper.
+                # And they do: the confirmation refuses on the same helper.
                 approval_blockers += [
                     f"Lineup template: {problem}" for problem in lineup_problems
                 ]
@@ -718,9 +719,9 @@ class SeasonCog(commands.Cog):
             else:
                 report.append("\n".join(lineup_lines))
 
-        # ── Server-level unsettled signups (issue #220) ──────────
-        # Named in the public report, every one of them, so that whoever reads the review
-        # sees who is still to be placed or turned down — not merely how many.
+        # ── Server-level unsettled signups ──────────
+        # Named in the public report, every one of them, so that whoever reads the review sees who
+        # is still to be placed or turned down — not merely how many.
         unsettled, channel_faults = await approval_checks.placement_confirmation_faults(
             self.bot.db_path, season.id, interaction.guild,
             driver_names_read=self.bot.driver_names_read,
@@ -732,13 +733,12 @@ class SeasonCog(commands.Cog):
                 "`/driver assign`, turned down with `/driver reject`, or reviewed:\n"
                 + "\n".join(f"\u2022 {line}" for line in unsettled)
             ))
-        # The season-wide report of rounds already inside a configured window is
-        # withdrawn (#181, decided 2026-09-14). It named every round against every
-        # window it had missed, capped at eight rounds — sixty lines where two would do,
+        # No season-wide report of rounds already inside a configured window: naming every
+        # round against every window it had missed runs to sixty lines where two would do,
         # and past Discord's 2000-character limit for a season built wholly in the past,
-        # which lost the whole message rather than its tail. Each division's calendar
-        # now carries its own two findings, above, where the manager is already looking
-        # at the dates they would have to change.
+        # which loses the whole message rather than its tail. Each division's calendar
+        # carries its own two findings, above, where the manager is already looking at the
+        # dates they would have to change.
         if calendar_faults_found:
             # Said once more at the end, briefly, because the per-division notes are
             # scattered through a review running to a dozen messages and the reason the
@@ -827,7 +827,7 @@ class SeasonCog(commands.Cog):
             await poster.reply(chunk, ephemeral=True)
 
     # ------------------------------------------------------------------
-    # /season placements-review mid-season — Ongoing, placements (issue #220)
+    # /season placements-review mid-season — Ongoing, placements
     # ------------------------------------------------------------------
 
     async def _review_mid_season_placements(self, interaction: discord.Interaction, season) -> None:
@@ -837,7 +837,7 @@ class SeasonCog(commands.Cog):
         the review reports the drivers of the window just closed, each division's lineup with
         them in it, and every signup still unsettled.
 
-        **It withholds its button on what would stop the confirmation** (#374), as the first
+        **It withholds its button on what would stop the confirmation**, as the first
         review does: an unsettled signup, a channel a division posts to that is not set or no
         longer on the server, a fault of the image configuration, and a lineup confirming
         would post that will not draw. The lineup of each division holding a new driver is
@@ -939,15 +939,15 @@ class SeasonCog(commands.Cog):
         )
 
     # ------------------------------------------------------------------
-    # /season config-review — confirming the configuration (issue #220)
+    # /season config-review — confirming the configuration
     # ------------------------------------------------------------------
 
     async def _league_roles_review_lines(self) -> list[str]:
         """The league's base role and driver role, as the configuration review reports them.
 
         Shown whatever modules are enabled, the roles being the league's rather than the
-        signup module's (issue #276). Whether their absence is a fault is the signup
-        module's to say; see `approval_checks.configuration_faults`.
+        signup module's. Whether their absence is a fault is the signup module's to say; see
+        `approval_checks.configuration_faults`.
 
         **The configuration review alone.** Confirming the configuration fixes both roles
         until the season ends, so the placements review has nothing to say of them that the
@@ -1069,11 +1069,11 @@ class SeasonCog(commands.Cog):
             ),
         )
 
-    # No command confirms placements (decided 2026-09-07). They are confirmed from the button
-    # `/season placements-review` posts and from nowhere else: the review is the evidence the
-    # confirmation rests on, and a command that could be run without one let a manager commit
-    # a season they had not looked at. The button carries its own five-minute window, so
-    # what is confirmed is always a season someone has just read.
+    # No command confirms placements. They are confirmed from the button `/season placements-review`
+    # posts and from nowhere else: the review is the evidence the confirmation rests on, and a
+    # command that could be run without one would let a manager commit a season they had not looked
+    # at. The button carries its own five-minute window, so what is confirmed is always a season
+    # someone has just read.
 
     @season.command(
         name="status",
@@ -1173,7 +1173,7 @@ class SeasonCog(commands.Cog):
     @app_commands.describe(confirm='Type "CONFIRM" to abort the season.')
     @league_admin_only
     async def season_abort(self, interaction: discord.Interaction, confirm: str) -> None:
-        """Abort the season being set up, before its placements are first confirmed (issue #220).
+        """Abort the season being set up, before its placements are first confirmed.
 
         The season is deleted with every record of it, its signups included, and takes no
         number. Its drivers go through the driver pass — no history is written, the season
@@ -1197,8 +1197,8 @@ class SeasonCog(commands.Cog):
             return
 
         # Another end of the season in hand is named before the stage is judged, whatever stage
-        # the season is in (owner, 2026-10-09, answer B): a cancellation stopped over an ongoing
-        # season is told so, not that an ongoing season is cancelled.
+        # the season is in: a cancellation stopped over an ongoing season is told so, not that an
+        # ongoing season is cancelled.
         hand = await season_end_in_hand(self.bot.db_path, season.id)
         if hand is not None:
             await refuse(

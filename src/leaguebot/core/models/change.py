@@ -1,4 +1,4 @@
-"""The plain data of the change queue (#439): no Discord and no database.
+"""The plain data of the change queue: no Discord and no database.
 
 `docs/design/architecture.md`, "How a change is carried out", designs the queue. This module holds
 the types a change type's steps are written in, which is why they live in a model: another module's

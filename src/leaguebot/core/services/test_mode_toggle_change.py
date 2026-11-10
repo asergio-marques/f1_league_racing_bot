@@ -4,8 +4,8 @@ A change type of its own on the league lane, registered by the builder, **carryi
 sets** (`{"on": True}` or `{"on": False}`), which the command reads once, to say which way it goes,
 as `/test-mode nationality` does (`test_mode_settings.py`). The acknowledgement names the
 direction, and a second press while the first waits, asking the same with nothing else asked on
-the lane since, is refused by the queue as a repeat: two presses racing can no longer both take
-one path.
+the lane since, is refused by the queue as a repeat: two presses racing cannot both take one
+path.
 
 **The refusals are the check's**, judged at the ask and again as the change starts, in the
 league's log channel either time: no season in Configuration, and, to turn test mode on, a real

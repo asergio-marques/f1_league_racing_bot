@@ -206,7 +206,7 @@ class DivisionCog(commands.Cog):
         from leaguebot.core.models.season import ONGOING_STAGES
 
         # Not while the season's own end is in hand: refused at once, naming the job, ahead of
-        # the stage gate (slice 5, owner, 2026-10-09, answer B).
+        # the stage gate.
         if season is not None:
             hand = await season_end_in_hand(self.bot.db_path, season.id)
             if hand is not None:
@@ -217,7 +217,7 @@ class DivisionCog(commands.Cog):
                 )
                 return
 
-        # Available only while the season is ongoing (issue #220).
+        # Available only while the season is ongoing.
         if season is None or season.stage not in ONGOING_STAGES:
             await refuse(
                 interaction,
@@ -355,13 +355,12 @@ class DivisionCog(commands.Cog):
         keyboard is the one able to fix the template, and the outcome says that nothing was
         deleted and the previous calendar still stands.
 
-        **The season's number is passed bare, and a falsy one is drawn rather than hidden**
-        (issue #213, decided 2026-09-20). `seasons.season_number` is `NOT NULL` with no
-        default and numbering starts at one, so a season reaching this command always
-        carries a real number; a `0` can only come from a malformed row and is a bug. The
-        obvious reflex, `season.season_number or None`, would empty the template's field
-        and silently drop the whole "SEASON n" line where the template groups it — the same
-        quiet failure this issue was raised for. Drawing "SEASON 0" is visibly wrong and
+        **The season's number is passed bare, and a falsy one is drawn rather than hidden.**
+        `seasons.season_number` is `NOT NULL` with no default and numbering starts at one, so
+        a season reaching this command always carries a real number; a `0` can only come from
+        a malformed row and is a bug. The obvious reflex, `season.season_number or None`,
+        would empty the template's field and silently drop the whole "SEASON n" line where
+        the template groups it — a quiet failure. Drawing "SEASON 0" is visibly wrong and
         gets reported, so the value goes through untouched and the job logs the fault beside
         it. Pinned by `test_a_season_with_no_number_still_draws_and_is_logged`.
         """
@@ -370,10 +369,10 @@ class DivisionCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
-        # Refused once every division is done (issue #224): the calendar describes rounds
-        # somebody will drive, and a season pending completion has none left. It is no part
-        # of the end-of-season output either — completing posts the final classification and
-        # the final attendance sheet, and neither is a calendar.
+        # Refused once every division is done: the calendar describes rounds somebody will drive,
+        # and a season pending completion has none left. It is no part of the end-of-season output
+        # either — completing posts the final classification and the final attendance sheet, and
+        # neither is a calendar.
         season = await season_for_command(
             interaction, self.bot.season_service, "division calendar-sync"
         )

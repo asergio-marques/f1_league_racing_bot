@@ -20,14 +20,14 @@ nothing is posted in its place; a moment already past is never honoured retroact
 would not, what was posted is withdrawn and the work armed again for its new moment. That single
 rule covers the delay, the bring-forward and the change that moves no date at all.
 
-**A round is never moved into the past**, whatever the modules enabled (decided 2026-09-14).
-A round's result submission is armed against its own moment, and a job more than the scheduler's
-misfire grace behind is discarded rather than run — so a round moved backwards silently loses the
-one clock-driven transition it has, and the round's start (`results.submission.open`) being
-the only route to a submission channel, no command in production opens one afterwards. The
-check-in deadline rule below already refused such a move where attendance was on; the refusal is stated in its own right
-so that the answer does not depend on which modules a league runs. Moving a round *forward* is
-untouched, and remains the remedy for a circuit or a format that must be corrected late.
+**A round is never moved into the past**, whatever the modules enabled. A round's result submission
+is armed against its own moment, and a job more than the scheduler's misfire grace behind is
+discarded rather than run — so a round moved backwards silently loses the one clock-driven
+transition it has, and the round's start (`results.submission.open`) being the only route to a
+submission channel, no command in production opens one afterwards. The check-in deadline rule below
+refuses such a move where attendance is on; the refusal is stated in its own right so that the
+answer does not depend on which modules a league runs. Moving a round *forward* is untouched, and
+remains the remedy for a circuit or a format that must be corrected late.
 
 **An amendment is one change.** However many of the three fields it alters, it is judged once,
 against the round as it will stand once every change is in, and where any rule refuses any part of

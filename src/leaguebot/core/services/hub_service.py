@@ -1,4 +1,4 @@
-"""The hub (issue #279): one channel every member of the league may use, and one panel in it.
+"""The hub: one channel every member of the league may use, and one panel in it.
 
 Every command the bot has is a league manager's or a league admin's. The hub is the one
 surface for everybody else: a channel set by `/bot hub-channel`, holding a single panel of

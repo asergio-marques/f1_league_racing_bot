@@ -15,8 +15,8 @@ the two are compared, which a naive moment never does.
 
 A local time that daylight saving makes nonexistent (the hour a spring-forward skips) or
 ambiguous (the hour an autumn-back repeats) is resolved the way Python resolves it, with
-no complaint — decided 2026-09-05. `/round add-bulk` states its times in UTC and cannot
-meet either case, which is the way round it for a league that cares.
+no complaint. `/round add-bulk` states its times in UTC and cannot meet either case, which is the
+way round it for a league that cares.
 """
 
 from __future__ import annotations

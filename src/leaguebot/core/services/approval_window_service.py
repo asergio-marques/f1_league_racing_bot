@@ -8,34 +8,33 @@ configured distance *before* the round: the check-in call five days out, the las
 day out, the check-in deadline two hours out, the three weather phases at their own
 horizons. Approve a season late enough and some of those moments are already behind you.
 
-What used to happen then was silent and different for each module. `schedule_attendance_round`
-skipped a past-dated job and logged a line nobody reads, so the round asked nobody whether
-they were racing, distributed no reserves, and was recorded afterwards as perfect attendance
-for the whole division. `schedule_round` armed its weather jobs regardless, and the scheduler
-discarded them for being past its five-minute misfire grace — recoverable, but only if the
-host happened to restart before the race.
+Unchecked, what happens then is silent and different for each module. `schedule_attendance_round`
+skips a past-dated job and logs a line nobody reads, so the round asks nobody whether they are
+racing, distributes no reserves, and is recorded afterwards as perfect attendance for the whole
+division. The weather jobs are armed regardless, and the scheduler discards them for being past its
+five-minute misfire grace — recoverable, but only if the host happens to restart before the race.
 
 This module is the check that makes both unreachable from approval. It computes nothing and
 decides nothing about what to do; it reports which windows have passed, and
 `season_review_workflows.approve_season` refuses on the answer. The league's remedy is to move
 the round or shorten the window, and that is a choice only they can make.
 
-**A round's own moment is judged too, and whatever the modules are** (#181, decided
-2026-09-14). The windows above are contributed by the modules that configure them, so a
-league running neither weather nor attendance offered none at all — and a season every round
-of which was already in the past was approved in silence. Nothing recovered it: a round's
-result submission is armed against the round's own moment, a job that far behind is thrown
-away by the scheduler's 300-second misfire grace rather than run, the round's start (`results.submission.open`)
-is the only route to a submission channel, and that job is the round's one clock-driven
-transition. Every round stayed at *not run* for good. `/round amend` refuses a backwards move
-on the same reasoning and in the same words (#182), so the two doors agree.
+**A round's own moment is judged too, and whatever the modules are.** The windows above are
+contributed by the modules that configure them, so a league running neither weather nor
+attendance offers none at all, and a season every round of which is already in the past would
+otherwise be approved in silence. Nothing would recover it: a round's result submission is
+armed against the round's own moment, a job that far behind is thrown away by the scheduler's
+300-second misfire grace rather than run, the round's start (`results.submission.open`) is the
+only route to a submission channel, and that job is the round's one clock-driven transition.
+Every round would stay at *not run* for good. `/round amend` refuses a backwards move on the
+same reasoning and in the same words, so the two doors agree.
 
-**A division's faults are reduced to the latest round of each kind** (decided 2026-09-14).
-`calendar_faults` names the last round already run and, where it is a later round, the last
-round holding an elapsed window — and no more. Every earlier round is implied by them: a
-manager who moves the calendar past the round named has moved it past all of them. Naming
-each round against each window instead told a manager sixty things where two would do, and
-ran a season built wholly in the past past Discord's 2000-character limit.
+**A division's faults are reduced to the latest round of each kind.** `calendar_faults` names the
+last round already run and, where it is a later round, the last round holding an elapsed window —
+and no more. Every earlier round is implied by them: a manager who moves the calendar past the round
+named has moved it past all of them. Rejected: naming each round against each window, which tells a
+manager sixty things where two would do, and runs a season built wholly in the past past Discord's
+2000-character limit.
 
 **The threshold is ``fire_at <= now``** — a window whose moment is exactly now counts as
 elapsed. That is precisely the complement of `schedule_attendance_round`'s own
@@ -98,7 +97,8 @@ def overdue_windows(
 
         That second emptiness is not a verdict that the season is fine. A round's own moment
         is not a window and is not judged here — `calendar_faults` judges it, whatever the
-        modules. Reading this answer alone as "the season may be approved" is #181.
+        modules. Reading this answer alone as "the season may be approved" would approve a
+        season already wholly in the past.
     """
     found: list[OverdueWindow] = []
     now = as_utc(now)

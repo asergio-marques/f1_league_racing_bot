@@ -71,9 +71,9 @@ async def _next_synthetic_id(db_path: str) -> int:
 async def _reattach_history(db, discord_user_id: str, profile_id: int) -> None:
     """Give a driver created by test mode the history an earlier one of the same identifier left.
 
-    Test mode deletes its drivers when it is switched off, and keeps their history entries
-    (issue #220). A driver created again under the same identifier in a later season holds
-    that history as their own.
+    Test mode deletes its drivers when it is switched off, and keeps their history entries.
+    A driver created again under the same identifier in a later season holds that history as their
+    own.
     """
     await db.execute(
         "UPDATE driver_history_entries SET driver_profile_id = ? "
@@ -141,11 +141,11 @@ async def add_test_driver(
     driver created without one records none, and is drawn without a flag.
 
     *placement_service* holds the driver to the template capacities a real placement into
-    the same team is held to, and the driver is refused where one would be (#150). The cog
+    the same team is held to, and the driver is refused where one would be. The cog
     always passes it; left None, as tests of the seating alone do, the check is skipped.
 
     *driver_name* is drawn on graphics as a real driver's name is, so it is held to the rules
-    every name a league types is held to (#362).
+    every name a league types is held to.
 
     Returns a TestDriverInfo dict on success, or a refusal the member can act on, as a string.
     A fault in writing the driver is not a refusal: it raises, and the one transaction the
@@ -172,7 +172,7 @@ async def add_test_driver(
     if division_id is None:
         return f"Division '{division_name}' not found in the active season."
 
-    # A team is typed by its shorthand (#381); a role, a member or a name no team has is refused.
+    # A team is typed by its shorthand; a role, a member or a name no team has is refused.
     reference = await resolve_division_team(db_path, division_id, team_name)
     if reference.team is None:
         return f"{reference.refusal} (division '{division_name}')"
@@ -260,7 +260,7 @@ async def add_test_driver(
         profile_id=profile_id,
         discord_user_id=synthetic_uid,
         display_name=driver_name,
-        # What a reply shows is the full name; the shorthand is what was typed (#381).
+        # What a reply shows is the full name; the shorthand is what was typed.
         team_name=reference.team["full_name"],
         nationality=canonical_nationality,
     )
@@ -295,9 +295,9 @@ async def add_test_drivers_in_bulk(
     looking like the record of what happened.
 
     *placement_service* holds each division the roster seats to the template capacities a
-    real placement is held to, counting every driver the roster gives the division at once
-    (#150). The cog always passes it; left None, as tests of the seating alone do, the check
-    is skipped.
+    real placement is held to, counting every driver the roster gives the division at once.
+    The cog always passes it; left None, as tests of the seating alone do, the check is
+    skipped.
     """
     from leaguebot.core.utils.roster_import import divisions_named
 
@@ -361,8 +361,8 @@ async def add_test_drivers_in_bulk(
                     f"already on this server."
                 )
 
-        # A team is typed by its shorthand (#381), and a line naming it any other way — a
-        # role, a member — is refused on that line. Each division's teams are read once.
+        # A team is typed by its shorthand, and a line naming it any other way — a role, a member —
+        # is refused on that line. Each division's teams are read once.
         teams_of: dict[int, list[dict]] = {
             division_id: await division_team_references(db, division_id)
             for division_id in division_ids.values()
@@ -577,7 +577,7 @@ async def remove_test_driver(
     """Remove a single fake driver by their synthetic Discord user ID, keeping their history.
 
     Deleted by ``delete_driver_profiles``, the route `roster clear` and switching test mode
-    off take, so a table that comes to hold a driver is let go of here as well (issue #268).
+    off take, so a table that comes to hold a driver is let go of here as well.
 
     Returns a dict with keys ``display_name`` and ``team_name`` on success,
     or an error string if the profile doesn't exist or is not a test driver.
@@ -622,7 +622,7 @@ async def clear_all_test_drivers_on(
 
     Every one of them, seated or not and in whatever season — switching test mode off deletes
     every fake driver on the server. Their history entries are kept, naming them by identifier,
-    so a driver created again under the same identifier holds that history (issue #220).
+    so a driver created again under the same identifier holds that history.
 
     Committing nothing: a season's end deletes them inside the save that records its end.
     Returns the count removed.

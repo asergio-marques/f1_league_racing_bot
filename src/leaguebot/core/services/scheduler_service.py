@@ -122,9 +122,8 @@ def _job_event_type(job_id: str) -> str | None:
     one from a version of the bot that named its jobs otherwise.
 
     Every caller asking what a job is for asks here, and pairs the answer with the job's
-    round id the job is keyed by (`_round_of`) — never rebuilding an ID to look one up. The
-    review summary once built IDs of its own, in a shape no job has ever had, and so found none
-    of them (#426).
+    round id the job is keyed by (`_round_of`) — never rebuilding an ID to look one up: an ID
+    built elsewhere can take a shape no job has, and so find none.
     """
     m = _JOB_SUFFIX_RE.search(job_id)
     return None if m is None else job_id[: m.start()]
@@ -186,7 +185,7 @@ async def _one_off_timer_job(kind: str, key: int | str | None = None) -> None:
 #: One league, so one daily refresh: the job is named by what it does, not by a server.
 PORTRAIT_REFRESH_JOB_ID = "pfp_daily"
 
-#: The standing sweep that undoes an amendment nobody approved (#345).
+#: The standing sweep that undoes an amendment nobody approved.
 AMENDMENT_SWEEP_JOB_ID = "amend_sweep"
 
 #: How often it looks. An amendment lapses after
@@ -470,7 +469,7 @@ class SchedulerService:
                                  ahead of it is skipped (the queue's clock, never the wall's).
 
         A fourth job, ``rsvp_cleanup``, takes the round's call, last notice and distribution
-        message down `POST_RACE_CLEANUP_DELAY` after the round's start (#425).
+        message down `POST_RACE_CLEANUP_DELAY` after the round's start.
         """
         moments = round_event_moments(
             rnd.scheduled_at,
@@ -524,10 +523,10 @@ class SchedulerService:
         last notice and distribution message; *forecast* and *check_in* choose which are armed
         (``schedule_round`` arms the first through `_arm_forecast_cleanup`,
         ``schedule_attendance_round`` calls this for the second alone, and a refused
-        cancellation arms both for a round raced, or ended cancelled as not held, #439). The
-        forecast's is armed whatever the hour, as ever; the check-in's only while its moment is
-        still ahead of *now*, the restart's catch-up taking one already past
-        (`_recover_missed_cleanups`). Both replace a job of the same id.
+        cancellation arms both for a round raced, or ended cancelled as not held). The
+        forecast's is armed whatever the hour; the check-in's only while its moment is still
+        ahead of *now*, the restart's catch-up taking one already past (`_recover_missed_cleanups`).
+        Both replace a job of the same id.
         """
         if forecast:
             self._arm_forecast_cleanup(
@@ -557,7 +556,7 @@ class SchedulerService:
         """Arm the ``cleanup`` job that deletes a round's forecasts, whatever the hour.
 
         Armed by `schedule_round` and, on its own, by `schedule_round_cleanups`. No clock is
-        read: the job is armed past-dated too, as ever.
+        read: the job is armed past-dated too.
         """
         suffix = _round_job_suffix(rnd, season_number, division_tier)
         cleanup_fire_at = clean_up_moment(rnd.scheduled_at)
@@ -575,7 +574,7 @@ class SchedulerService:
     def cancel_round(self, round_id: int, *, only: frozenset[str] | None = None) -> list[str]:
         """Remove scheduler jobs belonging to *round_id*, and give the ids of those that went.
 
-        The ids let a cancellation refused afterwards know what it took and arm it again (#439).
+        The ids let a cancellation refused afterwards know what it took and arm it again.
 
         Iterates the live jobstore and removes every job of one of a round's kinds
         (`ROUND_JOB_KINDS`) whose ``key`` is *round_id*.  This is format-agnostic, and leaves
@@ -586,10 +585,10 @@ class SchedulerService:
                 `_job_event_type` reads it off the job ID — is in the set.  Callers
                 cancelling a *round* want the default, which takes all nine of its jobs; a
                 caller switching **one module** off wants that module's prefixes and nothing
-                else, or it takes the other modules' work down with it (issue #117).  The
-                filter reads the ID's prefix, which is the kind the job is stored with, so
-                it never has to guess a job's owner; a job whose ID carries no round suffix
-                has no event type to match and is left alone while *only* is in force.
+                else, or it takes the other modules' work down with it. The filter reads the ID's
+                prefix, which is the kind the job is stored with, so it never has to guess a job's
+                owner; a job whose ID carries no round suffix has no event type to match and is left
+                alone while *only* is in force.
         """
         removed: list[str] = []
         for job in self._scheduler.get_jobs():
@@ -612,9 +611,9 @@ class SchedulerService:
 
         The store is listed once, before anything is removed, and that listing is the only call
         that can raise: a store that cannot be read removes nothing, so a division's or a
-        season's cancellation that unarms its rounds first stands as it was (#439, slice 8).
-        Each removal then goes through `_remove_job`, which never raises. With *season_end*,
-        any stale ``season_end*`` job the store still carries goes in the same pass.
+        season's cancellation that unarms its rounds first stands as it was. Each removal then goes
+        through `_remove_job`, which never raises. With *season_end*, any stale ``season_end*`` job
+        the store still carries goes in the same pass.
         """
         wanted = set(round_ids)
         removed: dict[int, list[str]] = {}
@@ -644,9 +643,9 @@ class SchedulerService:
           cannot be run again on an active season, so cancelling them loses the season's check-ins
           for good.
 
-        Do not widen this back to a whole-round cancel: that was issue #117, in which
-        switching weather off silently stopped results collection and check-ins for the
-        rest of the season while reporting that only weather jobs had been cancelled.
+        Do not widen this to a whole-round cancel: switching weather off would then silently
+        stop results collection and check-ins for the rest of the season while reporting that
+        only weather jobs had been cancelled.
 
         Weather's switch-off is the caller: the ``REMOVE_JOBS`` ``After`` step of
         ``module_off_weather`` (`weather/services/module_switch_settings.py`), run once the flag's
@@ -777,11 +776,11 @@ class SchedulerService:
     def cancel_all(self, *, keep: frozenset[str] = frozenset()) -> int:
         """Remove every job but those whose ids are in *keep*, and return how many went.
 
-        For `/bot pack` and `/bot factory-reset` (issue #247), which clear all of the
-        league's scheduled work at once rather than round by round, and so reach the jobs no
-        round owns — the signup close timer, a wizard's inactivity and channel-delete jobs, a
-        stale season-end job. Pack keeps the daily portrait refresh: it is a standing
-        instruction from a setting pack keeps, and does nothing while no server is claimed.
+        For `/bot pack` and `/bot factory-reset`, which clear all of the league's scheduled work at
+        once rather than round by round, and so reach the jobs no round owns — the signup close
+        timer, a wizard's inactivity and channel-delete jobs, a stale season-end job. Pack keeps the
+        daily portrait refresh: it is a standing instruction from a setting pack keeps, and does
+        nothing while no server is claimed.
         """
         removed = 0
         for job in list(self._scheduler.get_jobs()):
@@ -804,7 +803,7 @@ class SchedulerService:
           - ``round_id``     — round this job belongs to
           - ``phase_number`` — 1/2/3 = the weather phases, 5/6/7 = the check-in call, its
             last notice and its deadline, 8/9 = the forecast and the check-in cleanups a day
-            after the round (#425). A mystery round's notice is armed as ``weather_p1`` and so
+            after the round. A mystery round's notice is armed as ``weather_p1`` and so
             comes back as 1, which ``get_next_pending_phase`` then reads as the notice — this
             method knows nothing of formats. 0 never occurs here.
           - ``next_run_time``— datetime when the job is scheduled to fire
@@ -849,12 +848,12 @@ class SchedulerService:
         type — ``results`` and both cleanups are included — so it answers "is a job queued",
         not "what will advance fire".
 
-        A job is found by its round and its event type, the way ``cancel_round`` finds one
-        (issue #139): the round id the job is keyed by, which is the round's own key whatever
-        numbers its ID carries (`_round_of`), and the type `_job_event_type` reads off the ID.
-        A caller asks ``(round_id, "weather_p1") in queued`` and never rebuilds an ID to look one
-        up — the review once did, in a shape no job has ever had, and so found none (#426). A
-        mystery round's notice is armed as ``weather_p1`` and is found under that type.
+        A job is found by its round and its event type, the way ``cancel_round`` finds one: the
+        round id the job is keyed by, which is the round's own key whatever numbers its ID
+        carries (`_round_of`), and the type `_job_event_type` reads off the ID. A caller asks
+        ``(round_id, "weather_p1") in queued`` and never rebuilds an ID to look one up: an ID
+        built elsewhere can take a shape no job has, and so find none. A mystery round's notice
+        is armed as ``weather_p1`` and is found under that type.
 
         A paused job (``next_run_time is None``) will not fire and is left out, as is one whose
         ID carries no round suffix.
@@ -878,13 +877,11 @@ class SchedulerService:
     def cancel_season_end(self) -> None:
         """Remove any season-end job a scheduler store still carries.
 
-        Nothing schedules one any more. A season ends when a league manager runs
-        `/season complete`, and `schedule_season_end` — along with the timer that armed it seven
-        days after the last round — was deleted with issue #154. This is kept because a
-        `scheduler.db` written by an older version may still carry a `season_end_*` job, and
-        because `/season cancel` should go on saying so plainly. A stale job whose
-        callable no longer exists is dropped by APScheduler on load, with a warning, rather than
-        failing start-up.
+        Nothing schedules one: a season ends when a league manager runs `/season complete`.
+        This is kept because a `scheduler.db` written by an older version of the bot may still
+        carry a `season_end_*` job, and because `/season cancel` should go on saying so plainly.
+        A stale job whose callable no longer exists is dropped by APScheduler on load, with a
+        warning, rather than failing start-up.
         """
         for job in list(self._scheduler.get_jobs()):
             if job.id.startswith("season_end"):
@@ -925,7 +922,7 @@ class SchedulerService:
         log.info("Scheduled %s at %s UTC daily", job_id, time_of_day)
 
     def schedule_amendment_sweep(self) -> None:
-        """Arm the standing sweep that undoes an amendment nobody carried through (#345).
+        """Arm the standing sweep that undoes an amendment nobody carried through.
 
         An ``IntervalTrigger`` for the reason ``schedule_portrait_refresh`` gives for its cron
         one: this is a standing instruction rather than an event, and re-arming it from inside

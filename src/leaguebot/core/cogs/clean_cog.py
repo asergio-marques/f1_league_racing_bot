@@ -5,12 +5,11 @@ Deletes the most recent messages in the current channel that were sent by the bo
 is a text channel, asks the change, and the queue chooses and deletes when it gets to it.
 Requires the bot to have the Manage Messages permission in that channel.
 
-**How many is asked for, and capped at ten** (2026-09-07). The command took no parameter
-and swept five hundred messages, which is a great deal of channel to lose to a slip of the
-finger — and irreversibly, since Discord keeps no undo. Ten is enough for the job it is
-actually for: clearing the tail of a multi-message command that did not clear itself. An
-approved or expired `/season placements-review` now deletes its own report, which was the case the
-five hundred was reaching for.
+**How many is asked for, and capped at ten.** A sweep of hundreds of messages is a great deal
+of channel to lose to a slip of the finger — and irreversibly, since Discord keeps no undo. Ten
+is enough for the job it is actually for: clearing the tail of a multi-message command that did
+not clear itself. An approved or expired `/season placements-review` deletes its own report, so
+no larger sweep is needed for it.
 """
 from __future__ import annotations
 

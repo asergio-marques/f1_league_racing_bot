@@ -24,7 +24,7 @@ async def _season_exists(db_path: str, season_id: int) -> bool:
 
 
 async def approval_faults(db_path: str, season_id: int, bot: LeagueBot) -> list[str]:
-    """Everything that would stop an approved amendment being published (#187).
+    """Everything that would stop an approved amendment being published.
 
     Returns the faults as lines a league can read, and an empty list where the whole
     cascade could be carried out.
@@ -38,10 +38,10 @@ async def approval_faults(db_path: str, season_id: int, bot: LeagueBot) -> list[
     `approval_checks.placement_confirmation_faults` serves the season's own review and
     confirmation — the report and the refusal are the same reading, so they cannot drift.
 
-    **A cancelled division is included** (owner, 2026-10-06, "Refuse at the press"): the
-    approval rescores, reposts and recalculates its raced rounds as a live division's, so the
-    results, standings, attendance and verdicts channels it configured are asked too, as the
-    results specification's "every division's" requires.
+    **A cancelled division is included**, refused at the press: the approval rescores, reposts and
+    recalculates its raced rounds as a live division's, so the results, standings, attendance and
+    verdicts channels it configured are asked too, as the results specification's "every division's"
+    requires.
 
     **Each module answers for its own channels.** The results module knows what its repost
     needs and the attendance module knows what its recalculation needs; this function only
@@ -63,7 +63,7 @@ async def approval_faults(db_path: str, season_id: int, bot: LeagueBot) -> list[
 
     # The attendance module recalculates as part of the same cascade, so its channels are
     # part of the same question. Asked only where it is switched on: a league without it
-    # must not be refused for an attendance channel it has never configured (#187).
+    # must not be refused for an attendance channel it has never configured.
     attendance_on = False
     try:
         attendance_on = await bot.module_service.is_attendance_enabled()

@@ -9,7 +9,7 @@ happens to the card. Say so wherever a league manager might read otherwise.
 and `test_mode_active` is a column of its one configuration row, so there is no "test data"
 to separate at the file level. The guarantee that a real league is never touched comes from
 the commands instead: they run only while the league is in test mode, which itself refuses
-to switch on while a real driver stands in a live season (decided 2026-09-07).
+to switch on while a real driver stands in a live season.
 
 **Why the SQLite backup API and not a file copy.** `bot.db` runs in WAL, so a committed
 transaction lives in `bot.db-wal` until a checkpoint folds it into the main file. Copying
@@ -111,8 +111,8 @@ def snapshot_database(source: str | Path, target: str | Path) -> None:
 
     Correct against a database being written to, and against WAL — see the module
     docstring. Written to a temporary file beside the target and renamed over it, so an
-    interruption leaves the previous backup standing rather than a half-written one where
-    a good one used to be.
+    interruption leaves the previous backup standing rather than a half-written one in
+    place of a good one.
     """
     target = Path(target)
     temporary = _copy_to_temporary(source, target)
@@ -306,7 +306,7 @@ def discard(db_path: str | Path, jobstore_path: str | Path) -> bool:
     A saved state belongs to the test season it was taken in: nothing restores it once that
     season is over, the backup commands running in test mode alone. So test mode leaving —
     by the toggle in Configuration, or by the season being completed — takes the backup with
-    it rather than leaving a state nobody can reach (decided 2026-09-17).
+    it rather than leaving a state nobody can reach.
 
     **The lock does not protect it.** The lock exists to stop a *save* overwriting a state a
     maintainer means to keep for the run they are in; it is not a reason to keep a state past

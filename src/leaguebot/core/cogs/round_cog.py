@@ -440,7 +440,7 @@ class RoundCog(commands.Cog):
 
         # The values that stand are no amendment: nothing is offered, and nothing changes. Asked
         # after the rules, so a round that cannot be amended at all is refused as such, whatever
-        # was given (owner, 2026-09-30).
+        # was given.
         standing = {
             "track_name": rnd.track_name,
             "scheduled_at": rnd.scheduled_at,
@@ -540,7 +540,7 @@ class RoundCog(commands.Cog):
         from leaguebot.core.models.season import ONGOING_STAGES
 
         # Not while the season's own end is in hand: refused at once, naming the job, ahead of
-        # the stage gate (slice 5, owner, 2026-10-09, answer B).
+        # the stage gate.
         if season is not None:
             hand = await season_end_in_hand(self.bot.db_path, season.id)
             if hand is not None:
@@ -551,7 +551,7 @@ class RoundCog(commands.Cog):
                 )
                 return
 
-        # Available only while the season is ongoing (issue #220).
+        # Available only while the season is ongoing.
         if season is None or season.stage not in ONGOING_STAGES:
             await refuse(
                 interaction,
@@ -718,9 +718,9 @@ class _ConfirmView(LeagueView):
                 return
             what = _round_amend_named(_rnd_now.round_number)
             _division = await self._cog.bot.season_service.get_division(_rnd_now.division_id)
-            # One change carrying every field, not one per field. Amending a round's track and
-            # its date used to run the whole amendment twice: two invalidation notices,
-            # two cancels, two re-arms, two re-runs of every overdue phase (#115).
+            # One change carrying every field, not one per field: a change per field would run
+            # the whole amendment twice for a track and a date together — two invalidation
+            # notices, two cancels, two re-arms, two re-runs of every overdue phase.
             await self._cog.bot.change_queue.ask(
                 ROUND_AMEND,
                 {

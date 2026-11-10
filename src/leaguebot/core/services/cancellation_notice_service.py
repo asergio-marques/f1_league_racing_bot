@@ -1,4 +1,4 @@
-"""Core's own part of a round, a division or a season called off (#175, #283).
+"""Core's own part of a round, a division or a season called off.
 
 Core announces nothing of its own: telling the drivers a race is off is each enabled module's
 own notice, in its own words, found and posted through its own subscriber to the
@@ -57,7 +57,7 @@ class NoticeFailure:
 
 def round_label(round_number: int, track_name: str | None) -> str:
     """A round's name in a cancellation notice, word for word: shared because attendance's,
-    weather's and results' own notices all word a round the same way (#283)."""
+    weather's and results' own notices all word a round the same way."""
     return f"Round {round_number} ({track_name or 'Mystery'})"
 
 
@@ -71,7 +71,7 @@ async def post_cancellation_notice(
     refusal where it refuses the send. Any other exception is a fault of the bot's own and
     propagates unchanged.
 
-    The one shape attendance's, weather's and results' own cancellation notices share (#283): each
+    The one shape attendance's, weather's and results' own cancellation notices share: each
     module reads its own channel id and builds its own wording, mentions and silence (*parts*),
     and calls this to post it. Posting itself is `notice_handler.send_notice`; this merely answers
     "no channel is set" and finds the channel before that send, which is why it lives here and not
@@ -93,7 +93,7 @@ async def post_cancellation_notice(
 async def require_division(seasons: SeasonService, season_id: int, division_id: int) -> Any:
     """The division *division_id* of season *season_id*, as `seasons.get_divisions` gives it, or
     `LookupError` where it is no longer there — the lookup a cancellation notice job makes for the
-    division its own payload names (#283)."""
+    division its own payload names."""
     division = next(
         (each for each in await seasons.get_divisions(int(season_id)) if each.id == int(division_id)),
         None,

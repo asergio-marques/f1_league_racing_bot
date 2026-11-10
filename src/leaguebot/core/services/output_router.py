@@ -42,7 +42,7 @@ from leaguebot.core.utils.input_validator import ROLE_MENTION, USER_MENTION
 from leaguebot.core.utils.messages import chunk_message
 
 #: Every mention a log line can carry, wrapped whole as code so it names without notifying.
-#: Built from the shared forms (#362), so ``<@!123>`` is wrapped as ``<@123>`` is.
+#: Built from the shared forms, so ``<@!123>`` is wrapped as ``<@123>`` is.
 _MENTION_RE = re.compile(rf"((?:{USER_MENTION})|(?:{ROLE_MENTION}))")
 
 if TYPE_CHECKING:
@@ -228,11 +228,11 @@ class OutputRouter:
         in its channel, mentioning the author alone, and delete the message.
 
         Each is tried once. A refusal of either is logged on the host and lost, never retried, and
-        the note stays: this is a named exception to every post being a job (#439, decision 9),
-        made at once so the member is told while the earlier answer they typed still waits, where a
-        job would wait behind it. It is here, in the one file that posts directly, and not in the
-        turn's own module (`typed_turns.turn_away` asks it), so that the posting check needs no
-        line for it. A static method: it needs the message alone.
+        the note stays: this is a named exception to every post being a job, made at once so the
+        member is told while the earlier answer they typed still waits, where a job would wait
+        behind it. It is here, in the one file that posts directly, and not in the turn's own module
+        (`typed_turns.turn_away` asks it), so that the posting check needs no line for it. A static
+        method: it needs the message alone.
         """
         try:
             await message.channel.send(

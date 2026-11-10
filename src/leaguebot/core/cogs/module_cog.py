@@ -97,9 +97,9 @@ class _ConfirmDisableResultsView(LeagueView):
     """Confirm disabling results & standings before anything is written.
 
     Shown wherever the command costs the league something it cannot get back: a running
-    season, whose results the disable destroys (issue #167), or an enabled attendance module,
-    which the disable takes with it (issue #114). With neither at stake — between seasons, with
-    attendance already off — the command disables results straight away, as it always did.
+    season, whose results the disable destroys, or an enabled attendance module, which the disable
+    takes with it. With neither at stake — between seasons, with attendance already off — the
+    command disables results straight away.
     """
 
     def __init__(
@@ -260,7 +260,7 @@ class ModuleCog(commands.Cog):
     ) -> bool:
         """Refuse enabling or disabling a module where the season's stage forbids it.
 
-        Issue #220, in the order a league meets the rules:
+        In the order a league meets the rules:
 
         - the signup module is enabled and disabled only with no active season, or while its
           season is in Configuration;
@@ -335,8 +335,8 @@ class ModuleCog(commands.Cog):
         self, interaction: discord.Interaction
     ) -> None:
         # A season whose placements are confirmed refuses the enable before this handler is
-        # reached (issue #220), so there is never a running season to catch up on: its
-        # forecast channels are checked, and its phases armed, when placements are confirmed.
+        # reached, so there is never a running season to catch up on: its forecast channels are
+        # checked, and its phases armed, when placements are confirmed.
         if await self._refuse_missing_dependency(interaction, "weather"):
             return
         # The switch is weather's own change on the queue: this asks for it and does nothing
@@ -395,16 +395,12 @@ class ModuleCog(commands.Cog):
     async def _disable_results(self, interaction: discord.Interaction) -> None:
         """Disable results & standings, warning first wherever it costs the league something.
 
-        The cascade used to happen unannounced: the reply named results alone and the league
-        was told nothing about attendance going with it, its check-in and attendance channels
-        being cleared, or its being unable to come back while the season runs. That was the
-        silent half of issue #114.
+        The warning names the cascade: attendance goes with results, its check-in and
+        attendance channels are cleared, and it cannot come back while the season runs.
 
-        A running season is the other half, and was silent for longer. Disabling mid-season
-        destroys that season's results entire and closes every round still waiting on them
-        (issue #167), and a league with attendance already off was shown no warning at all
-        before it happened. So the confirmation is now owed to a running season in its own
-        right, whatever attendance is doing.
+        A running season is owed the confirmation in its own right, whatever attendance is
+        doing: disabling mid-season destroys that season's results entire and closes every
+        round still waiting on them.
         """
         if not await self.bot.module_service.is_results_enabled():
             await refuse(
@@ -530,7 +526,7 @@ class ModuleCog(commands.Cog):
             what=describe(interaction),
         )
 
-    # ── Signup disable (T018) ──────────────────────────────────────────
+    # ── Signup disable ──────────────────────────────────────────────────
 
     async def _disable_signup(
         self, interaction: discord.Interaction

@@ -1,19 +1,17 @@
 """The stages of a season a command may act upon, and the refusal where it may not.
 
 Every command that changes a season has to answer two questions before it does anything:
-**which** season, and **is that season in a state where this command means anything**. Before
-issue #224 most of them answered only the first, and answered it two different ways —
-``get_setup_or_active_season`` for the live season, ``get_season_for_server`` for the most
-recent one whatever its status. The second reads a **completed or cancelled** season, so a
-handful of commands were rewriting an archive the core specification says shall never change.
+**which** season, and **is that season in a state where this command means anything**. A
+command that answers only the first, reading the most recent season whatever its status
+(``get_season_for_server``), can reach a **completed or cancelled** season and rewrite an
+archive the core specification says shall never change.
 
 This module answers both questions in one place, so that the rule is stated once rather than
-inline at fourteen call sites that would drift apart.
+inline at every call site, where it would drift apart.
 
-**Pending completion is the point of it** (decided 2026-09-20, issue #224). A season pending
-completion is one whose every division is finished or cancelled: the last moment its record
-can change, and a moment at which nothing is being raced. Three things are permitted there and
-nothing else —
+**Pending completion is the point of it.** A season pending completion is one whose every division
+is finished or cancelled: the last moment its record can change, and a moment at which nothing is
+being raced. Three things are permitted there and nothing else —
 
     1. completing the season;
     2. repairing a division's channels, because completing posts the final classification and
@@ -50,7 +48,7 @@ BEFORE_PENDING_COMPLETION: frozenset[SeasonStage] = LIVE_STAGES - {
 
 #: The two stages in which drivers are being placed: before the season's first confirmation,
 #: and while the drivers of a mid-season signup window are being placed. What `/driver
-#: reassign` is limited to (issue #224) — re-keying a profile onto another Discord account is
+#: reassign` is limited to — re-keying a profile onto another Discord account is
 #: part of settling who sits where, and elsewhere `/driver move` is the command.
 PLACEMENT_STAGES: frozenset[SeasonStage] = frozenset({
     SeasonStage.PLACEMENTS,

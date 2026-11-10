@@ -1,4 +1,4 @@
-"""pack_service — ready the bot to serve its league from another Discord server (issue #247).
+"""pack_service — ready the bot to serve its league from another Discord server.
 
 **What is the league's travels; what is the server's stays behind.** A Discord user id is the
 same on every server, so a driver's profile, accounts, history and portrait mean the same
@@ -17,23 +17,22 @@ signup wizards it cleared and the signup channel's id as it stood. The pack itse
 only core's own: the team roles, the queued messages, the review prompts, the server's roles,
 hub and claim, and the divisions' lineup and calendar message ids.
 
-**Refused while the league has a current season** (decided 2026-09-19): a season in any stage
-short of completed or cancelled, which is read off the lifecycle `stage` rather than the
-coarser `status`. A current season's divisions are built on this server's roles and channels,
-and a league does not pack up and leave with one under way.
+**Refused while the league has a current season**: a season in any stage short of completed or
+cancelled, which is read off the lifecycle `stage` rather than the coarser `status`. A current
+season's divisions are built on this server's roles and channels, and a league does not pack up and
+leave with one under way.
 
-**Refused while the queue holds a job** (decided 2026-10-02): a change in the queue
-(`change_queue`) that has not finished, queued, running or stopped on a failed job, would go on
-changing Discord on a server the bot no longer serves. A pack does not drop it: it is refused,
-naming the job it would wait on, so that the admin lets the queue empty, or presses Retry or
-Discard on a stopped job's notice, and packs again. A pack therefore finds only finished
-changes, which are history and stay with their jobs, and has none to delete.
+**Refused while the queue holds a job**: a change in the queue (`change_queue`) that has not
+finished, queued, running or stopped on a failed job, would go on changing Discord on a server the
+bot no longer serves. A pack does not drop it: it is refused, naming the job it would wait on, so
+that the admin lets the queue empty, or presses Retry or Discard on a stopped job's notice, and
+packs again. A pack therefore finds only finished changes, which are history and stay with their
+jobs, and has none to delete.
 
 **One transaction.** The checks and every write share one `BEGIN IMMEDIATE`, so a season or a
 change set up between the checks and the release cannot be stranded on a server the bot has
-left, nor go on changing a server it has. The
-audit entry shares it too (issue #383): every pack that takes effect is recorded, and a
-refused one records nothing.
+left, nor go on changing a server it has. The audit entry shares it too: every pack that takes
+effect is recorded, and a refused one records nothing.
 
 The Discord side is left as it is: the old server keeps the bot's messages and buttons, which
 refuse from then on (see `leaguebot.core.utils.league_server.LeagueView`). Pack touches only the database.
@@ -161,7 +160,7 @@ _AUDITED_SETTINGS: tuple[str, ...] = (
 
 
 async def _cleared_configuration(db, signup_channel_id: int | None) -> dict[str, Any]:
-    """The configuration pack is about to clear, for its audit entry (issue #383).
+    """The configuration pack is about to clear, for its audit entry.
 
     Every setting and role a league set upon this server: the four settings and the claim,
     the two league roles, the hub, the signup channel (*signup_channel_id*, as the signup module
@@ -230,12 +229,12 @@ async def pack(
             await db.execute("DELETE FROM season_review_prompts")
             # No change is open (refused above), so the queue holds only history, which stays.
 
-            # The league's two roles are core's (issue #276), but a role belongs to its
-            # server: the next server's `/bot init` finds none, as it finds no team role.
+            # The league's two roles are core's, but a role belongs to its server: the next server's
+            # `/bot init` finds none, as it finds no team role.
             await db.execute(
                 "UPDATE server_configs SET base_role_id = NULL, driver_role_id = NULL"
             )
-            # The hub is a channel of this server, and its panel a message in it (#279). The
+            # The hub is a channel of this server, and its panel a message in it. The
             # panel stays where it is, its buttons refused while no server is claimed.
             await db.execute(
                 "UPDATE server_configs SET hub_channel_id = NULL, hub_message_id = NULL"

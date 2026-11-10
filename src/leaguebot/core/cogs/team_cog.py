@@ -40,7 +40,7 @@ class TeamCog(commands.Cog):
         """Whether the team list may still be changed: no live season, or one in Configuration.
 
         The question apart from the refusal, because `/team modify` asks it to decide which
-        fields its form offers, and asks it again when the form comes back (#381).
+        fields its form offers, and asks it again when the form comes back.
         """
         season = await self.bot.season_service.get_setup_or_active_season()
         return season is None or season.stage is SeasonStage.CONFIGURATION
@@ -71,11 +71,11 @@ class TeamCog(commands.Cog):
     ) -> bool:
         """Refuse a role mapping once every division of the season is finished or cancelled.
 
-        A team's role may be repaired in every stage of a live season but Pending completion
-        (issue #224), and with no live season at all the mapping is the server's own and free
-        to change — the team list itself is settled on the same terms. So this refuses only
-        where a season is live and has run its course, and lets the no-season case through,
-        which the shared gate would otherwise turn away.
+        A team's role may be repaired in every stage of a live season but Pending completion,
+        and with no live season at all the mapping is the server's own and free to change — the
+        team list itself is settled on the same terms. So this refuses only where a season is live
+        and has run its course, and lets the no-season case through, which the shared gate would
+        otherwise turn away.
 
         Returns True where the command was refused, having answered the interaction and
         recorded the refusal of *what*. The refusal is the change's own
@@ -106,7 +106,7 @@ class TeamCog(commands.Cog):
     )
     @league_manager_only
     async def team_add(self, interaction: discord.Interaction) -> None:
-        """Open the form a team is added on (#381).
+        """Open the form a team is added on.
 
         A team carries three things, and the form takes all three at once: the shorthand a
         league types, the full name every post shows, and the role its drivers are granted.
@@ -149,7 +149,7 @@ class TeamCog(commands.Cog):
         )
 
     # ------------------------------------------------------------------
-    # /team modify  (#381) — replaces /team rename and /team role
+    # /team modify
     # ------------------------------------------------------------------
 
     @team.command(
@@ -159,7 +159,7 @@ class TeamCog(commands.Cog):
     @app_commands.describe(team="The team's shorthand.")
     @league_manager_only
     async def team_modify(self, interaction: discord.Interaction, team: str) -> None:
-        """Open the form a team is changed on (#381).
+        """Open the form a team is changed on.
 
         The form offers what may change **now**: the two names only while the team list is
         open, and the role at every stage but Pending completion, where nothing may change at
@@ -200,7 +200,7 @@ class TeamCog(commands.Cog):
         role: discord.Role | None,
         what: str | None = None,
     ) -> None:
-        """Ask for what the form changed, or refuse the whole submission (#381).
+        """Ask for what the form changed, or refuse the whole submission.
 
         *was* is the team as the form opened on it. Only a field whose value **changed**
         counts, so a form submitted untouched changes nothing and says so. The change is one on
@@ -273,7 +273,7 @@ class TeamCog(commands.Cog):
     ) -> None:
         if await self._team_list_lock(interaction, "remove", what=describe(interaction)):
             return
-        # A team is named by its shorthand (#381), offered by the autocomplete below.
+        # A team is named by its shorthand, offered by the autocomplete below.
         reference = await self.bot.team_service.resolve_server_team(name)
         if reference.team is None:
             await refuse(interaction, f"⛔ {reference.refusal}", what=describe(interaction))
@@ -320,8 +320,8 @@ class TeamCog(commands.Cog):
             return
 
         def _fmt_team(t: dict) -> str:
-            # All three names a team carries (#381): what is shown, what is typed, and the
-            # role its drivers are given.
+            # All three names a team carries: what is shown, what is typed, and the role its drivers
+            # are given.
             role_part = f"<@&{t['role_id']}>" if t["role_id"] else "no role"
             return f"  {t['full_name']} — `{t['name']}` → {role_part}"
 
@@ -506,7 +506,7 @@ class TeamCog(commands.Cog):
 
         The change is one on the queue (`core/services/team_changes.py`), which refuses at once,
         and again as the change starts, once the season is pending completion, and a role the bot
-        cannot grant or another team holds, as every team command does (#381).
+        cannot grant or another team holds, as every team command does.
         """
         await self.bot.change_queue.ask(
             TEAM_RESERVE_ROLE,
@@ -536,7 +536,7 @@ async def _send_long(interaction: discord.Interaction, text: str, *, ephemeral: 
 
 
 # ---------------------------------------------------------------------------
-# The forms a team is added and changed on (#381)
+# The forms a team is added and changed on
 # ---------------------------------------------------------------------------
 
 
@@ -587,7 +587,7 @@ class _TeamAddModal(LeagueModal, title="Add a team"):
 
 
 class _TeamModifyModal(LeagueModal, title="Modify a team"):
-    """A team's fields, pre-filled, and only those that may change now (#381).
+    """A team's fields, pre-filled, and only those that may change now.
 
     While the team list is open the form holds all three; once it is fixed it holds the role
     alone, because that is the only thing a league may still change. The windows are checked

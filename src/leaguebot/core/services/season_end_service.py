@@ -1,15 +1,12 @@
-"""season_end_service — what the end of a season does, as jobs on the change queue (#439).
+"""season_end_service — what the end of a season does, as jobs on the change queue.
 
 A season ends when a league admin runs `/season complete`, `/season cancel` or `/season abort`,
 and in no other way: each is a change type of the queue (`season_end_changes`,
 `cancellation_changes`), whose jobs this module holds the shared ones of (`shared_steps`) and
 whose saves it holds the writes of (`write_driver_history_entries_on`, `season_role_targets_on`).
 
-There was once a second entry point, `check_and_schedule_season_end`, which armed a timer to end a
-season seven days after its last round. Nothing ever called it, so it sat unreachable while reading
-as live code, and it misled the README into describing automatic completion until 2026-08-17. It
-was deleted with issue #154, whose lifecycle settles the question the other way: a season is
-completed explicitly, once every division is finished or cancelled.
+No timer ends a season: a season is completed explicitly, once every division is finished or
+cancelled.
 """
 
 from __future__ import annotations
@@ -69,7 +66,7 @@ async def write_driver_history_entries_on(
     A driver took part in a division once a placement of theirs in it was committed, and
     stays part of it whatever becomes of the placement afterwards: a driver moved, released
     or sacked mid-season holds an entry for every division they raced in, as the season's
-    history lists them (issue #220). Read from ``driver_division_memberships``, which records
+    history lists them. Read from ``driver_division_memberships``, which records
     each committed placement as it is committed and is never cleared by a placement changing.
 
     Commits nothing: the caller's connection carries the write and the caller commits it.
@@ -267,7 +264,7 @@ def shared_steps(
     test_mode_flushed: "AwaitedHook",
     drivers_deleted: "AwaitedHook",
 ) -> dict[str, Step]:
-    """The jobs the completion, the cancellation and the abort share (#439), each an ACT.
+    """The jobs the completion, the cancellation and the abort share, each an ACT.
 
     - `revoke_roles`: one driver's division, team and driver roles taken back, from the targets
       the save read (`season_role_targets_on`). A member who left or a role gone is passed over.

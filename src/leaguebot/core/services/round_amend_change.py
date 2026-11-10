@@ -1,12 +1,12 @@
-"""Amending a round on the change queue (#439, slice 4b, amendment A).
+"""Amending a round on the change queue.
 
-`/round amend` offers its confirmation as it always has. Confirm reads the round for its number and
-asks the queue for this change, which is judged when it is asked and again when it comes up to run,
-in the words Confirm used: a round that has gone, a window that has passed or results entered
-while the amendment waited refuse it with the same reply. It imports nothing from a module and no
-cog: what it needs of weather and attendance reaches it through the hooks the builder makes and
-signs them up to (the windows, the save, the posts and clean-ups, the steps they define and the
-words for a step left undone), and it reads the season through the service it is handed.
+`/round amend` offers its confirmation. Confirm reads the round for its number and asks the queue
+for this change, which is judged when it is asked and again when it comes up to run, in the words
+Confirm used: a round that has gone, a window that has passed or results entered while the amendment
+waited refuse it with the same reply. It imports nothing from a module and no cog: what it needs of
+weather and attendance reaches it through the hooks the builder makes and signs them up to (the
+windows, the save, the posts and clean-ups, the steps they define and the words for a step left
+undone), and it reads the season through the service it is handed.
 
 **The refusal because a cancellation is in hand is made only as the change is asked for**
 (`CheckContext.change_id` is None), through `cancellation_changes.cancellation_holding_amendment`.
@@ -15,12 +15,13 @@ cancellation queued behind it must not make the amendment refuse itself. Two req
 same instant can both pass; the queue then runs them in order and the second reads what the first
 wrote, a renumbering included.
 
-**The same steps arm a round again after a refused cancellation** (`round_rearm_change`, #439): a
+**The same steps arm a round again after a refused cancellation** (`round_rearm_change`): a
 cancellation refused at its save has already removed the timed work of its rounds, and asks one
 `season.round.rearm` for each round that is still to be run or awaiting its results, which judges
 the round as it stands when it runs and arms it as an amended round is armed, catching up what fell
-due meanwhile. For a round already raced, or one that ended cancelled for every session being entered as not
-held, it arms the next-day clean-ups alone (the payload's `cleanups_only`). Neither of its two jobs can be discarded.
+due meanwhile. For a round already raced, or one that ended cancelled for every session being
+entered as not held, it arms the next-day clean-ups alone (the payload's `cleanups_only`). Neither
+of its two jobs can be discarded.
 
 `amendment_in_hand` reads the queue for an amendment of a division, so that a cancellation is
 refused while one is waiting, running or stopped. It is read from the queue, never from memory
@@ -147,7 +148,7 @@ _NOTHING_CHANGED = "**Nothing has been changed.** Run `/round amend` again to st
 
 
 def no_longer_amendable(reasons: Iterable[str]) -> str:
-    """The refusal of an amendment the rules no longer allow, as Confirm has always said it."""
+    """The refusal of an amendment the rules no longer allow, in the words Confirm uses."""
     return (
         "⛔ This round can no longer be amended:\n"
         + "\n".join(f"• {reason}" for reason in reasons)
@@ -379,7 +380,7 @@ def _round_change(
         that its refusal is spoken once, at the save's own moment, however long a stop between
         them lasts. What the amendment withdraws and what becomes of the check-in call are not
         kept here, nor the phases to draw at once: the save plans the first from what it reads
-        when it runs and the arming the rest (owner, 2026-10-09)."""
+        when it runs and the arming the rest."""
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:
             raise LookupError(f"round {ctx.payload['round_id']} is no longer there")
@@ -450,7 +451,7 @@ def _round_change(
         forecasts it withdraws and those of them that were posted, whether the check-in was
         reopened and whether a call stood). Planned from `judge`'s instead,
         a save tried again after a window passed would withdraw a forecast that now stands, or
-        leave a call to a schedule whose moment has gone (owner, 2026-10-09)."""
+        leave a call to a schedule whose moment has gone."""
         if ctx.actor_id is None or ctx.actor_name is None:
             raise RuntimeError("amending a round is the act of a member, and none is recorded")
         judgement = judged(ctx) or {}
@@ -558,7 +559,7 @@ def _round_change(
 
     async def arm(ctx: StepContext) -> StepResult:
         """Arm the round's timed work as the round stands now, at the windows `judge` read, and
-        catch up what fell due while it stood removed, as a restart does (owner, 2026-10-09).
+        catch up what fell due while it stood removed, as a restart does.
 
         The amendment can stand stopped for hours, at the save or before it, and a discard or a
         refusal arms the round again at its old moment: a timer armed for a moment already past
@@ -568,8 +569,7 @@ def _round_change(
         check-in is not over, is posted where it has fallen due (`call_fell_due`).
 
         Under test mode the results submission is not run at once: `/test-mode advance` runs a
-        test season's rounds in their turn (owner, 2026-10-09: "Leave it to /test-mode
-        advance"). Its call is still posted (`post_call`)."""
+        test season's rounds in their turn. Its call is still posted (`post_call`)."""
         judgement = judged(ctx) or {}
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:
@@ -623,7 +623,7 @@ def _round_change(
         else:
             # Weather off, or a mystery round moved inside its first horizon, whose notice already
             # told the drivers and which must not be fired retroactively: its forecasts are not
-            # armed, but its results submission is, or the round would never leave Not run (#133).
+            # armed, but its results submission is, or the round would never leave Not run.
             scheduler.schedule_result_submission_jobs(
                 [rnd], division_meta={rnd.division_id: (season_number, tier)}
             )
@@ -737,8 +737,7 @@ def _round_change(
         if discarded(view(ctx, JUDGE)) or discarded(view(ctx, UNARM)):
             return NOTHING_AMENDED.format(**words)
         # The arming runs whatever became of the save, and what it catches up can be discarded
-        # too: it is named beneath the refusal or the discarded save as beneath a success
-        # (owner, 2026-10-09).
+        # too: it is named beneath the refusal or the discarded save as beneath a success.
         refused = (view(ctx, APPLY).result or {}).get("refused")
         if refused:
             return str(refused) + not_done(ctx)

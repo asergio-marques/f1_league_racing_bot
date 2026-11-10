@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class SackSaved:
-    """A sack written on the caller's save, and what is left for a job of its own to do (#439).
+    """A sack written on the caller's save, and what is left for a job of its own to do.
 
     *divisions* are those the driver left, whose lineups the caller asks for. *revoke_role_ids*
     are every role the driver's placements entitled them to, read before the placements were
@@ -66,7 +66,7 @@ class LineupPosted:
 
 @dataclass
 class RoleGrantOutcome:
-    """What granting one role to every driver did (#374).
+    """What granting one role to every driver did.
 
     *granted* counts the drivers given it. *not_granted* is the Discord id of each driver
     Discord would not give it to; a driver no longer in the server is in neither, there being
@@ -87,7 +87,7 @@ async def uncommitted_placements_on(db: aiosqlite.Connection, season_id: int) ->
 
     Each row: driver_profile_id, discord_user_id, is_test_driver, test_display_name,
     division_id, division_name, division_role_id, team_name (the shorthand, which keys the
-    role mapping) and team_full_name (what a review shows) — #381.
+    role mapping) and team_full_name (what a review shows).
     """
     cursor = await db.execute(
         """
@@ -148,15 +148,15 @@ class PlacementService:
     ) -> bool:
         """Grant *role_ids* to the member *user_id*, **raising** where it could not be done.
 
-        What a job on the change queue calls (#439): a driver's roles are theirs to give and the
-        queue stops where Discord will not, where `_grant_roles` logs and carries on. A member
-        Discord reports absent (`NotFound`) has left the server and is passed over: nothing is
-        given, nothing raises, and the result is False. Anything else stops the job with
-        `StepFailedOnDiscord`, raised from the Discord fault where there is one: the member
-        could not be fetched for another reason, a role is no longer on the server (checked
-        before any is given, so no driver is left with half), or Discord refuses the grant.
-        *reason* is what Discord's audit log is given for the grant. Granting is idempotent, so a
-        retry gives again what is already held.
+        What a job on the change queue calls: a driver's roles are theirs to give and the queue
+        stops where Discord will not, where `_grant_roles` logs and carries on. A member Discord
+        reports absent (`NotFound`) has left the server and is passed over: nothing is given,
+        nothing raises, and the result is False. Anything else stops the job with
+        `StepFailedOnDiscord`, raised from the Discord fault where there is one: the member could
+        not be fetched for another reason, a role is no longer on the server (checked before any is
+        given, so no driver is left with half), or Discord refuses the grant. *reason* is what
+        Discord's audit log is given for the grant. Granting is idempotent, so a retry gives again
+        what is already held.
         """
         try:
             member = await guild.fetch_member(user_id)
@@ -185,9 +185,9 @@ class PlacementService:
     ) -> bool:
         """Take *role_ids* from the member *user_id*, **raising** where it could not be done.
 
-        What a job on the change queue calls when a season's end takes a driver's roles back
-        (#439): the queue stops where Discord will not, where `_revoke_roles` logs and carries
-        on. The mirror of `grant_roles`. A member Discord reports absent (`NotFound`) has left
+        What a job on the change queue calls when a season's end takes a driver's roles back:
+        the queue stops where Discord will not, where `_revoke_roles` logs and carries on. The
+        mirror of `grant_roles`. A member Discord reports absent (`NotFound`) has left
         the server, and their roles went with them: nothing is taken, nothing raises, and the
         result is False. A member who cannot be fetched for any other reason, or a removal
         Discord refuses, stops the job with `StepFailedOnDiscord`, raised from the fault.
@@ -222,7 +222,7 @@ class PlacementService:
     async def grant_to_every_driver(
         self, guild: discord.Guild, role_id: int
     ) -> RoleGrantOutcome:
-        """Grant *role_id* to every driver of the league, and say what came of it (#374).
+        """Grant *role_id* to every driver of the league, and say what came of it.
 
         Called when a league role deleted from the server is replaced while the season's
         configuration is fixed. Nobody holds a deleted role, so every driver who held it lost it
@@ -323,11 +323,10 @@ class PlacementService:
         nothing and writing no audit entry: the change that calls it records the mapping. Returns
         the role the team held before, or None. *now* is when the mapping is stamped updated.
 
-        **A role belongs to one team only** (decided 2026-09-22, with #375). A submission names
-        a team by its role, and a result records the team the role resolves to, so a role two
-        teams held would name either. Raises ``Refused`` naming the team that holds it, and
-        writes nothing; re-setting a team's own role is allowed. The schema's unique index on
-        ``role_id`` is the backstop.
+        **A role belongs to one team only.** A submission names a team by its role, and a result
+        records the team the role resolves to, so a role two teams held would name either. Raises
+        ``Refused`` naming the team that holds it, and writes nothing; re-setting a team's own role
+        is allowed. The schema's unique index on ``role_id`` is the backstop.
         """
         holder = await self._team_holding_role(db, role_id, team_name)
         if holder is not None:
@@ -425,7 +424,7 @@ class PlacementService:
         return [int(row["discord_user_id"]) for row in await cursor.fetchall()]
 
     # ------------------------------------------------------------------
-    # Confirming placements mid-season (issue #220)
+    # Confirming placements mid-season
     # ------------------------------------------------------------------
 
     async def uncommitted_placements(self, season_id: int) -> list[dict]:
@@ -499,10 +498,10 @@ class PlacementService:
 
         **It bounds reserve placements and nothing else.** A driver going into an ordinary
         race team never joins the reserve block, so a full block says nothing about them.
-        Until #140 this guard was not told which team was being filled and counted the
-        division's reserves on every assignment, which left a division carrying as many
-        reserves as its template drew slots for unable to seat anybody at all — the refusal
-        blaming the reserve block for a placement that was never part of it.
+        So it is told which team is being filled: counting the division's reserves on every
+        assignment would leave a division carrying as many reserves as its template draws slots
+        for unable to seat anybody at all — the refusal blaming the reserve block for a
+        placement that was never part of it.
 
         *adding* is how many reserves the change seats — one for a placement, more for a test
         roster seated whole (``guard_roster_capacity``).
@@ -599,10 +598,10 @@ class PlacementService:
         **A reserve is not an entry of a classification.** They stand in for an absent driver
         and add no car to the grid, and ``standings_service`` filters ``ti.is_reserve = 0`` out
         of every classification it builds. So the count below excludes them, and a placement
-        *into* the reserve team is not measured at all — it grows no classification. Until #140
-        this guard counted every assignment of the division and added one whatever team was
-        being filled, which refused an ordinary placement one seat early for each reserve on
-        the books, and refused a reserve outright once the classified drivers filled the rows.
+        *into* the reserve team is not measured at all — it grows no classification. Counting
+        every assignment of the division, and adding one whatever team is being filled, would
+        refuse an ordinary placement one seat early for each reserve on the books, and a reserve
+        outright once the classified drivers filled the rows.
 
         The **constructors** ceiling is not checked here. Seating a driver adds no team, so no
         driver assignment can breach it; it is checked at ``/season placements-review``, which is where a
@@ -727,8 +726,8 @@ class PlacementService:
 
         *added* maps each team of *division_id* to the number of drivers the change seats in
         it. Test mode seats its fake drivers without passing through ``guard_assign``, so
-        without this a roster larger than the league's templates could hold was accepted, and
-        the rehearsal passed a configuration a real season would refuse (#150).
+        without this a roster larger than the league's templates could hold would be accepted,
+        and the rehearsal would pass a configuration a real season would refuse.
 
         **The count is per division, summed across its teams.** A bulk roster seats a whole
         division at once, and two teams that each fit on their own can together outgrow the
@@ -763,12 +762,12 @@ class PlacementService:
             )
 
     # ------------------------------------------------------------------
-    # Assign driver (T010)
+    # Assign driver
     # ------------------------------------------------------------------
 
     @staticmethod
     async def _team_full_name(db, division_id: int, team_name: str) -> str:
-        """The full name of the division's team held under the shorthand *team_name* (#381).
+        """The full name of the division's team held under the shorthand *team_name*.
 
         What a reply and a log line show. The shorthand is what every key here is, so the two
         are read apart: a command answers with the name a league reads, and writes the other.
@@ -1086,7 +1085,7 @@ class PlacementService:
         The capacity guards `move_driver` makes before it writes: the reserve block, the
         attendance sheet's rows, the driver standings' and an image template's. Public so that
         a sanction's check, a job of its own, can ask them before the move is saved, since they
-        read templates off the loop and cannot run inside a save (#439). Raises Refused.
+        read templates off the loop and cannot run inside a save. Raises Refused.
         """
         await self._guard_image_capacity(to_division_id, season_id, team_name)
 
@@ -1104,14 +1103,14 @@ class PlacementService:
     ) -> dict:
         """Move a committed driver from their seat in one division to a team of the same or another.
 
-        One change (issue #220): the old seat freed and the new one taken in a single
-        transaction (`move_on`), the roles of the seat left revoked where no other seat of the
-        driver maps to them, the roles of the seat taken granted, and the lineup of each
-        division touched posted once. A driver moved to another division leaves the points they
-        scored in the division they left, those being counted per division. The roles are
-        changed swallowing Discord's refusals: this is the committing form `/attendance sync`
-        moves a driver through, with no queue to report to. `/driver move` is a change on the
-        queue (`driver_changes`), and a sanction's own role change raises.
+        One change: the old seat freed and the new one taken in a single transaction (`move_on`),
+        the roles of the seat left revoked where no other seat of the driver maps to them, the roles
+        of the seat taken granted, and the lineup of each division touched posted once. A driver
+        moved to another division leaves the points they scored in the division they left, those
+        being counted per division. The roles are changed swallowing Discord's refusals: this is the
+        committing form `/attendance sync` moves a driver through, with no queue to report to.
+        `/driver move` is a change on the queue (`driver_changes`), and a sanction's own role change
+        raises.
 
         Refused as `move_on` and `guard_move` refuse.
 
@@ -1285,7 +1284,7 @@ class PlacementService:
         }
 
     # ------------------------------------------------------------------
-    # Unassign driver (T012)
+    # Unassign driver
     # ------------------------------------------------------------------
 
     async def judge_release_on(
@@ -1505,7 +1504,7 @@ class PlacementService:
         }
 
     # ------------------------------------------------------------------
-    # Revoke all placement roles (T014)
+    # Revoke all placement roles
     # ------------------------------------------------------------------
 
     async def revoke_all_placement_roles(
@@ -1558,7 +1557,7 @@ class PlacementService:
         }
 
     # ------------------------------------------------------------------
-    # A driver's roles follow their current account (issue #243)
+    # A driver's roles follow their current account
     # ------------------------------------------------------------------
 
     async def driver_role_ids(self, driver_profile_id: int) -> set[int]:
@@ -1612,7 +1611,7 @@ class PlacementService:
         return roles
 
     # ------------------------------------------------------------------
-    # Sack driver (T015)
+    # Sack driver
     # ------------------------------------------------------------------
 
     async def judge_sack_on(self, db, *, driver_profile_id: int, season_id: int) -> dict:
@@ -1764,14 +1763,14 @@ class PlacementService:
         """Sack a committed driver: revoke every role, free every seat, return to Not Signed Up.
 
         Returns the divisions the driver left, whose lineups the caller asks the change queue
-        to post (#439); the sack posts none.
+        to post; the sack posts none.
 
-        Issue #220. Sacking is for a driver whose placement is confirmed — an uncommitted one
-        is unassigned or rejected instead — and is available only while the season is
-        ongoing, which the command checks. The profile is **never deleted here**: a driver
-        without the former-driver flag who reaches Not Signed Up is pending deletion, and is
-        deleted by the driver pass that ends the season. Their attendance, results and
-        standings rows are therefore kept, and so is every signup they made.
+        Sacking is for a driver whose placement is confirmed — an uncommitted one is unassigned or
+        rejected instead — and is available only while the season is ongoing, which the command
+        checks. The profile is **never deleted here**: a driver without the former-driver flag who
+        reaches Not Signed Up is pending deletion, and is deleted by the driver pass that ends the
+        season. Their attendance, results and standings rows are therefore kept, and so is every
+        signup they made.
 
         The season's placements are removed (`sack_on`), so the driver holds no seat and gains
         no history entry for the season. The roles are revoked first, swallowing Discord's
@@ -1823,12 +1822,12 @@ class PlacementService:
     ) -> LineupPosted | None:
         """Post the division's lineup afresh, **raising** where it could not be posted.
 
-        What the post job of a change on the change queue calls (#439): a lineup channel the
-        division was given and the guild no longer holds, or a send Discord refuses, raises
+        What the post job of a change on the change queue calls: a lineup channel the division was
+        given and the guild no longer holds, or a send Discord refuses, raises
         `StepFailedOnDiscord`, for the queue to stop on and try again; so does a division never
-        given a lineup channel, the message naming `/division lineup-channel`. A division no
-        longer there posts nothing and gives None. The post is all it does: the job's `record`
-        saves the new id and a job after it deletes the message replaced.
+        given a lineup channel, the message naming `/division lineup-channel`. A division no longer
+        there posts nothing and gives None. The post is all it does: the job's `record` saves the
+        new id and a job after it deletes the message replaced.
 
         *as_text* skips the picture and posts the textual lineup: a job tried again goes as text
         (Constitution XIV, rule 8).
@@ -1980,7 +1979,7 @@ class PlacementService:
                 JOIN team_instances ti ON ti.id = ts.team_instance_id
                 JOIN seasons s ON s.id = dsa.season_id
                 WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
-                  -- A placement not yet confirmed mid-season is not posted (issue #220).
+                  -- A placement not yet confirmed mid-season is not posted.
                   AND (dsa.committed = 1 OR s.status != 'ACTIVE')
                 ORDER BY ti.is_reserve ASC, ti.full_name ASC
                 """,

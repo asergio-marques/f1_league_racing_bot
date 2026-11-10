@@ -1,11 +1,10 @@
 """ConfigService — the league's bot configuration, and the claim on its server.
 
-**The table holds one row, and the claim is a column of it** (issue #247). `server_id` is the
-league's server, and NULL while the bot serves none. `/bot pack` clears it with the four
-settings and leaves the row, because the row also carries what belongs to the league rather
-than the server — test mode and two module flags — and those travel with it. Deleting the
-row, as the withdrawn full reset did, would have lost them. So "configured" means "the row
-holds a server", never "a row exists", and every read here says so.
+**The table holds one row, and the claim is a column of it.** `server_id` is the league's server,
+and NULL while the bot serves none. `/bot pack` clears it with the four settings and leaves the row,
+because the row also carries what belongs to the league rather than the server — test mode and two
+module flags — and those travel with it. Deleting the row would lose them. So "configured" means
+"the row holds a server", never "a row exists", and every read here says so.
 """
 
 from __future__ import annotations
@@ -86,13 +85,13 @@ class ConfigService:
         module flags here means a claim can never carry a stale value of either over what the
         row already held.
 
-        **It is also the claim** (issue #244). One bot serves one league, and the league's
+        **It is also the claim.** One bot serves one league, and the league's
         server is the `server_id` of the one row this table holds. A fresh bot has no row,
         and the insert writes one only while none exists; a packed bot has a row whose
-        `server_id` is NULL (issue #247), and the update writes only while it still is. Only
-        the four settings are written there — test mode and the module flags are the
-        league's and came with it. Either way the condition is part of the statement, not a
-        read before it, so two servers racing to `/bot init` cannot both win.
+        `server_id` is NULL, and the update writes only while it still is. Only the four settings
+        are written there — test mode and the module flags are the league's and came with it. Either
+        way the condition is part of the statement, not a read before it, so two servers racing to
+        `/bot init` cannot both win.
         """
         cursor = await db.execute(
             """
@@ -133,9 +132,8 @@ class ConfigService:
         return cursor.rowcount > 0
 
     #: The four settings `/bot init` establishes and the four commands beside it repair, the
-    #: league's two roles, which `/bot base-role` and `/bot driver-role` set (issue #276), and
-    #: the hub's channel and the panel posted there (issue #279), and test mode's nationality
-    #: switch.
+    #: league's two roles, which `/bot base-role` and `/bot driver-role` set, and the hub's
+    #: channel and the panel posted there, and test mode's nationality switch.
     #: Named here rather than interpolated from the caller so that no command can reach a
     #: column of its own choosing.
     _SETTABLE_COLUMNS = {

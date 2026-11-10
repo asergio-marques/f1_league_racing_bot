@@ -12,9 +12,9 @@ one can be produced; the text is what the league falls back to, never what it lo
 
 A graphic does not. The picture draws the division's own name and says what it is, so a
 line of message text above it repeats the picture rather than introducing it, and the
-lineup graphic has never carried one either (2026-09-07). The heading is still built in
-one place, because the text is posted from two — the first try and the retry that follows a
-refusal, both of them the change queue's.
+lineup graphic carries none either. The heading is still built in one place, because the text is
+posted from two — the first try and the retry that follows a refusal, both of them the change
+queue's.
 
 Both forms post the calendar and nothing more: the id is saved with the post's mark and the
 message it replaces is deleted by a job after it (`standing_posts`), so whichever posted last is the
@@ -100,13 +100,12 @@ def textual_calendar(division_name: str, rounds) -> str:
     the one thing the graphic cannot do (Constitution XIV.15).
 
     A cancelled round keeps its line, struck through and marked, so the calendar still shows
-    the season as it was planned and says which weekend was called off (#175). Every other
+    the season as it was planned and says which weekend was called off. Every other
     line is unchanged, byte for byte.
     """
     lines = [calendar_heading(division_name)]
-    # Ordered by the moment each is run, which is the key the inline implementation this
-    # replaced used. Byte-identical output when the module is off is the contract (SC-006),
-    # so the sort key is preserved rather than swapped for the round number.
+    # Ordered by the moment each is run, not by the round number: byte-identical output when
+    # the module is off is the contract (SC-006).
     for entry in sorted(rounds, key=lambda r: r.scheduled_at):
         unix = int(entry.scheduled_at.timestamp())
         track = entry.track_name or "Mystery"
@@ -241,7 +240,7 @@ async def replace_calendar_message(
     if image_path is not None:
         # Closed here, where the attachment is, so the file's handle is released before
         # the caller's `finally` hands the path to `drawing.discard_picture` — the only
-        # place the render itself is released (#283), so core need not import the image
+        # place the render itself is released, so core need not import the image
         # module's own discard, which knows its render directories as its private rule.
         attachment = discord.File(str(image_path), filename=image_path.name)
         try:
@@ -401,7 +400,7 @@ def calendar_steps(seasons: "SeasonService", drawing: ImageDrawing) -> dict[str,
     failed removes the copy it sent first.
 
     *drawing* is the image module's answer to core's drawing protocol, the one the builder
-    attaches to the bot and hands to every change that plans this job (#283): `post_calendar`
+    attaches to the bot and hands to every change that plans this job: `post_calendar`
     draws through it rather than reaching into the bot, so a stand-in can answer for a test
     without a template or a rasteriser.
     """
@@ -510,7 +509,7 @@ def calendar_sync_change(seasons: "SeasonService", drawing: ImageDrawing) -> Cha
     posting: a render that fails posts nothing and the closing job writes the refusal.
 
     *drawing* is the image module's own answer to core's drawing protocol, handed by the
-    builder and passed straight on to `calendar_steps` (#283).
+    builder and passed straight on to `calendar_steps`.
     """
 
     async def check(ctx: CheckContext) -> Verdict:

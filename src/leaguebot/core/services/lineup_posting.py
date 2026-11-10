@@ -104,9 +104,9 @@ async def record_lineup_on(
     db: aiosqlite.Connection, ctx: StepContext, result: StepResult, *, now: datetime
 ) -> None:
     """Save the new lineup message on the division, and the audit of the posting, in the save
-    that marks the post job done (#439). Nothing is committed here.
+    that marks the post job done. Nothing is committed here.
 
-    The audit is the system's (actor 0), as both paths wrote it before; a picture says so. It is
+    The audit is the system's (actor 0); a picture says so. It is
     stamped *now*.
     """
     new = result.result.get("new")

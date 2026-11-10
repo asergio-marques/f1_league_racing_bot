@@ -1,4 +1,4 @@
-"""`core.clean`: `/clean-bot` as a change of the queue (#439, 6b).
+"""`core.clean`: `/clean-bot` as a change of the queue.
 
 The command deletes the newest *count* of the bot's own messages in the channel it was run in, at
 most ten, and nothing else. It is a member's change, repeatable, carried out on the league lane
@@ -17,10 +17,10 @@ in holds other people's between them, so the scan reaches further than the count
 bound: a channel whose last two hundred messages hold none of the bot's deletes nothing rather than
 reading to the beginning of time.
 
-**Why ten.** Deletion on Discord has no undo, and the command once swept five hundred. Ten is
-enough for the job it is for: clearing the tail of a multi-message command that did not clear
-itself. The cap is the command's parameter (`MAX_DELETIONS`); the change holds to the *count* it is
-given.
+**Why ten.** Deletion on Discord has no undo, so the cap bounds what one mistyped count can
+lose. Ten is enough for the job it is for: clearing the tail of a multi-message command that did
+not clear itself. The cap is the command's parameter (`MAX_DELETIONS`); the change holds to the
+*count* it is given.
 """
 from __future__ import annotations
 

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 class DefaultTeam:
     """A team of the server's list.
 
-    A team has three names, each with one job (#381): its **role**, which identifies it; its
+    A team has three names, each with one job: its **role**, which identifies it; its
     **shorthand** (``name``), a short alias a league types wherever a team is entered, and the
     filename its artwork is found by; and its **full name**, which is what is shown.
     """

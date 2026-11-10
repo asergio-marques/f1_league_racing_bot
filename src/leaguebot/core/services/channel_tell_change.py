@@ -1,4 +1,4 @@
-"""`channel.tell`: a change that tells a channel one line, on the change queue (#439, 6b).
+"""`channel.tell`: a change that tells a channel one line, on the change queue.
 
 A job or a start-up step that needs a one-line notice in a channel asks this change, as the bot's.
 Its one job, `tell`, posts the payload's `text` in the channel `channel_id`, and stops the queue

@@ -291,7 +291,7 @@ async def signup_prerequisite_problems(
 
 
 async def team_name_problems(team_service: TeamService, season_id: int | None) -> list[str]:
-    """Every team whose name cannot become an asset filename (047 FR-032).
+    """Every team whose name cannot become an asset filename.
 
     Checks the server's team configuration and every division of the season under
     setup, naming **every** offending team rather than stopping at the first — a
@@ -378,7 +378,7 @@ async def lineup_problems(
     team_service: TeamService,
     image_drawing: ImageDrawing,
 ) -> list[str]:
-    """Where the lineup template cannot draw a division of this season (047 FR-022).
+    """Where the lineup template cannot draw a division of this season.
 
     Counts each division's race teams, in tier order, and the drivers seated in each —
     an empty seat uncounted, the reserve team unhanded — and asks the drawing. The image

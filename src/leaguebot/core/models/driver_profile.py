@@ -10,10 +10,10 @@ class DriverState(str, Enum):
 
     There are no ban states. ``SEASON_BANNED`` and ``LEAGUE_BANNED`` were defined and wired
     into the transition table, but no command was ever built to impose or lift a ban, so a
-    league could never see either (issue #221). Sanctions belong to the stewarding module,
-    which will bring whatever shape of ban it needs rather than inherit one designed against
-    commands that were never written — so do not re-add them here ahead of it.
-    ``tests/core/test_driver_states.py`` pins this set.
+    league could never see either. Sanctions belong to the stewarding module, which will bring
+    whatever shape of ban it needs rather than inherit one designed against commands that were never
+    written — so do not re-add them here ahead of it. ``tests/core/test_driver_states.py`` pins this
+    set.
     """
 
     NOT_SIGNED_UP                  = "NOT_SIGNED_UP"
@@ -38,11 +38,9 @@ class InvalidDriverTransition(ValueError):
 class DriverProfile:
     """A driver, as the league holds them.
 
-    Carries no ban counters. ``race_ban_count``, ``season_ban_count``, ``league_ban_count``
-    and ``ban_races_remaining`` were only ever written as zero and went with the ban states
-    in issue #221; a qualifying ban never had a counter at all. The bot issues the four
-    sanctions in ``leaguebot.image.services.image_preview_data.VERDICT_SANCTIONS`` and no others; the fifth
-    entry there, no further action, is no sanction at all (#138).
+    Carries no ban counters, as there are no ban states to count towards. The bot issues the
+    four sanctions in ``leaguebot.image.services.image_preview_data.VERDICT_SANCTIONS`` and no
+    others; the fifth entry there, no further action, is no sanction at all.
     """
 
     id: int

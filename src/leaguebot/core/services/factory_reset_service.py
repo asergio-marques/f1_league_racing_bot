@@ -1,4 +1,4 @@
-"""factory_reset_service — return the bot to a fresh install (issue #247).
+"""factory_reset_service — return the bot to a fresh install.
 
 Three steps, in an order that is the whole of the design:
 
@@ -248,12 +248,11 @@ async def clean_discord(
     channel; the author is checked message by message.
 
     **Progress is reported as it goes, and before each channel as well as after it**, through
-    *report* — the command edits one direct message to the owner with it (decided
-    2026-09-19). A run can take far longer than an interaction lives: messages older than
-    fourteen days are deleted one request at a time, under Discord's rate limits. So if the
-    process stops part-way, the last report names the channel it was working in, and the
-    ones before it were finished. A channel that cannot be cleaned is reported and skipped
-    rather than ending the run.
+    *report* — the command edits one direct message to the owner with it. A run can take far
+    longer than an interaction lives: messages older than fourteen days are deleted one request
+    at a time, under Discord's rate limits. So if the process stops part-way, the last report
+    names the channel it was working in, and the ones before it were finished. A channel that
+    cannot be cleaned is reported and skipped rather than ending the run.
 
     Channels are visited in the order `gather_targets` gives, which is sorted, so a report
     of where it stopped reads the same against a second run.

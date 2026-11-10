@@ -2,8 +2,8 @@
 
 A season carries two states. ``status`` is the coarse grain every older reader was written
 against: SETUP until its placements are first confirmed, ACTIVE from then until it ends,
-and COMPLETED or CANCELLED after. ``stage`` is the lifecycle state issue #220 specifies,
-refining SETUP and ACTIVE into the stages a league actually passes through.
+and COMPLETED or CANCELLED after. ``stage`` is the lifecycle state the core specification
+sets, refining SETUP and ACTIVE into the stages a league actually passes through.
 
 The two are kept in step by the database (the `seasons_stage_*` triggers) and never disagree:
 ``STAGES_OF_STATUS`` is the mapping, and ``test_season_stage_matches_status`` pins it. A

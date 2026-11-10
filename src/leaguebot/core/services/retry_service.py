@@ -68,7 +68,7 @@ def delivery_lock() -> asyncio.Lock:
 
 
 # ---------------------------------------------------------------------------
-# T003 — enqueue
+# enqueue
 # ---------------------------------------------------------------------------
 
 async def enqueue(
@@ -98,7 +98,7 @@ async def enqueue(
 
 
 # ---------------------------------------------------------------------------
-# T004 — get_all_pending
+# get_all_pending
 # ---------------------------------------------------------------------------
 
 _COLUMNS = (
@@ -139,7 +139,7 @@ async def get_pending(db_path: str, entry_id: int) -> PendingMessage | None:
 
 
 # ---------------------------------------------------------------------------
-# T005 — mark_delivered
+# mark_delivered
 # ---------------------------------------------------------------------------
 
 async def mark_delivered(db_path: str, entry_id: int) -> None:
@@ -152,7 +152,7 @@ async def mark_delivered(db_path: str, entry_id: int) -> None:
 
 
 # ---------------------------------------------------------------------------
-# T006 — mark_failed
+# mark_failed
 # ---------------------------------------------------------------------------
 
 async def mark_failed(
@@ -178,7 +178,7 @@ async def mark_failed(
 
 
 # ---------------------------------------------------------------------------
-# T007 + T016–T018 — attempt_delivery
+# attempt_delivery
 # ---------------------------------------------------------------------------
 
 async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot", *, now: datetime) -> bool:
@@ -202,7 +202,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot", *, now: date
     was never tried (see the module docstring).
 
     On failure: if retry_count >= RETRY_WARN_THRESHOLD a warning is posted to
-    the log channel (T017); then mark_failed is called to increment the counter.
+    the log channel; then mark_failed is called to increment the counter.
     The warning fires every cycle once the threshold is crossed.
     """
     import discord
@@ -238,7 +238,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot", *, now: date
         if named is not None:
             target = named
 
-        # --- Warn before attempt if threshold already crossed (T017) ---
+        # --- Warn before attempt if threshold already crossed ---
         if entry.retry_count >= RETRY_WARN_THRESHOLD:
             warn_msg = (
                 f"⚠️ Stuck retry entry id={entry.id}: message to channel "
@@ -288,7 +288,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot", *, now: date
             )
             return False
 
-        # --- Success (T016) ---
+        # --- Success ---
         await mark_delivered(db_path, entry.id)
 
     if first_failure:
@@ -305,7 +305,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot", *, now: date
 
 
 # ---------------------------------------------------------------------------
-# T018 — internal helper: best-effort log-channel post
+# Internal helper: best-effort log-channel post
 # ---------------------------------------------------------------------------
 
 def _safe_post_log(bot: "LeagueBot", message: str) -> None:

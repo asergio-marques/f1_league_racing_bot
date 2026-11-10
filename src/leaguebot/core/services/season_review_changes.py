@@ -1,10 +1,10 @@
-"""A season review on the change queue (#439, slice 6b, C92).
+"""A season review on the change queue.
 
 A season review is a report posted in the review's channel and, below it, the question with its
 Approve button. This file holds the change that posts one and the change that takes one down.
 
 **`season.review.post`** is the reviewer's: the whole review is posted by its jobs, in order, so
-that a stopped queue holds it whole and a post Discord refuses stops the queue (decision 5, core
+that a stopped queue holds it whole and a post Discord refuses stops the queue (core
 specification "Reviewing placements"). Its payload is ``channel_id``, ``season_id``,
 ``reviewer_id``, ``review`` (the command), ``pictures`` (each ``name``, ``division_id``, ``kind``,
 ``text``, and where the review draws it so, ``include_uncommitted`` or ``season_number``),

@@ -1,17 +1,17 @@
-"""What the bot does when a command, button or form fails (issue #156).
+"""What the bot does when a command, button or form fails.
 
 discord.py's own handlers log a traceback to the host and do nothing else, so a failure
-reached the league as Discord's "The application did not respond", or as a "thinking"
-indicator that quietly expired. `report_failure` is what `LeagueCommandTree`, `LeagueView`
+would reach the league as Discord's "The application did not respond", or as a "thinking"
+indicator that quietly expires. `report_failure` is what `LeagueCommandTree`, `LeagueView`
 and `LeagueModal` call instead. It does three things, each independent of the others:
 
-- **The host's log keeps the traceback**, exactly as the library logged it before.
+- **The host's log keeps the traceback**, exactly as the library logs it.
 - **The member is told, seen by them alone**, what did not finish and that the fault is the
   bot's rather than anything they entered. The reply names no exception: a Python type name
   tells a league manager nothing. It says the command may have been partly done, because
   nothing is rolled back and "nothing was changed" would be a promise the bot cannot keep.
   Naming the command and the kind of fault is what keeps it clear of the constitution's ban
-  on a generic "something went wrong" (decided 2026-09-19).
+  on a generic "something went wrong".
 - **The log channel gets one line** naming the member, what failed and the exception's type,
   so the league holds something to report. The member is named as every line in the channel
   names them, by display name and mention (`interaction_member`, from
@@ -21,7 +21,7 @@ and `LeagueModal` call instead. It does three things, each independent of the ot
 **The handler never raises.** It runs where the failure already happened: the interaction's
 token may have expired, or the fault may be the database `post_log` reads its channel from.
 The reply and the log line are therefore each attempted on their own, and a failure of
-either is logged and leaves the other to go ahead (decided 2026-09-19).
+either is logged and leaves the other to go ahead.
 
 **Two kinds of caller.** Almost every failure reaches this through the base classes: the
 command lets the error propagate, and one failure makes one line. A command, button or form

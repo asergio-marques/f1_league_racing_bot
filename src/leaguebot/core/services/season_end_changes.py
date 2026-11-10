@@ -1,13 +1,11 @@
-"""Completing and aborting a season, carried out on the change queue (#439, slice 5).
+"""Completing and aborting a season, carried out on the change queue.
 
 `/season complete` checks the season at the press, in the season cog, then asks the queue for this
-change. It used to end the season inside the command: the final classifications caught to a
-problems list, then the history, the roles, the signup window, the driver pass and test mode each
-caught or committed on its own, and the success line written whatever had happened. This module
-holds the change; the cog holds the press.
+change, so that no part of the season's end is caught or committed on its own and no success line
+is written whatever has happened. This module holds the change; the cog holds the press.
 
 **The check, when asked and again when the change runs** (`check`), refuses in this order, in the
-words the command used: no season being raced, or the payload's season no longer the one; a round
+command's own words: no season being raced, or the payload's season no longer the one; a round
 being amended, which would carry its corrections into the final classification before they are
 approved; rounds still to be finalised, or a division neither finished nor cancelled. It imports
 no module and no cog: results' refusal of a round being amended reaches it through the
@@ -295,8 +293,8 @@ async def season_end_in_hand(
     comes first. The job is 0 where only the end's own close is left. *excluding* leaves out the
     change whose id it is, so that a check made as the change runs does not find itself.
 
-    Every request about a season reads it, only as the request is asked (the owner, 2026-10-09:
-    one rule for every request about a season whose end is in hand).
+    Every request about a season reads it, only as the request is asked: one rule for every
+    request about a season whose end is in hand.
     """
     nearest: tuple[str, int] | None = None
     for kind in (SEASON_COMPLETE, SEASON_CANCEL, SEASON_ABORT):
@@ -527,8 +525,8 @@ def season_complete_change(
         if season is None or season.id != int(ctx.payload["season_id"]):
             return Verdict.refuse(NO_SEASON)
 
-        # **A second completion, asked while the first is in hand** (owner, 2026-10-09): refused
-        # at once, naming the job. Only as it is asked: as the change runs, it would find itself.
+        # **A second completion, asked while the first is in hand**: refused at once, naming
+        # the job. Only as it is asked: as the change runs, it would find itself.
         if ctx.change_id is None:
             hand = await season_end_in_hand(ctx.db_path, season.id)
             if hand is not None:
@@ -536,9 +534,9 @@ def season_complete_change(
                     season_end_refusal(SEASON_COMPLETE, hand, season.season_number)
                 )
 
-        # **Not while a round is being amended** (#345, decided 2026-09-21): completing posts
-        # each division's final classification from the database, which holds an open
-        # amendment's corrections before they are approved.
+        # **Not while a round is being amended**: completing posts each division's final
+        # classification from the database, which holds an open amendment's corrections before they
+        # are approved.
         held = await refusal_of_the_modules(
             season_end_refused, ctx.db_path, season.id, COMPLETION
         )
@@ -842,10 +840,10 @@ def season_abort_change(
         if season is None or season.id != int(ctx.payload["season_id"]):
             return Verdict.refuse(ABORT_ONLY_BEFORE)
 
-        # **Another end of the season in hand** (owner, 2026-10-09, answers A and B): refused at
-        # once, naming the job, ahead of the stage gate, whatever stage the season is in: a second
-        # abort, or a cancellation or completion of a season past its placements. Only as it is
-        # asked: as the change runs, it would find itself.
+        # **Another end of the season in hand**: refused at once, naming the job, ahead of the
+        # stage gate, whatever stage the season is in: a second abort, or a cancellation or
+        # completion of a season past its placements. Only as it is asked: as the change runs, it
+        # would find itself.
         if ctx.change_id is None:
             hand = await season_end_in_hand(ctx.db_path, season.id)
             if hand is not None:

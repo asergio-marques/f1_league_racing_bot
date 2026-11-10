@@ -160,7 +160,7 @@ class TestModeCog(commands.Cog):
 
         if entry is None:
             # The weather steps of raced rounds passed over on the way, named before the step
-            # advanced (owner, 2026-10-12, "Advance names what it skipped").
+            # advanced.
             passed_over = [_passed_over_line(step) for step in run.passed_over]
             if passed_over:
                 said = (
@@ -358,8 +358,8 @@ class TestModeCog(commands.Cog):
     async def _refuse_roster_change_outside_placements(
         self, interaction: discord.Interaction, *, record: bool = True
     ) -> bool:
-        """Reply and return True where the season is not in Placements (issue #220), having
-        recorded the refusal in the log channel unless *record* is False.
+        """Reply and return True where the season is not in Placements, having recorded the refusal
+        in the log channel unless *record* is False.
 
         Fake drivers are seated, removed and cleared only while the season is in Placements,
         which is where real drivers are placed too: test mode replicates the live flow rather
@@ -890,7 +890,7 @@ class TestModeCog(commands.Cog):
     # (submit-results removed — use /test-mode advance which now handles result submission)
 
     # ------------------------------------------------------------------
-    # The team parameter's autocomplete (#381)
+    # The team parameter's autocomplete
     # ------------------------------------------------------------------
 
     @roster_add.autocomplete("team_name")
