@@ -156,7 +156,7 @@ Answers to `architecture.md`, "How the code is laid out". Core's code sits in `c
 | Configuration | `config_service` (`ConfigService`) | `server_configs`, and the claim on the server |
 | Seasons, divisions, rounds | `season_service` (`SeasonService`), `season_lifecycle_service`, `season_end_service`, `round_moments`, `track_service` | seasons, divisions, rounds, sessions; reads `tracks` |
 | Teams and placements | `team_service` (`TeamService`), `placement_service` (`PlacementService`) | the list and the divisions' teams; `team_role_configs`, seats, placements, and the roles they grant |
-| Drivers | `driver_service` (`DriverService`) | profiles, accounts, history, memberships, and the state machine |
+| Drivers | `driver_service` (`DriverService`) | profiles, accounts, memberships, and the state machine; history is written by `season_end_service.write_driver_history_entries_on` |
 | The change queue | `change_queue` (`ChangeQueue`), `setting_change`, `queue_stop_view`, `typed_turns` | `queued_changes`, `queued_change_steps` |
 | Timed work | `scheduler_service` (`SchedulerService`), `start_up` | the job store, a file of its own |
 | Posting | `output_router` (`OutputRouter`), `notice_handler`, `standing_post_handler`, `owned_channel_handler`, `standing_posts`, `retry_service` | `pending_messages` |
@@ -277,8 +277,8 @@ Core's settings, each of kind `core.setting.<name>`:
 | `/division lineup-channel`, `/division calendar-channel` | yes | none |
 | `/test-mode nationality` | no | none |
 
-Which settings overtake a stop is `Setting.repairs_the_bot`, set by each setting itself
-(`bot_settings.py`, `division_settings.py`) and read once by `setting_change`. A step that carries
+Which settings overtake a stop is `Setting.repairs_the_bot` (`architecture.md`, "A job that fails
+stops its lane"), set in `bot_settings.py` and `division_settings.py`. A step that carries
 the save's line writes it only once it has succeeded (`carries_line`; `setting_change`'s
 docstring).
 
@@ -314,9 +314,9 @@ Every core change type runs on the league lane; none is a conversation's. Each i
 | `core.team_*` (four) | `/team add`, `modify`, `remove`, `reserve-role` | the list and the role mapping, audited | role moves |
 | `core.test_mode_toggle` | `/test-mode toggle` | the flag, the modules' part, the audit entry; turned off, every fake driver deleted | forecasts cleared, the backup deleted |
 | `hub.refresh` | the bot, wherever what the panel offers may change | none: the panel's id is its job's `record` | the old panel deleted where the hub moved |
-| `calendar.sync` | `/division calendar-sync` | `close`, a save writing the line, after the post | the post, then the deletion of the calendar it replaced |
+| `calendar.sync` | `/division calendar-sync` | `close`, last: a save writing the line | before it: the post, then the deletion of the calendar it replaced |
 | `lineup.post` | the bot, after a change made off the queue moves a driver | none: the lineup's id and audit entry are its post's `record` | the post, then the deletion of the lineup it replaced |
-| `core.clean` | `/clean-bot` | `close`, a save writing the line, last | `choose`, then one `delete_message` for each message chosen |
+| `core.clean` | `/clean-bot` | `close`, last: a save writing the line | before it: `choose`, then one `delete_message` for each message chosen |
 
 Each module's switch is a change of the module's own, of kind `module.on:<name>` or
 `module.off:<name>` (`module_on` and `module_off` in `core/models/change.py`), which `ModuleCog`
@@ -357,9 +357,8 @@ id, a one-off timer's key, or nothing for a standing job. A kind with no handler
 a warning. **A job runs in an empty context** (`_JobScheduler`), so it can never take an
 interaction for its own
 (`test_a_job_scheduled_from_an_admitted_interaction_finds_no_member_to_warn`).
-A one-off timer is armed by `arm_once`, named from its kind and key, so arming it again replaces it,
-with no lateness limit. A round's job is named from the round's id and its kind
-(`_round_job_suffix`).
+A one-off timer is armed by `arm_once` (`architecture.md`, "Timed work and restarts"). A round's
+job is named from the round's id and its kind (`_round_job_suffix`).
 
 ### Core's own timed events
 
@@ -393,8 +392,8 @@ reports the bot ready, `start_up` (`core/services/start_up.py`) runs once per pr
   landed, and starts the dispatcher.
 - **A guard of its own** makes a second ready, after a network drop, run nothing.
 
-The first, second and fourth are each pinned by a test in `tests/core/test_start_up.py`;
-`ChangeQueue.start`'s docstring says what the queue's start does.
+Each is pinned by a test in `tests/core/test_start_up.py`; `ChangeQueue.start`'s docstring says
+what the queue's start does.
 
 The steps are a fixed tuple the builder makes (`_start_up_steps`), in an order its comments give
 where the order matters (`test_the_builder_orders_the_start_up_steps`):
@@ -457,8 +456,8 @@ and the calendar's in `post_division_calendar`, whose `commanded` parameter tell
 asked for from one that was not (`test_an_uncommanded_posting_falls_back_to_the_text`). The lineup's
 and the calendar's post job ask for text on every try after the first (`as_text`).
 
-**Who a post may mention is stated where it is sent**, as the `mentions` argument each handler
-requires; who that is, is the core specification's ("The record of what changed", "How a change is
+**Who a post may mention is stated where it is sent** (`architecture.md`, "Posting to Discord");
+who that is, is the core specification's ("The record of what changed", "How a change is
 carried out"). The stop notice's mention is decided by `ChangeQueue._admins_to_notify`, and a log
 line's mentions are wrapped by the router (`test_every_mention_in_a_log_line_is_written_as_code`).
 `post_cancellation_notice` posts with the mentions its caller, a module's notice job, hands it.
@@ -548,8 +547,8 @@ A keyed hook takes one function for each key. Each is an object the builder make
 | `AdvanceSteps.register_step` | the kind of a round's job | `register_scheduler_callbacks`, beside each kind's handler | `AdvanceStepFailed` (`test_advance_reports_a_kind_with_no_step_signed_up`) |
 | `HubOptions.register_option` | the option's key, part of the button's custom id | `register_hub_options`, which signs core's About | a press refused |
 
-`ModuleService` reads no module's table or column: `is_<module>_enabled` hands the module's reader
-a connection, and `is_enabled_on` hands it the caller's (`module_service`'s docstring).
+`ModuleService` reads no module's table or column; `is_<module>_enabled` and `is_enabled_on` are
+the readers `architecture.md` names ("How modules and core fit together").
 
 ### The dependency table
 
@@ -567,11 +566,11 @@ switch-off attendance's, for the cascade.
 the image module's class of the same name implements it; the builder makes it and attaches it as
 `bot.image_drawing`. Its methods fall in five groups:
 
-- **Capacity questions**, each answering a `CapacityProblem` or nothing: the four placement guards
-  (`PlacementService`), a round's (`round_add_changes`), and the season review's.
+- **Capacity questions**, each answering what the template cannot hold, or nothing: the four
+  placement guards (`PlacementService`), a round's (`round_add_changes`), and the season review's.
 - **Gates and pictures**: `calendar_wanted`, `draw_calendar`, `lineup_wanted`, `draw_lineup`,
-  `draw_lineup_for_command`, `discard_picture`. A gate that cannot be read answers that the league
-  does not draw, so the text goes out.
+  `draw_lineup_for_command`, `discard_picture`. What a gate that cannot be read answers is
+  `architecture.md`'s ("Errors and failures").
 - **The review's image section and its faults**: `rasteriser_fault`, `review_section`,
   `template_faults`, `colour_shortfall_problems`, `portrait_fault`. The image module words each;
   core decides which refuse. The module docstring says which faults each lets out.
@@ -617,7 +616,7 @@ being a query rather than a line posted (its docstring).
 | `PackRefused` | `core/services/pack_service.py` | `/bot pack`'s refusals, worded by the cog from its fields |
 | `InvalidDriverTransition` | `core/models/driver_profile.py` | a fault: a move past the transition table, caught by a caller that expects the race |
 | `InvalidStageTransition` | `core/models/season.py` | a season asked to move to a stage its lifecycle does not allow from where it is |
-| `SwitchNotSignedUp` | `core/services/module_service.py` | a fault in the bot's assembly, let through by name by every reader that stands aside |
+| `SwitchNotSignedUp` | `core/services/module_service.py` | a fault in the bot's assembly (`architecture.md`, "How modules and core fit together") |
 | `StepFailedOnDiscord` | `core/models/change.py` | a step's failure on Discord, carrying what the job keeps and a clause for the stop notice |
 | `GuildUnavailable` | `core/models/change.py` | the league's server missing from the cache: a failure on Discord's side |
 
@@ -718,8 +717,8 @@ the portrait's discard follow the save as jobs of their own.
 **A driver's history outlives the profile.** `driver_history_entries` names the driver by account
 and lets go of the profile on delete. `delete_driver_profiles` (`season_lifecycle_service`) is the
 one delete of profiles but a merge: it calls `profiles_deleted`, vacates seats, deletes placements,
-deletes the history unless asked to keep it, and deletes the profiles. The driver pass deletes a
-real driver with no history; test mode keeps its drivers' history.
+deletes the history unless asked to keep it, and deletes the profiles. `keep_history` says which;
+the core specification's "The driver pass" and "Entering and leaving it" say when.
 
 ---
 
