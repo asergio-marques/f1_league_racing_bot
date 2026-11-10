@@ -913,3 +913,42 @@ async def test_migrations_run_before_the_bot_connects(tmp_path, monkeypatch):
     start_up.assert_awaited_once_with(steps=bot.start_up_steps, change_queue=bot.change_queue,
                                       scheduler=bot.scheduler_service)
     assert calls[4:] == ["start-up", "commands synced"]
+
+
+#: Each module's section of a season review, as the module names it, and what the test calls it,
+#: in the order the builder signs them up: the order the review reads them in.
+_REVIEW_SECTION_PARTS = (
+    ("leaguebot.signup.services.signup_module_service", "review_section", "signup's section"),
+    ("leaguebot.attendance.services.attendance_service", "review_section",
+     "attendance's section"),
+    ("leaguebot.results.services.season_points_service", "review_section", "results' section"),
+    ("leaguebot.weather.services.weather_config_service", "review_section", "weather's section"),
+)
+
+
+@pytest.mark.xfail(strict=True, reason="#283: no hook gathers the review's sections; the season "
+                   "cog reads each module itself")
+async def test_the_builder_signs_every_module_up_to_the_review_sections(tmp_path, monkeypatch):
+    """Straight after `build`, each module's section of a season review is signed up to the hook
+    a review gathers its lines through, nothing called yet: signup's, attendance's, results' then
+    weather's, each handed which review is gathered, the season and the divisions it shows."""
+    import importlib
+
+    from leaguebot.core.services.review_sections import Review
+
+    called: list[tuple] = []
+    for module_name, name, part in _REVIEW_SECTION_PARTS:
+        async def section_spy(*_args, part=part, review, season_id, division_ids, **_kwargs):
+            called.append((part, review, season_id, tuple(division_ids)))
+        monkeypatch.setattr(importlib.import_module(module_name), name, section_spy,
+                            raising=False)
+
+    bot = await built_bot(tmp_path, now=_NOW)
+    assert called == []
+
+    await bot.review_sections_read.call(review=Review.PLACEMENTS, season_id=7,
+                                        division_ids=[70, 71])
+
+    assert called == [
+        (part, Review.PLACEMENTS, 7, (70, 71)) for _module, _name, part in _REVIEW_SECTION_PARTS
+    ]

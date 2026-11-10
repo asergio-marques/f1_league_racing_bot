@@ -1155,3 +1155,51 @@ async def test_the_question_asked_says_who_may_answer(db_path):
     assert f"<@{USER_ID}>" in question
     assert "administrator" in question
     assert "for the next 5 minutes" in question
+
+
+class _NotLookedUp:
+    """A module service the review must not reach: any use of it fails the test."""
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+
+    def __getattr__(self, attribute: str):
+        raise AssertionError(f"the review looked up {self._name}.{attribute} on the bot")
+
+
+@pytest.mark.xfail(strict=True, reason="#283: the review reads signup's and attendance's "
+                   "services on the bot rather than through the review's sections hook")
+async def test_the_review_reaches_each_module_through_its_section_alone(db_path):
+    """Signup and attendance on, their services stubbed as the builder signs their sections up,
+    then taken off the bot: the review still reports the signup channel among the modules, the
+    signup and attendance configurations, and each division's RSVP and attendance channels, in
+    today's words."""
+    cog = _cog(db_path, signup=True, attendance=True)
+    cog.bot.signup_module_service = _NotLookedUp("signup_module_service")
+    cog.bot.attendance_service = _NotLookedUp("attendance_service")
+
+    public = _public(await _review(cog, _interaction()))
+
+    assert "  Signup: ✅ Enabled | Channel: <#900>" in public
+    assert "**Signup Config**" in public
+    assert "  • Available slots: Sunday 20:00" in public
+    assert "**Attendance Config**" in public
+    assert "  • Auto-sack threshold: 10 pts" in public
+    assert "  RSVP channel: <#801>\n  Attendance channel: *(not set)*\n  Weather channel:" in public
+
+
+@pytest.mark.xfail(strict=True, reason="#283: the review judges its calendar on the host's "
+                   "clock, not the queue's")
+async def test_the_review_judges_its_calendar_on_the_queue_s_clock(db_path):
+    """A round three days ahead by the host's clock, and the queue's clock five days ahead of
+    the host's: the round has gone by on the queue's clock, so the review says the calendar
+    holds dates already gone by and withholds Approve."""
+    cog = _cog(db_path, rounds=[_round(days_away=3)])
+    cog.bot.change_queue.now = MagicMock(
+        return_value=datetime.now(timezone.utc) + timedelta(days=5)
+    )
+
+    messages = await _review(cog, _interaction())
+
+    assert "calendar holds dates that have already gone by" in _private(messages)
+    assert not _offered(cog)
