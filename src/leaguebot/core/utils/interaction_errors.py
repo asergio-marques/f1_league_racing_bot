@@ -85,8 +85,9 @@ def failure_reply(
 def failure_line(what: str, named: str, error: BaseException) -> str:
     """The log channel's line for *what* failing for *named* with *error*; *what* is used as given.
 
-    The one place a failure's line is formed: `report_failure` writes it, and so does the change
-    queue for a change that faults.
+    The line of a failure with a member to name: `report_failure` writes it, and so does the
+    change queue for a change that faults. A Discord event's has none, and is formed by
+    `event_failure_line`.
     """
     return (
         f"❌ {what} failed for {named} — {type(error).__name__}. "

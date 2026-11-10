@@ -115,7 +115,8 @@ def create_bot() -> LeagueBot:
     bot.add_listener(_warn_if_serving_several, "on_ready")
     bot.add_listener(_warn_if_serving_several, "on_guild_join")
     # A listener that raises is reported by one handler, never by a method of the bot. It is set
-    # with `setattr` because the type check reads an assignment to `on_error` as one to a method.
+    # with `setattr` because the type check reads an assignment to `on_error` as one to a method,
+    # and no function named `on_error` may stand outside `league_server.py`.
     setattr(bot, "on_error", partial(on_event_error, bot))
 
     return bot
