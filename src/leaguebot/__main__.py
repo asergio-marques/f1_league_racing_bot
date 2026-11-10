@@ -470,6 +470,22 @@ def _sign_up_to_fingerprint_areas_read(bot: LeagueBot) -> None:
         bot.fingerprint_areas_read.subscribe(module_areas.fingerprint_areas)
 
 
+def _sign_up_to_pending_steps_read(bot: LeagueBot) -> None:
+    """Make the hook `/test-mode advance` reads the pending steps through, and sign each module's
+    part up to it: the steps of the rounds core hands it that the module still has pending, and
+    those advance passes over, from its own state, handed the database path, the rounds and the
+    moment advance judges at. Weather, attendance and results sign up in the order the steps of a
+    round fall; core orders what they hand back (architecture.md, "How modules and core fit
+    together"). The builder hands it to the command."""
+    from leaguebot.attendance.services import test_mode_steps as attendance_steps
+    from leaguebot.results.services import test_mode_steps as results_steps
+    from leaguebot.weather.services import test_mode_steps as weather_steps
+
+    bot.pending_steps_read = AwaitedHook()
+    for module_steps in (weather_steps, attendance_steps, results_steps):
+        bot.pending_steps_read.subscribe(module_steps.pending_steps)
+
+
 def _sign_up_to_driver_turned_down(bot: LeagueBot) -> None:
     """Make the hook a driver turned down declares, and sign each module's part up to it: what a
     module lets go of from the driver, on the connection of the save that turns them down, given
@@ -1733,6 +1749,7 @@ async def build(settings: Settings) -> LeagueBot:
     _sign_up_to_division_channel_faults_read(bot)
     _sign_up_to_division_lines_read(bot)
     _sign_up_to_fingerprint_areas_read(bot)
+    _sign_up_to_pending_steps_read(bot)
     _sign_up_to_driver_account_changed(bot)
     _sign_up_to_placements_confirmed(bot)
     _sign_up_to_season_completed(bot)

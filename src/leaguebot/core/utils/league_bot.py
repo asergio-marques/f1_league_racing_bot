@@ -135,6 +135,14 @@ class LeagueBot(commands.Bot):
     #: images), so that core's fingerprint reads no module's table (architecture.md, "A hook core
     #: declares is a list of subscribers"); `take_fingerprint` digests what they hand back.
     fingerprint_areas_read: AwaitedHook
+    #: The moment `/test-mode advance` asks which steps of the season's rounds are still pending
+    #: and which it passes over: each module signs up a function handing back, as `ModuleSteps`,
+    #: its own steps of the rounds it is handed (the active season's, as core reads them), judged
+    #: at the moment given, nothing where its module is off. The builder makes it and signs them up
+    #: (weather, attendance, results), so that core reads no module's table and orders what
+    #: they hand back by its own step order (architecture.md, "A hook core declares is a list of
+    #: subscribers").
+    pending_steps_read: AwaitedHook
     #: The base role changed (`/bot base-role`), awaited from an `After` step once the queue has
     #: saved it, given the server, the role replaced and the role now set, and handing no
     #: connection: each subscriber opens its own (signup's move of the signup channel's overwrite

@@ -14,9 +14,6 @@ from leaguebot.core.db.database import get_connection, run_migrations
 NOW = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
 RACED = "2026-10-12T11:00:00+00:00"
 
-#: Why each test here fails until results answers for its own step.
-RESULTS_STEPS = "#283: results does not yet hand core its own test-mode step"
-
 
 async def _seed(
     db_path: str,
@@ -78,7 +75,6 @@ def _round(status: str):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=RESULTS_STEPS)
 @pytest.mark.parametrize("state, pending", [
     pytest.param({}, [(4, "results")], id="a round not yet run"),
     pytest.param({"status": "AWAITING_RESULTS"}, [(4, "results")], id="awaiting its results"),

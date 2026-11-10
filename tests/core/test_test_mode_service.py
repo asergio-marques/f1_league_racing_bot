@@ -1762,7 +1762,6 @@ async def test_each_module_is_handed_the_active_season_s_rounds_as_core_reads_th
         assert rounds[1].status == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason=MODULE_STEPS)
 async def test_the_builder_signs_weather_attendance_and_results_up_for_their_steps(
     tmp_path, monkeypatch,
 ) -> None:
