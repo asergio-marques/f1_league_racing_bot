@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
@@ -20,6 +21,8 @@ from leaguebot.core.services.output_router import OutputRouter
 from tests.support.change_queue import text_channel
 
 LOG_CHANNEL_ID = 101
+#: The change queue's clock, handed to the router as the builder hands it.
+NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
 ADMIN_ROLE_ID = 901
 
 
@@ -30,7 +33,7 @@ def _router() -> tuple[OutputRouter, MagicMock]:
     bot.config_service.get_server_config = AsyncMock(
         return_value=MagicMock(log_channel_id=LOG_CHANNEL_ID)
     )
-    return OutputRouter(bot, bot.config_service), channel
+    return OutputRouter(bot, bot.config_service, now=lambda: NOW), channel
 
 
 def _role_ids(mentions) -> set[int]:
@@ -38,6 +41,7 @@ def _role_ids(mentions) -> set[int]:
     return {getattr(role, "id", role) for role in roles} if isinstance(roles, list) else set()
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_notice_s_role_mention_is_the_only_one_left_unwrapped():
     """The router posts a stop notice naming member 4242, the role 555 and the league admins' role
     901, which it is given to mention. In the message sent, the admins' role stands bare and is the
@@ -100,6 +104,7 @@ async def test_send_log_text_divides_a_long_line_and_notifies_nobody():
     ],
     ids=["post_log", "post_notice"],
 )
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_database_fault_reading_the_log_channel_is_contained(call, caplog):
     """The database is locked when the router reads which channel is the log: the line is not
     posted and the call returns `None`, as for a line the channel refuses, and the fault goes to

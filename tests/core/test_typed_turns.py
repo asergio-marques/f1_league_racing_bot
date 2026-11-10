@@ -172,6 +172,7 @@ def _note_mentions(channel: Any) -> discord.AllowedMentions:
     return channel.send.await_args_list[-1].kwargs["allowed_mentions"]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_typed_turn_is_marked_at_once_and_the_mark_cleared_when_its_turn_is_done(env):
     """A driver types an answer into their channel: it is marked ⏳ before anything runs, its
     turn is saved on the channel's lane, and once the queue runs it the answer is given and the
@@ -195,6 +196,7 @@ async def test_a_typed_turn_is_marked_at_once_and_the_mark_cleared_when_its_turn
     assert [row["state"] for row in await change_rows(env.db_path)] == ["DONE"]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_message_typed_while_a_turn_waits_in_its_channel_is_turned_away_at_once_with_a_note(
     env,
 ):
@@ -217,6 +219,7 @@ async def test_a_message_typed_while_a_turn_waits_in_its_channel_is_turned_away_
     assert not mentions.everyone and not mentions.roles
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_message_in_another_channel_is_not_turned_away(env):
     """A turn waits in one driver's channel; a message typed in another driver's channel is
     marked and asked for as its own turn, and no note is posted anywhere."""
@@ -231,6 +234,7 @@ async def test_a_message_in_another_channel_is_not_turned_away(env):
     assert env.channel.sent == [] and env.other.sent == []
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_turn_still_waits_while_the_queue_is_stopped_at_it_and_later_messages_are_turned_away(
     env,
 ):
@@ -258,6 +262,7 @@ async def test_a_turn_still_waits_while_the_queue_is_stopped_at_it_and_later_mes
     assert MARK in third.marks
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_turn_waiting_survives_a_restart(env):
     """A turn is stopped at its answer and the bot restarts: the channel still waits, read from
     the queue's records rather than memory, and a message typed after the restart is turned away."""
@@ -271,6 +276,7 @@ async def test_turn_waiting_survives_a_restart(env):
     assert await ask_turn(env.bot, "turn", _typed(env, "second")) is None
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_mark_that_cannot_be_cleared_stops_the_queue(env):
     """The answer is given, but Discord refuses to take the ⏳ off the message: the turn's lane
     stops at the clearing job, the mark still on. A minute later the job is tried again on the
@@ -295,6 +301,7 @@ async def test_a_mark_that_cannot_be_cleared_stops_the_queue(env):
     assert [row["state"] for row in await change_rows(env.db_path)] == ["DONE"]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_turned_away_message_is_deleted_at_once_and_the_note_stays(env):
     """A second message typed while the first waits is deleted at once, before the queue runs;
     the note saying so stays in the channel, and stays after the first turn is answered."""
@@ -319,6 +326,7 @@ async def test_a_turned_away_message_is_deleted_at_once_and_the_note_stays(env):
     "note",
     "deletion",
 ])
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_refused_turn_away_note_or_deletion_is_lost_not_retried(env, caplog, refused):
     """Discord refuses the turn-away's note, or the deletion of the turned-away message: the
     refusal is logged on the host and nothing else — no error reaches the listener, no lane
@@ -348,6 +356,7 @@ async def test_a_refused_turn_away_note_or_deletion_is_lost_not_retried(env, cap
     assert (env.channel.send.await_count, second.delete.await_count) == tried
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_mark_on_a_message_since_deleted_completes_its_clear(env):
     """The driver deletes their answer before its turn comes: the answer is still given, the
     clearing job finds the message gone and is done, and no lane stops."""
@@ -366,6 +375,7 @@ async def test_a_mark_on_a_message_since_deleted_completes_its_clear(env):
     assert [row["state"] for row in await change_rows(env.db_path)] == ["DONE"]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_turn_discarded_lets_the_channel_take_messages_again(env):
     """A turn stopped at its answer is discarded by a league admin: the channel no longer waits,
     and the next message typed there is marked and asked for."""
@@ -381,6 +391,7 @@ async def test_a_turn_discarded_lets_the_channel_take_messages_again(env):
     assert MARK in again.marks
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_change_type_without_a_turn_channel_never_makes_a_channel_wait(env):
     """A league change naming the channel in its payload, but declaring no `turn_channel`, is
     stopped on the league lane: the channel does not wait, and a message typed there is marked and
@@ -397,6 +408,7 @@ async def test_a_change_type_without_a_turn_channel_never_makes_a_channel_wait(e
     assert MARK in message.marks
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_league_stop_does_not_make_a_channel_wait(env):
     """The league lane is stopped at a change of its own. A driver types into their channel: the
     answer is marked, given and the mark cleared, the league lane still stopped."""
@@ -415,6 +427,7 @@ async def test_a_league_stop_does_not_make_a_channel_wait(env):
     assert await stopped_job(env.db_path, "league") is not None
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_league_change_a_turn_handed_over_still_makes_its_channel_wait(env):
     """A driver's turn hands its work to the league, asking a league change that answers in their
     channel; the turn is done, but the league change is stopped on the league lane. The channel

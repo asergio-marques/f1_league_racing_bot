@@ -426,8 +426,11 @@ async def seed_server(db_path: str) -> None:
         await db.commit()
 
 
-def league_double(db_path: str) -> Any:
+def league_double(db_path: str, *, now: Any = None) -> Any:
     """A bot double with the league's log and interaction channels, and a real `OutputRouter`.
+
+    The router's clock is *now* where given, else the change queue's, read through the bot as the
+    builder hands it, so that a test attaching a queue moves the router's time with the queue's.
 
     `bot.log_channel` and `bot.interaction_channel` record what each is sent. The league's server
     is `SERVER_ID`, as `config_service.get_league_server_id` gives it; `bot.get_guild` finds no
@@ -441,7 +444,10 @@ def league_double(db_path: str) -> Any:
     bot = MagicMock()
     bot.db_path = db_path
     _stub_discord(bot)
-    bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=db_path)
+    bot.output_router = OutputRouter(
+        bot, bot.config_service, retry_db_path=db_path,
+        now=now if now is not None else (lambda: bot.change_queue.now()),
+    )
     bot.attendance_after_review = attendance_hook_double()
     return bot
 

@@ -182,7 +182,7 @@ def _save_backup(db_path: str, jobstore: str) -> None:
     Path(jobstore).write_bytes(b"")
     backup_service.backup_path(db_path).write_bytes(b"saved")
     backup_service.backup_path(jobstore).write_bytes(b"saved jobs")
-    backup_service.set_lock(db_path, who="Maintainer")
+    backup_service.set_lock(db_path, who="Maintainer", now=NOW)
 
 
 def _as_naive(stamp: str) -> datetime:

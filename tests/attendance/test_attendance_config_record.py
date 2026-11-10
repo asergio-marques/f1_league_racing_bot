@@ -64,6 +64,7 @@ async def _saved(db_path: str, column: str) -> tuple:
 
 
 @pytest.mark.parametrize("command,value,column,expected", CONFIG_SETTERS, ids=CONFIG_SETTER_IDS)
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_each_attendance_settings_command_records_its_audit_entry(
     tmp_path, command, value, column, expected
 ):
@@ -91,6 +92,7 @@ async def test_each_attendance_settings_command_records_its_audit_entry(
 @pytest.mark.parametrize("fault,value", [
     ("audit entry", 7), ("log line", 7), ("log line", 5),
 ], ids=["audit-entry", "log-line", "log-line-value-held"])
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_fault_in_the_save_leaves_neither_value_entry_nor_line(
     tmp_path, monkeypatch, fault, value
 ):
@@ -114,6 +116,7 @@ async def test_a_fault_in_the_save_leaves_neither_value_entry_nor_line(
     assert cog.bot.log_channel.sent == []
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_line_is_sent_once_its_save_is_made_with_the_text_it_always_had(tmp_path):
     """The line reaches the log channel after the value, its entry and the line are committed,
     worded as the command always worded it: the member, the command, the outcome, and the value
@@ -142,6 +145,7 @@ async def test_the_line_is_sent_once_its_save_is_made_with_the_text_it_always_ha
     assert (await _saved(db_path, "rsvp_notice_days"))[2] == []
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_value_already_held_still_records_that_nothing_changed(tmp_path):
     """A value the setting already holds writes no value and no entry, but its "Nothing
     changed" line is saved and sent as before."""

@@ -25,6 +25,8 @@ import os
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.penalty_service import StagedPenalty
@@ -196,6 +198,7 @@ def _names_both_pardons(message: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_approval_message_lists_the_staged_pardons(tmp_path):
     """**It said nothing was staged, and granted two pardons.**"""
     state = _state(await _make_db(tmp_path), pardons=_pardons())
@@ -210,6 +213,7 @@ async def test_the_approval_message_lists_the_staged_pardons(tmp_path):
     assert "pardons granted" in message
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_approval_message_withholds_a_pardons_justification(tmp_path):
     """The justification is for the log channel alone, and this message is posted in the open."""
     state = _state(await _make_db(tmp_path), pardons=_pardons())
@@ -223,6 +227,7 @@ async def test_the_approval_message_withholds_a_pardons_justification(tmp_path):
     assert "Travelling abroad" not in message
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_approval_message_with_nothing_staged_names_no_pardon_and_does_not_finalise(
     tmp_path,
 ):
@@ -245,6 +250,7 @@ async def test_the_approval_message_with_nothing_staged_names_no_pardon_and_does
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_no_penalties_confirm_with_only_pardons_staged_names_them(tmp_path):
     """The issue's reproduction. **✅ Approve** on the prompt is greyed out with only pardons
     staged, so this button is the one the manager has."""
@@ -261,6 +267,7 @@ async def test_no_penalties_confirm_with_only_pardons_staged_names_them(tmp_path
     assert _names_both_pardons(message)
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_clearing_the_penalties_keeps_the_pardons_on_the_approval_message(tmp_path):
     """Confirming the clear discards the penalties and nothing else, and the message says so."""
     state = _state(await _make_db(tmp_path), pardons=_pardons())
@@ -281,6 +288,7 @@ async def test_clearing_the_penalties_keeps_the_pardons_on_the_approval_message(
     assert _names_both_pardons(message)
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_an_amendments_approval_message_lists_the_pardons_it_reopened(tmp_path):
     """An amendment's report stage shows back the pardons the round carries, and approving it
     settles them. With no report among the amended sessions, this is the way on."""

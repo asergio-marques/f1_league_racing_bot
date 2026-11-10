@@ -13,6 +13,7 @@ overwrites a league's history run on a league's history.
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -27,6 +28,8 @@ from tests.support.scheduler import PausingScheduler
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 4400
+#: The change queue's clock, well before the host's, so that a time read from the host shows.
+NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
 USER_ID = 99
 
 
@@ -303,7 +306,7 @@ async def test_a_save_is_recorded(live):
 async def test_a_locked_backup_refuses_the_save(live):
     cog = _cog(live)
     await _body(Cog.backup_save)(cog, _interaction())
-    bs.set_lock(live.db, who="Manager")
+    bs.set_lock(live.db, who="Manager", now=NOW)
     interaction = _interaction()
 
     await _body(Cog.backup_save)(cog, interaction)
@@ -314,13 +317,17 @@ async def test_a_locked_backup_refuses_the_save(live):
 # ── Lock ──────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason="#283: /test-mode backup lock hands the lock the change queue's time")
 async def test_lock_toggles_and_says_which_way(live):
+    """The lock is stamped with the change queue's clock, the bot's clock, not the host's."""
     cog = _cog(live)
+    cog.bot.change_queue.now = MagicMock(return_value=NOW)
     await _body(Cog.backup_save)(cog, _interaction())
 
     first = _interaction()
     await _body(Cog.backup_lock)(cog, first)
     assert "Locked" in _reply(first)
+    assert bs.locked_by(live.db) == f"locked by Manager at {NOW.isoformat(timespec='seconds')}"
 
     second = _interaction()
     await _body(Cog.backup_lock)(cog, second)

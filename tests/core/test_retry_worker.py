@@ -83,13 +83,14 @@ class TestOutputRouterEnqueuesOnFailure:
                      id="http exception"),
         pytest.param(discord.Forbidden(MagicMock(status=403), "missing access"), id="forbidden"),
     ])
+    @pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
     async def test_an_http_exception_or_forbidden_enqueues_row(self, tmp_path, error):
         """A discord.HTTPException in _send should enqueue a pending_messages row, and a
         discord.Forbidden should too."""
         db_path = await _make_db(str(tmp_path))
 
         mock_bot = MagicMock()
-        router = OutputRouter(mock_bot, mock_bot.config_service, retry_db_path=db_path)
+        router = OutputRouter(mock_bot, mock_bot.config_service, retry_db_path=db_path, now=lambda: NOW)
 
         mock_channel = _make_text_channel_mock(send_side_effect=error)
         mock_bot.get_channel.return_value = mock_channel
@@ -98,6 +99,10 @@ class TestOutputRouterEnqueuesOnFailure:
 
         assert result is None
         assert await _row_count(db_path) == 1
+        async with get_connection(db_path) as db:
+            cursor = await db.execute("SELECT enqueued_at FROM pending_messages")
+            row = await cursor.fetchone()
+        assert row["enqueued_at"] == NOW.isoformat(), "stamped by the router's clock"
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("with_retry_db, enqueue_on_failure, label", [
@@ -106,6 +111,7 @@ class TestOutputRouterEnqueuesOnFailure:
         # The factory reset's line to a given channel asks for no retry, and gets none.
         pytest.param(True, False, "log", id="the caller wants none"),
     ])
+    @pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
     async def test_no_enqueue_without_a_retry_db_path_or_when_the_caller_wants_none(
         self, tmp_path, with_retry_db, enqueue_on_failure, label
     ):
@@ -115,7 +121,8 @@ class TestOutputRouterEnqueuesOnFailure:
 
         mock_bot = MagicMock()
         router = OutputRouter(
-            mock_bot, mock_bot.config_service, retry_db_path=db_path if with_retry_db else None
+            mock_bot, mock_bot.config_service, retry_db_path=db_path if with_retry_db else None,
+            now=lambda: NOW,
         )
 
         mock_channel = _make_text_channel_mock(
@@ -343,13 +350,14 @@ def _worker_bot(db_path: str, channel, *, configured: bool = True) -> MagicMock:
     bot.config_service.get_server_config = AsyncMock(
         return_value=MagicMock(log_channel_id=99) if configured else None
     )
-    bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=db_path)
+    bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=db_path, now=lambda: NOW)
     return bot
 
 
 class TestTheRetryWorkersOwnLinesAreNotQueued:
 
     @pytest.mark.asyncio
+    @pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
     async def test_its_own_line_goes_to_the_log_channel(self, tmp_path):
         from leaguebot.core.services.retry_service import _post_own_line
 
@@ -367,6 +375,7 @@ class TestTheRetryWorkersOwnLinesAreNotQueued:
     @pytest.mark.parametrize(
         "fault", ["refused", "channel-gone", "not-a-text-channel", "no-server-config"]
     )
+    @pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
     async def test_its_own_line_the_log_channel_cannot_take_is_not_queued(
         self, tmp_path, caplog, fault
     ):

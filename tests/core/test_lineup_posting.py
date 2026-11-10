@@ -236,7 +236,7 @@ async def _lineup_id(league: Any) -> Any:
 
 async def _lineup_audits(league: Any) -> list[dict[str, Any]]:
     return await league.rows(
-        "SELECT actor_name, new_value FROM audit_entries "
+        "SELECT actor_name, new_value, timestamp FROM audit_entries "
         "WHERE change_type = 'SIGNUP_LINEUP_POSTED' AND division_id = ?", PRO,
     )
 
@@ -508,14 +508,17 @@ async def test_a_lineup_fallen_back_to_text_is_recorded_by_every_change_that_pos
 
 
 @pytest.mark.parametrize("form", ["text", "image"])
+@pytest.mark.xfail(strict=True, reason="#283: the lineup's audit is stamped with the change queue's time")
 async def test_the_lineup_s_id_and_audit_are_saved_with_its_post(tmp_path, monkeypatch, form):
     """Once the post job is done, and before the deletion after it runs, the division records
     the new lineup and one `SIGNUP_LINEUP_POSTED` audit stands, written by the system, saying
-    "image" where the lineup was a picture."""
+    "image" where the lineup was a picture, and stamped at the queue's clock, moved an hour on
+    from the host's."""
     league = await ongoing_league(tmp_path)
     await _old_lineup_standing(league)
     if form == "image":
         _pictures_on(league, monkeypatch, tmp_path)
+    league.clock.advance(hours=1)
 
     await _ask(league, PRO)
     await _run_lineup_through(league, "post_lineup")
@@ -525,6 +528,7 @@ async def test_the_lineup_s_id_and_audit_are_saved_with_its_post(tmp_path, monke
     assert OLD_LINEUP in league.channel(LINEUP[PRO]).messages, "the old lineup went too soon"
     [audit] = await _lineup_audits(league)
     assert audit["actor_name"] == "system"
+    assert audit["timestamp"] == league.clock.now.isoformat()
     value = json.loads(audit["new_value"])
     assert value["division"] == "Pro"
     assert value.get("form") == ("image" if form == "image" else None)

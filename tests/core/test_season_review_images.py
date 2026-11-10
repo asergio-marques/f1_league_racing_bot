@@ -665,6 +665,7 @@ async def _kinds_queued(cog) -> list[str]:
     return [row["kind"] for row in await change_rows(cog.bot.db_path)]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_press_the_queue_refuses_at_once_leaves_the_review_standing(tmp_path, monkeypatch):
     """Every gate at the press passes, so Alex's approval goes through the button to the queue,
     whose own check refuses it at once (a round's date gone by while the press was worked). That
@@ -695,6 +696,7 @@ async def test_a_press_the_queue_refuses_at_once_leaves_the_review_standing(tmp_
     question.delete.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_press_the_queue_refuses_for_a_changed_season_ends_the_review_as_expired(
     tmp_path, monkeypatch
 ):

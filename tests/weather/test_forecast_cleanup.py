@@ -501,6 +501,7 @@ def _sending(channel: MagicMock, *, first_id: int, refuse_from: int | None = Non
     channel.send = AsyncMock(side_effect=send)
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_text_forecast_goes_through_the_standing_post_handler_in_parts(
     tmp_path, monkeypatch
 ):
@@ -513,7 +514,7 @@ async def test_a_text_forecast_goes_through_the_standing_post_handler_in_parts(
     from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
 
     bot = _make_bot(await _make_db(str(tmp_path)))
-    bot.output_router = OutputRouter(bot, bot.config_service)
+    bot.output_router = OutputRouter(bot, bot.config_service, now=lambda: bot.change_queue.now())
     channel = bot.get_channel.return_value
     _sending(channel, first_id=501)
     calls = _spy_on_post_standing(monkeypatch)
@@ -540,6 +541,7 @@ async def test_a_text_forecast_goes_through_the_standing_post_handler_in_parts(
         "not-a-text-channel",
     ],
 )
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_text_forecast_part_refused_keeps_the_parts_sent(tmp_path, monkeypatch, case):
     """The Phase 2 forecast is posted as text to channel 999, letting role 1 notify, and fails.
     The stop notice is read as the change queue shows it (`ChangeQueue._fault_kind`), in plain
@@ -557,7 +559,7 @@ async def test_a_text_forecast_part_refused_keeps_the_parts_sent(tmp_path, monke
     from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
 
     bot = _make_bot(await _make_db(str(tmp_path)))
-    bot.output_router = OutputRouter(bot, bot.config_service)
+    bot.output_router = OutputRouter(bot, bot.config_service, now=lambda: bot.change_queue.now())
     channel = bot.get_channel.return_value
     calls = _spy_on_post_standing(monkeypatch)
     text = "a" * 1500 + "\n" + "b" * 1500

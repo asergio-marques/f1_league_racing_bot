@@ -20,6 +20,9 @@ import pytest
 
 from leaguebot.core.services import backup_service as bs
 
+#: The time a lock is handed, as the command hands it the change queue's clock.
+NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
+
 
 def _database(path: Path, *, wal: bool = True, rows: int = 3) -> None:
     """A small database, in WAL by default, as the bot's own is.
@@ -339,7 +342,7 @@ def test_a_copy_or_write_that_fails_is_a_fault(tmp_path, monkeypatch, fault):
 def _locked(tmp_path: Path) -> None:
     live = tmp_path / "bot.db"
     _database(live)
-    bs.set_lock(live, who="Manager")
+    bs.set_lock(live, who="Manager", now=NOW)
     bs.save(live, tmp_path / "scheduler.db")
 
 
@@ -390,7 +393,7 @@ def test_a_locked_backup_refuses_a_save(tmp_path):
     _database(live, rows=1)
     bs.save(live, tmp_path / "scheduler.db")
     before = _rows(bs.backup_path(live))
-    bs.set_lock(live, who="Manager")
+    bs.set_lock(live, who="Manager", now=NOW)
 
     _add_round(live, "should not reach the backup")
     with pytest.raises(bs.BackupError, match="locked"):
@@ -404,9 +407,9 @@ def test_the_lock_toggles(tmp_path):
     locked one by accident."""
     live = tmp_path / "bot.db"
 
-    assert bs.set_lock(live, who="Manager") is True
+    assert bs.set_lock(live, who="Manager", now=NOW) is True
     assert bs.is_locked(live)
-    assert bs.set_lock(live, who="Manager") is False
+    assert bs.set_lock(live, who="Manager", now=NOW) is False
     assert not bs.is_locked(live)
 
 
@@ -693,7 +696,7 @@ def test_status_reports_the_lock(tmp_path):
     live = tmp_path / "bot.db"
     _database(live)
     bs.save(live, tmp_path / "scheduler.db")
-    bs.set_lock(live, who="Manager")
+    bs.set_lock(live, who="Manager", now=NOW)
 
     reported = bs.state(live)
 
@@ -752,7 +755,7 @@ def test_discard_deletes_both_backups_and_the_lock(tmp_path):
     _database(live)
     _database(jobs, wal=False, rows=1)
     bs.save(live, jobs)
-    bs.set_lock(live, who="Manager")
+    bs.set_lock(live, who="Manager", now=NOW)
 
     assert bs.discard(live, jobs) is True
 
@@ -794,7 +797,7 @@ def test_a_raising_discard_raises_after_trying_every_file(tmp_path, monkeypatch)
     _database(live)
     _database(jobs, wal=False, rows=1)
     bs.save(live, jobs)
-    bs.set_lock(live, who="Manager")
+    bs.set_lock(live, who="Manager", now=NOW)
     stuck = bs.backup_path(live)
     unlink = Path.unlink
 

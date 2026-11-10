@@ -320,6 +320,7 @@ async def test_only_a_league_manager_may_press(tmp_path, view_cls, button):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_make_changes_returns_to_staging_with_the_list_intact(tmp_path):
     """A steward who reaches approval and realises they have missed a penalty must be able
     to go back — otherwise the safe thing to do at that screen is to approve."""
@@ -420,6 +421,7 @@ async def test_a_remove_button_is_offered_for_each_staged_correction(tmp_path, d
     assert [i.label for i in view.children if str(i.label).startswith("Remove")] == expected
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_removing_a_correction_takes_it_off_the_list(tmp_path):
     db_path = await _make_db(tmp_path, name="appeals_remove")
     state = _state(db_path, appeals=[_penalty(101), _penalty(102)])
@@ -436,6 +438,7 @@ async def test_removing_a_correction_takes_it_off_the_list(tmp_path):
     refresh.assert_awaited_once()
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_removing_a_correction_says_which_one_went(tmp_path):
     """Two corrections against the same driver differ only in their penalty, and a steward
     who removed the wrong one needs to see it immediately."""
@@ -453,6 +456,7 @@ async def test_removing_a_correction_says_which_one_went(tmp_path):
     assert "101" in _answered(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_remove_button_past_the_end_is_answered(tmp_path):
     """The list shifts as entries are removed, so a stale button must not remove the wrong
     correction — which would be invisible, because both are removals."""
@@ -786,7 +790,8 @@ def _all_lines(interaction, state) -> list[str]:
 @pytest.mark.parametrize(
     "kind, label",
     [
-        pytest.param("review", "Remove #1", id="remove-correction"),
+        pytest.param("review", "Remove #1", id="remove-correction", marks=pytest.mark.xfail(
+            strict=True, reason="#283: the output router takes the change queue's clock")),
         pytest.param("clear", _APPEALS_CLEAR, id="clear"),
     ],
 )
