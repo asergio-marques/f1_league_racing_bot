@@ -77,8 +77,8 @@ hooks without importing a module.
 
 **What each part may do:**
 
-- **A cog** turns a command, button or form into a call to one service, and replies, unless the
-  service it hands a button's workflow to answers through the interaction. It holds no
+- **A cog** turns a command, button or form into a call to one service, and replies, unless it
+  hands a button's press to a service's workflow, which answers through the interaction. It holds no
   database code and no league rule, so every rule a league relies on can be tested by calling a
   service with no Discord interaction involved. A cog holds one command group; when one grows too
   large, its workflows move into services before it is split. A module's commands sit under its own
@@ -94,11 +94,11 @@ hooks without importing a module.
   core's groups as it loads, which works, but leaves a module's commands under names that are
   core's.
 - **A service** holds the league's rules and all the database code. It may use discord.py: it can
-  post to a channel and build the buttons it posts, and a workflow a cog hands its button to is
-  handed the pressed interaction and answers the member through it, while the gates it walks stay
-  callable with no interaction (`approval_checks`). Keeping Discord out of the services entirely
-  would need a separate posting layer, which a bot this size has no use for. A service never
-  imports a cog.
+  post to a channel and build the buttons it posts, and a service's workflow a cog hands a button's
+  press to is handed the pressed interaction and answers the member through it, while the gates it
+  walks stay callable with no interaction (`approval_checks`). Keeping Discord out of the services
+  entirely would need a separate posting layer, which a bot this size has no use for. A service
+  never imports a cog.
 - **Buttons live beside the code that posts them:** with the cog when a command posts them, with
   the service when a service does. A service never reaches into a cog for a view.
 - **Shared helpers in core** are of two kinds. Those used by cogs (the base classes, the guards,
@@ -905,15 +905,12 @@ file) runs off the bot's main loop, so commands and buttons keep being answered 
 **The time is always passed in.** A service that needs the current time takes a `now` argument, and
 every time inside the bot is in UTC. The change queue's clock (`ChangeQueue.now`) is the bot's
 clock: whatever hands a service its `now`, a cog, a change type or the start-up sweep, reads it
-there, so that a test moving it moves every reading. The review's workflows
-(`season_review_workflows`) read it themselves, being handed no `now`: the press and the change it
-queues judge time alike, so a test moving the clock moves the time left on the backup question and
-the dates of the calendar gate as it moves the queue's. A stored time is written from the `now`
-handed in, never by SQLite's `datetime('now')`, and in one form, ISO 8601 with its UTC offset, a
-round's moment included, so that no reader handles a naive time and no equality test of a naive time
-with an aware one, which Python answers as unequal without an error, can arise. *Rejected:* keeping
-a round's moment without an offset and making it aware where it is read, which leaves every reader
-to remember the conversion. How tests treat `now` is CLAUDE.md's.
+there, so that a test moving it moves every reading. A stored time is written from the `now` handed
+in, never by SQLite's `datetime('now')`, and in one form, ISO 8601 with its UTC offset, a round's
+moment included, so that no reader handles a naive time and no equality test of a naive time with an
+aware one, which Python answers as unequal without an error, can arise. *Rejected:* keeping a
+round's moment without an offset and making it aware where it is read, which leaves every reader to
+remember the conversion. How tests treat `now` is CLAUDE.md's.
 
 ---
 
@@ -1191,8 +1188,8 @@ to it would switch off the one failure path for every command.
    reading the per-tier colours or the portrait settings stands aside and lets the season through,
    because a reader that cannot answer must not be the thing that refuses a season (its docstring
    says so); the season's team-name check (`approval_checks.team_name_problems`) is a stated
-   exception beside it: its catch-all puts the error in the host's log alone and finds nothing
-   wrong, so the review and the approval carry on with the names unchecked, because the check only
+   exception too: its catch-all puts the error in the host's log alone and finds nothing wrong, so
+   every review and confirmation carries on with the names unchecked, because the check only
    keeps a team name from becoming a bad artwork filename (its docstring says so); the season cog's
    own image review section (`SeasonCog._build_image_review_section`) is a stated exception beside
    it: its catch-all puts the error in the host's log and states the section as unreadable in the

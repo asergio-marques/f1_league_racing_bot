@@ -318,8 +318,8 @@ async def team_name_problems(team_service: TeamService, season_id: int | None) -
 
     A stated exception (architecture.md, "A catch-all error handler"): the check only keeps a
     team name from becoming a bad artwork filename, so where the teams cannot be read it finds
-    nothing wrong, and the review and the approval carry on with the names unchecked. The fault
-    goes to the host's log alone.
+    nothing wrong, and every review and confirmation carries on with the names unchecked. The
+    fault goes to the host's log alone.
     """
     problems: list[str] = []
     try:
