@@ -1563,17 +1563,26 @@ async def test_a_queued_job_is_offered_as_its_module_s_step(
 
 
 @pytest.mark.xfail(strict=True, reason=MODULE_STEPS)
-@pytest.mark.parametrize("status", ["FINAL", "AWAITING_APPEAL_VERDICTS"])
-async def test_a_round_that_has_ended_is_offered_its_clean_ups_alone(tmp_path, status) -> None:
-    """Round 1 (Bahrain) has ended, or its appeals are being judged. Weather hands back its
-    Phase 1 and its forecast clean-up, and results its submission: advance offers the clean-up
-    alone, as a round that has ended offers nothing else."""
+@pytest.mark.parametrize("status, not_held", [
+    pytest.param("FINAL", 0, id="final"),
+    pytest.param("AWAITING_APPEAL_VERDICTS", 0, id="its appeals being judged"),
+    pytest.param("CANCELLED", 1, id="every session entered as not held"),
+])
+async def test_a_round_that_has_ended_is_offered_its_clean_ups_alone(
+    tmp_path, status, not_held,
+) -> None:
+    """Round 1 (Bahrain) has ended, its appeals are being judged, or it ended cancelled because
+    every session was entered as not held. Weather hands back its Phase 1 and its forecast
+    clean-up, and results its submission: advance offers the clean-up alone, as a round that has
+    ended offers nothing else."""
     from leaguebot.core.services.test_mode_service import get_next_pending_phase
 
     db_path = str(tmp_path / "ended.db")
     await _three_rounds(db_path)
     async with get_connection(db_path) as db:
-        await db.execute("UPDATE rounds SET status = ? WHERE id = 1", (status,))
+        await db.execute(
+            "UPDATE rounds SET status = ?, not_held = ? WHERE id = 1", (status, not_held)
+        )
         await db.execute("DELETE FROM rounds WHERE id IN (2, 3)")
         await db.commit()
     hook = _steps_hook(
@@ -1589,19 +1598,26 @@ async def test_a_round_that_has_ended_is_offered_its_clean_ups_alone(tmp_path, s
 
 
 @pytest.mark.xfail(strict=True, reason=MODULE_STEPS)
+@pytest.mark.parametrize("status, not_held", [
+    pytest.param("FINAL", 0, id="final"),
+    pytest.param("CANCELLED", 1, id="every session entered as not held"),
+])
 async def test_the_steps_passed_over_are_the_modules_in_the_order_the_rounds_race(
-    tmp_path,
+    tmp_path, status, not_held,
 ) -> None:
     """Weather names Phase 1 of round 2 (Jeddah), Phases 3 and 2 of round 1 (Bahrain) and
-    Phase 1 of round 3 (Imola) as passed over, in that order, and round 2 has ended. Advance names
-    round 1's Phases 2 and 3, then round 3's Phase 1: by the order the rounds race, the division,
-    then the phase, and nothing of a round that has ended."""
+    Phase 1 of round 3 (Imola) as passed over, in that order, and round 2 has ended: final, or
+    cancelled because every session was entered as not held. Advance names round 1's Phases 2
+    and 3, then round 3's Phase 1: by the order the rounds race, the division, then the phase,
+    and nothing of a round that has ended."""
     from leaguebot.core.services.test_mode_service import get_passed_over_steps
 
     db_path = str(tmp_path / "passed_over_gathered.db")
     await _three_rounds(db_path)
     async with get_connection(db_path) as db:
-        await db.execute("UPDATE rounds SET status = 'FINAL' WHERE id = 2")
+        await db.execute(
+            "UPDATE rounds SET status = ?, not_held = ? WHERE id = 2", (status, not_held)
+        )
         await db.commit()
     hook = _steps_hook(
         ([], [(2, 1, "weather_p1"), (1, 3, "weather_p3"), (1, 2, "weather_p2"),
