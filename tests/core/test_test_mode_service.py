@@ -1580,6 +1580,15 @@ async def test_core_offers_the_first_of_the_steps_the_modules_hand_back(
                  id="a job its module hands back no step for is stale"),
     pytest.param("NORMAL", [[(1, 4, "results")], [(2, 1, "weather_p1")]], [_job(2, 1, days=6)],
                  (1, 4, None), id="an earlier round's step before a later round's job"),
+    pytest.param("NORMAL", [[(1, 2, "weather_p2")]], [_job(1, 1, days=2)], (1, 2, None),
+                 id="a job whose step has run passed over for its round's next step"),
+    pytest.param("NORMAL", [[(1, 1, "weather_p1"), (1, 2, "weather_p2")]],
+                 [_job(2, 1, days=1), _job(1, 2, days=2)], (1, 1, None),
+                 id="an earlier round's step before a later round's stale job",
+                 marks=pytest.mark.xfail(
+                     strict=True,
+                     reason="#283: a stale job is passed over before the earlier rounds are asked",
+                 )),
 ])
 async def test_a_queued_job_is_offered_as_its_module_s_step(
     tmp_path, round_format, handed, jobs, expected,
@@ -1591,7 +1600,12 @@ async def test_a_queued_job_is_offered_as_its_module_s_step(
     A job whose module hands back no step of its kind for its round is stale, and passed over.
     A step of an earlier round comes before a later round's job, with no job id of its own: one
     stand-in hands back round 1's result submission, the other round 2's Phase 1, whose job the
-    scheduler holds."""
+    scheduler holds. A job whose step has already run, though the scheduler still holds it, is
+    passed over for its round's next real step: round 1's Phase 1 job held, weather hands back
+    only its Phase 2, and Phase 2 is offered with no job id. A later round's stale job, first to
+    fire, does not jump an earlier round's step: round 2's Phase 1 job held though weather owes
+    round 2 nothing, round 1's Phase 1 misfired and its Phase 2 job held, and round 1's Phase 1 is
+    offered."""
     from leaguebot.core.services.test_mode_service import get_next_pending_phase
 
     db_path = str(tmp_path / "jobs.db")
