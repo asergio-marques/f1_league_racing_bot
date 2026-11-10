@@ -1200,7 +1200,8 @@ async def test_a_mystery_round_whose_save_is_discarded_is_armed_again_with_its_m
 
 
 async def _place_r3(league: Any, **delta: float) -> None:
-    """Pro's round 3 stands *delta* from "now", stored as plain UTC as production stores it."""
+    """Pro's round 3 stands *delta* from "now", stored in UTC with its offset as production
+    stores it."""
     await league.write(
         "UPDATE rounds SET scheduled_at = ? WHERE id = ?",
         (league.clock.now + timedelta(**delta)).astimezone(timezone.utc).isoformat(), R3,

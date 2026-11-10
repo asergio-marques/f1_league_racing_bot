@@ -124,7 +124,7 @@ def summer_time_host(monkeypatch):
     time.tzset()
 
 
-def test_a_round_stored_as_plain_utc_is_shown_at_its_utc_moment(summer_time_host):
+def test_a_round_s_utc_moment_is_shown_at_that_moment_on_a_summer_time_host(summer_time_host):
     """A round's moment is read back aware, in UTC. On a host in British Summer Time, a round
     at 20:00 UTC on 30 July shows that moment, not one an hour early."""
     import calendar

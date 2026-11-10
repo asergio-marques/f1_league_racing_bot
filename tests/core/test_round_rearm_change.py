@@ -80,7 +80,8 @@ async def _rearmings(league: Any) -> list[dict[str, Any]]:
 
 
 async def _place(league: Any, rid: int = R3, **delta: float) -> None:
-    """Round *rid* stands *delta* from "now", stored as plain UTC as production stores it."""
+    """Round *rid* stands *delta* from "now", stored in UTC with its offset as production stores
+    it."""
     await league.write(
         "UPDATE rounds SET scheduled_at = ? WHERE id = ?",
         (league.clock.now + timedelta(**delta)).astimezone(timezone.utc).isoformat(), rid,

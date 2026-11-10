@@ -21,14 +21,14 @@ from datetime import datetime, timezone
 
 import pytest
 
-#: Why the moment's tests fail until the build hands it aware.
-_AWARE = "#283: an imported moment is still handed back naive"
-
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.utils.round_import import (
     parse_bulk_round_lines,
     parse_round_xml,
 )
+
+#: Why the moment's tests fail until the build hands it aware.
+_AWARE = "#283: an imported moment is still handed back naive"
 
 
 # ── The pasted-line format ────────────────────────────────────────────────
