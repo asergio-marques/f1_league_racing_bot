@@ -1142,10 +1142,11 @@ to it would switch off the one failure path for every command.
    before it looks again. The queue's catches of a step that raises (`ChangeQueue._run_step`), of a
    check that raises as the change starts (`ChangeQueue._start`), and of a hook that raises in
    either (`ChangeQueue._step_failed`, `_end_on_check_fault` and `_refuse`, each leading to the
-   lane's stop) are failure paths as well: each stops the lane, or, for a step of a league's
-   setting, `/bot init`'s save or a role move that gives `Step.on_fault`, or a member's change of a
-   type that gives `ChangeType.on_check_fault`, ends the job instead and the lane goes on (see "A
-   job that fails stops its lane"). Either way the fault is logged on the host and recorded in the
+   lane's stop) are failure paths as well: the catches of a step and of a check each stop the lane,
+   or, for a step of a league's setting, `/bot init`'s save or a role move that gives
+   `Step.on_fault`, or a member's change of a type that gives `ChangeType.on_check_fault`, end the
+   job instead and the lane goes on (see "A job that fails stops its lane"), and a hook's catch
+   always leads to the stop. Either way the fault is logged on the host and recorded in the
    log channel as a failure, once — save a fault in `/bot init`'s save, which writes no line, and a
    fault in its check while no server holds the league, when there is no log channel to record it
    in; the host's log holds either alone. The callback a change type may give for a Discard of a
@@ -1213,17 +1214,17 @@ to it would switch off the one failure path for every command.
    (their docstrings say so); a season's fingerprint that cannot be taken
    (`season_fingerprint_service.take_fingerprint`) is a stated exception: it is signed as an empty
    one, which refuses an approval whose review was read, because a fingerprint that could not be
-   read must not wave one through (its docstring says so); and the factory reset's Discord clean-up
+   read must not wave one through (its docstring says so); the factory reset's Discord clean-up
    (`bot_cog._clean_up`) is a stated exception: it says in the reset's last report and closing line
-   that its clean-up stopped, because a reset must not end in silence (its docstring says so);
+   that its clean-up stopped, because a reset must not end in silence (its docstring says so); and
+   the scheduler's removal of one job (`SchedulerService._remove_job`) is a stated exception: every
+   cancel is a clean-up, so a job that will not go is logged on the host and left, a teardown list
+   going on past it (`SchedulerService` says so);
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a job: one that fails stops its lane until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
    work (above). Neither applies where an operation's own rule is all or nothing, as a points
-   amendment's save is (the results specification's "Changing points system mid-season"). The
-   scheduler's removal of one job (`SchedulerService._remove_job`) is this place's handler for a
-   teardown list, called once for each job rather than written in the loop's body: one job that
-   will not go must not stop the rest (`SchedulerService` says so);
+   amendment's save is (the results specification's "Changing points system mid-season");
 3. around reporting a failure, or writing a line to the log channel, where that itself might fail:
    keeping a line for retry (`OutputRouter._enqueue_if_configured`), recording a refusal already
    answered (`log_lines.record_refusal`) and naming a member in a line (`log_lines.name_of_member`)
@@ -1346,7 +1347,7 @@ later on its own.
   `WALL_CLOCK_ALLOWED`), a catch-all handler outside the five places (one that raises again, calls
   `report_failure` as a statement directly in its body, or sits directly in the body of a `for`
   loop, is in a place by its shape; `CATCH_ALLS_ALLOWED` names for good the failure paths of place
-  1, the stated exceptions, place 2's handlers called for each item, the guards around reporting and
+  1, the stated exceptions, place 3's guards around reporting and writing a log line and
   the fifth place's handlers), and a save outside a queued change. The job check and the check of
   cogs handling their own errors are absolute, with no list of breaches left to grow, and the log
   channel's check holds its six
