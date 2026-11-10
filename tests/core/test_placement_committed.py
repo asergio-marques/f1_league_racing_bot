@@ -26,9 +26,6 @@ from tests.core.test_placement_assign import (
     _service,
 )
 
-#: Why a placement refusal test fails until #283's build raises the member's refusal by name.
-PLACEMENT_REFUSAL = "#283: placement still refuses with a bare ValueError, not Refused"
-
 
 async def _assign(db_path, *, division_id: int = DIVISION_ID, **kwargs) -> dict:
     """Place the driver at Alpha through `assign_on`: `/driver assign`'s save without the change
@@ -132,7 +129,6 @@ async def test_a_placement_in_a_season_in_setup_defaults_to_uncommitted(tmp_path
     assert await _committed(db_path) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_a_committed_driver_is_refused_where_only_uncommitted_ones_may_be_placed(tmp_path):
     """Mid-season placing: the driver already holds a confirmed seat at Alpha in Division 1, and
     is assigned to Division 2 where only unconfirmed drivers may be placed. The save refuses him,
@@ -171,7 +167,6 @@ async def test_removing_an_uncommitted_placement_revokes_nothing_and_posts_nothi
     assert result["lineups"] == []
 
 
-@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_a_committed_placement_is_refused_where_only_uncommitted_ones_may_be_removed(tmp_path):
     """The driver sits confirmed at Alpha in Division 1. Taking him out where only unconfirmed
     placements may be removed is refused, pointing to `/driver move`, and he stays confirmed."""

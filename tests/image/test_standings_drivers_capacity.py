@@ -18,9 +18,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from lxml import etree
 
-#: Why a placement refusal test fails until #283's build raises the member's refusal by name.
-PLACEMENT_REFUSAL = "#283: placement still refuses with a bare ValueError, not Refused"
-
 
 SVG_NS = "http://www.w3.org/2000/svg"
 DRIVERS = "standings_drivers_template"
@@ -198,7 +195,6 @@ async def test_no_standings_drawn_means_no_problem(tmp_path, toggle, images):
 # ── As a league meets it, through the choke point ─────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_a_race_placement_past_the_rows_is_refused_through_guard_assign(tmp_path):
     """The two seated reserves are not among the drivers counted: they hold no row."""
     from leaguebot.core.models.refusal import Refused

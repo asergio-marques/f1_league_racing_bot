@@ -17,9 +17,6 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 
-#: Why a placement refusal test fails until #283's build raises the member's refusal by name.
-PLACEMENT_REFUSAL = "#283: placement still refuses with a bare ValueError, not Refused"
-
 
 RESERVE = "Reserve"
 ORDINARY = "Team 1"
@@ -160,7 +157,6 @@ async def _place(service, season_id, division_id, team):
     ],
     ids=["reserve", "sheet", "standings", "declared"],
 )
-@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_placement_capacity_guards_run_with_a_stub_drawing(
     tmp_path, caplog, guard, team, refusal
 ):

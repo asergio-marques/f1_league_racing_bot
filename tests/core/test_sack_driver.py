@@ -38,8 +38,6 @@ from leaguebot.core.services.placement_service import PlacementService
 from tests.core.test_driver_move import _end_the_races, _unconfirm_lewis
 from tests.support.teams import seed_team_instances
 
-#: Why a placement refusal test fails until #283's build raises the member's refusal by name.
-PLACEMENT_REFUSAL = "#283: placement still refuses with a bare ValueError, not Refused"
 
 SERVER_ID = 10708
 SEASON_ID = 1
@@ -221,7 +219,6 @@ async def _profile_state(db_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_a_driver_with_no_confirmed_placement_is_refused(tmp_path):
     """Issue #220: an uncommitted placement is unassigned, an Unassigned driver rejected."""
     from leaguebot.core.models.refusal import Refused
@@ -245,7 +242,6 @@ async def test_a_driver_with_no_confirmed_placement_is_refused(tmp_path):
         DriverState.PENDING_DRIVER_CORRECTION,
     ],
 )
-@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_any_other_state_is_refused(tmp_path, state):
     """Someone mid-signup has nothing to revoke, and someone at Not Signed Up is already
     out — sacking either would do nothing but move a driver the season no longer holds. The

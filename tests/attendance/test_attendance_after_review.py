@@ -47,8 +47,6 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.services.penalty_wizard import StagedPardon
 from tests.support.change_queue import http_error, in_a_job
 
-#: Why the sanction check's refusal test fails until #283's build names the member's refusal.
-PLACEMENT_REFUSAL = "#283: placement still refuses with a bare ValueError, not Refused"
 
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
 SEASON_ID = 51
@@ -589,7 +587,6 @@ async def test_a_sanction_s_roles_are_changed_even_once_attendance_is_off(tmp_pa
     assert taken == {PRO_ROLE, ALPHA_ROLE}
 
 
-@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_check_sanction_refuses_a_full_reserve_block(tmp_path):
     """Max is owed an autoreserve, and the placement service's guard refuses the move to the
     Reserve team of Pro (its block in the lineup picture is full). The check made before the
@@ -612,9 +609,6 @@ async def test_check_sanction_refuses_a_full_reserve_block(tmp_path):
     assert await _state(db_path, MAX) == ("ASSIGNED", 1)
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: check_sanction still takes any ValueError for a refusal"
-)
 async def test_an_unexpected_value_error_is_a_failure_not_a_refusal(tmp_path):
     """Max is owed an autoreserve, and the placement service's guard raises a bug's `ValueError`
     rather than a refusal. The check made before the sanction is saved lets it go on as a fault,

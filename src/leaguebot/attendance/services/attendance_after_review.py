@@ -37,6 +37,7 @@ import discord
 from leaguebot.attendance.services import attendance_service as _att
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord
+from leaguebot.core.models.refusal import Refused
 from leaguebot.core.services import lineup_posting
 from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -145,7 +146,7 @@ class AttendanceAfterReview:
             await _att.check_sanction(
                 self._db_path, self._placement, round_id, division_id, candidate
             )
-        except (_att.SanctionNotApplicable, ValueError) as error:
+        except (_att.SanctionNotApplicable, Refused) as error:
             # Worded as a failure the queue stops on, so its notice names what to repair.
             raise StepFailedOnDiscord(str(error)) from None
 

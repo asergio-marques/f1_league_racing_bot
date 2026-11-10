@@ -28,8 +28,6 @@ from leaguebot.core.services.placement_service import (
     _fmt_ms,
 )
 
-#: Why a placement refusal test fails until #283's build raises the member's refusal by name.
-PLACEMENT_REFUSAL = "#283: placement still refuses with a bare ValueError, not Refused"
 
 SERVER_ID = 9408
 ROLE_ID = 4242
@@ -216,7 +214,6 @@ async def test_renaming_a_team_with_no_mapping_is_a_no_op(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_a_role_another_team_holds_is_refused_and_nothing_written(tmp_path):
     """A submission names a team by its role, so a role two teams held would name either.
     Alpha holds 4242 and Beta 5353; giving Beta 4242 is refused naming Alpha, and Beta keeps
@@ -234,7 +231,6 @@ async def test_a_role_another_team_holds_is_refused_and_nothing_written(tmp_path
     assert await _audit(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_the_reserve_s_role_is_one_no_other_team_may_hold(tmp_path):
     from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)

@@ -2069,7 +2069,7 @@ async def check_sanction(
 ) -> None:
     """Refuse a sanction that cannot be saved, before it is: an autoreserve in a division with no
     Reserve team (`SanctionNotApplicable`), or one the placement service's capacity guards refuse
-    (ValueError). Reads templates off the loop, which a save cannot; an autosack needs no check.
+    (`Refused`). Reads templates off the loop, which a save cannot; an autosack needs no check.
     """
     if candidate["sanction"] != "AUTORESERVE":
         return

@@ -14,9 +14,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-#: Why a placement refusal test fails until #283's build raises the member's refusal by name.
-PLACEMENT_REFUSAL = "#283: placement still refuses with a bare ValueError, not Refused"
-
 
 ORDINARY = "Team 1"
 RACE = "results_race_template"
@@ -178,7 +175,6 @@ async def _seed(tmp_path):
     return db_path, season_id, division_id
 
 
-@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_a_placement_past_the_declared_rows_is_refused_through_guard_assign(
     tmp_path, declare
 ):

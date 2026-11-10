@@ -81,6 +81,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.core.models.refusal import Refused
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
 from leaguebot.core.services import lineup_posting, standing_posts
 from leaguebot.core.services.change_queue import (
@@ -425,18 +426,19 @@ def driver_move_change(
         )
         if refused is not None:
             return refused
+        to_division_id = int(payload["to_division_id"])
+        from_division_id = int(payload["from_division_id"])
+        driver_profile_id = int(payload["driver_profile_id"])
+        team_name = str(payload["team_name"])
         try:
-            await placement.guard_move(
-                int(payload["to_division_id"]), season_id, str(payload["team_name"])
-            )
+            await placement.guard_move(to_division_id, season_id, team_name)
             async with get_connection(ctx.db_path) as db:
                 await placement.judge_move_on(
-                    db, driver_profile_id=int(payload["driver_profile_id"]),
-                    season_id=season_id, from_division_id=int(payload["from_division_id"]),
-                    to_division_id=int(payload["to_division_id"]),
-                    team_name=str(payload["team_name"]),
+                    db, driver_profile_id=driver_profile_id, season_id=season_id,
+                    from_division_id=from_division_id, to_division_id=to_division_id,
+                    team_name=team_name,
                 )
-        except ValueError as refusal:
+        except Refused as refusal:
             return Verdict.refuse(f"⛔ {refusal}")
         return Verdict.go()
 
@@ -510,13 +512,14 @@ def driver_sack_change(
         ) or await profile_refusal(ctx.db_path, payload)
         if refused is not None:
             return refused
+        driver_profile_id = int(payload["driver_profile_id"])
+        season_id = int(payload["season_id"])
         try:
             async with get_connection(ctx.db_path) as db:
                 await placement.judge_sack_on(
-                    db, driver_profile_id=int(payload["driver_profile_id"]),
-                    season_id=int(payload["season_id"]),
+                    db, driver_profile_id=driver_profile_id, season_id=season_id,
                 )
-        except ValueError as refusal:
+        except Refused as refusal:
             return Verdict.refuse(f"⛔ {refusal}")
         return Verdict.go()
 
@@ -581,13 +584,15 @@ def driver_release_change(
         )
         if refused is not None:
             return refused
+        driver_profile_id = int(payload["driver_profile_id"])
+        division_id = int(payload["division_id"])
         try:
             async with get_connection(ctx.db_path) as db:
                 await placement.judge_release_on(
-                    db, driver_profile_id=int(payload["driver_profile_id"]),
-                    division_id=int(payload["division_id"]), season_id=season_id,
+                    db, driver_profile_id=driver_profile_id, division_id=division_id,
+                    season_id=season_id,
                 )
-        except ValueError as refusal:
+        except Refused as refusal:
             return Verdict.refuse(f"⛔ {refusal}")
         return Verdict.go()
 
@@ -656,18 +661,16 @@ def driver_assign_change(
         )
         if refused is not None:
             return refused
+        team_name = str(payload["team_name"])
+        driver_profile_id = int(payload["driver_profile_id"])
         try:
-            await placement.guard_assign(
-                division_id, season_id, str(payload["team_name"]),
-                int(payload["driver_profile_id"]),
-            )
+            await placement.guard_assign(division_id, season_id, team_name, driver_profile_id)
             async with get_connection(ctx.db_path) as db:
                 await placement.judge_assign_on(
-                    db, driver_profile_id=int(payload["driver_profile_id"]),
-                    division_id=division_id, team_name=str(payload["team_name"]),
-                    season_id=season_id, uncommitted_only=True,
+                    db, driver_profile_id=driver_profile_id, division_id=division_id,
+                    team_name=team_name, season_id=season_id, uncommitted_only=True,
                 )
-        except ValueError as refusal:
+        except Refused as refusal:
             return Verdict.refuse(f"⛔ {refusal}")
         return Verdict.go()
 
@@ -744,13 +747,14 @@ def driver_unassign_change(
         )
         if refused is not None:
             return refused
+        driver_profile_id = int(payload["driver_profile_id"])
         try:
             async with get_connection(ctx.db_path) as db:
                 await placement.judge_unassign_on(
-                    db, driver_profile_id=int(payload["driver_profile_id"]),
-                    division_id=division_id, season_id=season_id, uncommitted_only=True,
+                    db, driver_profile_id=driver_profile_id, division_id=division_id,
+                    season_id=season_id, uncommitted_only=True,
                 )
-        except ValueError as refusal:
+        except Refused as refusal:
             return Verdict.refuse(f"⛔ {refusal}")
         return Verdict.go()
 

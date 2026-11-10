@@ -10,8 +10,6 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 
-#: Why a placement refusal test fails until #283's build raises the member's refusal by name.
-PLACEMENT_REFUSAL = "#283: placement still refuses with a bare ValueError, not Refused"
 
 SERVER_ID = 1
 
@@ -43,7 +41,6 @@ def _service(db_path):
     return PlacementService(db_path)  # handed no drawing, it asks no capacity guard
 
 
-@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_a_real_driver_is_refused_under_test_mode(tmp_path):
     from leaguebot.core.models.refusal import Refused
     db_path = await _seed(tmp_path, test_mode=True, drivers={1: False})
@@ -75,7 +72,6 @@ async def test_an_unknown_profile_is_left_to_the_check_that_reports_it(tmp_path)
     await _service(db_path)._guard_test_mode(404)
 
 
-@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_the_guard_runs_before_a_placement(tmp_path):
     """The refusal reaches the caller through the assignment's guards, not only in isolation."""
     from leaguebot.core.models.refusal import Refused

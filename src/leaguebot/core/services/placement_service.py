@@ -15,6 +15,7 @@ import discord
 from leaguebot.core.db.database import get_connection, sole_row
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.driver_profile import DriverProfile, DriverState
+from leaguebot.core.models.refusal import Refused
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL, write_transition
 from leaguebot.core.services.image_drawing import CapacityProblem, ImageDrawing
@@ -344,13 +345,13 @@ class PlacementService:
 
         **A role belongs to one team only** (decided 2026-09-22, with #375). A submission names
         a team by its role, and a result records the team the role resolves to, so a role two
-        teams held would name either. Raises ``ValueError`` naming the team that holds it, and
+        teams held would name either. Raises ``Refused`` naming the team that holds it, and
         writes nothing; re-setting a team's own role is allowed. The schema's unique index on
         ``role_id`` is the backstop.
         """
         holder = await self._team_holding_role(db, role_id, team_name)
         if holder is not None:
-            raise ValueError(
+            raise Refused(
                 f'<@&{role_id}> is already the role of "{holder}". A role belongs to '
                 "one team only."
             )
@@ -695,7 +696,7 @@ class PlacementService:
             lambda drawing, seated: drawing.reserve_capacity_problem(seated),
         )
         if problem is not None:
-            raise ValueError(
+            raise Refused(
                 f"{problem.problem}. The driver was **not** assigned. {problem.remedy}"
             )
 
@@ -743,7 +744,7 @@ class PlacementService:
             lambda drawing, seated: drawing.sheet_capacity_problem(seated),
         )
         if problem is not None:
-            raise ValueError(
+            raise Refused(
                 f"{problem.problem}. The driver was **not** assigned. {problem.remedy}"
             )
 
@@ -799,7 +800,7 @@ class PlacementService:
             lambda drawing, seated: drawing.standings_capacity_problem(seated),
         )
         if problem is not None:
-            raise ValueError(
+            raise Refused(
                 f"{problem.problem}. The driver was **not** assigned. {problem.remedy}"
             )
 
@@ -831,7 +832,7 @@ class PlacementService:
         if row["is_test_driver"]:
             return
         if row["test_mode_active"]:
-            raise ValueError(
+            raise Refused(
                 "Test mode is active — a real driver cannot be assigned to a team. "
                 "Turn it off with `/test-mode toggle` first."
             )
@@ -879,7 +880,7 @@ class PlacementService:
             lambda drawing, seated: drawing.declared_capacity_problem(seated),
         )
         if problem is not None:
-            raise ValueError(f"{problem.problem}. {problem.remedy}")
+            raise Refused(f"{problem.problem}. {problem.remedy}")
 
     async def guard_roster_capacity(
         self, division_id: int, added: Mapping[str, int]
@@ -900,7 +901,7 @@ class PlacementService:
         The declared-capacity branch of ``_guard_image_capacity`` is not run: every catalogue
         declares ``capacity=None`` today, so it bounds no placement, real or test.
 
-        Raises ValueError naming the template, as a real placement's refusal does.
+        Raises Refused naming the template, as a real placement's refusal does.
         """
         reserve_team: str | None = None
         classified_team: str | None = None
@@ -948,7 +949,7 @@ class PlacementService:
         only: None for the seat where the reserve team has none free and would make another.
 
         A race team's seats are finite and fill in number order; the reserve team makes another
-        seat rather than refusing. Raises ValueError for a team the division does not hold, or a
+        seat rather than refusing. Raises Refused for a team the division does not hold, or a
         race team with no seat free.
         """
         cursor = await db.execute(
@@ -960,7 +961,7 @@ class PlacementService:
         )
         ti_row = await cursor.fetchone()
         if ti_row is None:
-            raise ValueError(f"Team **{team_name}** not found in this division.")
+            raise Refused(f"Team **{team_name}** not found in this division.")
         is_reserve = bool(ti_row["is_reserve"])
 
         cursor = await db.execute(
@@ -977,7 +978,7 @@ class PlacementService:
         if seat_row is not None:
             return seat_row["id"], is_reserve
         if not is_reserve:
-            raise ValueError(f"**{team_name}** in this division has no available seats.")
+            raise Refused(f"**{team_name}** in this division has no available seats.")
         return None, is_reserve
 
     async def _free_seat(self, db, division_id: int, team_name: str) -> tuple[int, bool]:
@@ -985,7 +986,7 @@ class PlacementService:
         making the reserve team another seat where it has none free.
 
         Shared by placing a driver and moving one, so the two cannot disagree about where a
-        driver may sit. Raises ValueError as `_find_free_seat` does.
+        driver may sit. Raises Refused as `_find_free_seat` does.
         """
         found, is_reserve = await self._find_free_seat(db, division_id, team_name)
         if found is not None:
@@ -1025,7 +1026,7 @@ class PlacementService:
         """Judge a move of a driver on *db*, writing nothing: what `move_seat_on` would refuse,
         in its words, and the rows it then moves by.
 
-        Refused (ValueError) where the driver holds no committed placement in the division
+        Refused where the driver holds no committed placement in the division
         left, where they already hold a seat in a different division moved into, where the team
         is the one they already sit in, and where the team has no seat free. Returns the profile's
         account (*user_id*), whether it is a test driver and the placement left (*source*).
@@ -1037,7 +1038,7 @@ class PlacementService:
         )
         row = await cursor.fetchone()
         if row is None:
-            raise ValueError("Driver profile not found.")
+            raise Refused("Driver profile not found.")
 
         cursor = await db.execute(
             """
@@ -1052,14 +1053,14 @@ class PlacementService:
         )
         source = await cursor.fetchone()
         if source is None:
-            raise ValueError("Driver holds no seat in the division they are moved from.")
+            raise Refused("Driver holds no seat in the division they are moved from.")
         if not source["committed"]:
-            raise ValueError(
+            raise Refused(
                 "That placement is not yet confirmed. Change it with `/driver unassign` "
                 "and `/driver assign`."
             )
         if from_division_id == to_division_id and source["team_name"] == team_name:
-            raise ValueError(f"Driver already sits in **{team_name}** in this division.")
+            raise Refused(f"Driver already sits in **{team_name}** in this division.")
         if from_division_id != to_division_id:
             cursor = await db.execute(
                 "SELECT 1 FROM driver_season_assignments "
@@ -1067,7 +1068,7 @@ class PlacementService:
                 (driver_profile_id, season_id, to_division_id),
             )
             if await cursor.fetchone() is not None:
-                raise ValueError(
+                raise Refused(
                     "Driver already holds a seat in the division they would move into."
                 )
 
@@ -1247,7 +1248,7 @@ class PlacementService:
         The capacity guards `move_driver` makes before it writes: the reserve block, the
         attendance sheet's rows, the driver standings' and an image template's. Public so that
         a sanction's check, a job of its own, can ask them before the move is saved, since they
-        read templates off the loop and cannot run inside a save (#439). Raises ValueError.
+        read templates off the loop and cannot run inside a save (#439). Raises Refused.
         """
         await self._guard_image_capacity(to_division_id, season_id, team_name)
 
@@ -1315,7 +1316,7 @@ class PlacementService:
         (`_guard_image_capacity`), then the server's test-mode flag (`_guard_test_mode`). Public
         so that the assignment's check, a job of its own, can ask them at the ask and again as the
         change starts, since they read templates off the loop and cannot run inside a save.
-        Raises ValueError.
+        Raises Refused.
         """
         await self._guard_image_capacity(division_id, season_id, team_name)
         await self._guard_test_mode(driver_profile_id)
@@ -1333,7 +1334,7 @@ class PlacementService:
         """Judge the assignment of a driver to a team of a division on *db*, writing nothing: what
         `assign_on` would refuse, in its words, and the state it would assign from.
 
-        Raises ValueError where the profile is not found, is neither Unassigned nor Assigned,
+        Raises Refused where the profile is not found, is neither Unassigned nor Assigned,
         with *uncommitted_only* already holds a confirmed placement in the season, already holds
         a seat in the division, or the team is not in the division or has no free seat. Returns
         the profile's *current_state*.
@@ -1343,10 +1344,10 @@ class PlacementService:
         )
         row = await cursor.fetchone()
         if row is None:
-            raise ValueError("Driver profile not found.")
+            raise Refused("Driver profile not found.")
         current_state = DriverState(row["current_state"])
         if current_state not in (DriverState.UNASSIGNED, DriverState.ASSIGNED):
-            raise ValueError(
+            raise Refused(
                 f"Driver must be Unassigned or Assigned to be placed "
                 f"(current state: {current_state.value})."
             )
@@ -1358,7 +1359,7 @@ class PlacementService:
                 (driver_profile_id, season_id),
             )
             if await cursor.fetchone() is not None:
-                raise ValueError(
+                raise Refused(
                     "Driver already holds a confirmed placement this season. Move them "
                     "with `/driver move`, or release them from a division with "
                     "`/driver release`."
@@ -1373,7 +1374,7 @@ class PlacementService:
             cursor = await db.execute("SELECT name FROM divisions WHERE id = ?", (division_id,))
             div_row = await cursor.fetchone()
             div_name = div_row["name"] if div_row else str(division_id)
-            raise ValueError(f"Driver is already assigned to a team in **{div_name}**.")
+            raise Refused(f"Driver is already assigned to a team in **{div_name}**.")
 
         await self._find_free_seat(db, division_id, team_name)
         return {"current_state": current_state}
@@ -1455,7 +1456,7 @@ class PlacementService:
         """Judge the release of a committed driver from one division on *db*, writing nothing:
         what `unassign_on` would refuse of it, in its words, and the facts it then unassigns by.
 
-        Refused (ValueError) for a division where the driver holds no seat, for an uncommitted
+        Refused for a division where the driver holds no seat, for an uncommitted
         placement, which is unassigned instead, for a driver's only confirmed seat, which is
         sacked or moved instead, and as `judge_unassign_on` refuses.
         """
@@ -1466,9 +1467,9 @@ class PlacementService:
         )
         row = await cursor.fetchone()
         if row is None:
-            raise ValueError("Driver holds no seat in that division.")
+            raise Refused("Driver holds no seat in that division.")
         if not row["committed"]:
-            raise ValueError(
+            raise Refused(
                 "That placement is not yet confirmed. Remove it with `/driver unassign`."
             )
         # Only a confirmed seat counts: a driver left holding nothing but an unconfirmed
@@ -1480,7 +1481,7 @@ class PlacementService:
             (driver_profile_id, season_id, division_id),
         )
         if (await sole_row(cursor))["n"] == 0:
-            raise ValueError(
+            raise Refused(
                 "That is the driver's only seat. Sack them with `/driver sack`, or move "
                 "them with `/driver move`."
             )
@@ -1501,7 +1502,7 @@ class PlacementService:
         """Judge the removal of a driver's assignment from one division on *db*, writing nothing:
         what `unassign_on` would refuse, in its words, and what it would then remove.
 
-        Raises ValueError where the profile is not found, is not Assigned, holds no assignment
+        Raises Refused where the profile is not found, is not Assigned, holds no assignment
         in the division, or, with *uncommitted_only*, holds a confirmed one. Returns the
         profile's account (*user_id*), whether it is a test driver, and the assignment: its
         row (*assignment_id*), its seat (*seat_id*) and whether it was confirmed
@@ -1514,10 +1515,10 @@ class PlacementService:
         )
         row = await cursor.fetchone()
         if row is None:
-            raise ValueError("Driver profile not found.")
+            raise Refused("Driver profile not found.")
         current_state = DriverState(row["current_state"])
         if current_state != DriverState.ASSIGNED:
-            raise ValueError(
+            raise Refused(
                 f"Driver must be in Assigned state to be unassigned "
                 f"(current state: {current_state.value})."
             )
@@ -1532,10 +1533,10 @@ class PlacementService:
             cursor = await db.execute("SELECT name FROM divisions WHERE id = ?", (division_id,))
             div_row = await cursor.fetchone()
             div_name = div_row["name"] if div_row else str(division_id)
-            raise ValueError(f"Driver is not assigned to any team in **{div_name}**.")
+            raise Refused(f"Driver is not assigned to any team in **{div_name}**.")
         was_committed = bool(asgn_row["committed"])
         if uncommitted_only and was_committed:
-            raise ValueError(
+            raise Refused(
                 "That placement has been confirmed. Move the driver with `/driver move`, "
                 "or release them from the division with `/driver release`."
             )
@@ -1780,7 +1781,7 @@ class PlacementService:
         """Judge a sack of a driver on *db*, writing nothing: what `sack_seats_on` would refuse,
         in its words, and what it would then sack by.
 
-        Raises ValueError where the profile is not found, is neither Unassigned nor Assigned, or
+        Raises Refused where the profile is not found, is neither Unassigned nor Assigned, or
         holds no confirmed placement in the season. Returns the profile's account (*user_id*), its
         state, whether it is a former driver and a test driver, and the divisions it is placed in
         (*division_ids*).
@@ -1792,10 +1793,10 @@ class PlacementService:
         )
         row = await cursor.fetchone()
         if row is None:
-            raise ValueError("Driver profile not found.")
+            raise Refused("Driver profile not found.")
         current_state = DriverState(row["current_state"])
         if current_state not in (DriverState.UNASSIGNED, DriverState.ASSIGNED):
-            raise ValueError(
+            raise Refused(
                 f"Driver must be Unassigned or Assigned to be sacked "
                 f"(current state: {current_state.value})."
             )
@@ -1807,7 +1808,7 @@ class PlacementService:
         )
         asgn_rows = await cursor.fetchall()
         if not any(r["committed"] for r in asgn_rows):
-            raise ValueError(
+            raise Refused(
                 "Only a driver whose placement is confirmed can be sacked. Remove an "
                 "unconfirmed placement with `/driver unassign`, and turn down an "
                 "Unassigned driver with `/driver reject`."
@@ -1939,35 +1940,13 @@ class PlacementService:
         refusals: this is the committing form `/attendance sync` sacks a driver through, with no
         queue to report to. `/driver sack` is a change on the queue (`driver_changes`), which
         takes the roles after the save, and a sanction's own role change raises. Raises
-        ValueError for blocking conditions.
+        Refused as `judge_sack_on` does.
         """
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT current_state, is_test_driver FROM driver_profiles WHERE id = ?",
-                (driver_profile_id,),
+            judged = await self.judge_sack_on(
+                db, driver_profile_id=driver_profile_id, season_id=season_id,
             )
-            row = await cursor.fetchone()
-            if row is None:
-                raise ValueError("Driver profile not found.")
-            current_state = DriverState(row["current_state"])
-            is_test_driver: bool = bool(row["is_test_driver"])
-            if current_state not in (DriverState.UNASSIGNED, DriverState.ASSIGNED):
-                raise ValueError(
-                    f"Driver must be Unassigned or Assigned to be sacked "
-                    f"(current state: {current_state.value})."
-                )
-
-            cursor = await db.execute(
-                "SELECT committed FROM driver_season_assignments "
-                "WHERE driver_profile_id = ? AND season_id = ?",
-                (driver_profile_id, season_id),
-            )
-            if not any(r["committed"] for r in await cursor.fetchall()):
-                raise ValueError(
-                    "Only a driver whose placement is confirmed can be sacked. Remove an "
-                    "unconfirmed placement with `/driver unassign`, and turn down an "
-                    "Unassigned driver with `/driver reject`."
-                )
+        is_test_driver: bool = judged["is_test_driver"]
 
         # Revoke all roles before DB mutation: the placements are what they are computed from.
         member = guild.get_member(int(discord_user_id))

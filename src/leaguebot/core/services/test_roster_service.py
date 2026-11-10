@@ -26,6 +26,7 @@ from typing import TypedDict
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection, inserted_id, sole_row
+from leaguebot.core.models.refusal import Refused
 from leaguebot.core.services.team_service import (
     division_team_references,
     resolve_division_team,
@@ -197,7 +198,7 @@ async def add_test_driver(
                 await placement_service.guard_roster_capacity(
                     division_id, {team_row["name"]: 1}
                 )
-            except ValueError as exc:
+            except Refused as exc:
                 return str(exc)
 
         # Find a free seat (driver_profile_id IS NULL)
@@ -428,7 +429,7 @@ async def add_test_drivers_in_bulk(
                     await placement_service.guard_roster_capacity(
                         division_id, added[division_id]
                     )
-                except ValueError as exc:
+                except Refused as exc:
                     errors.append(f"Division '{name}': {exc}")
 
         if errors:
