@@ -2518,6 +2518,86 @@ def test_each_table_is_read_by_the_module_that_owns_it():
     )
 
 
+#: Each module's own column on a core table (`OWN_COLUMNS`), by its name, with the module it belongs
+#: to.
+_COLUMN_OWNER = {
+    column: module
+    for module, tables in OWN_COLUMNS.items()
+    for columns in tables.values()
+    for column in columns
+}
+
+#: A module's own column named in a string: as a word, so a longer name is not taken for it.
+_OWN_COLUMN = re.compile(r"\b(?P<column>" + "|".join(sorted(_COLUMN_OWNER)) + r")\b")
+
+
+def _own_columns_outside_the_owner_among(nodes) -> Counter[tuple[str, str]]:
+    """The mentions among *nodes*, each ``(file, function, node)``, of a module's own column on a
+    core table (`OWN_COLUMNS`) in a file of another module, counted by file and function: each
+    such column named in a string, in SQL or as a row's key, outside a docstring. The entry point
+    is no module's, so each it names counts."""
+    nodes = list(nodes)
+    docstrings = _docstrings_among(nodes)
+    found: Counter[tuple[str, str]] = Counter()
+    for path, function, node in nodes:
+        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)) or id(node) in docstrings:
+            continue
+        module = _module_of(path)
+        found[(path, function)] += sum(
+            1 for match in _OWN_COLUMN.finditer(node.value)
+            if _COLUMN_OWNER[match.group("column")] != module
+        )
+    return +found
+
+
+#: Today's mentions of a module's own column outside it, under the design pass that removes each:
+#: core's under its own, the entry point's under the module whose recovery it carries.
+KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
+    ("__main__.py", "_recover_missed_check_in_calls"): (1, PASS["attendance"]),
+    ("__main__.py", "_recover_missed_phases"): (3, PASS["weather"]),
+    ("core/services/approval_checks.py", "<module>"): (1, PASS["core"]),
+    ("core/services/approval_checks.py", "division_channel_faults"): (1, PASS["core"]),
+    ("core/services/channel_registry_service.py", "<module>"): (1, PASS["core"]),
+    ("core/services/round_amend_change.py", "_round_change.apply"): (3, PASS["core"]),
+    ("core/services/round_amend_change.py", "_round_change.judged_again"): (3, PASS["core"]),
+    ("core/services/season_fingerprint_service.py", "take_fingerprint"): (3, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.all_phases_complete"): (3, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.get_division"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.get_division_rounds_on"): (3, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.get_divisions_on"): (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.get_divisions_with_results_config"):
+        (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.get_previewable_divisions"):
+        (1, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.get_round"): (3, PASS["core"]),
+    ("core/services/season_service.py", "SeasonService.get_sessions"): (2, PASS["core"]),
+    ("core/services/season_service.py", "_row_to_division"): (1, PASS["core"]),
+    ("core/services/season_service.py", "_row_to_round"): (3, PASS["core"]),
+    ("core/services/season_service.py", "_row_to_session"): (2, PASS["core"]),
+    ("core/services/season_service.py", "division_first_round"): (3, PASS["core"]),
+    ("core/services/season_service.py", "round_by_id"): (3, PASS["core"]),
+    ("core/services/test_mode_service.py", "_weather_steps_undone"): (1, PASS["core"]),
+    ("core/services/test_mode_service.py", "build_review_summary"): (11, PASS["core"]),
+    ("core/services/test_mode_service.py", "get_next_pending_phase"): (6, PASS["core"]),
+    ("core/services/test_mode_service.py", "get_next_pending_phase._first_pending_for_row"):
+        (1, PASS["core"]),
+    ("core/services/test_mode_service.py", "get_passed_over_steps"): (4, PASS["core"]),
+    ("image/services/image_weather_post.py", "build_drawing_for_round"): (5, PASS["image"]),
+}
+
+
+def test_a_module_s_own_column_is_read_and_set_by_that_module_alone():
+    """A module's own column on a core table is that module's alone, to read and to set
+    (architecture.md, "The database"): the table check sees tables, not columns, so this one
+    counts each such column another module's file names in a string, in SQL or as a row's key.
+    A breach is keyed by the naming function, and listed with the issue that will fix it."""
+    _check(
+        "a module's own column is read and set by that module alone",
+        _own_columns_outside_the_owner_among(_nodes()),
+        KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER,
+    )
+
+
 def test_the_read_check_counts_a_table_named_after_from_or_join_that_the_file_s_module_does_not_own():
     """A `FROM` and a `JOIN` of another module's table each count, core's tables too; a module's
     own table, a write (`DELETE FROM`), a docstring and a lower-case word do not. The entry point
