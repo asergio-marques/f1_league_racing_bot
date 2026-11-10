@@ -574,7 +574,11 @@ def register_change_types(bot: LeagueBot) -> None:
         division_amend_change,
         division_rename_change,
     )
-    from leaguebot.core.services.team_changes import team_add_change, team_remove_change
+    from leaguebot.core.services.team_changes import (
+        team_add_change,
+        team_modify_change,
+        team_remove_change,
+    )
     from leaguebot.core.services.driver_changes import (
         driver_assign_change,
         driver_move_change,
@@ -1001,6 +1005,12 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(
         team_remove_change(teams=bot.team_service, placement=bot.placement_service)
+    )
+    bot.change_queue.register(
+        team_modify_change(
+            teams=bot.team_service, placement=bot.placement_service,
+            now=lambda: bot.change_queue.now(),
+        )
     )
     bot.change_queue.register(sheet_post_change())
     bot.change_queue.register(rounds_sync_change(bot.season_service, bot.module_service))

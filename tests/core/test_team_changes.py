@@ -718,9 +718,6 @@ async def test_a_team_remove_asked_again_while_it_waits_is_refused_as_a_repeat(t
 
 # ── /team modify ──────────────────────────────────────────────────────────────────────
 
-#: Why each `/team modify` test below fails until the build.
-_MODIFY_ON_THE_QUEUE = "#283: /team modify is not yet a change on the queue"
-
 _MODIFY_FORM = "the “Modify a team” form"
 #: The reason Discord's audit log is given for a seated driver's roles moved by `/team modify`.
 _MODIFY_REASON = "Team's role changed"
@@ -878,7 +875,6 @@ _MODIFY_CHANGES = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=_MODIFY_ON_THE_QUEUE)
 @pytest.mark.parametrize("season", _LIST_OPEN)
 @pytest.mark.parametrize("fields, standing, audits, line, reply", _MODIFY_CHANGES)
 async def test_a_team_modify_its_row_mapping_audit_entries_and_line_are_one_save(
@@ -969,18 +965,10 @@ async def test_a_team_modify_its_row_mapping_audit_entries_and_line_are_one_save
             None, {"shorthand": "Ferrari", "role_id": ALPINE_ROLE},
             '⛔ A default team named "Ferrari" already exists.', _STANDING,
             id="a-shorthand-taken-with-a-new-role",
-            marks=pytest.mark.xfail(
-                strict=True, reason="#283: a submission refused for its names saves its role"
-            ),
         ),
         pytest.param(
             _pending_completion, {"role_id": ALPINE_ROLE}, _SEASON_DONE.format(command="modify"),
             _STANDING, id="the-season-pending-completion",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#283: /team modify's form is not refused once the season is pending "
-                "completion",
-            ),
         ),
     ],
 )
@@ -1036,7 +1024,6 @@ async def test_a_team_modify_submitted_untouched_is_answered_with_its_line_alone
     assert await _team_audits(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_MODIFY_ON_THE_QUEUE)
 async def test_a_failed_team_modify_changes_nothing(tmp_path):
     """The season is in Configuration. Admin submits the "Modify a team" form of McLaren with the
     shorthand MCL, the full name "McLaren Racing" and the role 813, and as the queue runs it the
@@ -1067,7 +1054,6 @@ async def test_a_failed_team_modify_changes_nothing(tmp_path):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_MODIFY_ON_THE_QUEUE)
 @pytest.mark.parametrize(
     "fields, meanwhile, reply, standing",
     [
@@ -1133,7 +1119,6 @@ async def test_a_team_modify_is_judged_again_as_it_starts(tmp_path, fields, mean
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_MODIFY_ON_THE_QUEUE)
 async def test_a_refusal_found_inside_the_save_ends_the_team_modify_and_the_lane_goes_on(
     tmp_path,
 ):
@@ -1177,7 +1162,6 @@ async def test_a_refusal_found_inside_the_save_ends_the_team_modify_and_the_lane
     assert last_said(ferrari) == _modified("Scuderia Ferrari", f"Role: <@&{HAAS_ROLE}>")
 
 
-@pytest.mark.xfail(strict=True, reason=_MODIFY_ON_THE_QUEUE)
 async def test_a_team_modify_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The season is in Configuration. Admin submits the "Modify a team" form of McLaren with the
     shorthand MCL and the full name "McLaren Racing", and is acknowledged; before the queue runs
@@ -1227,7 +1211,6 @@ async def _seated_league(tmp_path):
     return league
 
 
-@pytest.mark.xfail(strict=True, reason=_MODIFY_ON_THE_QUEUE)
 async def test_a_team_modify_moves_its_seated_drivers_roles_after_the_save(tmp_path):
     """architecture.md, "A job that fails stops its lane": the roles of a team's members follow
     its change, one job for each member. The season is ongoing, so the form offers the role
@@ -1290,7 +1273,6 @@ async def test_a_team_modify_moves_its_seated_drivers_roles_after_the_save(tmp_p
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_MODIFY_ON_THE_QUEUE)
 async def test_a_role_refused_after_a_team_modify_is_reported_and_the_queue_goes_on(tmp_path):
     """Decision 5: a role Discord refuses after a team's change is reported, and the queue goes
     on. The season is ongoing. Admin submits the "Modify a team" form of Ferrari with Alpine's

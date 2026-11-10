@@ -490,6 +490,33 @@ class PlacementService:
             for r in rows
         ]
 
+    @staticmethod
+    async def seated_user_ids_on(db: aiosqlite.Connection, team_name: str) -> list[int]:
+        """The accounts of the drivers seated in the team *team_name*, read on *db*: those in any
+        division of the season being raced whose placement is confirmed, in the order of their ids.
+
+        The drivers already seated in a team follow its role when a league repoints it (issue
+        #220). A driver created by test mode holds no roles and is left out.
+        """
+        from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
+
+        cursor = await db.execute(
+            f"""
+            SELECT DISTINCT dp.discord_user_id
+            FROM team_seats ts
+            JOIN team_instances ti ON ti.id = ts.team_instance_id
+            JOIN divisions d ON d.id = ti.division_id
+            JOIN seasons s ON s.id = d.season_id
+            JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
+            WHERE s.status = 'ACTIVE' AND ti.name = ?
+              AND dp.is_test_driver = 0
+              AND {uncommitted_seat_excluded("ts")}
+            ORDER BY dp.discord_user_id
+            """,
+            (team_name,),
+        )
+        return [int(row["discord_user_id"]) for row in await cursor.fetchall()]
+
     async def swap_team_role(
         self,
         team_name: str,

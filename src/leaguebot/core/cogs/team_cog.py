@@ -10,9 +10,13 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services.team_changes import TEAM_ADD, TEAM_REMOVE
+from leaguebot.core.services.team_changes import (
+    TEAM_ADD,
+    TEAM_MODIFY,
+    TEAM_REMOVE,
+    season_done_reply,
+)
 from leaguebot.core.services.team_service import FULL_NAME_MAX, SHORTHAND_MAX
-from leaguebot.core.utils.asset_slug import normalise
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only, role_grant_refusal, changes_nothing
 from leaguebot.core.utils.interaction_errors import describe, describe_form
@@ -76,22 +80,15 @@ class TeamCog(commands.Cog):
         which the shared gate would otherwise turn away.
 
         Returns True where the command was refused, having answered the interaction and
-        recorded the refusal of *what*.
+        recorded the refusal of *what*. The refusal is the change's own
+        (`team_changes.season_done_reply`), which the queue judges again as the change starts.
         """
-        from leaguebot.core.models.season import SeasonStage
-
-        season = await self.bot.season_service.get_setup_or_active_season(
-
+        reply = season_done_reply(
+            await self.bot.season_service.get_setup_or_active_season(), command
         )
-        if season is None or season.stage is not SeasonStage.PENDING_COMPLETION:
+        if reply is None:
             return False
-        await refuse(
-            interaction,
-            f"⛔ Every division of Season {season.season_number} is done, so `/team "
-            f"{command}` no longer has anything to act on — completing the season "
-            "revokes the team roles. Repair the mapping once the season has ended.",
-            what=what,
-        )
+        await refuse(interaction, reply, what=what)
         return True
 
     team = app_commands.Group(
@@ -205,12 +202,13 @@ class TeamCog(commands.Cog):
         role: discord.Role | None,
         what: str | None = None,
     ) -> None:
-        """Apply what the form changed, or refuse the whole submission (#381).
+        """Ask for what the form changed, or refuse the whole submission (#381).
 
         *was* is the team as the form opened on it. Only a field whose value **changed**
-        counts, so a form submitted untouched changes nothing and says so. Each changed field
-        is held to its own window, checked again here because the season may have moved on
-        while the form stood open: a change that no longer stands refuses the submission as a
+        counts, so a form submitted untouched changes nothing and says so. The change is one on
+        the queue (`core/services/team_changes.py`), which holds each changed field to its own
+        window at the ask, because the season may have moved on while the form stood open, and
+        again as the change starts: a change that no longer stands refuses the submission as a
         whole, naming the field, and nothing at all is written. *what* names what a refusal is
         recorded against: the form, which passes it; a call without one names the command.
         """
@@ -229,10 +227,9 @@ class TeamCog(commands.Cog):
         new_shorthand = (shorthand or "").strip() or current["name"]
         new_full_name = (full_name or "").strip() or current["full_name"]
         names_changed = (new_shorthand, new_full_name) != (current["name"], current["full_name"])
-        role_changed = role is not None and role.id != current["role_id"]
-        new_role = role if role_changed else None
+        new_role = role if role is not None and role.id != current["role_id"] else None
 
-        if not names_changed and not role_changed:
+        if not names_changed and new_role is None:
             await interaction.followup.send(
                 f'Nothing changed: "{current["full_name"]}" stands as it was.', ephemeral=True
             )
@@ -244,79 +241,17 @@ class TeamCog(commands.Cog):
             )
             return
 
-        if names_changed and not await self._team_list_is_open():
-            await refuse(
-                interaction,
-                "⛔ The team list is fixed now that the season's configuration is confirmed, "
-                "so a team's shorthand and full name cannot change. Only its role can, and "
-                "nothing was written.",
-                what=what,
-            )
-            return
-
-        if new_role is not None:
-            refusal = role_grant_refusal(new_role)
-            if refusal is not None:
-                await refuse(interaction, f"⛔ {refusal} Nothing was written.", what=what)
-                return
-            try:
-                await self.bot.placement_service.set_team_role_config(
-                    current["name"], new_role.id,
-                    actor_id=interaction.user.id, actor_name=str(interaction.user),
-                )
-            except ValueError as exc:
-                # Another team holds the role (#375): nothing is changed and no driver moves.
-                await refuse(interaction, f"⛔ {exc} Nothing was written.", what=what)
-                return
-
-        moved = 0
-        if new_role is not None:
-            # The drivers already seated in the team follow its role (issue #220).
-            moved = await self.bot.placement_service.swap_team_role(
-                current["name"], current["role_id"], new_role.id, interaction.guild,
-            )
-
-        named = dict(current)
-        if names_changed:
-            try:
-                named = await self.bot.team_service.modify_default_team(
-                    current["name"],
-                    shorthand=new_shorthand,
-                    full_name=new_full_name,
-                    actor_id=interaction.user.id,
-                    actor_name=str(interaction.user),
-                )
-            except ValueError as exc:
-                await refuse(interaction, f"⛔ {exc}", what=what)
-                return
-            if new_shorthand != current["name"]:
-                await self.bot.placement_service.rename_team_role_config(
-                    current["name"], new_shorthand,
-                    actor_id=interaction.user.id, actor_name=str(interaction.user),
-                )
-
-        lines = [f'✅ Team "{named["full_name"]}" updated.']
-        if new_full_name != current["full_name"]:
-            lines.append(f'  Full name: "{current["full_name"]}" → "{new_full_name}"')
-        if new_shorthand != current["name"]:
-            lines.append(f"  Shorthand: `{current['name']}` → `{new_shorthand}`")
-            old_file, new_file = normalise(current["name"]), normalise(new_shorthand)
-            if old_file != new_file:
-                lines.append(
-                    f"  Its artwork is now looked for as `{new_file}`, not `{old_file}` — "
-                    "rename the file in the team image directory."
-                )
-        if new_role is not None:
-            lines.append(f"  Role: {new_role.mention}")
-            if moved:
-                lines.append(f"  {moved} seated driver(s) moved to the new role.")
-        await interaction.followup.send("\n".join(lines), ephemeral=True)
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team modify | Success\n"
-            f"  team: {named['full_name']}\n"
-            f"  shorthand: {named['name']}\n"
-            + (f"  role: {new_role.name} (<@&{new_role.id}>)\n" if new_role is not None else "")
-            + f"  seated drivers moved: {moved}",
+        await self.bot.change_queue.ask(
+            TEAM_MODIFY,
+            {
+                "was_shorthand": current["name"],
+                "was_full_name": current["full_name"],
+                "shorthand": new_shorthand,
+                "full_name": new_full_name,
+                "role_id": None if new_role is None else new_role.id,
+                "role_name": None if new_role is None else new_role.name,
+            },
+            interaction=interaction, what=what,
         )
 
     @team_modify.autocomplete("team")

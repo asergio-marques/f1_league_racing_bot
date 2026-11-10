@@ -17,7 +17,7 @@ from leaguebot.core.utils.input_validator import NAME, parse_role_mention, parse
 
 log = logging.getLogger(__name__)
 
-_RESERVE_NAME = "Reserve"
+RESERVE_NAME = "Reserve"
 
 #: The normalised form the Reserve team owns. No configurable team may claim it: the
 #: reserve is a singleton whose name is reserved, and a team normalising to the same word
@@ -211,7 +211,7 @@ class TeamService:
         await db.execute(
             "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
             "VALUES (?, ?, -1, 1)",
-            (_RESERVE_NAME, _RESERVE_NAME),
+            (RESERVE_NAME, RESERVE_NAME),
         )
         return True
 
@@ -240,9 +240,9 @@ class TeamService:
         """Raise ValueError, in the words a league is told, where a team under the shorthand
         *name* and the *full_name* cannot be added to the server's list, reading on *db* and
         writing nothing: the Reserve name, a shorthand already taken, a name the rules refuse."""
-        if name == _RESERVE_NAME:
+        if name == RESERVE_NAME:
             raise ValueError(
-                f'The team name "{_RESERVE_NAME}" is protected and cannot be managed.'
+                f'The team name "{RESERVE_NAME}" is protected and cannot be managed.'
             )
         existing = await db.execute("SELECT 1 FROM default_teams WHERE name = ?", (name,))
         if await existing.fetchone():
@@ -291,27 +291,24 @@ class TeamService:
         *db*: ``{name, full_name, max_seats, is_reserve, role_id}``, or None where none is."""
         return next((t for t in await self.teams_with_roles_on(db) if t["name"] == name), None)
 
-    async def modify_default_team_on(
+    async def judge_modify_on(
         self,
         db: aiosqlite.Connection,
         current_name: str,
         *,
         shorthand: str | None = None,
         full_name: str | None = None,
-    ) -> dict:
-        """Change a team's shorthand, its full name, or both (#381), on *db*, a connection the
-        caller holds. Returns both as they stand.
+    ) -> tuple[int, str, str]:
+        """The id of the team whose shorthand is *current_name* and the shorthand and full name it
+        would carry, read on *db* and writing nothing. Raises ValueError, in the words a league is
+        told, where the team cannot be changed so.
 
-        Everything is checked before anything is written, so a refusal leaves the team exactly
-        as it was. As on a rename, only the **new** names are validated: a team named before a
-        rule existed must still be correctable (FR-011). The Reserve team is protected.
-
-        Commits nothing and writes no audit entry: the change that calls it records the names
-        (`TEAM_NAMES`) and re-keys the role mapping (`rename_team_role_config_on`).
+        As on a rename, only the **new** names are validated: a team named before a rule existed
+        must still be correctable (FR-011). The Reserve team is protected.
         """
-        if current_name == _RESERVE_NAME:
+        if current_name == RESERVE_NAME:
             raise ValueError(
-                f'The team name "{_RESERVE_NAME}" is protected and cannot be managed.'
+                f'The team name "{RESERVE_NAME}" is protected and cannot be managed.'
             )
         row = await (
             await db.execute(
@@ -345,10 +342,30 @@ class TeamService:
             )
             if problem is not None:
                 raise ValueError(problem)
+        return int(row["id"]), new_shorthand, new_full_name
 
+    async def modify_default_team_on(
+        self,
+        db: aiosqlite.Connection,
+        current_name: str,
+        *,
+        shorthand: str | None = None,
+        full_name: str | None = None,
+    ) -> dict:
+        """Change a team's shorthand, its full name, or both (#381), on *db*, a connection the
+        caller holds. Returns both as they stand.
+
+        Everything is judged before anything is written (`judge_modify_on`), so a refusal leaves
+        the team exactly as it was. Commits nothing and writes no audit entry: the change that
+        calls it records the names (`TEAM_NAMES`) and re-keys the role mapping
+        (`rename_team_role_config_on`).
+        """
+        team_id, new_shorthand, new_full_name = await self.judge_modify_on(
+            db, current_name, shorthand=shorthand, full_name=full_name
+        )
         await db.execute(
             "UPDATE default_teams SET name = ?, full_name = ? WHERE id = ?",
-            (new_shorthand, new_full_name, row["id"]),
+            (new_shorthand, new_full_name, team_id),
         )
         return {"name": new_shorthand, "full_name": new_full_name}
 
@@ -389,9 +406,9 @@ class TeamService:
     async def judge_remove_on(self, db: aiosqlite.Connection, name: str) -> int:
         """The id of the team of the server's list whose shorthand is *name*, read on *db*.
         Raises ValueError where none is, or where it is the protected Reserve team."""
-        if name == _RESERVE_NAME:
+        if name == RESERVE_NAME:
             raise ValueError(
-                f'The team name "{_RESERVE_NAME}" is protected and cannot be managed.'
+                f'The team name "{RESERVE_NAME}" is protected and cannot be managed.'
             )
         row = await (
             await db.execute(
