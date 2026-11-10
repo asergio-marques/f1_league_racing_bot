@@ -12,7 +12,7 @@ the wave order, not for what it costs one issue.
 ## The shape
 
 The cog surface is thin and the work is in services, as the rest of the bot is: `attendance_cog` is
-some 600 lines against `attendance_service`'s 1,942, and that ratio is the one to keep. A steward
+some 1,200 lines against `attendance_service`'s 2,600, and that ratio is the one to keep. A steward
 command body is a guard, an unpack, one call and one reply.
 
 Services, and the issue that brings each:
