@@ -54,7 +54,8 @@ async def name_of_member(bot: Any, member_id: int | None) -> str:
     """The member *member_id*, named as the log channel names them, found on the league's server.
 
     For a line written without an interaction — a scheduled lapse. A member who has left the
-    server is named by mention alone; nobody recorded is "a member". Never raises.
+    server, or who cannot be looked up, is named by mention alone, which still names them; nobody
+    recorded is "a member". Never raises.
     """
     if member_id is None:
         return "a member"
@@ -246,7 +247,8 @@ async def record_refusal(
 
     `refuse` writes its own through here, the line being formed by `refusal_line`. For a
     refusal whose reply is not an interaction's, and so has no `refuse`; *member* is named as
-    `record_abandoned` names its own. Never raises.
+    `record_abandoned` names its own. Never raises: the refusal is already answered, and a record
+    that fails is logged on the host, never answered a second time.
     """
     try:
         named = await _named(bot, member)

@@ -754,7 +754,8 @@ class SchedulerService:
         """Remove *job_id*, and say whether it went; never raises (see the class docstring).
 
         A job already gone is passed over in silence. Any other failure is logged as a warning
-        with its traceback, so that a real job-store fault can be found.
+        with its traceback, so that a real job-store fault can be found, and a teardown goes on
+        past one job that will not go.
         """
         try:
             self._scheduler.remove_job(job_id)

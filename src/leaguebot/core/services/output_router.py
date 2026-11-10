@@ -253,7 +253,8 @@ class OutputRouter:
         """Take the buttons off the message *message_id* of channel *channel_id*.
 
         A message already gone is no failure; any other failure goes to the host's log. Never
-        raises.
+        raises: the buttons belong to a notice, and the queue's own telling of a change's outcome
+        never fails the change.
         """
         try:
             channel = self._bot.get_channel(channel_id)
@@ -548,6 +549,9 @@ class OutputRouter:
         *wanted* is False for a line sent to a given channel: the factory reset's, which would
         otherwise leave a row in the fresh database of a bot serving no server, and the retry
         worker's own lines (:meth:`post_log`); and for the stop notice, posted again its own way.
+
+        A line that can be neither posted nor kept for retry is logged on the host and dropped:
+        the log writer's own containment.
         """
         if self._retry_db_path and wanted:
             try:
