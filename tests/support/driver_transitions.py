@@ -5,7 +5,9 @@ of its own.
 nothing; a test of the transition table alone has no save around it, so `transitioned` opens one,
 moves the driver, and commits. `DriverService.reassign_user_id_on` judges and then writes a
 reassign, the two halves `/driver reassign`'s save runs in turn, and `reassigned` opens a save
-around it for a test of the reassign without the queue.
+around it for a test of the reassign without the queue. A reassign asks results which divisions each side raced in, through
+`divisions_raced_read` (`tests.support.driver_records_hooks`), which `reassigned` hands beside the
+merge hook.
 """
 from __future__ import annotations
 
@@ -16,6 +18,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.driver_profile import DriverProfile, DriverState
 from leaguebot.core.services.driver_service import DriverService, ReassignOutcome
 from tests.support.delete_hooks import MERGE_HOOKS, delete_hooks
+from tests.support.driver_records_hooks import divisions_raced_read
 
 #: The clock a reassign through `reassigned` is handed, unless the test hands its own.
 REASSIGNED_AT = datetime(2026, 9, 17, 12, 0, tzinfo=timezone.utc)
@@ -35,13 +38,20 @@ async def transitioned(
     return profile
 
 
+def reassign_hooks() -> dict[str, Any]:
+    """The hooks a reassign is handed, as the builder makes them: the merge hook, and
+    `divisions_raced_read`, which asks results which divisions each side raced in."""
+    return {**delete_hooks(*MERGE_HOOKS), "divisions_raced_read": divisions_raced_read()}
+
+
 async def reassigned(
     db_path: str, old_user_id: str, new_user_id: str, *, hooks: dict[str, Any] | None = None,
     now: datetime = REASSIGNED_AT,
 ) -> ReassignOutcome:
     """Make *new_user_id* the current account of the driver *old_user_id* names, through
     `reassign_user_id_on` in a save of its own, by the league manager Manager (77) at *now*, handed
-    the merge hook the builder makes, or *hooks*. Gives the outcome.
+    the merge hook and `divisions_raced_read` as the builder makes them, or *hooks*. Gives the
+    outcome.
 
     The save ends as a change's save on the queue ends: a refusal (ValueError) is committed as it
     stands, the change's save turning it into its reply, so that a test sees the refusal itself
@@ -51,7 +61,7 @@ async def reassigned(
         try:
             outcome = await DriverService(db_path).reassign_user_id_on(
                 db, old_user_id, new_user_id, 77, "Manager",
-                **(hooks or delete_hooks(*MERGE_HOOKS)), now=now,
+                **(hooks or reassign_hooks()), now=now,
             )
         except ValueError:
             await db.commit()

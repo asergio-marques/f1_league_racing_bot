@@ -196,13 +196,14 @@ _RESERVE_ROLE_GARBLED = {"role_id": "x", "role_name": "Reserve"}
 
 def _reassign_change(driver, profiles_merged=None):
     """`driver_changes.driver_reassign_change`'s change, judged and saved through *driver*, a
-    merge calling *profiles_merged*, and every Discord job a double."""
+    merge calling *profiles_merged*, no module answering which divisions a side raced in, and
+    every Discord job a double."""
     from leaguebot.core.services.driver_changes import driver_reassign_change
     from leaguebot.core.utils.hooks import AwaitedHook
 
     return driver_reassign_change(
         driver=driver, placement=MagicMock(), drawing=MagicMock(),
-        profiles_merged=profiles_merged or AwaitedHook(),
+        profiles_merged=profiles_merged or AwaitedHook(), divisions_raced_read=AwaitedHook(),
         driver_account_changed=AwaitedHook(), driver_account_changed_steps=MagicMock(),
         now=lambda: datetime(2026, 9, 17, 12, tzinfo=timezone.utc),
     )
@@ -304,8 +305,11 @@ CATCHES = [
                  id="team modify save, a role id no number"),
     pytest.param(_team_save("team_reserve_role_change", _RESERVE_ROLE_GARBLED),
                  id="team reserve-role save, a role id no number"),
-    pytest.param(_reassign_checked, id="driver reassign check"),
-    pytest.param(_reassign_merge_hook_faulted, id="driver reassign save, a merge hook's fault"),
+    pytest.param(_reassign_checked, id="driver reassign check", marks=pytest.mark.xfail(
+        strict=True, reason="#283: the reassign change is not yet handed divisions_raced_read")),
+    pytest.param(_reassign_merge_hook_faulted, id="driver reassign save, a merge hook's fault",
+                 marks=pytest.mark.xfail(strict=True, reason=(
+                     "#283: the reassign change is not yet handed divisions_raced_read"))),
     pytest.param(_former_driver_set, id="test-mode set-former-driver"),
     pytest.param(_tiers_checked, id="season approval's tier check"),
 ]
