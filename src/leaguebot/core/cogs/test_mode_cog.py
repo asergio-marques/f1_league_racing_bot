@@ -153,6 +153,7 @@ class TestModeCog(commands.Cog):
             self.bot.scheduler_service,
             now=self.bot.change_queue.now(),
             announce=functools.partial(self._announce_advance, interaction),
+            pending_steps_read=self.bot.pending_steps_read,
         )
         entry = run.entry
 

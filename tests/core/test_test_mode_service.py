@@ -24,10 +24,6 @@ from tests.support.pending_steps_hook import pending_steps_read
 #: reading, so that the rounds seeded relative to it and the reads judging them agree.
 NOW = datetime.now(timezone.utc)
 
-#: Why each test reading the steps through the modules as the builder signs them up fails until
-#: core asks them.
-ASKED_OF_THE_MODULES = "#283: core does not yet read the steps through the modules' hook"
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -175,7 +171,6 @@ async def test_nationality_toggle_starts_on(tmp_path) -> None:
 # get_next_pending_phase — queue ordering
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_empty_queue_returns_none(tmp_path) -> None:
     """All phases done → get_next_pending_phase returns None."""
     db_path = str(tmp_path / "bot.db")
@@ -189,7 +184,6 @@ async def test_empty_queue_returns_none(tmp_path) -> None:
     assert result is None
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_mystery_round_notice_pending_returns_entry(tmp_path) -> None:
     """Mystery round with notice unsent (phase1_done=0) returns a phase_number=0 entry, found
     from database state and named by the `weather_p1` kind its job is armed under."""
@@ -206,7 +200,6 @@ async def test_mystery_round_notice_pending_returns_entry(tmp_path) -> None:
     assert result["kind"] == "weather_p1"
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_mystery_round_notice_done_excluded(tmp_path) -> None:
     """Mystery round with notice already sent (phase1_done=1) must not appear in queue."""
     db_path = str(tmp_path / "bot.db")
@@ -220,7 +213,6 @@ async def test_mystery_round_notice_done_excluded(tmp_path) -> None:
     assert result is None
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_earliest_scheduled_round_comes_first(tmp_path) -> None:
     """The round with the earlier scheduled_at is returned first."""
     earlier = (NOW + timedelta(days=5)).strftime(
@@ -243,7 +235,6 @@ async def test_earliest_scheduled_round_comes_first(tmp_path) -> None:
     assert result["phase_number"] == 1
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_division_id_tiebreak_same_scheduled_at(tmp_path) -> None:
     """When two rounds have the same scheduled_at, lower division id comes first."""
     shared_sched = (NOW + timedelta(days=7)).strftime(
@@ -274,7 +265,6 @@ async def test_division_id_tiebreak_same_scheduled_at(tmp_path) -> None:
     assert result["track_name"] == "Bahrain"
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_no_active_season_returns_none(tmp_path) -> None:
     """Returns None when there is no season in ACTIVE status."""
     db_path = str(tmp_path / "bot.db")
@@ -387,7 +377,6 @@ async def _seed_with_attendance(db_path: str, rounds: list[dict]) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_misfired_fallback_returns_phase1(tmp_path) -> None:
     """Empty scheduler + weather enabled → phase 1 returned via DB flag fallback."""
     db_path = str(tmp_path / "bot.db")
@@ -403,7 +392,6 @@ async def test_misfired_fallback_returns_phase1(tmp_path) -> None:
     assert result["track_name"] == "Monza"
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_misfired_fallback_respects_phase_flags(tmp_path) -> None:
     """phase1_done=1, phase2_done=0 → fallback returns phase 2, not phase 1, of kind
     `weather_p2`."""
@@ -420,7 +408,6 @@ async def test_misfired_fallback_respects_phase_flags(tmp_path) -> None:
     assert result["kind"] == "weather_p2"
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_misfired_fallback_weather_disabled_skips_phases(tmp_path) -> None:
     """Weather module disabled → weather phases never returned even with empty scheduler."""
     db_path = str(tmp_path / "bot.db")
@@ -435,7 +422,6 @@ async def test_misfired_fallback_weather_disabled_skips_phases(tmp_path) -> None
     assert result is None
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_misfired_fallback_canonical_order(tmp_path) -> None:
     """Canonical order: P1 → RSVP-notice → P2 → RSVP-last → P3 → RSVP-deadline, each entry
     named by its job's kind: `weather_p1`, `rsvp_notice`, `weather_p2`, `rsvp_last_notice`,
@@ -510,7 +496,6 @@ async def test_misfired_fallback_canonical_order(tmp_path) -> None:
     assert r is not None and (r["phase_number"], r["kind"]) == (7, "rsvp_deadline")
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_earlier_misfired_round_beats_later_scheduler_job(tmp_path) -> None:
     """Earlier round with misfired phases must be advanced before a later
     round whose scheduler job is still pending, its entry named by the `weather_p1` kind. The
@@ -603,7 +588,6 @@ def _job(round_id: int, phase: int, *, days: float) -> dict:
     }
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_round_ends_with_its_forecast_then_its_check_in_coming_down(tmp_path) -> None:
     """With nothing else pending, what is left standing is what remains to take down — the
     forecast first, as the two fall together and it is the lower step. Each entry, found from
@@ -628,7 +612,6 @@ async def test_a_round_ends_with_its_forecast_then_its_check_in_coming_down(tmp_
     assert second is not None and (second["phase_number"], second["kind"]) == (9, "rsvp_cleanup")
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_cleared_round_is_not_offered_its_call_again(tmp_path) -> None:
     """Its call is gone and so is the row recording it — which is also what a round whose call
     is still to come looks like. The mark is what tells them apart, and without it advance
@@ -645,7 +628,6 @@ async def test_a_cleared_round_is_not_offered_its_call_again(tmp_path) -> None:
     ) is None
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_round_start_already_asked_of_the_queue_is_not_offered_again(tmp_path) -> None:
     """Round 1's result submission is the step advance would offer, ahead of the round's cleanup
     job: result submission never comes from the job store, and falls a day before the cleanup.
@@ -680,7 +662,6 @@ async def test_a_round_start_already_asked_of_the_queue_is_not_offered_again(tmp
     assert again is None or again["phase_number"] != 4
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_finished_round_s_cleanup_job_is_not_stale(tmp_path) -> None:
     """A finished round offers no other step, which once meant any job of its was thrown away
     as stale. Its cleanups are still to run, the check-in clean-up's entry naming its kind,
@@ -700,7 +681,6 @@ async def test_a_finished_round_s_cleanup_job_is_not_stale(tmp_path) -> None:
     assert result["kind"] == "rsvp_cleanup"
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_forecast_cleanup_with_no_forecast_standing_is_stale(tmp_path) -> None:
     """A round with no forecast recorded leaves nothing to take down, so its cleanup job is
     stale."""
@@ -718,7 +698,6 @@ async def test_a_forecast_cleanup_with_no_forecast_standing_is_stale(tmp_path) -
     ) is None
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_an_earlier_round_s_cleanup_does_not_jump_a_later_round_s_step(tmp_path) -> None:
     """A double-header: Sunday's deadline falls before Saturday's cleanup. The check of the
     rounds before a job must not offer Saturday's cleanup ahead of it."""
@@ -745,7 +724,6 @@ async def test_an_earlier_round_s_cleanup_does_not_jump_a_later_round_s_step(tmp
     assert (result["round_id"], result["phase_number"]) == (2, 7)
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_the_database_fallback_offers_the_cleanups_last(tmp_path) -> None:
     """Round-by-round the fallback would reach a round's cleanup before the next round's first
     phase, though the cleanup falls days later; so every other step goes first."""
@@ -765,7 +743,6 @@ async def test_the_database_fallback_offers_the_cleanups_last(tmp_path) -> None:
     assert (result["round_id"], result["phase_number"]) == (2, 1)
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 @pytest.mark.parametrize("found", ["job in the store", "database fallback"])
 async def test_a_forecast_cleanup_is_offered_for_an_earlier_phase_still_standing(
     tmp_path, found
@@ -791,7 +768,6 @@ async def test_a_forecast_cleanup_is_offered_for_an_earlier_phase_still_standing
     assert (result["round_id"], result["phase_number"], result["kind"]) == (1, 8, "cleanup")
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_mystery_round_s_notice_is_offered_no_forecast_cleanup(tmp_path) -> None:
     """A finished mystery round, its check-in cleared, with its notice (phase 0) standing: the
     notice is not a forecast the clean-up deletes, so nothing is offered."""
@@ -1051,7 +1027,6 @@ async def _mystery_round_armed(
     return db_path
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_mystery_round_s_queued_notice_is_advanced_as_the_notice(
     tmp_path, paused_scheduler
 ) -> None:
@@ -1067,7 +1042,6 @@ async def test_a_mystery_round_s_queued_notice_is_advanced_as_the_notice(
     assert result["kind"] == "weather_p1"
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_mystery_round_s_notice_job_left_after_its_notice_is_stale(
     tmp_path, paused_scheduler
 ) -> None:
@@ -1085,7 +1059,6 @@ async def test_a_mystery_round_s_notice_job_left_after_its_notice_is_stale(
     assert result["phase_number"] == 4
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_mystery_round_s_phase_2_and_3_jobs_are_passed_over(
     tmp_path, paused_scheduler
 ) -> None:
@@ -1128,7 +1101,6 @@ async def _last_notice_switched_off(db_path: str) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_switched_off_last_notice_is_never_offered(tmp_path, paused_scheduler) -> None:
     db_path = str(tmp_path / "last_notice_off.db")
     await _last_notice_switched_off(db_path)
@@ -1163,7 +1135,6 @@ async def test_the_review_leaves_out_a_switched_off_last_notice(tmp_path) -> Non
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_no_mystery_notice_is_offered_while_weather_is_off(tmp_path) -> None:
     """The notice is a weather posting, and a disabled module produces nothing: a live season
     arms no job for it. Advance once found it owing from database state regardless."""
@@ -1182,7 +1153,6 @@ async def test_no_mystery_notice_is_offered_while_weather_is_off(tmp_path) -> No
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_weather_step_in_hand_on_the_queue_is_not_offered_again(tmp_path) -> None:
     """Weather is on and round 1 (Monza) has none of its phases done; its scheduler job was
     cancelled by the advance that asked the change queue for its Phase 1, which waits there
@@ -1226,7 +1196,6 @@ _CHECK_IN_STEPS_IN_HAND = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 @pytest.mark.parametrize("phase,kind,call", _CHECK_IN_STEPS_IN_HAND)
 async def test_a_check_in_step_in_hand_on_the_queue_is_not_offered_again(
     tmp_path, phase, kind, call
@@ -1275,7 +1244,6 @@ async def test_a_check_in_step_in_hand_on_the_queue_is_not_offered_again(
 # A weather step of a round whose race has been run (#439)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 @pytest.mark.parametrize("scheduler", ["job left in the store", "job store empty"])
 async def test_a_raced_round_s_weather_steps_are_passed_over(tmp_path, scheduler) -> None:
     """Weather is on. Round 1 (Bahrain) was raced an hour ago with none of its phases done (the
@@ -1302,7 +1270,6 @@ async def test_a_raced_round_s_weather_steps_are_passed_over(tmp_path, scheduler
     assert (result["round_id"], result["phase_number"]) == (2, 1)
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_a_raced_round_s_result_submission_is_still_offered(tmp_path) -> None:
     """Weather and results are on. Round 1 (Bahrain) was raced an hour ago with none of its
     phases done and no results submitted: advance passes over its weather steps alone, and
@@ -1356,7 +1323,6 @@ async def test_the_review_marks_a_raced_round_s_weather_steps_as_passed_over(tmp
     assert "⏭️ passed over (its race has been run)" in summary
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 @pytest.mark.parametrize("scheduler", ["job left in the store", "job store empty"])
 async def test_a_raced_mystery_round_s_notice_is_passed_over(tmp_path, scheduler) -> None:
     """Weather is on, and it is noon on 12 October 2026. Round 1 is a mystery round raced an hour
@@ -1389,7 +1355,6 @@ async def test_a_raced_mystery_round_s_notice_is_passed_over(tmp_path, scheduler
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_the_steps_passed_over_are_a_raced_round_s_undone_weather_steps(tmp_path) -> None:
     """Weather is on, and it is noon on 12 October 2026. Round 1 (Bahrain) was raced an hour ago
     with none of its phases done; round 2 is a mystery round raced an hour ago whose notice never
@@ -1419,7 +1384,6 @@ async def test_the_steps_passed_over_are_a_raced_round_s_undone_weather_steps(tm
     assert {step["division_name"] for step in steps} == {"Division A"}
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_the_steps_passed_over_follow_the_order_the_rounds_raced(tmp_path) -> None:
     """Weather is on, and it is noon on 12 October 2026. Round 1 (Bahrain) was raced an hour ago
     and round 2 (Monza), added after it, two hours ago, neither with a phase done and both
@@ -1442,7 +1406,6 @@ async def test_the_steps_passed_over_follow_the_order_the_rounds_raced(tmp_path)
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_no_step_is_passed_over_while_the_weather_module_is_off(tmp_path) -> None:
     """Weather is off, so nothing of it was armed and advance offers none of it: a raced round's
     undone phases are not named as passed over."""
@@ -1473,7 +1436,6 @@ async def _queue_forecast(db_path: str, round_id: int, phase: int) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 @pytest.mark.parametrize("case, left", [
     pytest.param("FINAL", [], id="round final"),
     pytest.param("AWAITING_APPEAL_VERDICTS", [], id="round awaiting appeal verdicts"),
@@ -1525,10 +1487,6 @@ async def test_a_raced_step_advance_would_not_offer_anyway_is_not_named_as_passe
 # hand back and picks the first. Each subscriber here stands in for a module and hands back the
 # steps it is given, as (round, phase, kind).
 
-#: Why each test of this section fails until core asks the modules for their steps.
-MODULE_STEPS = "#283: core does not yet ask each module for its pending steps"
-
-
 def _steps_hook(*modules, handed_to: list | None = None):
     """A `pending_steps_read` hook with one subscriber per *modules* entry, each a (pending,
     passed over) pair of (round, phase, kind) lists it hands back; each records the rounds and the
@@ -1561,7 +1519,6 @@ async def _three_rounds(db_path: str) -> None:
     ])
 
 
-@pytest.mark.xfail(strict=True, reason=MODULE_STEPS)
 @pytest.mark.parametrize("weather, attendance, results, expected", [
     pytest.param([(2, 1, "weather_p1")], [(1, 7, "rsvp_deadline")], [],
                  (1, 7, "rsvp_deadline", "Division A", "Bahrain"), id="an earlier round first"),
@@ -1616,7 +1573,6 @@ async def test_core_offers_the_first_of_the_steps_the_modules_hand_back(
     assert entry["job_id"] is None
 
 
-@pytest.mark.xfail(strict=True, reason=MODULE_STEPS)
 @pytest.mark.parametrize("round_format, handed, jobs, expected", [
     pytest.param("MYSTERY", [[(1, 0, "weather_p1")]], [_job(1, 1, days=2)], (1, 0, "job_1_r1"),
                  id="a job taken as the step its module hands back for its kind"),
@@ -1655,7 +1611,6 @@ async def test_a_queued_job_is_offered_as_its_module_s_step(
     assert (entry["round_id"], entry["phase_number"], entry["job_id"]) == expected
 
 
-@pytest.mark.xfail(strict=True, reason=MODULE_STEPS)
 @pytest.mark.parametrize("status, not_held", [
     pytest.param("FINAL", 0, id="final"),
     pytest.param("AWAITING_APPEAL_VERDICTS", 0, id="its appeals being judged"),
@@ -1690,7 +1645,6 @@ async def test_a_round_that_has_ended_is_offered_its_clean_ups_alone(
     assert (entry["round_id"], entry["phase_number"]) == (1, 8)
 
 
-@pytest.mark.xfail(strict=True, reason=MODULE_STEPS)
 @pytest.mark.parametrize("status, not_held", [
     pytest.param("FINAL", 0, id="final"),
     pytest.param("CANCELLED", 1, id="every session entered as not held"),
@@ -1726,7 +1680,6 @@ async def test_the_steps_passed_over_are_the_modules_in_the_order_the_rounds_rac
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=MODULE_STEPS)
 async def test_each_module_is_handed_the_active_season_s_rounds_as_core_reads_them(
     tmp_path,
 ) -> None:

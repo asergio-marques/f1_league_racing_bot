@@ -726,9 +726,6 @@ async def test_a_fired_check_in_phase_is_logged_by_name(tmp_path, phase, name):
     ]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: core does not yet read the steps through the modules' hook"
-)
 async def test_a_deadline_whose_announcement_was_refused_is_not_offered_again(tmp_path):
     """Test mode on, attendance and results on. Round 3's check-in deadline has run, its
     distribution saved and marked (`deadline_run_at`), but Discord refused its announcement, so
@@ -1316,9 +1313,6 @@ async def test_advance_reads_the_clock_once_for_the_step_it_offers_and_those_it_
 
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: advance does not yet ask the modules' steps of the bot's hook"
-)
 async def test_advance_asks_the_step_it_offers_and_those_it_passes_over_of_the_bot_s_hook(
     tmp_path,
 ):
@@ -1449,9 +1443,6 @@ async def test_an_advanced_deadline_places_the_reserves_on_every_answer_held(tmp
 # A round whose every session was entered as not held (#439, slice 8, Part E)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: core does not yet read the steps through the modules' hook"
-)
 async def test_advance_offers_only_the_clean_ups_of_a_round_whose_every_session_was_not_held(
     tmp_path,
 ):
