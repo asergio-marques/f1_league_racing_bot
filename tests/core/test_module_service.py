@@ -97,9 +97,10 @@ async def test_each_switch_is_answered_by_the_reader_its_module_registered(db_pa
 async def test_a_switch_no_module_signed_up_for_is_an_error_not_off(db_path):
     """A module whose reader the builder never signed up is a fault in the bot's assembly, and
     asking its switch raises naming it rather than reading it as off."""
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.module_service import ModuleService, SwitchNotSignedUp
 
-    with pytest.raises(LookupError, match="images"):
+    assert issubclass(SwitchNotSignedUp, LookupError)
+    with pytest.raises(SwitchNotSignedUp, match="images"):
         await ModuleService(db_path).is_images_enabled()
 
 

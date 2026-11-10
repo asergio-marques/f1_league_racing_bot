@@ -1344,7 +1344,7 @@ async def test_the_attendance_channels_are_not_checked_while_the_module_is_off(d
 
 @pytest.mark.asyncio
 async def test_an_attendance_switch_nobody_signed_up_for_is_raised_not_read_as_off(db_path):
-    """The attendance module's switch reader was never signed up (`LookupError`): that is a fault
+    """The attendance module's switch reader was never signed up (`SwitchNotSignedUp`): that is a fault
     in the bot's assembly, not a switch that cannot be read, so `approval_faults` raises it rather
     than standing aside and reading the module as off."""
     from unittest.mock import AsyncMock
@@ -1357,9 +1357,13 @@ async def test_an_attendance_switch_nobody_signed_up_for_is_raised_not_read_as_o
     await _staged_amendment(path, season_id)
 
     bot = await _bot_recording_reposts(path, [])
-    bot.module_service.is_attendance_enabled = AsyncMock(side_effect=LookupError("attendance"))
+    from leaguebot.core.services.module_service import SwitchNotSignedUp
 
-    with pytest.raises(LookupError, match="attendance"):
+    bot.module_service.is_attendance_enabled = AsyncMock(
+        side_effect=SwitchNotSignedUp("attendance")
+    )
+
+    with pytest.raises(SwitchNotSignedUp, match="attendance"):
         await approval_faults(path, season_id, bot)
 
 

@@ -206,11 +206,13 @@ def test_a_released_calendar_is_removed_with_its_render_directory(tmp_path):
 
 
 async def test_a_switch_nobody_signed_up_for_is_raised_not_read_as_text():
-    """The images module's switch reader was never signed up (`LookupError`): that is a fault in
+    """The images module's switch reader was never signed up (`SwitchNotSignedUp`): that is a fault in
     the bot's assembly, not a gate that cannot be read, so it is raised rather than answered as
     text."""
     drawing, _, _, modules = _drawing()
-    modules.is_images_enabled = AsyncMock(side_effect=LookupError("images"))
+    from leaguebot.core.services.module_service import SwitchNotSignedUp
 
-    with pytest.raises(LookupError, match="images"):
+    modules.is_images_enabled = AsyncMock(side_effect=SwitchNotSignedUp("images"))
+
+    with pytest.raises(SwitchNotSignedUp, match="images"):
         await drawing.calendar_wanted()

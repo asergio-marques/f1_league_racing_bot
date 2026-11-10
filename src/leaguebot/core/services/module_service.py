@@ -6,7 +6,7 @@ the change queue (`<module>/services/module_switch_settings.py`), never by this 
 module signs up the reader of its own switch (`register_switch`, from the builder), and
 `is_<module>_enabled` hands that reader a connection to the league's database and gives back its
 answer. A module that never signed up is a fault in the bot's assembly, and asking for it raises
-`LookupError` naming it, rather than reading as off.
+`SwitchNotSignedUp`, a `LookupError`, naming it, rather than reading as off.
 """
 from __future__ import annotations
 
@@ -18,6 +18,13 @@ import aiosqlite
 from leaguebot.core.db.database import get_connection
 
 log = logging.getLogger(__name__)
+
+class SwitchNotSignedUp(LookupError):
+    """A module's switch was asked for and no reader is signed up for it: a fault in the bot's
+    assembly. Its own type, so that a reader standing aside from a fault reading a switch lets this
+    one through by name, and still stands aside from any other `LookupError`, a row without the
+    column it names among them."""
+
 
 #: A module's switch reader: whether the module is on, read on the connection it is handed.
 SwitchReader = Callable[[aiosqlite.Connection], Awaitable[bool]]
@@ -38,7 +45,7 @@ class ModuleService:
         module's switch here, so that the read is part of it."""
         reader = self._switch_readers.get(module)
         if reader is None:
-            raise LookupError(f"no switch reader is signed up for the {module} module")
+            raise SwitchNotSignedUp(f"no switch reader is signed up for the {module} module")
         return await reader(db)
 
     async def _is_enabled(self, module: str) -> bool:

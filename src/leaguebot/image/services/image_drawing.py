@@ -30,7 +30,7 @@ from leaguebot.core.services.image_drawing import (
     Held,
     LineupPicture,
 )
-from leaguebot.core.services.module_service import ModuleService
+from leaguebot.core.services.module_service import ModuleService, SwitchNotSignedUp
 from leaguebot.core.utils.paths import resolve_within_project_root
 from leaguebot.image.models.image_catalogues import (
     catalogue_for,
@@ -475,7 +475,7 @@ class ImageDrawing:
             if not await self._modules.is_images_enabled():
                 return False
             return await self._config.is_aspect_enabled(CALENDAR_ASPECT)
-        except LookupError:
+        except SwitchNotSignedUp:
             raise  # a module that never signed up is a fault in the bot's assembly, not a reading
         except Exception:  # noqa: BLE001 — a stated exception, see the docstring
             log.exception("calendar: could not read the image gates")

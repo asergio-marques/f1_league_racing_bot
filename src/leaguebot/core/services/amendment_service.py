@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.services.module_service import SwitchNotSignedUp
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
 
@@ -46,9 +47,9 @@ async def approval_faults(db_path: str, season_id: int, bot: LeagueBot) -> list[
     needs and the attendance module knows what its recalculation needs; this function only
     composes them, and reaches into neither's configuration itself.
 
-    A fault reading whether the attendance module is on stands aside, logged on the host and read
-    as off: an attendance switch that cannot be read never refuses an amendment. A switch nobody
-    signed up for is not such a fault but one in the bot's assembly, and its `LookupError` is raised.
+    A fault reading whether the attendance module is on stands aside, logged on the host and read as
+    off: an attendance switch that cannot be read never refuses an amendment. A switch nobody signed
+    up for is not such a fault but one in the bot's assembly, and its `SwitchNotSignedUp` is raised.
     """
     from leaguebot.results.services import results_post_service
 
@@ -66,7 +67,7 @@ async def approval_faults(db_path: str, season_id: int, bot: LeagueBot) -> list[
     attendance_on = False
     try:
         attendance_on = await bot.module_service.is_attendance_enabled()
-    except LookupError:
+    except SwitchNotSignedUp:
         raise  # a module that never signed up is a fault in the bot's assembly, not a reading
     except Exception:  # noqa: BLE001 — never refuse an amendment on this reader
         log.exception("approval_faults: could not read the attendance module's state")

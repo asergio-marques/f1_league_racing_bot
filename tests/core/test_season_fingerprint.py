@@ -162,11 +162,11 @@ async def test_a_switch_nobody_signed_up_for_is_raised_not_fingerprinted(season)
     """A module whose switch reader the builder never signed up is a fault in the bot's assembly,
     not a season that could not be read: taking the fingerprint raises it, naming the module,
     rather than giving the empty fingerprint."""
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.module_service import ModuleService, SwitchNotSignedUp
 
     season.bot.module_service = ModuleService(season.path)
 
-    with pytest.raises(LookupError, match="weather"):
+    with pytest.raises(SwitchNotSignedUp, match="weather"):
         await _take(season)
 
 
@@ -595,18 +595,26 @@ async def test_an_edit_to_a_module_s_configuration_changes_what_that_module_hand
     assert changed == [(_MODULE_AREAS[module], {area})]
 
 
-@pytest.mark.parametrize("fault", ["a module's read fails", "no module hands its areas"])
+@pytest.mark.parametrize("fault", [
+    "a module's read fails", "a module's row lacks a column", "no module hands its areas",
+])
 async def test_a_module_s_areas_not_read_leave_an_empty_fingerprint_logged(
     season, caplog, fault,
 ):
-    """A module whose read fails while the fingerprint is taken, or a bot whose modules hand no
-    areas at all, gives an empty fingerprint, which differs from every other, so an approval is
-    refused rather than waved through; the fault is logged on the host."""
+    """A module whose read fails while the fingerprint is taken (the database refusing, or a row
+    without the column it names, an `IndexError` as `sqlite3.Row` raises), or a bot whose modules
+    hand no areas at all, gives an empty fingerprint, which differs from every other, so an
+    approval is refused rather than waved through; the fault is logged on the host."""
     from leaguebot.core.utils.hooks import AwaitedHook
 
-    if fault == "a module's read fails":
+    if fault != "no module hands its areas":
+        error = (
+            sqlite3.OperationalError("no such table: image_config")
+            if fault == "a module's read fails" else IndexError("No item with that key")
+        )
+
         async def broken(*_args, **_kwargs):
-            raise sqlite3.OperationalError("no such table: image_config")
+            raise error
 
         season.bot.fingerprint_areas_read.subscribe(broken)
     else:
