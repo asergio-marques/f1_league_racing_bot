@@ -2245,6 +2245,10 @@ READS_OF_OWN_COLUMNS: dict[tuple[str, str], tuple[str, str]] = {
         "rounds",
         "reads `rounds.phase1_done` to `phase3_done`, the weather module's own columns",
     ),
+    ("attendance/services/test_mode_steps.py", "check_ins_cleared"): (
+        "rounds",
+        "reads `rounds.checkin_cleared`, the attendance module's own column",
+    ),
 }
 
 
