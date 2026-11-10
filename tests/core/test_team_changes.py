@@ -1194,7 +1194,8 @@ async def test_a_team_modify_asked_again_while_it_waits_is_refused_as_a_repeat(t
     shorthand MCL and the full name "McLaren Racing", and is acknowledged; before the queue runs
     it, they open the form again and submit it, the same. The second is refused at once, in the
     queue's words; only the one change is queued. The queue runs it: MCL is on the list, with one
-    `TEAM_NAMES` entry."""
+    `TEAM_NAMES` entry and one `TEAM_ROLE_CONFIG` entry, its role mapping following the new
+    shorthand."""
     from tests.support.change_queue import change_rows, run_queue
     from tests.support.settings_league import said
     from tests.support.setup_rounds import repeated
@@ -1209,7 +1210,9 @@ async def test_a_team_modify_asked_again_while_it_waits_is_refused_as_a_repeat(t
     await run_queue(league.bot)
 
     assert (await _server_list(league))["MCL"] == ("McLaren Racing", 812)
-    assert [row["change_type"] for row in await _team_audits(league)] == ["TEAM_NAMES"]
+    assert [row["change_type"] for row in await _team_audits(league)] == [
+        "TEAM_NAMES", "TEAM_ROLE_CONFIG",
+    ]
     assert said(first)[-1] == _modified(
         "McLaren Racing",
         'Full name: "McLaren F1 Team" → "McLaren Racing"',
