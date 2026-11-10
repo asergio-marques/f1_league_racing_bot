@@ -374,9 +374,6 @@ async def _merge(
     """
     await profiles_merged.call(db, kept["id"], absorbed["id"])
     moved = (kept["id"], absorbed["id"])
-    # The division memberships come first: moving a placement fires the
-    # `driver_division_membership_on_update` trigger, which would otherwise add the membership a
-    # second time.
     await db.execute(
         "UPDATE driver_division_memberships SET driver_profile_id = ? WHERE driver_profile_id = ?",
         moved,
