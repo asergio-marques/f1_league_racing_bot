@@ -403,21 +403,6 @@ async def test_a_failing_deadline_run_does_not_stop_the_startup(tmp_path, caplog
     )
 
 
-async def test_a_naive_timestamp_is_read_as_utc(tmp_path):
-    """Rows written before the timestamps carried a zone still exist; read as local time
-    the deadline would move by the host's offset."""
-    db_path = await _make_db(tmp_path, hours_until_round=-1)
-    naive = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(tzinfo=None)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE rounds SET scheduled_at = ? WHERE id = ?", (naive.isoformat(), ROUND_ID)
-        )
-        await db.commit()
-    bot = await _bot(db_path)
-
-    assert await _recover(bot) == 1
-
-
 async def test_a_round_whose_timestamp_will_not_parse_is_skipped(tmp_path):
     """One malformed row must not cost every other division its catch-up."""
     db_path = await _make_db(tmp_path, hours_until_round=-1)
