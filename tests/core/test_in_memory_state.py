@@ -122,6 +122,9 @@ EXEMPT = {
     # The timer kinds' callables the builder registers at start-up: the bot's wiring, not the
     # league's data (#439).
     ("core/services/scheduler_service.py", "_timer_callbacks"),
+    # The module switch readers the builder signs up once at start-up: the bot's wiring, not the
+    # league's data.
+    ("core/services/module_service.py", "_switch_readers"),
     # The amendment's session chooser: what the member ticked, read once when they press
     # Continue. It dies with the ephemeral view it belongs to (#345).
     ("results/cogs/results_cog.py", "selected"),
