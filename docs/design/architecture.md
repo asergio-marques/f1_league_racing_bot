@@ -1139,89 +1139,93 @@ to it would switch off the one failure path for every command.
    for each lane) puts the error in the host's log, that lane's worker pauses and looks again, and
    the job runs again, so that its failure is recorded then; beside it, the dispatcher's own
    catch-all (`ChangeQueue._work`) puts a fault in starting the lanes in the host's log and pauses
-   before it looks again. The queue's catch of a step that raises (`ChangeQueue._run_step`) is a failure path as well:
-   it stops the lane, or, for a step of a league's setting, `/bot init`'s save or a role move that
-   gives `Step.on_fault`, and for a check that raises as the job starts (`ChangeQueue._start`), as a
-   member's change of a type that gives `ChangeType.on_check_fault`, ends the job instead and the lane goes on (see "A job that fails
-   stops its lane"). Either way the fault is logged on the host and recorded in the log channel as a
-   failure, once — save a fault in `/bot init`'s save, which writes no line, and a fault in its
-   check while no server holds the league, when there is no log channel to record it in; the
-   host's log holds either alone. The wrapper `bounded_autocomplete` puts round an autocomplete is
-   a failure path too: no choices, and the error in the host's log. The callback a change type may give for a Discard of a change
-   before it started (`ChangeType.on_discarded`) is not a failure path but a stated exception: the
-   catch-all around it
-   (`ChangeQueue._discard_follow_ons`) puts the error in the host's log alone, with no line to the
-   log channel, and asks no follow-on, because a Discard is the queue's last way past a stop and a
-   callback that raises must not hold it; the reader that says what dropping an undiscardable job
-   would leave (`ChangeQueue._undiscardable_refusal`) is a stated exception likewise: its catch-all
-   puts the error in the host's log with the full details, and the Discard is refused all the same,
-   naming the job in place of the reason, its refusal recorded in the log channel as any refused
-   press is, because an undiscardable job is never dropped for want of its reason; the `names`
-   job an amendment's lapse and its cancel share (`amend_end_changes._names_step`) is a stated
-   exception as well: its catch-all puts the error in the host's log and completes the job with no
-   names, so the revert goes ahead with a full tie ordered by user id, because a tie so ordered is
-   the lesser fault than a round not put back (its docstring says so); the helper through which a
-   placement's capacity guards count the seats and ask the image module
-   (`PlacementService._ask_drawing`) is a stated exception too: its catch-all puts the error in the
-   host's log in full, and the guard lets the placement through as if no problem were found,
-   because a capacity check that cannot run must not block a placement (its docstring says so); the
-   image module's calendar gate (`ImageDrawing.calendar_wanted`) is a stated exception likewise:
+   before it looks again. The queue's catches of a step that raises (`ChangeQueue._run_step`) and of
+   a check that raises as the change starts (`ChangeQueue._start`) are failure paths as well: each
+   stops the lane, or, for a step of a league's setting, `/bot init`'s save or a role move that
+   gives `Step.on_fault`, or a member's change of a type that gives `ChangeType.on_check_fault`,
+   ends the job instead and the lane goes on (see "A job that fails stops its lane"). Either way the
+   fault is logged on the host and recorded in the log channel as a failure, once — save a fault in
+   `/bot init`'s save, which writes no line, and a fault in its check while no server holds the
+   league, when there is no log channel to record it in; the host's log holds either alone. The
+   wrapper `bounded_autocomplete` puts round an autocomplete is a failure path too: no choices, and
+   the error in the host's log. The callback a change type may give for a Discard of a change before
+   it started (`ChangeType.on_discarded`) is not a failure path but a stated exception: the
+   catch-all around it (`ChangeQueue._discard_follow_ons`) puts the error in the host's log alone,
+   with no line to the log channel, and asks no follow-on, because a Discard is the queue's last way
+   past a stop and a callback that raises must not hold it; the reader that says what dropping an
+   undiscardable job would leave (`ChangeQueue._undiscardable_refusal`) is a stated exception
+   likewise: its catch-all puts the error in the host's log with the full details, and the Discard
+   is refused all the same, naming the job in place of the reason, its refusal recorded in the log
+   channel as any refused press is, because an undiscardable job is never dropped for want of its
+   reason; the `names` job an amendment's lapse and its cancel share
+   (`amend_end_changes._names_step`) is a stated exception as well: its catch-all puts the error in
+   the host's log and completes the job with no names, so the revert goes ahead with a full tie
+   ordered by user id, because a tie so ordered is the lesser fault than a round not put back (its
+   docstring says so); the helper through which a placement's capacity guards count the seats and
+   ask the image module (`PlacementService._ask_drawing`) is a stated exception too: its catch-all
+   puts the error in the host's log in full, and the guard lets the placement through as if no
+   problem were found, because a capacity check that cannot run must not block a placement (its
+   docstring says so); the image module's calendar gate (`ImageDrawing.calendar_wanted`) is a stated
+   exception likewise: its catch-all puts the error in the host's log alone, with no line to the log
+   channel, and answers that the league does not draw its calendar, so the text calendar goes out,
+   because a gate that cannot be read must not lose a league its calendar (its docstring says so);
+   the image module's lineup gate (`ImageDrawing.lineup_wanted`) is a stated exception beside it:
    its catch-all puts the error in the host's log alone, with no line to the log channel, and
-   answers that the league does not draw its calendar, so the text calendar goes out, because a
-   gate that cannot be read must not lose a league its calendar (its docstring says so); the image
-   module's lineup gate (`ImageDrawing.lineup_wanted`) is a stated exception beside it: its
-   catch-all puts the error in the host's log alone, with no line to the log channel, and answers
-   that the league does not draw its lineup, so the text lineup goes out, because a gate that
-   cannot be read must not lose a league its lineup (its docstring says so); the helper through
+   answers that the league does not draw its lineup, so the text lineup goes out, because a gate
+   that cannot be read must not lose a league its lineup (its docstring says so); the helper through
    which the season's own capacity checks count and ask the image module
    (`approval_checks.ask_drawing`) — the review's and the approval's (`lineup_problems`, and the
    review's calendar and attendance warnings) — is a stated exception beside
    `PlacementService._ask_drawing`'s: its catch-all puts the error in the host's log in full and
    lets the season through as if no problem were found, because a capacity check that cannot run
-   must not block a season (its docstring says so); the round guard that `/round add` and the
-   round imports share (`calendar_round_refusal`, in `core/services/round_add_changes.py`) is a
-   stated exception beside it: the change types' checks call it when the change is asked for and
-   again as it starts, and its catch-all puts the error in the host's log in full and lets the
-   round through as if no problem were found, because a capacity check that cannot run must not
-   block a round (its docstring says so); the season's reading of the image module's configuration
-   faults (`approval_checks.image_configuration_faults`) is a stated exception too: each of its
-   catch-alls puts the error in the host's log; a fault reading the templates is stated as a fault
-   of its own, which refuses the season, because a check that never ran is not a pass, while a fault
-   reading the per-tier colours or the portrait settings stands aside and lets the season through,
-   because a reader that cannot answer must not be the thing that refuses a season (its docstring
-   says so); the season's team-name check (`approval_checks.team_name_problems`) is a stated
-   exception too: its catch-all puts the error in the host's log alone and finds nothing wrong, so
-   each review and confirmation that checks the names carries on with them unchecked, because the
-   check only keeps a team name from becoming a bad artwork filename (its docstring says so); the
-   season cog's own image review section (`SeasonCog._build_image_review_section`) is a stated
-   exception beside `approval_checks.image_configuration_faults`: its catch-all puts the error in
-   the host's log and states the section as unreadable in the review, because a review must never
-   fail for this (its docstring says so); the image module's artwork signature
-   (`ImageDrawing.artwork_signature`) is a stated exception too: its catch-all signs a configured
-   directory it cannot resolve as `[column, value, "unresolvable"]`, with a warning to the host's
-   log alone, and signs the rest all the same, because a fault that escaped it would empty the whole
-   fingerprint and the review would read as changed in every area (its docstring says so); the
-   queue's own telling of a change's outcome (`ChangeQueue._acknowledge`, `_acknowledge_saved`,
-   `_name_job`, `_post_notice`, `_tell`, `_tell_origin`, `_update_reply` and `_finish`, and
-   `OutputRouter.strip_view` beside them) is a stated exception as well: each catch-all puts the
-   error in the host's log and the change goes ahead, because telling a change's outcome must never
-   fail the change; the queue's catches of a hook that raises (`ChangeQueue._end_on_check_fault`,
-   `_refuse` and `_step_failed`) are stated exceptions likewise: each puts the error in the host's
-   log and stops the lane, on the fault of the check, the refusal or the job in hand; the log
-   writer's own catch-alls (`OutputRouter._enqueue_if_configured`, `log_lines.name_of_member` and
-   `log_lines.record_refusal`) are stated exceptions beside place 3: a line that can be neither
-   posted nor kept for retry is logged on the host and dropped, a member who cannot be looked up is
-   named by mention alone, and a refusal's record that fails is logged on the host and not answered
-   a second time, because a line to the log channel must not fail the work it records; the readers
-   that stand aside (`amendment_service.approval_faults`, `approval_checks.channel_on_server`,
-   `season_fingerprint_service.take_fingerprint` and `bot_cog._clean_up`) are stated exceptions too:
-   the first two put the error in the host's log and read an attendance switch as off and a channel
-   as present, because a reader that cannot answer must not refuse an amendment or a season, the
-   third signs a fingerprint it cannot take as an empty one, which refuses an approval, and the
-   fourth says in the factory reset's last report and closing line that its clean-up stopped,
-   because a reset must not end in silence (each docstring says so); and the scheduler's removal of
-   one job (`SchedulerService._remove_job`) is a stated exception too: its catch-all puts the error
-   in the host's log and the teardown goes on past a job that will not go;
+   must not block a season (its docstring says so); the round guard that `/round add` and the round
+   imports share (`calendar_round_refusal`, in `core/services/round_add_changes.py`) is a stated
+   exception beside it: the change types' checks call it when the change is asked for and again as
+   it starts, and its catch-all puts the error in the host's log in full and lets the round through
+   as if no problem were found, because a capacity check that cannot run must not block a round (its
+   docstring says so); the season's reading of the image module's configuration faults
+   (`approval_checks.image_configuration_faults`) is a stated exception too: each of its catch-alls
+   puts the error in the host's log; a fault reading the templates is stated as a fault of its own,
+   which refuses the season, because a check that never ran is not a pass, while a fault reading the
+   per-tier colours or the portrait settings stands aside and lets the season through, because a
+   reader that cannot answer must not be the thing that refuses a season (its docstring says so);
+   the season's team-name check (`approval_checks.team_name_problems`) is a stated exception too:
+   its catch-all puts the error in the host's log alone and finds nothing wrong, so each review and
+   confirmation that checks the names carries on with them unchecked, because the check only keeps a
+   team name from becoming a bad artwork filename (its docstring says so); the season cog's own
+   image review section (`SeasonCog._build_image_review_section`) is a stated exception beside
+   `approval_checks.image_configuration_faults`: its catch-all puts the error in the host's log and
+   states the section as unreadable in the review, because a review must never fail for this (its
+   docstring says so); the image module's artwork signature (`ImageDrawing.artwork_signature`) is a
+   stated exception too: its catch-all signs a configured directory it cannot resolve as
+   `[column, value, "unresolvable"]`, with a warning to the host's log alone, and signs the rest all
+   the same, because a fault that escaped it would empty the whole fingerprint and the review would
+   read as changed in every area (its docstring says so); the queue's own telling of a change's
+   outcome (`ChangeQueue._acknowledge`, `_acknowledge_saved`, `_name_job`, `_post_notice`, `_tell`,
+   `_tell_origin`, `_update_reply` and `_finish`, and `OutputRouter.strip_view` beside them) is a
+   stated exception as well: each catch-all puts the error in the host's log and the change goes
+   ahead, because telling a change's outcome must never fail the change; the queue's catches of a
+   hook that raises (`ChangeQueue._end_on_check_fault`, `_refuse` and `_step_failed`) are stated
+   exceptions likewise: each puts the error in the host's log and stops the lane, on the fault of
+   the check, of the refusal's hook or of the job in hand; the log line's own catch-alls (the log
+   writer's and `log_lines'`) fall under place 3, keeping a line for retry
+   (`OutputRouter._enqueue_if_configured`) and recording a refusal already answered
+   (`log_lines.record_refusal`): a line that can be neither posted nor kept is logged on the host
+   and dropped, and a refusal's record that fails is not answered a second time, because a line to
+   the log channel must not fail the work it records; naming a member in a line
+   (`log_lines.name_of_member`) is a stated exception: one who cannot be looked up is named by
+   mention alone, for the same reason; the readers that stand aside
+   (`amendment_service.approval_faults` and `approval_checks.channel_on_server`) are stated
+   exceptions too: each puts the error in the host's log and reads an attendance switch as off or a
+   channel as present, because a reader that cannot answer must not refuse an amendment or a season;
+   a season's fingerprint that cannot be taken (`season_fingerprint_service.take_fingerprint`) is a
+   stated exception: it is signed as an empty one, which refuses an approval, because a fingerprint
+   that could not be read must not wave one through; the factory reset's Discord clean-up
+   (`bot_cog._clean_up`) is a stated exception: it says in the reset's last report and closing line
+   that its clean-up stopped, because a reset must not end in silence (each docstring says so); and
+   the scheduler's removal of one job (`SchedulerService._remove_job`) is a stated exception too:
+   its catch-all puts the error in the host's log and the teardown goes on past a job that will not
+   go;
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a job: one that fails stops its lane until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
@@ -1341,10 +1345,10 @@ later on its own.
   types from a module's package, read from a file of core), SQLite's clock in a statement, a service
   reading the wall clock (the change queue's own default clock is the one place allowed,
   `WALL_CLOCK_ALLOWED`), a catch-all handler outside the five places (one that raises again, calls
-  `report_failure` as a statement directly in its body, or sits directly in the
-  body of a `for` loop, is in a place by its shape; `CATCH_ALLS_ALLOWED` names for good the queue's
-  failure paths, the stated exceptions, the guards around reporting and the fifth place's handlers),
-  and a save outside a queued change. The job check and the check of cogs handling their own errors
+  `report_failure` as a statement directly in its body, or sits directly in the body of a `for`
+  loop, is in a place by its shape; `CATCH_ALLS_ALLOWED` names for good the failure paths of place
+  1, the stated exceptions, the guards around reporting and the fifth place's handlers), and a save
+  outside a queued change. The job check and the check of cogs handling their own errors
   are absolute, with no list of breaches left to grow, and the log channel's check holds its six
   places for good; every other check lists today's breaches, each under the work that removes it.
   The check of a save outside a queued change counts each function's `.commit()` and
