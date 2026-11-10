@@ -88,6 +88,12 @@ async def _run_review(cog, interaction) -> None:
         await undecorate(SeasonCog.season_review)(cog, interaction)
 
 POST = "season.review.post"
+#: Why a test whose stand-in bot has each module's section signed up as the builder does fails
+#: until the builder signs them up and the review reads its sections through the hook.
+_NO_SECTIONS_HOOK = (
+    "#283: the builder signs no module's section up to a review sections hook; the season cog "
+    "reads each module itself"
+)
 #: What the drawings the command used to make itself are stood down by, where they still exist.
 _TODAY_S_DRAWING = (
     "_prerender_review_images",
@@ -192,10 +198,13 @@ def _cog(
     bot.db_path = db_path
     bot.output_router.post_log = AsyncMock()
     # The windows hook as the builder signs attendance and weather up to it, which the cog's
-    # `_approval_windows` reads through.
-    from leaguebot.__main__ import _sign_up_to_round_windows
+    # `_approval_windows` reads through; and the review sections hook as the builder signs
+    # signup, attendance, results and weather up to it, each section read through the module
+    # stubs below.
+    from leaguebot.__main__ import _sign_up_to_review_sections, _sign_up_to_round_windows
 
     _sign_up_to_round_windows(bot)
+    _sign_up_to_review_sections(bot)
     cog.bot = bot
 
     # The season being set up, read from the database (#283).
@@ -402,6 +411,7 @@ def _private(messages) -> str:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_server_with_no_pending_setup_is_told_to_start_one(db_path):
     cog = _cog(db_path)
     hold_setup(cog.bot.season_service, None, divisions=False)
@@ -415,6 +425,7 @@ async def test_a_server_with_no_pending_setup_is_told_to_start_one(db_path):
     interaction.response.defer.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_the_review_is_asked_of_the_queue_to_be_posted_in_the_command_s_channel(db_path):
     """It is a report a league's staff read together, not a private preview, and the public
     messages are what the approval later clears. The manager runs the review in channel 2: one
@@ -432,6 +443,7 @@ async def test_the_review_is_asked_of_the_queue_to_be_posted_in_the_command_s_ch
     assert review["evidence"]
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_the_heading_names_the_season_and_the_game(db_path):
     cog = _cog(db_path)
     messages = await _review(cog, _interaction())
@@ -444,6 +456,7 @@ async def test_the_heading_names_the_season_and_the_game(db_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_every_module_is_listed_as_on_or_off(db_path):
     cog = _cog(db_path, weather=True, results=True)
     messages = await _review(cog, _interaction())
@@ -455,6 +468,7 @@ async def test_every_module_is_listed_as_on_or_off(db_path):
     assert "Attendance: ❌ Disabled" in public
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_disabled_modules_configuration_is_not_reviewed(db_path):
     """A module that is off has no configuration to review; an empty heading is noise a
     manager has to read past."""
@@ -467,6 +481,7 @@ async def test_a_disabled_modules_configuration_is_not_reviewed(db_path):
     assert "Attendance Config" not in public
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_the_weather_deadlines_are_reviewed(db_path):
     cog = _cog(db_path, weather=True)
     messages = await _review(cog, _interaction())
@@ -476,6 +491,7 @@ async def test_the_weather_deadlines_are_reviewed(db_path):
     assert "Phase 3 deadline: 2h before race" in public
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_the_signup_configuration_is_reviewed(db_path):
     cog = _cog(db_path, signup=True)
     messages = await _review(cog, _interaction())
@@ -490,6 +506,7 @@ async def test_the_signup_configuration_is_reviewed(db_path):
 
 
 @pytest.mark.parametrize("signup", [True, False])
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_the_placements_review_does_not_repeat_the_league_s_roles(db_path, signup):
     """Confirming the configuration fixed both roles until the season ends (issue #276), so
     the configuration review reports them and this one has nothing to add."""
@@ -501,6 +518,7 @@ async def test_the_placements_review_does_not_repeat_the_league_s_roles(db_path,
     assert "<@&902>" not in public
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_the_attendance_configuration_is_reviewed(db_path):
     cog = _cog(db_path, attendance=True)
     messages = await _review(cog, _interaction())
@@ -511,6 +529,7 @@ async def test_the_attendance_configuration_is_reviewed(db_path):
     assert "No-show penalty: 3 pt(s)" in public
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_an_unset_attendance_threshold_says_so(db_path):
     """Distinct from a threshold of nought, which would sack everybody on the first
     point — "not set" is what tells a manager nothing will happen automatically."""
@@ -522,6 +541,7 @@ async def test_an_unset_attendance_threshold_says_so(db_path):
     assert "Auto-sack threshold: 10 pts" in public
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_season_with_no_points_attached_says_so(db_path):
     cog = _cog(db_path, results=True)
     messages = await _review(cog, _interaction())
@@ -529,6 +549,7 @@ async def test_a_season_with_no_points_attached_says_so(db_path):
     assert "Points Configs:** *(none attached)*" in _public(messages)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_test_mode_promises_no_points_on_approval(db_path):
     """Test mode attaches Standard and Half Points when it is enabled and at no other moment
     (decided 2026-09-23). The review once promised them "on approval", which the approval of
@@ -540,6 +561,7 @@ async def test_test_mode_promises_no_points_on_approval(db_path):
     assert "auto-seeded" not in _public(messages) + _private(messages)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_team_name_that_cannot_be_a_lineup_field_is_named(db_path):
     cog = _cog(db_path, name_problems=["'Red/Blue' contains a character no field id may"])
     messages = await _review(cog, _interaction())
@@ -549,6 +571,7 @@ async def test_a_team_name_that_cannot_be_a_lineup_field_is_named(db_path):
     assert "Red/Blue" in public
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_team_name_that_cannot_be_a_lineup_field_withholds_approval(db_path):
     """The review calls it blocking, and the confirmation refuses on it (#396). The team
     list is fixed by then, so the one remedy named is to abandon the season."""
@@ -560,6 +583,7 @@ async def test_a_team_name_that_cannot_be_a_lineup_field_withholds_approval(db_p
     assert "`/season abort`" in _private(messages)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_reserve_team_with_no_role_is_warned_about(db_path):
     """Drivers on it fail result validation, which is discovered at the first submission
     unless the review says so first."""
@@ -576,6 +600,7 @@ async def test_a_reserve_team_with_no_role_is_warned_about(db_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_division_gets_its_banner(db_path):
     cog = _cog(db_path)
     messages = await _review(cog, _interaction())
@@ -583,6 +608,7 @@ async def test_a_division_gets_its_banner(db_path):
     assert "# PRO (Tier 1)" in _public(messages)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_divisions_channels_are_listed(db_path):
     cog = _cog(db_path)
     messages = await _review(cog, _interaction())
@@ -593,6 +619,7 @@ async def test_a_divisions_channels_are_listed(db_path):
     assert "Verdicts channel: <#705>" in public
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_an_unset_channel_says_so_rather_than_being_left_out(db_path):
     """An absent line and a configured channel read the same to someone skimming."""
     cog = _cog(db_path, divisions=[_division(penalty_channel_id=None, lineup_channel_id=None)])
@@ -603,6 +630,7 @@ async def test_an_unset_channel_says_so_rather_than_being_left_out(db_path):
     assert "Lineup channel: *(not set)*" in public
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_the_attendance_channels_are_listed_only_when_the_module_is_on(db_path):
     on = await _review(_cog(db_path, attendance=True), _interaction())
     off = await _review(_cog(db_path, attendance=False), _interaction())
@@ -612,6 +640,7 @@ async def test_the_attendance_channels_are_listed_only_when_the_module_is_on(db_
     assert "RSVP channel" not in _public(off)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_the_textual_calendar_lists_the_rounds(db_path):
     cog = _cog(db_path, rounds=[_round(1), _round(2, days_away=37)])
     messages = await _review(cog, _interaction())
@@ -621,6 +650,7 @@ async def test_the_textual_calendar_lists_the_rounds(db_path):
     assert "Round 2: NORMAL @ Silverstone" in public
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_mystery_round_is_named_as_one(db_path):
     rnd = _round(1)
     rnd.track_name = None
@@ -630,6 +660,7 @@ async def test_a_mystery_round_is_named_as_one(db_path):
     assert "@ Mystery" in _public(messages)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_team_without_a_role_is_warned_about_in_its_lineup(db_path):
     """Result submission rejects drivers in a team nobody can mention."""
     cog = _cog(
@@ -651,6 +682,7 @@ async def test_a_team_without_a_role_is_warned_about_in_its_lineup(db_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_every_unsettled_signup_is_named_in_the_public_report(db_path):
     """Whoever reads the review sees who is still to be placed or turned down (#220)."""
     cog = _cog(db_path)
@@ -665,6 +697,7 @@ async def test_every_unsettled_signup_is_named_in_the_public_report(db_path):
     assert "**Rookie** — awaiting approval" in public
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_no_unsettled_signup_means_no_listing(db_path):
     cog = _cog(db_path)
     messages = await _review(cog, _interaction())
@@ -677,6 +710,7 @@ async def test_no_unsettled_signup_means_no_listing(db_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_clean_season_is_offered_for_approval(db_path):
     cog = _cog(db_path)
 
@@ -685,6 +719,7 @@ async def test_a_clean_season_is_offered_for_approval(db_path):
     assert _offered(cog)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_round_already_run_withholds_approval(db_path):
     """A round in the past never opens its result submission, so it could never take
     results at all."""
@@ -696,6 +731,7 @@ async def test_a_round_already_run_withholds_approval(db_path):
     assert "dates that have already gone by" in _private(messages)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_season_with_no_division_withholds_approval(db_path):
     cog = _cog(db_path)
     cog.season_has_divisions = AsyncMock(return_value=False)
@@ -705,6 +741,7 @@ async def test_a_season_with_no_division_withholds_approval(db_path):
     assert "This season has no divisions" in _private(messages)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_an_unsettled_signup_withholds_approval_and_is_named(db_path):
     """Every signup is placed or rejected before placements are confirmed (issue #220)."""
     cog = _cog(db_path)
@@ -719,6 +756,7 @@ async def test_an_unsettled_signup_withholds_approval_and_is_named(db_path):
     assert "`/driver reject`" in _private(messages)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_division_missing_a_channel_it_posts_to_withholds_approval(db_path):
     """Every channel a division posts to is required at confirmation (issues #220, #374) —
     a module's as well as the lineup's and the calendar's, so the review withholds its button
@@ -734,6 +772,7 @@ async def test_a_division_missing_a_channel_it_posts_to_withholds_approval(db_pa
     assert "**Pro** has no results channel — `/results channel results`." in _private(messages)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_missing_channel_and_a_phantom_config_are_named_together(db_path):
     """A manager with two things wrong is told both and fixes them in one pass. The
     approval's results gate once carried both faults in one refusal; the channel is judged
@@ -749,6 +788,7 @@ async def test_a_missing_channel_and_a_phantom_config_are_named_together(db_path
     assert "points configuration that does not exist" in _private(messages)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_the_review_judges_the_channels_upon_its_own_server(db_path):
     """A channel deleted from the server is found only where the server is asked (#374)."""
     cog = _cog(db_path)
@@ -761,6 +801,7 @@ async def test_the_review_judges_the_channels_upon_its_own_server(db_path):
     assert interaction.guild in call.args or call.kwargs.get("guild") is interaction.guild
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_phantom_points_configuration_withholds_approval(db_path):
     cog = _cog(db_path, results=True, phantoms=["Standrad"])
     messages = await _review(cog, _interaction())
@@ -774,6 +815,7 @@ async def test_a_phantom_points_configuration_withholds_approval(db_path):
     pytest.param(False, id="a season"),
     pytest.param(True, id="a test season"),
 ])
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_season_with_no_points_attached_withholds_approval(db_path, test_mode):
     """The regression for #409. The approval refuses a season with nothing attached, and
     `/results config detach` stays open in Placements, so the review has to say so too. Test
@@ -788,6 +830,7 @@ async def test_a_season_with_no_points_attached_withholds_approval(db_path, test
     assert "`/results config append`" in _private(messages)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_season_with_results_on_and_nothing_wrong_is_offered_for_approval(db_path):
     """The other half: a points check that refuses everything is no better than none."""
     cog = _cog(db_path, results=True)
@@ -797,6 +840,7 @@ async def test_a_season_with_results_on_and_nothing_wrong_is_offered_for_approva
     assert _offered(cog)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_an_out_of_order_points_table_withholds_approval(db_path):
     cog = _cog(db_path, results=True, points_faults=["Feature Race: P2 beats P1"])
     messages = await _review(cog, _interaction())
@@ -805,6 +849,7 @@ async def test_an_out_of_order_points_table_withholds_approval(db_path):
     assert "points tables are out of order" in _private(messages)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_the_reasons_approval_is_withheld_are_private(db_path):
     """They are for the reviewer; the public review is what the approval later clears."""
     cog = _cog(db_path, results=True, points_faults=["P2 beats P1"])
@@ -814,6 +859,7 @@ async def test_the_reasons_approval_is_withheld_are_private(db_path):
     assert "not** offered for approval" not in _public(messages)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_points_faults_are_not_checked_with_results_off(db_path):
     """A season with the results module off has no points tables to be wrong about."""
     cog = _cog(db_path, results=False, points_faults=["P2 beats P1"])
@@ -835,6 +881,7 @@ async def test_points_faults_are_not_checked_with_results_off(db_path):
 # confirmation refuses on, so what withholds the button here is what refuses the press.
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_sound_image_configuration_is_offered_for_approval(db_path):
     cog = _cog(db_path, images=True)
 
@@ -844,6 +891,7 @@ async def test_a_sound_image_configuration_is_offered_for_approval(db_path):
     cog.bot.image_drawing.template_faults.assert_awaited_once_with()
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_missing_rasteriser_withholds_approval(db_path):
     """With the lineup and the calendar off the review draws nothing, so the rasteriser
     being absent was never met by a render — and every graphic of the season would fail."""
@@ -858,6 +906,7 @@ async def test_a_missing_rasteriser_withholds_approval(db_path):
     cog.bot.image_drawing.rasteriser_fault.assert_called_with()
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_broken_template_of_a_switched_on_output_withholds_approval(db_path):
     """Which templates a switched-on output draws, and so which withhold the button, is the
     image module's to say (`tests/image/test_image_drawing_review.py`); the review withholds it
@@ -872,6 +921,7 @@ async def test_a_broken_template_of_a_switched_on_output_withholds_approval(db_p
     assert fault in _private(messages)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_tier_colour_shortfall_withholds_approval(db_path):
     cog = _cog(db_path, images=True)
     cog.bot.image_drawing.colour_shortfall_problems.return_value = [
@@ -886,6 +936,7 @@ async def test_a_tier_colour_shortfall_withholds_approval(db_path):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_the_image_checks_are_not_read_with_the_module_off(db_path):
     """A league not drawing has no template, rasteriser or colour to be wrong about."""
     cog = _cog(db_path, images=False, image_faults=["Inkscape is not installed on this host."])
@@ -896,6 +947,7 @@ async def test_the_image_checks_are_not_read_with_the_module_off(db_path):
     assert _offered(cog)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_long_list_of_image_faults_is_sent_whole(db_path):
     """Sixteen templates each with its reason pass Discord's limit, and an over-long send
     loses the message rather than its tail."""
@@ -909,6 +961,7 @@ async def test_a_long_list_of_image_faults_is_sent_whole(db_path):
     assert all(fault in _private(messages) for fault in faults)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_lineup_the_template_cannot_draw_withholds_approval(db_path):
     """The review calls it blocking, and the confirmation refuses on it (#396)."""
     problem = "division **Pro** fields 12 teams but the lineup template declares 10 blocks"
@@ -921,6 +974,7 @@ async def test_a_lineup_the_template_cannot_draw_withholds_approval(db_path):
     assert f"Lineup template: {problem}" in _private(messages)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_the_review_and_the_confirmation_refuse_on_the_same_image_faults(db_path):
     """One reading for both surfaces (#396). The review withholds its button on a fault of
     the image configuration, and a press that reached the confirmation anyway — a review
@@ -1022,6 +1076,7 @@ def _a_season_in_configuration(cog):
         ),
     ],
 )
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_every_placements_review_refusal_is_recorded(db_path, arrange, reply):
     """Each refusal answers as today and writes one refusal line (#482, criterion 1)."""
     cog = _cog(db_path)
@@ -1039,6 +1094,7 @@ async def test_every_placements_review_refusal_is_recorded(db_path, arrange, rep
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_posted_placements_review_writes_no_line_of_its_own_and_asks_the_review_as_the_manager_s(
         db_path, monkeypatch):
     """Alex runs a clean placements review. The command builds no approve view and writes no
@@ -1068,6 +1124,7 @@ def _pictures_wanted(monkeypatch, cog) -> None:
     cog.bot.image_drawing.lineup_wanted = AsyncMock(return_value=True)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_switched_on_calendar_and_lineup_are_asked_as_pictures_in_place_of_their_text(
         db_path, monkeypatch):
     """Reverses 038 FR-027 (decided 2026-08-27): where an aspect is switched on, its picture
@@ -1092,6 +1149,7 @@ async def test_a_switched_on_calendar_and_lineup_are_asked_as_pictures_in_place_
     assert _offered(cog)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_with_the_image_module_off_no_picture_is_asked_and_the_sections_are_text(db_path):
     """The league conveys the section as text, so the review posts the text exactly as it
     always did. With the image module off, the review asks the queue for no picture, and its
@@ -1105,6 +1163,7 @@ async def test_with_the_image_module_off_no_picture_is_asked_and_the_sections_ar
     assert "*(no drivers assigned)*" in _public(messages)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_lineup_shown_as_a_picture_still_warns_of_a_team_without_a_role(
         db_path, monkeypatch):
     """A finding the picture cannot show is posted either way. Pro's team Ghost has no role and
@@ -1128,6 +1187,7 @@ async def test_a_lineup_shown_as_a_picture_still_warns_of_a_team_without_a_role(
     assert 'No role assigned:** "Ghost"' in _public(messages)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_calendar_shown_as_a_picture_still_names_a_round_gone_by(db_path, monkeypatch):
     """#181: a calendar picture is drawn from the very rounds that are wrong and says nothing of
     which have gone by, so the finding is posted whichever form the calendar takes. Pro's round 1
@@ -1143,6 +1203,7 @@ async def test_a_calendar_shown_as_a_picture_still_names_a_round_gone_by(db_path
     assert not _offered(cog)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_the_question_asked_says_who_may_answer(db_path):
     """Public, so a reviewer who cannot approve can put the question to someone who can; so it
     says who may answer, and for how long. A clean season's review asks a question naming the
