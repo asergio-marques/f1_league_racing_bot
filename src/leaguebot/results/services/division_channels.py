@@ -26,6 +26,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.approval_checks import channel_fault
+from leaguebot.core.services.channel_registry_service import ChannelUse, channel_ids_in
 
 if TYPE_CHECKING:
     from leaguebot.core.services.module_service import ModuleService
@@ -129,6 +130,56 @@ async def division_lines(
             for column, label, _command, unset in _CHANNELS
         ]
     return lines
+
+
+#: The settings of results' three channels, by the column that holds each, in the order a channel
+#: is looked for: what core's `channel_uses_read` names each.
+_SETTINGS = (
+    ("results_channel_id", "results"),
+    ("standings_channel_id", "standings"),
+    ("penalty_channel_id", "verdicts"),
+)
+
+
+async def channel_uses(
+    db_path: str, *, channel_id: int, divisions: Mapping[int, str]
+) -> list[ChannelUse]:
+    """The results, standings and verdicts channels of those of *divisions* (the live season's, by
+    id, naming each) that are *channel_id*, each as the use of it, naming its division, in that
+    order; empty where none is.
+
+    Subscribed to core's `channel_uses_read`, which asks it as a channel is set, so that a
+    channel does one job. Asked no switch: a channel results holds is held whether results is on
+    or off. Reads only.
+    """
+    uses: list[ChannelUse] = []
+    async with get_connection(db_path) as db:
+        for column, setting in _SETTINGS:
+            cursor = await db.execute(
+                f"SELECT division_id FROM division_results_config WHERE {column} = ? "
+                f"ORDER BY division_id",
+                (channel_id,),
+            )
+            uses += [
+                ChannelUse(setting, divisions[int(row[0])])
+                for row in await cursor.fetchall()
+                if int(row[0]) in divisions
+            ]
+    return uses
+
+
+async def setting_channels(db_path: str, *, division_ids: Sequence[int]) -> set[int]:
+    """Every channel a division's results, standings or verdicts channel names, in any season.
+
+    Subscribed to core's `setting_channels_read`, which the factory reset asks for the channels
+    it cleans up. The divisions' ids are handed, as they are every subscriber, and not used. Reads
+    only.
+    """
+    found: set[int] = set()
+    async with get_connection(db_path) as db:
+        for column, _setting in _SETTINGS:
+            found |= await channel_ids_in(db, "division_results_config", column)
+    return found
 
 
 async def division_channel_faults(

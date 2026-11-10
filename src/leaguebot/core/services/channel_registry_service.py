@@ -15,20 +15,34 @@ tell apart.
 
 Read at the moment a channel is set, never cached: a manager can clear a channel by other
 routes, and a stale answer would refuse a channel that is genuinely free.
+
+**Core reads its own channels and asks each module for the rest.** The lineup and calendar
+channels, and the interaction, log and hub channels, are core's columns, read here. A module's
+channels are the module's own columns (architecture.md, "Each table is read and written by its
+owner alone"), so the registry asks each module for the uses of a channel through the bot's
+`channel_uses_read` hook (:func:`find_channel_use`), and the factory reset asks each for every
+channel its settings hold, in any season, through `setting_channels_read`
+(:func:`channel_ids_in` is what a module reads a column with, for that).
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import cast
 
+import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.utils.hooks import AwaitedHook
+
+log = logging.getLogger(__name__)
 
 __all__ = [
     "ChannelUse",
     "as_text_channel",
+    "channel_ids_in",
     "channel_refusal",
     "find_channel_use",
     "SETTING_LABELS",
@@ -79,36 +93,52 @@ class ChannelUse:
         return f"{self.label} channel for **{self.division_name}**"
 
 
-#: The per-division settings, as (setting key, table, column). The divisions row carries
-#: three of them directly; the other five hang off it in two config tables.
+#: Core's own per-division settings, as (setting key, table, column), both on the divisions row.
+#: The modules' division settings are each module's to name (:func:`find_channel_use`).
 DIVISION_SOURCES: tuple[tuple[str, str, str], ...] = (
-    ("weather", "divisions", "forecast_channel_id"),
     ("lineup", "divisions", "lineup_channel_id"),
     ("calendar", "divisions", "calendar_channel_id"),
-    ("results", "division_results_config", "results_channel_id"),
-    ("standings", "division_results_config", "standings_channel_id"),
-    ("verdicts", "division_results_config", "penalty_channel_id"),
-    ("rsvp", "attendance_division_config", "rsvp_channel_id"),
-    ("attendance", "attendance_division_config", "attendance_channel_id"),
 )
 
-#: The league-wide settings, as (setting key, table, column). Each table holds one row.
-#: Both lists are read by the factory reset too, to find every channel the bot posts to.
+#: Core's own league-wide settings, as (setting key, table, column). The table holds one row.
+#: Both lists are read by the factory reset too, to find the channels core's settings hold.
 SERVER_SOURCES: tuple[tuple[str, str, str], ...] = (
     ("interaction", "server_configs", "interaction_channel_id"),
     ("log", "server_configs", "log_channel_id"),
     ("hub", "server_configs", "hub_channel_id"),
-    ("signup", "signup_module_config", "signup_channel_id"),
 )
+
+
+async def channel_ids_in(db: aiosqlite.Connection, table: str, column: str) -> set[int]:
+    """Every channel id *column* of *table* holds, as integers: what a module's
+    `setting_channels_read` subscriber reads its own channel columns with.
+
+    A column holding something that is not an id (a TEXT column holds whatever it was given) is
+    logged and left out, so that one bad value never stops the clean-up reaching the rest.
+    """
+    found: set[int] = set()
+    cursor = await db.execute(f"SELECT {column} FROM {table} WHERE {column} IS NOT NULL")
+    for row in await cursor.fetchall():
+        try:
+            found.add(int(row[0]))
+        except (TypeError, ValueError):
+            log.warning("%s.%s holds %r, which is not a channel id", table, column, row[0])
+    return found
 
 
 async def find_channel_use(
     db_path: str,
     channel_id: int,
     *,
+    channel_uses_read: AwaitedHook,
     ignore: ChannelUse | None = None,
 ) -> ChannelUse | None:
     """What *channel_id* is already used for, or None where it is free.
+
+    Core's own settings are read here, then each module is asked through *channel_uses_read*,
+    the bot's hook, which hands each subscriber the channel and the live season's divisions (by
+    id, naming each) and gathers a list of the :class:`ChannelUse` each finds it holding, in the
+    order the modules signed up. The first use not ignored is the answer.
 
     *ignore* names a use to disregard — the setting being written. Without it, changing a
     division's results channel to a different channel would be refused by its own current
@@ -129,21 +159,12 @@ async def find_channel_use(
                 return ChannelUse(setting)
 
         for setting, table, column in DIVISION_SOURCES:
-            if table == "divisions":
-                sql = (
-                    f"SELECT d.name FROM divisions d "
-                    f"JOIN seasons s ON s.id = d.season_id "
-                    f"WHERE s.status IN ('SETUP', 'ACTIVE') "
-                    f"  AND d.{column} = ? LIMIT 1"
-                )
-            else:
-                sql = (
-                    f"SELECT d.name FROM {table} c "
-                    f"JOIN divisions d ON d.id = c.division_id "
-                    f"JOIN seasons s ON s.id = d.season_id "
-                    f"WHERE s.status IN ('SETUP', 'ACTIVE') "
-                    f"  AND c.{column} = ? LIMIT 1"
-                )
+            sql = (
+                f"SELECT d.name FROM {table} d "
+                f"JOIN seasons s ON s.id = d.season_id "
+                f"WHERE s.status IN ('SETUP', 'ACTIVE') "
+                f"  AND d.{column} = ? LIMIT 1"
+            )
             cursor = await db.execute(sql, (channel_id,))
             row = await cursor.fetchone()
             if row is None:
@@ -152,6 +173,17 @@ async def find_channel_use(
             if ignore is not None and ignore == use:
                 continue
             return use
+
+        cursor = await db.execute(
+            "SELECT d.id, d.name FROM divisions d JOIN seasons s ON s.id = d.season_id "
+            "WHERE s.status IN ('SETUP', 'ACTIVE')"
+        )
+        divisions = {int(row[0]): str(row[1]) for row in await cursor.fetchall()}
+
+    for found in await channel_uses_read.call(channel_id=channel_id, divisions=divisions):
+        for use in found:
+            if ignore is None or ignore != use:
+                return use
 
     return None
 
@@ -180,6 +212,7 @@ async def channel_refusal(
     channel: discord.TextChannel,
     setting: str,
     *,
+    channel_uses_read: AwaitedHook,
     division_name: str | None = None,
 ) -> str | None:
     """Why *channel* may not become *setting*, or None where nothing already holds it.
@@ -195,7 +228,7 @@ async def channel_refusal(
     its own interaction is in. A module's command reaches this rule here, in core's service,
     rather than through core's cog.
     """
-    use = await find_channel_use(db_path, channel.id)
+    use = await find_channel_use(db_path, channel.id, channel_uses_read=channel_uses_read)
     if use is None:
         return None
     return refusal(

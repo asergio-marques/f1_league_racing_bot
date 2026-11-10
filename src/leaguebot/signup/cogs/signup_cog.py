@@ -473,7 +473,9 @@ class SignupCog(commands.Cog):
             refusal,
         )
 
-        use = await find_channel_use(self.bot.db_path, channel.id)
+        use = await find_channel_use(
+            self.bot.db_path, channel.id, channel_uses_read=self.bot.channel_uses_read
+        )
         if use is not None:
             await refuse(
                 interaction,

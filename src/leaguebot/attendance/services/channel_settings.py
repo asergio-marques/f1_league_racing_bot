@@ -95,7 +95,9 @@ def _channel_setting(
         division = await seasons.get_division(int(payload["division_id"]))
         if division is None or division.season_id != season.id:
             return Verdict.refuse(division_not_found(payload["division_name"]))
-        use = await find_channel_use(ctx.db_path, value)
+        use = await find_channel_use(
+            ctx.db_path, value, channel_uses_read=ctx.bot.channel_uses_read
+        )
         if use is not None:
             return Verdict.refuse(
                 refusal(f"<#{value}>", use, same_setting=(use == ChannelUse(key, division.name)))

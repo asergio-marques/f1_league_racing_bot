@@ -19,12 +19,6 @@ from tests.support.review_prompts import store_review_prompt
 
 NOW = datetime(2026, 9, 19, 10, 15, 0, tzinfo=timezone.utc)
 
-#: Why the reset's asking of each module is not yet true.
-MODULES_ASKED = (
-    "#283: the reset reads each module's channel columns itself and takes no "
-    "setting_channels_read hook"
-)
-
 
 @pytest.fixture
 async def db_path(tmp_path) -> str:
@@ -233,7 +227,6 @@ async def test_the_channels_the_bot_created_are_gathered_apart(db_path):
     assert not set(targets.created) & set(targets.channels)
 
 
-@pytest.mark.xfail(strict=True, reason=MODULES_ASKED)
 async def test_a_module_s_channels_are_gathered_only_by_asking_the_module(db_path):
     """The same two seasons, and the reset asked with no module signed up to its hook: only core's
     own channels are gathered, since core reads no module's columns. They are the interaction and

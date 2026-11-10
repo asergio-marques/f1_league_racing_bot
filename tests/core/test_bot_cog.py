@@ -50,7 +50,7 @@ import pytest
 from leaguebot.core.cogs.bot_cog import BotCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.config_service import ConfigService
-from tests.support.channel_uses import sign_up_setting_channels_read
+from tests.support.channel_uses import sign_up_channel_uses_read, sign_up_setting_channels_read
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 4242
@@ -1754,6 +1754,8 @@ def _resetting_bot(db_path: str, tmp_path) -> MagicMock:
     bot.output_router.log_destination = AsyncMock(return_value=CONFIGURED_LOG)
     # The reset asks each module for every channel its settings hold, through the bot's own hook.
     sign_up_setting_channels_read(bot)
+    # The hub's channel is checked against each module's, through the bot's own hook.
+    sign_up_channel_uses_read(bot)
     return bot
 
 

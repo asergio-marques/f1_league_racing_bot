@@ -428,6 +428,40 @@ def _sign_up_to_division_lines_read(bot: LeagueBot) -> None:
     bot.division_lines_read.subscribe(partial(forecast_channel.division_lines, bot.db_path))
 
 
+def _sign_up_to_channel_uses_read(bot: LeagueBot) -> None:
+    """Make the hook a channel being set is asked of each module through, so that a channel does
+    one job, and sign each module up to it, handed the database's path: the uses of the channel its
+    settings hold in the live season, in the order a division's channels read (weather, results,
+    attendance, then signup's own). The builder hands it to every command that sets a channel
+    (architecture.md, "How modules and core fit together")."""
+    from leaguebot.attendance.services import division_channels as attendance_channels
+    from leaguebot.results.services import division_channels as results_channels
+    from leaguebot.signup.services import channel_uses
+    from leaguebot.weather.services import forecast_channel
+
+    bot.channel_uses_read = AwaitedHook()
+    bot.channel_uses_read.subscribe(partial(forecast_channel.channel_uses, bot.db_path))
+    bot.channel_uses_read.subscribe(partial(results_channels.channel_uses, bot.db_path))
+    bot.channel_uses_read.subscribe(partial(attendance_channels.channel_uses, bot.db_path))
+    bot.channel_uses_read.subscribe(partial(channel_uses.channel_uses, bot.db_path))
+
+
+def _sign_up_to_setting_channels_read(bot: LeagueBot) -> None:
+    """Make the hook the factory reset asks each module through for every channel its settings
+    hold, in any season, and sign each module up to it, handed the database's path, in the same
+    order (architecture.md, "How modules and core fit together")."""
+    from leaguebot.attendance.services import division_channels as attendance_channels
+    from leaguebot.results.services import division_channels as results_channels
+    from leaguebot.signup.services import channel_uses
+    from leaguebot.weather.services import forecast_channel
+
+    bot.setting_channels_read = AwaitedHook()
+    bot.setting_channels_read.subscribe(partial(forecast_channel.setting_channels, bot.db_path))
+    bot.setting_channels_read.subscribe(partial(results_channels.setting_channels, bot.db_path))
+    bot.setting_channels_read.subscribe(partial(attendance_channels.setting_channels, bot.db_path))
+    bot.setting_channels_read.subscribe(partial(channel_uses.setting_channels, bot.db_path))
+
+
 def _sign_up_to_division_channel_faults_read(bot: LeagueBot) -> None:
     """Make the hook a division's channel faults are read through, and sign each module's part up
     to it: the lines naming that module's own channels not set or not on the server, by division,
@@ -1796,6 +1830,8 @@ async def build(settings: Settings) -> LeagueBot:
     _sign_up_to_driver_names_read(bot)
     _sign_up_to_division_channel_faults_read(bot)
     _sign_up_to_division_lines_read(bot)
+    _sign_up_to_channel_uses_read(bot)
+    _sign_up_to_setting_channels_read(bot)
     _sign_up_to_fingerprint_areas_read(bot)
     _sign_up_to_pending_steps_read(bot)
     _sign_up_to_review_marks_read(bot)

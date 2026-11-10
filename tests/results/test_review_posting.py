@@ -52,6 +52,7 @@ from tests.support.change_queue import (
     stopped_job,
     updated_reply,
 )
+from tests.support.channel_uses import sign_up_channel_uses_read
 from tests.support.mentions import NOBODY, notified
 from tests.support.season_league import set_module_flag
 from tests.support.undecorate import undecorate
@@ -535,6 +536,8 @@ async def _set_results_channel(league: _League, channel_id: int) -> Any:
     built = {call.args[0].kind: call.args[0]
              for call in builder.change_queue.register.call_args_list}
     register(league.bot, built["results.setting.results_channel"])
+    # The registry asks each module for the channels it holds, through the bot's own hook.
+    sign_up_channel_uses_read(league.bot)
     cog = ResultsCog.__new__(ResultsCog)
     cog.bot = league.bot
     interaction = member_interaction(league.bot)

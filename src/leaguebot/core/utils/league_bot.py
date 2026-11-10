@@ -127,6 +127,20 @@ class LeagueBot(commands.Bot):
     #: weather), so that core's review reads no module's table (architecture.md, "A hook core
     #: declares is a list of subscribers"); `read_division_lines` gathers what they hand back.
     division_lines_read: AwaitedHook
+    #: The moment a channel is being set, which the registry asks of each module so that a channel
+    #: does one job: each module signs up a function handing back the uses of the channel its own
+    #: settings hold in the live season, as `ChannelUse`s, given the channel (the database's path
+    #: is bound as it signs up), whatever its switch. The builder makes it and signs them up in
+    #: the order a division's channels read (weather, results, attendance, signup), and hands it to
+    #: every command that sets a channel, so that core's registry reads no module's table
+    #: (architecture.md, "A hook core declares is a list of subscribers").
+    channel_uses_read: AwaitedHook
+    #: The moment the factory reset gathers the channels it cleans up: each module signs up a
+    #: function handing back the ids of every channel its own settings hold, in any season (the
+    #: database's path is bound as it signs up), whatever its switch. The builder makes it and
+    #: signs them up in the same order, so that core's reset reads no module's table
+    #: (architecture.md, "A hook core declares is a list of subscribers").
+    setting_channels_read: AwaitedHook
     #: The moment a season's fingerprint is taken (a review's post, and every check that compares
     #: the season with its review): each module signs up a function handing back the rows of its
     #: own configuration, by the area each belongs to, whatever its switch, handed the connection

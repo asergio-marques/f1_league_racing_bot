@@ -408,7 +408,9 @@ class BotCog(commands.Cog):
         """
         from leaguebot.core.services.channel_registry_service import ChannelUse, find_channel_use, refusal
 
-        use = await find_channel_use(self.bot.db_path, channel.id)
+        use = await find_channel_use(
+            self.bot.db_path, channel.id, channel_uses_read=self.bot.channel_uses_read
+        )
         if use is not None:
             await refuse(
                 interaction,
@@ -608,7 +610,9 @@ class BotCog(commands.Cog):
             )
             return
 
-        targets = await factory_reset_service.gather_targets(db_path)
+        targets = await factory_reset_service.gather_targets(
+            db_path, setting_channels_read=self.bot.setting_channels_read
+        )
         # The wipe takes the configuration and with it any way to find the log channel, so
         # where the closing line goes is learned now.
         log_channel = await self.bot.output_router.log_destination()

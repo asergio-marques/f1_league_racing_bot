@@ -2561,7 +2561,6 @@ def _own_columns_outside_the_owner_among(nodes) -> Counter[tuple[str, str]]:
 KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "_recover_missed_check_in_calls"): (1, PASS["attendance"]),
     ("__main__.py", "_recover_missed_phases"): (3, PASS["weather"]),
-    ("core/services/channel_registry_service.py", "<module>"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.all_phases_complete"): (3, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.get_division"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.get_division_rounds_on"): (3, PASS["core"]),

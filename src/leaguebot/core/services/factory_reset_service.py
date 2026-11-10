@@ -35,9 +35,13 @@ from leaguebot.core.services.change_queue import (
     carry_job_numbering,
     highest_job_number,
 )
-from leaguebot.core.services.channel_registry_service import DIVISION_SOURCES, SERVER_SOURCES
+from leaguebot.core.services.channel_registry_service import (
+    DIVISION_SOURCES,
+    SERVER_SOURCES,
+    channel_ids_in,
+)
 from leaguebot.core.services.in_memory_state import clear_in_memory_state
-from leaguebot.core.utils.hooks import Hook
+from leaguebot.core.utils.hooks import AwaitedHook, Hook
 
 log = logging.getLogger(__name__)
 
@@ -138,28 +142,28 @@ _OTHER_SOURCES: tuple[tuple[str, str], ...] = (
 )
 
 
-async def gather_targets(db_path: str) -> DiscordTargets:
-    """Every channel the clean-up must visit. Read before the wipe, which forgets them all."""
-    async def ids(db, pairs) -> set[int]:
-        found: set[int] = set()
-        for table, column in pairs:
-            cursor = await db.execute(
-                f"SELECT {column} FROM {table} WHERE {column} IS NOT NULL"
-            )
-            for row in await cursor.fetchall():
-                try:
-                    found.add(int(row[0]))
-                except (TypeError, ValueError):
-                    log.warning("factory reset: %s.%s holds %r", table, column, row[0])
-        return found
+async def gather_targets(db_path: str, *, setting_channels_read: AwaitedHook) -> DiscordTargets:
+    """Every channel the clean-up must visit. Read before the wipe, which forgets them all.
 
+    Core's own channels are read here, in every season's divisions, not only the current one's:
+    the bot posted in all of them. Each module is asked for the channels its settings hold,
+    in any season, through *setting_channels_read*, the bot's hook, which hands each subscriber the
+    id of every division of every season and gathers a set of channel ids from each.
+    """
     async with get_connection(db_path) as db:
-        created = await ids(db, _CREATED_SOURCES)
-        # Every season's divisions, not only the current one's: the bot posted in all of them.
+        created: set[int] = set()
+        for table, column in _CREATED_SOURCES:
+            created |= await channel_ids_in(db, table, column)
         settings = [
             (table, column) for _key, table, column in (*SERVER_SOURCES, *DIVISION_SOURCES)
         ]
-        channels = await ids(db, [*settings, *_OTHER_SOURCES])
+        channels: set[int] = set()
+        for table, column in [*settings, *_OTHER_SOURCES]:
+            channels |= await channel_ids_in(db, table, column)
+        cursor = await db.execute("SELECT id FROM divisions")
+        division_ids = [int(row[0]) for row in await cursor.fetchall()]
+    for held in await setting_channels_read.call(division_ids=division_ids):
+        channels |= set(held)
     return DiscordTargets(
         created=tuple(sorted(created)), channels=tuple(sorted(channels - created))
     )

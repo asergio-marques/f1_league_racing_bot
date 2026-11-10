@@ -37,12 +37,6 @@ from tests.support.channel_uses import channel_uses_given
 
 SERVER_ID = 4242
 
-#: Why the registry's asking of each module is not yet true.
-MODULES_ASKED = (
-    "#283: the registry reads each module's channel columns itself and takes no "
-    "channel_uses_read hook"
-)
-
 #: The settings a module holds, each in a table or column of its own.
 MODULE_SETTINGS = ["attendance", "results", "rsvp", "signup", "standings", "verdicts", "weather"]
 
@@ -192,7 +186,6 @@ async def test_a_server_setting_names_no_division(db_path, setting):
     assert "**" not in use.describe()
 
 
-@pytest.mark.xfail(strict=True, reason=MODULES_ASKED)
 @pytest.mark.parametrize("setting", MODULE_SETTINGS)
 async def test_a_module_s_channel_is_found_only_by_asking_the_module(db_path, setting):
     """Channel 500 set as Pro's *setting*, a module's own, and the registry asked with no module
@@ -205,7 +198,6 @@ async def test_a_module_s_channel_is_found_only_by_asking_the_module(db_path, se
     assert await find_channel_use(db_path, 500, channel_uses_read=AwaitedHook()) is None
 
 
-@pytest.mark.xfail(strict=True, reason=MODULES_ASKED)
 @pytest.mark.parametrize("setting", CORE_SETTINGS)
 async def test_core_finds_its_own_channels_with_no_module_asked(db_path, setting):
     """Channel 500 set as *setting*, core's own (Pro's calendar or lineup, or the server's hub,

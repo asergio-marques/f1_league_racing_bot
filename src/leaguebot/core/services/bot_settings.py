@@ -132,7 +132,9 @@ def _bot_setting(column: str, config: "ConfigService") -> Setting:
     async def check(ctx: CheckContext) -> Verdict:
         value = int(ctx.payload["value"])
         if channel_setting is not None:
-            use = await find_channel_use(ctx.db_path, value)
+            use = await find_channel_use(
+                ctx.db_path, value, channel_uses_read=ctx.bot.channel_uses_read
+            )
             if use is not None:
                 return Verdict.refuse(
                     refusal(
@@ -641,7 +643,9 @@ def hub_channel_setting(*, config: "ConfigService") -> Setting:
 
     async def check(ctx: CheckContext) -> Verdict:
         value = int(ctx.payload["value"])
-        use = await find_channel_use(ctx.db_path, value)
+        use = await find_channel_use(
+            ctx.db_path, value, channel_uses_read=ctx.bot.channel_uses_read
+        )
         if use is not None:
             return Verdict.refuse(
                 refusal(f"<#{value}>", use, same_setting=(use == ChannelUse("hub")))
