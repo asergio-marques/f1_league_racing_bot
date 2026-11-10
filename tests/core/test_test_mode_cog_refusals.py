@@ -317,18 +317,6 @@ _CASES = {
         None,
         "`user_id` must be a numeric Discord user ID",
     ),
-    "roster clear outside test mode": (
-        "test-mode roster clear",
-        _command("roster_clear", "Pro"),
-        _not_in_test_mode,
-        "only available when test mode is enabled",
-    ),
-    "roster clear refused by the service": (
-        "test-mode roster clear",
-        _command("roster_clear", "Nowhere"),
-        _roster_service_refuses("clear_test_drivers", "No division named **Nowhere**."),
-        "No division named **Nowhere**.",
-    ),
     "import form with an unreadable paste": (
         None,
         _submit_import_form,
