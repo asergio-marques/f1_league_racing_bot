@@ -77,7 +77,8 @@ hooks without importing a module.
 
 **What each part may do:**
 
-- **A cog** turns a command, button or form into a call to one service, and replies. It holds no
+- **A cog** turns a command, button or form into a call to one service, and replies, unless the
+  service it hands a button's workflow to answers through the interaction. It holds no
   database code and no league rule, so every rule a league relies on can be tested by calling a
   service with no Discord interaction involved. A cog holds one command group; when one grows too
   large, its workflows move into services before it is split. A module's commands sit under its own
@@ -93,9 +94,9 @@ hooks without importing a module.
   core's groups as it loads, which works, but leaves a module's commands under names that are
   core's.
 - **A service** holds the league's rules and all the database code. It may use discord.py: it can
-  post to a channel and build the buttons it posts, and a workflow moved out of a cog is handed the
-  pressed interaction and answers the member through it, while the gates it walks stay callable
-  with no interaction (`approval_checks`). Keeping Discord out of the services entirely
+  post to a channel and build the buttons it posts, and a workflow a cog hands its button to is
+  handed the pressed interaction and answers the member through it, while the gates it walks stay
+  callable with no interaction (`approval_checks`). Keeping Discord out of the services entirely
   would need a separate posting layer, which a bot this size has no use for. A service never
   imports a cog.
 - **Buttons live beside the code that posts them:** with the cog when a command posts them, with
@@ -905,14 +906,14 @@ file) runs off the bot's main loop, so commands and buttons keep being answered 
 every time inside the bot is in UTC. The change queue's clock (`ChangeQueue.now`) is the bot's
 clock: whatever hands a service its `now`, a cog, a change type or the start-up sweep, reads it
 there, so that a test moving it moves every reading. The review's workflows
-(`season_review_workflows`) read it themselves, being handed no `now`: the press and the change
-it queues judge time alike, so a test moving the clock moves the time left on the backup question
-and the dates of the calendar gate as it moves the queue's. A stored time is written from the `now` handed
-in, never by SQLite's `datetime('now')`, and in one form, ISO 8601 with its UTC offset, a round's
-moment included, so that no reader handles a naive time and no equality test of a naive time with an
-aware one, which Python answers as unequal without an error, can arise. *Rejected:* keeping a
-round's moment without an offset and making it aware where it is read, which leaves every reader to
-remember the conversion. How tests treat `now` is CLAUDE.md's.
+(`season_review_workflows`) read it themselves, being handed no `now`: the press and the change it
+queues judge time alike, so a test moving the clock moves the time left on the backup question and
+the dates of the calendar gate as it moves the queue's. A stored time is written from the `now`
+handed in, never by SQLite's `datetime('now')`, and in one form, ISO 8601 with its UTC offset, a
+round's moment included, so that no reader handles a naive time and no equality test of a naive time
+with an aware one, which Python answers as unequal without an error, can arise. *Rejected:* keeping
+a round's moment without an offset and making it aware where it is read, which leaves every reader
+to remember the conversion. How tests treat `now` is CLAUDE.md's.
 
 ---
 
@@ -1183,25 +1184,24 @@ to it would switch off the one failure path for every command.
    stated exception beside it: the change types' checks call it when the change is asked for and
    again as it starts, and its catch-all puts the error in the host's log in full and lets the
    round through as if no problem were found, because a capacity check that cannot run must not
-   block a round (its docstring says so); the season's reading of the image module's
-   configuration faults (`approval_checks.image_configuration_faults`) is a stated exception too: each
-   of its catch-alls puts the error in the host's log; a fault reading the templates is stated as
-   a fault of its own, which refuses the season, because a check that never ran is not a pass,
-   while a fault reading the per-tier colours or the portrait settings stands aside and lets the
-   season through, because a reader that cannot answer must not be the thing that refuses a season
-   (its docstring says so); the season's team-name check (`approval_checks.team_name_problems`) is
-   a stated exception beside it: its catch-all puts the error in the host's log alone and finds
-   nothing wrong, so the review and the approval carry on with the names unchecked, because the
-   check only keeps a team name from becoming a bad artwork filename (its docstring says so); the season cog's
-   own image review section
-   (`SeasonCog._build_image_review_section`) is a stated exception beside it: its catch-all puts
-   the error in the host's log and states the section as unreadable in the review, because a
-   review must never fail for this (its docstring says so); and the image module's artwork
-   signature (`ImageDrawing.artwork_signature`) is a stated exception too: its catch-all signs a
-   configured directory it cannot resolve as `[column, value, "unresolvable"]`, with a warning to
-   the host's log alone, and signs the rest all the same, because a fault that escaped it would
-   empty the whole fingerprint and the review would read as changed in every area (its docstring
-   says so);
+   block a round (its docstring says so); the season's reading of the image module's configuration
+   faults (`approval_checks.image_configuration_faults`) is a stated exception too: each of its
+   catch-alls puts the error in the host's log; a fault reading the templates is stated as a fault
+   of its own, which refuses the season, because a check that never ran is not a pass, while a fault
+   reading the per-tier colours or the portrait settings stands aside and lets the season through,
+   because a reader that cannot answer must not be the thing that refuses a season (its docstring
+   says so); the season's team-name check (`approval_checks.team_name_problems`) is a stated
+   exception beside it: its catch-all puts the error in the host's log alone and finds nothing
+   wrong, so the review and the approval carry on with the names unchecked, because the check only
+   keeps a team name from becoming a bad artwork filename (its docstring says so); the season cog's
+   own image review section (`SeasonCog._build_image_review_section`) is a stated exception beside
+   it: its catch-all puts the error in the host's log and states the section as unreadable in the
+   review, because a review must never fail for this (its docstring says so); and the image module's
+   artwork signature (`ImageDrawing.artwork_signature`) is a stated exception too: its catch-all
+   signs a configured directory it cannot resolve as `[column, value, "unresolvable"]`, with a
+   warning to the host's log alone, and signs the rest all the same, because a fault that escaped it
+   would empty the whole fingerprint and the review would read as changed in every area (its
+   docstring says so);
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a job: one that fails stops its lane until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
@@ -1220,7 +1220,7 @@ refusal the member can act on, or to hand them to `report_failure` itself with c
 outcome, as `/test-mode backup save` does with a backup fault, saying that the previous backup is unchanged.
 
 *Rejected:* narrowing the capacity guards' catch to the errors they expect by name, in the
-placement guard or the season cog's own checks alike: a fault of any other kind would then
+placement guard or the season's own capacity checks alike: a fault of any other kind would then
 block a placement, a round or a season, when a check that cannot run must not.
 
 *Rejected:* treating a calendar gate that cannot be read as a picture that could not be drawn: it
