@@ -130,9 +130,10 @@ def _bot(
     sign_up_confirmation_refused(bot)
     # The configuration's faults, as the builder hands the review them: the gate, handed this
     # bot's services by name as they stand when it is asked, the gates a test stands in included.
-    bot.configuration_faults = AsyncMock(side_effect=lambda season_id, guild=None: run_check(
-        "configuration_faults", bot, season_id, guild
-    ))
+    async def _faults(season_id: int, guild: object = None) -> list[str]:
+        return await run_check("configuration_faults", bot, season_id, guild)
+
+    bot.configuration_faults = AsyncMock(side_effect=_faults)
     return bot
 
 
