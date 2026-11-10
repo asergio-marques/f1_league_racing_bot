@@ -174,10 +174,11 @@ a module added later signs up without core changing. A hook keyed by a kind take
 each key instead, as a kind of timed job takes its one handler (see "Timed work and restarts").
 **A module's switch read is a keyed hook:** one reader for each module, keyed by the module's
 name, which the module's own work also calls; core asks for it by that name (`is_<module>_enabled`,
-or `is_enabled_on` on a connection a save holds), because core names the modules: it shows which
-are on in the reviews and keeps the table of what each depends on (the core specification's
-"Modules"). So a module added later adds its `is_<module>_enabled` to core's module service as
-well as signing up; core knows its name for its switch and nothing more. A module that never
+or `is_enabled_on` on a connection a save holds), because core names the modules and shows which
+are on in the reviews (the core specification's "Modules"), and keeps the dependency table (above).
+The key is the name the module's switch is asked by: `images` for the image module, the module's
+own name for the rest. So a module added later adds its `is_<module>_enabled` to core's module
+service as well as signing up; core knows its name for its switch and nothing more. A module that never
 signed up is a fault in the bot's assembly, and asking for it raises `LookupError`, which no reader
 that stands aside takes for an answer. A link the dependency table allows between two modules is not
 one of core's hooks: there the module depended on may name what it asks of its dependant, as results
@@ -1352,7 +1353,9 @@ later on its own.
   use may, as a cog does; `league_guild` is the one a service calls), a table written by a module
   that does not own it, a table read outside its owner (core's tables too; the scan sees tables, not
   columns, so a module's read of its own columns on a core table is named for good,
-  `READS_OF_OWN_COLUMNS`), core reading a module's service on the bot (an attribute `LeagueBot`
+  `READS_OF_OWN_COLUMNS`), a module's own column on a core table named in another module's file
+  (`KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER`; the check reads the column's name in a statement's text),
+  core reading a module's service on the bot (an attribute `LeagueBot`
   types from a module's package, read from a file of core), SQLite's clock in a statement, a service
   reading the wall clock (the change queue's own default clock is the one place allowed,
   `WALL_CLOCK_ALLOWED`), a catch-all handler outside the five places (one that raises again, calls
@@ -1386,6 +1389,4 @@ under "Testing".
 
 Not every rule has its check yet. The rules about how things are built (the hooks, the one builder,
 start-up, the sweep) cannot all be checked by reading the code; the rule that a refusal is raised
-and caught by name ("Errors and failures") has no check yet; and the check of a table read by its
-owner alone reads tables, not columns, so core reading a module's own column on a core table is not
-yet counted.
+and caught by name ("Errors and failures") has no check yet.
