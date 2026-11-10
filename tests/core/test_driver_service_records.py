@@ -40,8 +40,6 @@ from tests.support.teams import seed_team_instances
 from tests.support.driver_transitions import reassigned, transitioned
 
 NOW = datetime(2031, 3, 4, 5, 6, 7, tzinfo=timezone.utc)
-#: Why a test setting the flag fails until it takes now.
-FLAG_TAKES_NOW = "#283: set_former_driver does not take now yet"
 
 
 SERVER_ID = 9108
@@ -386,7 +384,6 @@ async def test_a_refused_re_key_over_racing_records_changes_nothing(tmp_path):
         pytest.param(True, False, (True, False), id="cleared"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=FLAG_TAKES_NOW)
 async def test_the_former_driver_flag_is_set_or_cleared_and_reports_both_values(
     tmp_path, former, value, reported
 ):
@@ -406,7 +403,6 @@ async def test_the_former_driver_flag_is_set_or_cleared_and_reports_both_values(
     assert profile.former_driver is value
 
 
-@pytest.mark.xfail(strict=True, reason=FLAG_TAKES_NOW)
 async def test_setting_the_flag_for_a_user_with_no_profile_is_refused(tmp_path):
     db_path = await _make_db(tmp_path)
     service = DriverService(db_path)
@@ -417,7 +413,6 @@ async def test_setting_the_flag_for_a_user_with_no_profile_is_refused(tmp_path):
         )
 
 
-@pytest.mark.xfail(strict=True, reason=FLAG_TAKES_NOW)
 async def test_setting_the_flag_is_audited(tmp_path):
     """The entry is written at the time the command hands in, never the host's clock."""
     db_path = await _make_db(tmp_path)
@@ -435,7 +430,6 @@ async def test_setting_the_flag_is_audited(tmp_path):
         assert (await cursor.fetchone())["timestamp"] == NOW.isoformat()
 
 
-@pytest.mark.xfail(strict=True, reason=FLAG_TAKES_NOW)
 async def test_the_flag_decides_whether_a_departure_destroys_the_profile(tmp_path):
     """The two halves of this file meeting: setting the flag changes what the destructive
     transition does to the same driver."""
@@ -449,7 +443,6 @@ async def test_the_flag_decides_whether_a_departure_destroys_the_profile(tmp_pat
     assert await _profile_count(db_path) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=FLAG_TAKES_NOW)
 async def test_the_flag_is_set_through_a_past_account(tmp_path):
     """Any account names the driver (issue #243), the test-mode command included."""
     db_path = await _make_db(tmp_path)

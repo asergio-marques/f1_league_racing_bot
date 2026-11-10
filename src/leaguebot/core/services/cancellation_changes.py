@@ -1426,7 +1426,9 @@ def season_cancel_change(
 
         test_mode = await test_mode_on(db)
         await write_driver_history_entries_on(db, season_id, number, force_cancelled=True)
-        driver_pass = await run_driver_pass_on(db, profiles_deleted=profiles_deleted)
+        driver_pass = await run_driver_pass_on(
+            db, profiles_deleted=profiles_deleted, now=now()
+        )
         await drivers_returned.call(db, driver_pass.drivers)
         if test_mode:
             await switch_test_mode_off_on(db, profiles_deleted=profiles_deleted)

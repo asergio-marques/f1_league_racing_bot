@@ -54,8 +54,9 @@ held after the save.
 """
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
@@ -506,6 +507,7 @@ def season_complete_change(
     test_mode_flushed: AwaitedHook,
     drivers_deleted: AwaitedHook,
     profiles_deleted: AwaitedHook,
+    now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that completes the confirmed season; see the module.
 
@@ -514,8 +516,9 @@ def season_complete_change(
     hooks the modules sign up to
     (*final_round_read*, *season_completed*, *season_completed_steps*, *season_end_refused*,
     *season_end_closes*, *drivers_returned*, *driver_turned_down*, *driver_returned_jobs*,
-    *season_end_steps*, *test_mode_flushed*, *drivers_deleted*) and the hook each driver deleted
-    calls (*profiles_deleted*).
+    *season_end_steps*, *test_mode_flushed*, *drivers_deleted*), the hook each driver deleted
+    calls (*profiles_deleted*) and the queue's clock *now*, which stamps the audit entries of the
+    turn-down and the driver pass.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -640,7 +643,9 @@ def season_complete_change(
 
         test_mode = await test_mode_on(db)
         await write_driver_history_entries_on(db, season_id, number)
-        driver_pass = await run_driver_pass_on(db, profiles_deleted=profiles_deleted)
+        driver_pass = await run_driver_pass_on(
+            db, profiles_deleted=profiles_deleted, now=now()
+        )
         await drivers_returned.call(db, driver_pass.drivers)
         if test_mode:
             await switch_test_mode_off_on(db, profiles_deleted=profiles_deleted)
@@ -759,7 +764,7 @@ def season_complete_change(
 
     winding = wind_down_steps(
         drivers_returned=drivers_returned, driver_turned_down=driver_turned_down,
-        driver_returned_jobs=driver_returned_jobs,
+        driver_returned_jobs=driver_returned_jobs, now=now,
     )
     turn_down = winding[TURN_DOWN_STEP]
 
@@ -815,6 +820,7 @@ def season_abort_change(
     divisions_deleted: AwaitedHook,
     season_deleted: AwaitedHook,
     profiles_deleted: AwaitedHook,
+    now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that aborts the season being set up; see the module.
 
@@ -825,7 +831,7 @@ def season_abort_change(
     (*season_end_closes*, *drivers_returned*, *driver_returned_jobs*, *season_end_steps*,
     *test_mode_flushed*, *drivers_deleted*), the hooks the season's deletion calls
     (*rounds_deleted*, *divisions_deleted*, *season_deleted*), the hook each driver deleted calls
-    (*profiles_deleted*).
+    (*profiles_deleted*) and the queue's clock *now*, which stamps the driver pass's audit entry.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -862,7 +868,9 @@ def season_abort_change(
             return StepResult(result={"refused": ABORT_ONLY_BEFORE})
 
         test_mode = await test_mode_on(db)
-        driver_pass = await run_driver_pass_on(db, profiles_deleted=profiles_deleted)
+        driver_pass = await run_driver_pass_on(
+            db, profiles_deleted=profiles_deleted, now=now()
+        )
         await drivers_returned.call(db, driver_pass.drivers)
         if test_mode:
             await switch_test_mode_off_on(db, profiles_deleted=profiles_deleted)

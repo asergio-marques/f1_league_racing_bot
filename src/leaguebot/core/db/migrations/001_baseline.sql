@@ -842,7 +842,7 @@ CREATE TABLE "team_role_configs" (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     team_name   TEXT    NOT NULL UNIQUE,
     role_id     INTEGER NOT NULL,
-    updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    updated_at  TEXT    NOT NULL
 );
 -- A role belongs to one team only: a submission names a team by its role (#375).
 CREATE UNIQUE INDEX uq_team_role_configs_role_id ON team_role_configs(role_id);

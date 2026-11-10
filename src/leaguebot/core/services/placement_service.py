@@ -335,15 +335,8 @@ class PlacementService:
         row = await cursor.fetchone()
         return row["team_name"] if row else None
 
-    @staticmethod
-    def _stamped(now: datetime | None) -> str | None:
-        """*now* as a mapping's ``updated_at`` is kept; None where none is given and the schema's
-        own default stamps a new row."""
-        return None if now is None else now.astimezone(timezone.utc).isoformat()
-
     async def set_team_role_config_on(
-        self, db: aiosqlite.Connection, team_name: str, role_id: int, *,
-        now: datetime | None = None,
+        self, db: aiosqlite.Connection, team_name: str, role_id: int, *, now: datetime,
     ) -> int | None:
         """Upsert a team -> role mapping on *db*, a connection the caller holds, committing
         nothing and writing no audit entry: the change that calls it records the mapping. Returns
@@ -365,20 +358,12 @@ class PlacementService:
             "SELECT role_id FROM team_role_configs WHERE team_name = ?", (team_name,),
         )
         existing = await cursor.fetchone()
-        stamp = self._stamped(now)
-        if stamp is None:
-            await db.execute(
-                "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?) "
-                "ON CONFLICT(team_name) DO UPDATE SET role_id = excluded.role_id",
-                (team_name, role_id),
-            )
-        else:
-            await db.execute(
-                "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES (?, ?, ?) "
-                "ON CONFLICT(team_name) DO UPDATE SET "
-                "role_id = excluded.role_id, updated_at = excluded.updated_at",
-                (team_name, role_id, stamp),
-            )
+        await db.execute(
+            "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(team_name) DO UPDATE SET "
+            "role_id = excluded.role_id, updated_at = excluded.updated_at",
+            (team_name, role_id, now.isoformat()),
+        )
         return existing["role_id"] if existing else None
 
     async def delete_team_role_config_on(
@@ -397,8 +382,7 @@ class PlacementService:
         return row["role_id"]
 
     async def rename_team_role_config_on(
-        self, db: aiosqlite.Connection, old_name: str, new_name: str, *,
-        now: datetime | None = None,
+        self, db: aiosqlite.Connection, old_name: str, new_name: str, *, now: datetime,
     ) -> int | None:
         """Rename the team_name key in the role mapping on *db*, a connection the caller holds,
         committing nothing and writing no audit entry. Returns the role it holds, or None where
@@ -409,16 +393,10 @@ class PlacementService:
         row = await cursor.fetchone()
         if row is None:
             return None
-        stamp = self._stamped(now)
-        if stamp is None:
-            await db.execute(
-                "UPDATE team_role_configs SET team_name = ? WHERE id = ?", (new_name, row["id"]),
-            )
-        else:
-            await db.execute(
-                "UPDATE team_role_configs SET team_name = ?, updated_at = ? WHERE id = ?",
-                (new_name, stamp, row["id"]),
-            )
+        await db.execute(
+            "UPDATE team_role_configs SET team_name = ?, updated_at = ? WHERE id = ?",
+            (new_name, now.isoformat(), row["id"]),
+        )
         return row["role_id"]
 
     async def get_all_team_role_configs(self) -> list[TeamRoleConfig]:

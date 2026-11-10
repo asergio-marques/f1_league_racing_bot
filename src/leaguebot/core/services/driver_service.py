@@ -691,10 +691,12 @@ class DriverService:
         value: bool,
         actor_id: int,
         actor_name: str,
+        *,
+        now: datetime,
     ) -> tuple[bool, bool]:
         """Set the former_driver flag.  Returns (old_value, new_value).
 
-        Any account the driver has held names them (issue #243).
+        Any account the driver has held names them (issue #243). The audit entry is stamped *now*.
         """
         profile = await self.get_profile(
             await self.current_account(discord_user_id)
@@ -712,8 +714,8 @@ class DriverService:
             await db.execute(
                 "INSERT INTO audit_entries "
                 "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'TEST_FORMER_DRIVER_FLAG_SET', ?, ?, datetime('now'))",
-                (actor_id, actor_name, str(old_value), str(value)),
+                "VALUES (?, ?, NULL, 'TEST_FORMER_DRIVER_FLAG_SET', ?, ?, ?)",
+                (actor_id, actor_name, str(old_value), str(value), now.isoformat()),
             )
             await db.commit()
         return old_value, value

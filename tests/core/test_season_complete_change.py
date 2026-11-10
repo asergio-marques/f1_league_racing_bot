@@ -1038,9 +1038,6 @@ async def test_a_season_in_an_ongoing_stage_with_every_division_done_is_wound_do
     assert await _status(league) == "COMPLETED"
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: the turn-down and the driver pass stamp SQLite's clock, not the queue's"
-)
 async def test_every_audit_row_of_one_save_has_the_queues_time(tmp_path):
     """The season Ongoing placements with every division done and Max's placement pending, the
     queue's clock moved two days past the host's. Admin 77 completes it: the wind-down turns Max's

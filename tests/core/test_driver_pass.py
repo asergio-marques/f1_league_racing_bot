@@ -21,8 +21,6 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
 
 NOW = datetime(2031, 3, 4, 5, 6, 7, tzinfo=timezone.utc)
-#: Why a test running the pass fails until it takes the save's now.
-PASS_TAKES_NOW = "#283: the driver pass does not take the save's now yet"
 
 
 SERVER_ID = 22130
@@ -141,7 +139,6 @@ def _member_holding(role_id: int, user_id: int):
     return guild, member, role
 
 
-@pytest.mark.xfail(strict=True, reason=PASS_TAKES_NOW)
 async def test_the_pass_resets_and_deletes_as_the_rules_say(db_path):
     result = await _pass(db_path)
 
@@ -153,7 +150,6 @@ async def test_the_pass_resets_and_deletes_as_the_rules_say(db_path):
     assert sorted(result.deleted) == [2, 3, 4, 5]
 
 
-@pytest.mark.xfail(strict=True, reason=PASS_TAKES_NOW)
 async def test_a_deleted_driver_leaves_no_placement_or_history_but_keeps_their_signup(db_path):
     await _pass(db_path)
 
@@ -172,7 +168,6 @@ async def test_a_deleted_driver_leaves_no_placement_or_history_but_keeps_their_s
         assert (await cursor.fetchone())[0] == 1
 
 
-@pytest.mark.xfail(strict=True, reason=PASS_TAKES_NOW)
 async def test_a_former_driver_keeps_their_placement_and_history(db_path):
     await _pass(db_path)
 
@@ -285,7 +280,6 @@ async def test_an_inactivity_timer_already_gone_does_not_stop_the_pass():
     wizard_service.lock_signup_channel.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=PASS_TAKES_NOW)
 async def test_every_reset_goes_through_the_transition_table(db_path, monkeypatch):
     """Constitution VIII: no code path sets a driver's state directly."""
     import leaguebot.core.services.driver_service as driver_service
@@ -310,7 +304,6 @@ async def test_every_reset_goes_through_the_transition_table(db_path, monkeypatc
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=PASS_TAKES_NOW)
 async def test_the_pass_is_recorded_in_the_audit_trail(db_path):
     import json
 
@@ -399,7 +392,6 @@ async def _pass_and_discard(db_path, directory):
     return result
 
 
-@pytest.mark.xfail(strict=True, reason=PASS_TAKES_NOW)
 async def test_a_deleted_driver_s_portrait_is_discarded_with_them(db_path, portraits):
     await _obtained(db_path, portraits, "1001", "1002", "1005")
 
@@ -409,7 +401,6 @@ async def test_a_deleted_driver_s_portrait_is_discarded_with_them(db_path, portr
     assert _files(portraits) == ["1001.svg"]
 
 
-@pytest.mark.xfail(strict=True, reason=PASS_TAKES_NOW)
 async def test_a_past_account_s_leftover_portrait_goes_too(db_path, portraits):
     """A reassign that could not resolve the directory leaves the replaced account's portrait
     behind. The driver's deletion is the last chance to discard it."""
@@ -426,7 +417,6 @@ async def test_a_past_account_s_leftover_portrait_goes_too(db_path, portraits):
     assert _files(portraits) == []
 
 
-@pytest.mark.xfail(strict=True, reason=PASS_TAKES_NOW)
 async def test_a_deleted_driver_s_own_artwork_is_left(db_path, portraits):
     """A file with no row was placed by the league, and is never the bot's to delete."""
     (portraits / "1003.svg").write_text("<svg>the league's own</svg>")
@@ -436,7 +426,6 @@ async def test_a_deleted_driver_s_own_artwork_is_left(db_path, portraits):
     assert (portraits / "1003.svg").read_text() == "<svg>the league's own</svg>"
 
 
-@pytest.mark.xfail(strict=True, reason=PASS_TAKES_NOW)
 async def test_no_portrait_is_touched_where_the_directory_does_not_resolve(
     db_path, portraits, monkeypatch
 ):
@@ -457,7 +446,6 @@ async def test_no_portrait_is_touched_where_the_directory_does_not_resolve(
     assert _files(portraits) == ["1002.svg"]
 
 
-@pytest.mark.xfail(strict=True, reason=PASS_TAKES_NOW)
 async def test_a_portrait_that_cannot_be_removed_does_not_undo_the_pass(
     db_path, portraits, monkeypatch
 ):
@@ -488,7 +476,6 @@ async def test_a_portrait_that_cannot_be_removed_does_not_undo_the_pass(
 # (`take_driver_role`). A job that cannot do its work raises, for the queue to stop on.
 
 
-@pytest.mark.xfail(strict=True, reason=PASS_TAKES_NOW)
 async def test_the_pass_on_the_save_handed_commits_nothing_and_gives_the_accounts(db_path):
     """The league of the pass above, run on a connection the season's end hands it and then
     let go uncommitted: every driver stands as before, and the result gives the five drivers
@@ -506,7 +493,6 @@ async def test_the_pass_on_the_save_handed_commits_nothing_and_gives_the_account
     assert sorted(result.accounts) == ["1002", "1003", "1004", "1005"]
 
 
-@pytest.mark.xfail(strict=True, reason=PASS_TAKES_NOW)
 async def test_the_pass_on_the_save_handed_names_each_driver_its_discord_side_reaches(db_path):
     """The pass names each driver it returned to Not Signed Up, with the state they were in and
     whether test mode created them, for the jobs after the save: Lewis (1001) and Max (1002)

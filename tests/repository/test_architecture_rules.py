@@ -2766,9 +2766,6 @@ def _wall_clock_reads_among(nodes) -> Counter[tuple[str, str]]:
 
 
 KNOWN_SQL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/services/driver_service.py", "DriverService.set_former_driver"): (1, PASS["core"]),
-    ("core/services/season_lifecycle_service.py", "_turn_down_on"): (1, PASS["core"]),
-    ("core/services/season_lifecycle_service.py", "run_driver_pass_on"): (1, PASS["core"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.save_record_on"):
         (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService.set_window_closed_on"):
@@ -2785,7 +2782,6 @@ KNOWN_CLOCK_DEFAULTS: dict[tuple[str, str], tuple[int, str]] = {
     ("schema", "signup_windows.opened_at"): (1, PASS["signup"]),
     ("schema", "signup_wizard_records.created_at"): (1, PASS["signup"]),
     ("schema", "signup_wizard_records.last_activity_at"): (1, PASS["signup"]),
-    ("schema", "team_role_configs.updated_at"): (1, PASS["core"]),
 }
 
 KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {

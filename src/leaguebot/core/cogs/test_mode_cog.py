@@ -311,6 +311,7 @@ class TestModeCog(commands.Cog):
                 value,
                 interaction.user.id,
                 str(interaction.user),
+                now=self.bot.change_queue.now(),
             )
         except ValueError as exc:
             await refuse(interaction, f"⛔ {exc}", what=describe(interaction))

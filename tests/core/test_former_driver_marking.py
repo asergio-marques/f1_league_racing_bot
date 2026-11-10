@@ -545,7 +545,6 @@ async def test_cancelling_a_season_closes_a_round_whose_verdicts_are_open(tmp_pa
     assert await _former(db_path, 32) == 0, "a did-not-start entry marked a driver"
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the driver pass does not take the save's now yet")
 async def test_a_driver_of_a_closed_round_survives_the_driver_pass(tmp_path):
     """The harm the close prevents, stated end to end (#216).
 

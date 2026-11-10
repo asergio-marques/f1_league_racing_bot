@@ -1080,6 +1080,7 @@ def register_change_types(bot: LeagueBot) -> None:
             driver_turned_down=bot.driver_turned_down,
             driver_returned_jobs=bot.driver_returned_jobs,
             season_end_steps=bot.season_end_steps,
+            now=lambda: bot.change_queue.now(),
         )
     )
     bot.change_queue.register(
@@ -1099,6 +1100,7 @@ def register_change_types(bot: LeagueBot) -> None:
             test_mode_flushed=bot.test_mode_flushed,
             drivers_deleted=bot.drivers_deleted,
             profiles_deleted=bot.profiles_deleted,
+            now=lambda: bot.change_queue.now(),
         )
     )
     bot.change_queue.register(
@@ -1138,6 +1140,7 @@ def register_change_types(bot: LeagueBot) -> None:
             divisions_deleted=bot.divisions_deleted,
             season_deleted=bot.season_deleted,
             profiles_deleted=bot.profiles_deleted,
+            now=lambda: bot.change_queue.now(),
         )
     )
     # The season's approval is judged again as it runs: the clock is the queue's, the windows the

@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
@@ -236,8 +237,11 @@ async def _turn_down_on(
     season_id: int,
     drivers: list[dict],
     driver_turned_down: AwaitedHook,
+    *,
+    now: datetime,
 ) -> None:
-    """Write the turn-down of *drivers*' placements on *db*, committing nothing.
+    """Write the turn-down of *drivers*' placements on *db*, committing nothing, its audit entry
+    stamped *now*.
 
     Each driver approved (Unassigned, or Assigned by a placement never committed) is handed to
     *driver_turned_down* as `/driver reject` hands it, so that each module lets go of what it holds
@@ -265,16 +269,17 @@ async def _turn_down_on(
         await db.execute(
             "INSERT INTO audit_entries "
             "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-            "VALUES (0, 'system', NULL, 'PENDING_PLACEMENTS_TURNED_DOWN', ?, ?, datetime('now'))",
+            "VALUES (0, 'system', NULL, 'PENDING_PLACEMENTS_TURNED_DOWN', ?, ?, ?)",
             (
                 json.dumps({d["id"]: d["current_state"] for d in drivers}, sort_keys=True),
                 json.dumps({"state": "NOT_SIGNED_UP"}),
+                now.isoformat(),
             ),
         )
 
 
 async def turn_down_pending_placements_on(
-    db: aiosqlite.Connection, season_id: int, driver_turned_down: AwaitedHook
+    db: aiosqlite.Connection, season_id: int, driver_turned_down: AwaitedHook, *, now: datetime
 ) -> list[dict]:
     """Turn down every placement of *season_id* still pending, as the reject command would, on *db*.
 
@@ -287,7 +292,7 @@ async def turn_down_pending_placements_on(
     and closed, an approved driver loses the driver role.
     """
     drivers = await _pending_placement_drivers_on(db, season_id)
-    await _turn_down_on(db, season_id, drivers, driver_turned_down)
+    await _turn_down_on(db, season_id, drivers, driver_turned_down, now=now)
     return [
         {
             "id": d["id"],
@@ -491,6 +496,7 @@ def wind_down_change(
     driver_turned_down: AwaitedHook,
     driver_returned_jobs: Hook,
     season_end_steps: Hook,
+    now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that takes a season whose every division is done to Pending completion.
 
@@ -510,7 +516,8 @@ def wind_down_change(
 
     *placement* and the hooks the modules sign up to (*season_end_closes*, *drivers_returned*,
     *driver_turned_down*, *driver_returned_jobs*, *season_end_steps*) are what the jobs reach
-    Discord and the other modules through, handed by the builder.
+    Discord and the other modules through, handed by the builder, which hands *now* too: the
+    queue's clock, which stamps the turn-down's audit entry.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -535,7 +542,7 @@ def wind_down_change(
 
     steps = wind_down_steps(
         drivers_returned=drivers_returned, driver_turned_down=driver_turned_down,
-        driver_returned_jobs=driver_returned_jobs,
+        driver_returned_jobs=driver_returned_jobs, now=now,
     )
     steps.update(
         close_signup_steps(
@@ -561,6 +568,7 @@ def wind_down_steps(
     drivers_returned: AwaitedHook,
     driver_turned_down: AwaitedHook,
     driver_returned_jobs: Hook,
+    now: Callable[[], datetime],
 ) -> dict[str, Step]:
     """The job that takes a season whose every division is done out of its ongoing stages.
 
@@ -571,7 +579,8 @@ def wind_down_steps(
     (`close_jobs`), and the jobs that tell and close each driver's signup
     (`close_signup_steps`) are the change's own to carry. The modules' parts of the `turn_down`
     save are its hooks: the drivers returned (*drivers_returned*), each approved one turned down
-    (*driver_turned_down*) and the jobs planned for each (*driver_returned_jobs*).
+    (*driver_turned_down*) and the jobs planned for each (*driver_returned_jobs*). *now* is the
+    queue's clock, which stamps the turn-down's audit entry.
     """
 
     async def turn_down(db: aiosqlite.Connection, _ctx: StepContext) -> StepResult:
@@ -587,7 +596,9 @@ def wind_down_steps(
             return StepResult(result={"moved": False})
         drivers: list[dict] = []
         if stage != SeasonStage.ONGOING.value:
-            drivers = await turn_down_pending_placements_on(db, season_id, driver_turned_down)
+            drivers = await turn_down_pending_placements_on(
+                db, season_id, driver_turned_down, now=now()
+            )
             await drivers_returned.call(db, drivers)
             current, _ = await _stage_and_whether_done_on(db, season_id)
             if current in (SeasonStage.ONGOING_SIGNUPS.value, SeasonStage.ONGOING_PLACEMENTS.value):
@@ -811,7 +822,7 @@ class DriverPass:
 
 
 async def run_driver_pass_on(
-    db: aiosqlite.Connection, *, profiles_deleted: AwaitedHook
+    db: aiosqlite.Connection, *, profiles_deleted: AwaitedHook, now: datetime
 ) -> DriverPass:
     """The database side of the driver pass that ends a season, on the connection handed.
 
@@ -858,10 +869,11 @@ async def run_driver_pass_on(
     await db.execute(
         "INSERT INTO audit_entries "
         "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-        "VALUES (0, 'system', NULL, 'DRIVER_PASS', ?, ?, datetime('now'))",
+        "VALUES (0, 'system', NULL, 'DRIVER_PASS', ?, ?, ?)",
         (
             json.dumps({d["id"]: d["current_state"] for d in to_reset}, sort_keys=True),
             json.dumps({"state": "NOT_SIGNED_UP", "deleted": sorted(pending_deletion)}),
+            now.isoformat(),
         ),
     )
     return DriverPass(
