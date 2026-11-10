@@ -71,11 +71,11 @@ def _asks(league):
     )
 
 
-async def _ask(league, interaction, nationality: str | None) -> None:
-    """Admin adds Mock Alpha to McLaren in Am with *nationality*, and nothing more: the queue is
-    not run."""
+async def _ask(league, interaction, nationality: str | None, division: str = "Am") -> None:
+    """Admin adds Mock Alpha to McLaren in Am, typed as *division*, with *nationality*, and
+    nothing more: the queue is not run."""
     await undecorate(test_mode_cog.TestModeCog.roster_add)(
-        league.cog, interaction, "Mock Alpha", "McLaren", "Am", nationality
+        league.cog, interaction, "Mock Alpha", "McLaren", division, nationality
     )
 
 
@@ -98,37 +98,47 @@ def _lines(league) -> list[str]:
 
 
 @pytest.mark.parametrize(
-    "switched_off, given, kept",
+    "switched_off, given, kept, typed",
     [
-        pytest.param(False, "united kingdom", "British", id="a nationality given"),
-        pytest.param(False, None, None, id="none given"),
-        pytest.param(True, None, None, id="nationality switched off, none given"),
+        pytest.param(False, "united kingdom", "British", "Am", id="a nationality given"),
+        pytest.param(False, None, None, "Am", id="none given"),
+        pytest.param(True, None, None, "Am", id="nationality switched off, none given"),
+        pytest.param(
+            False, "united kingdom", "British", "am", id="the division typed in another case",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="#283: the reply names the division by its stored name, not as typed",
+            ),
+        ),
     ],
 )
 async def test_a_fake_driver_and_its_audit_entry_and_line_are_one_save(
-    league, switched_off, given, kept
+    league, switched_off, given, kept, typed
 ):
     """The core specification's test roster, changed by hand under test mode, and its record of
     what changed. The season is in Placements under test mode, McLaren's second seat in Am free,
     and in the third case nationality is switched off for test mode. Admin (77) runs
-    `/test-mode roster add` of Mock Alpha to McLaren in Am, giving *given* as the nationality.
-    They are answered at once with the queue's acknowledgement, "Adding fake driver **Mock Alpha**
-    to **McLaren F1 Team** in **Am**", naming its first job, and nothing is written until the queue runs
+    `/test-mode roster add` of Mock Alpha to McLaren in Am, typing the division as *typed* ("am"
+    in the fourth case) and giving *given* as the nationality. They are answered at once with the
+    queue's acknowledgement, "Adding fake driver **Mock Alpha** to **McLaren F1 Team** in
+    **<typed>**", naming its first job, and nothing is written until the queue runs
     the change, of kind `core.test_roster_add`. Once it has, Mock Alpha is a fake driver with the
     first synthetic id, Assigned, holding McLaren's second seat and assigned to Am for the season,
     their nationality stored as *kept*; one audit entry, `TEST_DRIVER_ADDED`, by Admin, on Am,
     stamped with the queue's clock, records the driver, id, team, division and nationality, each
-    unset before; the acknowledgement reads today's reply, naming the team's full name before the
-    division, the nationality where one is kept, and the mention to paste into results; and the
-    log channel holds today's success line once, the nationality "(none)" where none is kept."""
+    unset before, the division by its stored name, "Am", however it was typed; the reply reads
+    today's reply, naming the team's full name before the division as typed, the nationality
+    where one is kept, and the mention to paste into results; and the log channel holds today's
+    success line once, the division as typed, the nationality "(none)" where none is kept."""
     if switched_off:
         await _switch_nationality_off(league)
     interaction = _asks(league)
 
-    await _ask(league, interaction, given)
+    await _ask(league, interaction, given, typed)
 
     first_job = (await step_rows(league.db_path))[0]["id"]
-    assert said(interaction)[0] == f"{acknowledged(_DOING)} It begins with job #{first_job}."
+    doing = f"Adding fake driver **Mock Alpha** to **McLaren F1 Team** in **{typed}**"
+    assert said(interaction)[0] == f"{acknowledged(doing)} It begins with job #{first_job}."
     assert [row["kind"] for row in await change_rows(league.db_path)] == ["core.test_roster_add"]
     assert await _fake_drivers(league) == []
     assert await audit_rows(league.db_path) == []
@@ -150,7 +160,7 @@ async def test_a_fake_driver_and_its_audit_entry_and_line_are_one_save(
     )]
     nationality_line = f"Nationality: **{kept}**\n" if kept else ""
     assert last_said(interaction) == (
-        "✅ Added fake driver **Mock Alpha** to **McLaren F1 Team** in **Am**.\n"
+        f"✅ Added fake driver **Mock Alpha** to **McLaren F1 Team** in **{typed}**.\n"
         f"{nationality_line}"
         f"Mention string (copy-paste into results): `<@{MOCK_ID}>`"
     )
@@ -158,7 +168,7 @@ async def test_a_fake_driver_and_its_audit_entry_and_line_are_one_save(
         f"{_NAMED} | /test-mode roster add | Success\n"
         "  driver: Mock Alpha\n"
         "  team: McLaren F1 Team\n"
-        "  division: Am\n"
+        f"  division: {typed}\n"
         f"  nationality: {kept or '(none)'}"
     ]
 

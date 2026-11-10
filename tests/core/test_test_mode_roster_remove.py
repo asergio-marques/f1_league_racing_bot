@@ -276,19 +276,58 @@ async def test_it_is_judged_again_as_it_starts(league, meanwhile, refusal):
     assert await stopped_job(league.db_path) is None
 
 
-async def test_a_fault_in_the_save_removes_nobody(league):
+async def _seated(league) -> None:
+    """Mock Alpha stays in McLaren's second seat in Am."""
+
+
+async def _unseated(league) -> None:
+    """Mock Alpha gives up McLaren's second seat and their place in Am, keeping their profile."""
+    await league.write(
+        "DELETE FROM driver_season_assignments WHERE driver_profile_id = "
+        "(SELECT id FROM driver_profiles WHERE discord_user_id = ?)",
+        MOCK_ID,
+    )
+    await league.write(
+        "UPDATE team_seats SET driver_profile_id = NULL WHERE team_instance_id = ? "
+        "AND seat_number = 2",
+        MCLAREN,
+    )
+
+
+@pytest.mark.parametrize(
+    "seat, drivers, reply",
+    [
+        pytest.param(
+            _seated, _BOTH,
+            "Nothing was removed: **Mock Alpha** is still seated in **Am**. "
+            "Run `/test-mode roster remove` again.",
+            id="a seated driver",
+        ),
+        pytest.param(
+            _unseated,
+            [_BOTH[0], {"discord_user_id": MOCK_ID, "is_test_driver": 1, "seat_number": None}],
+            "Nothing was removed: **Mock Alpha** is still on the server. "
+            "Run `/test-mode roster remove` again.",
+            id="a driver holding no seat",
+        ),
+    ],
+)
+async def test_a_fault_in_the_save_removes_nobody(league, seat, drivers, reply):
     """The season is in Placements under test mode, Mock Alpha a fake driver in McLaren's second
-    seat in Am. Admin (77) runs `/test-mode roster remove` with Mock Alpha's ID, and the audit
-    entry's write fails on the database as the queue runs the change. Nothing of the removal is
-    saved, the deletion, its audit entry and its line being one save: Mock Alpha keeps their
-    profile, name and seat, nothing a module wrote through the bot's delete hook stands, no audit
-    entry stands, the log channel holds no success line, and the
-    error's text reaches nobody. The league's lane stops at the job. Once a league admin discards
-    the stopped job, Admin's reply says "Nothing was removed: **Mock Alpha** is still seated in
-    **Am**. Run `/test-mode roster remove` again."; and the lane is clear."""
+    seat in Am, or, in the second case, a fake driver holding no seat. Admin (77) runs
+    `/test-mode roster remove` with Mock Alpha's ID, and the audit entry's write fails on the
+    database as the queue runs the change. Nothing of the removal is saved, the deletion, its
+    audit entry and its line being one save: Mock Alpha keeps their profile, name and any seat,
+    nothing a module wrote through the bot's delete hook stands, no audit entry stands, the log
+    channel holds no success line, and the error's text reaches nobody. The league's lane stops
+    at the job. Once a league admin discards the stopped job, Admin's reply says "Nothing was
+    removed: **Mock Alpha** is still seated in **Am**. Run `/test-mode roster remove` again.",
+    or, for the driver holding no seat, "Nothing was removed: **Mock Alpha** is still on the
+    server. Run `/test-mode roster remove` again.", naming no seat; and the lane is clear."""
     from tests.support.change_queue import discard_job
     from tests.support.settings_league import fault_in
 
+    await seat(league)
     _watch_deletions(league)
     interaction = _asks(league)
 
@@ -296,7 +335,7 @@ async def test_a_fault_in_the_save_removes_nobody(league):
     with fault_in("leaguebot.core.services.change_queue.record_change_on"):
         await run_queue(league.bot)
 
-    assert await _drivers(league) == _BOTH
+    assert await _drivers(league) == drivers
     assert await league.rows(
         "SELECT test_display_name FROM driver_profiles WHERE discord_user_id = ?", MOCK_ID
     ) == [{"test_display_name": "Mock Alpha"}]
@@ -306,10 +345,7 @@ async def test_a_fault_in_the_save_removes_nobody(league):
 
     await discard_job(league.bot)
 
-    assert last_said(interaction) == (
-        "Nothing was removed: **Mock Alpha** is still seated in **Am**. "
-        "Run `/test-mode roster remove` again."
-    )
+    assert last_said(interaction) == reply
     assert not any("database or disk is full" in text for text in said(interaction))
     assert await stopped_job(league.db_path) is None
 
