@@ -56,11 +56,7 @@ from leaguebot.core.services.configuration_confirm_change import (
 )
 from leaguebot.core.services.mid_season_confirm_change import (
     ALREADY_BEING_CONFIRMED,
-    KIND as MID_SEASON_CONFIRM_KIND,
-    STAGE_REFUSAL as CONFIRM_STAGE_REFUSAL,
     confirmation_in_hand,
-    every_division_done_in,
-    every_division_done_refusal,
 )
 from leaguebot.core.services.round_amend_change import ROUND_AMEND, payload_changes
 from leaguebot.core.services.round_moments import read_round_windows
@@ -1233,101 +1229,6 @@ class SeasonCog(commands.Cog):
                 "grants the new drivers their roles and posts each affected lineup."
             ),
         )
-
-    async def _do_confirm_mid_season_placements(
-        self,
-        interaction: discord.Interaction,
-        *,
-        what: str | None = None,
-        fingerprint: dict | None = None,
-    ) -> bool:
-        """Ask the change queue to confirm the new placements, the review taken down ahead of
-        it (#439, slice 8, Part B). Returns whether the queue accepted the request: False where
-        the press was refused, which leaves the button's review standing
-        (`_ApproveView._settle_press`).
-
-        A refusal is recorded under *what*, the button pressed, which the button passes in;
-        the review's own Confirm placements button where the caller names none. *fingerprint*
-        is the review's own, the areas of the season as the report described it, which the
-        confirmation is judged against again when it runs; where it is not given the season is
-        fingerprinted as it stands.
-
-        **The press is not deferred:** the queue's acknowledgement is the press's own response
-        and the confirmation's outcome updates it. The refusals below answer the press at once
-        in the words the confirmation's own check uses (`mid_season_confirm_change`), which
-        judges them again when the confirmation runs: a season changed while it waited must
-        not be committed. Everything after the request, the placements and the season's return
-        to Ongoing in one save, each driver's roles, each lineup, the one line that records it,
-        is the change's, a job each, so that a stop leaves nothing undone for good.
-        """
-        if what is None:
-            what = _review_button("Confirm placements", "/season placements-review")
-        season = await self.bot.season_service.get_confirmed_season()
-        if season is not None and await confirmation_in_hand(self.bot.db_path, season.id):
-            await refuse(interaction, ALREADY_BEING_CONFIRMED, what=what)
-            return False
-        if season is None or season.stage is not SeasonStage.ONGOING_PLACEMENTS:
-            await refuse(interaction, CONFIRM_STAGE_REFUSAL, what=what)
-            return False
-        if await every_division_done_in(self.bot.db_path, season.id):
-            await refuse(
-                interaction, every_division_done_refusal(season.season_number), what=what
-            )
-            return False
-        # Judged afresh, as the first confirmation judges Gate S (#374). The review withholds
-        # its button on each of these, but it stands five minutes, and a channel deleted from
-        # the server meanwhile changes nothing the fingerprint reads. The lineups are not
-        # drawn again: the fingerprint proves the images configuration and the artwork
-        # unchanged since the review drew them.
-        unsettled, channel_faults = await approval_checks.placement_confirmation_faults(
-            self.bot.module_service, self.bot.db_path, season.id, interaction.guild
-        )
-        faults = [
-            *(f"Unsettled signup: {line}" for line in unsettled),
-            *channel_faults,
-            *await approval_checks.mid_season_configuration_faults(
-            self.bot.module_service, self.bot.image_drawing
-        ),
-        ]
-        if faults:
-            bullets = "\n".join(f"\u2022 {line}" for line in faults)
-            await refuse(
-                interaction,
-                f"\u26d4 Placements cannot be confirmed:\n{bullets}\n"
-                "**Nothing has been confirmed.**",
-                what=what,
-                reason="placements cannot be confirmed:\n" + "\n".join(faults),
-            )
-            return False
-
-        if fingerprint is None:
-            from leaguebot.core.services.season_fingerprint_service import take_fingerprint
-
-            fingerprint = (
-                await take_fingerprint(
-                    self.bot.db_path, season.id, drawing=self.bot.image_drawing
-                )
-            ).areas
-        # The review comes down ahead of the confirmation's own jobs, but only for a request
-        # the queue accepts: one it refuses at once leaves the review standing.
-        confirmation = {
-            "season_id": season.id,
-            "season_number": season.season_number,
-            "fingerprint": dict(fingerprint),
-            "channel_id": interaction.channel_id,
-        }
-        question = getattr(interaction.message, "id", None)
-        if isinstance(question, int):
-            change_id = await take_review_down_before(
-                self.bot.change_queue, self.bot.db_path, question, MID_SEASON_CONFIRM_KIND,
-                confirmation, interaction=interaction, what=what,
-            )
-        else:
-            change_id = await self.bot.change_queue.ask(
-                MID_SEASON_CONFIRM_KIND, confirmation, interaction=interaction, what=what
-            )
-        # None where the queue's own check refused the request and saved nothing.
-        return change_id is not None
 
     # ------------------------------------------------------------------
     # /season config-review — confirming the configuration (issue #220)
@@ -3507,6 +3408,22 @@ class _ConfirmMidSeasonPlacementsView(_ApproveView):
     _button_label = "Confirm placements"
     _verb = "confirmed"
 
+    async def _confirm_placements(
+        self, interaction: discord.Interaction, *, what: str, fingerprint: dict | None
+    ) -> bool:
+        """The mid-season placements' confirmation, handed the bot's services."""
+        bot = self._cog.bot
+        return await season_review_workflows.confirm_mid_season_placements(
+            interaction,
+            season_service=bot.season_service,
+            module_service=bot.module_service,
+            db_path=bot.db_path,
+            image_drawing=bot.image_drawing,
+            change_queue=bot.change_queue,
+            what=what,
+            fingerprint=fingerprint,
+        )
+
     @discord.ui.button(
         label="✅ Confirm placements", style=discord.ButtonStyle.success,
         custom_id="season_review:confirm_placements",
@@ -3516,7 +3433,7 @@ class _ConfirmMidSeasonPlacementsView(_ApproveView):
     ) -> None:
         await self._confirm_press(
             interaction,
-            self._cog._do_confirm_mid_season_placements,
+            self._confirm_placements,
             in_hand=(confirmation_in_hand, ALREADY_BEING_CONFIRMED),
             evidence_to_confirm=True,
         )

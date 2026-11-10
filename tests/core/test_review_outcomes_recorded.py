@@ -53,17 +53,16 @@ _BUTTONS = [
     ),
 ]
 
-#: The approval's and the mid-season confirmation's buttons still hand a press on to the season
-#: cog's `_do_*` methods.
+#: The approval's button still hands a press on to the season cog's `_do_approve`.
 _BUTTONS_ON_THE_COG = (
     "#283: the review's buttons do not yet run the workflows of season_review_workflows"
 )
 
-#: `_BUTTONS`, those two expected to fail until the build.
+#: `_BUTTONS`, the approval's expected to fail until the build.
 _PENDING_BUTTONS = [
     pytest.param(
         *button.values, id=button.id,
-        marks=() if button.id == "confirm_configuration"
+        marks=() if button.id != "approve"
         else pytest.mark.xfail(strict=True, reason=_BUTTONS_ON_THE_COG),
     )
     for button in _BUTTONS

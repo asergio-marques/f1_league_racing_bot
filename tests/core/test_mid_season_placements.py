@@ -51,12 +51,6 @@ async def test_the_uncommitted_placements_are_listed(db_path):
 
 # ── The command ────────────────────────────────────────────────────────────────────
 
-#: The mid-season confirmation still runs as `SeasonCog._do_confirm_mid_season_placements`.
-_CONFIRMATION_ON_THE_COG = (
-    "#283: the mid-season confirmation is not yet "
-    "season_review_workflows.confirm_mid_season_placements"
-)
-
 #: The gates a test stands in, each a function of `approval_checks` that the review command and
 #: the confirmation's workflow call alike.
 _GATES = (
@@ -170,7 +164,6 @@ async def test_the_review_is_refused_in_the_other_ongoing_stages(db_path, stage)
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_CONFIRMATION_ON_THE_COG)
 async def test_confirming_returns_the_season_to_ongoing(db_path):
     """Season 1 in Ongoing, placements, every signup settled and its channels set, driver 1002
     placed in Pro and not yet committed. A manager presses ✅ Confirm placements on a review whose
@@ -191,7 +184,6 @@ async def test_confirming_returns_the_season_to_ongoing(db_path):
     assert await _uncommitted(db_path) == ["1002"]
 
 
-@pytest.mark.xfail(strict=True, reason=_CONFIRMATION_ON_THE_COG)
 async def test_confirming_refuses_while_a_signup_is_unsettled(db_path):
     async with get_connection(db_path) as db:
         await db.execute("UPDATE driver_profiles SET current_state = 'UNASSIGNED' WHERE id = 3")
@@ -206,7 +198,6 @@ async def test_confirming_refuses_while_a_signup_is_unsettled(db_path):
     assert "Nothing has been confirmed" in acknowledgement(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_CONFIRMATION_ON_THE_COG)
 async def test_confirming_refuses_a_deleted_channel_and_commits_nothing(db_path):
     """The review stands five minutes, and a channel deleted from the server meanwhile
     changes nothing the fingerprint reads (#374)."""
@@ -231,7 +222,6 @@ async def test_confirming_refuses_a_deleted_channel_and_commits_nothing(db_path)
     assert await _uncommitted(db_path) == ["1002"]
 
 
-@pytest.mark.xfail(strict=True, reason=_CONFIRMATION_ON_THE_COG)
 async def test_confirming_refuses_an_image_fault_and_commits_nothing(db_path):
     await _settle_every_signup(db_path)
     cog = _cog(db_path, SeasonStage.ONGOING_PLACEMENTS)
@@ -249,7 +239,6 @@ async def test_confirming_refuses_an_image_fault_and_commits_nothing(db_path):
     assert await _uncommitted(db_path) == ["1002"]
 
 
-@pytest.mark.xfail(strict=True, reason=_CONFIRMATION_ON_THE_COG)
 async def test_confirming_names_every_fault_at_once(db_path):
     async with get_connection(db_path) as db:
         await db.execute("UPDATE driver_profiles SET current_state = 'UNASSIGNED' WHERE id = 3")
@@ -269,7 +258,6 @@ async def test_confirming_names_every_fault_at_once(db_path):
     assert _asked(cog) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_CONFIRMATION_ON_THE_COG)
 async def test_confirming_a_season_no_longer_placing_confirms_nothing(db_path):
     cog = _cog(db_path, SeasonStage.ONGOING)
     interaction = _pressing()
@@ -680,12 +668,6 @@ async def test_a_lineup_discord_refuses_after_a_confirmation_stops_the_queue_and
 #: The workflow of `season_review_workflows` the ✅ Confirm placements button hands a press on to.
 CONFIRM = "confirm_mid_season_placements"
 
-#: The ✅ Confirm placements button still hands a press on to the season cog's method.
-_BUTTON_ON_THE_COG = (
-    "#283: the Confirm placements button does not yet run "
-    "season_review_workflows.confirm_mid_season_placements"
-)
-
 
 async def _standing_mid_season(tmp_path):
     """Alex's mid-season placements review of season 1, standing in channel 700."""
@@ -773,7 +755,6 @@ async def test_a_stumbled_confirmation_still_clears_its_review(tmp_path, monkeyp
     assert (await league.season())["stage"] == "ONGOING_PLACEMENTS"
 
 
-@pytest.mark.xfail(strict=True, reason=_BUTTON_ON_THE_COG)
 async def test_a_refused_confirmation_leaves_its_review_standing(tmp_path, monkeypatch):
     """The core specification's "Confirming placements", as for every review's button: a press
     refused at the press leaves the review and its button standing, to be pressed again within
@@ -799,7 +780,6 @@ async def test_a_refused_confirmation_leaves_its_review_standing(tmp_path, monke
     assert await _prompt_rows(env) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_BUTTON_ON_THE_COG)
 async def test_the_reviewer_confirms_the_mid_season_placements(tmp_path, monkeypatch):
     """Alex's mid-season review stands, posted a moment ago, the season unchanged since its
     report, its row's evidence reading Pro's rounds "as reviewed". Alex, who ran it, presses
@@ -827,7 +807,6 @@ async def test_the_reviewer_confirms_the_mid_season_placements(tmp_path, monkeyp
     assert await _take_downs(env) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_BUTTON_ON_THE_COG)
 async def test_mid_season_placements_changed_since_the_review_are_not_confirmed(
         tmp_path, monkeypatch):
     """Alex's mid-season review stands, its row recording Pro's rounds as its report described
@@ -891,7 +870,6 @@ def _faults_on_every_count(cog):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_CONFIRMATION_ON_THE_COG)
 @pytest.mark.parametrize(
     "arrange, reply_says, carried",
     [

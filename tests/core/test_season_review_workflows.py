@@ -73,8 +73,7 @@ async def _configuration(league: Any) -> list[dict[str, Any]]:
 @pytest.mark.parametrize("build, post, asked", [
     pytest.param(season_league, post_review, _approval, id="approval",
                  marks=pytest.mark.xfail(strict=True, reason=_WORKFLOWS_ON_THE_COG)),
-    pytest.param(placing_league, post_mid_season_review, _mid_season, id="mid-season placements",
-                 marks=pytest.mark.xfail(strict=True, reason=_WORKFLOWS_ON_THE_COG)),
+    pytest.param(placing_league, post_mid_season_review, _mid_season, id="mid-season placements"),
     pytest.param(configuring_league, post_config_review, _configuration, id="configuration"),
 ])
 async def test_each_review_button_runs_its_workflow_with_nothing_of_the_season_cog(
