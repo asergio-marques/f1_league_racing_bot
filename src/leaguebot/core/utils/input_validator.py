@@ -424,7 +424,7 @@ def parse_lap_gap(text: str | None) -> int | None:
 
 
 def parse_datetime(text: str | None) -> datetime | None:
-    """An ISO 8601 moment as naive UTC, the form a round's time is stored in, or None.
+    """An ISO 8601 moment as aware UTC, the form a round's time is held in, or None.
 
     A value given with a zone is converted to UTC; one without is taken to be UTC already, as
     every command taking one has always said. `/round add` once stored a typed zone as it
@@ -435,9 +435,9 @@ def parse_datetime(text: str | None) -> datetime | None:
         moment = datetime.fromisoformat((text or "").strip())
     except ValueError:
         return None
-    if moment.tzinfo is not None:
-        moment = moment.astimezone(timezone.utc).replace(tzinfo=None)
-    return moment
+    if moment.tzinfo is None:
+        return moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc)
 
 
 # ── Formats: a nationality ────────────────────────────────────────────────

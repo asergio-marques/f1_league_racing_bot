@@ -46,7 +46,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.division import Division
-from leaguebot.core.models.round import Round, RoundFormat
+from leaguebot.core.models.round import Round, RoundFormat, stored_scheduled_at, utc_text
 from leaguebot.core.services import track_service
 from leaguebot.core.services.change_queue import (
     ChangeType,
@@ -141,7 +141,7 @@ def _audit(placed: Round, division: Division) -> AuditRecord:
         "round_number": placed.round_number,
         "format": placed.format.value,
         "track_name": placed.track_name,
-        "scheduled_at": placed.scheduled_at.isoformat(),
+        "scheduled_at": stored_scheduled_at(placed.scheduled_at),
     }
     return AuditRecord("ROUND_ADDED", dict.fromkeys(new), new, division_id=division.id)
 
@@ -252,7 +252,7 @@ def _add_save(
             f"  division: {division.name}\n"
             f"  round: {placed.round_number}, format: {fmt.value}\n"
             f"  track: {track_name or 'Mystery'}\n"
-            f"  scheduled_at: {moment.isoformat()} UTC"
+            f"  scheduled_at: {utc_text(moment)} UTC"
         )
         return StepResult(
             result={
@@ -335,7 +335,7 @@ def import_payload(source: str, parsed: list[ParsedDivisionRounds]) -> dict[str,
                 "rounds": [
                     {
                         "location": r.location,
-                        "scheduled_at": r.scheduled_at.isoformat(),
+                        "scheduled_at": stored_scheduled_at(r.scheduled_at),
                         "format": r.format.value,
                         "track": r.track_raw,
                     }
@@ -364,7 +364,7 @@ def _duplicate_datetime_errors(
         previous = seen.get(at)
         if previous is not None:
             errors.append(
-                f"{parsed['location']}: duplicate datetime {at.isoformat()} — already used "
+                f"{parsed['location']}: duplicate datetime {utc_text(at)} — already used "
                 f"by {previous}."
             )
             continue

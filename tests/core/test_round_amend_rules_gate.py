@@ -548,7 +548,7 @@ async def test_a_round_amend_confirmation_that_fails_elsewhere_stops_its_view(
 
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
     cog = await _cog(path, attendance=False)
-    later = (datetime.now(timezone.utc) + timedelta(days=31)).replace(tzinfo=None)
+    later = datetime.now(timezone.utc) + timedelta(days=31)
     fault = sqlite3.OperationalError("database is locked")
     interaction = _interaction()
     if where == "the ask fails":

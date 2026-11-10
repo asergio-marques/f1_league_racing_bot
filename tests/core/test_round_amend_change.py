@@ -59,10 +59,6 @@ from tests.support.season_league import (
 )
 from tests.support.mentions import NOBODY, notified
 
-#: Why the tests of an amended moment fail until the build stores it with its offset.
-_NO_OFFSET = "#283: /round amend of a raced season's round still stores its moment without an offset"
-#: Why the success line fails until the build writes each moment in it as a league has always read it.
-_LINE_OFFSET = "#283: /round amend's log line shows the stored moment with its offset"
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 R3, R4 = round_id(PRO, 3), round_id(PRO, 4)
@@ -398,7 +394,6 @@ async def _clear_blocker(league: Any) -> None:
 # ── The defects ─────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_a_stop_after_the_amendment_is_saved_arms_the_round_again_on_restart(tmp_path):
     """Pro's round 3 moved past round 4. The queue is stopped once the save is made; after a
     restart the round is armed against its new moment, the rounds stand renumbered and one
@@ -455,7 +450,6 @@ async def test_the_rounds_are_renumbered_in_the_amendment_s_own_save(tmp_path):
     assert _success_lines(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_LINE_OFFSET)
 async def test_the_success_line_is_saved_with_the_amendment(tmp_path):
     """Round 3, ninety days out, moved a day later. The arming fails after the save, stopping
     the queue, and the bot restarts: the success line, saved with the amendment, stands once in
@@ -982,7 +976,6 @@ async def test_a_discarded_amendment_is_named_by_the_number_the_round_bears_when
     assert "round 3" not in _outcome(press)
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_the_arming_cannot_be_discarded_and_once_retried_arms_the_round(tmp_path):
     """The arming fails and stops the queue. A league admin's Discard on it is refused,
     privately and with one line in the log channel; the queue stays stopped at the arming, and
@@ -1069,7 +1062,6 @@ async def test_a_module_turned_off_before_its_job_drops_it(tmp_path):
     assert NOT_DONE not in _outcome(press)
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_a_cancellation_queued_behind_an_amendment_runs_after_its_renumbering(tmp_path):
     """Attendance on; the queue is stopped. Pro's round 3 is moved past round 4 and confirmed,
     then Pro's round 4 is cancelled, each ask blind to the other as two asks in the same instant
@@ -1208,7 +1200,6 @@ async def _place_r3(league: Any, **delta: float) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_a_phase_that_fell_due_while_the_save_stood_stopped_is_drawn_at_once(
     tmp_path, phases,
 ):

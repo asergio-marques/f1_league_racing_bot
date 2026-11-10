@@ -33,10 +33,6 @@ from tests.support.setup_rounds import (
 )
 from tests.support.undecorate import undecorate
 
-#: Why the tests of a round's stored moment fail until the build stores it with its offset.
-_NO_OFFSET = "#283: /round amend still stores a round's moment without its offset"
-#: Why the tests of a clash with a held round fail until the build reads it aware.
-_CLASH = "#283: /round amend still misses a held round at the same moment, held with its offset"
 
 #: The command as the log channel names it.
 WHAT = "`/round amend`"
@@ -113,7 +109,6 @@ def _clash(number: int, at: datetime) -> str:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_a_setup_round_amendment_its_renumbering_audit_entry_and_line_are_one_save(
     tmp_path,
 ):
@@ -213,7 +208,6 @@ async def test_a_setup_round_amendment_its_renumbering_audit_entry_and_line_are_
             2, {"track": "Silverstone Circuit", "scheduled_at": "2026-06-21T18:00:00"},
             (2, "NORMAL", "Silverstone Circuit", "2026-06-21T18:00:00+00:00"),
             ("track: Hungaroring → Silverstone Circuit",),
-            marks=pytest.mark.xfail(strict=True, reason=_NO_OFFSET),
             id="its-own-moment-restated-which-am-also-holds",
         ),
         pytest.param(
@@ -221,7 +215,6 @@ async def test_a_setup_round_amendment_its_renumbering_audit_entry_and_line_are_
             (3, "MYSTERY", None, "2026-07-05T18:00:00+00:00"),
             ("scheduled_at: 2026-06-28 18:00:00 → 2026-07-05 18:00:00",
              "track: Hungaroring → none"),
-            marks=pytest.mark.xfail(strict=True, reason=_NO_OFFSET),
             id="a-moved-mystery-round-loses-the-track-it-holds",
         ),
     ],
@@ -312,7 +305,6 @@ async def test_a_failed_setup_round_amendment_changes_nothing(tmp_path):
         pytest.param(
             "a-round-added-at-that-moment",
             _clash(4, _JULY_5),
-            marks=pytest.mark.xfail(strict=True, reason=_CLASH),
             id="a-round-at-that-moment-by-the-time-it-runs",
         ),
     ],
@@ -366,7 +358,6 @@ async def test_a_setup_round_amendment_is_judged_again_as_it_starts(tmp_path, me
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_a_setup_round_amendment_asked_again_while_it_waits_is_refused_as_a_repeat(
     tmp_path,
 ):
@@ -400,7 +391,6 @@ async def test_a_setup_round_amendment_asked_again_while_it_waits_is_refused_as_
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_a_full_calendar_does_not_refuse_a_setup_round_amendment(tmp_path, monkeypatch):
     """An amendment adds no round, so the calendar's room is not asked. Season #1 is being set up,
     in Placements, Pro holding its rounds of 14, 21 and 28 June, and the image module's drawing
@@ -520,7 +510,6 @@ async def test_a_setup_round_amended_to_what_stands_changes_nothing(
         ),
         pytest.param(
             {"scheduled_at": "2026-06-21T18:00:00"}, _clash(2, datetime(2026, 6, 21, 18, 0)),
-            marks=pytest.mark.xfail(strict=True, reason=_CLASH),
             id="a-moment-another-round-holds",
         ),
     ],

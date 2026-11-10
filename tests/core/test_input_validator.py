@@ -490,11 +490,8 @@ def test_parse_lap_gap_refuses_anything_else(typed):
 # ── Formats: moments ──────────────────────────────────────────────────────
 
 
-#: Why the moment's tests fail until the build hands it aware.
-_AWARE = "#283: a typed moment is still handed back naive"
 
 
-@pytest.mark.xfail(strict=True, reason=_AWARE)
 def test_parse_datetime_takes_a_zoneless_value_as_utc():
     """"2026-06-14T18:00", typed with no zone, is 18:00 UTC, handed back aware."""
     from datetime import datetime, timezone
@@ -508,7 +505,6 @@ def test_parse_datetime_takes_a_zoneless_value_as_utc():
 @pytest.mark.parametrize(
     "typed", ["2026-06-14T20:00+02:00", "2026-06-14T18:00Z", "2026-06-14T13:00:00-05:00"]
 )
-@pytest.mark.xfail(strict=True, reason=_AWARE)
 def test_parse_datetime_converts_a_zone_to_utc(typed):
     """Converted to 18:00 UTC and handed back aware, in the form a round's moment is stored in."""
     from datetime import datetime, timedelta, timezone

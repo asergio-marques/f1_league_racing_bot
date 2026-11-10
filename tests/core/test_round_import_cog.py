@@ -23,10 +23,6 @@ from leaguebot.core.cogs.round_cog import BulkRoundModal, RoundCog, XmlRoundModa
 from tests.support.setup_rounds import FORMS, NAMED, import_rounds, round_rows, setup_league
 from tests.support.undecorate import undecorate
 
-#: Why the tests of a round's stored moment fail until the build stores it with its offset.
-_NO_OFFSET = "#283: /round add and add-xml still store a round's moment without its offset"
-#: Why the tests of a clash with a held round fail until the build reads it aware.
-_CLASH = "#283: a typed or imported moment still misses a held round at that moment, held aware"
 
 #: Pro, holding no round, in season #1 being set up in Placements.
 _PRO = (("Pro", 1, 10, ()),)
@@ -207,7 +203,6 @@ async def test_the_xml_modal_reports_a_parse_failure(tmp_path):
     assert await round_rows(league.db_path, "Pro") == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_the_xml_modal_applies_a_sound_payload(tmp_path):
     """Season #1 in Placements, Pro holding no round. The manager submits `/round add-xml`'s form
     with one round for Pro at track 14 on 14 June at 18:00, Europe/Lisbon time, and the queue
@@ -262,7 +257,6 @@ _PRO_HOLDING_THE_14TH = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason=_CLASH)
 async def test_round_add_refuses_a_datetime_the_division_already_holds(tmp_path):
     """Season #1 is being set up, in Placements, Pro holding round 1 at the Hungaroring on 14 June
     2026 at 18:00 UTC. The league manager runs `/round add` for Pro, a NORMAL round at track 14 on
@@ -286,7 +280,6 @@ async def test_round_add_refuses_a_datetime_the_division_already_holds(tmp_path)
     assert len(await round_rows(league.db_path, "Pro")) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_round_add_still_accepts_a_free_moment(tmp_path):
     """Season #1 is being set up, in Placements, Pro holding round 1 at the Hungaroring on 14 June
     2026 at 18:00 UTC. The league manager runs `/round add` for Pro, a NORMAL round at track 14 on
@@ -418,7 +411,6 @@ _NO_SETUP = "No pending season setup. Run `/season setup` first."
             ["Line 2: unknown track `99`.",
              "Line 1: duplicate datetime 2026-06-14T18:00:00 — already used by a round already "
              "in this division."],
-            marks=pytest.mark.xfail(strict=True, reason=_CLASH),
             id="bulk_refused_by_the_season",
         ),
         pytest.param(
@@ -445,7 +437,6 @@ _NO_SETUP = "No pending season setup. Run `/season setup` first."
             ["[Pro] line 1: duplicate datetime 2026-06-14T18:00:00 — already used by a round "
              "already in this division.",
              "[Am]: no division of that name in the pending setup."],
-            marks=pytest.mark.xfail(strict=True, reason=_CLASH),
             id="xml_refused_by_the_season",
         ),
     ],

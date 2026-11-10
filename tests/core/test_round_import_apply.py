@@ -42,10 +42,6 @@ from tests.support.setup_rounds import (
     setup_league,
 )
 
-#: Why the tests of a round's stored moment fail until the build stores it with its offset.
-_NO_OFFSET = "#283: an import still stores a round's moment without its offset"
-#: Why the tests of a clash with a held round fail until the build reads it aware.
-_CLASH = "#283: an import still misses a held round at the same moment, held with its offset"
 
 #: Pro's rounds of 14 and 28 June and Am's of 21 June, mystery rounds all, at 18:00 UTC.
 _PRO_14 = ("MYSTERY", None, datetime(2026, 6, 14, 18, 0))
@@ -100,7 +96,6 @@ async def _nothing_asked(league) -> bool:
 # ── The happy path ────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_rounds_are_sorted_and_numbered_from_one(tmp_path):
     """Season #1 in Placements, Pro holding no round. The manager pastes, in `/round add-bulk` for
     Pro, rounds at the Hungaroring on 28, 14 and 21 June at 18:00 UTC, in that order, and the
@@ -158,7 +153,6 @@ async def test_existing_rounds_are_kept_and_renumbered_around_the_new_ones(tmp_p
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_an_imported_round_sorts_beside_ones_added_by_hand(tmp_path):
     """The regression guard for the zone. A round is stored in UTC with its offset; one given
     in a zone must be converted and stored the same way, or the two cannot be sorted together.
@@ -272,7 +266,6 @@ async def test_two_imported_rounds_may_not_share_a_moment(tmp_path):
     assert await round_rows(league.db_path, "Pro") == []
 
 
-@pytest.mark.xfail(strict=True, reason=_CLASH)
 async def test_an_imported_round_may_not_land_on_an_existing_one(tmp_path):
     """The confirmation of placements refuses such a season; catching it here saves finding out
     later. Season #1 in Placements, Pro holding a round on 14 June at 18:00. The manager pastes a
@@ -337,7 +330,6 @@ async def test_a_batch_that_fits_is_allowed(tmp_path, monkeypatch):
 # ── Mystery rounds ────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_a_mystery_round_without_a_track_is_stored_with_none(tmp_path):
     """Season #1 in Placements, Pro holding no round. The manager pastes a mystery round on 14
     June with no track, and the queue runs it. Pro holds round 1, a MYSTERY round with no
@@ -354,7 +346,6 @@ async def test_a_mystery_round_without_a_track_is_stored_with_none(tmp_path):
 # ── On the change queue (#283) ────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_an_import_is_one_save_across_its_divisions(tmp_path):
     """The core specification's record of what changed. Season #1 in Placements, as the database
     alone holds it: Pro holds mystery rounds on 14 and 28 June at 18:00 UTC, Am one on 21 June,
@@ -465,7 +456,6 @@ async def test_a_failed_import_save_adds_nothing(tmp_path, form, value, command)
             "a-round-added-at-that-moment",
             "Line 1: duplicate datetime 2026-06-21T18:00:00 — already used by a round already in "
             "this division.",
-            marks=pytest.mark.xfail(strict=True, reason=_CLASH),
             id="a-round-added-at-that-moment-meanwhile",
         ),
         pytest.param(

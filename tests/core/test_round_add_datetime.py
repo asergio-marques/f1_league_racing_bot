@@ -37,10 +37,6 @@ from tests.support.setup_rounds import (
 )
 from tests.support.undecorate import undecorate
 
-#: Why the tests of a round's stored moment fail until the build stores it with its offset.
-_NO_OFFSET = "#283: /round add still stores a round's moment without its offset"
-#: Why the tests of a clash with a held round fail until the build reads it aware.
-_CLASH = "#283: /round add still misses a held round at the same moment, held with its offset"
 
 #: The command as the log channel names it.
 WHAT = "`/round add`"
@@ -104,7 +100,6 @@ def _success_line(number: int, division: str, fmt: str, track: str | None, at: d
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_a_round_its_renumbering_audit_entry_and_line_are_one_save(tmp_path):
     """The core specification's record of what changed. Season #1 is being set up, in Placements,
     as the database alone holds it after a restart: Pro holds mystery rounds on 14 and 28 June
@@ -193,7 +188,6 @@ async def test_a_failed_round_save_adds_nothing(tmp_path):
             "❌ **Pro** already holds round 2 at <t:1782064800:F>. Two rounds of one division "
             "cannot share a moment — the season could not be approved. The round was **not** "
             "added.",
-            marks=pytest.mark.xfail(strict=True, reason=_CLASH),
             id="a-round-added-at-that-moment-meanwhile",
         ),
         pytest.param(
@@ -277,7 +271,6 @@ async def test_a_round_add_is_judged_again_as_it_starts(tmp_path, monkeypatch, m
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_a_calendar_guard_that_cannot_run_lets_the_round_through(tmp_path, monkeypatch, caplog):
     """architecture.md, "A catch-all error handler": a capacity check that cannot run must not
     block a round. Season #1 is being set up, in Placements, Pro holding its rounds of 14 and 28
@@ -348,7 +341,6 @@ async def test_a_round_add_asked_again_while_it_waits_is_refused_as_a_repeat(tmp
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_round_add_stores_a_zoned_time_as_utc(tmp_path):
     """Season #1 is being set up, in Placements, Pro holding no round. The manager runs
     `/round add` for Pro, a mystery round at 2026-06-14T20:00+02:00, and the queue runs it. Pro
@@ -364,7 +356,6 @@ async def test_round_add_stores_a_zoned_time_as_utc(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_CLASH)
 async def test_a_zoned_time_clashes_with_the_same_instant_given_without_one(tmp_path):
     """Stored alike, the two are seen to be one moment and the second is refused. Season #1 is
     being set up, in Placements, Pro holding a mystery round on 14 June 2026 at 18:00 UTC. The
@@ -438,7 +429,6 @@ _OVERFLOW = (
             "❌ **Pro** already holds round 1 at <t:1781460000:F>. Two rounds of one "
             "division cannot share a moment — the season could not be approved. The round "
             "was **not** added.",
-            marks=pytest.mark.xfail(strict=True, reason=_CLASH),
             id="a_round_clash",
         ),
         pytest.param(

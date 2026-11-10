@@ -19,6 +19,7 @@ from leaguebot.core.models.round import (
     Round,
     RoundFormat,
     RoundStatus,
+    stored_scheduled_at,
 )
 from leaguebot.core.models.season import (
     Season,
@@ -763,7 +764,7 @@ class SeasonService:
                     rnd.round_number,
                     rnd.format.value,
                     rnd.track_name,
-                    (rnd.scheduled_at + offset).isoformat(),
+                    stored_scheduled_at(rnd.scheduled_at + offset),
                 ),
             )
         await renumber_rounds_on(db, division.id)
@@ -817,7 +818,7 @@ class SeasonService:
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, track_name, scheduled_at) "
             "VALUES (?, 0, ?, ?, ?)",
-            (division_id, fmt.value, track_name, scheduled_at.isoformat()),
+            (division_id, fmt.value, track_name, stored_scheduled_at(scheduled_at)),
         )
         return inserted_id(cursor)
 

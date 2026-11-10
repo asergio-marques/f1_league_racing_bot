@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Awaitable, Callable
+from datetime import datetime, timezone
 from typing import Any
 
 import aiosqlite
@@ -39,7 +40,7 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.models.round import Round, RoundFormat
+from leaguebot.core.models.round import Round, RoundFormat, stored_scheduled_at
 from leaguebot.core.services import track_service
 from leaguebot.core.services.amendment_rules_service import amendment_changes_nothing
 from leaguebot.core.services.change_queue import (
@@ -87,9 +88,11 @@ def amend_payload(
 
 
 def _field_text(value: object) -> str:
-    """A round's field as a log line states it."""
+    """A round's field as a log line states it: a moment in UTC without its offset."""
     if value is None:
         return "none"
+    if isinstance(value, datetime):
+        return str(value.astimezone(timezone.utc).replace(tzinfo=None))
     return str(getattr(value, "value", value))
 
 
@@ -146,7 +149,7 @@ def round_values(rnd: Round) -> dict[str, Any]:
         "round_number": rnd.round_number,
         "format": rnd.format.value,
         "track_name": rnd.track_name,
-        "scheduled_at": rnd.scheduled_at.isoformat(),
+        "scheduled_at": stored_scheduled_at(rnd.scheduled_at),
     }
 
 
@@ -285,8 +288,8 @@ def _save(
         await db.execute(
             "UPDATE rounds SET format = ?, track_name = ?, scheduled_at = ? WHERE id = ?",
             (
-                after["format"].value, after["track_name"], after["scheduled_at"].isoformat(),
-                rnd.id,
+                after["format"].value, after["track_name"],
+                stored_scheduled_at(after["scheduled_at"]), rnd.id,
             ),
         )
         await renumber_rounds_on(db, division.id)

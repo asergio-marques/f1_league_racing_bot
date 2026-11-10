@@ -52,6 +52,9 @@ from leaguebot.core.models.round import (
     RoundFormat,
     RoundStatus,
     WeatherWindows,
+    read_scheduled_at,
+    stored_scheduled_at,
+    utc_text,
 )
 from leaguebot.core.services.amendment_rules_service import (
     AmendmentVerdict,
@@ -126,6 +129,16 @@ SAVE_DISCARDED = (
 #: How a field of a round is named in the success line, where it differs from its column.
 _PARAMETER_OF = {"track_name": "track"}
 
+
+def _as_logged(field: str, value: object) -> str:
+    """*value* of *field* as the success line shows it: a moment in UTC without its offset, as a
+    league has always read it, any other value as it stands."""
+    if value is None:
+        return "none"
+    if field == "scheduled_at":
+        return utc_text(read_scheduled_at(str(value)))
+    return str(value)
+
 _EMPTY = StepView(name="", payload={}, result=None, done=False)
 
 ROUND_GONE = "⛔ That round no longer exists. **Nothing has been changed.**"
@@ -143,11 +156,11 @@ def no_longer_amendable(reasons: Iterable[str]) -> str:
 
 def payload_changes(amendments: Iterable[tuple[str, object]]) -> list[list[str]]:
     """The amendments a member confirmed, as the change's payload holds them: ``[field, value]``,
-    the moment as ISO text and the format as its value."""
+    the moment as its stored text and the format as its value."""
     changes: list[list[str]] = []
     for field, value in amendments:
         if isinstance(value, datetime):
-            text = value.isoformat()
+            text = stored_scheduled_at(value)
         elif isinstance(value, RoundFormat):
             text = value.value
         else:
@@ -481,7 +494,7 @@ def _round_change(
             if old != new:
                 changed += (
                     f"\n  {_PARAMETER_OF.get(field, field)}: "
-                    f"{old if old is not None else 'none'} → {new}"
+                    f"{_as_logged(field, old)} → {_as_logged(field, new)}"
                 )
         withdrawn = sorted(n for n, outcome in verdict.phases.items() if not outcome.stands)
         # With attendance on, an allowed amendment always leaves the check-in open: one whose

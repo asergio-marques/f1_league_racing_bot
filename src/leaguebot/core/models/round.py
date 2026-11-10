@@ -100,6 +100,24 @@ class Round:
     status: str = RoundStatus.NOT_RUN.value
 
 
+def stored_scheduled_at(moment: datetime) -> str:
+    """*moment* as ``rounds.scheduled_at`` holds it: UTC, ISO 8601, written with its offset.
+
+    The one writer's form, so that text order is time order wherever the column is sorted or
+    compared in SQL. A moment with no offset is refused with a ``ValueError``, since converting
+    it would read it in the host's zone.
+    """
+    if moment.tzinfo is None:
+        raise ValueError(f"a round's moment carries no offset: {moment.isoformat()!r}")
+    return moment.astimezone(timezone.utc).isoformat()
+
+
+def utc_text(moment: datetime) -> str:
+    """*moment* in UTC as ISO text without its offset: how a reply and a log line show a round's
+    moment, the zone being said where it is not obvious."""
+    return moment.astimezone(timezone.utc).replace(tzinfo=None).isoformat()
+
+
 def read_scheduled_at(stored: str) -> datetime:
     """A round's stored moment as an aware UTC datetime: the one reader of ``rounds.scheduled_at``.
 

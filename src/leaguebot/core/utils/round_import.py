@@ -9,11 +9,9 @@ plain string in and a dataclass out, and it is why a track is carried here as th
 that named it: resolving a track needs a connection, so it belongs to the change that adds the
 rounds (`round_add_changes.py`).
 
-**Datetimes are naive and mean UTC**, matching how a round is stored and how `/round add`
-records one. The XML parser converts from the stated zone and then strips the tzinfo,
-which is not cosmetic: a division holding a mix of naive and aware datetimes raises
-``TypeError: can't compare offset-naive and offset-aware datetimes`` the moment its rounds
-are sorted, which is every time one is added.
+**Datetimes are aware UTC**, matching how a round is held and how `/round add` takes one. The
+XML parser converts from the stated zone, so that a pasted moment equals a stored one wherever
+the two are compared, which a naive moment never does.
 
 A local time that daylight saving makes nonexistent (the hour a spring-forward skips) or
 ambiguous (the hour an autumn-back repeats) is resolved the way Python resolves it, with
@@ -101,7 +99,7 @@ def _parse_format(raw: str, location: str, errors: list[str]) -> RoundFormat | N
 
 
 def _parse_datetime(raw: str, location: str, errors: list[str]) -> datetime | None:
-    """A round's moment as naive UTC by the shared rule (#362), a zone converted as the XML
+    """A round's moment as aware UTC by the shared rule (#362), a zone converted as the XML
     import converts one."""
     moment = parse_datetime(raw)
     if moment is None:
@@ -198,13 +196,9 @@ def _text_of(parent, tag: str) -> str | None:
 
 
 def _to_utc(local: datetime, zone_name: str) -> datetime:
-    """*local* read in *zone_name*, as a naive UTC datetime.
-
-    The tzinfo is stripped deliberately: a round is stored naive-meaning-UTC, and a
-    division holding both naive and aware datetimes cannot be sorted.
-    """
+    """*local* read in *zone_name*, as an aware UTC datetime."""
     aware = local.replace(tzinfo=ZoneInfo(zone_name))
-    return aware.astimezone(timezone.utc).replace(tzinfo=None)
+    return aware.astimezone(timezone.utc)
 
 
 def parse_round_xml(xml_text: str) -> tuple[list[ParsedDivisionRounds], list[str]]:

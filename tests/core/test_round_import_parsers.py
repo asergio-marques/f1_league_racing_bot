@@ -27,14 +27,11 @@ from leaguebot.core.utils.round_import import (
     parse_round_xml,
 )
 
-#: Why the moment's tests fail until the build hands it aware.
-_AWARE = "#283: an imported moment is still handed back naive"
 
 
 # ── The pasted-line format ────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_AWARE)
 def test_a_calendar_of_three_rounds():
     """Each datetime is written without seconds, and is stated in UTC and handed back aware —
     see the module docstring."""
@@ -216,7 +213,6 @@ def test_rounds_need_not_be_in_chronological_order():
     assert [r.scheduled_at.day for r in divisions[0].rounds] == [28, 14]
 
 
-@pytest.mark.xfail(strict=True, reason=_AWARE)
 def test_the_offset_follows_the_season():
     """A local time is converted to UTC, and the same wall time converts differently either
     side of a daylight-saving change: June in Lisbon is WEST, an hour ahead of UTC. Every XML
@@ -343,7 +339,6 @@ def test_an_external_entity_is_not_resolved():
     assert "root:" not in rendered
 
 
-@pytest.mark.xfail(strict=True, reason=_AWARE)
 def test_a_pasted_time_given_with_a_zone_is_stored_as_utc():
     """By the shared rule (#362), as the XML import already converted one."""
     rounds, errors = parse_bulk_round_lines("2026-06-14T20:00+02:00, Normal, 14")
