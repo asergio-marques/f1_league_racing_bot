@@ -73,6 +73,7 @@ async def attendance_enabled_on(db: "aiosqlite.Connection") -> bool:
     row = await (await db.execute("SELECT module_enabled FROM attendance_config")).fetchone()
     return row is not None and bool(row["module_enabled"])
 
+
 #: How each module the dependency table may name reads in attendance's own refusal. Covers only
 #: what `needs("attendance")` names today; a further entry needs a label added here too, or the
 #: refusal raises `KeyError` rather than naming it.

@@ -1,6 +1,7 @@
-"""The mid-season points amendment's workflow.
+"""What stops a mid-season points amendment being published.
 
-A round amendment is a change on the queue (`round_amend_change`), not a method here.
+A round amendment is a change on the queue (`round_amend_change`), not a method here. The
+amendment's own tables are results': its readers are in results' `amendment_mode_service`.
 """
 
 from __future__ import annotations
@@ -31,8 +32,9 @@ async def approval_faults(db_path: str, season_id: int, bot: LeagueBot) -> list[
     panel, so a manager sees what is wrong while deciding rather than after pressing Approve;
     the points approval's check calls it again at the press and once more when the approval
     runs, before it writes anything, so the refusal cannot be stepped around by a panel drawn
-    when the channels were still sound. This is how `amendment_mode_service.validate_modification_ordering` is
-    already used, and how `approval_checks.placement_confirmation_faults` serves the season's own review and
+    when the channels were still sound. This is how results' `validate_modification_ordering`
+    (`amendment_mode_service`) is already used, and how
+    `approval_checks.placement_confirmation_faults` serves the season's own review and
     confirmation — the report and the refusal are the same reading, so they cannot drift.
 
     **A cancelled division is included** (owner, 2026-10-06, "Refuse at the press"): the

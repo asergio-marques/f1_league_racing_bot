@@ -861,8 +861,9 @@ async def slots_on(db: aiosqlite.Connection) -> list[AvailabilitySlot]:
 
 
 async def signup_enabled_on(db: aiosqlite.Connection) -> bool:
-    """Whether the signup module is on, read on *db*, as `ModuleService.is_signup_enabled`
-    reads it."""
+    """Whether the signup module is on, read on *db*: the module's switch reader, which the builder
+    signs up with `ModuleService` and the module's own work asks. A league that has never
+    switched it on has no row, and reads as off."""
     cursor = await db.execute("SELECT signup_module_enabled FROM server_configs")
     row = await cursor.fetchone()
     return row is not None and bool(row["signup_module_enabled"])

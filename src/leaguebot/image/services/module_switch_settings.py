@@ -61,6 +61,7 @@ async def images_enabled_on(db: "aiosqlite.Connection") -> bool:
     row = await (await db.execute("SELECT module_enabled FROM image_config")).fetchone()
     return row is not None and bool(row["module_enabled"])
 
+
 _ENABLED = "✅ Image module enabled. All output aspects start disabled — use `/images config toggle`."
 
 

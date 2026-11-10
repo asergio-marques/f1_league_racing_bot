@@ -38,7 +38,9 @@ _ROUND_COLUMNS = (
 
 
 async def weather_enabled_on(db: aiosqlite.Connection) -> bool:
-    """Whether the weather module is on, as `ModuleService.is_weather_enabled` reads it."""
+    """Whether the weather module is on, read on *db*: the module's switch reader, which the builder
+    signs up with `ModuleService` and the module's own work asks. A league that has never
+    switched it on has no row, and reads as off."""
     cursor = await db.execute("SELECT weather_module_enabled FROM server_configs")
     row = await cursor.fetchone()
     return row is not None and bool(row["weather_module_enabled"])
