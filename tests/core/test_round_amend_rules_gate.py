@@ -209,6 +209,23 @@ async def test_an_allowed_amendment_is_offered_for_confirmation(tmp_path):
     assert "Amend Round 1" in _reply(interaction)
 
 
+@pytest.mark.parametrize("typed", [
+    pytest.param("2099-06-21T18:00:00", id="no-zone"),
+    pytest.param("2099-06-21T20:00:00+02:00", id="with-a-zone"),
+])
+async def test_the_confirmation_shows_a_new_moment_in_utc_without_its_offset(tmp_path, typed):
+    """The season is active, with attendance off. A manager amends round 1's moment, typed with no
+    zone or as 20:00 at +02:00. The confirmation offered names the new moment as UTC, as a league
+    has always read it, with no offset: "• `scheduled_at` → `2099-06-21 18:00:00`"."""
+    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    interaction = _interaction()
+
+    await _amend(await _cog(path, attendance=False), interaction, scheduled_at=typed)
+
+    assert _offered_a_confirmation(interaction)
+    assert "  • `scheduled_at` → `2099-06-21 18:00:00`" in _reply(interaction)
+
+
 async def test_the_summary_names_the_forecasts_it_will_withdraw(tmp_path):
     """A round a month out has drawn nothing yet, so all three phases are still to come."""
     path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))

@@ -454,7 +454,7 @@ class RoundCog(commands.Cog):
 
         summary_lines = [f"**Amend Round {rnd.round_number}** in division **{div.name}**:"]
         for f_name, f_val in amendments:
-            # A moment is shown in UTC without its offset, as it always has been.
+            # A moment is shown in UTC without its offset.
             shown = (
                 f_val.astimezone(timezone.utc).replace(tzinfo=None)
                 if isinstance(f_val, datetime) else f_val
