@@ -966,7 +966,7 @@ async def build_review_summary(
             rid = row["round_id"]
             rnum = row["round_number"]
             track = row["track_name"] or "TBA"
-            date_str = str(row["scheduled_at"])[:10]
+            date_str = read_scheduled_at(row["scheduled_at"]).date().isoformat()
 
             fmt = str(row["format"]).upper()
             is_mystery = fmt == "MYSTERY"

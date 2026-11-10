@@ -109,7 +109,7 @@ def _parse_close_time(
             "❌ `close_time` is not a valid ISO 8601 datetime "
             "(e.g. `2025-06-15T20:00:00`)."
         )
-    parsed = moment.replace(tzinfo=timezone.utc)
+    parsed = moment
     if parsed <= (now if now is not None else datetime.now(timezone.utc)):
         return None, "❌ `close_time` must be a future datetime."
     return parsed.isoformat(), None

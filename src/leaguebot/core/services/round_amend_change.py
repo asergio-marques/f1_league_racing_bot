@@ -131,8 +131,8 @@ _PARAMETER_OF = {"track_name": "track"}
 
 
 def _as_logged(field: str, value: object) -> str:
-    """*value* of *field* as the success line shows it: a moment in UTC without its offset, as a
-    league has always read it, any other value as it stands."""
+    """*value* of *field* as the success line shows it: a moment in UTC without its offset, any
+    other value as it stands."""
     if value is None:
         return "none"
     if field == "scheduled_at":

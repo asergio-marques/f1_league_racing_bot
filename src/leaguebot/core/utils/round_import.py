@@ -99,8 +99,8 @@ def _parse_format(raw: str, location: str, errors: list[str]) -> RoundFormat | N
 
 
 def _parse_datetime(raw: str, location: str, errors: list[str]) -> datetime | None:
-    """A round's moment as aware UTC by the shared rule (#362), a zone converted as the XML
-    import converts one."""
+    """A round's moment as aware UTC by the shared rule, a zone converted as the XML import
+    converts one."""
     moment = parse_datetime(raw)
     if moment is None:
         errors.append(
