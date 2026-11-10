@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -140,26 +140,21 @@ async def resolve_driver_profile_id(discord_user_id: int, db) -> int | None:
 # in those tables and is left out of the maps.
 
 
-#: Every account of the driver row aliased ``dp``, for matching a record written under any of
-#: them — `discord_user_id IN {ACCOUNTS_OF_DP_SQL}`. A driver's signups are kept under the
-#: account each was made from, so "the driver's latest signup" is the latest across all.
-ACCOUNTS_OF_DP_SQL = (
-    "(SELECT discord_user_id FROM driver_accounts WHERE driver_profile_id = dp.id)"
-)
+async def drivers_in_states(db, states: Sequence[str]) -> list[dict[str, Any]]:
+    """Every driver whose state is one of *states*, oldest profile first, each as their profile id
+    (``id``), account (``discord_user_id``) and state (``current_state``), read on *db*.
 
-#: The order "the driver's signup" is chosen in: the latest season first, and within a season
-#: an approved signup before any other, then the latest. A seated driver's approved signup
-#: therefore outranks a later one the league rejected on another of their accounts (decided
-#: 2026-09-18). A driver cannot sign up again while approved, so within one account the rule
-#: changes nothing.
-SIGNUP_PRECEDENCE_SQL = "season_id DESC, approved DESC, id DESC"
-
-#: The id of the signup record that is the driver's — the driver row aliased ``dp``.
-DRIVERS_SIGNUP_OF_DP_SQL = (
-    "(SELECT id FROM signup_records "
-    f"WHERE discord_user_id IN {ACCOUNTS_OF_DP_SQL} "
-    f"ORDER BY {SIGNUP_PRECEDENCE_SQL} LIMIT 1)"
-)
+    The one read a module lists drivers by their state through without reading `driver_profiles`
+    itself (core owns it, CLAUDE.md), as signup lists the unsettled ones.
+    """
+    if not states:
+        return []
+    cursor = await db.execute(
+        "SELECT id, discord_user_id, current_state FROM driver_profiles "
+        f"WHERE current_state IN ({', '.join('?' * len(states))}) ORDER BY id",
+        tuple(states),
+    )
+    return [dict(row) for row in await cursor.fetchall()]
 
 
 async def accounts_of(db, discord_user_id) -> list[str]:

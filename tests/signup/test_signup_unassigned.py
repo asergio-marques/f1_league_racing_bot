@@ -98,9 +98,6 @@ def _slot(sequence: int, label: str, slot_id: str | None = None):
     )
 
 
-#: Why every test here fails until the build: the cog still asks core's placement service for the
-#: listings, which are signup's own.
-_ASKED_OF_SIGNUP = "#283: the cog asks PlacementService, not signup, for the unassigned listings"
 
 
 def _make_cog(*, listed=None, exportable=None, slots=None) -> SignupCog:
@@ -165,7 +162,6 @@ def _csv_rows(interaction) -> list[list[str]]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_no_unassigned_drivers_says_so(tmp_path):
     """A real and common state — every driver placed — and distinct from a failure."""
     interaction = _interaction()
@@ -175,7 +171,6 @@ async def test_no_unassigned_drivers_says_so(tmp_path):
     assert "No unsettled signups found" in _sent(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_the_list_counts_the_drivers(tmp_path):
     interaction = _interaction()
 
@@ -184,7 +179,6 @@ async def test_the_list_counts_the_drivers(tmp_path):
     assert "2 total" in _sent(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_the_seeding_order_survives_the_formatting(tmp_path):
     """A league places its fastest drivers in its top division; the order is the command's
     reason for existing and is taken from the placement service, not re-sorted here."""
@@ -199,7 +193,6 @@ async def test_the_seeding_order_survives_the_formatting(tmp_path):
     assert sent.index("Fastest") < sent.index("Middle") < sent.index("Slowest")
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_a_driver_s_details_are_all_shown(tmp_path):
     """The manager is choosing seats from this alone."""
     interaction = _interaction()
@@ -219,7 +212,6 @@ async def test_a_driver_s_details_are_all_shown(tmp_path):
         assert detail in sent
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_a_driver_with_no_preferences_shows_a_dash_rather_than_a_blank(tmp_path):
     """A blank mid-line reads as a bug rather than as an answer."""
     interaction = _interaction()
@@ -230,7 +222,6 @@ async def test_a_driver_with_no_preferences_shows_a_dash_rather_than_a_blank(tmp
     assert "—" in _sent(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_notes_are_shown_when_given(tmp_path):
     interaction = _interaction()
     cog = _make_cog(listed=[_seeded(1, notes="Cannot race Mondays")])
@@ -240,7 +231,6 @@ async def test_notes_are_shown_when_given(tmp_path):
     assert "Cannot race Mondays" in _sent(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_a_driver_with_no_notes_gets_no_notes_line(tmp_path):
     """An empty "Notes:" label would take a line per driver for nothing, and the list is
     already close to the message limit."""
@@ -256,7 +246,6 @@ async def test_a_driver_with_no_notes_gets_no_notes_line(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_a_driver_s_availability_is_shown(tmp_path):
     """Issue #184. Availability is the question divisions are built around, and the spec
     has always required it on this command — it was simply never rendered, though the
@@ -277,7 +266,6 @@ async def test_a_driver_s_availability_is_shown(tmp_path):
     assert "Friday 21:00 UTC" in sent
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_availability_is_matched_on_the_durable_slot_id_not_the_ordinal(tmp_path):
     """#126's rule, for this command. The ordinal is a chronological position recomputed on
     every read, so matching on it would show a driver against somebody else's time as soon
@@ -297,7 +285,6 @@ async def test_availability_is_matched_on_the_durable_slot_id_not_the_ordinal(tm
     assert "Monday 19:00 UTC" not in sent
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_availability_reads_in_the_league_s_slot_order(tmp_path):
     """Two drivers' lines have to be comparable at a glance, so the labels follow the
     league's own chronological order rather than the order the answers happen to sit in
@@ -320,7 +307,6 @@ async def test_availability_reads_in_the_league_s_slot_order(tmp_path):
     assert sent.index("Wednesday 20:00 UTC") < sent.index("Friday 21:00 UTC")
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_an_availability_naming_a_removed_slot_says_unknown_slot(tmp_path):
     """The signup spec: availability naming a slot that no longer exists is reported as an
     unknown slot. The durable ID is a storage form no league should ever be shown."""
@@ -337,7 +323,6 @@ async def test_an_availability_naming_a_removed_slot_says_unknown_slot(tmp_path)
     assert "Sat_18_00" not in sent
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_two_removed_slots_read_as_two_unknowns(tmp_path):
     """One entry per answer, as the wizard's review panel already does
     (``test_wizard_availability`` pins the same shape there). Collapsing them would
@@ -353,7 +338,6 @@ async def test_two_removed_slots_read_as_two_unknowns(tmp_path):
     assert "Unknown slot, Unknown slot" in _sent(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_a_driver_with_no_availability_shows_a_dash(tmp_path):
     """Consistent with how the same line renders an absent team or teammate: a blank
     mid-line reads as a bug rather than as an answer."""
@@ -365,7 +349,6 @@ async def test_a_driver_with_no_availability_shows_a_dash(tmp_path):
     assert "Available: —" in _sent(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_every_slot_is_listed_however_many_there_are(tmp_path):
     """Decided 2026-09-20: every label, never elided. The spec caps a league at 25 slots,
     and a driver who ticks all of them still renders in full — measured at some 700
@@ -393,7 +376,6 @@ async def test_every_slot_is_listed_however_many_there_are(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_a_short_list_arrives_as_one_message(tmp_path):
     interaction = _interaction()
 
@@ -402,7 +384,6 @@ async def test_a_short_list_arrives_as_one_message(tmp_path):
     assert len(_messages(interaction)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_a_long_list_is_split_across_several_messages(tmp_path):
     """A league of forty unassigned drivers is well over Discord's limit, and a single
     send would be rejected outright — the manager would get nothing at all, exactly when
@@ -417,7 +398,6 @@ async def test_a_long_list_is_split_across_several_messages(tmp_path):
     assert all(len(m) <= 1900 for m in messages)
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_no_driver_is_lost_in_the_chunking(tmp_path):
     """The chunker builds messages line by line; an off-by-one would drop whichever driver
     sat on a boundary, and nothing else would notice."""
@@ -436,7 +416,6 @@ async def test_no_driver_is_lost_in_the_chunking(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_nothing_to_export_says_so(tmp_path):
     interaction = _interaction()
 
@@ -446,7 +425,6 @@ async def test_nothing_to_export_says_so(tmp_path):
     assert "file" not in interaction.followup.send.await_args.kwargs
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_the_export_attaches_a_csv(tmp_path):
     interaction = _interaction()
 
@@ -457,7 +435,6 @@ async def test_the_export_attaches_a_csv(tmp_path):
     assert "1 Unassigned driver(s) exported" in _sent(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_the_csv_names_every_column_a_manager_needs(tmp_path):
     interaction = _interaction()
 
@@ -476,7 +453,6 @@ async def test_the_csv_names_every_column_a_manager_needs(tmp_path):
         assert column in header
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_a_slot_the_driver_gave_is_marked_and_one_they_did_not_is_blank(tmp_path):
     """Each availability slot becomes its own column: the manager sorts by slot to find who
     can race when, which needs a column per slot rather than one cell listing them."""
@@ -496,7 +472,6 @@ async def test_a_slot_the_driver_gave_is_marked_and_one_they_did_not_is_blank(tm
     assert row[header.index("Friday 21:00 UTC")] == ""
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_the_slot_columns_follow_the_league_s_own_order(tmp_path):
     """Sorted by the slot's sequence, not by however the query returned them, so the
     columns match the order the league sees everywhere else."""
@@ -512,7 +487,6 @@ async def test_the_slot_columns_follow_the_league_s_own_order(tmp_path):
     assert header.index("Monday 19:00 UTC") < header.index("Friday 21:00 UTC")
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_every_driver_reaches_the_csv_in_seed_order(tmp_path):
     interaction = _interaction()
     cog = _make_cog(
@@ -526,7 +500,6 @@ async def test_every_driver_reaches_the_csv_in_seed_order(tmp_path):
     assert rows[2][1] == "Slowest"
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_the_csv_carries_a_byte_order_mark(tmp_path):
     """`utf-8-sig` is what makes Excel open the file with accented driver names intact.
     Without it "Pérez" arrives mangled, and the manager's spreadsheet is the whole reason
@@ -546,7 +519,6 @@ async def test_the_csv_carries_a_byte_order_mark(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_a_signup_in_review_is_listed_by_its_state_rather_than_a_seed(tmp_path):
     in_review = dict(_seeded(2, "Max Verstappen"), seed=None, state="PENDING_ADMIN_APPROVAL")
     cog = _make_cog(listed=[_seeded(1), in_review])
@@ -559,7 +531,6 @@ async def test_a_signup_in_review_is_listed_by_its_state_rather_than_a_seed(tmp_
     assert "**Awaiting approval** **Max Verstappen**" in sent
 
 
-@pytest.mark.xfail(strict=True, reason=_ASKED_OF_SIGNUP)
 async def test_a_signup_in_review_exports_with_no_seed(tmp_path):
     import csv
 

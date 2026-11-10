@@ -13,9 +13,10 @@ import discord
 from leaguebot.core.db.database import get_connection, inserted_id
 from leaguebot.core.models.change import PlannedStep
 from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.core.services.driver_service import accounts_of_profile
+from leaguebot.core.services.driver_service import accounts_of_profile, drivers_in_states
 from leaguebot.core.services.pack_service import CLEARED_SIGNUP_CHANNEL_ID, CLEARED_WIZARDS
 from leaguebot.core.services.review_sections import Review, ReviewSection
+from leaguebot.core.services.season_lifecycle_service import UNSETTLED_STATES
 from leaguebot.signup.models.signup_module import (
     AvailabilitySlot,
     ConfigSnapshot,
@@ -43,6 +44,30 @@ DELETE_REPLACED_CHANNEL = "delete_replaced_channel"
 #: 2026-09-18). A driver cannot sign up again while approved, so within one account the rule
 #: changes nothing.
 SIGNUP_PRECEDENCE_SQL = "season_id DESC, approved DESC, id DESC"
+
+
+def _fmt_ms(total_ms: int) -> str:
+    """Format milliseconds as M:ss.mmm (e.g. 83456 → '1:23.456')."""
+    minutes, remainder = divmod(total_ms, 60_000)
+    seconds, ms = divmod(remainder, 1000)
+    return f"{minutes}:{seconds:02d}.{ms:03d}"
+
+
+def _listing_order(pair: tuple[dict[str, Any], aiosqlite.Row | None]) -> tuple[Any, ...]:
+    """The order the unassigned listings keep: Unassigned drivers first, then by total lap time
+    with none last, then by the moment their signup was sent in, which a correction never moves,
+    then by the signup's id; a driver holding no signup sorts as a null does (first, where a null
+    sorts first)."""
+    driver, signup = pair
+    total = None if signup is None else signup["total_lap_ms"]
+    created = None if signup is None else signup["created_at"]
+    record_id = None if signup is None else signup["id"]
+    return (
+        driver["current_state"] != "UNASSIGNED",
+        total is None, total or 0,
+        created is not None, created or "",
+        record_id is not None, record_id or 0,
+    )
 
 
 class SignupModuleService:
@@ -109,6 +134,95 @@ class SignupModuleService:
                 if row is not None:
                     found[profile_id] = row
         return found
+
+    async def _unsettled_drivers(self) -> list[tuple[dict[str, Any], aiosqlite.Row | None]]:
+        """Every driver whose signup is unsettled (core's `UNSETTLED_STATES`), each beside their
+        signup, in the order the listings keep (`_listing_order`)."""
+        async with get_connection(self._db_path) as db:
+            drivers = await drivers_in_states(db, UNSETTLED_STATES)
+            paired = [
+                (driver, await driver_signup_on(db, await accounts_of_profile(db, driver["id"])))
+                for driver in drivers
+            ]
+        return sorted(paired, key=_listing_order)
+
+    async def get_unassigned_drivers_seeded(self) -> list[dict]:
+        """Return every unsettled signup: Unassigned drivers in seed order, then the rest.
+
+        Unassigned drivers are seeded by total_lap_ms ASC NULLS LAST, then by the moment their
+        signup was submitted — not approved, and not last corrected. A driver still awaiting
+        approval or correction follows them, holding no seed (``seed`` is None) — they are
+        listed because confirming placements waits on them too (issue #220).
+        """
+        results = []
+        for i, (driver, row) in enumerate(await self._unsettled_drivers(), start=1):
+            total_ms = None if row is None else row["total_lap_ms"]
+            results.append({
+                "seed": i if driver["current_state"] == "UNASSIGNED" else None,
+                "state": driver["current_state"],
+                "discord_user_id": driver["discord_user_id"],
+                "server_display_name": (
+                    (row and row["server_display_name"]) or driver["discord_user_id"]
+                ),
+                "platform": (row and row["platform"]) or "—",
+                "availability_slot_ids": json.loads((row and row["availability_slot_ids"]) or "[]"),
+                "driver_type": (row and row["driver_type"]) or "—",
+                "preferred_teams": json.loads((row and row["preferred_teams"]) or "[]"),
+                "preferred_teammate": None if row is None else row["preferred_teammate"],
+                "notes": None if row is None else row["notes"],
+                "total_lap_ms": total_ms,
+                "total_lap_fmt": _fmt_ms(total_ms) if total_ms is not None else "—",
+            })
+        return results
+
+    async def get_unassigned_drivers_for_export(
+        self, slots: list[AvailabilitySlot]
+    ) -> list[dict]:
+        """Return every unsettled signup, as the seeded listing orders it, enriched for CSV.
+
+        Each row dict contains:
+          seed, display_name, discord_user_id, driver_type, total_lap_fmt,
+          slot_presence (dict {slot_sequence_id: bool}),
+          preferred_team_1, preferred_team_2, preferred_team_3,
+          platform, platform_id
+
+        ``slot_presence`` is **keyed** by the display ordinal, because that is the CSV
+        column order, but each answer is **matched** on the slot's durable ID. Matching
+        on the ordinal is the defect in issue #126: it is a chronological position
+        recomputed on every read, so a slot added or removed since the driver signed up
+        would put their X under somebody else's time.
+        """
+        slots_ordered = sorted(slots, key=lambda s: s.slot_sequence_id)
+        results = []
+        for i, (driver, row) in enumerate(await self._unsettled_drivers(), start=1):
+            total_ms = None if row is None else row["total_lap_ms"]
+            slot_ids_raw: list[str] = json.loads((row and row["availability_slot_ids"]) or "[]")
+            slot_presence = {s.slot_sequence_id: (s.slot_id in slot_ids_raw) for s in slots_ordered}
+
+            preferred_teams_raw: list[str] = json.loads((row and row["preferred_teams"]) or "[]")
+            preferred_team_1 = preferred_teams_raw[0] if len(preferred_teams_raw) > 0 else ""
+            preferred_team_2 = preferred_teams_raw[1] if len(preferred_teams_raw) > 1 else ""
+            preferred_team_3 = preferred_teams_raw[2] if len(preferred_teams_raw) > 2 else ""
+
+            display_name = (
+                (row and (row["server_display_name"] or row["discord_username"]))
+                or driver["discord_user_id"]
+            )
+            results.append({
+                "seed": i if driver["current_state"] == "UNASSIGNED" else None,
+                "state": driver["current_state"],
+                "display_name": display_name,
+                "discord_user_id": driver["discord_user_id"],
+                "driver_type": (row and row["driver_type"]) or "",
+                "total_lap_fmt": _fmt_ms(total_ms) if total_ms is not None else "",
+                "slot_presence": slot_presence,
+                "preferred_team_1": preferred_team_1,
+                "preferred_team_2": preferred_team_2,
+                "preferred_team_3": preferred_team_3,
+                "platform": (row and row["platform"]) or "",
+                "platform_id": (row and row["platform_id"]) or "",
+            })
+        return results
 
     async def save_config(self, cfg: SignupModuleConfig) -> None:
         async with get_connection(self._db_path) as db:

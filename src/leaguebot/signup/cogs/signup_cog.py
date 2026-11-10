@@ -1268,7 +1268,7 @@ class SignupCog(commands.Cog):
         if not await self._module_gate(interaction, record=False):
             return
         await interaction.response.defer(ephemeral=True)
-        drivers = await self.bot.placement_service.get_unassigned_drivers_seeded()
+        drivers = await self.bot.signup_module_service.get_unassigned_drivers_seeded()
         if not drivers:
             await interaction.followup.send(
                 "No unsettled signups found.", ephemeral=True
@@ -1346,7 +1346,7 @@ class SignupCog(commands.Cog):
         slots = await self.bot.signup_module_service.get_slots()
         slots_ordered = sorted(slots, key=lambda s: s.slot_sequence_id)
 
-        drivers = await self.bot.placement_service.get_unassigned_drivers_for_export(
+        drivers = await self.bot.signup_module_service.get_unassigned_drivers_for_export(
             slots_ordered
         )
         if not drivers:

@@ -23,10 +23,8 @@ import os
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.placement_service import (
-    PlacementService,
-    _fmt_ms,
-)
+from leaguebot.core.services.placement_service import PlacementService
+from leaguebot.signup.services.signup_module_service import _fmt_ms
 
 
 SERVER_ID = 9408

@@ -17,27 +17,13 @@ from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.driver_profile import DriverProfile, DriverState
 from leaguebot.core.models.refusal import Refused
 from leaguebot.core.services.channel_registry_service import as_text_channel
-from leaguebot.core.services.driver_service import DRIVERS_SIGNUP_OF_DP_SQL, write_transition
+from leaguebot.core.services.driver_service import write_transition
 from leaguebot.core.services.image_drawing import CapacityProblem, ImageDrawing
 from leaguebot.core.services.standing_post_handler import post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job
-from leaguebot.signup.models.signup_module import AvailabilitySlot
 from leaguebot.core.models.team import TeamRoleConfig
 
 log = logging.getLogger(__name__)
-
-#: The driver states a signup is unsettled in: approved and unplaced, or still being judged.
-#: The unassigned listing reports every one of them (issue #220).
-_UNSETTLED_SQL = ", ".join(
-    f"'{state}'"
-    for state in (
-        "UNASSIGNED",
-        "PENDING_ADMIN_APPROVAL",
-        "AWAITING_CORRECTION_PARAMETER",
-        "PENDING_DRIVER_CORRECTION",
-    )
-)
-
 
 @dataclass
 class SackSaved:
@@ -93,13 +79,6 @@ class RoleGrantOutcome:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _fmt_ms(total_ms: int) -> str:
-    """Format milliseconds as M:ss.mmm (e.g. 83456 → '1:23.456')."""
-    minutes, remainder = divmod(total_ms, 60_000)
-    seconds, ms = divmod(remainder, 1000)
-    return f"{minutes}:{seconds:02d}.{ms:03d}"
-
 
 async def uncommitted_placements_on(db: aiosqlite.Connection, season_id: int) -> list[dict]:
     """Every placement of *season_id* not yet committed, ordered by division and team, read on
@@ -453,150 +432,6 @@ class PlacementService:
         :func:`uncommitted_placements_on`), read on a connection of its own."""
         async with get_connection(self._db_path) as db:
             return await uncommitted_placements_on(db, season_id)
-
-    # ------------------------------------------------------------------
-    # Seeded unassigned listing (T008)
-    # ------------------------------------------------------------------
-
-    async def get_unassigned_drivers_seeded(self) -> list[dict]:
-        """Return every unsettled signup: Unassigned drivers in seed order, then the rest.
-
-        Unassigned drivers are seeded by total_lap_ms ASC NULLS LAST, then by the moment their
-        signup was submitted — not approved, and not last corrected. A driver still awaiting
-        approval or correction follows them, holding no seed (``seed`` is None) — they are
-        listed because confirming placements waits on them too (issue #220).
-        """
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                """
-                SELECT
-                    dp.id                   AS profile_id,
-                    dp.discord_user_id,
-                    dp.current_state,
-                    sr.server_display_name,
-                    sr.platform,
-                    sr.availability_slot_ids,
-                    sr.driver_type,
-                    sr.preferred_teams,
-                    sr.preferred_teammate,
-                    sr.notes,
-                    sr.total_lap_ms,
-                    sr.created_at           AS submitted_at
-                FROM driver_profiles dp
-                -- The driver's signup: records are kept, never overwritten (#220), and an
-                -- approved one outranks a later one that was not (#243).
-                LEFT JOIN signup_records sr ON sr.id = {drivers_signup}
-                WHERE dp.current_state IN ({unsettled})
-                ORDER BY
-                    dp.current_state = 'UNASSIGNED' DESC,
-                    sr.total_lap_ms ASC NULLS LAST,
-                    -- A tie goes to whoever sent their signup in first: the moment the record
-                    -- was made, which a correction never moves.
-                    sr.created_at ASC,
-                    sr.id ASC
-                """.format(unsettled=_UNSETTLED_SQL, drivers_signup=DRIVERS_SIGNUP_OF_DP_SQL)
-            )
-            rows = await cursor.fetchall()
-
-        results = []
-        for i, row in enumerate(rows, start=1):
-            total_ms = row["total_lap_ms"]
-            results.append({
-                "seed": i if row["current_state"] == "UNASSIGNED" else None,
-                "state": row["current_state"],
-                "discord_user_id": row["discord_user_id"],
-                "server_display_name": row["server_display_name"] or row["discord_user_id"],
-                "platform": row["platform"] or "—",
-                "availability_slot_ids": json.loads(row["availability_slot_ids"] or "[]"),
-                "driver_type": row["driver_type"] or "—",
-                "preferred_teams": json.loads(row["preferred_teams"] or "[]"),
-                "preferred_teammate": row["preferred_teammate"],
-                "notes": row["notes"],
-                "total_lap_ms": total_ms,
-                "total_lap_fmt": _fmt_ms(total_ms) if total_ms is not None else "—",
-            })
-        return results
-
-    # ------------------------------------------------------------------
-    # Export unassigned drivers (T017)
-    # ------------------------------------------------------------------
-
-    async def get_unassigned_drivers_for_export(
-        self, slots: list[AvailabilitySlot]
-    ) -> list[dict]:
-        """Return every unsettled signup, as the seeded listing orders it, enriched for CSV.
-
-        Each row dict contains:
-          seed, display_name, discord_user_id, driver_type, total_lap_fmt,
-          slot_presence (dict {slot_sequence_id: bool}),
-          preferred_team_1, preferred_team_2, preferred_team_3,
-          platform, platform_id
-
-        ``slot_presence`` is **keyed** by the display ordinal, because that is the CSV
-        column order, but each answer is **matched** on the slot's durable ID. Matching
-        on the ordinal is the defect in issue #126: it is a chronological position
-        recomputed on every read, so a slot added or removed since the driver signed up
-        would put their X under somebody else's time.
-        """
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                """
-                SELECT
-                    dp.discord_user_id,
-                    dp.current_state,
-                    sr.server_display_name,
-                    sr.discord_username,
-                    sr.platform,
-                    sr.platform_id,
-                    sr.availability_slot_ids,
-                    sr.driver_type,
-                    sr.preferred_teams,
-                    sr.total_lap_ms,
-                    sr.created_at           AS submitted_at
-                FROM driver_profiles dp
-                -- The driver's signup: records are kept, never overwritten (#220), and an
-                -- approved one outranks a later one that was not (#243).
-                LEFT JOIN signup_records sr ON sr.id = {drivers_signup}
-                WHERE dp.current_state IN ({unsettled})
-                ORDER BY
-                    dp.current_state = 'UNASSIGNED' DESC,
-                    sr.total_lap_ms ASC NULLS LAST,
-                    -- A tie goes to whoever sent their signup in first: the moment the record
-                    -- was made, which a correction never moves.
-                    sr.created_at ASC,
-                    sr.id ASC
-                """.format(unsettled=_UNSETTLED_SQL, drivers_signup=DRIVERS_SIGNUP_OF_DP_SQL)
-            )
-            rows = await cursor.fetchall()
-
-        slots_ordered = sorted(slots, key=lambda s: s.slot_sequence_id)
-        results = []
-        for i, row in enumerate(rows, start=1):
-            total_ms = row["total_lap_ms"]
-            slot_ids_raw: list[str] = json.loads(row["availability_slot_ids"] or "[]")
-            slot_presence = {s.slot_sequence_id: (s.slot_id in slot_ids_raw) for s in slots_ordered}
-
-            preferred_teams_raw: list[str] = json.loads(row["preferred_teams"] or "[]")
-            preferred_team_1 = preferred_teams_raw[0] if len(preferred_teams_raw) > 0 else ""
-            preferred_team_2 = preferred_teams_raw[1] if len(preferred_teams_raw) > 1 else ""
-            preferred_team_3 = preferred_teams_raw[2] if len(preferred_teams_raw) > 2 else ""
-
-            display_name = row["server_display_name"] or row["discord_username"] or row["discord_user_id"]
-            results.append({
-                "seed": i if row["current_state"] == "UNASSIGNED" else None,
-                "state": row["current_state"],
-                "display_name": display_name,
-                "discord_user_id": row["discord_user_id"],
-                "driver_type": row["driver_type"] or "",
-                "total_lap_fmt": _fmt_ms(total_ms) if total_ms is not None else "",
-                "slot_presence": slot_presence,
-                "preferred_team_1": preferred_team_1,
-                "preferred_team_2": preferred_team_2,
-                "preferred_team_3": preferred_team_3,
-                "platform": row["platform"] or "",
-                "platform_id": row["platform_id"] or "",
-            })
-        return results
 
     # ------------------------------------------------------------------
     # Image template capacity (036 / Constitution XIV.12)
