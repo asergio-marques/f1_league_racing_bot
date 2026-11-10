@@ -91,6 +91,14 @@ class LeagueBot(commands.Bot):
     #: or weather (architecture.md, "A hook core declares is a list of subscribers");
     #: `read_round_windows` gathers what they hand back.
     round_windows_read: AwaitedHook
+    #: The moment a season review gathers its lines (`/season placements-review` and
+    #: `/season config-review`): each module signs up a function handing back its own section
+    #: of the review, or nothing where its module is off, handed which review is gathered, the
+    #: season and the divisions the review shows. The builder makes it and signs them up in the
+    #: order the review lays the sections out in, so that core's review reads no module's
+    #: service (architecture.md, "A hook core declares is a list of subscribers");
+    #: `read_review_sections` gathers what they hand back.
+    review_sections_read: AwaitedHook
     #: The base role changed (`/bot base-role`), awaited from an `After` step once the queue has
     #: saved it, given the server, the role replaced and the role now set, and handing no
     #: connection: each subscriber opens its own (signup's move of the signup channel's overwrite

@@ -146,6 +146,14 @@ def _sign_up_to_round_windows(bot: LeagueBot) -> None:
     ))
 
 
+def _sign_up_to_review_sections(bot: LeagueBot) -> None:
+    """Make the hook a season review gathers its lines through, and sign each module's section
+    up to it, in the order the review lays them out: signup's, attendance's, results' then
+    weather's. Each is handed which review is gathered, the season and its divisions, and checks
+    its own switch."""
+    bot.review_sections_read = AwaitedHook()
+
+
 def _sign_up_to_base_role_changed(bot: LeagueBot) -> None:
     """Make the hook the base role changed declares, and sign signup's move of the signup
     channel's overwrite up to it, so core never reaches into the signup module itself
@@ -1545,6 +1553,7 @@ async def build(settings: Settings) -> LeagueBot:
     # through; results' change types reach attendance through it alone (#439).
     bot.attendance_after_review = AttendanceAfterReview(bot, bot.placement_service)
     _sign_up_to_round_windows(bot)
+    _sign_up_to_review_sections(bot)
     _sign_up_to_base_role_changed(bot)
     _sign_up_to_amendments(bot)
 

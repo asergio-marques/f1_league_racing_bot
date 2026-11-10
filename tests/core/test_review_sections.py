@@ -10,8 +10,6 @@ import pytest
 
 from leaguebot.core.utils.hooks import AwaitedHook
 
-_NOT_YET = "#283: core has no review sections hook nor a reader laying its sections out"
-
 
 def _hook(*handed_back):
     """A review sections hook whose subscribers hand back *handed_back*, in that order, each
@@ -26,7 +24,6 @@ def _hook(*handed_back):
     return hook
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_the_sections_are_laid_out_in_the_review_s_order():
     """Signup, attendance, results and weather signed up in that order, and a fifth subscriber
     handing nothing: the review reads signup's, attendance's, results' then weather's, each
@@ -55,7 +52,6 @@ async def test_the_sections_are_laid_out_in_the_review_s_order():
     assert [section.module for section in sections] == ["weather", "signup"]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_section_that_cannot_be_read_fails_the_review_as_today():
     """A subscriber raising while its section is read: the raise reaches the review command's
     failure path, as a signup, attendance, weather or points reader's raise does today. Core
