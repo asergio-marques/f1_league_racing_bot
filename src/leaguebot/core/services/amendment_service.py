@@ -106,7 +106,7 @@ async def approval_faults(db_path: str, season_id: int, bot: LeagueBot) -> list[
     the points approval's check calls it again at the press and once more when the approval
     runs, before it writes anything, so the refusal cannot be stepped around by a panel drawn
     when the channels were still sound. This is how `validate_modification_ordering` is already
-    used, and how `_placement_confirmation_faults` serves the season's own review and
+    used, and how `approval_checks.placement_confirmation_faults` serves the season's own review and
     confirmation — the report and the refusal are the same reading, so they cannot drift.
 
     **A cancelled division is included** (owner, 2026-10-06, "Refuse at the press"): the

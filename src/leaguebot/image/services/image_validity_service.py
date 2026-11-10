@@ -1447,7 +1447,7 @@ def colour_shortfall(
     Keyed by template so :func:`build_aspect_statuses` can attribute each line to the
     aspect that would draw it. Every missing pair is named rather than counted: a manager
     fixing them one review at a time is a manager the check is failing, which is the rule
-    `_team_name_problems` already follows.
+    `approval_checks.team_name_problems` already follows.
 
     Measured **per template, against the slots that template actually marks**, so a
     template marking none demands nothing and can never be blocked by this — which is what

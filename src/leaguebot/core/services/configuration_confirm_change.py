@@ -2,9 +2,9 @@
 
 ✅ Confirm configuration on `/season config-review` gates the press
 (`season_review_workflows.confirm_configuration`) and asks the queue for this change, the review
-taken down ahead of it, as ✅ Confirm placements does mid-season (`mid_season_confirm_change`). The stage, the modules' kept settings and the
-confirmation's own record are one save, so a fault leaves the season in Configuration with nothing
-kept and nothing recorded. This module holds the change; the workflow holds the press.
+taken down ahead of it, as ✅ Confirm placements does mid-season (`mid_season_confirm_change`).
+The stage, the modules' kept settings and the confirmation's own record are one save, so a fault
+leaves the season in Configuration with nothing kept and nothing recorded. This module holds the change; the workflow holds the press.
 
 **The check, at the press and again when the change runs** (`check`), refuses in this order, the
 first that fails being the refusal: another confirmation of the season in hand, queued, running or

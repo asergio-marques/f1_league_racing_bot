@@ -4,8 +4,9 @@ The approval is judged twice: at the press, by the review's workflow, and again 
 to run on the change queue, by the change type, which may import no cog. So every check both make
 lives here as a public function, and the review commands, the workflows and the change types all
 call it; the same question is then answered the same way wherever it is asked. A check is handed
-the services it reads, a service that several checks read by the name the bot carries it under, as
-a keyword. `not_done_section` is the reply's list of what a confirmation could not do.
+the services it reads: one reading several of the league's services takes them as keywords named as
+the bot carries them, and one reading one or two takes them in order. `not_done_section` is the
+reply's list of what a confirmation could not do.
 
 A caller reaches a check through this module (`approval_checks.team_name_problems`), never by
 importing it by name, so that a test standing one in replaces it for every caller.
@@ -250,13 +251,12 @@ async def points_ordering_problems(db_path: str, season_id: int) -> list[str]:
     fault the approval refuses on, or a manager is sent to an approval that refuses for a fault
     the report told them nothing about.
 
-    Two checks, because the points a season will run on can arrive from two directions.
-    The attached server-level configs are what a first approval copies in, and until it
-    does the season's own table is empty, so the season's table alone would pass every first
-    approval. The season's own table is
-    read as well, because the snapshot writes with INSERT OR REPLACE and clears nothing
-    first, so a season being approved a second time can be holding entries an earlier
-    approval left behind that no attached config would mention.
+    Two checks, because the points a season will run on can arrive from two directions. The
+    attached server-level configs are what a first approval copies in, and until it does the
+    season's own table is empty, so the season's table alone would pass every first approval.
+    The season's own table is read as well, because the snapshot writes with INSERT OR REPLACE
+    and clears nothing first, so a season being approved a second time can be holding entries
+    an earlier approval left behind that no attached config would mention.
 
     Merged rather than concatenated: a re-approval sees the same fault from both sides,
     and a manager should read each broken position once.
@@ -293,9 +293,10 @@ async def no_points_config_attached(db_path: str, season_id: int) -> bool:
     would refuse — which can happen because `/results config detach` stays open in
     Placements.
 
-    A link to a configuration that does not exist still counts as attached here; that
-    one is `missing_points_config_problems`' fault. Test mode is no exception: it attaches Standard and Half Points when it is enabled and at no other
-    moment, and a season that has had them detached is refused as any other.
+    A link to a configuration that does not exist still counts as attached here; that one is
+    `missing_points_config_problems`' fault. Test mode is no exception: it attaches Standard and
+    Half Points when it is enabled and at no other moment, and a season that has had them
+    detached is refused as any other.
     """
     return not await season_points_service.get_attached_config_names(db_path, season_id)
 
@@ -468,9 +469,8 @@ async def mid_season_configuration_faults(
 ) -> list[str]:
     """The configuration review's checks that confirming mid-season placements repeats.
 
-    Every check the configuration review makes is made again when placements are
-    confirmed mid-season save those whose answer the season
-    has already settled:
+    Every check the configuration review makes is made again when placements are confirmed
+    mid-season, save those whose answer the season has already settled:
 
     * the league's two roles and the signup configuration, which confirming the
       configuration fixed;
