@@ -17,6 +17,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from lxml import etree
 
+#: Why a placement refusal test fails until #283's build raises the member's refusal by name.
+PLACEMENT_REFUSAL = "#283: placement still refuses with a bare ValueError, not Refused"
+
 
 SVG_NS = "http://www.w3.org/2000/svg"
 LINEUP = "lineup_template"
@@ -232,11 +235,14 @@ async def test_no_lineup_drawn_means_no_problem(tmp_path, toggle, images):
 # ── As a league meets it, through the choke point ─────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=PLACEMENT_REFUSAL)
 async def test_a_reserve_overflow_reaches_the_caller_through_guard_assign(tmp_path):
+    from leaguebot.core.models.refusal import Refused
+
     db_path, season_id, division_id = await _seed(tmp_path, reserves=3)
     template = _template_file(tmp_path, reserve_slots=3)
 
-    with pytest.raises(ValueError) as refused:
+    with pytest.raises(Refused) as refused:
         await _assign(
             db_path, season_id, division_id, RESERVE, _drawing({LINEUP: _report(template)})
         )
