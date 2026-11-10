@@ -2732,6 +2732,7 @@ SPLICED_SOURCES: tuple[tuple[str, str], ...] = (
     ("core/services/channel_registry_service.py", "SERVER_SOURCES"),
     ("core/services/channel_registry_service.py", "DIVISION_SOURCES"),
     ("core/services/factory_reset_service.py", "_OTHER_SOURCES"),
+    ("results/services/verdict_records.py", "VERDICT_TABLES"),
 )
 
 

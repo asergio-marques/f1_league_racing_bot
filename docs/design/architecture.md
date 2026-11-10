@@ -155,17 +155,17 @@ falling due, a round amended or its timed work armed again, a round's timing win
 a division or a season cancelled, a round's results made final, placements confirmed, a season's
 configuration confirmed, a review gathering its lines, the placements review gathering each
 division's lines, a division's channel faults read, a channel's uses read as a command sets it, the
-factory reset gathering the channels each module holds, a round's drawn phases read, a
-driver's name read, the divisions a driver's accounts raced in read, a driver's standing in a
-division read for the season's history, a season's fingerprint taken, a season's pending test-mode
-steps read, the test-mode review's marks read, a season's confirmation judged, a division's final
-round read, a season ending, a season, division, round or driver deleted, a driver merged into
-another or turned down, a driver's account changed, a base role changed, the bot packed, test mode
-turned on, the bot's in-memory state cleared, the hub's panel gathering its options, a module's
-switch read), core declares a hook. The builder signs each module up to it before the bot connects.
-Core calls whoever signed up, and never imports a module, the bot's type aside (see "How the code is
-laid out"). A module turned on or off is not a hook but a change of the module's own, which core
-asks for by its kind (see "Each module turns itself on and off").
+factory reset gathering the channels each module holds, a round's drawn phases read, a driver's name
+read, the divisions a driver's accounts raced in read, a driver's standing in a division read for
+the season's history, a season's fingerprint taken, a season's pending test-mode steps read, the
+test-mode review's marks read, a season's confirmation judged, a division's final round read, a
+season ending, a season, division, round or driver deleted, a driver merged into another or turned
+down, a driver's account changed, a base role changed, the bot packed, test mode turned on, the
+bot's in-memory state cleared, the hub's panel gathering its options, a module's switch read), core
+declares a hook. The builder signs each module up to it before the bot connects. Core calls whoever
+signed up, and never imports a module, the bot's type aside (see "How the code is laid out"). A
+module turned on or off is not a hook but a change of the module's own, which core asks for by its
+kind (see "Each module turns itself on and off").
 
 **A hook core declares is a list of subscribers.** Core declares the moment and what it hands over:
 what the moment concerns, where it concerns anything (the rows, the round, the driver's accounts,
@@ -180,9 +180,10 @@ and no module's operation, so a module's part of the moment is the module's own 
 added later signs up without core changing, the switch read aside (below). A hook keyed by a kind
 takes one function for each key instead, as a kind of timed job takes its one handler (see "Timed
 work and restarts") and a kind of a round's job its one `/test-mode advance` step; each is an object
-the builder makes and signs each module's own up on, never a registry a module keeps for the
-process. **A module's switch read is a keyed hook:** one reader for each module, keyed by the
-module's name, which the module's own work may also call; core asks for it by that name
+the builder makes and signs each module's own up on, never a registry kept at module level for the
+life of the process, as nothing is wired in after the bot starts (see "Services stay attached to the
+bot"). **A module's switch read is a keyed hook:** one reader for each module, keyed by the module's
+name, which the module's own work may also call; core asks for it by that name
 (`is_<module>_enabled`, or `is_enabled_on` on a connection the caller holds), because core names the
 modules and shows which are on in the reviews (the core specification's "Modules"), and keeps the
 dependency table (above). The key is the name the module's switch is asked by: `images` for the
@@ -1373,11 +1374,12 @@ later on its own.
   that does not own it, a table read outside its owner (core's tables too; the scan sees tables, not
   columns, so a module's read of its own columns on a core table is named for good,
   `READS_OF_OWN_COLUMNS`; a table whose name is spliced into an f-string after `FROM` or `JOIN`
-  cannot be told, so each counts unless its function was read by hand and found to name only its
-  own module's tables, `SPLICED_READS_READ_BY_HAND`, which holds the count exactly), a module's own
+  cannot be told, so each counts unless its function was read by hand and found to name only its own
+  module's tables, `SPLICED_READS_READ_BY_HAND`, which holds the count exactly, the tuples of table
+  names those functions iterate checked to name their own module's tables alone), a module's own
   column on a core table named in a file outside that module, the entry point's included
-  (`KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER`; the check counts the column's name in any string outside
-  a docstring, in SQL or as a row's key, and each attribute named for it, read or set), core reading a
+  (`KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER`; the check counts the column's name in any string outside a
+  docstring, in SQL or as a row's key, and each attribute named for it, read or set), core reading a
   module's service on the bot (an attribute `LeagueBot` types from a module's package, read from a
   file of core), SQLite's clock in a statement, a service reading the wall clock (the change queue's
   own default clock is the one place allowed, `WALL_CLOCK_ALLOWED`), a catch-all handler outside the
