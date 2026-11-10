@@ -132,27 +132,29 @@ async def channel_on_server(guild, channel_id: int) -> bool:
     return True
 
 
-#: Every channel a division posts to, in the order a manager reads them: the column that
-#: holds it, what a league calls it, the command that sets it, and the module that needs
-#: it — None where every season does.
-DIVISION_CHANNELS = (
-    ("lineup_channel_id", "lineup channel", "/division lineup-channel", None),
-    ("calendar_channel_id", "calendar channel", "/division calendar-channel", None),
-    ("forecast_channel_id", "weather channel", "/weather channel", "weather"),
-    ("results_channel_id", "results channel", "/results channel results", "results"),
-    ("standings_channel_id", "standings channel", "/results channel standings", "results"),
-    ("penalty_channel_id", "verdicts channel", "/results channel verdicts", "results"),
-    ("rsvp_channel_id", "RSVP channel", "/attendance channel rsvp", "attendance"),
-    (
-        "attendance_channel_id",
-        "attendance channel",
-        "/attendance channel attendance",
-        "attendance",
-    ),
-)
+async def channel_fault(
+    guild, division_name: str, value, label: str, command: str
+) -> str | None:
+    """The line saying a division's channel is not set, or no longer on the *guild*, or None
+    where it is fine: the one wording every module's channel faults and core's own are laid in.
+
+    *value* is the channel's id as the column holds it; *label* is what a league calls the
+    channel and *command* sets it. With no *guild*, only whether it is set is judged.
+    """
+    if not value:
+        return f"**{division_name}** has no {label} — `{command}`."
+    if guild is not None and not await channel_on_server(guild, int(value)):
+        return f"**{division_name}**'s {label} is no longer on the server — `{command}`."
+    return None
 
 
-async def division_channel_faults(modules, db_path: str, season_id: int, guild=None) -> list[str]:
+async def division_channel_faults(
+    db_path: str,
+    season_id: int,
+    guild=None,
+    *,
+    division_channel_faults_read: AwaitedHook,
+) -> list[str]:
     """Every channel a division of the season posts to that is not set, or not on the server.
 
     **Both confirmations ask this**: the first, and the one mid-season. Nothing
@@ -165,39 +167,37 @@ async def division_channel_faults(modules, db_path: str, season_id: int, guild=N
     being the one proof it is gone. Any other failure is **not** a fault: a check that
     could not tell must not be what refuses a season. With no *guild*, only whether each
     channel is set is judged. A cancelled division posts nothing and is passed over.
+
+    Core names the lineup and calendar channels, which every season needs; each module names
+    its own through *division_channel_faults_read*, its switch asked of itself. A division's
+    lines read in tier order: its own, then the modules' in the order they signed up.
     """
-    enabled = {
-        None: True,
-        "weather": await modules.is_weather_enabled(),
-        "results": await modules.is_results_enabled(),
-        "attendance": await modules.is_attendance_enabled(),
-    }
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT d.name, d.lineup_channel_id, d.calendar_channel_id, "
-            "       d.forecast_channel_id, rc.results_channel_id, "
-            "       rc.standings_channel_id, rc.penalty_channel_id, "
-            "       ac.rsvp_channel_id, ac.attendance_channel_id "
-            "FROM divisions d "
-            "LEFT JOIN division_results_config rc ON rc.division_id = d.id "
-            "LEFT JOIN attendance_division_config ac ON ac.division_id = d.id "
-            "WHERE d.season_id = ? AND d.status != 'CANCELLED' ORDER BY d.tier",
+            "SELECT id, name, lineup_channel_id, calendar_channel_id FROM divisions "
+            "WHERE season_id = ? AND status != 'CANCELLED' ORDER BY tier",
             (season_id,),
         )
         rows = await cursor.fetchall()
 
+    divisions = {row["id"]: row["name"] for row in rows}
+    handed = await division_channel_faults_read.call(divisions=divisions, guild=guild)
     faults: list[str] = []
     for row in rows:
-        for column, label, command, module in DIVISION_CHANNELS:
-            if not enabled[module]:
-                continue
-            value = row[column]
-            if not value:
-                faults.append(f"**{row['name']}** has no {label} — `{command}`.")
-            elif guild is not None and not await channel_on_server(guild, int(value)):
-                faults.append(
-                    f"**{row['name']}**'s {label} is no longer on the server — `{command}`."
-                )
+        for fault in (
+            await channel_fault(
+                guild, row["name"], row["lineup_channel_id"], "lineup channel",
+                "/division lineup-channel",
+            ),
+            await channel_fault(
+                guild, row["name"], row["calendar_channel_id"], "calendar channel",
+                "/division calendar-channel",
+            ),
+        ):
+            if fault:
+                faults.append(fault)
+        for module_lines in handed:
+            faults.extend(module_lines.get(row["id"], []))
     return faults
 
 
@@ -503,6 +503,7 @@ async def placement_confirmation_faults(
     guild: discord.Guild | None = None,
     *,
     driver_names_read: AwaitedHook,
+    division_channel_faults_read: AwaitedHook,
 ) -> tuple[list[str], list[str]]:
     """What stops placements being confirmed that no older gate checks.
 
@@ -510,10 +511,14 @@ async def placement_confirmation_faults(
     division posts to that is not set or no longer on the server. The review
     withholds its button on either, and the confirmation refuses on either, from this one
     reading — mid-season as at the first confirmation. The unsettled are named through
-    *driver_names_read*.
+    *driver_names_read*, and each module names its own channels through
+    *division_channel_faults_read*. *module_service* is no longer read: each module asks its own
+    switch of itself.
     """
     unsettled = await unsettled_signups(db_path, driver_names_read)
-    return unsettled, await division_channel_faults(module_service, db_path, season_id, guild)
+    return unsettled, await division_channel_faults(
+        db_path, season_id, guild, division_channel_faults_read=division_channel_faults_read
+    )
 
 
 async def configuration_faults(

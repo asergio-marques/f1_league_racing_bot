@@ -382,9 +382,6 @@ async def test_recalculation_faults_wants_attach_files_only_with_graphics(tmp_pa
     assert "Attach Files" in faults[0]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: attendance does not yet answer for its division channels"
-)
 async def test_attendance_names_each_division_s_missing_or_deleted_channels(db_path):
     """Pro's RSVP channel 130 is gone from the server and its attendance channel 131 is there;
     Am has neither. Attendance on names Pro's RSVP channel as gone and both of Am's as missing,

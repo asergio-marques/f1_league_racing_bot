@@ -281,6 +281,7 @@ def season_approval_change(
     round_windows_read: AwaitedHook,
     placements_confirmed: AwaitedHook,
     placements_confirmed_steps: Hook,
+    division_channel_faults_read: AwaitedHook,
     rasteriser_fault: Callable[[], str | None],
     snapshot_points_on: Callable[[aiosqlite.Connection, int], Awaitable[None]],
     now: Callable[[], datetime],
@@ -294,7 +295,8 @@ def season_approval_change(
     *placements_confirmed* (the hook each module's opening post is planned through, called
     inside the save for each division in turn, on the save's connection) and
     *placements_confirmed_steps* (each module's step definitions for its own opening post, by
-    name), *rasteriser_fault* (what is wrong with the host's drawing program, None where nothing
+    name), *division_channel_faults_read* (the hook each module names its own channels' faults
+    through), *rasteriser_fault* (what is wrong with the host's drawing program, None where nothing
     is), results' *snapshot_points_on* (the points snapshot on a handed save, which reads
     results' own switch) and *now* (the queue's clock).
     """
@@ -336,7 +338,7 @@ def season_approval_change(
 
         guild = await league_guild(ctx.bot)
         channels = await approval_checks.division_channel_faults(
-            modules, ctx.db_path, season_id, guild
+            ctx.db_path, season_id, guild, division_channel_faults_read=division_channel_faults_read
         )
         if channels:
             bullets = "\n".join(f"• {line}" for line in channels)

@@ -194,6 +194,7 @@ def mid_season_confirm_change(
     drawing: "ImageDrawing",
     rasteriser_fault: Callable[[], str | None],
     driver_names_read: AwaitedHook,
+    division_channel_faults_read: AwaitedHook,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that confirms a season's placements mid-season; see the module.
@@ -201,7 +202,8 @@ def mid_season_confirm_change(
     The builder hands in *modules* (which modules are on), the *placement* service (a driver's
     roles, a division's lineup), the image module's own drawing (*drawing*) and
     *rasteriser_fault* (what is wrong with the host's drawing program, None where nothing is),
-    *driver_names_read* (the hook an unsettled driver is named through) and *now* (the queue's
+    *driver_names_read* (the hook an unsettled driver is named through),
+    *division_channel_faults_read* (the hook each module names its own channels' faults through) and *now* (the queue's
     clock, which stamps the lineup's audit).
     """
 
@@ -235,7 +237,7 @@ def mid_season_confirm_change(
         unsettled = await approval_checks.unsettled_signups(ctx.db_path, driver_names_read)
         guild = await league_guild(ctx.bot)
         channels = await approval_checks.division_channel_faults(
-            modules, ctx.db_path, season_id, guild
+            ctx.db_path, season_id, guild, division_channel_faults_read=division_channel_faults_read
         )
         faults = [*(f"Unsettled signup: {line}" for line in unsettled), *channels]
         if await modules.is_images_enabled():

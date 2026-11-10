@@ -406,6 +406,31 @@ def _sign_up_to_driver_names_read(bot: LeagueBot) -> None:
     )
 
 
+def _sign_up_to_division_channel_faults_read(bot: LeagueBot) -> None:
+    """Make the hook a division's channel faults are read through, and sign each module's part up
+    to it: the lines naming that module's own channels not set or not on the server, by division,
+    handed the divisions judged and the server. Weather and results are handed the module service
+    and the database, attendance its service and the module service, each asking its own switch;
+    they sign up in the order a division's lines read. The builder hands it to the placements
+    review and the confirmations (architecture.md, "How modules and core fit together")."""
+    from leaguebot.attendance.services import attendance_service
+    from leaguebot.results.services import division_channels
+    from leaguebot.weather.services import forecast_channel
+
+    bot.division_channel_faults_read = AwaitedHook()
+    bot.division_channel_faults_read.subscribe(
+        partial(forecast_channel.division_channel_faults, bot.module_service, bot.db_path)
+    )
+    bot.division_channel_faults_read.subscribe(
+        partial(division_channels.division_channel_faults, bot.module_service, bot.db_path)
+    )
+    bot.division_channel_faults_read.subscribe(
+        partial(
+            attendance_service.division_channel_faults, bot.attendance_service, bot.module_service
+        )
+    )
+
+
 def _sign_up_to_driver_turned_down(bot: LeagueBot) -> None:
     """Make the hook a driver turned down declares, and sign each module's part up to it: what a
     module lets go of from the driver, on the connection of the save that turns them down, given
@@ -606,6 +631,7 @@ def _approve_view_for(bot: LeagueBot) -> "Callable[[dict[str, Any]], discord.ui.
             round_windows_read=bot.round_windows_read,
             confirmation_refused=bot.confirmation_refused,
             driver_names_read=bot.driver_names_read,
+            division_channel_faults_read=bot.division_channel_faults_read,
             now=bot.change_queue.now,
         )
 
@@ -1213,6 +1239,7 @@ def register_change_types(bot: LeagueBot) -> None:
             round_windows_read=bot.round_windows_read,
             placements_confirmed=bot.placements_confirmed,
             placements_confirmed_steps=bot.placements_confirmed_steps,
+            division_channel_faults_read=bot.division_channel_faults_read,
             rasteriser_fault=bot.image_drawing.rasteriser_fault,
             snapshot_points_on=snapshot_configs_to_season_on,
             now=lambda: bot.change_queue.now(),
@@ -1228,6 +1255,7 @@ def register_change_types(bot: LeagueBot) -> None:
             drawing=bot.image_drawing,
             rasteriser_fault=bot.image_drawing.rasteriser_fault,
             driver_names_read=bot.driver_names_read,
+            division_channel_faults_read=bot.division_channel_faults_read,
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -1659,6 +1687,7 @@ async def build(settings: Settings) -> LeagueBot:
     _sign_up_to_configuration_confirmed(bot)
     _sign_up_to_driver_turned_down(bot)
     _sign_up_to_driver_names_read(bot)
+    _sign_up_to_division_channel_faults_read(bot)
     _sign_up_to_driver_account_changed(bot)
     _sign_up_to_placements_confirmed(bot)
     _sign_up_to_season_completed(bot)

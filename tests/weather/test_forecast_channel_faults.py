@@ -20,9 +20,6 @@ def _modules(on: bool) -> MagicMock:
     return modules
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: weather does not yet answer for its forecast channel"
-)
 async def test_weather_names_each_division_s_missing_or_deleted_forecast_channel(tmp_path):
     """Pro's weather channel 110 is gone from the server, Am has none, and Old's 310 is there but
     Old is not among the divisions judged. Weather on names Pro's and Am's, each with

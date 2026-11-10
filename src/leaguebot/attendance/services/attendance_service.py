@@ -14,6 +14,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.services import audit_service
+from leaguebot.core.services.approval_checks import channel_fault
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
 from leaguebot.attendance.models.attendance import (
@@ -778,6 +779,39 @@ async def review_section(
                 f"  Attendance channel: {attendance}",
             ]
     return ReviewSection(module="attendance", lines=lines, division_lines=division_lines)
+
+
+async def division_channel_faults(
+    service: AttendanceService,
+    modules: "ModuleService",
+    *,
+    divisions: Mapping[int, str],
+    guild: Any = None,
+) -> dict[int, list[str]]:
+    """Each division's RSVP channel and then its attendance channel, in that order, that is not
+    set or not on the *guild*, by division id; nothing where the attendance module is off.
+
+    Subscribed to core's `division_channel_faults_read`, which hands the divisions the
+    confirmation judges (id to name) and the server. A division with no fault is given an empty
+    list. With no *guild*, only whether each channel is set is judged. Reads only.
+    """
+    if not await modules.is_attendance_enabled():
+        return {}
+    found: dict[int, list[str]] = {}
+    for division_id, name in divisions.items():
+        channels = await service.get_division_config(division_id)
+        lines: list[str] = []
+        for value, label, command in (
+            (channels.rsvp_channel_id if channels else None, "RSVP channel",
+             "/attendance channel rsvp"),
+            (channels.attendance_channel_id if channels else None, "attendance channel",
+             "/attendance channel attendance"),
+        ):
+            fault = await channel_fault(guild, name, value, label, command)
+            if fault:
+                lines.append(fault)
+        found[division_id] = lines
+    return found
 
 
 def _dra_from_row(row: aiosqlite.Row) -> DriverRoundAttendance:

@@ -181,6 +181,7 @@ async def confirm_mid_season_placements(
     image_drawing: ImageDrawing,
     change_queue: ChangeQueue,
     driver_names_read: AwaitedHook,
+    division_channel_faults_read: AwaitedHook,
     what: str | None = None,
     fingerprint: dict | None = None,
 ) -> bool:
@@ -222,6 +223,7 @@ async def confirm_mid_season_placements(
     unsettled, channel_faults = await approval_checks.placement_confirmation_faults(
         module_service, db_path, season.id, interaction.guild,
         driver_names_read=driver_names_read,
+        division_channel_faults_read=division_channel_faults_read,
     )
     faults = [
         *(f"Unsettled signup: {line}" for line in unsettled),
@@ -501,6 +503,7 @@ async def approve_season(
     round_windows_read: AwaitedHook,
     confirmation_refused: AwaitedHook,
     driver_names_read: AwaitedHook,
+    division_channel_faults_read: AwaitedHook,
     now: Callable[[], datetime],
     deadline: datetime | None = None,
     what: str | None = None,
@@ -562,6 +565,7 @@ async def approve_season(
     unsettled, channel_faults = await approval_checks.placement_confirmation_faults(
         module_service, db_path, season.id, interaction.guild,
         driver_names_read=driver_names_read,
+        division_channel_faults_read=division_channel_faults_read,
     )
     if unsettled or channel_faults:
         bullets = "\n".join(f"\u2022 {line}" for line in [*unsettled, *channel_faults])

@@ -103,6 +103,14 @@ class LeagueBot(commands.Bot):
     #: each gave in their signup. The builder makes it and signs signup up, so that core reads no
     #: signup record (architecture.md, "A hook core declares is a list of subscribers").
     driver_names_read: AwaitedHook
+    #: A division's channel faults read (the placements review and the confirmations judging each
+    #: channel a division posts to): each module signs up a function handing back, by division id,
+    #: the lines naming its own channels that are not set or not on the server, nothing where its
+    #: module is off, handed the divisions judged (id to name) and the server. The builder makes it
+    #: and signs them up in the order a division's lines read (weather, results, attendance), so
+    #: that core reads no module's table (architecture.md, "A hook core declares is a list of
+    #: subscribers").
+    division_channel_faults_read: AwaitedHook
     #: The moment a season review gathers its lines (`/season placements-review` and
     #: `/season config-review`): each module signs up a function handing back its own section
     #: of the review, or nothing, as its own switch decides, handed which review is gathered, the

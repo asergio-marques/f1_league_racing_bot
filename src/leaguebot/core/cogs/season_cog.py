@@ -717,6 +717,7 @@ class SeasonCog(commands.Cog):
         unsettled, channel_faults = await approval_checks.placement_confirmation_faults(
             self.bot.module_service, self.bot.db_path, season.id, interaction.guild,
             driver_names_read=self.bot.driver_names_read,
+            division_channel_faults_read=self.bot.division_channel_faults_read,
         )
         if unsettled:
             report.extend(chunk_message(
@@ -890,6 +891,7 @@ class SeasonCog(commands.Cog):
         unsettled, channel_faults = await approval_checks.placement_confirmation_faults(
             self.bot.module_service, self.bot.db_path, season.id, interaction.guild,
             driver_names_read=self.bot.driver_names_read,
+            division_channel_faults_read=self.bot.division_channel_faults_read,
         )
         configuration_faults = await approval_checks.mid_season_configuration_faults(
             self.bot.module_service, self.bot.image_drawing

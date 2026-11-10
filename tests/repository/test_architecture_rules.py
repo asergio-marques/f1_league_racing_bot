@@ -2233,6 +2233,10 @@ READS_OF_OWN_COLUMNS: dict[tuple[str, str], tuple[str, str]] = {
         "divisions",
         "reads `divisions.forecast_channel_id`, the weather module's own column",
     ),
+    ("weather/services/forecast_channel.py", "division_channel_faults"): (
+        "divisions",
+        "reads `divisions.forecast_channel_id`, the weather module's own column",
+    ),
     ("weather/services/cancellation_notice.py", "_forecast_channel"): (
         "divisions",
         "reads `divisions.forecast_channel_id`, the weather module's own column",
@@ -2325,7 +2329,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
         (2, PASS["attendance"]),
     ("attendance/services/sheet_posting.py", "ask_sheet_post"): (1, PASS["attendance"]),
     ("attendance/services/sheet_posting.py", "sheet_post_change.check"): (2, PASS["attendance"]),
-    ("core/services/approval_checks.py", "division_channel_faults"): (2, PASS["core"]),
     ("core/services/driver_service.py", "divisions_taken_part_in"): (5, PASS["core"]),
     ("core/services/season_end_service.py", "write_driver_history_entries_on"): (3, PASS["core"]),
     ("core/services/season_fingerprint_service.py", "take_fingerprint"): (21, PASS["core"]),
@@ -2549,8 +2552,6 @@ def _own_columns_outside_the_owner_among(nodes) -> Counter[tuple[str, str]]:
 KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "_recover_missed_check_in_calls"): (1, PASS["attendance"]),
     ("__main__.py", "_recover_missed_phases"): (3, PASS["weather"]),
-    ("core/services/approval_checks.py", "<module>"): (1, PASS["core"]),
-    ("core/services/approval_checks.py", "division_channel_faults"): (1, PASS["core"]),
     ("core/services/channel_registry_service.py", "<module>"): (1, PASS["core"]),
     ("core/services/round_amend_change.py", "_round_change.apply"): (3, PASS["core"]),
     ("core/services/round_amend_change.py", "_round_change.judged_again"): (3, PASS["core"]),

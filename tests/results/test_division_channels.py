@@ -191,9 +191,6 @@ async def test_a_results_channel_already_held_is_left_unwritten(tmp_path, setter
     assert _as_text(replaced) == "700001"
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: results does not yet answer for its division channels"
-)
 async def test_results_names_each_division_s_missing_or_deleted_channels(tmp_path):
     """Division 11's results channel 120 is set, its standings channel 121 gone from the server and
     the server cannot say whether its verdicts channel 122 is there; Am has none of the three.

@@ -88,10 +88,6 @@ def _faults_bot(db_path, modules):
     return bot
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: core still reads the modules' channels itself, with no channel faults hook",
-)
 @pytest.mark.parametrize("pro_lineup", ["deleted", "cannot be told"])
 async def test_the_channel_faults_are_read_by_the_service(db_path, pro_lineup):
     """With every module off, Am has no lineup channel and Pro's lineup channel 100 has been
@@ -113,10 +109,6 @@ async def test_the_channel_faults_are_read_by_the_service(db_path, pro_lineup):
     ]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: core still reads the modules' channels itself, with no channel faults hook",
-)
 async def test_each_division_s_module_channels_follow_its_own_in_the_modules_order(db_path):
     """Every module on. Pro's lineup channel 100, results channel 120 and attendance channel 131
     are gone from the server, its other channels there; Am has no lineup, weather, results,

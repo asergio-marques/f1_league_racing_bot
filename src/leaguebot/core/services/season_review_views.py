@@ -133,6 +133,7 @@ class ApproveView(LeagueView):
         round_windows_read: AwaitedHook,
         confirmation_refused: AwaitedHook,
         driver_names_read: AwaitedHook,
+        division_channel_faults_read: AwaitedHook,
         now: Callable[[], datetime],
     ) -> None:
         super().__init__(timeout=None)
@@ -150,6 +151,7 @@ class ApproveView(LeagueView):
         self._round_windows_read = round_windows_read
         self._confirmation_refused = confirmation_refused
         self._driver_names_read = driver_names_read
+        self._division_channel_faults_read = division_channel_faults_read
         self._now = now
         # The review the last press read from its row. A view serves one question, and a second
         # press is refused (`_refuse_if_under_way`) before it reads, so this is the row of the one
@@ -372,6 +374,7 @@ class ApproveView(LeagueView):
                 round_windows_read=self._round_windows_read,
                 confirmation_refused=self._confirmation_refused,
                 driver_names_read=self._driver_names_read,
+                division_channel_faults_read=self._division_channel_faults_read,
                 now=self._now,
                 deadline=review.deadline,
                 what=self._button,
@@ -473,6 +476,7 @@ class ConfirmMidSeasonPlacementsView(ApproveView):
             image_drawing=self._image_drawing,
             change_queue=self._change_queue,
             driver_names_read=self._driver_names_read,
+            division_channel_faults_read=self._division_channel_faults_read,
             what=what,
             fingerprint=fingerprint,
         )
