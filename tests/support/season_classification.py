@@ -63,7 +63,7 @@ async def seed_season(path: str, *, server_id: int = 1, divisions: tuple[str, ..
             )
             await db.execute(
                 "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
-                "VALUES (?, 1, 'NORMAL', '2026-02-01T18:00:00')",
+                "VALUES (?, 1, 'NORMAL', '2026-02-01T18:00:00+00:00')",
                 (division_id,),
             )
             cur = await db.execute(
@@ -119,7 +119,7 @@ async def second_round_with_results(path: str, division_id: int, *, message_id=N
     async with get_connection(path) as db:
         cur = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
-            "VALUES (?, 2, 'NORMAL', '2026-03-01T18:00:00')",
+            "VALUES (?, 2, 'NORMAL', '2026-03-01T18:00:00+00:00')",
             (division_id,),
         )
         round_id = cur.lastrowid

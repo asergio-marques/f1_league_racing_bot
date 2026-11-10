@@ -28,7 +28,7 @@ import importlib
 import json
 import re
 from contextlib import ExitStack
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -401,7 +401,7 @@ async def _formers(league: Any, *user_ids: int) -> None:
 async def _awaiting_results(league: Any, rid: int) -> None:
     await league.write(
         "UPDATE rounds SET status = 'AWAITING_RESULTS', scheduled_at = ? WHERE id = ?",
-        (league.clock.now - timedelta(hours=2)).replace(tzinfo=None).isoformat(), rid,
+        (league.clock.now - timedelta(hours=2)).astimezone(timezone.utc).isoformat(), rid,
     )
 
 

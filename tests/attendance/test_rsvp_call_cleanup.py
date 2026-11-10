@@ -488,7 +488,7 @@ async def _ask(league, step: str) -> None:
 async def _round_3_raced_a_day_ago(league) -> None:
     when = league.clock.now - timedelta(hours=25)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       when.replace(tzinfo=None).isoformat(), ROUND_3)
+                       when.astimezone(timezone.utc).isoformat(), ROUND_3)
 
 
 def _moved_into(league, message_id: int, content: str) -> None:
@@ -551,7 +551,7 @@ async def test_each_check_in_message_s_channel_is_saved_with_it(tmp_path):
     )
     when = league.clock.now + timedelta(hours=3)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       when.replace(tzinfo=None).isoformat(), ROUND_3)
+                       when.astimezone(timezone.utc).isoformat(), ROUND_3)
 
     await _ask(league, "last_notice")
     league.clock.advance(hours=2)

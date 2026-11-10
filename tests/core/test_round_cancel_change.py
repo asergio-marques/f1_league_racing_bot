@@ -19,7 +19,7 @@ import importlib
 import json
 import sqlite3
 from contextlib import ExitStack
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -175,7 +175,7 @@ async def _awaiting_results(league: Any, rid: int = R3) -> None:
     """Round *rid*'s race time has passed and it waits for its results."""
     await league.write(
         "UPDATE rounds SET status = 'AWAITING_RESULTS', scheduled_at = ? WHERE id = ?",
-        (league.clock.now - timedelta(hours=2)).replace(tzinfo=None).isoformat(), rid,
+        (league.clock.now - timedelta(hours=2)).astimezone(timezone.utc).isoformat(), rid,
     )
 
 
@@ -847,7 +847,7 @@ async def _renumbered(league: Any) -> None:
     """Pro's round 2's date moved past round 4's, and the division renumbered by date, as an
     amended date renumbers it: the round asked for as round 3 is now round 2."""
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       (league.clock.now + timedelta(days=200)).replace(tzinfo=None).isoformat(),
+                       (league.clock.now + timedelta(days=200)).astimezone(timezone.utc).isoformat(),
                        round_id(PRO, 2))
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.services.season_service import renumber_rounds_on

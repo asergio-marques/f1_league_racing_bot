@@ -467,7 +467,7 @@ async def _no_call_league(tmp_path):
     attendance_from_the_database(league)
     when = league.clock.now + timedelta(hours=3)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       when.replace(tzinfo=None).isoformat(), round_id(PRO, 3))
+                       when.astimezone(timezone.utc).isoformat(), round_id(PRO, 3))
     await league.write("DELETE FROM rsvp_embed_messages WHERE round_id = ?", round_id(PRO, 3))
     return league
 

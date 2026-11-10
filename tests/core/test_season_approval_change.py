@@ -18,7 +18,7 @@ import json
 import logging
 import re
 from contextlib import ExitStack
-from datetime import timedelta
+from datetime import timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -1752,7 +1752,7 @@ async def _window_opening_soon(league: Any) -> None:
     soon = league.clock.now + timedelta(days=5, minutes=5)
     await league.write(
         "UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-        soon.replace(tzinfo=None).isoformat(), round_id(PRO, 1),
+        soon.astimezone(timezone.utc).isoformat(), round_id(PRO, 1),
     )
 
 

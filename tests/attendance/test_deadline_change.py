@@ -19,7 +19,7 @@ lock or announcement stops the queue, and a discarded announcement is named and 
 from __future__ import annotations
 
 import inspect
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -69,7 +69,7 @@ async def _league(tmp_path: Any) -> SeasonLeague:
     attendance_from_the_database(league)
     when = league.clock.now + timedelta(hours=1)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       when.replace(tzinfo=None).isoformat(), ROUND_3)
+                       when.astimezone(timezone.utc).isoformat(), ROUND_3)
     del league.channel(CHECK_IN).messages[CALL_MESSAGES[2]]
     await league.write("UPDATE rsvp_embed_messages SET distribution_msg_id = NULL "
                        "WHERE round_id = ?", ROUND_3)

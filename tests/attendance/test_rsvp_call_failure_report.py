@@ -17,7 +17,7 @@ timer asks it, and the queue run.
 """
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -55,7 +55,7 @@ async def _league(tmp_path: Any, *, images: bool = False) -> SeasonLeague:
     attendance_from_the_database(league)
     when = league.clock.now + timedelta(days=3)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       when.replace(tzinfo=None).isoformat(), ROUND_4)
+                       when.astimezone(timezone.utc).isoformat(), ROUND_4)
     return league
 
 

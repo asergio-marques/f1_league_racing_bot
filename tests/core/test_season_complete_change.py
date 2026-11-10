@@ -25,6 +25,7 @@ import json
 import re
 import sqlite3
 from contextlib import ExitStack
+from datetime import timezone
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -917,7 +918,7 @@ async def test_the_list_of_outstanding_rounds_stops_at_twenty(tmp_path):
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, scheduled_at,"
             " status) VALUES (?, ?, ?, 'NORMAL', 'Silverstone', ?, 'NOT_RUN')",
             1000 + number, PRO, number,
-            league.clock.now.replace(tzinfo=None).isoformat(),
+            league.clock.now.astimezone(timezone.utc).isoformat(),
         )
 
     interaction = await _asked(league)

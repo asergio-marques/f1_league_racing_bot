@@ -488,7 +488,7 @@ async def make_db(tmp_path: Any, now: datetime, *, extra_drivers: bool) -> str:
                     "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
                     "scheduled_at) VALUES (?, ?, ?, 'NORMAL', 'Silverstone', ?)",
                     (round_id(division_id, number), division_id, number,
-                     (now + timedelta(days=30 * number)).replace(tzinfo=None).isoformat()),
+                     (now + timedelta(days=30 * number)).astimezone(timezone.utc).isoformat()),
                 )
         for team_id, (division_id, name, full_name, role) in TEAMS.items():
             await db.execute(
@@ -852,7 +852,7 @@ async def ongoing_league(
                                      (2, "AWAITING_REPORT_VERDICTS", now - timedelta(days=3))):
             await db.execute(
                 "UPDATE rounds SET status = ?, scheduled_at = ? WHERE id = ?",
-                (status, when.replace(tzinfo=None).isoformat(), round_id(PRO, number)),
+                (status, when.astimezone(timezone.utc).isoformat(), round_id(PRO, number)),
             )
         call, notice, distribution = CALL_MESSAGES
         await db.execute(
@@ -1423,7 +1423,7 @@ async def pending_completion_league(
             for division_id in DIVISIONS:
                 await db.execute(
                     "UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                    ((now - timedelta(days=40 - 7 * number)).replace(tzinfo=None).isoformat(),
+                    ((now - timedelta(days=40 - 7 * number)).astimezone(timezone.utc).isoformat(),
                      round_id(division_id, number)),
                 )
         await db.execute("UPDATE divisions SET status = 'FINISHED' WHERE season_id = ?",

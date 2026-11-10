@@ -1045,7 +1045,7 @@ async def test_an_advanced_phase_of_a_raced_round_says_it_was_not_due(tmp_path):
     await league.set_test_mode(True)
     round_ = round_id(PRO, 3)
     forecast = DIVISIONS[PRO][3].forecast
-    raced = (league.clock.now - timedelta(hours=1)).replace(tzinfo=None).isoformat()
+    raced = (league.clock.now - timedelta(hours=1)).astimezone(timezone.utc).isoformat()
     await league.write("UPDATE rounds SET track_name = 'Silverstone Circuit', scheduled_at = ? "
                        "WHERE id = ?", raced, round_)
     for session in ("SHORT_QUALIFYING", "LONG_RACE"):
@@ -1089,7 +1089,7 @@ async def test_an_advanced_forecast_cleanup_deletes_an_earlier_phase_still_stand
     await league.set_test_mode(True)
     round_ = round_id(PRO, 3)
     forecast = league.channel(DIVISIONS[PRO][3].forecast)
-    raced = (league.clock.now - timedelta(days=1, hours=1)).replace(tzinfo=None).isoformat()
+    raced = (league.clock.now - timedelta(days=1, hours=1)).astimezone(timezone.utc).isoformat()
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?", raced, round_)
     await posted_forecast(league, round_, 2, 8002)
     league.bot.scheduler_service.cancel_round = MagicMock()
@@ -1121,7 +1121,7 @@ async def test_an_advanced_forecast_cleanup_names_the_phase_it_deletes(tmp_path)
     league = await ongoing_league(tmp_path, weather=True)
     await league.set_test_mode(True)
     round_ = round_id(PRO, 3)
-    raced = (league.clock.now - timedelta(days=1, hours=1)).replace(tzinfo=None).isoformat()
+    raced = (league.clock.now - timedelta(days=1, hours=1)).astimezone(timezone.utc).isoformat()
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?", raced, round_)
     await posted_forecast(league, round_, 2, 8002)
     league.bot.scheduler_service.cancel_round = MagicMock()
@@ -1154,7 +1154,7 @@ async def test_an_advanced_mystery_notice_of_a_raced_round_says_it_was_not_due(t
     await league.set_test_mode(True)
     round_ = round_id(PRO, 3)
     forecast = DIVISIONS[PRO][3].forecast
-    raced = (league.clock.now - timedelta(hours=1)).replace(tzinfo=None).isoformat()
+    raced = (league.clock.now - timedelta(hours=1)).astimezone(timezone.utc).isoformat()
     await league.write("UPDATE rounds SET format = 'MYSTERY', scheduled_at = ? WHERE id = ?",
                        raced, round_)
     league.bot.scheduler_service.cancel_round = MagicMock()
@@ -1193,7 +1193,7 @@ async def test_an_advanced_forecast_cleanup_with_no_forecast_standing_says_it_wa
     league = await ongoing_league(tmp_path, weather=True)
     await league.set_test_mode(True)
     round_ = round_id(PRO, 3)
-    raced = (league.clock.now - timedelta(days=1, hours=1)).replace(tzinfo=None).isoformat()
+    raced = (league.clock.now - timedelta(days=1, hours=1)).astimezone(timezone.utc).isoformat()
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?", raced, round_)
     await league.write("DELETE FROM forecast_messages WHERE round_id = ?", round_)
     league.bot.scheduler_service.cancel_round = MagicMock()
@@ -1383,7 +1383,7 @@ async def test_an_advanced_last_notice_is_posted_after_the_real_deadline(tmp_pat
     league = await _league(tmp_path)
     when = league.clock.now + delta(hours=1)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       when.replace(tzinfo=None).isoformat(), ROUND_3)
+                       when.astimezone(timezone.utc).isoformat(), ROUND_3)
 
     await _ask_as_advance(league, 6, ROUND_3, 3)
     await run_queue(league.bot)

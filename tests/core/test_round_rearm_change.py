@@ -14,7 +14,7 @@ round 3 (id 213) is NOT_RUN 90 days out unless a test moves it.
 """
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -83,7 +83,7 @@ async def _place(league: Any, rid: int = R3, **delta: float) -> None:
     """Round *rid* stands *delta* from "now", stored as plain UTC as production stores it."""
     await league.write(
         "UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-        (league.clock.now + timedelta(**delta)).replace(tzinfo=None).isoformat(), rid,
+        (league.clock.now + timedelta(**delta)).astimezone(timezone.utc).isoformat(), rid,
     )
 
 

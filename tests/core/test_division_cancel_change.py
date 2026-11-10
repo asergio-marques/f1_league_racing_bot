@@ -19,7 +19,7 @@ from __future__ import annotations
 import importlib
 from contextlib import ExitStack
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -165,7 +165,7 @@ async def _round_audits(league: Any) -> list[str]:
 async def _awaiting_results(league: Any, rid: int) -> None:
     await league.write(
         "UPDATE rounds SET status = 'AWAITING_RESULTS', scheduled_at = ? WHERE id = ?",
-        (league.clock.now - timedelta(hours=2)).replace(tzinfo=None).isoformat(), rid,
+        (league.clock.now - timedelta(hours=2)).astimezone(timezone.utc).isoformat(), rid,
     )
 
 
@@ -940,7 +940,7 @@ async def test_a_session_accepted_after_the_check_refuses_the_save_and_arms_agai
     await open_submission(league, R3)
     await league.write(
         "UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-        (league.clock.now - timedelta(minutes=10)).replace(tzinfo=None).isoformat(), R4,
+        (league.clock.now - timedelta(minutes=10)).astimezone(timezone.utc).isoformat(), R4,
     )
     interaction = await _asked(league)
     scheduler = league.bot.scheduler_service

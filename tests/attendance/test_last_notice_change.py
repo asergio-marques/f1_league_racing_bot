@@ -18,7 +18,7 @@ runs is dropped (fault 8). Discord refusing it stops the queue.
 from __future__ import annotations
 
 import inspect
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Any
 
 import discord
@@ -56,7 +56,7 @@ async def _league(tmp_path: Any) -> SeasonLeague:
     attendance_from_the_database(league)
     when = league.clock.now + timedelta(hours=3)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       when.replace(tzinfo=None).isoformat(), ROUND_3)
+                       when.astimezone(timezone.utc).isoformat(), ROUND_3)
     await league.write(
         "UPDATE rsvp_embed_messages SET last_notice_msg_id = NULL, distribution_msg_id = NULL "
         "WHERE round_id = ?", ROUND_3,
@@ -143,7 +143,7 @@ async def test_a_last_notice_after_a_channel_move_goes_to_the_new_channel_and_is
 
     when = league.clock.now - timedelta(hours=25)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       when.replace(tzinfo=None).isoformat(), ROUND_3)
+                       when.astimezone(timezone.utc).isoformat(), ROUND_3)
     await ask_check_in_clean_up(league.bot.change_queue, league.db_path, ROUND_3,
                                 origin=ChangeOrigin.BOT)
     await run_queue(league.bot)

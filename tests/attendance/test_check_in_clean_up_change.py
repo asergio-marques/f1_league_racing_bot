@@ -15,7 +15,7 @@ by hand (Q9, as a cancellation's does); a message already gone completes its del
 from __future__ import annotations
 
 import inspect
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -57,7 +57,7 @@ async def _league(tmp_path: Any) -> SeasonLeague:
     attendance_from_the_database(league)
     when = league.clock.now - timedelta(hours=25)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       when.replace(tzinfo=None).isoformat(), ROUND_3)
+                       when.astimezone(timezone.utc).isoformat(), ROUND_3)
     return league
 
 
@@ -240,7 +240,7 @@ async def test_the_start_up_asks_for_each_clean_up_missed(tmp_path):
     league = await _league(tmp_path)
     tomorrow = league.clock.now + timedelta(days=1)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       tomorrow.replace(tzinfo=None).isoformat(), ROUND_4)
+                       tomorrow.astimezone(timezone.utc).isoformat(), ROUND_4)
     await league.write(
         "INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id, "
         "posted_at) VALUES (?, ?, ?, ?, ?)",
@@ -266,7 +266,7 @@ async def test_the_clean_up_leaves_the_other_round_of_a_double_header_standing(t
     league = await _league(tmp_path)
     tomorrow = league.clock.now + timedelta(days=1)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       tomorrow.replace(tzinfo=None).isoformat(), ROUND_4)
+                       tomorrow.astimezone(timezone.utc).isoformat(), ROUND_4)
     await league.write(
         "INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id, "
         "posted_at, last_notice_msg_id) VALUES (?, ?, ?, ?, ?, ?)",

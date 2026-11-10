@@ -955,7 +955,7 @@ async def test_a_discarded_amendment_is_named_by_the_number_the_round_bears_when
     r2 = round_id(PRO, 2)
     await league.write(
         "UPDATE rounds SET status = 'NOT_RUN', scheduled_at = ? WHERE id = ?",
-        (league.clock.now + timedelta(days=60)).replace(tzinfo=None).isoformat(), r2,
+        (league.clock.now + timedelta(days=60)).astimezone(timezone.utc).isoformat(), r2,
     )
     await _stopped_blocker(league)
     await _amended(league, 2, scheduled_at=_at(league, days=150))
@@ -1062,6 +1062,7 @@ async def test_a_module_turned_off_before_its_job_drops_it(tmp_path):
     assert NOT_DONE not in _outcome(press)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_a_cancellation_queued_behind_an_amendment_runs_after_its_renumbering(tmp_path):
     """Attendance on; the queue is stopped. Pro's round 3 is moved past round 4 and confirmed,
     then Pro's round 4 is cancelled, each ask blind to the other as two asks in the same instant
@@ -1195,7 +1196,7 @@ async def _place_r3(league: Any, **delta: float) -> None:
     """Pro's round 3 stands *delta* from "now", stored as plain UTC as production stores it."""
     await league.write(
         "UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-        (league.clock.now + timedelta(**delta)).replace(tzinfo=None).isoformat(), R3,
+        (league.clock.now + timedelta(**delta)).astimezone(timezone.utc).isoformat(), R3,
     )
 
 

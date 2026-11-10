@@ -8,7 +8,7 @@ change, and the queue runs one change at a time on the league's lane.
 """
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import timedelta, timezone
 
 
 # A deadline that has run is marked so on its call (`deadline_run_at`), apart from the message it
@@ -34,7 +34,7 @@ async def _league_past_its_deadline(tmp_path, *, marked: bool, announced: bool):
     attendance_from_the_database(league)
     now = league.clock.now
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       (now + timedelta(hours=1)).replace(tzinfo=None).isoformat(),
+                       (now + timedelta(hours=1)).astimezone(timezone.utc).isoformat(),
                        round_id(PRO, 3))
     if not announced:
         del league.channel(DIVISIONS[PRO][3].checkin).messages[CALL_MESSAGES[2]]

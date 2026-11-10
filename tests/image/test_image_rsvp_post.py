@@ -17,7 +17,7 @@ the check-in graphic stood in for by a double of `try_attach`.
 from __future__ import annotations
 
 import inspect
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -178,7 +178,7 @@ async def _call_league(tmp_path: Any, *, images: bool = True) -> SeasonLeague:
     attendance_from_the_database(league)
     when = league.clock.now + timedelta(days=3)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       when.replace(tzinfo=None).isoformat(), ROUND_4)
+                       when.astimezone(timezone.utc).isoformat(), ROUND_4)
     return league
 
 
@@ -326,7 +326,7 @@ async def _deadline_league(tmp_path: Any, monkeypatch: Any) -> tuple[SeasonLeagu
     attendance_from_the_database(league)
     when = league.clock.now + timedelta(hours=1)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       when.replace(tzinfo=None).isoformat(), ROUND_3)
+                       when.astimezone(timezone.utc).isoformat(), ROUND_3)
     del league.channel(CHECK_IN).messages[CALL_MESSAGES[2]]
     await league.write("UPDATE rsvp_embed_messages SET distribution_msg_id = NULL "
                        "WHERE round_id = ?", ROUND_3)

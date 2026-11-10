@@ -18,7 +18,7 @@ leaves alone a call already in hand; under test mode it asks none (the #429 rule
 from __future__ import annotations
 
 import inspect
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -77,7 +77,7 @@ async def _call_league(tmp_path: Any, *, images: bool = False) -> SeasonLeague:
 async def _round_4_in(league: SeasonLeague, delta: timedelta) -> None:
     when = league.clock.now + delta
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       when.replace(tzinfo=None).isoformat(), ROUND_4)
+                       when.astimezone(timezone.utc).isoformat(), ROUND_4)
 
 
 async def _ask(league: SeasonLeague, round_: int = ROUND_4, **kwargs: Any) -> None:

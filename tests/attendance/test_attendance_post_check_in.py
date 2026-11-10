@@ -234,7 +234,7 @@ async def _queue_league(tmp_path) -> SeasonLeague:
 async def _round_4_in(league: SeasonLeague, delta: timedelta) -> None:
     when = league.clock.now + delta
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       when.replace(tzinfo=None).isoformat(), ROUND_4)
+                       when.astimezone(timezone.utc).isoformat(), ROUND_4)
 
 
 async def _post_check_in(league: SeasonLeague, *, round: int = 4):

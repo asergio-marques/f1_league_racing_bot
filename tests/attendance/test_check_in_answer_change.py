@@ -20,7 +20,7 @@ them all (`save_answers`) and redraw the call once.
 """
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -67,7 +67,7 @@ async def _league(tmp_path: Any, *, race_in: timedelta = timedelta(days=3)) -> S
     attendance_from_the_database(league)
     when = league.clock.now + race_in
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       when.replace(tzinfo=None).isoformat(), ROUND_3)
+                       when.astimezone(timezone.utc).isoformat(), ROUND_3)
     return league
 
 
