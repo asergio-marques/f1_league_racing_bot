@@ -172,13 +172,12 @@ class LeagueBot(commands.Bot):
     #: reaches into the signup module itself (architecture.md, "A hook core declares is a list of
     #: subscribers").
     base_role_changed: AwaitedHook
-    #: Whether each of Phases 1 to 3 has been drawn for the rounds core hands it (an amendment's
-    #: judgement of a round, as the command judges it, as the change's check does and as its save
-    #: does again), by round and phase: weather signs up a function handing it back, whatever
-    #: its switch, given the round ids and, inside a save, the save's connection (the database's
-    #: path is bound as it signs up, for the rest). The builder makes it and signs weather up, so
-    #: that core reads no column of weather's own (architecture.md, "A hook core declares is a
-    #: list of subscribers").
+    #: Whether each of Phases 1 to 3 has been drawn, by round and phase, for the rounds core hands
+    #: it: the module that draws them signs up a function handing it back, whatever its switch,
+    #: given the round ids and, inside a save, the save's connection (the database's path is bound
+    #: as it signs up, for the rest). The builder makes it and signs weather up, so that core reads
+    #: no column of weather's own (architecture.md, "A hook core declares is a list of
+    #: subscribers").
     phases_drawn_read: AwaitedHook
     #: The moments of a round amended, each module signing up its part: inside the save, each
     #: module's part of the amendment on the save's connection (each hands back what the arming

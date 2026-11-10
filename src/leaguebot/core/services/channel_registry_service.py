@@ -140,7 +140,8 @@ async def find_channel_use(
     Core's own settings are read here, then each module is asked through *channel_uses_read*,
     the bot's hook, which hands each subscriber the channel and the live season's divisions (by
     id, naming each) and gathers a list of the :class:`ChannelUse` each finds it holding, in the
-    order the modules signed up. The first use not ignored is the answer.
+    order the modules signed up (weather, results, attendance, then signup: a channel two modules
+    hold is named for the first of them). The first use not ignored is the answer.
 
     *ignore* names a use to disregard — the setting being written. Without it, changing a
     division's results channel to a different channel would be refused by its own current
