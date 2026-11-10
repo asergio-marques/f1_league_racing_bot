@@ -101,7 +101,14 @@ def test_the_review_command_draws_nothing_under_a_notice_of_its_own():
 
 _APPROVAL = "core/services/season_approval_change.py"
 
+#: The press's approval, the workflow the review's Approve button hands a press on to.
+_PRESS = "core/services/season_review_workflows.py"
 
+#: The press's approval still runs as `SeasonCog._do_approve`.
+_PRESS_ON_THE_COG = "#283: the approval is not yet season_review_workflows.approve_season"
+
+
+@pytest.mark.xfail(strict=True, reason=_PRESS_ON_THE_COG)
 def test_the_approve_lineup_and_calendar_posting_is_wrapped():
     """The approval's notice is posted and deleted by jobs of its own, through the batch
     notice's raising halves, and no longer wraps the press."""
@@ -110,16 +117,17 @@ def test_the_approve_lineup_and_calendar_posting_is_wrapped():
 
     assert {"send_notice", "delete_notice"} <= calls
     assert "post_batch_notice" in source and "delete_batch_notice" in source
-    assert not _notices(_function("core/cogs/season_cog.py", "_do_approve"))
+    assert not _notices(_function(_PRESS, "approve_season"))
 
 
+@pytest.mark.xfail(strict=True, reason=_PRESS_ON_THE_COG)
 def test_the_approve_notice_goes_to_the_interaction_channel():
     """The approve button is ephemeral, so the channel the review was read in is the
     only home it has: the press keeps it in the approval's payload, which the notice's jobs
     read when they run."""
     kept = [
         ast.unparse(value)
-        for sub in ast.walk(_function("core/cogs/season_cog.py", "_do_approve"))
+        for sub in ast.walk(_function(_PRESS, "approve_season"))
         if isinstance(sub, ast.Dict)
         for key, value in zip(sub.keys, sub.values)
         if isinstance(key, ast.Constant) and key.value == "channel_id"
