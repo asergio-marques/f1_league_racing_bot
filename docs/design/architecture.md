@@ -94,11 +94,11 @@ hooks without importing a module.
   core's groups as it loads, which works, but leaves a module's commands under names that are
   core's.
 - **A service** holds the league's rules and all the database code. It may use discord.py: it can
-  post to a channel and build the buttons it posts, and a service's workflow a cog hands a button's
-  press to is handed the pressed interaction and answers the member through it, while the gates it
-  walks stay callable with no interaction (`approval_checks`). Keeping Discord out of the services
-  entirely would need a separate posting layer, which a bot this size has no use for. A service
-  never imports a cog.
+  post to a channel and build the buttons it posts, and a workflow, to which a cog hands a button's
+  press, takes the pressed interaction and answers the member through it, while the gates it walks
+  stay callable with no interaction (`approval_checks`, and the stage and in-hand checks the change
+  judges again in its own check). Keeping Discord out of the services entirely would need a
+  separate posting layer, which a bot this size has no use for. A service never imports a cog.
 - **Buttons live beside the code that posts them:** with the cog when a command posts them, with
   the service when a service does. A service never reaches into a cog for a view.
 - **Shared helpers in core** are of two kinds. Those used by cogs (the base classes, the guards,

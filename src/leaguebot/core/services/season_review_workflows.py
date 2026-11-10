@@ -12,7 +12,8 @@ Each workflow takes the interaction pressed, the services it reads as keywords, 
 carries them, and the press's own particulars (*what*, the button as the log channel names it, and
 the review's *fingerprint*). It answers `True` where the queue accepted the request, and `False`
 where the press was refused, which leaves the button's review standing. The gates it runs are
-`approval_checks`', called through that module.
+`approval_checks`', called through that module, beside the stage and in-hand checks the change
+judges again in its own check.
 
 **The approval's backup question** (`offer_backup_before_approving`, its view
 `BackupBeforeApprovalView`) is put under test mode, after every gate and before every write, and
