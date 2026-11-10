@@ -757,6 +757,8 @@ _RECOVERIES_IN_THE_ENTRY_POINT = {
 }
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the start-up does not yet hand the hub's recovery "
+                   "the bot's hub options")
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     """`build` on paths under `tmp_path` gives the start-up's steps by name, in today's order
     (architecture.md, "Start-up runs once, in one function"), so the order is read from the list
@@ -770,7 +772,8 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     - **the RSVP deadlines before the missed clean-ups**: a check-in whose deadline and clean-up
       both passed while the bot was down is distributed before it is taken down;
     - **the hub among them**, its step handing the hub's recovery the change queue, which it asks
-      for the panel (the recovery itself is tested in `test_hub_service.py`).
+      for the panel, and the bot's hub options, whose buttons it routes (the recovery itself is
+      tested in `test_hub_service.py`).
 
     Every step is then run on its own, each recovery stubbed to record what it was handed, and is
     seen to run its own recovery once, for the bot, and no other step's, so that a name cannot
@@ -778,8 +781,9 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     signup close timer, a close still ahead on record, re-arms it on the bot's scheduler (the step
     reads the host's clock and takes no `now`, so the close is set a day after that clock); the
     expired review prompts, a review left standing, ask the bot's queue for its take-down ending
-    `restart`; the hub hands its recovery the bot and its queue; the wizards are recovered by the
-    bot's wizard service; and each other step hands its recovery in the entry point the bot.
+    `restart`; the hub hands its recovery the bot, its queue and its hub options; the wizards are
+    recovered by the bot's wizard service; and each other step hands its recovery in the entry
+    point the bot.
     """
     import leaguebot.__main__ as bot_module
 
@@ -830,7 +834,8 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
         "signup close timer": ("schedule_signup_close_timer", (scheduler, close_at), {}),
         "expired review prompts": ("take_review_down", (bot.change_queue, bot.db_path, 42,
                                                         season_review_changes.RESTART), {}),
-        "hub": ("recover_hub", (bot,), {"queue": bot.change_queue}),
+        "hub": ("recover_hub", (bot,), {"queue": bot.change_queue,
+                                        "hub_options": bot.hub_options}),
         "wizards": ("recover_wizards", (bot.wizard_service,), {}),
     } | {
         step: (function, (bot,), {}) for step, function in _RECOVERIES_IN_THE_ENTRY_POINT.items()

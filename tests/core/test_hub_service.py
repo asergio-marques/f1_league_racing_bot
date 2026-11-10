@@ -4,7 +4,8 @@
 module's up on them, saying when it is offered and what a press does; core's one, About, is
 defined by `core/services/about_service.py` (#258) and tested there. A panel offering nothing says
 so. The tests sign their own options up on hub options of their own, made as the builder makes
-them, and hand them to the bot or the press.
+them, and hand them in where the builder and the start-up hand the bot's: to the panel, its view,
+a press, the refresh change and the restart. Nothing reads them off the bot.
 
 **A press is judged when it is made.** A panel can outlive the module that filled it — posted,
 then the module disabled — so the option is asked again at the press, and refused where it is
@@ -44,6 +45,7 @@ from tests.support.change_queue import (
     league_bot,
     league_queue,
     member_interaction,
+    register,
     retry_job,
     run_queue,
     seed_server,
@@ -150,32 +152,37 @@ def test_registering_the_same_option_again_is_harmless():
 
 @pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_only_the_options_offered_are_on_the_panel():
-    """The panel carries the bot's own hub options that are offered now."""
-    bot = MagicMock()
-    bot.hub_options = _options(
+    """The panel carries the options of the hub options handed to it that are offered now."""
+    hub_options = _options(
         _option("on", offered=_offered(True)),
         _option("off", offered=_offered(False)),
         _option("always"),
     )
 
-    assert [o.key for o in await offered_options(bot)] == ["always", "on"]
+    assert [o.key for o in await offered_options(MagicMock(), hub_options=hub_options)] == [
+        "always", "on"
+    ]
 
 
 # ── The panel ─────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_an_empty_panel_says_so_and_carries_no_buttons():
-    text, view = render_panel([])
+    """Hub options holding no option: the panel says nothing is offered, and has no view."""
+    text, view = render_panel([], hub_options=_options())
 
     assert "Nothing is offered here yet." in text
     assert view is None
 
 
+@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_each_option_is_a_button_keyed_by_its_custom_id():
-    """The custom id is what survives a restart, so it is the key and nothing else."""
+    """The custom id is what survives a restart, so it is the key and nothing else. The panel is
+    drawn from two options, handed the hub options they are signed up on."""
     options = [_option("licence", label="View licence"), _option("about", label="About")]
 
-    text, view = render_panel(options)
+    text, view = render_panel(options, hub_options=_options(*options))
 
     assert "Press an option below." in text
     assert [(b.label, b.custom_id) for b in view.children] == [
@@ -184,10 +191,12 @@ async def test_each_option_is_a_button_keyed_by_its_custom_id():
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_the_panel_is_persistent_and_refuses_other_servers():
     """No timeout, a custom id on every button, and the league-server check every view the
-    bot posts carries."""
-    view = HubPanelView([_option()])
+    bot posts carries. The view is built from one option, handed the hub options it is on."""
+    option = _option()
+    view = HubPanelView([option], hub_options=_options(option))
 
     assert view.timeout is None
     assert view.is_persistent()
@@ -199,12 +208,12 @@ async def test_the_panel_is_persistent_and_refuses_other_servers():
 
 @pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_a_press_is_answered_by_its_option():
-    """The option pressed is found on the bot's hub options, and answers the press."""
+    """The option pressed is found on the hub options the view was handed, and answers the
+    press."""
     respond = AsyncMock()
     option = _option("licence", respond=respond, offered=_offered(True))
-    view = HubPanelView([option])
+    view = HubPanelView([option], hub_options=_options(option))
     interaction = _interaction()
-    interaction.client.hub_options = _options(option)
 
     await view.children[0].callback(interaction)
 
@@ -234,12 +243,11 @@ async def test_a_stale_press_is_recorded_in_the_log_channel(registered, named):
     label, or by its key where no module registers it any more; the member is answered exactly
     as before, and the option does not run. The first case is a panel posted while the module
     was on and disabled since; the second, a button left on a panel by a version of the bot
-    that offered it, the bot's hub options holding no option under its key."""
+    that offered it, the hub options the view was handed holding no option under its key."""
     respond = AsyncMock()
     option = _option("licence", label="View licence", offered=_offered(False), respond=respond)
-    view = HubPanelView([option])
+    view = HubPanelView([option], hub_options=_options(option) if registered else _options())
     interaction = _interaction()
-    interaction.client.hub_options = _options(option) if registered else _options()
 
     await view.children[0].callback(interaction)
 
@@ -355,9 +363,14 @@ async def league(tmp_path):
 
 
 def _offer(league, *options):
-    """The league's bot holds hub options of its own with *options* alone signed up on them, in
-    place of the builder's, which hold About."""
-    league.bot.hub_options = _options(*options)
+    """Hub options with *options* alone signed up on them, and the league's `hub.refresh` built on
+    them in place of the builder's, which is built on the bot's (holding About): the panel the
+    queue posts carries these, and its buttons are handed them. Gives the hub options back."""
+    hub_options = _options(*options)
+    register(league.bot, hub_service.hub_refresh_change(
+        league.bot.change_queue, league.bot.config_service, hub_options=hub_options,
+    ))
+    return hub_options
 
 
 async def _ask_refresh(league, command="/module enable weather"):
@@ -385,8 +398,8 @@ def _log(league) -> str:
 
 @pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_a_standing_panel_is_edited_in_place(league):
-    """The panel stands in the hub; a refresh asked once an option is signed up on the bot's hub
-    options edits it in place, with the option's button, and posts nothing new."""
+    """The panel stands in the hub; a refresh asked once an option is signed up on the hub options
+    the refresh is built on edits it in place, with the option's button, and posts nothing new."""
     standing = await league.hub.send("old panel")
     await _configure(league.db_path, hub_message_id=standing.id)
     _offer(league, _option("licence"))
@@ -414,13 +427,13 @@ async def test_a_deleted_panel_is_posted_again(league):
 @pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_the_hub_panel_posted_or_edited_notifies_nobody(league):
     """The hub is set, no panel stands and nothing is offered: a refresh posts it. An option is
-    signed up on the bot's hub options and the panel refreshed again: it is edited in place.
-    Neither the post nor the edit notifies anybody."""
-    _offer(league)
+    signed up on the hub options the refresh is built on and the panel refreshed again: it is
+    edited in place. Neither the post nor the edit notifies anybody."""
+    hub_options = _offer(league)
     await _ask_refresh(league)
     await run_queue(league.bot)
     panel = league.hub.posted[0]
-    league.bot.hub_options.register_option(_option("licence"))
+    hub_options.register_option(_option("licence"))
     await _ask_refresh(league)
     await run_queue(league.bot)
 
@@ -431,7 +444,8 @@ async def test_the_hub_panel_posted_or_edited_notifies_nobody(league):
 
 @pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_a_hub_panel_emptied_of_options_loses_its_buttons(league):
-    """The bot's hub options hold one option, and the panel is posted with its button; the
+    """The hub options the refresh is built on hold one option, and the panel is posted with
+    its button; the
     option then stops being offered and the panel is refreshed through the queue. The panel says
     nothing is offered and carries no view, so no old button is left under it."""
     offered = _offered(True)
@@ -481,8 +495,8 @@ async def test_a_hub_channel_gone_stops_the_queue_naming_the_command(league):
 
 @pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_the_panel_s_id_is_saved_with_its_mark(league):
-    """The hub is set, no panel stands and the bot's hub options hold no option; the refresh is
-    asked and the queue run. The panel is posted; its id is kept, so that the next refresh edits
+    """The hub is set, no panel stands and the hub options the refresh is built on hold no
+    option; the refresh is asked and the queue run. The panel is posted; its id is kept, so that the next refresh edits
     it in place rather than posting a second, and is written in the refresh job's own save, with
     its mark."""
     _offer(league)
@@ -508,8 +522,8 @@ async def test_a_hub_not_set_is_not_due(league):
 
 
 async def _panel_with(league, option):
-    """The panel posted through the queue with *option* alone on the bot's hub options, and
-    offered; its view, as Discord holds it."""
+    """The panel posted through the queue with *option* alone on the hub options the refresh is
+    built on, and offered; its view, as Discord holds it, handed those hub options."""
     _offer(league, option)
     await _ask_refresh(league)
     await run_queue(league.bot)
@@ -633,13 +647,16 @@ async def test_permissions_are_left_alone_while_no_hub_is_set(db_path):
 @pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_a_restart_routes_every_registered_option_and_refreshes(league):
     """Every option, offered or not: a stale press is refused in words, not in silence. The
-    panel stands in the hub; after a restart every option on the bot's hub options has its button
+    panel stands in the hub; after a restart every option on the hub options handed to the
+    recovery has its button
     routed again, and the panel's refresh is asked of the queue rather than made at once."""
     standing = await league.hub.send("old panel")
     await _configure(league.db_path, hub_message_id=standing.id)
-    _offer(league, _option("on", offered=_offered(True)), _option("off", offered=_offered(False)))
+    hub_options = _offer(
+        league, _option("on", offered=_offered(True)), _option("off", offered=_offered(False))
+    )
 
-    await recover_hub(league.bot, queue=league.bot.change_queue)
+    await recover_hub(league.bot, queue=league.bot.change_queue, hub_options=hub_options)
 
     (view,), _ = league.bot.add_view.call_args
     assert sorted(b.custom_id for b in view.children) == ["hub:off", "hub:on"]
@@ -649,11 +666,11 @@ async def test_a_restart_routes_every_registered_option_and_refreshes(league):
 
 @pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_the_start_up_asks_for_the_panel_before_the_queue_starts(league):
-    """The hub is set, no panel stands and the bot's hub options hold no option. The start-up
-    asks the queue for the panel, as the bot's, and posts nothing itself; the panel is posted,
-    and its id kept, once the queue runs."""
-    _offer(league)
-    await recover_hub(league.bot, queue=league.bot.change_queue)
+    """The hub is set, no panel stands and the hub options handed to the start-up hold no option.
+    The start-up asks the queue for the panel, as the bot's, and posts nothing itself; the panel
+    is posted, and its id kept, once the queue runs."""
+    hub_options = _offer(league)
+    await recover_hub(league.bot, queue=league.bot.change_queue, hub_options=hub_options)
 
     assert league.hub.sent == []
     [change] = await _refreshes(league)
@@ -665,8 +682,8 @@ async def test_the_start_up_asks_for_the_panel_before_the_queue_starts(league):
 
 @pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_a_restart_with_no_option_registered_adds_no_view(league):
-    """The bot's hub options hold no option: a restart routes no view."""
-    _offer(league)
-    await recover_hub(league.bot, queue=league.bot.change_queue)
+    """The hub options handed to the start-up hold no option: a restart routes no view."""
+    hub_options = _offer(league)
+    await recover_hub(league.bot, queue=league.bot.change_queue, hub_options=hub_options)
 
     league.bot.add_view.assert_not_called()

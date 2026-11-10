@@ -51,7 +51,7 @@ def _hub_options(*options):
 def _interaction(running_version="v0.4.0-234", made=MADE):
     interaction = MagicMock()
     interaction.client = MagicMock(
-        spec=["running_version", "running_version_date", "config_service", "hub_options"]
+        spec=["running_version", "running_version_date", "config_service"]
     )
     interaction.client.running_version = running_version
     interaction.client.running_version_date = made
@@ -134,22 +134,26 @@ async def test_about_is_always_offered_and_after_every_module():
     assert [o.key for o in hub_options.registered_options()] == ["licence", "guides", "about"]
 
 
+@pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_its_key_never_changes():
-    """Part of the button's custom id: a panel already posted carries it."""
+    """Part of the button's custom id: a panel already posted carries it. The panel is drawn from
+    About, handed hub options holding it."""
     assert ABOUT_KEY == "about"
     assert ABOUT_OPTION.key == "about"
     assert ABOUT_OPTION.label == "About"
-    _content, view = hub_service.render_panel([ABOUT_OPTION])
+    _content, view = hub_service.render_panel(
+        [ABOUT_OPTION], hub_options=_hub_options(ABOUT_OPTION)
+    )
     assert [(item.label, item.custom_id) for item in view.children] == [("About", "hub:about")]
 
 
 @pytest.mark.xfail(strict=True, reason=ON_THE_BOT)
 async def test_a_press_on_the_panel_reaches_about():
-    """About is on the bot's hub options; a press on its key is answered by About."""
+    """About is on the hub options handed to the press; a press on its key is answered by About.
+    The bot pressed on holds no hub options, so the press reads only the ones handed to it."""
     interaction = _interaction()
-    interaction.client.hub_options = _hub_options(ABOUT_OPTION)
 
-    await hub_service.press(interaction, ABOUT_KEY)
+    await hub_service.press(interaction, ABOUT_KEY, hub_options=_hub_options(ABOUT_OPTION))
 
     assert interaction.response.send_message.await_args.args[0] == about_text("v0.4.0-234", MADE)
 
