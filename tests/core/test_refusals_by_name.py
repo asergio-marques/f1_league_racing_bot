@@ -95,6 +95,108 @@ async def _test_roster_imported(tmp_path, monkeypatch) -> None:
     )
 
 
+#: Ferrari, as the server's team list holds it, with no role mapped.
+_FERRARI = {"name": "Ferrari", "full_name": "Scuderia Ferrari", "max_seats": 2,
+            "is_reserve": False, "role_id": None}
+
+
+def _faulty_teams() -> MagicMock:
+    """A team service holding Ferrari, whose every judge raises a bug's `ValueError`."""
+    teams = MagicMock()
+    teams.server_team_on = AsyncMock(return_value=dict(_FERRARI))
+    teams.teams_with_roles_on = AsyncMock(return_value=[dict(_FERRARI)])
+    for name in ("judge_add_on", "judge_modify_on", "judge_remove_on"):
+        setattr(teams, name, AsyncMock(side_effect=ValueError(BUG)))
+    return teams
+
+
+def _team_placement() -> MagicMock:
+    """A placement service for which no team holds a role, and every role write goes through."""
+    placement = MagicMock()
+    placement.team_holding_role = AsyncMock(return_value=None)
+    placement.set_team_role_config_on = AsyncMock(return_value=None)
+    placement.delete_team_role_config_on = AsyncMock(return_value=None)
+    placement.seated_user_ids_on = AsyncMock(return_value=[])
+    return placement
+
+
+def _team_bot() -> MagicMock:
+    """A bot with no league server set up, so a role is judged by its holder alone."""
+    bot = MagicMock()
+    bot.config_service.get_league_server_id = AsyncMock(return_value=None)
+    return bot
+
+
+def _team_change(factory: str):
+    """`team_changes.<factory>`'s change, made with the doubles above and the queue's clock."""
+    from leaguebot.core.services import team_changes
+
+    made = getattr(team_changes, factory)
+    kwargs = {"placement": _team_placement()}
+    if factory != "team_reserve_role_change":
+        kwargs["teams"] = _faulty_teams()
+    if factory != "team_remove_change":
+        kwargs["now"] = lambda: datetime(2026, 9, 17, 12, tzinfo=timezone.utc)
+    return made(**kwargs)
+
+
+def _team_check(factory: str, payload: dict) -> Callable[..., Awaitable[None]]:
+    """The check of `team_changes.<factory>`'s change asked with *payload*, no season live, judged
+    with a team service that raises a bug's `ValueError`."""
+
+    async def run(tmp_path, monkeypatch) -> None:
+        from leaguebot.core.models.change import ChangeOrigin
+        from leaguebot.core.services.change_queue import CheckContext
+
+        db_path = str(tmp_path / "check.db")
+        await run_migrations(db_path)
+        await _team_change(factory).check(CheckContext(
+            payload=dict(payload), bot=_team_bot(), db_path=db_path,
+            origin=ChangeOrigin.MEMBER,
+        ))
+
+    return run
+
+
+def _team_save(factory: str, payload: dict) -> Callable[..., Awaitable[None]]:
+    """The save of `team_changes.<factory>`'s change asked by Admin with *payload*, no season
+    live, run with a team service that raises a bug's `ValueError`."""
+
+    async def run(tmp_path, monkeypatch) -> None:
+        from leaguebot.core.db.database import get_connection
+        from leaguebot.core.services.change_queue import StepContext
+        from leaguebot.core.services.team_changes import SAVE
+
+        db_path = str(tmp_path / "save.db")
+        await run_migrations(db_path)
+        change = _team_change(factory)
+        async with get_connection(db_path) as db:
+            await change.steps[SAVE].run(db, StepContext(
+                bot=_team_bot(), db_path=db_path, change_id=1, kind=change.kind,
+                payload=dict(payload), what="the change", actor_id=77, actor_name="Admin",
+                named="Admin (<@77>)", steps=(), step_name=SAVE,
+            ))
+
+    return run
+
+
+#: `/team add` of Alpine, "Alpine Racing", with role 813.
+_TEAM_ADDED = {"shorthand": "Alpine", "full_name": "Alpine Racing", "role_id": 813,
+               "role_name": "Alpine"}
+#: `/team modify` of Ferrari to "Ferrari F1" with its role left as it is.
+_TEAM_RENAMED = {"was_shorthand": "Ferrari", "was_full_name": "Scuderia Ferrari",
+                 "shorthand": "Ferrari", "full_name": "Ferrari F1", "role_id": None,
+                 "role_name": None}
+#: `/team modify` of Ferrari's role, the role id stored as no number: a bug's `int()` refuses it.
+_TEAM_ROLE_GARBLED = {"was_shorthand": "Ferrari", "was_full_name": "Scuderia Ferrari",
+                      "shorthand": "Ferrari", "full_name": "Scuderia Ferrari", "role_id": "x",
+                      "role_name": "Ferrari"}
+#: `/team remove` of Ferrari.
+_TEAM_REMOVED = {"shorthand": "Ferrari", "full_name": "Scuderia Ferrari"}
+#: `/team reserve-role`, the role id stored as no number: a bug's `int()` refuses it.
+_RESERVE_ROLE_GARBLED = {"role_id": "x", "role_name": "Reserve"}
+
+
 #: One case per catch: what it guards, and how to raise a bug's `ValueError` inside it.
 CATCHES = [
     pytest.param(_placement_check("driver_move_change"), id="driver move check",
@@ -110,6 +212,22 @@ CATCHES = [
     pytest.param(_test_driver_added, id="test driver added",
                  marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
     pytest.param(_test_roster_imported, id="test roster imported",
+                 marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
+    pytest.param(_team_check("team_add_change", _TEAM_ADDED), id="team add check",
+                 marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
+    pytest.param(_team_save("team_add_change", _TEAM_ADDED), id="team add save",
+                 marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
+    pytest.param(_team_check("team_remove_change", _TEAM_REMOVED), id="team remove check",
+                 marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
+    pytest.param(_team_save("team_remove_change", _TEAM_REMOVED), id="team remove save",
+                 marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
+    pytest.param(_team_check("team_modify_change", _TEAM_RENAMED), id="team modify check",
+                 marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
+    pytest.param(_team_save("team_modify_change", _TEAM_ROLE_GARBLED),
+                 id="team modify save, a role id no number",
+                 marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
+    pytest.param(_team_save("team_reserve_role_change", _RESERVE_ROLE_GARBLED),
+                 id="team reserve-role save, a role id no number",
                  marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
 ]
 
