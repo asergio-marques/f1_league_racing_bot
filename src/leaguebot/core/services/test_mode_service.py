@@ -10,7 +10,10 @@ Provides async functions consumed by TestModeCog, among them:
   - register_advance, advance_next_step: the step `/test-mode advance` runs for each kind of a
                                   round's job, signed up by its module, and the one call that
                                   picks it, takes its job down and runs it
-  - build_review_summary:         format a full season/division/round status string
+  - build_review_summary:         format a full season/division/round status string, core laying
+                                  out the divisions and rounds and each module handing back its
+                                  own marks of them through the bot's `review_marks_read` hook
+  - phase_mark, PASSED_OVER, ReviewMarks: the vocabulary of those marks, shared with the modules
 """
 
 from __future__ import annotations
@@ -480,10 +483,6 @@ async def round_result_status(db_path: str, round_id: int) -> str | None:
     NOT_RUN -> AWAITING_RESULTS -> AWAITING_REPORT_VERDICTS -> AWAITING_APPEAL_VERDICTS -> FINAL,
     with CANCELLED as the other ending. Only FINAL and CANCELLED are terminal — a round awaiting
     appeal verdicts still has its results open to change.
-
-    This replaced `is_round_finalized`, which read `rounds.finalized`: a column nothing has ever
-    written, so it returned False for every round however completely it was scored and
-    `/test-mode advance` treated a finished round as one still in penalty review.
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -510,7 +509,7 @@ def phase_mark(
 
     *event* is the ``(round_id, event_type)`` the slot's job is armed under, and *queued* the
     scheduler's own answer from ``get_queued_events_for_rounds`` — a job is found by its round
-    and its type, never by an ID rebuilt here, which is how every slot once read ⚠️.
+    and its type, never by an ID rebuilt.
     When *queued* is None (no scheduler available) pending phases show ⏳.
     """
     if done:
