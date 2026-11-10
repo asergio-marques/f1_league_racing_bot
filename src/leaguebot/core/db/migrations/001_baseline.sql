@@ -834,6 +834,8 @@ CREATE TABLE "default_teams" (
     max_seats  INTEGER NOT NULL DEFAULT 2,
     is_reserve INTEGER NOT NULL DEFAULT 0
 );
+-- The list ships holding the Reserve team alone: no change adds it, and none may remove it.
+INSERT INTO default_teams (name, full_name, max_seats, is_reserve) VALUES ('Reserve', 'Reserve', -1, 1);
 
 -- team_role_configs
 CREATE TABLE "team_role_configs" (

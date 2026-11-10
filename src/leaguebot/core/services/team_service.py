@@ -191,41 +191,13 @@ class TeamService:
     # Default teams (US4)
     # ------------------------------------------------------------------
 
-    @staticmethod
-    async def _ensure_reserve(db) -> bool:
-        """Create the server's Reserve team where none is present. True where it was.
-
-        Principle IX requires the Reserve team to exist in the server's team configuration
-        as it does in every division, and FR-014 requires it to be created whenever that
-        configuration is read or written and none is present. The older seeding fired only
-        when the server had **no team at all**, so a configuration that lost its Reserve
-        row — or predates the rule — never regained one.
-        """
-        found = await (
-            await db.execute(
-                "SELECT 1 FROM default_teams WHERE is_reserve = 1 LIMIT 1",
-            )
-        ).fetchone()
-        if found:
-            return False
-        await db.execute(
-            "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
-            "VALUES (?, ?, -1, 1)",
-            (RESERVE_NAME, RESERVE_NAME),
-        )
-        return True
-
     async def get_default_teams(self) -> list[DefaultTeam]:
         """Return all default teams for this server, the Reserve team included."""
         async with get_connection(self._db_path) as db:
-            if await self._ensure_reserve(db):
-                await db.commit()
             return await self._read_default_teams(db)
 
     async def get_default_teams_on(self, db: aiosqlite.Connection) -> list[DefaultTeam]:
-        """`get_default_teams` on *db*, a connection the caller holds: a Reserve team it has to
-        restore is written there and left for the caller to commit."""
-        await self._ensure_reserve(db)
+        """`get_default_teams` on *db*, a connection the caller holds."""
         return await self._read_default_teams(db)
 
     @staticmethod
@@ -265,7 +237,6 @@ class TeamService:
 
         Raises ValueError on a duplicate or the Reserve name (`judge_add_on`).
         """
-        await self._ensure_reserve(db)
         await self.judge_add_on(db, name, full_name=full_name)
         cursor = await db.execute(
             "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
@@ -481,13 +452,10 @@ class TeamService:
         int | None, and ``name`` is the team's shorthand.
         Ordered: non-reserve alphabetically first, Reserve last.
 
-        Restores a missing Reserve team first, as ``get_default_teams`` does: this is the
-        read behind `/team list`, `/team reserve-role` and team autocomplete, and the Reserve team
-        must be present on every read of the list (issue #146).
+        The read behind `/team list`, `/team reserve-role` and team autocomplete: it writes
+        nothing, the Reserve team being a row the baseline holds.
         """
         async with get_connection(self._db_path) as db:
-            if await self._ensure_reserve(db):
-                await db.commit()
             return await self.teams_with_roles_on(db)
 
     @staticmethod

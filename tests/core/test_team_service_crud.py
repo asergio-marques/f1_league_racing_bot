@@ -43,16 +43,6 @@ SEASON_ID = 1
 #: The protected name, as the service spells it.
 RESERVE = "Reserve"
 
-#: Why the tests of the Reserve team's seeded row fail until the build.
-_SEEDED = "#283: a new database does not yet hold the Reserve team"
-#: Why the test of a read writing nothing fails until the build.
-_READ_WRITES = "#283: reading the team list still writes the Reserve team back"
-#: Why the test of the Reserve row renamed by hand fails until the build.
-_SEEDED_ON = (
-    "#283: a new database does not yet hold the Reserve team, and the team list's writers have "
-    "no _on forms yet"
-)
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -171,7 +161,6 @@ async def _insert_division_team(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_SEEDED)
 async def test_a_new_server_s_team_list_is_the_reserve_team_alone(tmp_path):
     """The core specification: the list ships holding the Reserve team alone. A database just
     built by the migrations, before anything has read or written the list, holds one team: the
@@ -191,7 +180,6 @@ async def test_a_new_server_s_team_list_is_the_reserve_team_alone(tmp_path):
     assert teams[0].full_name == RESERVE
 
 
-@pytest.mark.xfail(strict=True, reason=_READ_WRITES)
 @pytest.mark.parametrize("read", ["get_default_teams", "get_teams_with_roles"])
 async def test_reading_the_team_list_writes_nothing(tmp_path, read):
     """Reading the team list commits nothing: every change is made through the change queue,
@@ -245,7 +233,6 @@ async def test_no_team_command_may_manage_the_reserve_team(tmp_path, call):
         await _write(db_path, call)
 
 
-@pytest.mark.xfail(strict=True, reason=_SEEDED_ON)
 async def test_a_reserve_team_cannot_be_renamed_by_its_row_either(tmp_path):
     """The name check catches the usual case; the `is_reserve` check behind it catches a
     Reserve team that was somehow stored under another name. The Reserve team's row, the one

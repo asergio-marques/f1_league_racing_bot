@@ -2028,8 +2028,6 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/placement_service.py", "PlacementService.rename_team_role_config"): (1, PASS["core"]),
     ("core/services/placement_service.py", "PlacementService.set_team_role_config"): (1, PASS["core"]),
     ("core/services/team_service.py", "TeamService.add_default_team"): (1, PASS["core"]),
-    ("core/services/team_service.py", "TeamService.get_default_teams"): (1, PASS["core"]),
-    ("core/services/team_service.py", "TeamService.get_teams_with_roles"): (1, PASS["core"]),
     ("core/services/team_service.py", "TeamService.modify_default_team"): (1, PASS["core"]),
     ("core/services/team_service.py", "TeamService.remove_default_team"): (1, PASS["core"]),
     ("core/services/test_roster_service.py", "_delete_test_drivers_in_division"): (1, PASS["core"]),

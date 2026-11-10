@@ -346,7 +346,6 @@ async def test_pack_keeps_the_past_season_whole(db_path):
     assert await _count(db_path, "audit_entries WHERE change_type = 'X'") == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#283: a new database does not yet hold the Reserve team")
 async def test_pack_keeps_the_teams_points_and_module_settings(db_path):
     """The server's team list travels with the league: Ferrari, and the Reserve team a new
     database holds."""
