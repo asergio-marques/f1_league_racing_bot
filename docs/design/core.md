@@ -182,11 +182,11 @@ need by whoever calls them.
 
 **A cog reads no table and no module's service.** What a command shows is asked of the service that
 owns it (`pack_service.what_stops_a_pack`, `track_service.list_tracks` and `resolve_track`,
-`PlacementService.division_lineup`). Where a service of plain functions needs a module's service,
-its caller hands it in: `approval_faults` is handed the module switches by `results`' cog and change
-type, and `/season config-review` is handed `bot.configuration_faults`, the reader the builder makes
-(`_make_configuration_faults`), which asks the configuration gate with the services as they stand
-when it is asked.
+`PlacementService.division_lineup`). A service of plain functions looks no service up on the bot:
+its caller hands it what it needs. `approval_faults` is handed core's module switches
+(`ModuleService`) by `results`' cog and change type. `/season config-review` is handed
+`bot.configuration_faults`, the reader the builder makes (`_make_configuration_faults`), which asks
+the configuration gate with the services, signup's among them, as they stand when it is asked.
 
 **Core's models** (`core/models/`) are plain data and the enums the schema ties to: the season's
 status and stage, a division's and a round's status, the driver's state, the change queue's
