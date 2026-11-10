@@ -260,13 +260,12 @@ async def test_the_withdrawn_template_gate_is_not_called_again(db_path):
 
 # ── Gate 4b: the image module's configuration (#396) ────────────────────────
 #
-# The review draws the lineup and the calendar and nothing else, so its render was never
-# evidence that a results or weather template would draw, nor that the rasteriser was there
-# at all with both of those off. Each such season was named as blocked by the review and
-# then approved here. These drive the gate with the real `_image_configuration_faults`, over a
-# stand-in for the image module's drawing that answers each question as the test says; what the
-# image module answers is tested against its own drawing, in
-# `tests/image/test_image_drawing_review.py`.
+# The review draws the lineup and the calendar and nothing else, so its render was never evidence
+# that a results or weather template would draw, nor that the rasteriser was there at all with both
+# of those off. Each such season was named as blocked by the review and then approved here. These
+# drive the gate with the real `approval_checks.image_configuration_faults`, over a stand-in for the
+# image module's drawing that answers each question as the test says; what the image module answers
+# is tested against its own drawing, in `tests/image/test_image_drawing_review.py`.
 
 _RASTERISER = "Inkscape is not installed on this host."
 

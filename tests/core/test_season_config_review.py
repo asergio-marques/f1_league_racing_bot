@@ -29,7 +29,8 @@ ADMIN_ROLE = 444
 
 #: The configuration's confirmation still runs as `SeasonCog._do_confirm_configuration`.
 _CONFIRMATION_ON_THE_COG = (
-    "#283: the configuration's confirmation is not yet season_review_workflows.confirm_configuration"
+    "#283: the configuration's confirmation is not yet "
+    "season_review_workflows.confirm_configuration"
 )
 
 #: The configuration review's gates are still the season cog's methods.

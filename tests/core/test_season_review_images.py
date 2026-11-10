@@ -293,7 +293,9 @@ async def test_a_league_admin_may_approve_somebody_elses_review(tmp_path, monkey
 
 
 @pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
-async def test_nobody_but_the_reviewer_may_approve_while_no_admin_role_is_set(tmp_path, monkeypatch):
+async def test_nobody_but_the_reviewer_may_approve_while_no_admin_role_is_set(
+    tmp_path, monkeypatch,
+):
     """A league with no admin role set (one that predates it, or deleted it). Sam, holding the
     role the league once used and so Discord's old way in, presses Approve on Alex's review: he
     is refused, nothing is approved, and no take-down is asked."""
@@ -345,14 +347,15 @@ async def test_a_report_message_already_gone_does_not_stop_the_rest(tmp_path):
 
 # ── A press refused, or cancelled, leaves the review standing (#439) ───────
 #
-# The core specification's "Confirming placements": a press refused at the press by the
-# approval's own gates, or cancelled at the test-mode backup question, leaves the review and its
-# button standing, to be pressed again within its five minutes, as a press that fails on a fault
-# does. A press whose approval goes through asks the queue to take the review down, ahead of the
-# approval's work, whatever then becomes of it (core :288). These drive the real approval,
-# `season_review_workflows.approve_season`, behind the button, so that what the helper tells the view is what is tested, not what a double
-# says. The review is read from its row: its question Q (999) posted a moment ago in channel 111,
-# its report R (900–902), the evidence its report was computed from matching the season now.
+# The core specification's "Confirming placements": a press refused at the press by the approval's
+# own gates, or cancelled at the test-mode backup question, leaves the review and its button
+# standing, to be pressed again within its five minutes, as a press that fails on a fault does. A
+# press whose approval goes through asks the queue to take the review down, ahead of the approval's
+# work, whatever then becomes of it (core :288). These drive the real approval,
+# `season_review_workflows.approve_season`, behind the button, so that what the helper tells the
+# view is what is tested, not what a double says. The review is read from its row: its question Q
+# (999) posted a moment ago in channel 111, its report R (900–902), the evidence its report was
+# computed from matching the season now.
 
 GATED_QUESTION = 999
 GATED_REPORT = (900, 901, 902)

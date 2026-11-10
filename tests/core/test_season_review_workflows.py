@@ -35,8 +35,9 @@ _WORKFLOWS_ON_THE_COG = "#283: the review's workflows and their gates are still 
 _PRESS_ON_THE_HOST_CLOCK = "#283: the approval's press reads the host's clock, not the queue's"
 _CHECK_BUILDS_A_COG = "#283: the configuration change's check calls SeasonCog._configuration_faults"
 
-#: Every workflow and gate the review's buttons run on `SeasonCog` today. Each moves into core's
-#: services; the review commands keep the cog.
+#: Every workflow and gate the review's buttons run on `SeasonCog` today: work the press must not
+#: reach on the cog. All but `_approval_windows` move into core's services; `_approval_windows`
+#: stays for the review command, the workflow reading the windows through `read_round_windows`.
 _COG_WORK = (
     "_do_approve", "_offer_backup_before_approving", "_record_backup_question_ended",
     "_do_confirm_mid_season_placements", "_do_confirm_configuration",

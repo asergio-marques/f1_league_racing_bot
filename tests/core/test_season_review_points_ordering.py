@@ -5,8 +5,8 @@ It collected every other blocker and not this one — which was harmless only wh
 was dead (#131), and stopped being harmless the moment the gate started refusing: a season
 could review clean and then be refused for a fault the report had just said nothing about.
 
-Both surfaces read `approval_checks.points_ordering_problems`, and the drift is what these pin. A copy of
-the logic in each would pass every test in this file on the day it was written and diverge
+Both surfaces read `approval_checks.points_ordering_problems`, and the drift is what these pin. A
+copy of the logic in each would pass every test in this file on the day it was written and diverge
 the first time either was touched.
 """
 from __future__ import annotations

@@ -5,9 +5,10 @@ The placements review never asked, so it offered Approve to a season the press t
 reachable because `/results config detach` stays open in Placements. Each surface counted
 `season_points_links` with SQL of its own, and one of them simply had no copy.
 
-All three now read `approval_checks.no_points_config_attached`, and the drift between them is what the source
-pins below hold. Test mode is no exception (decided 2026-09-23): it attaches Standard and Half
-Points when it is enabled and at no other moment, so all three judge a test season as any other.
+All three now read `approval_checks.no_points_config_attached`, and the drift between them is what
+the source pins below hold. Test mode is no exception (decided 2026-09-23): it attaches Standard and
+Half Points when it is enabled and at no other moment, so all three judge a test season as any
+other.
 """
 from __future__ import annotations
 

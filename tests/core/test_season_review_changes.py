@@ -834,7 +834,9 @@ PRO_ROUNDS = "Division Pro's rounds"
 
 
 #: The Approve button still hands a press on to `SeasonCog._do_approve`.
-_APPROVAL_ON_THE_COG = "#283: the Approve button does not yet run season_review_workflows.approve_season"
+_APPROVAL_ON_THE_COG = (
+    "#283: the Approve button does not yet run season_review_workflows.approve_season"
+)
 
 
 def _approve_view(env: Any, monkeypatch: Any) -> tuple[Any, Any]:
@@ -1084,7 +1086,9 @@ def _refused_as_expired(env: Any, interaction: Any) -> None:
 
 
 @pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
-async def test_a_press_on_a_review_whose_five_minutes_ran_is_refused_and_recorded(standing, monkeypatch):
+async def test_a_press_on_a_review_whose_five_minutes_ran_is_refused_and_recorded(
+    standing, monkeypatch,
+):
     """Alex's review stands in channel 700, its question Q posted on 7 September, so its five
     minutes ran long ago, but nothing has yet taken it down. Alex presses Approve on Q through a view just built for it. He is refused,
     privately, told the review's five minutes are up and nothing was approved; one ⛔ line naming
@@ -1102,7 +1106,9 @@ async def test_a_press_on_a_review_whose_five_minutes_ran_is_refused_and_recorde
 
 @pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 @pytest.mark.parametrize("mark", ["UNDER_WAY", "TIMER_FIRED"])
-async def test_a_late_press_beside_one_under_way_leaves_the_review_to_it(standing, monkeypatch, mark):
+async def test_a_late_press_beside_one_under_way_leaves_the_review_to_it(
+    standing, monkeypatch, mark,
+):
     """Alex's review stands past its five minutes and his first press is being worked (or the
     timer has fired and waits for it). A second press is refused as expired, privately, and
     recorded, but asks no take-down: the first press settles how the review ends, so its approval
