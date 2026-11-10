@@ -725,12 +725,22 @@ async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     # The faults are pinned above; here only what is reported.
     cog.configuration_faults = AsyncMock(return_value=[])
 
-    text = "\n".join(await _report(cog, _interaction(), monkeypatch))
+    review = await _review_asked(cog, _interaction(), monkeypatch)
+    messages = review["report"]
+    text = "\n".join(_texts(review))
 
-    assert "**Signup Config**" in text and "Available slots: Sunday 20:00" in text
-    assert "**Attendance Config**" in text and "Auto-sack threshold: 10 pts" in text
+    # Each section its own message, after the season's and in the placements review's order,
+    # whichever order the hook gathers them in (core specification, "Confirming the
+    # configuration").
+    headings = ("**Signup Config**", "**Attendance Config**", "**Points Configs:**",
+                "**Weather Config**")
+    assert len(messages) == 1 + len(headings), messages
+    for message, heading in zip(messages[1:], headings):
+        assert message.startswith(heading), (heading, message)
+    assert "Available slots: Sunday 20:00" in text
+    assert "Auto-sack threshold: 10 pts" in text
     assert "**Points Configs:** Standard, Sprint" in text
-    assert "**Weather Config**" in text and "Phase 3 deadline: 2h before race" in text
+    assert "Phase 3 deadline: 2h before race" in text
 
 
 @pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
