@@ -61,6 +61,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.services.amendment_service import approval_faults
+from leaguebot.core.services.module_service import ModuleService
 from leaguebot.core.services.change_queue import (
     ChangeType,
     CheckContext,
@@ -205,11 +206,14 @@ def _left(ctx: OutcomeContext) -> list[str]:
 
 
 def points_amendment_change(
-    *, attendance: AttendanceAfterReview, now: Callable[[], datetime]
+    *,
+    attendance: AttendanceAfterReview,
+    now: Callable[[], datetime],
+    module_service: ModuleService,
 ) -> ChangeType:
     """The change that approves a season's staged points; see the module. *attendance* is the
-    hook the builder hands every change type that reaches attendance, and *now* the queue's
-    clock."""
+    hook the builder hands every change type that reaches attendance, *now* the queue's clock,
+    and *module_service* the module switches its check of the channels asks of."""
 
     async def check(ctx: CheckContext) -> Verdict:
         db_path = ctx.db_path
@@ -254,7 +258,9 @@ def points_amendment_change(
                 "\n".join(ordering),
             )
 
-        faults = await approval_faults(db_path, season_id, ctx.bot)
+        faults = await approval_faults(
+            db_path, season_id, ctx.bot, module_service=module_service
+        )
         if faults:
             bullets = "\n• ".join(faults)
             return Verdict.refuse(

@@ -1213,7 +1213,9 @@ def register_change_types(bot: LeagueBot) -> None:
         bot.change_queue.register(stage)
     bot.change_queue.register(
         points_amendment_change(
-            attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
+            attendance=bot.attendance_after_review,
+            now=lambda: bot.change_queue.now(),
+            module_service=bot.module_service,
         )
     )
     bot.change_queue.register(hub_refresh_change(

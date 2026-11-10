@@ -88,9 +88,6 @@ async def _seed_season_points(db_path: str, season_id: int) -> None:
 # recorded rather than run, patched before the league is built; a check-in call is posted by
 # attendance's own service and read from what its check-in channel was sent.
 
-#: Why a test of `approval_faults` handing it the module service fails until the build.
-HANDED_SWITCHES = "#283: approval_faults is not yet handed the module service it asks the attendance switch of"
-
 BAHRAIN = "Bahrain International Circuit"
 SILVERSTONE = "Silverstone Circuit"
 AM_3 = round_id(AM, 3)
@@ -1264,7 +1261,6 @@ async def test_an_amendment_is_refused_when_the_attendance_channel_is_gone(db_pa
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason=HANDED_SWITCHES)
 async def test_approval_faults_names_a_cancelled_division_s_deleted_attendance_channel(db_path):
     """A division cancelled mid-season, attendance on, whose attendance channel (601) has been
     deleted: the approval reposts and recalculates its raced rounds too, so the check names the
@@ -1351,7 +1347,6 @@ async def test_the_attendance_channels_are_not_checked_while_the_module_is_off(d
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason=HANDED_SWITCHES)
 async def test_an_attendance_switch_nobody_signed_up_for_is_raised_not_read_as_off(db_path):
     """The attendance module's switch reader was never signed up (`SwitchNotSignedUp`): that is a fault
     in the bot's assembly, not a switch that cannot be read, so `approval_faults` raises it rather

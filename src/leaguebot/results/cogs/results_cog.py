@@ -1418,7 +1418,9 @@ class ResultsCog(commands.Cog):
         # press: an approval that cannot be published is refused entire rather than
         # half-made (#187), and a manager should meet that while deciding rather than
         # after pressing Approve.
-        channel_faults = await approval_faults(self.bot.db_path, season.id, self.bot)
+        channel_faults = await approval_faults(
+            self.bot.db_path, season.id, self.bot, module_service=self.bot.module_service
+        )
         if channel_faults:
             bullet_list = "\n• ".join(channel_faults)
             diff += (
