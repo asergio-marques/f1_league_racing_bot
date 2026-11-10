@@ -64,6 +64,44 @@ def sign_up_driver_names_read(bot: Any) -> None:
     bot.driver_names_read.subscribe(signup_names)
 
 
+def sign_up_division_channel_faults_read(bot: Any) -> None:
+    """Give *bot* the hook a division's channel faults are read through
+    (`division_channel_faults_read`), each module's faults signed up as the builder signs them, in
+    the order a division's lines are read: weather's forecast channel, results' three channels,
+    then attendance's two. Weather and results are handed *bot*'s module service and database,
+    attendance its service over that database and the module service; then each is handed the
+    divisions judged and the server. Each module's function is looked up as the hook is called, so
+    a stand-in bot carries the hook whether or not any check asks it yet. This copies the
+    builder's sign-up, as no builder function for it exists before the build."""
+    from leaguebot.core.utils.hooks import AwaitedHook
+
+    async def weather_faults(*args: Any, **kwargs: Any) -> Any:
+        from leaguebot.weather.services import forecast_channel
+
+        return await forecast_channel.division_channel_faults(
+            bot.module_service, bot.db_path, *args, **kwargs
+        )
+
+    async def results_faults(*args: Any, **kwargs: Any) -> Any:
+        from leaguebot.results.services import division_channels
+
+        return await division_channels.division_channel_faults(
+            bot.module_service, bot.db_path, *args, **kwargs
+        )
+
+    async def attendance_faults(*args: Any, **kwargs: Any) -> Any:
+        from leaguebot.attendance.services import attendance_service
+
+        return await attendance_service.division_channel_faults(
+            attendance_service.AttendanceService(bot.db_path), bot.module_service,
+            *args, **kwargs,
+        )
+
+    bot.division_channel_faults_read = AwaitedHook()
+    for subscriber in (weather_faults, results_faults, attendance_faults):
+        bot.division_channel_faults_read.subscribe(subscriber)
+
+
 def _services(target: Any, bot: Any, given: dict[str, Any]) -> dict[str, Any]:
     """Every keyword-only parameter of *target* that has no default and is not in *given*, each
     taken off *bot* by its name, but `now`, which is the queue's clock as the views hand it."""

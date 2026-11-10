@@ -18,6 +18,7 @@ from leaguebot.core.models.season import SeasonStage
 from tests.support.review_workflows import (
     run_check,
     run_workflow,
+    sign_up_division_channel_faults_read,
     sign_up_driver_names_read,
 )
 from tests.support.setup_reads import hold_setup
@@ -64,6 +65,7 @@ def _cog(db_path, *, weather=False, results=False, attendance=False) -> SeasonCo
     cog.bot.module_service.is_results_enabled = AsyncMock(return_value=results)
     cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
     sign_up_driver_names_read(cog.bot)
+    sign_up_division_channel_faults_read(cog.bot)
     return cog
 
 

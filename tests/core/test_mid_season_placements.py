@@ -23,6 +23,7 @@ from tests.support.change_queue import acknowledgement
 from tests.support.review_workflows import (
     record_review_views,
     run_workflow,
+    sign_up_division_channel_faults_read,
     sign_up_driver_names_read,
 )
 from tests.support.season_league import PLACEMENTS_CONFIRM_KIND as KIND
@@ -115,6 +116,7 @@ def _cog(db_path, stage: SeasonStage) -> SeasonCog:
     cog.bot.image_drawing.calendar_wanted = AsyncMock(return_value=False)
     cog.bot.image_drawing.lineup_wanted = AsyncMock(return_value=False)
     sign_up_driver_names_read(cog.bot)
+    sign_up_division_channel_faults_read(cog.bot)
     return cog
 
 

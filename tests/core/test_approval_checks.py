@@ -73,21 +73,89 @@ def _guild(*, gone: tuple[int, ...] = (), unreadable: tuple[int, ...] = ()):
     return guild
 
 
+def _faults_bot(db_path, modules):
+    """A bot carrying *modules*, the database and attendance's service, and the hook a division's
+    channel faults are read through, each module signed up to it by the builder's own sign-up."""
+    from types import SimpleNamespace
+
+    from leaguebot.__main__ import _sign_up_to_division_channel_faults_read
+    from leaguebot.attendance.services.attendance_service import AttendanceService
+
+    bot = SimpleNamespace(
+        module_service=modules, db_path=db_path, attendance_service=AttendanceService(db_path)
+    )
+    _sign_up_to_division_channel_faults_read(bot)
+    return bot
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: core still reads the modules' channels itself, with no channel faults hook",
+)
 @pytest.mark.parametrize("pro_lineup", ["deleted", "cannot be told"])
 async def test_the_channel_faults_are_read_by_the_service(db_path, pro_lineup):
     """With every module off, Am has no lineup channel and Pro's lineup channel 100 has been
     deleted from the server. The service names both, with the command that sets each, and asks
     nothing of the cancelled division. Where Discord cannot say whether channel 100 is there (a
-    server error), it is taken as there: a check that could not tell does not refuse a season."""
-    from leaguebot.core.services.approval_checks import division_channel_faults
+    server error), it is taken as there: a check that could not tell does not refuse a season.
+    Each module is asked its own channels through the hook the builder signs them up to, and,
+    being off, names none."""
+    from tests.support.review_workflows import run_check
 
     guild = _guild(gone=(100,)) if pro_lineup == "deleted" else _guild(unreadable=(100,))
+    bot = _faults_bot(db_path, _modules())
 
-    faults = await division_channel_faults(_modules(), db_path, SEASON_ID, guild)
+    faults = await run_check("division_channel_faults", bot, db_path, SEASON_ID, guild)
 
     pro = ["**Pro**'s lineup channel is no longer on the server — `/division lineup-channel`."]
     assert faults == (pro if pro_lineup == "deleted" else []) + [
         "**Am** has no lineup channel — `/division lineup-channel`.",
+    ]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: core still reads the modules' channels itself, with no channel faults hook",
+)
+async def test_each_division_s_module_channels_follow_its_own_in_the_modules_order(db_path):
+    """Every module on. Pro's lineup channel 100, results channel 120 and attendance channel 131
+    are gone from the server, its other channels there; Am has no lineup, weather, results,
+    standings, verdicts, RSVP or attendance channel. Each module answers for its own channels
+    through the hook the builder signs them up to, and the faults read division by division, in
+    tier order: the division's own lineup and calendar channels first, then weather's, results'
+    and attendance's, as they read before the modules answered for them. The cancelled division
+    is asked nothing."""
+    from tests.support.review_workflows import run_check
+
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE divisions SET forecast_channel_id = 110 WHERE id = 1")
+        await db.execute(
+            "INSERT INTO division_results_config (division_id, results_channel_id, "
+            "standings_channel_id, penalty_channel_id) VALUES (1, 120, 121, '122')"
+        )
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, rsvp_channel_id, "
+            "attendance_channel_id) VALUES (1, '130', '131')"
+        )
+        await db.commit()
+    bot = _faults_bot(db_path, _modules(weather=True, results=True, attendance=True))
+
+    faults = await run_check(
+        "division_channel_faults", bot, db_path, SEASON_ID, _guild(gone=(100, 120, 131))
+    )
+
+    assert faults == [
+        "**Pro**'s lineup channel is no longer on the server — `/division lineup-channel`.",
+        "**Pro**'s results channel is no longer on the server — `/results channel results`.",
+        "**Pro**'s attendance channel is no longer on the server — "
+        "`/attendance channel attendance`.",
+        "**Am** has no lineup channel — `/division lineup-channel`.",
+        "**Am** has no weather channel — `/weather channel`.",
+        "**Am** has no results channel — `/results channel results`.",
+        "**Am** has no standings channel — `/results channel standings`.",
+        "**Am** has no verdicts channel — `/results channel verdicts`.",
+        "**Am** has no RSVP channel — `/attendance channel rsvp`.",
+        "**Am** has no attendance channel — `/attendance channel attendance`.",
     ]
 
 

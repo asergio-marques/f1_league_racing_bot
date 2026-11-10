@@ -380,3 +380,47 @@ async def test_recalculation_faults_wants_attach_files_only_with_graphics(tmp_pa
 
     assert len(faults) == 1, faults
     assert "Attach Files" in faults[0]
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#283: attendance does not yet answer for its division channels"
+)
+async def test_attendance_names_each_division_s_missing_or_deleted_channels(db_path):
+    """Pro's RSVP channel 130 is gone from the server and its attendance channel 131 is there;
+    Am has neither. Attendance on names Pro's RSVP channel as gone and both of Am's as missing,
+    RSVP first, each with the command that sets it; with no server, only Am's two. Attendance off
+    names nothing."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from leaguebot.attendance.services.attendance_service import (
+        AttendanceService,
+        division_channel_faults,
+    )
+    from leaguebot.core.db.database import get_connection
+    from tests.support.channel_faults import server_holding
+
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, rsvp_channel_id, "
+            "attendance_channel_id) VALUES (10, '130', '131')"
+        )
+        await db.commit()
+
+    async def faults(on: bool, guild) -> dict[int, list[str]]:
+        modules = MagicMock()
+        modules.is_attendance_enabled = AsyncMock(return_value=on)
+        found = await division_channel_faults(
+            AttendanceService(db_path), modules, divisions={10: "Pro", 11: "Am"}, guild=guild
+        )
+        return {division_id: lines for division_id, lines in found.items() if lines}
+
+    am = {11: [
+        "**Am** has no RSVP channel — `/attendance channel rsvp`.",
+        "**Am** has no attendance channel — `/attendance channel attendance`.",
+    ]}
+    assert await faults(True, server_holding(gone=(130,))) == {
+        10: ["**Pro**'s RSVP channel is no longer on the server — `/attendance channel rsvp`."],
+        **am,
+    }
+    assert await faults(True, None) == am
+    assert await faults(False, server_holding(gone=(130,))) == {}

@@ -189,3 +189,53 @@ async def test_a_results_channel_already_held_is_left_unwritten(tmp_path, setter
 
     assert changed == 0
     assert _as_text(replaced) == "700001"
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#283: results does not yet answer for its division channels"
+)
+async def test_results_names_each_division_s_missing_or_deleted_channels(tmp_path):
+    """Division 11's results channel 120 is set, its standings channel 121 gone from the server and
+    the server cannot say whether its verdicts channel 122 is there; Am has none of the three.
+    Results on names Division 11's standings channel as gone, taking the verdicts channel as there, and each of
+    Am's three as missing, in the order results, standings, verdicts, each with the command that
+    sets it. Results off names nothing."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from leaguebot.results.services.division_channels import division_channel_faults
+    from tests.support.channel_faults import server_holding
+
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, mention_role_id, tier) "
+            "VALUES (12, 1, 'Am', 1, 12)"
+        )
+        await db.execute(
+            "INSERT INTO division_results_config (division_id, results_channel_id, "
+            "standings_channel_id, penalty_channel_id) VALUES (?, 120, 121, '122')",
+            (DIVISION_ID,),
+        )
+        await db.commit()
+    guild = server_holding(gone=(121,), unreadable=(122,))
+
+    async def faults(on: bool) -> dict[int, list[str]]:
+        modules = MagicMock()
+        modules.is_results_enabled = AsyncMock(return_value=on)
+        found = await division_channel_faults(
+            modules, db_path, divisions={DIVISION_ID: "Division 11", 12: "Am"}, guild=guild
+        )
+        return {division_id: lines for division_id, lines in found.items() if lines}
+
+    assert await faults(True) == {
+        DIVISION_ID: [
+            "**Division 11**'s standings channel is no longer on the server — "
+            "`/results channel standings`.",
+        ],
+        12: [
+            "**Am** has no results channel — `/results channel results`.",
+            "**Am** has no standings channel — `/results channel standings`.",
+            "**Am** has no verdicts channel — `/results channel verdicts`.",
+        ],
+    }
+    assert await faults(False) == {}
