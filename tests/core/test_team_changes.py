@@ -22,9 +22,6 @@ import pytest
 
 from tests.core.test_driver_move import _ADMIN, _as_logged
 
-#: Why each test below fails until the build.
-_ON_THE_QUEUE = "#283: /team add and remove are not yet changes on the queue"
-
 ALPINE_ROLE, HAAS_ROLE = 813, 814
 _ADD_FORM = "the “Add a team” form"
 _FIXED = (
@@ -207,7 +204,6 @@ _LIST_OPEN = [
 _LIST_FIXED_STAGES = ("WAITING", "SIGNUPS", "PLACEMENTS", "ONGOING")
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 @pytest.mark.parametrize("season", _LIST_OPEN)
 async def test_a_team_add_its_row_mapping_audit_entries_and_line_are_one_save(tmp_path, season):
     """The core specification's team list, and its record of what changed. Season 3 is in
@@ -328,7 +324,6 @@ async def test_a_team_add_is_refused_at_the_ask(tmp_path, setup, shorthand, full
     assert await _team_audits(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_failed_team_add_changes_nothing(tmp_path):
     """The season is in Configuration. Admin submits the "Add a team" form for Alpine, and as the
     queue runs it the database fails writing the audit entries. Nothing of it is saved, the row,
@@ -372,7 +367,6 @@ async def _alpine_added_meanwhile(league):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 @pytest.mark.parametrize(
     "meanwhile, reply, standing",
     [
@@ -411,7 +405,6 @@ async def test_a_team_add_is_judged_again_as_it_starts(tmp_path, meanwhile, repl
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_refusal_found_inside_the_save_ends_the_team_add_and_the_lane_goes_on(tmp_path):
     """The one-save decision: the refusals are read again inside the save, so a role taken between
     the check and the write cannot leave a team behind without one. The season is in Configuration.
@@ -450,7 +443,6 @@ async def test_a_refusal_found_inside_the_save_ends_the_team_add_and_the_lane_go
     assert last_said(haas) == _added("Haas", "Haas F1 Team", HAAS_ROLE)
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_team_add_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. The
@@ -513,7 +505,6 @@ _REMOVE = "`/team remove`"
 _NO_MCLAREN = "⛔ No team in the server's list has the shorthand `McLaren`."
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 @pytest.mark.parametrize("season", _LIST_OPEN)
 async def test_a_team_remove_its_row_mapping_audit_entries_and_line_are_one_save(tmp_path, season):
     """Season 3 is in Configuration, or completed, the server holding no live season. The league
@@ -600,7 +591,6 @@ async def test_a_team_remove_is_refused_at_the_ask(tmp_path, setup, name, reply)
     assert await _team_audits(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_failed_team_remove_changes_nothing(tmp_path):
     """The season is in Configuration. The league admin runs `/team remove` of McLaren, and as the
     queue runs it the database fails writing the audit entries. Nothing is saved: McLaren is on the
@@ -638,7 +628,6 @@ async def _mclaren_removed_meanwhile(league):
 _WITHOUT_MCLAREN = {key: value for key, value in _STANDING.items() if key != "McLaren"}
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 @pytest.mark.parametrize(
     "meanwhile, reply, standing",
     [
@@ -670,7 +659,6 @@ async def test_a_team_remove_is_judged_again_as_it_starts(tmp_path, meanwhile, r
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_refusal_found_inside_the_save_ends_the_team_remove_and_the_lane_goes_on(
     tmp_path,
 ):
@@ -705,7 +693,6 @@ async def test_a_refusal_found_inside_the_save_ends_the_team_remove_and_the_lane
     assert last_said(ferrari) == _removed("Scuderia Ferrari")
 
 
-@pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_team_remove_asked_again_while_it_waits_is_refused_as_a_repeat(tmp_path):
     """The season is in Configuration. The league admin runs `/team remove` of McLaren and is
     acknowledged; before the queue runs it, they run it again. The second is refused at once, in

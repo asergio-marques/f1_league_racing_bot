@@ -236,20 +236,14 @@ class TeamService:
         )
         return [_row_to_default_team(r) for r in await cursor.fetchall()]
 
-    async def add_default_team_on(
-        self, db: aiosqlite.Connection, name: str, *, full_name: str, max_seats: int = 2
-    ) -> DefaultTeam:
-        """Add a team to the server's list under its shorthand *name* and its *full_name*, on
-        *db*, a connection the caller holds: commits nothing and writes no audit entry, which the
-        change that calls it records.
-
-        Raises ValueError on a duplicate or the Reserve name.
-        """
+    async def judge_add_on(self, db: aiosqlite.Connection, name: str, *, full_name: str) -> None:
+        """Raise ValueError, in the words a league is told, where a team under the shorthand
+        *name* and the *full_name* cannot be added to the server's list, reading on *db* and
+        writing nothing: the Reserve name, a shorthand already taken, a name the rules refuse."""
         if name == _RESERVE_NAME:
             raise ValueError(
                 f'The team name "{_RESERVE_NAME}" is protected and cannot be managed.'
             )
-        await self._ensure_reserve(db)
         existing = await db.execute("SELECT 1 FROM default_teams WHERE name = ?", (name,))
         if await existing.fetchone():
             raise ValueError(f'A default team named "{name}" already exists.')
@@ -262,6 +256,17 @@ class TeamService:
         if problem is not None:
             raise ValueError(problem)
 
+    async def add_default_team_on(
+        self, db: aiosqlite.Connection, name: str, *, full_name: str, max_seats: int = 2
+    ) -> DefaultTeam:
+        """Add a team to the server's list under its shorthand *name* and its *full_name*, on
+        *db*, a connection the caller holds: commits nothing and writes no audit entry, which the
+        change that calls it records.
+
+        Raises ValueError on a duplicate or the Reserve name (`judge_add_on`).
+        """
+        await self._ensure_reserve(db)
+        await self.judge_add_on(db, name, full_name=full_name)
         cursor = await db.execute(
             "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
             "VALUES (?, ?, ?, 0)",
@@ -284,26 +289,7 @@ class TeamService:
     async def server_team_on(self, db: aiosqlite.Connection, name: str) -> dict | None:
         """The team of the server's list whose shorthand is *name*, with its mapped role, read on
         *db*: ``{name, full_name, max_seats, is_reserve, role_id}``, or None where none is."""
-        row = await (
-            await db.execute(
-                """
-                SELECT dt.name, dt.full_name, dt.max_seats, dt.is_reserve, trc.role_id
-                FROM default_teams dt
-                LEFT JOIN team_role_configs trc ON trc.team_name = dt.name
-                WHERE dt.name = ?
-                """,
-                (name,),
-            )
-        ).fetchone()
-        if row is None:
-            return None
-        return {
-            "name": row["name"],
-            "full_name": row["full_name"],
-            "max_seats": row["max_seats"],
-            "is_reserve": bool(row["is_reserve"]),
-            "role_id": row["role_id"],
-        }
+        return next((t for t in await self.teams_with_roles_on(db) if t["name"] == name), None)
 
     async def modify_default_team_on(
         self,
@@ -400,9 +386,9 @@ class TeamService:
             await db.commit()
         return named
 
-    async def remove_default_team_on(self, db: aiosqlite.Connection, name: str) -> None:
-        """Remove a default team on *db*, a connection the caller holds: commits nothing and
-        writes no audit entry. Raises ValueError if protected or not found."""
+    async def judge_remove_on(self, db: aiosqlite.Connection, name: str) -> int:
+        """The id of the team of the server's list whose shorthand is *name*, read on *db*.
+        Raises ValueError where none is, or where it is the protected Reserve team."""
         if name == _RESERVE_NAME:
             raise ValueError(
                 f'The team name "{_RESERVE_NAME}" is protected and cannot be managed.'
@@ -416,7 +402,13 @@ class TeamService:
             raise ValueError(f'No default team named "{name}" found.')
         if row["is_reserve"]:
             raise ValueError(f'The team "{name}" is protected and cannot be managed.')
-        await db.execute("DELETE FROM default_teams WHERE id = ?", (row["id"],))
+        return int(row["id"])
+
+    async def remove_default_team_on(self, db: aiosqlite.Connection, name: str) -> None:
+        """Remove a default team on *db*, a connection the caller holds: commits nothing and
+        writes no audit entry. Raises ValueError if protected or not found."""
+        team_id = await self.judge_remove_on(db, name)
+        await db.execute("DELETE FROM default_teams WHERE id = ?", (team_id,))
 
     async def remove_default_team(self, name: str) -> None:
         """`remove_default_team_on` on a connection of its own, committed."""
@@ -479,16 +471,20 @@ class TeamService:
         async with get_connection(self._db_path) as db:
             if await self._ensure_reserve(db):
                 await db.commit()
-            cursor = await db.execute(
-                """
-                SELECT dt.name, dt.full_name, dt.max_seats, dt.is_reserve, trc.role_id
-                FROM default_teams dt
-                LEFT JOIN team_role_configs trc
-                       ON trc.team_name = dt.name
-                ORDER BY dt.is_reserve ASC, dt.name ASC
-                """,
-            )
-            rows = await cursor.fetchall()
+            return await self.teams_with_roles_on(db)
+
+    @staticmethod
+    async def teams_with_roles_on(db: aiosqlite.Connection) -> list[dict]:
+        """`get_teams_with_roles` read on *db*, a connection the caller holds."""
+        cursor = await db.execute(
+            """
+            SELECT dt.name, dt.full_name, dt.max_seats, dt.is_reserve, trc.role_id
+            FROM default_teams dt
+            LEFT JOIN team_role_configs trc
+                   ON trc.team_name = dt.name
+            ORDER BY dt.is_reserve ASC, dt.name ASC
+            """,
+        )
         return [
             {
                 "name": r["name"],
@@ -497,7 +493,7 @@ class TeamService:
                 "is_reserve": bool(r["is_reserve"]),
                 "role_id": r["role_id"],
             }
-            for r in rows
+            for r in await cursor.fetchall()
         ]
 
     async def resolve_division_team(self, division_id: int, text: str | None) -> TeamReference:

@@ -10,6 +10,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.models.season import SeasonStage
+from leaguebot.core.services.team_changes import TEAM_ADD, TEAM_REMOVE
 from leaguebot.core.services.team_service import FULL_NAME_MAX, SHORTHAND_MAX
 from leaguebot.core.utils.asset_slug import normalise
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
@@ -134,60 +135,22 @@ class TeamCog(commands.Cog):
         role: discord.Role,
         what: str | None = None,
     ) -> None:
-        """Add the team the form describes, or say why not. Every check runs here.
+        """Ask for the team the form describes to be added, or say why not.
 
-        *what* names what a refusal is recorded against: the form the team was submitted on,
-        which the form passes; a call without one names the command.
+        The team's addition is a change on the queue (`core/services/team_changes.py`), which
+        refuses at once, and again as the change starts, whatever the list, the role or the
+        team's names do not allow. *what* names what a refusal is recorded against: the form the
+        team was submitted on, which the form passes; a call without one names the command.
         """
-        what = what or describe(interaction)
-        if await self._team_list_lock(interaction, "add", what=what):
-            return
-        # A team's role is granted to its drivers, so one the bot cannot grant is refused here,
-        # where a league can still choose another (#381).
-        refusal = role_grant_refusal(role)
-        if refusal is not None:
-            await refuse(interaction, f"⛔ {refusal}", what=what)
-            return
-        # A role belongs to one team only, and the team is not added where its role is taken.
-        holder = await self.bot.placement_service.team_holding_role(
-            role.id
-        )
-        if holder is not None:
-            await refuse(
-                interaction,
-                f'⛔ {role.mention} is already the role of "{holder}". A role belongs to one '
-                "team only.",
-                what=what,
-            )
-            return
-        try:
-            await self.bot.team_service.add_default_team(
-                shorthand, full_name=full_name
-            )
-        except ValueError as exc:
-            await refuse(interaction, f"⛔ {exc}", what=what)
-            return
-
-        try:
-            await self.bot.placement_service.set_team_role_config(
-                shorthand, role.id,
-                actor_id=interaction.user.id, actor_name=str(interaction.user),
-            )
-        except ValueError as exc:
-            # Taken between the check and the write: the team goes again, so nothing stands.
-            await self.bot.team_service.remove_default_team(shorthand)
-            await refuse(interaction, f"⛔ {exc}", what=what)
-            return
-
-        await interaction.response.send_message(
-            f'✅ Team "{full_name}" added as `{shorthand}`, with role {role.mention}.',
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team add | Success\n"
-            f"  team: {full_name}\n"
-            f"  shorthand: {shorthand}\n"
-            f"  role: {role.name} (<@&{role.id}>)",
+        await self.bot.change_queue.ask(
+            TEAM_ADD,
+            {
+                "shorthand": shorthand,
+                "full_name": full_name,
+                "role_id": role.id,
+                "role_name": role.name,
+            },
+            interaction=interaction, what=what or describe(interaction),
         )
 
     # ------------------------------------------------------------------
@@ -386,27 +349,10 @@ class TeamCog(commands.Cog):
         if reference.team is None:
             await refuse(interaction, f"⛔ {reference.refusal}", what=describe(interaction))
             return
-        shorthand, full_name = reference.team["name"], reference.team["full_name"]
-        try:
-            await self.bot.team_service.remove_default_team(
-                shorthand
-            )
-        except ValueError as exc:
-            await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
-            return
-
-        await self.bot.placement_service.delete_team_role_config(
-            shorthand,
-            actor_id=interaction.user.id, actor_name=str(interaction.user),
-        )
-
-        await interaction.response.send_message(
-            f'✅ Team "{full_name}" removed from the server list.', ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team remove | Success\n"
-            f"  team: {full_name}\n"
-            f"  shorthand: {shorthand}",
+        await self.bot.change_queue.ask(
+            TEAM_REMOVE,
+            {"shorthand": reference.team["name"], "full_name": reference.team["full_name"]},
+            interaction=interaction, what=describe(interaction),
         )
 
     @team_remove.autocomplete("name")
