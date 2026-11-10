@@ -41,8 +41,9 @@ class AdminReviewCog(commands.Cog):
 
         The reason completes the change the press asked for, so it counts as the button's own
         work: a fault in the service is reported through the press's stored interaction
-        (`report_failure`) — the manager is told, one failure line is written — and never
-        escapes to discord.py's event handler, which would tell nobody. The catch wraps only
+        (`report_failure`) — the manager is told, one failure line is written. A fault that
+        escaped would reach the bot's event handler (`on_event_error`), which writes a line
+        to the log channel but does not tell the manager, so the catch stays. It wraps only
         that call, hands the error over and returns (architecture.md, "Errors and failures").
         A signup that has moved on since the press is a refusal, not a fault.
         """
