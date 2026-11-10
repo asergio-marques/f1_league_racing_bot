@@ -3,8 +3,10 @@
 `round_event_moments` gives each of a round's events its moment, keyed by the kind its job is
 stored with. The scheduler's arming, the approval's overdue windows and the amendment's rules all
 read it, so the rules every copy once carried hold in one place: a last notice of 0 hours is no
-last notice, a deadline of 0 hours is the round's own moment, and a moment stored without a zone
-is UTC.
+last notice, a deadline of 0 hours is the round's own moment, and every moment handed is aware.
+
+A round's moment is stored in one form, ISO 8601 with its UTC offset, and read back by one reader,
+`read_scheduled_at`, which hands an aware UTC moment and refuses a stored value with no offset.
 """
 from __future__ import annotations
 
@@ -51,10 +53,6 @@ _RESULTS = {"results": timedelta(0)}
             {**_CALL, "rsvp_deadline": timedelta(0), **_RESULTS},
             id="a deadline of 0 is the round's moment",
         ),
-        pytest.param(
-            MOMENT.replace(tzinfo=None), WEATHER, CHECK_IN, {**_PHASES, **_CALL, **_RESULTS},
-            id="a moment with no zone is UTC",
-        ),
     ],
 )
 def test_round_event_moments(scheduled_at, weather, check_in, offsets):
@@ -75,3 +73,36 @@ def test_round_event_moments(scheduled_at, weather, check_in, offsets):
     assert dict(moments) == {kind: MOMENT + offset for kind, offset in offsets.items()}
     assert all(each.tzinfo is not None for each in moments.values())
 
+
+
+#: Why the one reader's tests fail until the build adds it.
+_ONE_READER = "#283: no single reader of a round's stored moment yet"
+
+
+@pytest.mark.xfail(strict=True, reason=_ONE_READER)
+@pytest.mark.parametrize(
+    "stored",
+    [
+        pytest.param("2026-06-14T14:00:00+00:00", id="in UTC"),
+        pytest.param("2026-06-14T16:00:00+02:00", id="with another offset"),
+    ],
+)
+def test_a_stored_round_moment_is_read_as_an_aware_utc_moment(stored):
+    """Pro's round is stored at 14:00 UTC on 14 June 2026, written with its offset. The one reader
+    of a round's stored moment hands back 14:00 UTC, aware, whatever offset it was written in."""
+    from leaguebot.core.models.round import read_scheduled_at
+
+    moment = read_scheduled_at(stored)
+
+    assert moment == MOMENT
+    assert moment.utcoffset() == timedelta(0)
+
+
+@pytest.mark.xfail(strict=True, reason=_ONE_READER)
+def test_a_stored_round_moment_without_its_offset_is_refused():
+    """A round's moment stored as "2026-06-14T14:00:00", with no offset, is a form no writer
+    produces: the one reader refuses it with a ValueError rather than guess its zone."""
+    from leaguebot.core.models.round import read_scheduled_at
+
+    with pytest.raises(ValueError):
+        read_scheduled_at("2026-06-14T14:00:00")

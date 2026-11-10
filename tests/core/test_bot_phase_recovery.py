@@ -353,24 +353,6 @@ async def test_a_round_not_to_be_run_recovers_nothing(tmp_path, status):
     assert await _recover(_bot(db_path)) == []
 
 
-async def test_a_naive_timestamp_is_read_as_utc(tmp_path):
-    """Rows written before the timestamps carried a zone still exist. Read as local time
-    the horizon would move by the host's offset, so the same database would recover
-    differently on the Pi than on a developer's machine; and compared with an aware "now" it
-    would raise, aborting the sweep partway through a season."""
-    db_path = await _make_db(tmp_path)
-    naive = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(tzinfo=None)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE rounds SET scheduled_at = ? WHERE id = 1", (naive.isoformat(),)
-        )
-        await db.commit()
-
-    fired = await _recover(_bot(db_path))
-
-    assert sorted(p for p, _ in fired) == [1, 2, 3]
-
-
 # ---------------------------------------------------------------------------
 # A mystery round's notice, recovered through weather's ask (#439)
 # ---------------------------------------------------------------------------

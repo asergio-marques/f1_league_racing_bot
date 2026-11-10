@@ -275,22 +275,6 @@ def test_each_window_falls_at_its_event_s_moment():
     }
 
 
-def test_a_naive_scheduled_at_is_read_as_utc():
-    """Rounds come back from the database without a timezone, as they do everywhere here."""
-    naive = Round(
-        id=1,
-        division_id=1,
-        round_number=1,
-        format=RoundFormat.NORMAL,
-        track_name="Silverstone",
-        scheduled_at=datetime(2026, 9, 13, 12, 0),  # no tzinfo
-    )
-
-    found = overdue_windows([("Premier", naive)], now=NOW, attendance=DEFAULT_ATTENDANCE)
-
-    assert "Check-in call" in _labels(found)
-
-
 # ── `calendar_faults` — one division reduced to the rounds that bound it ──────
 #
 # #181: a league running neither weather nor attendance contributed no windows at all, so
@@ -411,22 +395,6 @@ def test_a_division_of_nothing_but_cancelled_rounds_is_no_fault():
     cancelled = _round(days_out=-30, status=RoundStatus.CANCELLED.value)
 
     assert _faults([cancelled]) is None
-
-
-def test_a_naive_scheduled_at_is_read_as_utc_here_too():
-    """Rounds come back from the database without a timezone, as they do everywhere here."""
-    naive = Round(
-        id=1,
-        division_id=1,
-        round_number=1,
-        format=RoundFormat.NORMAL,
-        track_name="Silverstone",
-        scheduled_at=datetime(2026, 9, 1, 12, 0),  # no tzinfo, and behind NOW
-    )
-
-    fault = _faults([naive])
-
-    assert fault is not None and fault.latest_past.round_number == 1
 
 
 def test_two_rounds_at_one_moment_break_the_tie_on_round_number():
