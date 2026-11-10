@@ -61,6 +61,8 @@ from tests.support.mentions import NOBODY, notified
 
 #: Why the tests of an amended moment fail until the build stores it with its offset.
 _NO_OFFSET = "#283: /round amend of a raced season's round still stores its moment without an offset"
+#: Why the success line fails until the build writes each moment in it as a league has always read it.
+_LINE_OFFSET = "#283: /round amend's log line shows the stored moment with its offset"
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 R3, R4 = round_id(PRO, 3), round_id(PRO, 4)
@@ -453,12 +455,15 @@ async def test_the_rounds_are_renumbered_in_the_amendment_s_own_save(tmp_path):
     assert _success_lines(league) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_LINE_OFFSET)
 async def test_the_success_line_is_saved_with_the_amendment(tmp_path):
-    """The arming fails after the save, stopping the queue, and the bot restarts: the success
-    line, saved with the amendment, stands once in the log channel, and once only after the
-    arming goes through on Retry."""
+    """Round 3, ninety days out, moved a day later. The arming fails after the save, stopping
+    the queue, and the bot restarts: the success line, saved with the amendment, stands once in
+    the log channel, naming the round and both moments in UTC as a league has always read them,
+    with no offset, and once only after the arming goes through on Retry."""
     league = await ongoing_league(tmp_path)
-    await _amended(league, scheduled_at=_at(league, days=91))
+    old, new = _at(league, days=90), _at(league, days=91)
+    await _amended(league, scheduled_at=new)
     league.arming_fails = RuntimeError("job store unavailable")
     await run_queue(league.bot)
     assert await _stopped_at(league) == "arm"
@@ -467,7 +472,9 @@ async def test_the_success_line_is_saved_with_the_amendment(tmp_path):
     await run_queue(league.bot)
 
     [line] = _success_lines(league)
-    assert "scheduled_at:" in line
+    assert line.split("\n")[1:3] == [
+        f"  round 3 (round_id: {R3})", f"  scheduled_at: {old} → {new}"
+    ]
     league.arming_fails = None
     await retry_job(league.bot)
     assert len(_success_lines(league)) == 1
