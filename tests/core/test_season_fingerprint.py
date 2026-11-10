@@ -229,18 +229,12 @@ async def test_the_drivers_area(season):
     )
 
 
-async def test_the_channels_area(season):
-    before = await _take(season)
-    await _assert_only(
-        season, before, "channels",
-        "UPDATE divisions SET calendar_channel_id = 999 WHERE id = ?",
-        season.division_id,
-    )
-
-
-#: Each module's own channel set or changed, a seed standing first where the edit changes a row:
-#: the seed, the edit, both handed the division.
-_MODULE_CHANNELS = {
+#: A division's channel set or changed, its own or a module's, a seed standing first where the edit
+#: changes a row: the seed, the edit, both handed the division.
+_CHANNELS = {
+    "the division's calendar channel": (
+        None, "UPDATE divisions SET calendar_channel_id = 999 WHERE id = ?",
+    ),
     "weather's forecast channel": (
         None, "UPDATE divisions SET forecast_channel_id = 555 WHERE id = ?",
     ),
@@ -259,32 +253,23 @@ _MODULE_CHANNELS = {
 }
 
 
-@pytest.mark.parametrize("edit", sorted(_MODULE_CHANNELS))
-async def test_a_module_s_channel_is_part_of_the_channels_area(season, edit):
-    """Pro's weather channel set, its results channel set, its reserves left out of the
-    standings, or its RSVP channel set, between the review and the button: each is named as the
-    channels changing, and nothing else, as a division's own lineup or calendar channel is."""
-    seed, sql = _MODULE_CHANNELS[edit]
+@pytest.mark.parametrize("edit", sorted(_CHANNELS))
+async def test_the_channels_area(season, edit):
+    """Pro's calendar channel changed, its weather channel set, its results channel set, its
+    reserves left out of the standings, or its RSVP channel set, between the review and the
+    button: each is named as the channels changing, and nothing else."""
+    seed, sql = _CHANNELS[edit]
     if seed is not None:
         await _change(season, seed, season.division_id)
     before = await _take(season)
     await _assert_only(season, before, "channels", sql, season.division_id)
 
 
-async def test_the_modules_area(season):
-    before = await _take(season)
-    await _assert_only(
-        season, before, "modules",
-        "UPDATE server_configs SET weather_module_enabled = 1 WHERE server_id = ?",
-        SERVER_ID,
-    )
-
-
-@pytest.mark.parametrize("module", ["signup", "results", "attendance", "images"])
-async def test_a_module_switched_on_is_part_of_the_modules_area(season, module):
-    """Signup, results, attendance or images switched on between the review and the button is
-    named as which modules are enabled changing. Attendance's and images' switches stand in their
-    own configurations, which the review reports too, so those are named with it."""
+@pytest.mark.parametrize("module", ["weather", "signup", "results", "attendance", "images"])
+async def test_the_modules_area(season, module):
+    """Any module switched on between the review and the button is named as which modules are
+    enabled changing. Attendance's and images' switches stand in their own configurations, which
+    the review reports too, so those are named with it."""
     from tests.support.season_league import set_module_flag
 
     before = await _take(season)
