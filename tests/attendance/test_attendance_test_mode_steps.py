@@ -135,3 +135,55 @@ async def test_attendance_hands_back_its_own_pending_steps(tmp_path, state, pend
         (1, phase, kind) for phase, kind in pending
     ]
     assert steps.passed_over == []
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#283: attendance does not yet hand the review its own marks"
+)
+@pytest.mark.parametrize("state, queued, marks", [
+    pytest.param({}, None, [("RSVP", "⏳"), ("Last", "⏳"), ("Deadline", "⏳"), ("Cleared", "⏳")],
+                 id="no call posted, with no scheduler"),
+    pytest.param({}, set(), [("RSVP", "⚠️"), ("Last", "⚠️"), ("Deadline", "⚠️"),
+                 ("Cleared", "⚠️")], id="no call posted, with no job queued"),
+    pytest.param({"in_hand": ("attendance.check_in.call",)}, set(),
+                 [("RSVP", "⏳"), ("Last", "⚠️"), ("Deadline", "⚠️"), ("Cleared", "⚠️")],
+                 id="the call in hand on the change queue"),
+    pytest.param({"call": True}, {(1, "rsvp_deadline")},
+                 [("RSVP", "✅"), ("Last", "⚠️"), ("Deadline", "⏳"), ("Cleared", "⚠️")],
+                 id="the call posted, with the deadline's job queued"),
+    pytest.param({"call": True, "in_hand": ("attendance.check_in.last_notice",)}, set(),
+                 [("RSVP", "✅"), ("Last", "⏳"), ("Deadline", "⚠️"), ("Cleared", "⚠️")],
+                 id="the last notice in hand on the change queue"),
+    pytest.param({"call": True, "last_notice": True, "deadline_marked": True}, None,
+                 [("RSVP", "✅"), ("Last", "✅"), ("Deadline", "✅"), ("Cleared", "⏳")],
+                 id="the deadline marked as run"),
+    pytest.param({"call": True, "last_notice": True, "announced": True}, set(),
+                 [("RSVP", "✅"), ("Last", "✅"), ("Deadline", "✅"), ("Cleared", "⚠️")],
+                 id="the deadline's announcement posted"),
+    pytest.param({"call": True, "last_notice_hours": 0}, None,
+                 [("RSVP", "✅"), ("Deadline", "⏳"), ("Cleared", "⏳")],
+                 id="the call posted, with no last notice set"),
+    pytest.param({"cleared": True}, set(),
+                 [("RSVP", "✅"), ("Last", "✅"), ("Deadline", "✅"), ("Cleared", "✅")],
+                 id="the check-in taken down"),
+    pytest.param({"cleared": True, "last_notice_hours": 0}, set(),
+                 [("RSVP", "✅"), ("Deadline", "✅"), ("Cleared", "✅")],
+                 id="the check-in taken down, with no last notice set"),
+    pytest.param({"attendance_on": False, "call": True}, set(), None, id="attendance off"),
+])
+async def test_attendance_hands_the_review_its_own_marks(tmp_path, state, queued, marks) -> None:
+    """It is noon on 12 October 2026, and round 1 (Bahrain) races in a week. Attendance marks the
+    round's check-in call, its last notice (left out where the league set it to 0), its deadline
+    and its clean-up: ✅ once the call is posted, the last notice sent, the deadline run (marked,
+    or its announcement posted), and all four once the check-in is taken down; any other step ⏳
+    where its job is queued, it is already asked of the change queue, or there is no scheduler to
+    ask, and ⚠️ where the scheduler holds no job for it. While attendance is off, it hands back
+    nothing."""
+    from leaguebot.attendance.services.test_mode_steps import review_marks
+
+    db_path = str(tmp_path / "attendance_marks.db")
+    await _seed(db_path, **state)
+
+    handed_back = await review_marks(db_path, [_round()], now=NOW, queued=queued)
+
+    assert handed_back == ({} if marks is None else {1: marks})
