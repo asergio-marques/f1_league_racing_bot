@@ -7,14 +7,16 @@ to Placements where it is not or the season runs in test mode.
 """
 from __future__ import annotations
 
+from contextlib import ExitStack, contextmanager
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from leaguebot.core.cogs.season_cog import SeasonCog, _ConfirmConfigurationView
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.models.server_config import ServerConfig
+from tests.support.review_workflows import run_check, run_workflow
 from tests.support.season_league import reply as _told
 from tests.support.setup_reads import hold_setup
 
@@ -24,6 +26,54 @@ SERVER_ID = 7
 SEASON_ID = 31
 REVIEWER = 4242
 ADMIN_ROLE = 444
+
+#: The configuration's confirmation still runs as `SeasonCog._do_confirm_configuration`.
+_CONFIRMATION_ON_THE_COG = (
+    "#283: the configuration's confirmation is not yet season_review_workflows.confirm_configuration"
+)
+
+#: The configuration review's gates are still the season cog's methods.
+_GATES_ON_THE_COG = "#283: the configuration's gates are not yet functions of approval_checks"
+
+#: The gates a test stands in, each a function of `approval_checks` that the review command and
+#: the confirmation's workflow call alike.
+_GATES = (
+    "configuration_faults", "team_name_problems", "missing_points_config_problems",
+    "points_ordering_problems", "image_configuration_faults",
+)
+
+
+@contextmanager
+def _gates_of(cog):
+    """Each gate *cog* stands in for, patched on `approval_checks` for as long as it is held."""
+    from leaguebot.core.services import approval_checks
+
+    with ExitStack() as stack:
+        for gate in _GATES:
+            if gate in vars(cog):
+                stack.enter_context(patch.object(approval_checks, gate, vars(cog)[gate]))
+        yield
+
+
+async def _faults(cog, guild=None) -> list[str]:
+    """Every fault that stops season 31's configuration being confirmed, judged upon *guild*:
+    the gate the review and the confirmation share, handed *cog*'s bot's services."""
+    with _gates_of(cog):
+        return await run_check("configuration_faults", cog.bot, SEASON_ID, guild)
+
+
+async def _image_faults(cog) -> list[str]:
+    """The image module's faults that need no division, read through *cog*'s bot's drawing."""
+    from leaguebot.core.services import approval_checks
+
+    return await approval_checks.image_configuration_faults(cog.bot.image_drawing)
+
+
+async def _confirm(cog, interaction) -> bool:
+    """Press ✅ Confirm configuration: the confirmation's workflow, handed *cog*'s bot's
+    services, the gates *cog* stands in for on `approval_checks`."""
+    with _gates_of(cog):
+        return await run_workflow("confirm_configuration", cog.bot, interaction)
 
 
 def _server_config(*, test_mode: bool = False, base=2, driver=3) -> ServerConfig:
@@ -82,7 +132,7 @@ def _cog(bot: MagicMock) -> SeasonCog:
     # The season being set up, read from the database (#283).
     hold_setup(bot.season_service, season_id=SEASON_ID, season_number=4, game_edition=25)
     # The team names are checked by a helper of their own, pinned elsewhere.
-    cog._team_name_problems = AsyncMock(return_value=[])
+    cog.team_name_problems = AsyncMock(return_value=[])
     return cog
 
 
@@ -128,13 +178,14 @@ def _interaction() -> MagicMock:
 # ── What the configuration review checks ────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_the_signup_module_needs_its_channel_and_both_roles():
     """Each fault names the command that sets it: the roles are the league's, set under
     `/bot`, not under `/signup` (issue #276)."""
     bot = _bot(signup=True, signup_config=_signup_config(channel=None), roles=(None, None))
     cog = _cog(bot)
 
-    faults = await cog._configuration_faults(SEASON_ID)
+    faults = await _faults(cog)
 
     assert len(faults) == 3
     assert any("signup channel" in f for f in faults)
@@ -147,39 +198,41 @@ async def test_the_signup_module_needs_its_channel_and_both_roles():
     pytest.param(None, (None, None), None, id="its channel and roles unset"),
     pytest.param(1, (2, 3), (2, 3), id="its roles gone from the server"),
 ])
+@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_a_disabled_signup_module_is_not_checked(channel, roles, gone):
     """Nor are the league's roles, whether unset or no longer upon the server: only the signup
     module needs them. A plain configuration has no faults."""
     bot = _bot(signup=False, signup_config=_signup_config(channel=channel), roles=roles)
     guild = _guild(gone=gone) if gone is not None else None
 
-    assert await _cog(bot)._configuration_faults(SEASON_ID, guild) == []
+    assert await _faults(_cog(bot), guild) == []
 
 
 @pytest.mark.parametrize(
     "gone,expected",
     [(2, "**base role** is no longer on the server"), (3, "**driver role** is no longer on the server")],
 )
+@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_a_league_role_gone_from_the_server_is_a_fault(gone, expected):
     """Confirming fixes both roles, so this is the last moment a league can choose another
     freely (#374). Stored is not enough."""
     cog = _cog(_bot(signup=True))
 
-    (fault,) = await cog._configuration_faults(SEASON_ID, _guild(gone=(gone,)))
+    (fault,) = await _faults(cog, _guild(gone=(gone,)))
 
     assert expected in fault
 
 
+@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_a_driver_role_the_bot_cannot_grant_is_a_fault():
     cog = _cog(_bot(signup=True))
 
-    (fault,) = await cog._configuration_faults(
-        SEASON_ID, _guild(driver_above_the_bot=True)
-    )
+    (fault,) = await _faults(cog, _guild(driver_above_the_bot=True))
 
     assert "Move my role above it" in fault
 
 
+@pytest.mark.xfail(strict=True, reason=_CONFIRMATION_ON_THE_COG)
 async def test_confirming_refuses_a_driver_role_gone_from_the_server(tmp_path):
     """The signup module is on, and the league's driver role (3) has been deleted from the server
     since the review. ✅ Confirm configuration is refused at the press, naming the driver role,
@@ -189,23 +242,25 @@ async def test_confirming_refuses_a_driver_role_gone_from_the_server(tmp_path):
     interaction = _interaction()
     interaction.guild = _guild(gone=(3,))
 
-    await cog._do_confirm_configuration(interaction)
+    await _confirm(cog, interaction)
 
     assert "**driver role** is no longer on the server" in _told(interaction)
     assert "Nothing has been confirmed" in _told(interaction)
     assert bot.change_queue.method_calls == []
 
 
+@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_team_names_of_the_server_list_are_checked():
     cog = _cog(_bot())
-    cog._team_name_problems = AsyncMock(return_value=["**!!!** reduces to nothing"])
+    cog.team_name_problems = AsyncMock(return_value=["**!!!** reduces to nothing"])
 
-    faults = await cog._configuration_faults(SEASON_ID)
+    faults = await _faults(cog)
 
-    cog._team_name_problems.assert_awaited_once_with(None)
+    cog.team_name_problems.assert_awaited_once_with(cog.bot.team_service, None)
     assert faults == ["Team name: **!!!** reduces to nothing"]
 
 
+@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_the_results_module_needs_a_points_configuration(tmp_path):
     from leaguebot.core.db.database import run_migrations
 
@@ -214,22 +269,23 @@ async def test_the_results_module_needs_a_points_configuration(tmp_path):
     bot = _bot(results=True)
     bot.db_path = db_path
     cog = _cog(bot)
-    cog._missing_points_config_problems = AsyncMock(return_value=["Ghost"])
-    cog._points_ordering_problems = AsyncMock(return_value=["Standard: 2nd above 1st"])
+    cog.missing_points_config_problems = AsyncMock(return_value=["Ghost"])
+    cog.points_ordering_problems = AsyncMock(return_value=["Standard: 2nd above 1st"])
 
-    faults = await cog._configuration_faults(SEASON_ID)
+    faults = await _faults(cog)
 
     assert any("No points configuration is attached" in f for f in faults)
     assert any("**Ghost** does not exist" in f for f in faults)
     assert any("out of order" in f for f in faults)
 
 
+@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_the_image_module_faults_are_included():
     bot = _bot(images=True)
     cog = _cog(bot)
-    cog._image_configuration_faults = AsyncMock(return_value=["Inkscape is not installed."])
+    cog.image_configuration_faults = AsyncMock(return_value=["Inkscape is not installed."])
 
-    assert await cog._configuration_faults(SEASON_ID) == [
+    assert await _faults(cog) == [
         "Inkscape is not installed."
     ]
 
@@ -254,6 +310,7 @@ async def test_the_review_is_refused_outside_configuration(stage):
 # ── Confirming ─────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_CONFIRMATION_ON_THE_COG)
 async def test_confirming_refuses_on_a_fault_found_afresh(tmp_path):
     """The signup module is on and its signup channel has been cleared since the review.
     ✅ Confirm configuration is refused at the press, and nothing is asked of the change queue."""
@@ -262,7 +319,7 @@ async def test_confirming_refuses_on_a_fault_found_afresh(tmp_path):
     cog = _cog(bot)
     interaction = _interaction()
 
-    await cog._do_confirm_configuration(interaction)
+    await _confirm(cog, interaction)
 
     assert "Nothing has been confirmed" in _told(interaction)
     assert bot.change_queue.method_calls == []
@@ -533,7 +590,8 @@ async def _review_asked(cog, interaction, monkeypatch) -> dict:
     interaction.client = cog.bot
     interaction.channel_id = COMMAND_CHANNEL
     interaction.followup.send = AsyncMock(return_value=MagicMock())
-    await undecorate(SeasonCog.season_config_review)(cog, interaction)
+    with _gates_of(cog):
+        await undecorate(SeasonCog.season_config_review)(cog, interaction)
     asked = [call for call in cog.bot.change_queue.ask.await_args_list
              if (call.kwargs.get("kind") or call.args[0]) == POST]
     assert len(asked) == 1, cog.bot.change_queue.ask.await_args_list
@@ -552,6 +610,7 @@ async def _report(cog, interaction, monkeypatch) -> list[str]:
     return _texts(await _review_asked(cog, interaction, monkeypatch))
 
 
+@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(monkeypatch):
     """Manager runs `/season config-review` in channel 111 on a sound configuration of season 31
     (test mode on, signup on, results off; teams Alpha with its role, Reserve with none). The
@@ -586,6 +645,7 @@ async def test_a_sound_configuration_is_reported_and_offered_for_confirmation(mo
     assert not any(line.startswith("⛔") for line in _logged(bot))
 
 
+@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
     tmp_path, monkeypatch
 ):
@@ -602,8 +662,8 @@ async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
     bot = _report_bot(results=True, test_mode=True)
     bot.db_path = db_path
     cog = _cog(bot)
-    cog._missing_points_config_problems = AsyncMock(return_value=[])
-    cog._points_ordering_problems = AsyncMock(return_value=[])
+    cog.missing_points_config_problems = AsyncMock(return_value=[])
+    cog.points_ordering_problems = AsyncMock(return_value=[])
 
     text = "\n".join(await _report(cog, _interaction(), monkeypatch))
 
@@ -614,6 +674,7 @@ async def test_a_test_season_with_nothing_attached_is_refused_without_a_promise(
 
 
 @pytest.mark.parametrize("signup", [True, False])
+@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_the_configuration_review_reports_the_league_s_roles(monkeypatch, signup):
     """The one review that reports them (issue #276). They are the league's, so the review asked
     of the queue shows them whether or not signup is on, and confirming the configuration fixes
@@ -626,6 +687,7 @@ async def test_the_configuration_review_reports_the_league_s_roles(monkeypatch, 
     assert "Driver role: <@&3>" in messages[0]
 
 
+@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     """The placements review's subsections, save the divisions, in the same words (#220): with
     signup, results, attendance and weather on, the review asked of the queue carries each
@@ -653,7 +715,7 @@ async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     )
     cog = _cog(bot)
     # The faults are pinned above; here only what is reported.
-    cog._configuration_faults = AsyncMock(return_value=[])
+    cog.configuration_faults = AsyncMock(return_value=[])
 
     text = "\n".join(await _report(cog, _interaction(), monkeypatch))
 
@@ -663,6 +725,7 @@ async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     assert "**Weather Config**" in text and "Phase 3 deadline: 2h before race" in text
 
 
+@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_a_disabled_modules_configuration_is_not_reported(monkeypatch):
     """With every module off, the review asked of the queue carries no module's configuration."""
     cog = _cog(_report_bot())
@@ -673,18 +736,20 @@ async def test_a_disabled_modules_configuration_is_not_reported(monkeypatch):
         assert heading not in text
 
 
+@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_the_image_outputs_are_reported_when_the_module_is_on(monkeypatch):
     """With the image module on, the review asked of the queue carries its outputs."""
     bot = _report_bot(images=True)
     cog = _cog(bot)
     cog._build_image_review_section = AsyncMock(return_value=["**Image outputs**", "  lineup: on"])
-    cog._image_configuration_faults = AsyncMock(return_value=[])
+    cog.image_configuration_faults = AsyncMock(return_value=[])
 
     messages = await _report(cog, _interaction(), monkeypatch)
 
     assert any("**Image outputs**" in m and "lineup: on" in m for m in messages)
 
 
+@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_a_faulty_configuration_is_reported_without_a_button(monkeypatch):
     """Signup is on and the league's base role is unset. The review asked of the queue ends in
     the faults, naming the base role and `/bot base-role`, and saying to run
@@ -700,6 +765,7 @@ async def test_a_faulty_configuration_is_reported_without_a_button(monkeypatch):
     assert not any("Do you confirm this season's configuration?" in m for m in messages)
 
 
+@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_the_followup_is_restored_after_the_report(monkeypatch):
     """The review wraps the followup to collect what it says privately; a later reply must not be
     caught."""
@@ -713,7 +779,8 @@ async def test_the_followup_is_restored_after_the_report(monkeypatch):
     original = AsyncMock(return_value=MagicMock())
     interaction.followup.send = original
 
-    await undecorate(SeasonCog.season_config_review)(cog, interaction)
+    with _gates_of(cog):
+        await undecorate(SeasonCog.season_config_review)(cog, interaction)
 
     assert interaction.followup.send is original
 
@@ -747,13 +814,15 @@ def _image_cog(
     return _cog(bot)
 
 
+@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_a_sound_image_configuration_has_no_faults():
     cog = _image_cog()
 
-    assert await cog._image_configuration_faults() == []
+    assert await _image_faults(cog) == []
     cog.bot.image_drawing.template_faults.assert_awaited_once_with()
 
 
+@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_every_image_fault_that_needs_no_division_is_named():
     """The drawing program, a broken template a switched-on output draws, a per-tier colour and
     the portrait settings, each in the image module's words, in that order; core adds the
@@ -766,7 +835,7 @@ async def test_every_image_fault_that_needs_no_division_is_named():
         portrait=_PORTRAIT,
     )
 
-    assert await cog._image_configuration_faults() == [
+    assert await _image_faults(cog) == [
         _RASTERISER,
         "Template **Lineup**: it has no driver name field.",
         "Tier colour: tier 2 has no colour for slot accent",
@@ -774,6 +843,7 @@ async def test_every_image_fault_that_needs_no_division_is_named():
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_templates_that_cannot_be_read_are_a_fault_not_a_pass():
     cog = _image_cog(
         rasteriser=_RASTERISER,
@@ -782,7 +852,7 @@ async def test_templates_that_cannot_be_read_are_a_fault_not_a_pass():
         unreadable=("template_faults",),
     )
 
-    faults = await cog._image_configuration_faults()
+    faults = await _image_faults(cog)
 
     assert faults == [_RASTERISER, "The image templates could not be read."]
 
@@ -800,6 +870,7 @@ async def test_templates_that_cannot_be_read_are_a_fault_not_a_pass():
         ),
     ],
 )
+@pytest.mark.xfail(strict=True, reason=_GATES_ON_THE_COG)
 async def test_an_unreadable_colour_or_portrait_check_stands_aside(unreadable, kept):
     """A per-tier colour check, or a portrait settings check, that cannot be read never refuses
     a season: it is dropped, and every other fault is still named. Takes the place of
@@ -812,7 +883,7 @@ async def test_an_unreadable_colour_or_portrait_check_stands_aside(unreadable, k
         unreadable=(unreadable,),
     )
 
-    assert await cog._image_configuration_faults() == kept
+    assert await _image_faults(cog) == kept
 
 
 # ── The button, on a season unchanged since the report ─────────────────────────────
@@ -925,6 +996,7 @@ def _manager_confirming(bot):
     return interaction
 
 
+@pytest.mark.xfail(strict=True, reason=_CONFIRMATION_ON_THE_COG)
 async def test_confirming_with_no_season_in_configuration_is_refused_and_recorded(tmp_path):
     """The configuration review's question is pressed once no season is being set up: refused at
     once, one refusal line recorded, and nothing asked of the change queue."""
@@ -933,7 +1005,7 @@ async def test_confirming_with_no_season_in_configuration_is_refused_and_recorde
     hold_setup(bot.season_service, None)
     interaction = _manager_confirming(bot)
 
-    await cog._do_confirm_configuration(interaction)
+    await _confirm(cog, interaction)
 
     interaction.response.send_message.assert_awaited_once_with(
         "⛔ There is no season in configuration.", ephemeral=True
@@ -948,6 +1020,7 @@ async def test_confirming_with_no_season_in_configuration_is_refused_and_recorde
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_CONFIRMATION_ON_THE_COG)
 async def test_confirming_a_configuration_with_faults_is_refused_with_every_fault_recorded(
     tmp_path,
 ):
@@ -959,10 +1032,10 @@ async def test_confirming_a_configuration_with_faults_is_refused_with_every_faul
         "The signup module is enabled but has no signup channel — set one with `/signup channel`.",
         "**Pro** has no lineup channel — set one with `/division lineup-channel`.",
     ]
-    cog._configuration_faults = AsyncMock(return_value=faults)
+    cog.configuration_faults = AsyncMock(return_value=faults)
     interaction = _manager_confirming(bot)
 
-    await cog._do_confirm_configuration(interaction)
+    await _confirm(cog, interaction)
 
     reply = _told(interaction)
     assert reply.startswith("⛔ The configuration cannot be confirmed:")

@@ -12,7 +12,9 @@ the same way, and its view `BackupBeforeApprovalView`, built by `build_view` the
 `timeout` given.
 
 The gates the workflows run are functions of `leaguebot.core.services.approval_checks`, called
-through the module, so that a test standing one in patches `approval_checks.<gate>`.
+through the module, so that a test standing one in patches `approval_checks.<gate>`. A gate that
+reads several of the league's services, as `configuration_faults` does, takes them as keyword
+arguments named as the bot carries them, and `run_check` hands them over as `run_workflow` does.
 """
 from __future__ import annotations
 
@@ -48,3 +50,12 @@ def build_view(name: str, bot: Any, **given: Any) -> Any:
 
     view = getattr(season_review_workflows, name)
     return view(**_services(view, bot, given), **given)
+
+
+async def run_check(name: str, bot: Any, *args: Any, **given: Any) -> Any:
+    """Run the gate *name* of `approval_checks` on *args*, handing it every service it asks for
+    off *bot* by name, and *given*."""
+    from leaguebot.core.services import approval_checks
+
+    check = getattr(approval_checks, name)
+    return await check(*args, **_services(check, bot, given), **given)
