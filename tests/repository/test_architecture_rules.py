@@ -2898,7 +2898,8 @@ def test_a_listed_clock_read_that_is_gone_fails_the_clock_checks():
 # ── 17. A catch-all sits in one of the five places ──────────────────────────────────────────
 
 #: The functions whose catch-all is one of the five places and is not recognised by its shape, for
-#: good, and why: the stated exceptions and the guards around reporting (architecture.md, "A
+#: good, and why: the failure paths of place 1, the stated exceptions, place 2's handlers called
+#: for each item, the guards around reporting and the fifth place's handlers (architecture.md, "A
 #: catch-all error handler"). A handler that re-raises, that calls `report_failure`, or that sits
 #: directly in the body of a loop needs no entry.
 CATCH_ALLS_ALLOWED = {
@@ -2929,11 +2930,11 @@ CATCH_ALLS_ALLOWED = {
     ("core/services/change_queue.py", "ChangeQueue._update_reply"):
         "a stated exception: the queue's own telling of a change's outcome never fails the change",
     ("core/services/change_queue.py", "ChangeQueue._end_on_check_fault"):
-        "a stated exception: a hook that raises stops the lane",
+        "a failure path: a hook that raises leads to the lane's stop",
     ("core/services/change_queue.py", "ChangeQueue._refuse"):
-        "a stated exception: a hook that raises stops the lane",
+        "a failure path: a hook that raises leads to the lane's stop",
     ("core/services/change_queue.py", "ChangeQueue._step_failed"):
-        "a stated exception: a hook that raises stops the lane",
+        "a failure path: a hook that raises leads to the lane's stop",
     ("core/services/change_queue.py", "ChangeQueue._discard_follow_ons"):
         "a stated exception: a hook that raises must not hold a Discard, the queue's last way past a stop",
     ("core/services/change_queue.py", "ChangeQueue._undiscardable_refusal"):
@@ -2956,10 +2957,11 @@ CATCH_ALLS_ALLOWED = {
     ("core/utils/log_lines.py", "record_refusal"):
         "place 3, around recording a refusal already answered",
     ("core/utils/log_lines.py", "name_of_member"):
-        "a stated exception: a member who cannot be looked up is named by mention alone, which "
-        "still names them",
+        "place 3, around naming a member in a line: one who cannot be looked up is named by mention "
+        "alone",
     ("core/services/scheduler_service.py", "SchedulerService._remove_job"):
-        "a stated exception: a teardown goes on past one job that will not go",
+        "place 2, called for each job of a teardown list: one job that will not go must not stop "
+        "the rest",
     ("core/services/amendment_service.py", "approval_faults"):
         "a stated exception: an attendance switch that cannot be read never refuses an amendment",
     ("core/services/approval_checks.py", "channel_on_server"):
@@ -3041,9 +3043,8 @@ def _catch_alls_outside_the_places_among(nodes) -> Counter[tuple[str, str]]:
 
 #: Today's catch-alls in none of the five places, under the issue that removes each: a module's
 #: design pass for its own files, the pass of the module whose recovery the entry point's function
-#: carries, and the failure path of timed jobs, loops and background tasks. Some are a place the
-#: architecture does not yet state (a hook's catch in the change queue, a cosmetic step in the
-#: router): the design pass judges each, to a failure path or to a stated exception.
+#: carries, and the failure path of timed jobs, loops and background tasks. Each pass judges its
+#: own, to a failure path, a place by its reason or a stated exception, or narrows it.
 KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "_recover_missed_check_in_calls"): (1, PASS["attendance"]),
     ("__main__.py", "_recover_missed_cleanups"): (1, CLEANUPS),

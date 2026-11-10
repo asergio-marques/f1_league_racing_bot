@@ -550,8 +550,8 @@ class OutputRouter:
         otherwise leave a row in the fresh database of a bot serving no server, and the retry
         worker's own lines (:meth:`post_log`); and for the stop notice, posted again its own way.
 
-        A line that can be neither posted nor kept for retry is logged on the host and dropped:
-        the log writer's own containment.
+        A line that can be neither posted nor kept for retry is logged on the host and dropped,
+        because a line to the log channel must not fail the work it records.
         """
         if self._retry_db_path and wanted:
             try:
