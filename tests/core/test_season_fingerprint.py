@@ -21,6 +21,7 @@ each test sets; the answer itself is pinned against image's own drawing in
 from __future__ import annotations
 
 import logging
+import sqlite3
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -610,7 +611,7 @@ async def test_a_module_s_areas_not_read_leave_an_empty_fingerprint_logged(
 
     if fault == "a module's read fails":
         async def broken(*_args, **_kwargs):
-            raise RuntimeError("no such table: image_config")
+            raise sqlite3.OperationalError("no such table: image_config")
 
         season.bot.fingerprint_areas_read.subscribe(broken)
     else:
