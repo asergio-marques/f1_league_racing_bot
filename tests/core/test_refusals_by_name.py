@@ -326,7 +326,8 @@ CATCHES = [
     pytest.param(_reassign_merge_hook_faulted, id="driver reassign save, a merge hook's fault",
                  marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
     pytest.param(_former_driver_set, id="test-mode set-former-driver",
-                 marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),    pytest.param(_tiers_checked, id="season approval's tier check",
+                 marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
+    pytest.param(_tiers_checked, id="season approval's tier check",
                  marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_A_REFUSAL)),
 ]
 
