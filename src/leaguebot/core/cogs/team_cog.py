@@ -15,6 +15,8 @@ from leaguebot.core.services.team_changes import (
     TEAM_MODIFY,
     TEAM_REMOVE,
     TEAM_RESERVE_ROLE,
+    gone_reply,
+    list_lock_reply,
     season_done_reply,
 )
 from leaguebot.core.services.team_service import FULL_NAME_MAX, SHORTHAND_MAX
@@ -53,20 +55,15 @@ class TeamCog(commands.Cog):
         the signup wizard offers it as the preferred teams, and every division is created
         from it. With no active season the list is free. Returns True where the command was
         refused, having answered the interaction and recorded the refusal of *what* — the
-        command, or the form it was submitted on.
+        command, or the form it was submitted on. The refusal is the change's own
+        (`team_changes.list_lock_reply`), which the queue judges again as the change starts.
         """
-        season = await self.bot.season_service.get_setup_or_active_season(
-
+        reply = list_lock_reply(
+            await self.bot.season_service.get_setup_or_active_season(), command
         )
-        if season is None or season.stage is SeasonStage.CONFIGURATION:
+        if reply is None:
             return False
-        await refuse(
-            interaction,
-            f"⛔ The team list is fixed for Season {season.season_number} now that its "
-            f"configuration has been confirmed. `/team {command}` is available again once "
-            "the season has ended, or while a new season is in configuration.",
-            what=what,
-        )
+        await refuse(interaction, reply, what=what)
         return True
 
     async def _refuse_once_the_season_is_done(
@@ -217,11 +214,7 @@ class TeamCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         reference = await self.bot.team_service.resolve_server_team(was["name"])
         if reference.team is None:
-            await refuse(
-                interaction,
-                f'⛔ "{was["full_name"]}" is no longer in the server\'s team list.',
-                what=what,
-            )
+            await refuse(interaction, gone_reply(was["full_name"]), what=what)
             return
         current = reference.team
 

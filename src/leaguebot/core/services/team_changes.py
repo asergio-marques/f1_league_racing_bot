@@ -108,23 +108,34 @@ _LIST_FIXED = (
 )
 
 
-async def list_lock_refusal(db_path: str, command: str) -> Verdict | None:
-    """The refusal of a change to the team list once a season's configuration is confirmed: the
-    list is settled while the live season stands in Configuration, or while none is live, and fixed
-    for the rest of the season from the moment its configuration is confirmed, since the signup
-    wizard offers it as the preferred teams and every division is created from it."""
-    season = await live_season(db_path)
+def list_lock_reply(season: Season | None, command: str) -> str | None:
+    """What a change to the team list is answered once the configuration of *season*, the live
+    one, is confirmed, else None: the list is settled while the live season stands in
+    Configuration, or while none is live, and fixed for the rest of the season from the moment its
+    configuration is confirmed, since the signup wizard offers it as the preferred teams and every
+    division is created from it."""
     if season is None or season.stage is SeasonStage.CONFIGURATION:
         return None
-    return Verdict.refuse(_LIST_FIXED.format(season=season.season_number, command=command))
+    return _LIST_FIXED.format(season=season.season_number, command=command)
+
+
+async def list_lock_refusal(db_path: str, command: str) -> Verdict | None:
+    """`list_lock_reply` of the league's live season, as a refusal."""
+    reply = list_lock_reply(await live_season(db_path), command)
+    return None if reply is None else Verdict.refuse(reply)
+
+
+def gone_reply(full_name: str) -> str:
+    """What a change to the team *full_name* is answered where it has left the server's list."""
+    return "⛔ " + _GONE.format(full_name=full_name)
 
 
 def season_done_reply(season: Season | None, command: str) -> str | None:
     """What a role mapping is answered once every division of *season*, the live one, is finished
     or cancelled, else None.
 
-    A team's role may be repaired in every stage of a live season but Pending completion
-    (issue #224), and with no live season at all the mapping is the server's own and free to
+    A team's role may be repaired in every stage of a live season but Pending completion, and
+    with no live season at all the mapping is the server's own and free to
     change, the team list itself being settled on the same terms. So this refuses only where a
     season is live and has run its course: completing it revokes the team roles.
     """
@@ -449,7 +460,7 @@ def team_modify_change(
         async with get_connection(ctx.db_path) as db:
             current = await teams.server_team_on(db, payload["was_shorthand"])
             if current is None:
-                return Verdict.refuse("⛔ " + _GONE.format(full_name=payload["was_full_name"]))
+                return Verdict.refuse(gone_reply(payload["was_full_name"]))
         if names_changed(payload) and await list_lock_refusal(ctx.db_path, "modify") is not None:
             return Verdict.refuse(_NAMES_FIXED)
         if payload["role_id"] is not None:
@@ -674,6 +685,7 @@ def team_reserve_role_change(
 __all__ = [
     "MODIFY_REASON", "NOTHING_ADDED", "NOTHING_MODIFIED", "NOTHING_REMOVED", "NOTHING_RESERVED",
     "RESERVE_REASON", "TEAM_ADD", "TEAM_MODIFY", "TEAM_REMOVE", "TEAM_RESERVE_ROLE",
-    "list_lock_refusal", "season_done_refusal", "season_done_reply", "team_add_change",
+    "gone_reply", "list_lock_refusal", "list_lock_reply", "season_done_refusal",
+    "season_done_reply", "team_add_change",
     "team_modify_change", "team_remove_change", "team_reserve_role_change",
 ]

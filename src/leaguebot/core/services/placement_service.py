@@ -443,8 +443,8 @@ class PlacementService:
         """The accounts of the drivers seated in the team *team_name*, read on *db*: those in any
         division of the season being raced whose placement is confirmed, in the order of their ids.
 
-        The drivers already seated in a team follow its role when a league repoints it (issue
-        #220). A driver created by test mode holds no roles and is left out.
+        The drivers already seated in a team follow its role when a league repoints it. A driver
+        created by test mode holds no roles and is left out.
         """
         from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
 
