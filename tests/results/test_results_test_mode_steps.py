@@ -100,3 +100,31 @@ async def test_results_hands_back_its_own_pending_step(tmp_path, state, pending)
         (1, phase, kind) for phase, kind in pending
     ]
     assert steps.passed_over == []
+
+
+@pytest.mark.xfail(strict=True, reason="#283: results does not yet hand the review its own marks")
+@pytest.mark.parametrize("state, queued, mark", [
+    pytest.param({}, None, "⏳", id="a round not yet run, with no scheduler"),
+    pytest.param({}, set(), "⚠️", id="a round not yet run, with no job queued"),
+    pytest.param({}, {(1, "results")}, "⏳", id="a round not yet run, with its job queued"),
+    pytest.param({"submitted": True, "status": "AWAITING_REPORT_VERDICTS"}, set(),
+                 "⏸️ pending review", id="a session's results submitted"),
+    pytest.param({"submitted": True, "status": "FINAL"}, set(), "✅ finalized", id="final"),
+    pytest.param({"results_on": False}, set(), None, id="results off"),
+])
+async def test_results_hands_the_review_its_own_marks(tmp_path, state, queued, mark) -> None:
+    """It is noon on 12 October 2026, and round 1 (Bahrain) raced an hour ago. Results marks the
+    round's result submission: ✅ finalized once the round is final, ⏸️ pending review once a
+    session's results stand, and otherwise ⏳ where its job is queued or there is no scheduler to
+    ask, ⚠️ where the scheduler holds no job for it. While results is off, it hands back
+    nothing."""
+    from leaguebot.results.services.test_mode_steps import review_marks
+
+    db_path = str(tmp_path / "results_marks.db")
+    await _seed(db_path, **state)
+
+    handed_back = await review_marks(
+        db_path, [_round(state.get("status", "NOT_RUN"))], now=NOW, queued=queued
+    )
+
+    assert handed_back == ({} if mark is None else {1: [("Results", mark)]})
