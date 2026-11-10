@@ -331,7 +331,7 @@ async def get_next_pending_phase(
     db_path: str,
     scheduler_service: Any = None,
     *,
-    now: datetime | None = None,
+    now: datetime,
 ) -> PhaseEntry | None:
     """Return the earliest pending action entry based on the APScheduler job store.
 
@@ -421,9 +421,8 @@ async def get_next_pending_phase(
         round_info = {r["round_id"]: r for r in rows}
         # Rounds whose race has been run: the change queue drops their forecasts as not due (A25),
         # so none of their weather steps is offered.
-        moment = now if now is not None else datetime.now(timezone.utc)
         raced: set[int] = {
-            r["round_id"] for r in rows if _race_run(r["scheduled_at"], moment)
+            r["round_id"] for r in rows if _race_run(r["scheduled_at"], now)
         }
 
         # Rounds that already have at least one ACTIVE session_result (for mystery fallback)
@@ -716,10 +715,9 @@ async def get_next_pending_phase(
 
 
 async def get_passed_over_steps(
-    db_path: str, *, now: datetime | None = None
+    db_path: str, *, now: datetime
 ) -> list[PhaseEntry]:
-    """Every weather step `get_next_pending_phase` passes over as *now* stands (the present, where
-    not given): each Phase 1 to 3, or mystery round notice, still owed (`_weather_steps_undone`)
+    """Every weather step `get_next_pending_phase` passes over as *now* stands: each Phase 1 to 3, or mystery round notice, still owed (`_weather_steps_undone`)
     for a round whose race has been run, the change queue dropping a forecast for a race already
     run (A25). All of them, wherever they fall against the step advance offers, ordered by the
     round's race time, then its division, then the phase. `/test-mode advance` names each in its
@@ -737,7 +735,6 @@ async def get_passed_over_steps(
     in_hand: set[tuple[int, int]] = {
         (int(p["round_id"]), int(p["phase"])) for p in await unfinished(db_path, (FORECAST,))
     }
-    moment = now if now is not None else datetime.now(timezone.utc)
     async with get_connection(db_path) as db:
         cursor = await db.execute("SELECT weather_module_enabled FROM server_configs")
         found = await cursor.fetchone()
@@ -761,7 +758,7 @@ async def get_passed_over_steps(
     return [
         _weather_entry(row, phase)
         for row in rows
-        if _race_run(row["scheduled_at"], moment)
+        if _race_run(row["scheduled_at"], now)
         for phase in _weather_steps_undone(row, in_hand)
     ]
 
@@ -820,7 +817,7 @@ async def build_review_summary(
     db_path: str,
     scheduler_service: Any = None,
     *,
-    now: datetime | None = None,
+    now: datetime,
 ) -> str:
     """Return a formatted multi-line string summarising all rounds and phase status.
 
@@ -943,7 +940,6 @@ async def build_review_summary(
     if not rows:
         return f"**Season: {season_name} — ACTIVE**\n\nNo rounds have been configured yet."
 
-    moment = now if now is not None else datetime.now(timezone.utc)
 
     # The jobs the scheduler holds, as (round_id, event_type) — when one is available.
     round_ids: set[int] = {r["round_id"] for r in rows}
@@ -979,7 +975,7 @@ async def build_review_summary(
             is_mystery = fmt == "MYSTERY"
 
             parts: list[str] = []
-            raced = _race_run(row["scheduled_at"], moment)
+            raced = _race_run(row["scheduled_at"], now)
 
             def _weather(done: bool, event: str) -> str:
                 """A weather step's mark: passed over where undone on a raced round."""

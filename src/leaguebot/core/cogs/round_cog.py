@@ -11,7 +11,7 @@ Commands:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 import discord
@@ -418,7 +418,7 @@ class RoundCog(commands.Cog):
         # amendment the rules refuse never reaches a confirmation at all.
         _verdict = await _judge_round_amendment(
             self.bot, rnd, amendments,
-            now=datetime.now(timezone.utc),
+            now=self.bot.change_queue.now(),
         )
         if not _verdict.allowed:
             await refuse(

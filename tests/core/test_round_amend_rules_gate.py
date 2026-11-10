@@ -148,7 +148,6 @@ async def test_bringing_a_round_inside_its_check_in_deadline_is_refused(tmp_path
     assert not _offered_a_confirmation(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: /round amend judges by the host's clock")
 async def test_moving_a_round_backwards_is_refused_with_attendance_off(tmp_path):
     """The command consults the rule, and with no module standing in for it, at the change
     queue's time: the queue's clock reads 4 March 2031, years past the host's, so an hour before

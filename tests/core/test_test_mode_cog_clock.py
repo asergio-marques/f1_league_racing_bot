@@ -13,16 +13,12 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from leaguebot.core.cogs import test_mode_cog as cog_module
 from leaguebot.core.cogs.test_mode_cog import TestModeCog as _Cog
 from tests.support.undecorate import undecorate
 
 #: The change queue's clock.
 QUEUE_NOW = datetime(2031, 3, 4, 5, 6, tzinfo=timezone.utc)
-#: Why a test fails until the cog hands the queue's clock.
-COG_HANDS_THE_HOST_CLOCK = "#283: the test-mode cog does not hand the queue's clock yet"
 
 
 def _cog() -> _Cog:
@@ -50,7 +46,6 @@ def _interaction(command: str) -> MagicMock:
     return interaction
 
 
-@pytest.mark.xfail(strict=True, reason=COG_HANDS_THE_HOST_CLOCK)
 async def test_the_review_judges_the_season_at_the_queue_s_time(monkeypatch):
     """With test mode on, Alex runs `/test-mode review`. The summary is built at the change
     queue's time, the moment a raced round's weather steps are judged passed over by, and is

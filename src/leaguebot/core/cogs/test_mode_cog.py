@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import functools
 import logging
-from datetime import datetime, timezone
 
 import discord
 from discord import app_commands
@@ -151,7 +150,7 @@ class TestModeCog(commands.Cog):
         run = await advance_next_step(
             self.bot.db_path,
             self.bot.scheduler_service,
-            now=datetime.now(timezone.utc),
+            now=self.bot.change_queue.now(),
             announce=functools.partial(self._announce_advance, interaction),
         )
         entry = run.entry
@@ -267,6 +266,7 @@ class TestModeCog(commands.Cog):
         summary = await build_review_summary(
             self.bot.db_path,
             self.bot.scheduler_service,
+            now=self.bot.change_queue.now(),
         )
         # Discord message limit is 2000 characters; chunk if needed.
         chunks = [summary[i:i + 2000] for i in range(0, len(summary), 2000)]

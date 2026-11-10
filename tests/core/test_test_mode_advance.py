@@ -1291,7 +1291,6 @@ async def test_advance_with_only_raced_steps_left_names_them_and_says_nothing_el
     assert "above" not in refusals[0]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: advance reads the host's clock, not the queue's")
 async def test_advance_reads_the_clock_once_for_the_step_it_offers_and_those_it_passes_over(
     tmp_path,
 ):

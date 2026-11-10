@@ -2790,9 +2790,6 @@ KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/rsvp_service.py", "write_distribution_on"): (1, PASS["attendance"]),
     ("core/services/placement_service.py", "PlacementService.move_on"): (1, PASS["attendance"]),
     ("core/services/placement_service.py", "PlacementService.sack_on"): (1, PASS["attendance"]),
-    ("core/services/test_mode_service.py", "build_review_summary"): (1, PASS["core"]),
-    ("core/services/test_mode_service.py", "get_next_pending_phase"): (1, PASS["core"]),
-    ("core/services/test_mode_service.py", "get_passed_over_steps"): (1, PASS["core"]),
     ("image/services/driver_portrait_service.py", "refresh_portraits"): (1, PASS["image"]),
     ("results/services/result_submission_service.py", "_save_session_result_in_tx"):
         (1, PASS["results"]),
