@@ -747,10 +747,10 @@ mode and delete the saved backup. A season's end switches it off in its own `end
 real driver stands in the way is counted by `count_live_real_drivers`. `/test-mode nationality` is a
 `Setting`.
 
-**The other five test-mode commands are each a change of their own, in one shape:**
+**Five more test-mode commands are each a change of their own, in one shape:**
 `/test-mode set-former-driver` (`core.test_mode_former_driver`) and the four roster commands of
 `test_roster_changes` (`core.test_roster_add`, `core.test_roster_add_bulk`, `core.test_roster_remove`,
-`core.test_roster_clear`). Each carries what was typed, is judged without a write at the ask and
+`core.test_roster_clear`). Each carries what the command was given, is judged without a write at the ask and
 again as it starts, and is one save of its rows and their audit entries, the roster's writers
 taking the connection of the save and committing nothing. What the reply of a discarded save needs
 is read into the payload at the ask (`fill`), and a fault in a save stops the lane. What each kind
