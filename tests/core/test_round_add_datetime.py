@@ -339,11 +339,15 @@ async def test_a_round_add_asked_again_while_it_waits_is_refused_as_a_repeat(tmp
 # The moment, by the shared datetime rule (#362)
 # ---------------------------------------------------------------------------
 
+#: Why the stored form's tests fail until the build stores the offset.
+_NO_OFFSET = "#283: /round add still stores a round's moment without its offset"
 
+
+@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_round_add_stores_a_zoned_time_as_utc(tmp_path):
     """Season #1 is being set up, in Placements, Pro holding no round. The manager runs
     `/round add` for Pro, a mystery round at 2026-06-14T20:00+02:00, and the queue runs it. Pro
-    holds one round, round 1, stored at 18:00 UTC with no zone: "2026-06-14T18:00:00"."""
+    holds one round, round 1, stored at 18:00 UTC with its offset: "2026-06-14T18:00:00+00:00"."""
     from tests.support.change_queue import run_queue
 
     league = await setup_league(tmp_path, divisions=(("Pro", 1, 10, ()),))
@@ -351,7 +355,7 @@ async def test_round_add_stores_a_zoned_time_as_utc(tmp_path):
     await run_queue(league.bot)
 
     assert await round_rows(league.db_path, "Pro") == [
-        (1, "MYSTERY", None, "2026-06-14T18:00:00")
+        (1, "MYSTERY", None, "2026-06-14T18:00:00+00:00")
     ]
 
 

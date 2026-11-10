@@ -17,9 +17,12 @@ The load-bearing rules pinned here:
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
+
+#: Why the moment's tests fail until the build hands it aware.
+_AWARE = "#283: an imported moment is still handed back naive"
 
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.utils.round_import import (
@@ -31,6 +34,7 @@ from leaguebot.core.utils.round_import import (
 # ── The pasted-line format ────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_AWARE)
 def test_a_calendar_of_three_rounds():
     """Each datetime is written without seconds, and is stated in UTC and stored naive — see
     the module docstring."""
@@ -47,8 +51,8 @@ def test_a_calendar_of_three_rounds():
         RoundFormat.ENDURANCE,
     ]
     assert [r.track_raw for r in rounds] == ["14", "Hungaroring", "4"]
-    assert rounds[0].scheduled_at == datetime(2026, 6, 14, 18, 0)
-    assert rounds[0].scheduled_at.tzinfo is None
+    assert rounds[0].scheduled_at == datetime(2026, 6, 14, 18, 0, tzinfo=timezone.utc)
+    assert rounds[0].scheduled_at.tzinfo is not None
 
 
 def test_input_order_is_kept_rather_than_sorted():
@@ -212,20 +216,20 @@ def test_rounds_need_not_be_in_chronological_order():
     assert [r.scheduled_at.day for r in divisions[0].rounds] == [28, 14]
 
 
+@pytest.mark.xfail(strict=True, reason=_AWARE)
 def test_the_offset_follows_the_season():
     """A local time is converted to UTC, and the same wall time converts differently either
     side of a daylight-saving change: June in Lisbon is WEST, an hour ahead of UTC. Every XML
-    datetime is then stripped of its tzinfo, as a division of mixed awareness cannot be
-    sorted."""
+    datetime is handed back aware, in UTC, the form a round's moment is stored in."""
     divisions, errors = parse_round_xml(
         _xml(_round("2026-01-10T19:00"), _round("2026-06-14T19:00"))
     )
     winter, summer = divisions[0].rounds
 
     assert errors == []
-    assert winter.scheduled_at == datetime(2026, 1, 10, 19, 0)  # WET, UTC+0
-    assert summer.scheduled_at == datetime(2026, 6, 14, 18, 0)  # WEST, UTC+1
-    assert winter.scheduled_at.tzinfo is None and summer.scheduled_at.tzinfo is None
+    assert winter.scheduled_at == datetime(2026, 1, 10, 19, 0, tzinfo=timezone.utc)  # WET, UTC+0
+    assert summer.scheduled_at == datetime(2026, 6, 14, 18, 0, tzinfo=timezone.utc)  # WEST, UTC+1
+    assert winter.scheduled_at.tzinfo is not None and summer.scheduled_at.tzinfo is not None
 
 
 def test_an_unknown_time_zone():
@@ -339,10 +343,11 @@ def test_an_external_entity_is_not_resolved():
     assert "root:" not in rendered
 
 
+@pytest.mark.xfail(strict=True, reason=_AWARE)
 def test_a_pasted_time_given_with_a_zone_is_stored_as_utc():
     """By the shared rule (#362), as the XML import already converted one."""
     rounds, errors = parse_bulk_round_lines("2026-06-14T20:00+02:00, Normal, 14")
 
     assert errors == []
-    assert rounds[0].scheduled_at == datetime(2026, 6, 14, 18, 0)
-    assert rounds[0].scheduled_at.tzinfo is None
+    assert rounds[0].scheduled_at == datetime(2026, 6, 14, 18, 0, tzinfo=timezone.utc)
+    assert rounds[0].scheduled_at.tzinfo is not None
