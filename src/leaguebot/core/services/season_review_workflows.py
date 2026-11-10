@@ -17,14 +17,15 @@ where the press was refused, which leaves the button's review standing. The gate
 **The approval's backup question** (`offer_backup_before_approving`, its view
 `BackupBeforeApprovalView`) is put under test mode, after every gate and before every write, and
 is given what is left of the review's window. The time left, and the dates the approval's calendar
-gate judges, are read from the change queue's clock (`ChangeQueue.now`), as the change's own check
-reads it, so the press and the change judge time alike.
+gate judges, are read from the *now* the caller hands in, the change queue's clock, as the change
+types are handed it.
 
 The check of the change a workflow asks is the same gates again, judged as the change runs, so the
 refusal at the press and the refusal at the run cannot disagree.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 
 import discord
@@ -377,6 +378,7 @@ async def offer_backup_before_approving(
     change_queue: ChangeQueue,
     scheduler_service: SchedulerService,
     output_router: OutputRouter,
+    now: Callable[[], datetime],
 ) -> bool:
     """Under test mode, ask whether to save the databases. Returns whether to go on.
 
@@ -401,7 +403,7 @@ async def offer_backup_before_approving(
     if not interaction.response.is_done():
         await interaction.response.defer(ephemeral=True)
 
-    remaining = (deadline - change_queue.now()).total_seconds()
+    remaining = (deadline - now()).total_seconds()
     if remaining <= 0:
         reply = (
             "⏱️ This review expired before the season could be approved. Run "
@@ -491,6 +493,7 @@ async def approve_season(
     scheduler_service: SchedulerService,
     output_router: OutputRouter,
     round_windows_read: AwaitedHook,
+    now: Callable[[], datetime],
     deadline: datetime | None = None,
     what: str | None = None,
     fingerprint: dict | None = None,
@@ -715,7 +718,7 @@ async def approve_season(
     _dates = approval_checks.date_refusal(
         divisions,
         div_rounds,
-        now=change_queue.now(),
+        now=now(),
         attendance=_att_windows,
         weather=_wx_windows,
     )
@@ -828,6 +831,7 @@ async def approve_season(
         change_queue=change_queue,
         scheduler_service=scheduler_service,
         output_router=output_router,
+        now=now,
     ):
         return False
 

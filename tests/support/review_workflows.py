@@ -3,13 +3,13 @@
 The approval, the mid-season placements confirmation and the configuration confirmation are
 functions of `leaguebot.core.services.season_review_workflows`: `approve_season`,
 `confirm_mid_season_placements` and `confirm_configuration`. Each takes the interaction pressed,
-then as keyword arguments the services it uses, each named as the bot carries it
-(`season_service`, `change_queue`, `db_path` and so on), and the press's own particulars
-(`deadline`, `what`, `fingerprint`), which have defaults. The review's views hand them their
-services off the bot by those names, and so does `run_workflow`, so a test never lists which
-services a workflow reads. The approval's backup question is `offer_backup_before_approving`, run
-the same way, and its view `BackupBeforeApprovalView`, built by `build_view` the same way, its
-`timeout` given.
+then as keyword arguments the services it uses, each named as the bot carries it (`season_service`,
+`change_queue`, `db_path` and so on), the clock as `now`, the queue's (`change_queue.now`), and the
+press's own particulars (`deadline`, `what`, `fingerprint`), which have defaults. The review's views
+hand them their services off the bot by those names, and so does `run_workflow`, so a test never
+lists which services a workflow reads. The approval's backup question is
+`offer_backup_before_approving`, run the same way, and its view `BackupBeforeApprovalView`, built by
+`build_view` the same way, its `timeout` given.
 
 The gates the workflows run are functions of `leaguebot.core.services.approval_checks`, called
 through the module, so that a test standing one in patches `approval_checks.<gate>`. A gate that
@@ -24,9 +24,9 @@ from typing import Any
 
 def _services(target: Any, bot: Any, given: dict[str, Any]) -> dict[str, Any]:
     """Every keyword-only parameter of *target* that has no default and is not in *given*, each
-    taken off *bot* by its name."""
+    taken off *bot* by its name, but `now`, which is the queue's clock as the views hand it."""
     return {
-        param: getattr(bot, param)
+        param: bot.change_queue.now if param == "now" else getattr(bot, param)
         for param, spec in inspect.signature(target).parameters.items()
         if spec.kind is inspect.Parameter.KEYWORD_ONLY
         and spec.default is inspect.Parameter.empty

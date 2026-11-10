@@ -2715,6 +2715,7 @@ class _ApproveView(LeagueView):
                 scheduler_service=bot.scheduler_service,
                 output_router=bot.output_router,
                 round_windows_read=bot.round_windows_read,
+                now=bot.change_queue.now,
                 deadline=review.deadline,
                 what=self._button,
                 fingerprint=review.evidence,
