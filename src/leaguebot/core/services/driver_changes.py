@@ -962,11 +962,11 @@ def driver_reassign_change(
 
     async def check(ctx: CheckContext) -> Verdict:
         """The refusals of the service, each in its words, read from the database."""
+        old_user_id = str(ctx.payload["old_user_id"])
+        new_user_id = str(ctx.payload["new_user_id"])
         try:
             async with get_connection(ctx.db_path) as db:
-                await driver.judge_reassign_on(
-                    db, str(ctx.payload["old_user_id"]), str(ctx.payload["new_user_id"])
-                )
+                await driver.judge_reassign_on(db, old_user_id, new_user_id)
         except Refused as refusal:
             return Verdict.refuse(f"⛔ {refusal}")
         return Verdict.go()

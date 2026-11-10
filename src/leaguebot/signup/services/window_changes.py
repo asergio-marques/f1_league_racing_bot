@@ -519,8 +519,9 @@ def return_drivers_step(
         for row in rows:
             account = str(row["discord_user_id"])
             current = DriverState(row["current_state"])
+            profile_id = int(row["id"])
             try:
-                await write_transition(db, int(row["id"]), current, DriverState.NOT_SIGNED_UP)
+                await write_transition(db, profile_id, current, DriverState.NOT_SIGNED_UP)
             except InvalidDriverTransition:
                 continue  # the state machine's refusal: the driver moved on since they were read
             await signup_module_service().end_wizard_on(db, account)
