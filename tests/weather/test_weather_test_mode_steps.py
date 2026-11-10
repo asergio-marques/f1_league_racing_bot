@@ -145,3 +145,57 @@ async def test_weather_hands_back_its_own_pending_steps_and_those_passed_over(
     assert sorted((s.round_id, s.phase_number, s.kind) for s in steps.passed_over) == [
         (1, phase, kind) for phase, kind in passed_over
     ]
+
+
+#: The jobs the scheduler holds of round 1, as (round, the event each is armed under).
+P2_QUEUED = {(1, "weather_p2")}
+
+
+@pytest.mark.xfail(strict=True, reason="#283: weather does not yet hand the review its own marks")
+@pytest.mark.parametrize("state, queued, marks", [
+    pytest.param({}, None, [("P1", "⏳"), ("P2", "⏳"), ("P3", "⏳"), ("Cleanup", "⏳")],
+                 id="a round still to race, with no scheduler"),
+    pytest.param({"done": (1,), "standing": (1,)}, set(),
+                 [("P1", "✅"), ("P2", "⚠️"), ("P3", "⚠️"), ("Cleanup", "⚠️")],
+                 id="phase 1 posted, with no job queued"),
+    pytest.param({"done": (1,), "standing": (1,)}, P2_QUEUED,
+                 [("P1", "✅"), ("P2", "⏳"), ("P3", "⚠️"), ("Cleanup", "⚠️")],
+                 id="phase 1 posted, with phase 2's job queued"),
+    pytest.param({"format": "MYSTERY"}, None, [("Notice", "⏳")],
+                 id="a mystery round's notice still to post"),
+    pytest.param({"format": "MYSTERY", "done": (1,), "standing": (0,)}, set(), [("Notice", "✅")],
+                 id="a mystery round's notice posted"),
+    pytest.param({"scheduled_at": RACED}, set(),
+                 [("P1", "⏭️"), ("P2", "⏭️"), ("P3", "⏭️"), ("Cleanup", "✅")],
+                 id="a raced round with nothing posted"),
+    pytest.param({"scheduled_at": RACED, "done": (1, 2), "standing": (2,)}, set(),
+                 [("P1", "✅"), ("P2", "✅"), ("P3", "⏭️"), ("Cleanup", "⚠️")],
+                 id="a raced round with phase 2 still posted"),
+    pytest.param({"scheduled_at": RACED, "format": "MYSTERY"}, None, [("Notice", "⏭️")],
+                 id="a raced mystery round with no notice, with no scheduler"),
+    pytest.param({"done": (1, 2, 3), "standing": (3,)}, None,
+                 [("P1", "✅"), ("P2", "✅"), ("P3", "✅"), ("Cleanup", "⏳")],
+                 id="every phase posted, phase 3 still up"),
+    pytest.param({"done": (1, 2, 3)}, set(),
+                 [("P1", "✅"), ("P2", "✅"), ("P3", "✅"), ("Cleanup", "✅")],
+                 id="every phase posted and taken down"),
+    pytest.param({"weather_on": False}, set(), None, id="weather off"),
+])
+async def test_weather_hands_the_review_its_own_marks(tmp_path, state, queued, marks) -> None:
+    """It is noon on 12 October 2026, and round 1 (Bahrain) races in a week, or raced an hour ago.
+    Weather marks each of Phases 1 to 3 and the forecast clean-up of the round, or a mystery
+    round's notice alone: ✅ once done, the clean-up once nothing of Phases 1 to 3 stands and
+    Phase 3 has run or the race has; a phase not done on a raced round ⏭️, passed over; any other
+    step not done ⏳ where its job is queued or there is no scheduler to ask, and ⚠️ where the
+    scheduler holds no job for it. While weather is off, it hands back nothing."""
+    from leaguebot.weather.services.test_mode_steps import review_marks
+
+    db_path = str(tmp_path / "weather_marks.db")
+    await _seed(db_path, **state)
+    handed = _round(
+        format=state.get("format", "NORMAL"), scheduled_at=state.get("scheduled_at", AHEAD)
+    )
+
+    handed_back = await review_marks(db_path, [handed], now=NOW, queued=queued)
+
+    assert handed_back == ({} if marks is None else {1: marks})
