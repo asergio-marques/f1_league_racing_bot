@@ -2266,10 +2266,12 @@ def _spliced_reads(node: ast.JoinedStr) -> int:
 
 
 #: Functions that read tables named at run time, read by hand and found to name only tables their
-#: own module owns: how many such tables, and which. The scan cannot tell whose table a spliced
-#: name is, so every other such read counts as a read outside the owner. The count is held exactly
-#: (`test_every_spliced_read_read_by_hand_is_still_what_it_was`), so a read added later is read by
-#: hand too.
+#: own module owns: how many such statements, and which tables. The scan cannot tell whose table a
+#: spliced name is, so every other such read counts as a read outside the owner. The count of
+#: statements is held exactly (`test_every_spliced_read_read_by_hand_is_still_what_it_was`), so a
+#: statement added later is read by hand too; the count does not see a table added to a tuple a
+#: listed function iterates, which `SPLICED_SOURCES` pins
+#: (`test_every_table_a_listed_spliced_read_iterates_is_its_own_module_s`).
 SPLICED_READS_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/channel_registry_service.py", "find_channel_use"):
         (2, "core's own settings tables, `SERVER_SOURCES` and `DIVISION_SOURCES`"),
@@ -2722,6 +2724,42 @@ def test_every_spliced_read_read_by_hand_is_still_what_it_was():
         key: count for key, (count, _reason) in SPLICED_READS_READ_BY_HAND.items()
     }
     assert all(reason for _, reason in SPLICED_READS_READ_BY_HAND.values())
+
+
+#: The tuples of table names a function in `SPLICED_READS_READ_BY_HAND` feeds its spliced
+#: statements, by (file, name): every table each names must be the file's own module's.
+SPLICED_SOURCES: tuple[tuple[str, str], ...] = (
+    ("core/services/channel_registry_service.py", "SERVER_SOURCES"),
+    ("core/services/channel_registry_service.py", "DIVISION_SOURCES"),
+    ("core/services/factory_reset_service.py", "_OTHER_SOURCES"),
+)
+
+
+def test_every_table_a_listed_spliced_read_iterates_is_its_own_module_s():
+    """Each tuple a hand-read spliced read iterates (`SPLICED_SOURCES`) names tables, and every
+    table it names is owned by the module of the file it is declared in: a module's table put back
+    into one, as the factory reset's channels once were, fails here naming the table and the tuple,
+    though the count of spliced statements is unchanged."""
+    trees = dict(_sources())
+    for path, name in SPLICED_SOURCES:
+        values = [
+            node.value for node in trees[path].body
+            if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None
+            and any(
+                isinstance(target, ast.Name) and target.id == name
+                for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
+            )
+        ]
+        assert len(values) == 1, f"{path} declares {name} once"
+        tables = {
+            const.value for const in ast.walk(values[0])
+            if isinstance(const, ast.Constant) and const.value in TABLE_OWNER
+        }
+        assert tables, f"{name} in {path} names no table"
+        module = _module_of(path)
+        assert {table: TABLE_OWNER[table] for table in tables if TABLE_OWNER[table] != module} == {}, (
+            f"{name} in {path} names another module's table"
+        )
 
 
 def test_the_column_check_counts_an_attribute_named_for_another_module_s_column():
