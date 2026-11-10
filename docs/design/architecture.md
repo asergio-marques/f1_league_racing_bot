@@ -156,7 +156,7 @@ a division or a season cancelled, a round's results made final, placements confi
 configuration confirmed, a review gathering its lines, a season's confirmation judged, a
 season ending, a season, division, round or driver deleted, a driver merged into another or turned
 down, a driver's account changed, a base role changed, the bot packed, test mode turned on, the
-bot's in-memory state cleared, the hub's panel gathering its options), core declares a hook. The
+bot's in-memory state cleared, the hub's panel gathering its options, a module's switch read), core declares a hook. The
 builder signs each module up to it before the bot connects. Core calls whoever signed up, and
 never imports a module, the bot's type aside (see "How the code is laid out"). A module turned on or
 off is not a hook but a change of the module's own, which core asks for by its kind (see "Each
