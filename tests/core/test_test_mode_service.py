@@ -221,22 +221,6 @@ async def test_mystery_round_notice_done_excluded(tmp_path) -> None:
 
 
 @pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
-async def test_phase_number_ordering_within_round(tmp_path) -> None:
-    """Phase 1 done, Phase 2 not done → returns phase_number 2, of kind `weather_p2`."""
-    db_path = str(tmp_path / "bot.db")
-    await run_migrations(db_path)
-    await _seed_with_weather(db_path, [
-        {"phase1_done": 1, "phase2_done": 0, "phase3_done": 0},
-    ])
-    result = await get_next_pending_phase(
-        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
-    )
-    assert result is not None
-    assert result["phase_number"] == 2
-    assert result["kind"] == "weather_p2"
-
-
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_earliest_scheduled_round_comes_first(tmp_path) -> None:
     """The round with the earlier scheduled_at is returned first."""
     earlier = (NOW + timedelta(days=5)).strftime(
@@ -311,22 +295,6 @@ async def test_no_active_season_returns_none(tmp_path) -> None:
         db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
     )
     assert result is None
-
-
-@pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
-async def test_returns_phase1_for_fresh_round(tmp_path) -> None:
-    """A round with all phases pending returns phase_number=1."""
-    db_path = str(tmp_path / "bot.db")
-    await run_migrations(db_path)
-    await _seed_with_weather(db_path, [
-        {"track_name": "Japan", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
-    ])
-    result = await get_next_pending_phase(
-        db_path, _StubScheduler(), now=NOW, pending_steps_read=pending_steps_read(),
-    )
-    assert result is not None
-    assert result["phase_number"] == 1
-    assert result["track_name"] == "Japan"
 
 
 # ---------------------------------------------------------------------------
@@ -437,7 +405,8 @@ async def test_misfired_fallback_returns_phase1(tmp_path) -> None:
 
 @pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
 async def test_misfired_fallback_respects_phase_flags(tmp_path) -> None:
-    """phase1_done=1, phase2_done=0 → fallback returns phase 2, not phase 1."""
+    """phase1_done=1, phase2_done=0 → fallback returns phase 2, not phase 1, of kind
+    `weather_p2`."""
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
     await _seed_with_weather(db_path, [
@@ -448,6 +417,7 @@ async def test_misfired_fallback_respects_phase_flags(tmp_path) -> None:
     )
     assert result is not None
     assert result["phase_number"] == 2
+    assert result["kind"] == "weather_p2"
 
 
 @pytest.mark.xfail(strict=True, reason=ASKED_OF_THE_MODULES)
