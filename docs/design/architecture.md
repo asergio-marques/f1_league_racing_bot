@@ -1146,11 +1146,11 @@ stated exceptions below them:
    lane's stop) are failure paths as well: the catches of a step and of a check each stop the lane,
    or, for a step of a league's setting, `/bot init`'s save or a role move that gives
    `Step.on_fault`, end the job instead, or, for a member's change of a type that gives
-   `ChangeType.on_check_fault`, end the change, and the lane goes on (see "A job that fails stops its lane"), and a hook's catch
-   always leads to the stop. Either way the fault is logged on the host and recorded in the
-   log channel as a failure, once — save a fault in `/bot init`'s save, which writes no line, and a
-   fault in its check while no server holds the league, when there is no log channel to record it
-   in; the host's log holds either alone;
+   `ChangeType.on_check_fault`, end the change, and the lane goes on (see "A job that fails stops
+   its lane"), and a hook's catch always leads to the stop. Either way the fault is logged on the
+   host and recorded in the log channel as a failure, once — save a fault in `/bot init`'s save,
+   which writes no line, and a fault in its check while no server holds the league, when there is no
+   log channel to record it in; the host's log holds either alone;
 2. where the bot works through a list (divisions, drivers, posts) and one item failing must not stop
    the rest. Inside a queued change, each item is a job: one that fails stops its lane until
    it is cleared, and a league admin who discards it lets the items after it go ahead. Outside one, the failure goes to the failure path of whatever started the
