@@ -15,9 +15,6 @@ from leaguebot.core.db.database import get_connection, run_migrations
 NOW = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
 AHEAD = "2026-10-19T12:00:00+00:00"
 
-#: Why each test here fails until attendance answers for its own steps.
-ATTENDANCE_STEPS = "#283: attendance does not yet hand core its own test-mode steps"
-
 
 async def _seed(
     db_path: str,
@@ -92,7 +89,6 @@ def _round():
     )
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_STEPS)
 @pytest.mark.parametrize("state, pending", [
     pytest.param({}, [(5, "rsvp_notice")], id="no call posted"),
     pytest.param({"in_hand": ("attendance.check_in.call",)}, [],
