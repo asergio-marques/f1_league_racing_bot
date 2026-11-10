@@ -17,8 +17,6 @@ import importlib
 import logging
 from typing import Any
 
-import pytest
-
 _MODULE = "leaguebot.core.services.start_up"
 
 
