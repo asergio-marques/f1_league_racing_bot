@@ -876,6 +876,7 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.core.services.test_roster_changes import (
         test_roster_add_bulk_change,
         test_roster_add_change,
+        test_roster_remove_change,
     )
     from leaguebot.core.services.test_mode_toggle_change import test_mode_toggle_change
     from leaguebot.core.services.clean_change import clean_change
@@ -1558,6 +1559,9 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(
         test_roster_add_bulk_change(placement=lambda: bot.placement_service)
+    )
+    bot.change_queue.register(
+        test_roster_remove_change(profiles_deleted=bot.profiles_deleted)
     )
     for setting in (
         log_channel_setting(config=bot.config_service),

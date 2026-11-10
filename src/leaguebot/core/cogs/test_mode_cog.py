@@ -37,6 +37,7 @@ from leaguebot.core.services.test_roster_changes import (
     NOT_PLACING,
     TEST_ROSTER_ADD,
     TEST_ROSTER_ADD_BULK,
+    TEST_ROSTER_REMOVE,
     bulk_payload,
 )
 from leaguebot.core.services.test_mode_former_driver_change import TEST_MODE_FORMER_DRIVER
@@ -643,19 +644,11 @@ class TestModeCog(commands.Cog):
         interaction: discord.Interaction,
         user_id: str,
     ) -> None:
-        config = await self.bot.config_service.get_server_config(
+        """Ask the change that removes the fake driver, once the ID reads as a number.
 
-        )
-        if config is None or not config.test_mode_active:
-            await refuse(
-                interaction,
-                NOT_IN_TEST_MODE,
-                what=describe(interaction),
-            )
-            return
-        if await self._refuse_roster_change_outside_placements(interaction):
-            return
-
+        Test mode, the season's stage and the driver are judged by the change, as it is asked and
+        as it starts (`test_roster_changes`).
+        """
         discord_uid = parse_user_id(user_id)
         if discord_uid is None:
             await refuse(
@@ -664,28 +657,11 @@ class TestModeCog(commands.Cog):
                 what=describe(interaction),
             )
             return
-
-        from leaguebot.core.services.test_roster_service import remove_test_driver
-
-        result = await remove_test_driver(
-            discord_user_id=discord_uid,
-            db_path=self.bot.db_path,
-            profiles_deleted=self.bot.profiles_deleted,
-        )
-
-        if isinstance(result, str):
-            await refuse(interaction, f"⛔ {result}", what=describe(interaction))
-            return
-
-        await interaction.response.send_message(
-            f"✅ Removed fake driver **{result['display_name']}** from **{result['team_name']}**.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode roster remove | Success\n"
-            f"  driver: {result['display_name']}\n"
-            f"  team: {result['team_name']}\n"
-            f"  user_id: {discord_uid}",
+        await self.bot.change_queue.ask(
+            TEST_ROSTER_REMOVE,
+            {"user_id": str(discord_uid)},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     # /test-mode roster list -----------------------------------------------

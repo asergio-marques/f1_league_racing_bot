@@ -667,51 +667,93 @@ async def clear_test_drivers(
     )
 
 
-async def remove_test_driver(
-    discord_user_id: int,
-    db_path: str,
-    *,
-    profiles_deleted: AwaitedHook,
-) -> str | dict:
-    """Remove a single fake driver by their synthetic Discord user ID, keeping their history.
+@dataclass(frozen=True)
+class FakeDriver:
+    """A fake driver as the roster's removals and the audit entries of them name them: the profile,
+    the synthetic id as stored, the name, the team's full name, the nationality, and the division
+    they are seated in (None where they hold no seat)."""
+
+    profile_id: int
+    discord_user_id: str
+    display_name: str
+    team_name: str
+    nationality: str | None
+    division_id: int | None
+    division_name: str | None
+
+
+_FAKE_DRIVER_SELECT = """
+    SELECT dp.id AS profile_id,
+           dp.discord_user_id,
+           dp.test_display_name,
+           dp.test_nationality,
+           ti.full_name AS team_name,
+           d.id AS division_id,
+           d.name AS division_name
+    FROM driver_profiles dp
+    LEFT JOIN team_seats ts ON ts.driver_profile_id = dp.id
+    LEFT JOIN team_instances ti ON ti.id = ts.team_instance_id
+    LEFT JOIN divisions d ON d.id = ti.division_id
+"""
+
+
+def _fake_driver(row: aiosqlite.Row) -> FakeDriver:
+    return FakeDriver(
+        profile_id=row["profile_id"],
+        discord_user_id=str(row["discord_user_id"]),
+        display_name=row["test_display_name"] or f"Driver {row['profile_id']}",
+        team_name=row["team_name"] or "(unknown team)",
+        nationality=row["test_nationality"] or None,
+        division_id=row["division_id"],
+        division_name=row["division_name"],
+    )
+
+
+async def find_test_driver_on(
+    db: aiosqlite.Connection, discord_user_id: int
+) -> FakeDriver | str:
+    """The fake driver holding the synthetic id *discord_user_id*, or the refusal, in its words:
+    a real driver's id, and an id nobody holds, are both refused."""
+    cursor = await db.execute(
+        _FAKE_DRIVER_SELECT
+        + "WHERE CAST(dp.discord_user_id AS INTEGER) = ? AND dp.is_test_driver = 1",
+        (discord_user_id,),
+    )
+    row = await cursor.fetchone()
+    if row is None:
+        return "No test driver found with that user ID on this server."
+    return _fake_driver(row)
+
+
+async def delete_test_drivers_on(
+    db: aiosqlite.Connection, profile_ids: list[int], *, profiles_deleted: AwaitedHook
+) -> None:
+    """Delete the fake drivers *profile_ids*, keeping their history, on *db*, committing nothing.
 
     Deleted by ``delete_driver_profiles``, the route `roster clear` and switching test mode
     off take, so a table that comes to hold a driver is let go of here as well.
+    """
+    from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
+
+    await delete_driver_profiles(
+        db, profile_ids, keep_history=True, profiles_deleted=profiles_deleted
+    )
+
+
+async def remove_test_driver_on(
+    db: aiosqlite.Connection, discord_user_id: int, *, profiles_deleted: AwaitedHook
+) -> str | dict:
+    """Remove a single fake driver by their synthetic Discord user ID, keeping their history, on
+    *db*, committing nothing: the save it belongs to does.
 
     Returns a dict with keys ``display_name`` and ``team_name`` on success,
     or an error string if the profile doesn't exist or is not a test driver.
     """
-    from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT dp.id AS profile_id,
-                   dp.test_display_name,
-                   ti.full_name AS team_name
-            FROM driver_profiles dp
-            LEFT JOIN team_seats ts ON ts.driver_profile_id = dp.id
-            LEFT JOIN team_instances ti ON ti.id = ts.team_instance_id
-            WHERE CAST(dp.discord_user_id AS INTEGER) = ?
-              AND dp.is_test_driver = 1
-            """,
-            (discord_user_id,),
-        )
-        row = await cursor.fetchone()
-
-        if row is None:
-            return "No test driver found with that user ID on this server."
-
-        profile_id: int = row["profile_id"]
-        display_name: str = row["test_display_name"] or f"Driver {profile_id}"
-        team_name: str = row["team_name"] or "(unknown team)"
-
-        await delete_driver_profiles(
-            db, [profile_id], keep_history=True, profiles_deleted=profiles_deleted
-        )
-        await db.commit()
-
-    return {"display_name": display_name, "team_name": team_name}
+    found = await find_test_driver_on(db, discord_user_id)
+    if isinstance(found, str):
+        return found
+    await delete_test_drivers_on(db, [found.profile_id], profiles_deleted=profiles_deleted)
+    return {"display_name": found.display_name, "team_name": found.team_name}
 
 
 async def clear_all_test_drivers_on(

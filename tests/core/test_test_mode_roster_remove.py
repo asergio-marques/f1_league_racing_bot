@@ -26,8 +26,6 @@ from tests.support.settings_league import interaction as member_asks
 from tests.support.setup_rounds import acknowledged
 from tests.support.undecorate import undecorate
 
-#: What is not yet true of the command.
-ON_THE_QUEUE = "#283: /test-mode roster remove is not yet a change on the queue"
 
 ACTOR_ID = 77
 _NAMED = f"Admin (`<@{ACTOR_ID}>`)"
@@ -134,7 +132,6 @@ def _refused(refusal: str) -> str:
     return f"⛔ `/test-mode roster remove` refused for {_NAMED} — {refusal[2:]}"
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_removal_and_its_audit_entry_and_line_are_one_save(league):
     """The core specification's test roster, changed by hand under test mode, and its record of
     what changed. The season is in Placements under test mode, Mock Alpha (British) a fake driver
@@ -249,7 +246,6 @@ async def _removed_meanwhile(league) -> None:
     await league.write("DELETE FROM driver_profiles WHERE discord_user_id = ?", MOCK_ID)
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 @pytest.mark.parametrize(
     "meanwhile, refusal",
     [
@@ -280,7 +276,6 @@ async def test_it_is_judged_again_as_it_starts(league, meanwhile, refusal):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_a_fault_in_the_save_removes_nobody(league):
     """The season is in Placements under test mode, Mock Alpha a fake driver in McLaren's second
     seat in Am. Admin (77) runs `/test-mode roster remove` with Mock Alpha's ID, and the audit
@@ -319,7 +314,6 @@ async def test_a_fault_in_the_save_removes_nobody(league):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_the_same_ask_while_the_first_waits_is_refused_as_a_repeat(league):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. The

@@ -55,12 +55,16 @@ from leaguebot.core.services.test_mode_settings import NOT_IN_TEST_MODE
 from leaguebot.core.services.test_roster_service import (
     AddPlan,
     BulkPlan,
+    FakeDriver,
+    delete_test_drivers_on,
+    find_test_driver_on,
     judge_add_on,
     judge_bulk_on,
     locate_on,
     seat_bulk_on,
     seat_on,
 )
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 from leaguebot.core.utils.roster_import import (
     ParsedDriver,
@@ -70,6 +74,7 @@ from leaguebot.core.utils.roster_import import (
 
 TEST_ROSTER_ADD = "core.test_roster_add"
 TEST_ROSTER_ADD_BULK = "core.test_roster_add_bulk"
+TEST_ROSTER_REMOVE = "core.test_roster_remove"
 
 #: The name of the step that seats the driver and writes its audit entry and its line.
 SAVE = "save"
@@ -93,6 +98,15 @@ ADD_BULK_COMMAND = "/test-mode roster add-bulk"
 ROSTER_NOT_ADDED = (
     "Nothing was added: no test driver is seated in {divisions}. "
     "Run `/test-mode roster add-bulk` again."
+)
+
+#: `/test-mode roster remove` as the line names it.
+REMOVE_COMMAND = "/test-mode roster remove"
+
+#: The reply once a league admin has discarded the stopped save: nobody was removed.
+NOBODY_REMOVED = (
+    "Nothing was removed: **{driver_name}** is still seated in **{division}**. "
+    "Run `/test-mode roster remove` again."
 )
 
 #: The reply once a league admin has discarded the stopped save: nobody was added.
@@ -351,13 +365,116 @@ def test_roster_add_bulk_change(*, placement: Callable[[], PlacementService]) ->
     )
 
 
+# ─── /test-mode roster remove ─────────────────────────────────────────────────
+
+
+def _removed_entry(found: FakeDriver) -> dict[str, Any]:
+    """What the audit entry of a fake driver's removal records of them, as it stood."""
+    return {
+        "driver": found.display_name,
+        "user_id": found.discord_user_id,
+        "team": found.team_name,
+        "division": found.division_name,
+        "nationality": found.nationality,
+    }
+
+
+def test_roster_remove_change(*, profiles_deleted: AwaitedHook) -> ChangeType:
+    """The `core.test_roster_remove` change type, for the builder to register: *profiles_deleted*
+    is the hook each module signs up to so that it deletes its own rows of the drivers deleted.
+
+    A change type of its own on the league lane, **carrying the synthetic id typed** (`user_id`),
+    which the form of the command has read as a number. The ask reads the driver's name and
+    division into the payload (`fill`), for the reply of a save a league admin discarded.
+
+    **The refusals are the check's**, judged at the ask and again as the change starts: test mode
+    not on, the season not in Placements, and no fake driver holding the id (a real driver's id
+    is one). **One SAVE** judges once more on its own connection, deletes the driver, keeping
+    their history, and writes the `TEST_DRIVER_REMOVED` audit entry, on the division they were
+    seated in, and the line. A fault in the save stops the lane.
+    """
+
+    async def judge(db: aiosqlite.Connection, payload: dict[str, Any]) -> FakeDriver | str:
+        refusal = await standing_refusal_on(db)
+        if refusal is not None:
+            return refusal
+        found = await find_test_driver_on(db, int(payload["user_id"]))
+        return f"⛔ {found}" if isinstance(found, str) else found
+
+    async def fill(ctx: CheckContext) -> None:
+        async with get_connection(ctx.db_path) as db:
+            found = await judge(db, ctx.payload)
+        if not isinstance(found, str):
+            ctx.payload["driver_name"] = found.display_name
+            ctx.payload["division"] = found.division_name
+
+    async def check(ctx: CheckContext) -> Verdict:
+        async with get_connection(ctx.db_path) as db:
+            found = await judge(db, ctx.payload)
+        return Verdict.refuse(found) if isinstance(found, str) else Verdict.go()
+
+    async def save(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """Delete the driver, and write the audit entry and the line."""
+        found = await judge(db, ctx.payload)
+        if isinstance(found, str):
+            return StepResult(
+                result={"refused": found},
+                lines=(refusal_line(ctx.named, ctx.what, reply_reason(found)),),
+            )
+        await delete_test_drivers_on(db, [found.profile_id], profiles_deleted=profiles_deleted)
+        old = _removed_entry(found)
+        line = (
+            f"{ctx.named} | {REMOVE_COMMAND} | Success\n"
+            f"  driver: {found.display_name}\n"
+            f"  team: {found.team_name}\n"
+            f"  user_id: {found.discord_user_id}"
+        )
+        return StepResult(
+            result={"saved": True, "driver": found.display_name, "team": found.team_name},
+            audits=(
+                AuditRecord(
+                    "TEST_DRIVER_REMOVED", old, dict.fromkeys(old), division_id=found.division_id
+                ),
+            ),
+            lines=(line,),
+        )
+
+    def doing(payload: dict[str, Any]) -> str:
+        return f"Removing fake driver **{payload.get('driver_name') or payload['user_id']}**"
+
+    def outcome(ctx: OutcomeContext) -> str:
+        saved = saved_result(ctx)
+        if saved.get("refused"):
+            return str(saved["refused"])
+        if not saved.get("saved"):
+            return NOBODY_REMOVED.format(
+                driver_name=ctx.payload.get("driver_name") or ctx.payload["user_id"],
+                division=ctx.payload.get("division") or "its division",
+            )
+        return f"✅ Removed fake driver **{saved['driver']}** from **{saved['team']}**."
+
+    return ChangeType(
+        kind=TEST_ROSTER_REMOVE,
+        opening=(PlannedStep(SAVE),),
+        steps={SAVE: Step(SAVE, StepKind.SAVE, save)},
+        check=check,
+        key=lambda payload: f"{TEST_ROSTER_REMOVE}|{payload['user_id']}",
+        doing=doing,
+        outcome=outcome,
+        fill=fill,
+        lane=lambda _payload: LEAGUE_LANE,
+    )
+
+
 __all__ = [
     "NATIONALITY_SWITCHED_OFF",
     "NOT_PLACING",
     "TEST_ROSTER_ADD",
     "TEST_ROSTER_ADD_BULK",
+    "TEST_ROSTER_REMOVE",
     "bulk_payload",
     "standing_refusal_on",
     "test_roster_add_bulk_change",
     "test_roster_add_change",
+    "test_roster_remove_change",
 ]
