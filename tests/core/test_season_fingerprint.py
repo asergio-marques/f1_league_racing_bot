@@ -146,10 +146,28 @@ async def test_an_unchanged_season_fingerprints_the_same_twice(season):
 
 
 async def test_a_fingerprint_that_could_not_be_taken_differs_from_everything(season):
-    """A fault refuses an approval rather than waving it through."""
+    """A fault refuses an approval rather than waving it through: a fingerprint that could not be
+    taken differs from one that was, either way round, and from another that could not be taken
+    either, as a fault at both the review and the press would leave them, every area named."""
     empty = SeasonFingerprint({})
+    taken = await _take(season)
+    every_area = [AREA_LABELS[area] for area in sorted(AREA_LABELS)]
 
-    assert empty.differs_from(await _take(season))
+    assert empty.differs_from(taken)
+    assert taken.differs_from(empty)
+    assert empty.differs_from(SeasonFingerprint({})) == every_area
+
+
+async def test_a_switch_nobody_signed_up_for_is_raised_not_fingerprinted(season):
+    """A module whose switch reader the builder never signed up is a fault in the bot's assembly,
+    not a season that could not be read: taking the fingerprint raises it, naming the module,
+    rather than giving the empty fingerprint."""
+    from leaguebot.core.services.module_service import ModuleService
+
+    season.bot.module_service = ModuleService(season.path)
+
+    with pytest.raises(LookupError, match="weather"):
+        await _take(season)
 
 
 async def test_an_unreadable_season_yields_an_empty_fingerprint(season):
