@@ -384,3 +384,19 @@ async def test_a_check_that_cannot_run_lets_the_season_through(
     assert "capacity check could not run" in caplog.text
     assert "down" in caplog.text
     assert bool(drawing.asked) is (fault == "drawing")
+
+
+@pytest.mark.parametrize("question,check", [
+    pytest.param(case[1], case[2], id=case[0]) for case in CHECKS if case[0] in ("lineup", "round")
+])
+async def test_a_switch_nobody_signed_up_for_is_raised_by_a_check(tmp_path, question, check):
+    """The images module's switch reader was never signed up (`SwitchNotSignedUp`): that is a fault
+    in the bot's assembly, not a check that cannot run, so the lineup check and the round guard
+    raise it rather than letting the season or the round through."""
+    from leaguebot.core.services.module_service import SwitchNotSignedUp
+
+    drawing = _Drawing({question: SwitchNotSignedUp("images")})
+    cog = _cog(await _seed(tmp_path, SEASON), drawing)
+
+    with pytest.raises(SwitchNotSignedUp, match="images"):
+        await check(cog)

@@ -132,6 +132,19 @@ async def test_a_lineup_gate_that_cannot_be_read_answers_text(caplog):
     post_log.assert_not_awaited()
 
 
+async def test_a_lineup_gate_whose_switch_nobody_signed_up_for_raises():
+    """The images module's switch reader was never signed up (`SwitchNotSignedUp`): that is a fault
+    in the bot's assembly, not a gate that cannot be read, so it is raised rather than answered as
+    text."""
+    from leaguebot.core.services.module_service import SwitchNotSignedUp
+
+    drawing, _, _, modules = _drawing()
+    modules.is_images_enabled = AsyncMock(side_effect=SwitchNotSignedUp("images"))
+
+    with pytest.raises(SwitchNotSignedUp, match="images"):
+        await drawing.lineup_wanted()
+
+
 @pytest.mark.parametrize("draw", DRAWS)
 async def test_a_drawn_lineup_leaves_out_a_driver_not_yet_confirmed(db_path, monkeypatch, draw):
     """Pro, in a season being raced, seats Zara (placement confirmed), Yuri (placed mid-season and

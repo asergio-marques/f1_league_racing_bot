@@ -352,3 +352,17 @@ async def test_no_drawing_handed_means_no_guard(tmp_path):
     await PlacementService(db_path).guard_roster_capacity(
         division_id, {RESERVE: 99, ORDINARY: 99}
     )
+
+
+async def test_a_guard_whose_switch_nobody_signed_up_for_raises(tmp_path):
+    """The images module's switch reader was never signed up (`SwitchNotSignedUp`): that is a fault
+    in the bot's assembly, not a guard that cannot run, so the placement raises it rather than
+    letting the driver through unchecked."""
+    from leaguebot.core.services.module_service import SwitchNotSignedUp
+    from leaguebot.core.services.placement_service import PlacementService
+
+    db_path, season_id, division_id = await _seed(tmp_path)
+    drawing = _Drawing({name: SwitchNotSignedUp("images") for name in GUARDS})
+
+    with pytest.raises(SwitchNotSignedUp, match="images"):
+        await _place(PlacementService(db_path, drawing=drawing), season_id, division_id, RESERVE)
