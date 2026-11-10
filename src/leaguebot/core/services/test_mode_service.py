@@ -532,10 +532,10 @@ async def round_result_status(db_path: str, round_id: int) -> str | None:
 # Review summary
 # ---------------------------------------------------------------------------
 
-def _phase_status(
+def phase_mark(
     done: bool, event: tuple[int, str], queued: set[tuple[int, str]] | None
 ) -> str:
-    """Return a status emoji for a single phase slot.
+    """Return a status emoji for a single phase slot, as a module marks its steps in the review.
 
     ✅ — phase complete (DB flag set)
     ⏳ — pending; scheduler job is present (will fire automatically)
@@ -556,6 +556,11 @@ def _phase_status(
 
 #: The mark of a raced round's weather step that was never done: advance passes it over.
 PASSED_OVER = "⏭️"
+
+#: What a module hands the review: its marks of each round it was handed, by round id, each a
+#: (label, mark) pair in the order the review writes them. A round the module marks nothing of
+#: has no entry.
+ReviewMarks = dict[int, list[tuple[str, str]]]
 
 
 async def build_review_summary(
@@ -725,7 +730,7 @@ async def build_review_summary(
                 """A weather step's mark: passed over where undone on a raced round."""
                 if raced and not done:
                     return PASSED_OVER
-                return _phase_status(done, (rid, event), queued)
+                return phase_mark(done, (rid, event), queued)
 
             # ── Weather / mystery notice phases ───────────────────────────
             if weather_module_enabled and is_mystery:
@@ -739,7 +744,7 @@ async def build_review_summary(
                 p3 = _weather(bool(row["phase3_done"]), "weather_p3")
                 # Done once Phase 3 has run, or the race has (Phase 3 passed over), and nothing
                 # of Phases 1 to 3 is left standing.
-                cleanup = _phase_status(
+                cleanup = phase_mark(
                     (bool(row["phase3_done"]) or raced) and rid not in standing_forecasts,
                     (rid, "cleanup"),
                     queued,
@@ -753,7 +758,7 @@ async def build_review_summary(
                 elif rid in rounds_with_results:
                     res = "⏸️ pending review"
                 else:
-                    res = _phase_status(False, (rid, "results"), queued)
+                    res = phase_mark(False, (rid, "results"), queued)
                 parts.append(f"Results: {res}")
 
             # ── RSVP / attendance phases ──────────────────────────────────
@@ -769,12 +774,12 @@ async def build_review_summary(
                     rsvp = rsvp_rows.get((rid, row["division_id"]))
                     check_in = [
                         ("RSVP", "✅" if rsvp is not None
-                         else _phase_status(False, (rid, "rsvp_notice"), queued)),
+                         else phase_mark(False, (rid, "rsvp_notice"), queued)),
                         ("Last", "✅" if (rsvp and rsvp["last_notice_msg_id"])
-                         else _phase_status(False, (rid, "rsvp_last_notice"), queued)),
+                         else phase_mark(False, (rid, "rsvp_last_notice"), queued)),
                         ("Deadline", "✅" if (rsvp and _deadline_has_run(rsvp))
-                         else _phase_status(False, (rid, "rsvp_deadline"), queued)),
-                        ("Cleared", _phase_status(False, (rid, "rsvp_cleanup"), queued)),
+                         else phase_mark(False, (rid, "rsvp_deadline"), queued)),
+                        ("Cleared", phase_mark(False, (rid, "rsvp_cleanup"), queued)),
                     ]
                 if not last_notice_enabled:
                     check_in = [(name, mark) for name, mark in check_in if name != "Last"]

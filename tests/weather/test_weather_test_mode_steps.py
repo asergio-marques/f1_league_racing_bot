@@ -151,7 +151,6 @@ async def test_weather_hands_back_its_own_pending_steps_and_those_passed_over(
 P2_QUEUED = {(1, "weather_p2")}
 
 
-@pytest.mark.xfail(strict=True, reason="#283: weather does not yet hand the review its own marks")
 @pytest.mark.parametrize("state, queued, marks", [
     pytest.param({}, None, [("P1", "⏳"), ("P2", "⏳"), ("P3", "⏳"), ("Cleanup", "⏳")],
                  id="a round still to race, with no scheduler"),

@@ -1,5 +1,5 @@
 """Weather's steps for `/test-mode advance`: what of each round it still has to post or take down,
-and what advance passes over, read from weather's own state alone.
+and what advance passes over, and how the review marks them, read from weather's own state alone.
 
 Core's `pending_steps_read` hook asks each module which of the rounds it hands over have steps
 still pending (architecture.md, "How modules and core fit together"). Weather answers from its own
@@ -15,6 +15,12 @@ race already run as not due, so advance does not offer it, though it names it. T
 never passed over, and never a step already asked of the change queue and not yet run: the advance
 that asked for it cancelled the scheduler's job, so the database alone would offer it again. While
 weather is off nothing of it is armed and nothing is handed back.
+
+The review's marks of a round come through core's `review_marks_read` hook: Phases 1 to 3 and the
+clean-up, or a mystery round's notice alone, each done (✅), pending with its job queued or with no
+scheduler to ask (⏳), pending with no job (⚠️), or, where the round's race has been run, passed
+over (⏭️). The clean-up is done once nothing of Phases 1 to 3 stands and Phase 3 has run or the
+race has.
 """
 
 from __future__ import annotations
@@ -28,10 +34,13 @@ from leaguebot.core.db.database import get_connection, tuple_rows_in
 from leaguebot.core.models.change import FORECAST, FORECAST_CLEAN_UP
 from leaguebot.core.services.change_queue import unfinished
 from leaguebot.core.services.test_mode_service import (
+    PASSED_OVER,
     PHASE_KINDS,
     ActiveRound,
     ModuleSteps,
     PendingStep,
+    ReviewMarks,
+    phase_mark,
 )
 from leaguebot.weather.services.draw_guard import weather_enabled_on
 
@@ -101,3 +110,48 @@ async def pending_steps(
         if rnd.round_id in standing and rnd.round_id not in clean_ups_in_hand:
             pending.append(PendingStep(rnd.round_id, CLEAN_UP_PHASE, PHASE_KINDS[CLEAN_UP_PHASE]))
     return ModuleSteps(pending=pending, passed_over=passed_over)
+
+
+async def review_marks(
+    db_path: str,
+    rounds: Sequence[ActiveRound],
+    *,
+    now: datetime,
+    queued: set[tuple[int, str]] | None,
+) -> ReviewMarks:
+    """Weather's marks of *rounds* for `/test-mode review`, as *now* stands; *queued* is the jobs
+    the scheduler holds as (round, event type), None where there is no scheduler. Nothing is
+    handed back while weather is off."""
+    async with get_connection(db_path) as db:
+        if not await weather_enabled_on(db):
+            return {}
+        done = await phases_done(db, [r.round_id for r in rounds])
+        standing = await _standing_forecasts(db)
+
+    marks: ReviewMarks = {}
+    for rnd in rounds:
+        rid = rnd.round_id
+        raced = rnd.scheduled_at <= now
+        p1, p2, p3 = done[rid]
+
+        def mark(is_done: bool, event: str) -> str:
+            """A step's mark: passed over where undone on a raced round."""
+            if raced and not is_done:
+                return PASSED_OVER
+            return phase_mark(is_done, (rid, event), queued)
+
+        if rnd.format.upper() == "MYSTERY":
+            # A mystery round's notice is armed as `weather_p1`: weather's `ask_forecast` reads
+            # the round's format as it fires.
+            marks[rid] = [("Notice", mark(p1, "weather_p1"))]
+        else:
+            marks[rid] = [
+                ("P1", mark(p1, "weather_p1")),
+                ("P2", mark(p2, "weather_p2")),
+                ("P3", mark(p3, "weather_p3")),
+                (
+                    "Cleanup",
+                    phase_mark((p3 or raced) and rid not in standing, (rid, "cleanup"), queued),
+                ),
+            ]
+    return marks
