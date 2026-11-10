@@ -137,9 +137,6 @@ async def test_attendance_hands_back_its_own_pending_steps(tmp_path, state, pend
     assert steps.passed_over == []
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: attendance does not yet hand the review its own marks"
-)
 @pytest.mark.parametrize("state, queued, marks", [
     pytest.param({}, None, [("RSVP", "⏳"), ("Last", "⏳"), ("Deadline", "⏳"), ("Cleared", "⏳")],
                  id="no call posted, with no scheduler"),

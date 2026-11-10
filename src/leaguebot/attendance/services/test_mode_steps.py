@@ -1,5 +1,5 @@
 """Attendance's steps for `/test-mode advance`: what of each round's check-in it still has to post
-or take down, read from attendance's own state alone.
+or take down, and how the review marks them, read from attendance's own state alone.
 
 Core's `pending_steps_read` hook asks each module which of the rounds it hands over have steps
 still pending (architecture.md, "How modules and core fit together"). Attendance answers from its
@@ -14,6 +14,11 @@ stands. A step already asked of the change queue and not yet run is not handed b
 that asked for it cancelled the scheduler's job, so the database alone would offer it again.
 Attendance passes nothing over, and while it is off nothing of it is armed and nothing is handed
 back.
+
+The review's marks of a round come through core's `review_marks_read` hook: its check-in call, last
+notice (left out where the league set it to 0), deadline and clean-up, each done (✅), pending with
+its job queued, already asked of the change queue or with no scheduler to ask (⏳), or pending with
+no job (⚠️). A check-in taken down has every step done.
 """
 
 from __future__ import annotations
@@ -38,6 +43,8 @@ from leaguebot.core.services.test_mode_service import (
     ActiveRound,
     ModuleSteps,
     PendingStep,
+    ReviewMarks,
+    phase_mark,
 )
 
 #: The step of each check-in phase, by the change that asks for it.
@@ -47,6 +54,9 @@ _CHECK_IN_PHASES = {
     CHECK_IN_DEADLINE: 7,
     CHECK_IN_CLEAN_UP: 9,
 }
+
+#: The scheduler's event type of each check-in step, by its phase.
+_CHECK_IN_EVENTS = {5: "rsvp_notice", 6: "rsvp_last_notice", 7: "rsvp_deadline", 9: "rsvp_cleanup"}
 
 
 async def check_ins_cleared(
@@ -126,3 +136,54 @@ async def pending_steps(
             add(rid, 7)
         add(rid, 9)
     return ModuleSteps(pending=pending)
+
+
+async def review_marks(
+    db_path: str,
+    rounds: Sequence[ActiveRound],
+    *,
+    now: datetime,
+    queued: set[tuple[int, str]] | None,
+) -> ReviewMarks:
+    """Attendance's marks of *rounds* for `/test-mode review`; *queued* is the jobs the scheduler
+    holds as (round, event type), None where there is no scheduler. It marks nothing by *now*, and
+    nothing is handed back while attendance is off.
+
+    A check-in step in hand on the change queue is pending though its scheduler job was cancelled
+    by the advance that asked for it, so it counts as queued."""
+    round_ids = [r.round_id for r in rounds]
+    async with get_connection(db_path) as db:
+        if not await attendance_enabled_on(db):
+            return {}
+        cursor = await db.execute("SELECT rsvp_last_notice_hours FROM attendance_config")
+        found = await cursor.fetchone()
+        # A last notice set to 0 is never sent, and is left out like a step of a module that is
+        # off: the setting cannot change while a season runs, so no job was ever armed.
+        last_notice_on = found is not None and bool(found["rsvp_last_notice_hours"])
+        cleared = await check_ins_cleared(db, round_ids)
+        calls = await _calls_standing(db, round_ids)
+    if queued is not None:
+        queued = queued | {
+            (rid, _CHECK_IN_EVENTS[phase]) for rid, phase in await _check_ins_in_hand(db_path)
+        }
+
+    marks: ReviewMarks = {}
+    for rid in round_ids:
+        steps: list[tuple[str, str]]
+        if rid in cleared:
+            # Taken down a day after the round, and its record with it: every step before the
+            # clean-up had run by then.
+            steps = [("RSVP", "✅"), ("Last", "✅"), ("Deadline", "✅"), ("Cleared", "✅")]
+        else:
+            call = calls.get(rid)
+            steps = [
+                ("RSVP", "✅" if call is not None
+                 else phase_mark(False, (rid, "rsvp_notice"), queued)),
+                ("Last", "✅" if call is not None and call[1]
+                 else phase_mark(False, (rid, "rsvp_last_notice"), queued)),
+                ("Deadline", "✅" if call is not None and _deadline_has_run(call)
+                 else phase_mark(False, (rid, "rsvp_deadline"), queued)),
+                ("Cleared", phase_mark(False, (rid, "rsvp_cleanup"), queued)),
+            ]
+        marks[rid] = [(name, mark) for name, mark in steps if last_notice_on or name != "Last"]
+    return marks
