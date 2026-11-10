@@ -11,7 +11,9 @@ answered as such, recording that nothing was changed and writing no audit entry.
 no round, so the calendar's room is not asked.
 
 **A fault in the save stops the lane**, as a failed job does, for the reason `/season setup`'s does
-(`season_setup_change.py`): a league admin exists to discard the job and clear the stop.
+(`season_setup_change.py`): a league admin exists to discard the job and clear the stop. A refusal
+the save finds is not a fault: the check passed and something wrote the database after it, so the
+save writes nothing, answers in the check's words and goes on.
 
 **The round is judged by its id.** The division and the round are read from what the member typed
 as the change is asked for (`ChangeType.fill`), and judged by their ids from then on, so that a
@@ -60,6 +62,7 @@ from leaguebot.core.services.round_amend_change import NOTHING_AMENDED
 from leaguebot.core.services.season_service import SeasonService, renumber_rounds_on
 from leaguebot.core.utils.formatting import discord_ts, format_round_list
 from leaguebot.core.utils.input_validator import parse_datetime
+from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
 ROUND_AMEND_SETUP = "core.round_amend"
 
@@ -263,7 +266,11 @@ def _save(
             raise LookupError(f"round {payload['round_number']} is not in {division.name}")
         asked, refusal = await _asked(db, payload)
         if refusal is not None:
-            raise ValueError(refusal)
+            # A backstop: the check passed, and something wrote the database after it.
+            return StepResult(
+                result={"refused": refusal},
+                lines=(refusal_line(ctx.named, ctx.what, reply_reason(refusal)),),
+            )
 
         before = _standing(rnd)
         after = {**before, **asked}
@@ -325,6 +332,8 @@ def _doing(payload: dict[str, Any]) -> str:
 
 def _outcome(ctx: OutcomeContext) -> str:
     saved = saved_result(ctx)
+    if saved.get("refused"):
+        return str(saved["refused"])
     match saved.get("outcome"):
         case "amended":
             return (

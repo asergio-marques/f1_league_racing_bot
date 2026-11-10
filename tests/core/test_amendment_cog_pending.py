@@ -358,10 +358,6 @@ async def test_a_setup_round_amendment_is_judged_again_as_it_starts(tmp_path, me
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: a refusal the save finds is raised as a fault, stopping the league's lane",
-)
 async def test_a_track_gone_by_the_save_ends_the_amendment_in_its_refusal(tmp_path, monkeypatch):
     """Season #1 is being set up, in Placements, Pro's round 2 standing at the Hungaroring. The
     manager runs `/round amend` for Pro's round 2, moving it to Silverstone Circuit; the
