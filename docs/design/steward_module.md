@@ -295,7 +295,7 @@ a guard, an unpack, a service call, a reply. That lands the cog around 1,000 lin
 of the bot puts it.
 
 Commands that belong to other modules' groups go to the cogs that declare those groups, for the
-same binding reason: `division ticket-channel` and `division licence-channel` to `season_cog`,
+same binding reason: `division ticket-channel` and `division licence-channel` to `division_cog`,
 which owns `/division`; `module enable steward` to `module_cog`; `images template licence` and the
 `licence` value of `images config toggle` [STW-SHT-017, STW-SHT-018] to `image_cog`; the three
 test-mode commands [STW-TST-002, STW-TST-003, STW-TST-005] to `test_mode_cog`.
