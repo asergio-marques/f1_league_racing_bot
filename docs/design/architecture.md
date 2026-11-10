@@ -165,6 +165,7 @@ module up to it before the bot connects. Core calls whoever signed up, and never
 the bot's type aside (see "How the code is laid out"). A module turned on or off is not a hook but a
 change of the module's own, which core asks for by its kind (see "Each module turns itself on and
 off").
+
 **A hook core declares is a list of subscribers.** Core declares the moment and what it hands over:
 what the moment concerns, where it concerns anything (the rows, the round, the driver's accounts,
 the time its subscribers judge at, the jobs the scheduler holds), and, where core holds one open,
