@@ -53,10 +53,6 @@ from tests.support.change_queue import (
 )
 from tests.support.teams import seed_team_instances
 
-#: Why the tests marked with it fail until the build: their module service has each module's
-#: switch reader signed up, as the builder signs them up, which it cannot be yet.
-NOT_YET_ASKED = "#283: ModuleService still reads each module's switch itself"
-
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 WHAT = "`/module disable results`"
 #: The member as a log line names them, the mention wrapped so it notifies nobody.
@@ -434,7 +430,6 @@ async def _stopped_change(db_path: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_a_stop_after_results_is_turned_off_leaves_the_season_completable(tmp_path):
     """Defect 8: a stop after the switch-off no longer strands rounds nothing can close."""
     seeded = await _seed(tmp_path)
@@ -461,7 +456,6 @@ async def test_a_stop_after_results_is_turned_off_leaves_the_season_completable(
     assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_turning_results_off_and_closing_its_rounds_land_in_one_save(tmp_path, monkeypatch):
     """The flag, the erase and the closing of the rounds stand or fall together.
 
@@ -514,7 +508,6 @@ async def test_turning_results_off_and_closing_its_rounds_land_in_one_save(tmp_p
     assert most == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_a_fault_before_anything_is_saved_says_nothing_was_changed(tmp_path):
     """The switch-off's save failing stops the queue at it, with nothing saved: the stop names the
     fault, the admin's reply says the request is stopped at that job, and results is still on."""
@@ -535,7 +528,6 @@ async def test_a_fault_before_anything_is_saved_says_nothing_was_changed(tmp_pat
     assert await _count(seeded.db_path, "session_results") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_a_discarded_switch_off_says_nothing_was_changed(tmp_path):
     """A league admin discarding the switch-off whose save failed leaves results on and the season
     untouched, and the admin's reply says nothing was changed. The stop notice and the Discard line
@@ -570,7 +562,6 @@ async def test_a_discarded_switch_off_says_nothing_was_changed(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_a_stop_part_way_through_the_take_down_finishes_it_on_restart_and_counts_each_message_once(  # noqa: E501
     tmp_path,
 ):
@@ -589,7 +580,6 @@ async def test_a_stop_part_way_through_the_take_down_finishes_it_on_restart_and_
     assert "verdicts removed: 2" in closing
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_every_message_is_taken_down_by_the_ids_saved_with_the_switch_off(tmp_path):
     """The rows naming the messages are gone with the switch-off; the steps keep their ids."""
     seeded = await _seed(tmp_path)
@@ -616,7 +606,6 @@ async def test_every_message_is_taken_down_by_the_ids_saved_with_the_switch_off(
     assert await _count(seeded.db_path, "verdict_banner_messages") == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_turning_results_off_deletes_a_session_cancelled_line(tmp_path):
     """The round's qualifying was cancelled, its line standing in the results channel as message
     1500, recorded as that session's results message. Turning results off deletes it with the
@@ -635,7 +624,6 @@ async def test_turning_results_off_deletes_a_session_cancelled_line(tmp_path):
     assert 1500 in _deleted(bot, RESULTS_CHANNEL_ID)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_a_removal_discord_refuses_stops_the_queue_and_once_discarded_is_linked_not_counted(
     tmp_path,
 ):
@@ -676,7 +664,6 @@ async def test_a_removal_discord_refuses_stops_the_queue_and_once_discarded_is_l
     ) in reply
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_messages_left_standing_are_listed_in_the_reply_and_the_closing_line_with_their_links(  # noqa: E501
     tmp_path,
 ):
@@ -704,7 +691,6 @@ async def test_messages_left_standing_are_listed_in_the_reply_and_the_closing_li
     assert "left standing" not in switch_off
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_a_discarded_channel_take_down_names_the_channel_with_its_link(tmp_path):
     """Division 1's round 1 is final, its submission channel 8000 still open and an amendment open
     in channel 9100; Discord refuses to delete either. Each removal stops the queue, naming the
@@ -750,7 +736,6 @@ async def test_a_discarded_channel_take_down_names_the_channel_with_its_link(tmp
     assert all(channel in tail for channel in channels)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_the_closing_line_counts_what_was_removed(tmp_path):
     seeded = await _seed(tmp_path)
     await _announce_verdicts(seeded.db_path)
@@ -775,7 +760,6 @@ async def test_the_closing_line_counts_what_was_removed(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_a_fault_in_the_take_down_says_the_season_can_still_be_completed(tmp_path):
     """A removal failing on the bot's own fault stops the queue after the switch-off; once a league
     admin discards it, the reply says the season can still be completed and links its message."""
@@ -800,7 +784,6 @@ async def test_a_fault_in_the_take_down_says_the_season_can_still_be_completed(t
     assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_a_discard_after_the_switch_off_says_the_season_can_still_be_completed(
     tmp_path, monkeypatch,
 ):
@@ -847,7 +830,6 @@ async def test_a_discard_after_the_switch_off_says_the_season_can_still_be_compl
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_the_season_is_wound_down_as_a_change_of_its_own(tmp_path):
     """A season with placements still open has the wind-down's work left to do: the bot winds it
     down as a change of its own, and the season moves on to Pending completion."""
@@ -866,7 +848,6 @@ async def test_the_season_is_wound_down_as_a_change_of_its_own(tmp_path):
         assert [row["stage"] for row in await cursor.fetchall()] == ["PENDING_COMPLETION"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_a_season_that_cannot_be_wound_down_is_reported_and_the_switch_off_stands(
     tmp_path,
 ):
@@ -902,7 +883,6 @@ async def _set_hub(db_path: str) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_the_hub_is_refreshed_once_the_flag_is_down(tmp_path):
     """The hub is set. The switch-off asks the queue for the refresh in its own save, after it:
     the refresh is asked once, naming `/module disable`, its change after the switch-off's, and
@@ -922,7 +902,6 @@ async def test_the_hub_is_refreshed_once_the_flag_is_down(tmp_path):
     assert await _flag(seeded.db_path) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_a_hub_refresh_that_fails_names_the_refresh_not_the_switch_off(
     tmp_path, monkeypatch,
 ):
@@ -950,7 +929,6 @@ async def test_a_hub_refresh_that_fails_names_the_refresh_not_the_switch_off(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_a_second_confirmation_before_the_first_starts_is_refused_as_a_repeat(tmp_path):
     seeded = await _seed(tmp_path, attendance=True)
     bot = _league(seeded.db_path)
@@ -973,7 +951,6 @@ async def test_a_second_confirmation_before_the_first_starts_is_refused_as_a_rep
     assert [row["kind"] for row in await change_rows(seeded.db_path)] == ["module.off:results"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_a_confirmation_after_results_was_turned_off_meanwhile_is_refused(tmp_path):
     """A warning left open while results was turned off by another press is refused at once."""
     seeded = await _seed(tmp_path)
@@ -992,7 +969,6 @@ async def test_a_confirmation_after_results_was_turned_off_meanwhile_is_refused(
     assert kinds.count("module.off:results") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_a_switch_off_asked_before_pending_completion_and_run_after_it_is_refused(tmp_path):
     seeded = await _seed(tmp_path)
     bot = _league(seeded.db_path)
@@ -1014,7 +990,6 @@ async def test_a_switch_off_asked_before_pending_completion_and_run_after_it_is_
     assert await _count(seeded.db_path, "session_results") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_a_switch_off_asked_while_results_is_on_and_run_once_it_is_off_is_refused(tmp_path):
     """Two presses not repeats of each other, with and without the cascade, are both queued; the
     first turns results off, so the second is refused when it runs."""
@@ -1042,7 +1017,6 @@ async def test_a_switch_off_asked_while_results_is_on_and_run_once_it_is_off_is_
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_the_cascade_lands_in_the_switch_off_s_save(tmp_path):
     seeded = await _seed(tmp_path, attendance=True)
     bot = _league(seeded.db_path)
@@ -1068,7 +1042,6 @@ async def test_the_cascade_lands_in_the_switch_off_s_save(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_a_cascade_with_attendance_already_off_turns_off_results_alone(tmp_path):
     seeded = await _seed(tmp_path, attendance=True)
     bot = _league(seeded.db_path)
@@ -1090,7 +1063,6 @@ async def test_a_cascade_with_attendance_already_off_turns_off_results_alone(tmp
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_the_admin_is_told_at_once_and_the_reply_is_updated_with_what_went(tmp_path):
     seeded = await _seed(tmp_path)
     bot = _league(seeded.db_path)
@@ -1109,7 +1081,6 @@ async def test_the_admin_is_told_at_once_and_the_reply_is_updated_with_what_went
     )
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_an_outcome_after_a_restart_is_left_to_the_log_channel(tmp_path):
     seeded = await _seed(tmp_path)
     bot = _league(seeded.db_path)
@@ -1123,7 +1094,6 @@ async def test_an_outcome_after_a_restart_is_left_to_the_log_channel(tmp_path):
     await _line_starting(bot, f"{NAMED} | /module disable results | Messages removed")
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_a_server_out_of_cache_erases_the_rows_and_names_every_message_left_standing(
     tmp_path,
 ):
@@ -1160,7 +1130,6 @@ async def test_a_server_out_of_cache_erases_the_rows_and_names_every_message_lef
     assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_an_open_amendment_is_forgotten_with_the_season_and_its_channel_taken_down(
     tmp_path,
 ):
@@ -1194,7 +1163,6 @@ async def test_an_open_amendment_is_forgotten_with_the_season_and_its_channel_ta
 # come, and dropped.
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 async def test_turning_results_off_ends_every_submission_and_amendment(tmp_path):
     """Division 1's round 1 waits for its results, its submission open in channel 8000; its
     round 2 is final and being amended in channel 9100. The admin confirms `/module disable

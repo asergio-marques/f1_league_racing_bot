@@ -87,6 +87,7 @@ from leaguebot.core.services.season_service import set_round_status_on
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.results.services import review_posting
+from leaguebot.results.services.module_switch_settings import results_enabled_on
 from leaguebot.results.services.review_posting import (
     DELETE_CHANNEL,
     DELETE_MESSAGE,
@@ -156,11 +157,6 @@ _ROUND = (
 )
 
 
-async def _results_enabled(db: aiosqlite.Connection) -> bool:
-    row = await (await db.execute("SELECT module_enabled FROM results_module_config")).fetchone()
-    return bool(row is not None and row["module_enabled"])
-
-
 def submission_open_change(*, now: Callable[[], datetime]) -> ChangeType:
     """The `results.submission.open` change type, for the builder to register.
 
@@ -200,7 +196,7 @@ def submission_open_change(*, now: Callable[[], datetime]) -> ChangeType:
         row = await (await db.execute(_ROUND, (round_id,))).fetchone()
         if row is None:
             raise LookupError(f"round {round_id} is not there to start")
-        if not await _results_enabled(db):
+        if not await results_enabled_on(db):
             # Nobody will ever enter a result, so the round ends here; the division finishing may
             # have been the season's last, which the wind-down judges (the queue drops it if not).
             await set_round_status_on(

@@ -65,6 +65,14 @@ if TYPE_CHECKING:
 _ENABLE_COMMAND = "/module enable attendance"
 _DISABLE_COMMAND = "/module disable attendance"
 
+
+async def attendance_enabled_on(db: "aiosqlite.Connection") -> bool:
+    """Whether attendance is on, read on *db*: the module's switch reader, which the builder signs
+    up with `ModuleService` and the module's own work asks. A league that has never switched it on
+    has no row, and reads as off."""
+    row = await (await db.execute("SELECT module_enabled FROM attendance_config")).fetchone()
+    return row is not None and bool(row["module_enabled"])
+
 #: How each module the dependency table may name reads in attendance's own refusal. Covers only
 #: what `needs("attendance")` names today; a further entry needs a label added here too, or the
 #: refusal raises `KeyError` rather than naming it.

@@ -47,14 +47,12 @@ def _modules(db_path: str):
 MODULES = ["weather", "signup", "results", "attendance", "images"]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.parametrize("module", MODULES)
 async def test_a_module_is_off_by_default(db_path, module):
     svc = _modules(db_path)
     assert await getattr(svc, f"is_{module}_enabled")() is False
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_ASKED)
 @pytest.mark.parametrize("module", MODULES)
 async def test_each_module_s_switch_reads_its_own_flag_alone(db_path, module):
     """The module's flag turned on, as its switch leaves it: the module reads as on and every

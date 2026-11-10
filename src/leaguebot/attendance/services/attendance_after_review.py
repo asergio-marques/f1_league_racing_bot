@@ -35,6 +35,7 @@ import aiosqlite
 import discord
 
 from leaguebot.attendance.services import attendance_service as _att
+from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord
 from leaguebot.core.models.refusal import Refused
@@ -59,12 +60,7 @@ class AttendanceAfterReview:
 
     async def enabled(self) -> bool:
         async with get_connection(self._db_path) as db:
-            return await self._enabled_on(db)
-
-    @staticmethod
-    async def _enabled_on(db: aiosqlite.Connection) -> bool:
-        row = await (await db.execute("SELECT module_enabled FROM attendance_config")).fetchone()
-        return bool(row and row["module_enabled"])
+            return await attendance_enabled_on(db)
 
     async def _guild(self) -> discord.Guild:
         guild = await league_guild(self._bot)
@@ -76,7 +72,7 @@ class AttendanceAfterReview:
         self, db: aiosqlite.Connection, round_id: int, division_id: int, pardons: Any,
         now: datetime,
     ) -> None:
-        if not await self._enabled_on(db):
+        if not await attendance_enabled_on(db):
             return
         await _att.record_attendance_from_results_on(db, round_id, division_id)
         for pardon in pardons:
@@ -99,14 +95,14 @@ class AttendanceAfterReview:
     async def rewrite_pardons_on(
         self, db: aiosqlite.Connection, round_id: int, pardons: Any, now: datetime
     ) -> None:
-        if not await self._enabled_on(db):
+        if not await attendance_enabled_on(db):
             return
         await _att._rewrite_round_pardons_on(db, round_id, list(pardons), now)
 
     async def recalculate_on(
         self, db: aiosqlite.Connection, round_id: int, division_id: int
     ) -> None:
-        if not await self._enabled_on(db):
+        if not await attendance_enabled_on(db):
             return
         await _att._recalculate_forward(
             self._db_path, round_id, division_id, recompute="round", db=db
@@ -127,7 +123,7 @@ class AttendanceAfterReview:
     async def record_sheet_on(
         self, db: aiosqlite.Connection, division_id: int, posted: Mapping[str, Any]
     ) -> None:
-        if not await self._enabled_on(db):
+        if not await attendance_enabled_on(db):
             return
         await _att.record_sheet_on(db, division_id, posted)
 
@@ -154,7 +150,7 @@ class AttendanceAfterReview:
         self, db: aiosqlite.Connection, round_id: int, division_id: int,
         candidate: dict[str, Any],
     ) -> dict[str, Any] | None:
-        if not await self._enabled_on(db):
+        if not await attendance_enabled_on(db):
             return None
         bot_user = self._bot.user
         # Sanctions are enforced by a bot that has logged in, which is when it has a user.

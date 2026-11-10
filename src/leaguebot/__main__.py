@@ -31,6 +31,7 @@ from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
 
 if TYPE_CHECKING:
     from leaguebot.core.services.calendar_post_service import CalendarCommandOutcome
+    from leaguebot.core.services.module_service import ModuleService
     from leaguebot.image.services.image_lineup_post import LineupPostOutcome
 
 #: The oldest discord.py the bot runs on. `/team add` and `/team modify` take their input in a
@@ -138,6 +139,22 @@ def _cancel_wizard_timers(bot: LeagueBot) -> "Callable[[str], None]":
         bot.scheduler_service.disarm(CORRECTION_TIMER, user_id)
 
     return cancel
+
+
+def register_module_switches(modules: "ModuleService") -> None:
+    """Sign each module up with `ModuleService` for the reader of its own switch, keyed by the
+    name `is_<module>_enabled` asks it by."""
+    from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
+    from leaguebot.image.services.module_switch_settings import images_enabled_on
+    from leaguebot.results.services.module_switch_settings import results_enabled_on
+    from leaguebot.signup.services.signup_module_service import signup_enabled_on
+    from leaguebot.weather.services.draw_guard import weather_enabled_on
+
+    modules.register_switch("weather", weather_enabled_on)
+    modules.register_switch("signup", signup_enabled_on)
+    modules.register_switch("results", results_enabled_on)
+    modules.register_switch("attendance", attendance_enabled_on)
+    modules.register_switch("images", images_enabled_on)
 
 
 def _sign_up_to_round_windows(bot: LeagueBot) -> None:
@@ -1559,6 +1576,7 @@ async def build(settings: Settings) -> LeagueBot:
     from leaguebot.image.services.image_validity_service import ImageValidityService
 
     bot.module_service = ModuleService(settings.db_path)
+    register_module_switches(bot.module_service)
     bot.image_config_service = ImageConfigService(settings.db_path)
     bot.image_validity_service = ImageValidityService(
         bot.image_config_service,
