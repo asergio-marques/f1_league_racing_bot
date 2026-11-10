@@ -264,6 +264,12 @@ _AMENDMENT_PARTS = (
      "amendment_clean_ups", "attendance's clean-ups"),
 )
 
+#: Weather's answer to which forecast phases a round has had drawn, as the module names it: the
+#: module, the subscriber, and what the test calls it.
+_PHASES_DRAWN_PARTS = (
+    ("leaguebot.weather.services.round_phases", "phases_drawn", "weather's phases drawn"),
+)
+
 #: Each module's part of a season's end, as the module names it: the moment's hook on the bot, the
 #: module, the subscriber, and what the test calls it, in the order the builder signs them up.
 _SEASON_END_PARTS = (
@@ -490,6 +496,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
         *_SEASON_COMPLETED_PARTS,
         *_CONFIGURATION_CONFIRMED_PARTS,
         *_DRIVER_TURNED_DOWN_PARTS,
+        *_PHASES_DRAWN_PARTS,
     ):
         async def delete_spy(*args, part=part, **_kwargs):
             called.append(part)
@@ -542,6 +549,11 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
         called.clear()
         await getattr(bot, hook).call(None, 0)
         assert called == [part for each, _module, _name, part in _AMENDMENT_PARTS if each == hook]
+    called.clear()
+    handed.clear()
+    await bot.phases_drawn_read.call([7], db=None)
+    assert called == ["weather's phases drawn"]
+    assert handed == [(bot.db_path, [7])]
     assert [sorted(steps) for steps in bot.amendment_steps.call()] == [
         weather_steps, _ATTENDANCE_AMENDMENT_STEPS
     ]
