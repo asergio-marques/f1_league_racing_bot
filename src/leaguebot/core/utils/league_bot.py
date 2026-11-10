@@ -27,7 +27,7 @@ the check in turn.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime
 from typing import TYPE_CHECKING, cast
 
@@ -100,6 +100,11 @@ class LeagueBot(commands.Bot):
     #: approval and configuration check read no module's service (architecture.md, "A hook core
     #: declares is a list of subscribers"); `read_refusals` gathers what they hand back.
     confirmation_refused: AwaitedHook
+    #: A season configuration's faults, as lines for a manager to read: the reader the builder
+    #: makes, handed the season and the server, that asks the configuration gate
+    #: (`approval_checks.configuration_faults`) with the services it names on the bot as they
+    #: stand when it is asked, so that `/season config-review` reads no module's service itself.
+    configuration_faults: Callable[[int, discord.Guild | None], Awaitable[list[str]]]
     #: A driver's name read (the placements review and its confirmation naming the unsettled
     #: signups): signup signs up a function handing back, for the profile ids it is given, the name
     #: each gave in their signup. The builder makes it and signs signup up, so that core reads no

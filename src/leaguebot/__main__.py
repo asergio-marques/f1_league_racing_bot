@@ -6,7 +6,7 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from functools import partial
 from typing import TYPE_CHECKING, Any, cast
@@ -217,6 +217,29 @@ def _sign_up_to_confirmation_refused(bot: LeagueBot) -> None:
     bot.confirmation_refused.subscribe(partial(
         season_points_service.confirmation_refusals, bot.module_service, bot.db_path
     ))
+
+
+def _make_configuration_faults(
+    bot: LeagueBot,
+) -> Callable[[int, discord.Guild | None], Awaitable[list[str]]]:
+    """The reader of a season configuration's faults the review is handed: the gate
+    (`approval_checks.configuration_faults`) handed the bot's services by name, read as they
+    stand when it is asked, so that core's review reads no module's service on the bot."""
+    from leaguebot.core.services import approval_checks
+
+    async def configuration_faults(season_id: int, guild: discord.Guild | None = None) -> list[str]:
+        return await approval_checks.configuration_faults(
+            season_id,
+            guild,
+            module_service=bot.module_service,
+            signup_module_service=bot.signup_module_service,
+            config_service=bot.config_service,
+            team_service=bot.team_service,
+            confirmation_refused=bot.confirmation_refused,
+            image_drawing=bot.image_drawing,
+        )
+
+    return configuration_faults
 
 
 def _sign_up_to_base_role_changed(bot: LeagueBot) -> None:
@@ -1830,6 +1853,7 @@ async def build(settings: Settings) -> LeagueBot:
     _sign_up_to_round_windows(bot)
     _sign_up_to_review_sections(bot)
     _sign_up_to_confirmation_refused(bot)
+    bot.configuration_faults = _make_configuration_faults(bot)
     _sign_up_to_base_role_changed(bot)
     _sign_up_to_amendments(bot)
 

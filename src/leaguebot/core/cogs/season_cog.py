@@ -1025,16 +1025,7 @@ class SeasonCog(commands.Cog):
                 continue
             report.extend(chunk_message(body))
 
-        faults = await approval_checks.configuration_faults(
-            season.id,
-            interaction.guild,
-            module_service=self.bot.module_service,
-            signup_module_service=self.bot.signup_module_service,
-            config_service=self.bot.config_service,
-            team_service=self.bot.team_service,
-            confirmation_refused=self.bot.confirmation_refused,
-            image_drawing=self.bot.image_drawing,
-        )
+        faults = await self.bot.configuration_faults(season.id, interaction.guild)
         if faults:
             body = "\n".join(f"• {fault}" for fault in faults)
             report.extend(chunk_message(

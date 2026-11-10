@@ -777,11 +777,7 @@ async def test_a_faulty_configuration_is_reported_without_a_button(monkeypatch):
     assert not any("Do you confirm this season's configuration?" in m for m in messages)
 
 
-#: Why a test of the review handed its faults fails until the build.
-HANDED_FAULTS = "#283: /season config-review still reads signup's service on the bot for its faults"
 
-
-@pytest.mark.xfail(strict=True, reason=HANDED_FAULTS)
 async def test_the_review_reports_the_faults_the_builder_hands_it(monkeypatch):
     """Signup is on and a fault stands in the configuration. The review asks the configuration's
     faults of the reader the builder puts on the bot, for season 31 on the manager's server, and
@@ -803,7 +799,6 @@ async def test_the_review_reports_the_faults_the_builder_hands_it(monkeypatch):
     assert not any("Do you confirm this season's configuration?" in m for m in messages)
 
 
-@pytest.mark.xfail(strict=True, reason=HANDED_FAULTS)
 async def test_the_builder_s_faults_read_signup_s_settings_as_they_stand(tmp_path):
     """The bot the entry point builds, on an empty league's database, signup switched on, then
     signup's service replaced (as a league's own is, after the build) by one whose signup

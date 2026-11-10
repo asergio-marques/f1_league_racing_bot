@@ -2853,7 +2853,6 @@ def _module_lookups_in_core_among(nodes, attributes: frozenset[str]) -> Counter[
 
 
 KNOWN_MODULE_LOOKUPS_IN_CORE: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/cogs/season_cog.py", "SeasonCog.season_config_review"): (1, PASS["core"]),
 }
 
 
