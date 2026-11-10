@@ -33,7 +33,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import weakref
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 import aiosqlite
@@ -76,9 +76,10 @@ async def enqueue(
     channel_id: int,
     content: str,
     failure_reason: str,
+    *,
+    now: datetime,
 ) -> None:
-    """Persist a failed channel message for later retry."""
-    now = datetime.now(timezone.utc).isoformat()
+    """Persist a failed channel message for later retry, enqueued at *now*."""
     async with get_connection(db_path) as db:
         await db.execute(
             """
@@ -87,7 +88,7 @@ async def enqueue(
                  retry_count, last_attempted_at)
             VALUES (?, ?, ?, ?, 0, NULL)
             """,
-            (channel_id, content, failure_reason, now),
+            (channel_id, content, failure_reason, now.isoformat()),
         )
         await db.commit()
     log.warning(
@@ -154,13 +155,14 @@ async def mark_delivered(db_path: str, entry_id: int) -> None:
 # T006 — mark_failed
 # ---------------------------------------------------------------------------
 
-async def mark_failed(db_path: str, entry_id: int, *, reason: str | None = None) -> None:
-    """Increment retry_count and record last_attempted_at for entry_id.
+async def mark_failed(
+    db_path: str, entry_id: int, *, now: datetime, reason: str | None = None
+) -> None:
+    """Increment retry_count and record last_attempted_at (*now*) for entry_id.
 
     *reason* replaces the row's ``failure_reason``: a line never tried has none, and once it has
     failed its eventual delivery is recorded (see the module docstring).
     """
-    now = datetime.now(timezone.utc).isoformat()
     async with get_connection(db_path) as db:
         await db.execute(
             """
@@ -170,7 +172,7 @@ async def mark_failed(db_path: str, entry_id: int, *, reason: str | None = None)
                    failure_reason = COALESCE(?, failure_reason)
              WHERE id = ?
             """,
-            (now, reason, entry_id),
+            (now.isoformat(), reason, entry_id),
         )
         await db.commit()
 
@@ -179,7 +181,7 @@ async def mark_failed(db_path: str, entry_id: int, *, reason: str | None = None)
 # T007 + T016–T018 — attempt_delivery
 # ---------------------------------------------------------------------------
 
-async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
+async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot", *, now: datetime) -> bool:
     """Attempt to post entry.content to the log channel as it is now, under :func:`delivery_lock`.
 
     The log channel set when the row is tried takes it, so that a channel set again after the
@@ -191,6 +193,9 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
     Returns True if all chunks were delivered successfully, False otherwise. A failure to read
     the log channel (a database fault in `log_destination`, which raises), to find it or to send
     gives False; a fault reading or writing the retry table raises. Never calls enqueue() (FR-009).
+
+    *now* is the time of this try: what a failure records and the success line names as the time
+    delivered.
 
     On success: deletes the DB row and posts a delivery notification to the
     calculation log channel (best-effort; swallowed on failure), unless the row
@@ -226,7 +231,9 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
                 "attempt_delivery: cannot read the log channel for entry id=%s: %s",
                 entry.id, exc, exc_info=True,
             )
-            await mark_failed(db_path, entry.id, reason=str(exc) if first_failure else None)
+            await mark_failed(
+                db_path, entry.id, reason=str(exc) if first_failure else None, now=now
+            )
             return False
         if named is not None:
             target = named
@@ -251,7 +258,9 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
                 "attempt_delivery: cannot fetch channel id=%s for entry id=%s: %s",
                 target, entry.id, exc, exc_info=True,
             )
-            await mark_failed(db_path, entry.id, reason=str(exc) if first_failure else None)
+            await mark_failed(
+                db_path, entry.id, reason=str(exc) if first_failure else None, now=now
+            )
             return False
 
         if not isinstance(channel, discord.TextChannel):
@@ -262,6 +271,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
             await mark_failed(
                 db_path, entry.id,
                 reason="the channel is not a text channel" if first_failure else None,
+                now=now,
             )
             return False
 
@@ -273,7 +283,9 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
                 "attempt_delivery: send failed for entry id=%s channel=%s: %s",
                 entry.id, target, exc, exc_info=True,
             )
-            await mark_failed(db_path, entry.id, reason=str(exc) if first_failure else None)
+            await mark_failed(
+                db_path, entry.id, reason=str(exc) if first_failure else None, now=now
+            )
             return False
 
         # --- Success (T016) ---
@@ -281,13 +293,12 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot") -> bool:
 
     if first_failure:
         return True
-    now_str = datetime.now(timezone.utc)
     success_msg = (
         f"\u2705 Retry delivery succeeded for channel <#{target}> "
         f"(id={target}). "
         f"Original failure: {entry.failure_reason}. "
         f"Retries taken: {entry.retry_count}. "
-        f"Delivered at: {discord_ts(now_str)}."
+        f"Delivered at: {discord_ts(now)}."
     )
     _safe_post_log(bot, success_msg)
     return True

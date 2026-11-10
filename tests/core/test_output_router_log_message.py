@@ -45,7 +45,6 @@ def _bot(channel):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_post_log_returns_the_posted_message():
     sent = []
     bot = _bot(_channel(sent))
@@ -58,7 +57,6 @@ async def test_post_log_returns_the_posted_message():
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_split_block_returns_its_first_message():
     """So a link lands a reader at the top of the block rather than its tail."""
     sent = []
@@ -72,7 +70,6 @@ async def test_a_split_block_returns_its_first_message():
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_post_log_returns_none_when_the_server_has_no_config():
     bot = MagicMock()
     bot.config_service.get_server_config = AsyncMock(return_value=None)
@@ -81,7 +78,6 @@ async def test_post_log_returns_none_when_the_server_has_no_config():
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_post_log_returns_none_when_the_channel_cannot_be_reached():
     """Only the log channel is asked for: nothing is posted in the interaction channel (#439)."""
     bot = MagicMock()
@@ -99,7 +95,6 @@ async def test_post_log_returns_none_when_the_channel_cannot_be_reached():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mention", ["<@123>", "<@!123>", "<@&123>"])
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_every_mention_in_a_log_line_is_written_as_code(mention):
     """Named without notifying: the log channel mentions nobody (#362 builds the forms from the
     shared ones, which also wraps `<@!123>`)."""
@@ -128,7 +123,6 @@ def _unconfigured_bot(channel) -> MagicMock:
     return bot
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_router_says_where_the_log_goes():
     bot = _bot(_channel([]))
     router = OutputRouter(bot, bot.config_service, now=lambda: NOW)
@@ -136,7 +130,6 @@ async def test_the_router_says_where_the_log_goes():
     assert await router.log_destination() == 99
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_router_says_there_is_no_log_before_the_bot_is_set_up():
     bot = MagicMock()
     bot.config_service.get_server_config = AsyncMock(return_value=None)
@@ -144,7 +137,6 @@ async def test_the_router_says_there_is_no_log_before_the_bot_is_set_up():
     assert await OutputRouter(bot, bot.config_service, now=lambda: NOW).log_destination() is None
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_line_for_a_given_channel_is_written_as_any_other():
     """Its mentions name without notifying and it carries the separator, with no configuration
     left to read."""
@@ -160,7 +152,6 @@ async def test_a_line_for_a_given_channel_is_written_as_any_other():
     assert line.endswith("\n" + "―" * 36)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_long_line_for_a_given_channel_is_split_and_returns_its_first_message():
     sent = []
     bot = _unconfigured_bot(_channel(sent))
@@ -195,7 +186,6 @@ def _refusing_channel() -> MagicMock:
         ),
     ],
 )
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_line_for_a_given_channel_that_fails_is_neither_queued_nor_redirected(
     tmp_path, monkeypatch, where, channel
 ):
@@ -251,7 +241,6 @@ async def _pending(db_path: str) -> list[dict]:
         return [dict(row) for row in await cursor.fetchall()]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_line_queued_in_a_save_is_written_for_the_log_channel_and_not_committed(tmp_path):
     from leaguebot.core.db.database import get_connection
     from tests.support.change_queue import LOG_CHANNEL_ID
@@ -274,7 +263,6 @@ async def test_a_line_queued_in_a_save_is_written_for_the_log_channel_and_not_co
     assert bot.log_channel.sent == [], "the line is delivered after the save, not in it"
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_line_queued_before_the_bot_is_set_up_is_not_written(tmp_path):
     from leaguebot.core.db.database import get_connection
 
@@ -329,7 +317,6 @@ def _interaction(bot, *, age: timedelta = timedelta(seconds=5)):
     return member_interaction(bot, created_at=NOW - age)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_line_the_log_channel_refuses_is_told_to_the_member_alone(tmp_path):
     db_path, bot = await _league(tmp_path)
     _refusing_log(bot)
@@ -349,7 +336,6 @@ async def test_a_line_the_log_channel_refuses_is_told_to_the_member_alone(tmp_pa
     assert len(await _pending(db_path)) == 1, "the line still waits on the retry queue"
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_warning_for_an_interaction_not_yet_answered_follows_its_reply(tmp_path):
     """Sending the warning first would take the command's one response."""
     _db_path, bot = await _league(tmp_path)
@@ -374,7 +360,6 @@ async def test_a_warning_for_an_interaction_not_yet_answered_follows_its_reply(t
     assert bot.interaction_channel.sent == []
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_member_is_warned_once_however_many_of_their_lines_fail(tmp_path):
     db_path, bot = await _league(tmp_path)
     _refusing_log(bot)
@@ -394,7 +379,6 @@ async def test_a_member_is_warned_once_however_many_of_their_lines_fail(tmp_path
     assert len(await _pending(db_path)) == 3
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_line_with_no_interaction_to_answer_goes_to_the_host_log_alone(tmp_path, caplog):
     """A timed job: no member asked, so the failure is the host's log's alone."""
     db_path, bot = await _league(tmp_path)
@@ -413,7 +397,6 @@ async def test_a_line_with_no_interaction_to_answer_goes_to_the_host_log_alone(t
     assert any(record.levelno >= logging.ERROR for record in caplog.records)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_an_interaction_over_fourteen_minutes_old_is_not_answered(tmp_path):
     """Discord's token lasts fifteen minutes; the router leaves itself one to spare."""
     db_path, bot = await _league(tmp_path)
@@ -433,7 +416,6 @@ async def test_an_interaction_over_fourteen_minutes_old_is_not_answered(tmp_path
     assert len(await _pending(db_path)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_an_interaction_the_league_s_check_admits_is_the_one_its_lines_answer(tmp_path):
     """Two commands at once, and a timed job beside them: each command's lines answer that
     command's member alone, and the job's answer nobody."""
@@ -517,7 +499,6 @@ async def _queued(db_path: str) -> list[tuple[int, str]]:
     discord.Forbidden(MagicMock(status=403), "Missing Access"),
     discord.HTTPException(MagicMock(status=503), "Service Unavailable"),
 ], ids=["not-found", "forbidden", "http-error"])
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_line_whose_log_channel_cannot_be_fetched_is_kept_and_the_member_warned(
     tmp_path, fault
 ):
@@ -536,7 +517,6 @@ async def test_a_line_whose_log_channel_cannot_be_fetched_is_kept_and_the_member
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_line_whose_log_channel_is_no_text_channel_is_kept_and_the_member_warned(tmp_path):
     db_path = await _retry_db(tmp_path)
     bot = _bot(MagicMock(spec=discord.VoiceChannel))
@@ -557,7 +537,6 @@ async def test_a_line_whose_log_channel_is_no_text_channel_is_kept_and_the_membe
     aiohttp.ClientConnectionError("Cannot connect to host discord.com"),
     asyncio.TimeoutError(),
 ], ids=["os-error", "client-error", "timeout"])
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_line_that_cannot_reach_discord_is_kept_and_the_member_warned(
     tmp_path, fault, where
 ):

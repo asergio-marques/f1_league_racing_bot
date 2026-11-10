@@ -176,7 +176,6 @@ def _log(env: Any) -> str:
     return "\n".join(env.bot.log_channel.sent)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_take_down_deletes_each_message_by_id_and_forgets_the_prompt(standing):
     """Alex's review stands in channel 700: report R1 and R2, question Q. The bot asks for it to
     be taken down, confirmed. Nothing is deleted until the queue runs; then Q, R1 and R2 are each
@@ -195,7 +194,6 @@ async def test_a_take_down_deletes_each_message_by_id_and_forgets_the_prompt(sta
     assert change["state"] == "DONE"
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_an_expired_take_down_posts_the_expiry_notice_pinging_the_reviewer(standing):
     """Alex's review ran its five minutes and the bot asks for it to be taken down, expired. Once
     the queue runs the review is deleted, then one notice is posted in channel 700 pinging Alex
@@ -216,7 +214,6 @@ async def test_an_expired_take_down_posts_the_expiry_notice_pinging_the_reviewer
     assert "Alex" in _log(standing)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_confirmed_take_down_posts_no_notice(standing):
     """Alex's review was approved and the bot asks for it to be taken down, confirmed. Once the
     queue runs the review is deleted, nothing is posted in channel 700 and no lapse is recorded."""
@@ -227,7 +224,6 @@ async def test_a_confirmed_take_down_posts_no_notice(standing):
     assert "lapsed" not in _log(standing)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_refused_delete_stops_the_queue_and_a_discard_names_it(standing):
     """Discord refuses to delete report message R1. The bot asks for the review to be taken down,
     expired: the queue stops at R1's delete job. A league admin discards it: the change goes on,
@@ -260,7 +256,6 @@ CANNOT_DISCARD_FORGET = (
 )
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_forgetting_a_taken_down_review_cannot_be_discarded(standing):
     """Alex's review was approved and the bot asks for it to be taken down, confirmed. Its three
     messages are deleted, then forgetting the review's record fails and stops the queue. A league
@@ -293,7 +288,6 @@ async def test_forgetting_a_taken_down_review_cannot_be_discarded(standing):
     assert change["state"] == "DONE"
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_take_down_whose_channel_is_gone_completes(standing):
     """Channel 700 has been deleted from the server, Alex's review with it. The bot asks for the
     review to be taken down, expired: the change completes without stopping the queue, posts no
@@ -444,7 +438,6 @@ def _question(channel: Any) -> Any:
     return [m for m in _posts(channel) if m.content == QUESTION][-1]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_review_posts_the_drawing_notice_before_drawing_and_deletes_it_after(posting):
     """Alex's review of season 1 carries Pro's calendar and lineup pictures. Once the queue runs,
     "🎨 Drawing the graphics for this review — one moment." is posted in channel 700 before the
@@ -467,7 +460,6 @@ async def test_a_review_posts_the_drawing_notice_before_drawing_and_deletes_it_a
     assert len(pictures) == 2 and max(pictures) < deleted_at < first_report
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_each_review_picture_is_drawn_and_posted_by_a_job_of_its_own_in_order(posting):
     """Alex's review carries Pro's calendar, then its lineup. Once the queue runs, the calendar is
     drawn and posted, then the lineup, each by a `draw_and_post` job of its own; the report's two
@@ -491,7 +483,6 @@ async def test_each_review_picture_is_drawn_and_posted_by_a_job_of_its_own_in_or
     assert posting.views and posting.views[0]["season_id"] == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_refused_review_picture_falls_back_to_text_in_the_same_try(posting):
     """Discord refuses every message carrying a file in channel 700 (no Attach Files). Once the
     queue runs, each picture is posted as its text instead, in the same try: the queue does not
@@ -509,7 +500,6 @@ async def test_a_refused_review_picture_falls_back_to_text_in_the_same_try(posti
     assert contents[-1] == QUESTION
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_question_s_record_writes_the_prompt_row_with_every_report_id(posting):
     """Once Alex's review is posted, `season_review_prompts` holds one row for its question: season
     1, channel 700, Alex as reviewer, `/season placements-review`, the ids of both pictures and
@@ -530,7 +520,6 @@ async def test_the_question_s_record_writes_the_prompt_row_with_every_report_id(
     assert json.loads(row["evidence"]) == EVIDENCE
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_posted_review_writes_one_line_naming_who_ran_it(posting):
     """Alex's `/season placements-review` is asked of the queue and the queue posts it, its
     question standing in channel 700. The log channel then holds one line naming Alex and
@@ -547,7 +536,6 @@ async def test_a_posted_review_writes_one_line_naming_who_ran_it(posting):
     assert not any(line.startswith("⛔") for line in lines), lines
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_question_s_five_minutes_start_when_it_is_posted(posting):
     """The queue is stopped at 12:00 when Alex runs his review; it clears at 12:03. The question is
     posted at 12:03 and its row records it posted at 12:03 by the queue's clock, and a job after it
@@ -577,7 +565,6 @@ async def test_the_question_s_five_minutes_start_when_it_is_posted(posting):
     assert names.index("arm_expiry") > names.index("post_question")
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_question_whose_posting_was_not_marked_arms_its_five_minutes_on_the_queue_s_clock(
         posting):
     """Alex's question 9001 is posted, but the queue holds no mark of when its job was done. The
@@ -608,7 +595,6 @@ async def test_a_question_whose_posting_was_not_marked_arms_its_five_minutes_on_
     assert result.result == {"armed": (NOW + timedelta(minutes=5)).isoformat()}
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_review_while_the_queue_is_stopped_is_acknowledged_and_posted_when_it_clears(
         posting):
     """The queue is stopped when Alex runs his review. He is answered at once, and nothing is
@@ -632,7 +618,6 @@ async def test_a_review_while_the_queue_is_stopped_is_acknowledged_and_posted_wh
     assert [m.content for m in _posts(posting.channel)][-1] == QUESTION
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_picture_that_will_not_draw_withholds_the_button_and_is_told_in_the_reviewer_s_reply(
         posting):
     """Pro's lineup will not draw (its template's font cannot be loaded). Once the queue runs the
@@ -661,7 +646,6 @@ async def test_a_picture_that_will_not_draw_withholds_the_button_and_is_told_in_
     ("mid_season", "the placements are **not** offered for confirmation"),
     ("configuration", "the configuration is **not** offered for confirmation"),
 ])
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_drawing_fault_words_what_is_withheld_by_the_review_s_family(
         posting, view, withheld):
     """Pro's lineup will not draw in a mid-season or a configuration review. Alex's reply says
@@ -681,7 +665,6 @@ async def test_a_drawing_fault_words_what_is_withheld_by_the_review_s_family(
     assert "season is **not** offered for approval" not in updated_reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_drawing_fault_is_told_in_the_log_channel_once_the_reply_cannot_be_updated(
         posting):
     """Pro's lineup will not draw, and Alex's reply can no longer be updated (its token has run
@@ -697,7 +680,6 @@ async def test_a_drawing_fault_is_told_in_the_log_channel_once_the_reply_cannot_
     assert "Pro lineup" in _log(posting)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_review_s_drawing_runs_through_the_callable_the_builder_hands_off_the_event_loop(
         posting):
     """Once Alex's review runs, each of its pictures is drawn by the callable the builder handed
@@ -715,7 +697,6 @@ async def test_the_review_s_drawing_runs_through_the_callable_the_builder_hands_
 
 
 @pytest.mark.parametrize("uncommitted", [False, True], ids=["placements", "mid_season"])
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portraits(
         posting, monkeypatch, uncommitted):
     """The real change types are registered, as the builder registers them, and the drawing it
@@ -757,7 +738,6 @@ async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portrait
     assert bool(render.await_args.kwargs.get("include_uncommitted")) is uncommitted
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_drawn_picture_s_render_directory_is_gone_once_its_job_completes(
         posting, tmp_path):
     """Alex's review carries two pictures, each drawn by the image module into a directory of its
@@ -791,7 +771,6 @@ async def test_a_drawn_picture_s_render_directory_is_gone_once_its_job_completes
     assert [path.parent.exists() for path in made] == [False, False]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_builder_hands_the_review_the_image_module_s_discard_of_a_render(
         posting, monkeypatch):
     """The real change types are registered, as the builder registers them. The factory of
@@ -820,7 +799,6 @@ async def test_the_builder_hands_the_review_the_image_module_s_discard_of_a_rend
 CONFIG = "/season config-review"
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_restart_asks_the_take_down_of_each_review_standing_before_the_queue_starts(
         standing):
     """Two reviews stand in channel 700 when the bot starts: Alex's placements review (report R1
@@ -858,7 +836,6 @@ async def test_a_restart_asks_the_take_down_of_each_review_standing_before_the_q
     assert await _prompts(standing.db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_review_whose_take_down_is_in_hand_is_not_asked_again_at_a_second_start(standing):
     """Discord refuses to delete Alex's report message R1. The bot starts and asks the review's
     take-down, which stops at R1's delete. The bot starts again with it still stopped: the
@@ -963,7 +940,6 @@ def _expiry_callback(env: Any) -> Any:
     return callback
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_private_faults_stay_a_reply(standing):
     """Alex's placements review finds that Pro has no lineup channel. The fault is told to Alex
     alone, as a private follow-up of his command: nothing is posted in channel 700, nothing is
@@ -1054,7 +1030,6 @@ async def test_a_confirmation_asks_the_take_down_before_the_approval_and_the_rev
     pytest.param("expired", id="five_minutes"),
     pytest.param("refused", id="refused_press"),
 ])
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_five_minutes_and_a_refused_press_ask_the_take_down(
     standing, monkeypatch, ending,
 ):
@@ -1088,7 +1063,6 @@ async def test_the_five_minutes_and_a_refused_press_ask_the_take_down(
     assert change["origin"] == "BOT"
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_approve_refuses_where_the_season_changed_while_the_review_waited(
     posting, monkeypatch,
 ):
@@ -1147,7 +1121,6 @@ def _refused_as_expired(env: Any, interaction: Any) -> None:
     assert "Approve" in line and PLACEMENTS in line
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_press_on_a_review_whose_five_minutes_ran_is_refused_and_recorded(
     standing, monkeypatch,
 ):
@@ -1168,7 +1141,6 @@ async def test_a_press_on_a_review_whose_five_minutes_ran_is_refused_and_recorde
 
 
 @pytest.mark.parametrize("mark", ["UNDER_WAY", "TIMER_FIRED"])
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_late_press_beside_one_under_way_leaves_the_review_to_it(
     standing, monkeypatch, mark,
 ):
@@ -1189,7 +1161,6 @@ async def test_a_late_press_beside_one_under_way_leaves_the_review_to_it(
     assert await _take_downs(standing) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_press_refused_while_an_approval_is_in_hand_leaves_no_review_past_its_timer(
         standing, monkeypatch):
     """Alex's review stands in channel 700, posted a moment ago. He presses Approve while an
@@ -1221,7 +1192,6 @@ async def test_a_press_refused_while_an_approval_is_in_hand_leaves_no_review_pas
     assert (payload["ending"], payload["question_id"]) == ("expired", channel.q.id)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_review_standing_after_a_restart_refuses_a_press_and_records_it(standing):
     """The bot restarts with Alex's review standing in channel 700, posted on 7 September. The
     restart's step routes the button on Q again, before the queue starts, rather than leaving it
@@ -1252,7 +1222,6 @@ async def test_a_review_standing_after_a_restart_refuses_a_press_and_records_it(
     assert standing.channel.deleted == []
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_press_hands_the_approval_what_remains_of_the_review_s_five_minutes(
         standing, monkeypatch):
     """Alex's review stands in channel 700, its question posted four minutes ago by its row, on
@@ -1284,7 +1253,6 @@ async def test_a_press_hands_the_approval_what_remains_of_the_review_s_five_minu
     assert abs((deadline - expected).total_seconds()) < 2, (deadline, expected)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_review_s_five_minutes_are_armed_by_a_job_after_the_question_and_ask_the_take_down(
         standing):
     """The builder registers the review's expiry timer, which the review's `arm_expiry` job arms

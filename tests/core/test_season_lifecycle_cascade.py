@@ -713,7 +713,6 @@ async def _run_the_round_job(db_path, round_id, *, results_enabled):
     return bot
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_round_begins_awaiting_results_when_its_moment_arrives(tmp_path) -> None:
     db_path = str(tmp_path / "bot.db")
     _, built = await _seed(db_path, rounds_per_division=1)
@@ -727,7 +726,6 @@ async def test_the_round_begins_awaiting_results_when_its_moment_arrives(tmp_pat
     assert await _division_status(db_path, div_id) == "ACTIVE"
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_without_the_results_module_the_round_ends_when_its_moment_arrives(tmp_path) -> None:
     """A league that does not run results has nothing to await, so the round ends there.
 
@@ -746,7 +744,6 @@ async def test_without_the_results_module_the_round_ends_when_its_moment_arrives
     assert await _every_division_done(db_path) is True
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_moment_arriving_does_not_disturb_a_round_already_under_way(tmp_path) -> None:
     """The opening can be asked again — on a restart replaying missed work — and must not
     rewind: a round awaiting its appeal verdicts stays so, and a cancelled round stays
@@ -764,7 +761,6 @@ async def test_the_moment_arriving_does_not_disturb_a_round_already_under_way(tm
     assert await _round_status(db_path, round_id) == "CANCELLED"
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_without_the_results_module_the_round_and_its_division_are_saved_together(
     tmp_path, monkeypatch
 ) -> None:
@@ -799,7 +795,6 @@ async def test_without_the_results_module_the_round_and_its_division_are_saved_t
     assert await _division_status(db_path, div_id) == "ACTIVE"
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_without_the_results_module_the_wind_down_is_asked_of_the_queue(tmp_path) -> None:
     """The season's wind-down is asked of the change queue as the bot's, not run in-process
     (#439, slice 5). The season's only round's moment arrives with results off while the season

@@ -283,7 +283,6 @@ async def test_add_penalty_offers_a_session_to_choose():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_an_empty_list_goes_straight_to_approval(tmp_path):
     """Nothing to discard, so nothing to confirm — asking would be a confirmation with no
     consequence, which is how confirmations stop being read."""
@@ -329,7 +328,6 @@ async def test_the_confirmation_says_what_will_happen_to_the_round():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_confirming_the_clear_discards_the_staged_list(tmp_path):
     state = _state(staged=[_penalty(), _penalty(10)])
     view = _ConfirmClearView(state)
@@ -345,7 +343,6 @@ async def test_confirming_the_clear_discards_the_staged_list(tmp_path):
     approval.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_confirming_the_clear_redraws_the_prompt_with_nothing_staged(tmp_path):
     """**D5.** Round 3's penalty review (Division 1) has two penalties staged. Alex presses No
     Penalties / Confirm and then "Yes, clear and proceed with no penalties". The list is cleared
@@ -578,7 +575,6 @@ async def test_five_penalties_and_two_pardons_all_get_a_remove_button():
 
 
 @pytest.mark.parametrize("amendment", [False, True])
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_removing_a_pardon_takes_it_off_the_staged_list(amendment, tmp_path):
     state = _state(staged=[_penalty()])
     state.staged_pardons = [_pardon(0), _pardon(1)]
@@ -901,7 +897,6 @@ async def _pressed_by_alex(state, channel, tmp_path):
 
 
 @pytest.mark.parametrize("kind, label, staged, named", _PRESSES)
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_every_press_of_the_penalty_review_writes_one_line(kind, label, staged, named, tmp_path):
     """Round 3's penalty review (Division 1) has the penalties given staged and one ABSENT
     pardon. Alex, a league manager, presses Remove #1 or Remove Pardon #1, No Penalties /
@@ -941,7 +936,6 @@ async def test_every_press_of_the_penalty_review_writes_one_line(kind, label, st
         assert fragment in line, (fragment, line)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_no_penalties_with_the_channel_unreachable_is_answered_and_recorded(tmp_path):
     """Round 3's penalty review (Division 1) has nothing staged, and its submission channel
     (4455) can no longer be reached. Alex presses No Penalties / Confirm. No approval question

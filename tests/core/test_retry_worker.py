@@ -29,8 +29,6 @@ from leaguebot.core.services.output_router import OutputRouter
 #: The time handed in, well before the host's clock, so that a stamp read from the host shows.
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
 
-_RETRY_TAKES_NOW = "#283: the retry queue stamps its times from the now handed in, not the host's clock"
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -83,7 +81,6 @@ class TestOutputRouterEnqueuesOnFailure:
                      id="http exception"),
         pytest.param(discord.Forbidden(MagicMock(status=403), "missing access"), id="forbidden"),
     ])
-    @pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
     async def test_an_http_exception_or_forbidden_enqueues_row(self, tmp_path, error):
         """A discord.HTTPException in _send should enqueue a pending_messages row, and a
         discord.Forbidden should too."""
@@ -111,7 +108,6 @@ class TestOutputRouterEnqueuesOnFailure:
         # The factory reset's line to a given channel asks for no retry, and gets none.
         pytest.param(True, False, "log", id="the caller wants none"),
     ])
-    @pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
     async def test_no_enqueue_without_a_retry_db_path_or_when_the_caller_wants_none(
         self, tmp_path, with_retry_db, enqueue_on_failure, label
     ):
@@ -143,7 +139,6 @@ class TestOutputRouterEnqueuesOnFailure:
 
 class TestAttemptDeliverySuccess:
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_successful_delivery_returns_true(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
@@ -158,7 +153,6 @@ class TestAttemptDeliverySuccess:
             result = await attempt_delivery(entry, bot, now=NOW)
         assert result is True
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_successful_delivery_removes_row(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
@@ -173,7 +167,6 @@ class TestAttemptDeliverySuccess:
             await attempt_delivery(entry, bot, now=NOW)
         assert await _row_count(db_path) == 0
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_successful_delivery_sends_to_correct_channel(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
@@ -197,7 +190,6 @@ class TestAttemptDeliverySuccess:
 
 class TestAttemptDeliveryFailure:
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_send_failure_returns_false(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
@@ -213,7 +205,6 @@ class TestAttemptDeliveryFailure:
         result = await attempt_delivery(entry, bot, now=NOW)
         assert result is False
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_send_failure_increments_retry_count(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
@@ -237,7 +228,6 @@ class TestAttemptDeliveryFailure:
         assert row["retry_count"] == 1
         assert row["last_attempted_at"] == (NOW + timedelta(minutes=5)).isoformat()
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_send_failure_does_not_delete_row(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
@@ -253,7 +243,6 @@ class TestAttemptDeliveryFailure:
         await attempt_delivery(entry, bot, now=NOW)
         assert await _row_count(db_path) == 1
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_channel_not_found_increments_retry(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
@@ -282,7 +271,6 @@ class TestAttemptDeliveryFailure:
 
 class TestRetryWarningThreshold:
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_warning_posted_at_threshold(self, tmp_path):
         """When retry_count >= RETRY_WARN_THRESHOLD, _safe_post_log is called with a warning."""
@@ -310,7 +298,6 @@ class TestRetryWarningThreshold:
         warn_message = mock_safe_log.call_args_list[0][0][1]
         assert "Stuck retry" in warn_message
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_no_warning_below_threshold(self, tmp_path):
         """Under the threshold, _safe_post_log is never called."""
@@ -357,7 +344,6 @@ def _worker_bot(db_path: str, channel, *, configured: bool = True) -> MagicMock:
 class TestTheRetryWorkersOwnLinesAreNotQueued:
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
     async def test_its_own_line_goes_to_the_log_channel(self, tmp_path):
         from leaguebot.core.services.retry_service import _post_own_line
 
@@ -375,7 +361,6 @@ class TestTheRetryWorkersOwnLinesAreNotQueued:
     @pytest.mark.parametrize(
         "fault", ["refused", "channel-gone", "not-a-text-channel", "no-server-config"]
     )
-    @pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
     async def test_its_own_line_the_log_channel_cannot_take_is_not_queued(
         self, tmp_path, caplog, fault
     ):
@@ -405,7 +390,6 @@ class TestTheRetryWorkersOwnLinesAreNotQueued:
         assert await _row_count(db_path) == 0
         assert "Stuck retry entry id=7" in caplog.text
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_a_stuck_line_whose_log_channel_cannot_take_it_queues_nothing_more(
         self, tmp_path, caplog, monkeypatch
@@ -464,7 +448,6 @@ def _channels(**by_id) -> "MagicMock":
 
 class TestAWaitingLineGoesToTheLogChannelAsItIsNow:
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_a_line_queued_for_a_deleted_channel_is_delivered_to_the_new_one(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
@@ -482,7 +465,6 @@ class TestAWaitingLineGoesToTheLogChannelAsItIsNow:
         assert new.send.await_args_list[0].args[0] == "Admin | /module enable weather | Success"
         assert await _row_count(db_path) == 0
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_a_line_a_change_saved_is_delivered_to_the_log_channel_set_since(self, tmp_path):
         """A change's line is queued in its save for the log channel of the moment, 555, and
@@ -502,7 +484,6 @@ class TestAWaitingLineGoesToTheLogChannelAsItIsNow:
         assert new.send.await_count == 1
         assert await _row_count(db_path) == 0
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_a_log_channel_that_cannot_be_read_leaves_the_row_and_raises_nothing(
         self, tmp_path
@@ -524,7 +505,6 @@ class TestAWaitingLineGoesToTheLogChannelAsItIsNow:
         [after] = await get_all_pending(db_path)
         assert after.retry_count == 1
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_a_change_s_undelivered_line_warns_about_the_log_channel_as_it_is_now(
         self, tmp_path
@@ -547,7 +527,6 @@ class TestAWaitingLineGoesToTheLogChannelAsItIsNow:
         assert await _row_count(db_path) == 1
 
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_a_change_s_line_kept_when_the_log_channel_cannot_be_read_warns_the_member(
         self, tmp_path
@@ -571,7 +550,6 @@ class TestAWaitingLineGoesToTheLogChannelAsItIsNow:
         bot.output_router._warn_member.assert_awaited_once_with(555, interaction)
         assert await _row_count(db_path) == 1
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_a_change_s_line_whose_failure_cannot_be_counted_still_warns_the_member(
         self, tmp_path, monkeypatch

@@ -71,7 +71,6 @@ async def _ask_after(bot, interaction, n: int = 1):
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_two_are_saved_together_the_one_ahead_first_and_run_in_that_order(tmp_path):
     """Both changes are saved by one ask, the one ahead with the lower id, the bot's; only the
     change asked for is acknowledged to the member. The queue then carries the one ahead out first."""
@@ -93,7 +92,6 @@ async def test_the_two_are_saved_together_the_one_ahead_first_and_run_in_that_or
     assert ran == [AHEAD, MAIN]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_request_the_queue_refuses_at_once_leaves_nothing_ahead_of_it_queued(tmp_path):
     """The change asked for fails its check, so the member is refused and nothing is saved: the
     one that was to run ahead of it is not left on the queue."""
@@ -106,7 +104,6 @@ async def test_a_request_the_queue_refuses_at_once_leaves_nothing_ahead_of_it_qu
     assert "No." in acknowledgement(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_request_repeating_one_not_started_saves_neither(tmp_path):
     """The change asked for repeats the last on its lane before that has started: it is not asked
     for again, and the one ahead of it is not saved either."""
@@ -119,7 +116,6 @@ async def test_a_request_repeating_one_not_started_saves_neither(tmp_path):
     assert [row["id"] for row in await change_rows(db_path)] == [first]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_fault_in_the_save_leaves_neither_queued(tmp_path, monkeypatch):
     """The save raises after the change ahead is written and before the other is: the transaction
     is not committed, so the queue holds neither, and the fault reaches the caller."""
@@ -142,7 +138,6 @@ async def test_a_fault_in_the_save_leaves_neither_queued(tmp_path, monkeypatch):
     assert await change_rows(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_one_ahead_is_left_out_where_it_is_no_longer_due(tmp_path):
     """The change ahead finds itself no longer due: the change asked for is asked alone."""
     bot, db_path = await _queue(tmp_path, ahead_verdict=change.Verdict.not_due("gone"))
@@ -152,7 +147,6 @@ async def test_the_one_ahead_is_left_out_where_it_is_no_longer_due(tmp_path):
     assert [(row["id"], row["kind"]) for row in await change_rows(db_path)] == [(change_id, MAIN)]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_one_ahead_is_left_out_where_it_repeats_one_not_started(tmp_path):
     """The change ahead repeats the last on its lane before that has started: it is not saved a
     second time, and the change asked for still is."""

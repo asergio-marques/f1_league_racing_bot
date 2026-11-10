@@ -513,7 +513,6 @@ def _stop_view(*_args, **kwargs) -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_pressing_approve_on_an_out_of_order_table_refuses_and_changes_nothing(
     db_path, season
 ):

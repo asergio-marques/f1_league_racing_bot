@@ -349,7 +349,6 @@ async def _stop_notice(league: _League) -> str:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_replacement_is_posted_before_the_old_message_is_deleted(tmp_path):
     league = await _league(tmp_path)
     await _ask(league)
@@ -365,7 +364,6 @@ async def test_a_replacement_is_posted_before_the_old_message_is_deleted(tmp_pat
     assert set(league.channel(RESULTS_CHANNEL).messages) == {new[0]}
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_new_message_id_is_saved_with_the_post(tmp_path):
     league = await _league(tmp_path)
     await _ask(league)
@@ -378,7 +376,6 @@ async def test_the_new_message_id_is_saved_with_the_post(tmp_path):
     assert deletes and all(row["done_at"] is None for row in deletes)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_stop_between_the_post_and_the_delete_deletes_the_old_message_on_restart(tmp_path):
     league = await _league(tmp_path)
     await _ask(league)
@@ -398,7 +395,6 @@ async def test_a_stop_between_the_post_and_the_delete_deletes_the_old_message_on
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_post_discord_refuses_stops_the_queue_and_is_tried_again_as_text(tmp_path):
     league = await _league(tmp_path)
     league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
@@ -431,7 +427,6 @@ async def test_a_post_discord_refuses_stops_the_queue_and_is_tried_again_as_text
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_stopped_post_is_named_by_what_it_posts_and_where(tmp_path):
     league = await _league(tmp_path)
     league.channel(RESULTS_CHANNEL).send_fails = http_error(
@@ -447,7 +442,6 @@ async def test_a_stopped_post_is_named_by_what_it_posts_and_where(tmp_path):
     assert "sync" not in notice
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_post_refused_leaves_the_old_message_standing(tmp_path):
     """The regression #237 pinned, on the queue: a channel the bot may no longer post in keeps
     what the league already had, and its id stays recorded."""
@@ -463,7 +457,6 @@ async def test_a_post_refused_leaves_the_old_message_standing(tmp_path):
     assert await _session_ids(league.db_path) == (OLD_RESULTS, [OLD_RESULTS])
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_discarded_post_leaves_the_old_message_and_is_named_with_the_sync_commands(
     tmp_path,
 ):
@@ -484,7 +477,6 @@ async def test_a_discarded_post_leaves_the_old_message_and_is_named_with_the_syn
     assert "/results rounds sync" in reply
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_discarded_delete_leaves_both_messages_and_links_the_old_one(tmp_path):
     league = await _league(tmp_path)
     results = league.channel(RESULTS_CHANNEL)
@@ -502,7 +494,6 @@ async def test_a_discarded_delete_leaves_both_messages_and_links_the_old_one(tmp
     assert old_link in updated_reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_post_repointed_to_a_new_channel_lands_there_on_retry(tmp_path):
     league = await _league(tmp_path, results_message_id=None)
     league.gone.add(RESULTS_CHANNEL)
@@ -562,7 +553,6 @@ async def _results_channel(db_path: str) -> int | None:
     return None if row is None or row[0] is None else int(row[0])
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_stopped_post_lands_once_the_channel_is_set_and_retried(tmp_path):
     """Set the channel, then Retry: the remedy the stop notice leads a manager to, end to end.
 
@@ -595,7 +585,6 @@ async def test_a_stopped_post_lands_once_the_channel_is_set_and_retried(tmp_path
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_post_that_fails_part_way_removes_what_it_sent_before_its_next_try(tmp_path):
     league = await _league(tmp_path, results_message_id=None)
     results = league.channel(RESULTS_CHANNEL)
@@ -620,7 +609,6 @@ async def test_a_post_that_fails_part_way_removes_what_it_sent_before_its_next_t
     assert standing == set(ids) | {OLD_RESULTS}
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_discarded_part_posted_table_names_its_stranded_messages(tmp_path):
     """The results post sends its first chunk and Discord refuses the second; the chunk sent
     cannot be removed, nor on the retry. A league admin discards the job: the outcome names the
@@ -684,7 +672,6 @@ def _each_championship_as_text() -> Any:
                  new=AsyncMock(return_value=outcome))
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_standings_post_that_fails_on_its_second_table_removes_the_first_before_its_next_try(
     tmp_path,
 ):
@@ -725,7 +712,6 @@ async def test_a_standings_post_that_fails_on_its_second_table_removes_the_first
     assert row["constructor_standings_message_id"] is None
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_channel_the_division_was_never_given_plans_no_post(tmp_path):
     league = await _league(tmp_path, results_channel=None)
     await _ask(league)
@@ -737,7 +723,6 @@ async def test_a_channel_the_division_was_never_given_plans_no_post(tmp_path):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_only_the_round_s_active_sessions_are_posted(tmp_path):
     """What `delete_and_repost_final_results` held: a session whose results were replaced is
     not published again, and its message is left alone."""
@@ -802,7 +787,6 @@ async def _qualifying_ids(db_path: str) -> tuple[int | None, list[int] | None]:
 @pytest.mark.parametrize(
     "label", [LABEL, "Provisional Results (amended)"], ids=["first-posting", "resubmission"]
 )
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_cancelled_session_s_line_is_posted_in_its_place_among_the_provisional_results_and_recorded(
     tmp_path, label,
 ):
@@ -830,7 +814,6 @@ async def test_a_cancelled_session_s_line_is_posted_in_its_place_among_the_provi
     assert await _qualifying_ids(league.db_path) == (line, [line])
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_cancelled_session_s_line_stands_in_its_place_when_the_tables_are_posted_at_the_appeals_stage(
     tmp_path,
 ):
@@ -853,7 +836,6 @@ async def test_a_cancelled_session_s_line_stands_in_its_place_when_the_tables_ar
         ("delete", RESULTS_CHANNEL, OLD_CANCELLED_LINE))
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_an_old_message_already_gone_completes_its_delete(tmp_path):
     league = await _league(tmp_path)
     del league.channel(RESULTS_CHANNEL).messages[OLD_RESULTS]
@@ -866,7 +848,6 @@ async def test_an_old_message_already_gone_completes_its_delete(tmp_path):
     assert len(league.sent_to(RESULTS_CHANNEL)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_standings_that_still_fit_are_edited_in_place_and_nothing_is_deleted(tmp_path):
     league = await _league(tmp_path)
     await _ask(league)
@@ -885,7 +866,6 @@ DRIVERS_GRAPHIC = 8807
 CONSTRUCTORS_GRAPHIC = 8808
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_text_repost_over_two_graphics_takes_both_down(tmp_path):
     """Round 3's interim standings stand as two graphics, the drivers' and the constructors',
     each with its id recorded. The republication's first try is refused and its retry goes out
@@ -932,7 +912,6 @@ async def test_a_text_repost_over_two_graphics_takes_both_down(tmp_path):
     assert row["constructor_standings_message_ids"] is None
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_each_later_round_s_posted_standings_are_posted_again(tmp_path):
     """What `repost_subsequent_standings` held: a later round whose standings were posted is
     posted again; one never posted is not."""
@@ -997,7 +976,6 @@ async def _standings_rounds(league: _League) -> list[int]:
     return rounds
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_later_rounds_standings_are_posted_again_in_round_order(tmp_path):
     """What `repost_subsequent_standings` held: a championship posted out of order reads as
     though the season ran that way, so the rounds go in round order, not in stored order."""
@@ -1010,7 +988,6 @@ async def test_later_rounds_standings_are_posted_again_in_round_order(tmp_path):
     assert await _standings_rounds(league) == [ROUND_ID, LATER_ROUND_ID, LAST_ROUND_ID]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_an_earlier_round_s_standings_are_not_posted_again(tmp_path):
     """What `repost_subsequent_standings` held: a correction changes no round before it."""
     league = await _league(tmp_path)
@@ -1029,7 +1006,6 @@ CANCELLED_ROUND_ID = 17
 OLD_CANCELLED_STANDINGS = 8807
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_cancelled_later_round_s_standings_are_not_posted_again(tmp_path):
     """What `repost_subsequent_standings` held (`test_a_cancelled_round_is_skipped`, D135): a
     round cancelled after its standings were posted is not part of the championship, so a
@@ -1063,7 +1039,6 @@ async def test_a_cancelled_later_round_s_standings_are_not_posted_again(tmp_path
     assert OLD_CANCELLED_STANDINGS not in league.deleted_in(STANDINGS_CHANNEL)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_later_round_with_only_its_team_standings_posted_is_posted_again(tmp_path):
     """What `repost_subsequent_standings` held: "posted" is either championship, not the
     drivers' alone, since the picture can leave the two in different states."""
@@ -1084,7 +1059,6 @@ async def test_a_later_round_with_only_its_team_standings_posted_is_posted_again
     assert LATER_ROUND_ID in await _standings_rounds(league)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_each_later_round_s_standings_are_headed_with_its_own_round_number(tmp_path):
     """What `repost_subsequent_standings` held: every round posted again is headed with its own
     number, and one headed with the corrected round's would title the season after one race.
@@ -1185,7 +1159,6 @@ async def _republish_with_the_picture_declined(league: _League) -> Any:
     return try_post
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_republished_results_add_the_fastest_lap_bonus_to_the_points(tmp_path):
     """What `delete_and_repost_final_results` held: the fastest-lap point is stored apart from
     the points awarded, and a table showing only one of them understates whoever set it."""
@@ -1197,7 +1170,6 @@ async def test_the_republished_results_add_the_fastest_lap_bonus_to_the_points(t
     assert try_post.await_args.kwargs["points_map"] == {1001: 19}
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_republished_results_are_headed_with_the_round_s_number_and_track(tmp_path):
     """What `delete_and_repost_final_results` held: the round is posted again under its own
     number and track."""
@@ -1226,7 +1198,6 @@ async def test_the_republished_results_are_headed_with_the_round_s_number_and_tr
         ),
     ],
 )
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_sprint_round_is_republished_laid_out_as_one(
     tmp_path, round_format, is_sprint, heading,
 ):
@@ -1259,7 +1230,6 @@ async def test_a_sprint_round_is_republished_laid_out_as_one(
         ),
     ],
 )
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_republished_standings_follow_the_division_s_reserve_setting(
     tmp_path, reserves, shown,
 ):
@@ -1286,7 +1256,6 @@ async def test_the_republished_standings_follow_the_division_s_reserve_setting(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_batch_notice_brackets_the_republication(tmp_path):
     league = await _league(tmp_path)
     await _ask(league, notice=True)
@@ -1303,7 +1272,6 @@ async def test_the_batch_notice_brackets_the_republication(tmp_path):
     assert league.channel(SUBMISSION_CHANNEL).messages == {}
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_drawing_notice_notifies_nobody(tmp_path):
     """A round's results are posted again with the drawing notice. The notice in the round's
     results submission channel notifies nobody."""
@@ -1315,7 +1283,6 @@ async def test_the_drawing_notice_notifies_nobody(tmp_path):
     assert notified(call.kwargs.get("allowed_mentions")) == NOBODY
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_batch_notice_discord_refuses_stops_the_queue_like_any_job(tmp_path):
     league = await _league(tmp_path)
     league.channel(SUBMISSION_CHANNEL).send_fails = http_error(text="Discord is down")
@@ -1333,7 +1300,6 @@ async def test_a_batch_notice_discord_refuses_stops_the_queue_like_any_job(tmp_p
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_names_go_unresolved_where_the_server_is_not_in_the_cache(tmp_path):
     """The names only order a full tie, so a server the bot cannot see leaves them unresolved
     rather than stopping the queue: a post after the job stops it on the same fault."""
@@ -1472,7 +1438,6 @@ def _results_drawn(league: _League, tmp_path: Any) -> Any:
     return stack
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_drawn_table_s_id_is_saved_with_its_post_and_the_old_table_deleted_by_a_job(
     tmp_path,
 ):
@@ -1499,7 +1464,6 @@ async def test_a_drawn_table_s_id_is_saved_with_its_post_and_the_old_table_delet
     assert len(deletes) == 1 and deletes[0]["done_at"] is not None
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_drawn_table_whose_old_message_will_not_delete_stops_the_queue(tmp_path):
     """Round 3's results are posted again as a picture, and Discord refuses to delete the old
     table, 8800: the queue stops at the `delete_message` job, both tables standing and the
@@ -1568,7 +1532,6 @@ async def _standings_ids(db_path: str) -> tuple[int | None, int | None]:
     return row["standings_message_id"], row["constructor_standings_message_id"]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_standings_picture_s_old_message_is_deleted_by_a_job_of_its_own(tmp_path):
     """Round 3's standings stand as text, message 8801; they are posted again, both
     championships drawn as pictures. Once `post_standings` is done the two pictures stand and
@@ -1598,7 +1561,6 @@ async def test_a_standings_picture_s_old_message_is_deleted_by_a_job_of_its_own(
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_refused_delete_of_an_old_standings_picture_stops_the_queue_keeping_both(
     tmp_path,
 ):
@@ -1647,7 +1609,6 @@ async def test_a_refused_delete_of_an_old_standings_picture_stops_the_queue_keep
     assert DRIVERS_GRAPHIC in standings.messages
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_standings_picture_s_id_is_saved_with_its_mark(tmp_path):
     """Round 3's standings are drawn as two pictures. Their ids are saved by `post_standings`'
     own record, with its done mark: the job's result names both pictures, and the standings'
@@ -1669,7 +1630,6 @@ async def test_a_standings_picture_s_id_is_saved_with_its_mark(tmp_path):
     assert {drivers, constructors} <= set(post["result"]["new"])
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_picture_sent_before_a_later_failure_is_removed_before_the_next_try(tmp_path):
     """Round 3's standings are posted again: the drivers' championship draws as a picture and
     the constructors' falls back to a text table, which Discord refuses. The queue stops at

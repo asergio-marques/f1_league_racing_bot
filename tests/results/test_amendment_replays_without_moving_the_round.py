@@ -123,7 +123,6 @@ PUBLISHING_JOBS = [
 
 
 @pytest.mark.parametrize("kind", [REPORTS, APPEALS])
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_each_stage_of_an_amendment_is_a_change_of_its_own_kind(tmp_path, kind):
     """An amendment runs none of the first pass: its stages are kinds of their own, never a
     branch inside the first pass's approvals."""
@@ -151,7 +150,6 @@ def test_the_first_pass_carries_no_amendment_branches_of_its_own(module):
 
 
 @pytest.mark.parametrize("job", PUBLISHING_JOBS)
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_amendments_report_stage_publishes_and_moves_nothing(tmp_path, job):
     """Nothing is published until the last stage, and the attendance is the last stage's.
 
@@ -180,7 +178,6 @@ def test_neither_stage_moves_the_round_or_records_its_attendance_afresh(call):
     assert call not in _module_code(AMENDMENT)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_report_stage_clears_the_sessions_records_before_re_applying(tmp_path):
     """`apply_penalties_on` only inserts, and adds to the stored penalty columns. Replaying a
     round's reports over records still there duplicated every one of them.
@@ -190,7 +187,6 @@ async def test_the_report_stage_clears_the_sessions_records_before_re_applying(t
     assert source.index("_clear_round_verdict_records_on") < source.index("apply_penalties_on")
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_report_stage_s_save_is_refused_where_the_amendment_is_no_longer_open(tmp_path):
     """The stage's save sets `reports_approved_at` only on an amendment still unclaimed
     (`expires_at IS NOT NULL`), so a stage approved after the sweep or Cancel took the amendment
@@ -205,7 +201,6 @@ async def test_the_report_stage_s_save_is_refused_where_the_amendment_is_no_long
 # ── The appeal stage ──────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_division_is_rebuilt_when_the_appeal_stage_is_approved(tmp_path):
     """**The amendment's single rebuild, and its last act.** Rebuilding earlier would publish a
     classification whose reports and appeals are still the old round's. Its save recalculates
@@ -221,7 +216,6 @@ async def test_the_division_is_rebuilt_when_the_appeal_stage_is_approved(tmp_pat
         assert job in change_type.steps, job
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_snapshot_is_released_in_the_save_before_the_rebuild_begins(tmp_path):
     """Once anything is published the round must not be reverted from under it: the release is
     in the stage's save, and no publishing job opens the change ahead of it."""
@@ -243,7 +237,6 @@ async def test_the_snapshot_is_released_in_the_save_before_the_rebuild_begins(tm
         "WIND_DOWN",
     ],
 )
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_settled_round_is_not_moved_on_by_the_first_pass(tmp_path, moving_call):
     """A review put back by restart recovery cannot carry `is_amendment`, so the appeals
     approval's check refuses a round no longer awaiting its appeal verdicts, and the moving calls

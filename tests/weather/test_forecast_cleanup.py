@@ -501,7 +501,6 @@ def _sending(channel: MagicMock, *, first_id: int, refuse_from: int | None = Non
     channel.send = AsyncMock(side_effect=send)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_text_forecast_goes_through_the_standing_post_handler_in_parts(
     tmp_path, monkeypatch
 ):
@@ -541,7 +540,6 @@ async def test_a_text_forecast_goes_through_the_standing_post_handler_in_parts(
         "not-a-text-channel",
     ],
 )
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_text_forecast_part_refused_keeps_the_parts_sent(tmp_path, monkeypatch, case):
     """The Phase 2 forecast is posted as text to channel 999, letting role 1 notify, and fails.
     The stop notice is read as the change queue shows it (`ChangeQueue._fault_kind`), in plain

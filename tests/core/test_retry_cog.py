@@ -40,9 +40,6 @@ def _pending(entries, error=None):
     )
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: the retry loop hands each try the change queue's time"
-)
 async def test_every_queued_message_is_retried():
     """Constitution VII: messages that fail to post are retried until delivered. Each try is
     handed the change queue's clock, the bot's clock, as its "now"."""

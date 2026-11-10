@@ -202,7 +202,6 @@ async def _amend(cog, interaction, *, division="Pro", round_number=3, session=No
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_results_module_must_be_on(tmp_path):
     """Amending with the module off would write rows nothing reads and post nothing, and
     the command is reached from `/round`, which a league with the module off still sees."""
@@ -218,7 +217,6 @@ async def test_the_results_module_must_be_on(tmp_path):
     assert [row for row in await change_rows(db_path) if row["kind"] == OPEN] == []
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_no_season_refusal_names_results_rounds_amend(tmp_path):
     """The season gate quotes back the name the command hands it, so a refusal naming a
     command that no longer exists sends a league admin looking for it. The repository's
@@ -239,7 +237,6 @@ async def test_the_no_season_refusal_names_results_rounds_amend(tmp_path):
     assert "archive" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_an_unknown_division_is_refused_by_name(tmp_path):
     db_path = await _make_db(tmp_path, name="amend_nodiv")
     cog = await _make_cog(db_path)
@@ -251,7 +248,6 @@ async def test_an_unknown_division_is_refused_by_name(tmp_path):
     assert "not found" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_division_is_matched_regardless_of_case(tmp_path):
     """Every other division lookup in the bot is case-insensitive, and this one destroys
     results — a manager should not meet a different rule here of all places."""
@@ -264,7 +260,6 @@ async def test_the_division_is_matched_regardless_of_case(tmp_path):
     assert "not found" not in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_an_unknown_round_is_refused_by_number(tmp_path):
     db_path = await _make_db(tmp_path, name="amend_noround")
     cog = await _make_cog(db_path)
@@ -279,7 +274,6 @@ async def test_an_unknown_round_is_refused_by_number(tmp_path):
     "status",
     ["NOT_RUN", "AWAITING_RESULTS", "AWAITING_REPORT_VERDICTS", "AWAITING_APPEAL_VERDICTS"],
 )
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_round_that_has_not_reached_final_is_refused(tmp_path, status):
     """A round still in review or appeals has a process running that will change its
     results anyway, and amending underneath it would have the steward's work land on rows
@@ -293,7 +287,6 @@ async def test_a_round_that_has_not_reached_final_is_refused(tmp_path, status):
     assert "cannot be amended yet" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_refusal_names_the_status_that_is_required(tmp_path):
     """A manager meeting it needs to know whether to wait or to act."""
     db_path = await _make_db(tmp_path, name="amend_says_final")
@@ -307,7 +300,6 @@ async def test_the_refusal_names_the_status_that_is_required(tmp_path):
     assert "penalty review and appeals" in replied
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_round_with_no_results_is_refused(tmp_path):
     """Nothing to amend. A FINAL round with no active session results is one whose
     submission was superseded away, and the command would otherwise open a channel and
@@ -321,7 +313,6 @@ async def test_a_round_with_no_results_is_refused(tmp_path):
     assert "No results found for this round" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_superseded_session_does_not_count_as_results(tmp_path):
     """It is not what the round is any more."""
     db_path = await _make_db(
@@ -335,7 +326,6 @@ async def test_a_superseded_session_does_not_count_as_results(tmp_path):
     assert "No results found for this round" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_session_the_round_does_not_have_is_refused(tmp_path):
     """Chosen from the command's own list of four, which is the same list for every round —
     a normal round has no sprint to amend."""
@@ -375,7 +365,6 @@ async def _choose(
         discord.ui.View.wait = original  # type: ignore[assignment]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_manager_who_does_not_name_a_session_is_asked(tmp_path):
     """A round has up to four sessions and any of them may be amended; guessing would amend
     the wrong race."""
@@ -388,7 +377,6 @@ async def test_a_manager_who_does_not_name_a_session_is_asked(tmp_path):
     assert "Select the sessions to amend" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_only_the_sessions_the_round_has_are_offered(tmp_path):
     """Offering all four would let a manager pick one the round never ran and meet the
     refusal a step later, after the question rather than before it."""
@@ -405,7 +393,6 @@ async def test_only_the_sessions_the_round_has_are_offered(tmp_path):
     assert _offered(interaction) == ["Feature Qualifying", "Feature Race"]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_superseded_session_is_not_offered(tmp_path):
     """Amending it would write a correction onto results that were already replaced."""
     db_path = await _make_db(
@@ -421,7 +408,6 @@ async def test_a_superseded_session_is_not_offered(tmp_path):
     assert _offered(interaction) == ["Feature Race"]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_sessions_are_offered_in_racing_order(tmp_path):
     """Sprint before feature, qualifying before its race — a manager picking from a list in
     another order is working against their memory of the evening."""
@@ -448,7 +434,6 @@ async def test_the_sessions_are_offered_in_racing_order(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_cancelling_the_choice_amends_nothing(tmp_path):
     """And creates no channel: the channel is the expensive, visible part, so nothing is
     made until the choice is made."""
@@ -462,7 +447,6 @@ async def test_cancelling_the_choice_amends_nothing(tmp_path):
     interaction.guild.create_text_channel.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_choice_that_times_out_amends_nothing(tmp_path):
     """A manager who closes the ephemeral message or lets it lapse chooses nothing, and an
     empty choice must not be read as a session."""
@@ -476,7 +460,6 @@ async def test_a_choice_that_times_out_amends_nothing(tmp_path):
     interaction.guild.create_text_channel.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_several_sessions_can_be_chosen_at_once(tmp_path):
     """**One amendment for as many of the round's sessions as need correcting** (#345, decided
     2026-09-21). A round's reports and appeals are reviewed together, so the chooser takes any
@@ -598,7 +581,6 @@ async def _went_on(cog, interaction, **amend) -> bool:
     [("QUEUED", False), ("RUNNING", False), ("RUNNING", True), ("QUEUED", True)],
     ids=["queued", "running", "running-stopped", "queued-stopped"],
 )
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_round_is_not_amended_while_its_division_has_a_job_on_the_queue(
     tmp_path, state, stopped,
 ):
@@ -625,7 +607,6 @@ async def test_a_round_is_not_amended_while_its_division_has_a_job_on_the_queue(
         assert (await cursor.fetchone())[0] == 0
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_change_with_only_its_close_left_holds_the_amendment_without_a_job_number(tmp_path):
     """Round 4's review opening has done its every job and only its close is left: it still holds
     the division, and the refusal leaves out the job number rather than naming job #0, as the
@@ -651,7 +632,6 @@ async def test_a_change_with_only_its_close_left_holds_the_amendment_without_a_j
     interaction.guild.create_text_channel.assert_not_called()
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_job_naming_the_division_alone_still_blocks_the_amendment(tmp_path):
     """A change whose payload names the division and no round of it is the division's job too."""
     db_path = await _make_db(tmp_path, name="amend_queued_division")
@@ -678,7 +658,6 @@ async def test_a_job_naming_the_division_alone_still_blocks_the_amendment(tmp_pa
     ],
     ids=["another-division", "another-division-by-id", "finished", "bot-wide"],
 )
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_job_that_is_not_the_division_s_in_hand_does_not_hold_the_amendment(
     tmp_path, seed,
 ):
@@ -729,7 +708,6 @@ async def _division_cog(db_path: str, division: str):
     [("QUEUED", False), ("RUNNING", False), ("RUNNING", True)],
     ids=["waiting", "running", "stopped"],
 )
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_round_is_not_amended_while_a_points_approval_of_its_season_is_in_hand(
     tmp_path, state, stopped, division,
 ):
@@ -761,7 +739,6 @@ async def test_a_round_is_not_amended_while_a_points_approval_of_its_season_is_i
 
 
 @pytest.mark.parametrize("state", ["DONE", "DISCARDED"], ids=["finished", "discarded"])
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_finished_or_discarded_points_approval_does_not_hold_the_amendment(
     tmp_path, state,
 ):
@@ -786,7 +763,6 @@ async def test_a_finished_or_discarded_points_approval_does_not_hold_the_amendme
         pytest.param(True, id="points-approval-first"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_review_job_and_a_points_approval_name_the_one_nearer_its_turn(
     tmp_path, points_first,
 ):
@@ -840,7 +816,6 @@ _CANCELLATIONS = [
     [("QUEUED", False), ("RUNNING", True)],
     ids=["waiting", "stopped"],
 )
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_round_is_not_amended_while_a_cancellation_in_its_division_is_in_hand(
     tmp_path, kind, payload, state, stopped,
 ):
@@ -873,7 +848,6 @@ async def test_a_round_is_not_amended_while_a_cancellation_in_its_division_is_in
 
 @pytest.mark.parametrize(("kind", "payload"), _CANCELLATIONS)
 @pytest.mark.parametrize("state", ["DONE", "DISCARDED"], ids=["finished", "discarded"])
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_finished_or_discarded_cancellation_does_not_hold_the_amendment(
     tmp_path, kind, payload, state,
 ):
@@ -910,7 +884,6 @@ ROUND_AMEND_PAYLOAD = {
     [("QUEUED", False), ("RUNNING", True)],
     ids=["waiting", "stopped"],
 )
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_round_is_not_amended_while_a_round_amend_of_its_division_is_in_hand(
     tmp_path, state, stopped,
 ):
@@ -942,7 +915,6 @@ async def test_a_round_is_not_amended_while_a_round_amend_of_its_division_is_in_
 
 
 @pytest.mark.parametrize("state", ["DONE", "DISCARDED"], ids=["finished", "discarded"])
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_finished_or_discarded_round_amend_does_not_hold_the_amendment(tmp_path, state):
     """A `/round amend` of Pro's round 4 has finished, or a league admin discarded it: it is no
     longer in hand, so amending the results of Pro's round 3 goes on to create the amendment's
@@ -1025,7 +997,6 @@ async def _goes_on(tmp_path, name, *, kind, payload, state):
 
 @pytest.mark.parametrize("division", ["Pro", "Am"])
 @_IN_HAND
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_round_is_not_amended_while_its_season_s_completion_is_in_hand(
     tmp_path, state, stopped, division,
 ):
@@ -1040,7 +1011,6 @@ async def test_a_round_is_not_amended_while_its_season_s_completion_is_in_hand(
 
 
 @pytest.mark.parametrize("state", ["DONE", "DISCARDED"], ids=["finished", "discarded"])
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_finished_or_discarded_completion_does_not_hold_the_amendment(tmp_path, state):
     """Season 7's completion has finished, or a league admin discarded it: it is no longer in
     hand, so amending Pro's round 3 goes on to create the amendment's channel, nothing refused
@@ -1054,7 +1024,6 @@ async def test_a_finished_or_discarded_completion_does_not_hold_the_amendment(tm
 @pytest.mark.parametrize(("kind", "payload"), _SEASON_ENDS)
 @pytest.mark.parametrize("division", ["Pro", "Am"])
 @_IN_HAND
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_round_is_not_amended_while_its_season_s_cancellation_or_abort_is_in_hand(
     tmp_path, kind, payload, state, stopped, division,
 ):
@@ -1069,7 +1038,6 @@ async def test_a_round_is_not_amended_while_its_season_s_cancellation_or_abort_i
 
 @pytest.mark.parametrize(("kind", "payload"), _SEASON_ENDS)
 @pytest.mark.parametrize("state", ["DONE", "DISCARDED"], ids=["finished", "discarded"])
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_finished_or_discarded_season_cancellation_or_abort_does_not_hold_the_amendment(
     tmp_path, kind, payload, state,
 ):

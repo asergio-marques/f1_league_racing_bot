@@ -241,7 +241,6 @@ def _penalty(seconds: int, *, driver: int = DRIVER, session=SessionType.FEATURE_
 
 
 @pytest.mark.parametrize("typed", [f"<@{DRIVER}>", f"<@!{DRIVER}>", str(DRIVER)])
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_driver_may_be_named_by_mention_or_by_id(tmp_path, typed):
     """A steward pastes a mention from the results, or types an id from the log."""
     state = _state(await _make_db(tmp_path))
@@ -254,7 +253,6 @@ async def test_a_driver_may_be_named_by_mention_or_by_id(tmp_path, typed):
 @pytest.mark.parametrize(
     "typed", ["Lewis", "", "<@abc>", "not-a-driver", "-4001", "+4001", "<@&4001>"]
 )
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_an_unparseable_driver_is_refused(tmp_path, typed):
     """The signed ids are read by the shared parser (#362), which takes digits alone: `int()`
     took `-4001` and `+4001` as ids. A role mention was refused before and is refused still."""
@@ -266,7 +264,6 @@ async def test_an_unparseable_driver_is_refused(tmp_path, typed):
     assert state.staged == []
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_driver_not_in_the_session_s_results_is_refused(tmp_path):
     """Otherwise the penalty is applied on approval against a row that does not exist."""
     state = _state(await _make_db(tmp_path))
@@ -277,7 +274,6 @@ async def test_a_driver_not_in_the_session_s_results_is_refused(tmp_path):
     assert state.staged == []
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_refusal_names_the_session_looked_in(tmp_path):
     """A steward penalising the wrong session needs to know which one was searched."""
     state = _state(await _make_db(tmp_path))
@@ -287,7 +283,6 @@ async def test_the_refusal_names_the_session_looked_in(tmp_path):
     assert "Feature Race" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_qualifying_driver_is_found_in_the_qualifying_results(tmp_path):
     """Race and qualifying are separate queries against separate tables, so each needs its
     own exercise — a driver present in one is not present in the other.
@@ -300,7 +295,6 @@ async def test_a_qualifying_driver_is_found_in_the_qualifying_results(tmp_path):
     assert len(state.staged) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_time_penalty_is_refused_for_qualifying(tmp_path):
     """There is no race time to add seconds to, so the validator refuses it outright —
     the modal is shared between the two passes and the difference lives there."""
@@ -312,7 +306,6 @@ async def test_a_time_penalty_is_refused_for_qualifying(tmp_path):
     assert state.staged == []
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_driver_in_the_race_is_not_found_in_qualifying(tmp_path):
     state = _state(await _make_db(tmp_path, qualifying=False))
 
@@ -326,7 +319,6 @@ async def test_a_driver_in_the_race_is_not_found_in_qualifying(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_penalty_is_staged_with_its_description_and_justification(tmp_path):
     """Both reach the verdict the league reads, so losing either at this point loses it
     for good — nothing later asks for them again."""
@@ -340,7 +332,6 @@ async def test_a_penalty_is_staged_with_its_description_and_justification(tmp_pa
     assert staged.justification == "Reviewed the footage"
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_disqualification_is_staged(tmp_path):
     state = _state(await _make_db(tmp_path))
 
@@ -349,7 +340,6 @@ async def test_a_disqualification_is_staged(tmp_path):
     assert state.staged[0].penalty_type == "DSQ"
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_reply_names_what_was_staged(tmp_path):
     """The prompt is refreshed too, but the steward needs an immediate answer to the form
     they just submitted."""
@@ -362,7 +352,6 @@ async def test_the_reply_names_what_was_staged(tmp_path):
     assert "+5s" in replied
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_an_appeal_correction_is_staged_on_the_appeals_list(tmp_path):
     """Staged onto the penalty list it would be applied a pass too early, against the very
     results the appeal was lodged about. The appeals review is the stage the round has moved on
@@ -376,7 +365,6 @@ async def test_an_appeal_correction_is_staged_on_the_appeals_list(tmp_path):
     assert "Staged Correction" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_prompt_is_refreshed_for_the_pass_being_staged_into(tmp_path):
     """Refreshing the wrong one leaves the steward reading a list that does not include
     what they just added."""
@@ -406,7 +394,6 @@ async def test_the_prompt_is_refreshed_for_the_pass_being_staged_into(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_second_reduction_is_measured_against_the_remaining_headroom(tmp_path):
     """Penalties are held in memory until the pass is approved, so the driver's stored
     time does not yet reflect the first one. Two reductions that each look legal alone
@@ -422,7 +409,6 @@ async def test_a_second_reduction_is_measured_against_the_remaining_headroom(tmp
     assert _replied(interaction).startswith("❌")
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_reduction_within_the_remaining_headroom_is_accepted(tmp_path):
     """The other side of the same bound: ten applied, four staged, six remain."""
     state = _state(
@@ -445,7 +431,6 @@ async def test_a_reduction_within_the_remaining_headroom_is_accepted(tmp_path):
     ],
     ids=["another-driver", "another-session", "disqualification", "no-further-action"],
 )
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_staged_penalty_the_sum_filters_out_does_not_count(tmp_path, already_staged):
     """The sum is filtered by driver, session and penalty type.
 
@@ -468,7 +453,6 @@ async def test_a_staged_penalty_the_sum_filters_out_does_not_count(tmp_path, alr
     assert len(state.staged) == 2
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_appeals_pass_counts_its_own_staged_corrections(tmp_path):
     """Each pass sums the list it stages into, so a penalty staged in the earlier pass
     does not constrain a correction in the later one."""
@@ -499,7 +483,6 @@ async def test_the_form_names_no_further_action_among_the_values(tmp_path):
     assert "NFA" in (modal.penalty_input.placeholder or "")
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_no_further_action_is_staged(tmp_path):
     state = _state(await _make_db(tmp_path))
 
@@ -510,7 +493,6 @@ async def test_no_further_action_is_staged(tmp_path):
     assert "**NFA**" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_no_further_action_is_staged_for_qualifying(tmp_path):
     state = _state(await _make_db(tmp_path, qualifying=True))
 
@@ -519,7 +501,6 @@ async def test_no_further_action_is_staged_for_qualifying(tmp_path):
     assert [sp.penalty_type for sp in state.staged] == ["NFA"]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_no_further_action_is_staged_as_a_correction(tmp_path):
     """A correction takes the same values as a penalty, so an appeal can be closed with
     no further action as well."""
@@ -533,7 +514,6 @@ async def test_no_further_action_is_staged_as_a_correction(tmp_path):
 
 
 @pytest.mark.parametrize("appeals", [False, True])
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_penalty_of_no_seconds_is_refused_pointing_to_no_further_action(
     tmp_path, appeals
 ):
@@ -574,7 +554,6 @@ async def _driver_moved_on(db_path: str) -> None:
 
 
 @pytest.mark.parametrize("typed", [DRIVER, NEW_ACCOUNT])
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_either_account_finds_a_result_stood_under_the_old_one(tmp_path, typed):
     """E7: staged under the account the row holds, which is what applies it, and named by the
     account the driver uses now."""
@@ -610,7 +589,6 @@ async def test_the_prompt_names_the_staged_driver_by_the_current_account(tmp_pat
 ROLE_MENTION = "<@&987654321098765432>"
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_group_mention_in_the_justification_is_refused(tmp_path):
     state = _state(await _make_db(tmp_path))
 
@@ -621,7 +599,6 @@ async def test_a_group_mention_in_the_justification_is_refused(tmp_path):
     assert "Staged" not in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_correction_carrying_a_group_mention_is_refused(tmp_path):
     """The appeals pass stages through the same form, and its verdict is published the same
     way."""
@@ -632,7 +609,6 @@ async def test_a_correction_carrying_a_group_mention_is_refused(tmp_path):
     assert state.staged_appeals == []
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_driver_mention_in_the_justification_is_staged(tmp_path):
     """Naming the other car is the ordinary thing to write; only a group is refused."""
     state = _state(await _make_db(tmp_path))
@@ -643,7 +619,6 @@ async def test_a_driver_mention_in_the_justification_is_staged(tmp_path):
     assert state.staged[0].justification == f"Contact with <@{STRANGER}> at turn one"
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_an_emoji_in_the_description_is_refused(tmp_path):
     """Neither text carries an emoji, which the graphic cannot draw faithfully."""
     state = _state(await _make_db(tmp_path))
@@ -654,7 +629,6 @@ async def test_an_emoji_in_the_description_is_refused(tmp_path):
     assert "description" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_server_emoji_in_the_justification_is_refused(tmp_path):
     state = _state(await _make_db(tmp_path))
 
@@ -664,7 +638,6 @@ async def test_a_server_emoji_in_the_justification_is_refused(tmp_path):
     assert "justification" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_formatting_in_the_justification_is_refused(tmp_path):
     """The text verdict would format it and the graphic draw it raw."""
     state = _state(await _make_db(tmp_path))
@@ -706,7 +679,6 @@ _FORM_REFUSALS = [
 
 
 @pytest.mark.parametrize("appeals, typed", _FORM_REFUSALS)
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_every_refused_penalty_or_correction_form_is_recorded(tmp_path, appeals, typed):
     """Alex fills in the Add Penalty form of round 3's penalty review (Division 1), or the Add
     Correction form of its appeals review, for the Feature Race, and is refused: the review has
@@ -739,7 +711,6 @@ async def test_every_refused_penalty_or_correction_form_is_recorded(tmp_path, ap
     assert line.endswith(f" refused for Alex (<@77>) — {reason}"), line
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_correction_is_not_staged_once_the_appeals_are_approved(tmp_path):
     """**D3.** The Add Correction form can outlive its appeals review: submitted once round 3's
     appeals were approved and the round made FINAL, it staged a correction nothing would ever
@@ -768,7 +739,6 @@ async def test_a_correction_is_not_staged_once_the_appeals_are_approved(tmp_path
 
 
 @pytest.mark.parametrize("appeals", [False, True], ids=["penalty", "correction"])
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_staging_writes_one_line(tmp_path, appeals):
     """Alex submits the Add Penalty form of round 3's penalty review (Division 1), or the Add
     Correction form of its appeals review, giving driver 4001 +5s in the Feature Race. It is

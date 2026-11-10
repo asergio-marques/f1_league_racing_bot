@@ -246,7 +246,6 @@ async def test_a_backup_taken_during_start_up_leaves_the_scheduler_paused(servic
     assert handed == [4343]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_lane_armed_timer_asks_on_its_conversation_s_lane(services, tmp_path):
     """A round's review channel, 707, holds a lock warning whose clear is armed. The league lane
     is stopped at a change of its own. When the timer fires, the callback the builder registered

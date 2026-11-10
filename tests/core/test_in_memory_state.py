@@ -258,7 +258,6 @@ async def test_clearing_a_leagues_state_forgets_what_became_of_a_reviews_button(
     assert _PRESSES == {}
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queue_holds(tmp_path):
     """A factory reset deletes the changes the queue holds replies for (#439), so the clear, with
     no module signed up to its hook, makes the queue forget them: a change finishing afterwards

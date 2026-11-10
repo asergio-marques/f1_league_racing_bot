@@ -29,8 +29,6 @@ from leaguebot.core.utils.formatting import discord_ts
 #: The time handed in, well before the host's clock, so that a stamp read from the host shows.
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
 
-_RETRY_TAKES_NOW = "#283: the retry queue stamps its times from the now handed in, not the host's clock"
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -75,7 +73,6 @@ class TestRetryWarnThreshold:
 
 class TestEnqueue:
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_row_has_correct_fields(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
@@ -103,7 +100,6 @@ class TestGetAllPending:
         result = await get_all_pending(db_path)
         assert result == []
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_returns_all_rows(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
@@ -130,7 +126,6 @@ class TestGetAllPending:
         assert result[0].content == "second"
         assert result[1].content == "first"
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_pending_message_fields_populated(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
@@ -151,7 +146,6 @@ class TestGetAllPending:
 
 class TestMarkDelivered:
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_deletes_row(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
@@ -161,7 +155,6 @@ class TestMarkDelivered:
         await mark_delivered(db_path, entry_id)
         assert await _row_count(db_path) == 0
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_only_deletes_targeted_row(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
@@ -187,7 +180,6 @@ class TestMarkDelivered:
 
 class TestMarkFailed:
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     @pytest.mark.parametrize("failures", [
         pytest.param(1, id="one failure"),
@@ -205,7 +197,6 @@ class TestMarkFailed:
         rows2 = await _fetch_all_rows(db_path)
         assert rows2[0]["retry_count"] == failures
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_sets_last_attempted_at(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
@@ -219,7 +210,6 @@ class TestMarkFailed:
         assert rows2[0]["last_attempted_at"] == (NOW + timedelta(minutes=5)).isoformat()
         assert rows2[0]["enqueued_at"] == NOW.isoformat()
 
-    @pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
     @pytest.mark.asyncio
     async def test_does_not_delete_row(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
@@ -258,7 +248,6 @@ async def _settle() -> None:
         await asyncio.sleep(0)
 
 
-@pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
 async def test_a_line_never_tried_is_delivered_by_the_retry_loop_without_a_retry_notice(tmp_path):
     """The bot stopped between saving a line and delivering it: nothing failed, so there is no
     retry to announce."""
@@ -277,7 +266,6 @@ async def test_a_line_never_tried_is_delivered_by_the_retry_loop_without_a_retry
     bot.output_router.post_log.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
 async def test_a_retried_line_is_sent_notifying_nobody(tmp_path):
     import discord
 
@@ -296,7 +284,6 @@ async def test_a_retried_line_is_sent_notifying_nobody(tmp_path):
     assert sent.to_dict() == discord.AllowedMentions.none().to_dict()
 
 
-@pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
 async def test_attempt_delivery_sends_through_the_log_writer(tmp_path, monkeypatch):
     """A log line for channel 555 that failed once (503) is retried. It is handed to the router's
     log writer with its channel and its stored text, not sent by the retry itself, and the row is
@@ -323,7 +310,6 @@ async def test_attempt_delivery_sends_through_the_log_writer(tmp_path, monkeypat
     assert await _row_count(db_path) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
 async def test_a_late_log_line_delivered_on_retry_reports_its_delivery_as_today(tmp_path):
     """A log line queued for channel 555 that failed once (503) is delivered on its first retry, to
     the log channel as it is now, 99. The log channel gets exactly one line, saying the delivery to
@@ -347,7 +333,6 @@ async def test_a_late_log_line_delivered_on_retry_reports_its_delivery_as_today(
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_RETRY_TAKES_NOW)
 async def test_a_stuck_late_log_line_warns_before_its_retry_as_today(tmp_path):
     """A log line queued for channel 555 that failed with 503 and has been retried
     RETRY_WARN_THRESHOLD times is retried once more and delivered to the log channel as it is now,

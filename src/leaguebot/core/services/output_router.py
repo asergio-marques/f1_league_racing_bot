@@ -28,8 +28,8 @@ import asyncio
 import logging
 import re
 import sqlite3
-from collections.abc import Iterable
-from datetime import datetime, timedelta, timezone
+from collections.abc import Callable, Iterable
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Optional
 
 import aiohttp
@@ -71,15 +71,23 @@ async def send_log_text(channel: discord.TextChannel, content: str) -> None:
 
 
 class OutputRouter:
-    """Writes the log channel, a failure to post contained; `log_destination` raises by design."""
+    """Writes the log channel, a failure to post contained; `log_destination` raises by design.
+
+    **The time is the builder's** (architecture.md, "The time is always passed in"): *now* is the
+    change queue's clock as the builder hands it, and the router reads it for the time it stamps a
+    queued line with, the time of a failed delivery's try and the window a member is warned within.
+    """
 
     def __init__(
         self,
         bot: "LeagueBot",
         config_service: "ConfigService",
         retry_db_path: "Optional[str]" = None,
+        *,
+        now: Callable[[], datetime],
     ) -> None:
         self._bot = bot
+        self._now = now
         # Handed in by the builder, which is the one place services are wired (architecture.md,
         # "Services stay attached to the bot, and are built in one place"): the router reads the
         # log channel from it and looks no service up on the bot.
@@ -293,7 +301,7 @@ class OutputRouter:
                 )
                 return
             interaction, task = answering.interaction, answering.task
-        now = datetime.now(timezone.utc)
+        now = self._now()
         for key, created in list(self._warned.items()):
             if now - created >= ANSWERABLE_FOR:
                 del self._warned[key]
@@ -373,7 +381,7 @@ class OutputRouter:
             (
                 row["log_channel_id"],
                 self._as_log_line(content),
-                datetime.now(timezone.utc).isoformat(),
+                self._now().isoformat(),
             ),
         )
         return inserted_id(cursor)
@@ -416,7 +424,9 @@ class OutputRouter:
                         warn_about = None
                         await retry_service.mark_delivered(db_path, entry_id)
                         continue
-                    await retry_service.mark_failed(db_path, entry_id, reason=reason)
+                    await retry_service.mark_failed(
+                        db_path, entry_id, reason=reason, now=self._now()
+                    )
             except Exception:
                 log.error("deliver_queued: could not deliver line id=%s", entry_id, exc_info=True)
             if warn_about is not None and interaction is not None:
@@ -542,6 +552,8 @@ class OutputRouter:
         if self._retry_db_path and wanted:
             try:
                 from leaguebot.core.services.retry_service import enqueue
-                await enqueue(self._retry_db_path, channel_id, content, failure_reason)
+                await enqueue(
+                    self._retry_db_path, channel_id, content, failure_reason, now=self._now()
+                )
             except Exception as exc:
                 log.error("_enqueue_if_configured: failed to enqueue: %s", exc, exc_info=True)
