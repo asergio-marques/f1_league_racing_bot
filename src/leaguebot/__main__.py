@@ -671,6 +671,7 @@ def _approve_view_for(bot: LeagueBot) -> "Callable[[dict[str, Any]], discord.ui.
             confirmation_refused=bot.confirmation_refused,
             driver_names_read=bot.driver_names_read,
             division_channel_faults_read=bot.division_channel_faults_read,
+            fingerprint_areas_read=bot.fingerprint_areas_read,
             now=bot.change_queue.now,
         )
 
@@ -1279,6 +1280,7 @@ def register_change_types(bot: LeagueBot) -> None:
             placements_confirmed=bot.placements_confirmed,
             placements_confirmed_steps=bot.placements_confirmed_steps,
             division_channel_faults_read=bot.division_channel_faults_read,
+            fingerprint_areas_read=bot.fingerprint_areas_read,
             rasteriser_fault=bot.image_drawing.rasteriser_fault,
             snapshot_points_on=snapshot_configs_to_season_on,
             now=lambda: bot.change_queue.now(),
@@ -1295,6 +1297,7 @@ def register_change_types(bot: LeagueBot) -> None:
             rasteriser_fault=bot.image_drawing.rasteriser_fault,
             driver_names_read=bot.driver_names_read,
             division_channel_faults_read=bot.division_channel_faults_read,
+            fingerprint_areas_read=bot.fingerprint_areas_read,
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -1307,6 +1310,7 @@ def register_change_types(bot: LeagueBot) -> None:
             teams=bot.team_service,
             configuration_confirmed=bot.configuration_confirmed,
             confirmation_refused=bot.confirmation_refused,
+            fingerprint_areas_read=bot.fingerprint_areas_read,
             now=lambda: bot.change_queue.now(),
         )
     )

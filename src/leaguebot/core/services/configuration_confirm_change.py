@@ -124,6 +124,7 @@ def configuration_confirm_change(
     teams: TeamService,
     configuration_confirmed: AwaitedHook,
     confirmation_refused: AwaitedHook,
+    fingerprint_areas_read: AwaitedHook,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that confirms a season's configuration; see the module.
@@ -132,7 +133,8 @@ def configuration_confirm_change(
     the faults read), the services the faults read (*modules*, *signup_module*, *configs* and
     *teams*), the *configuration_confirmed* hook each module's part is kept through, called inside
     the save on its connection, the *confirmation_refused* hook the modules' own faults are
-    read through, and *now* (the queue's clock).
+    read through, the *fingerprint_areas_read* hook each module's own areas of the fingerprint
+    are asked through, and *now* (the queue's clock).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -148,7 +150,13 @@ def configuration_confirm_change(
 
         # The report read is the report confirmed: the press compares the review's fingerprint,
         # and so does the run, since the season may have changed while it waited.
-        current = await take_fingerprint(ctx.db_path, season_id, drawing=drawing)
+        current = await take_fingerprint(
+            ctx.db_path,
+            season_id,
+            drawing=drawing,
+            module_service=modules,
+            fingerprint_areas_read=fingerprint_areas_read,
+        )
         changed = SeasonFingerprint(areas=dict(ctx.payload["fingerprint"])).differs_from(current)
         if changed:
             bullets = "\n".join(f"• {area}" for area in changed)

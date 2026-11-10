@@ -134,6 +134,7 @@ class ApproveView(LeagueView):
         confirmation_refused: AwaitedHook,
         driver_names_read: AwaitedHook,
         division_channel_faults_read: AwaitedHook,
+        fingerprint_areas_read: AwaitedHook,
         now: Callable[[], datetime],
     ) -> None:
         super().__init__(timeout=None)
@@ -152,6 +153,7 @@ class ApproveView(LeagueView):
         self._confirmation_refused = confirmation_refused
         self._driver_names_read = driver_names_read
         self._division_channel_faults_read = division_channel_faults_read
+        self._fingerprint_areas_read = fingerprint_areas_read
         self._now = now
         # The review the last press read from its row. A view serves one question, and a second
         # press is refused (`_refuse_if_under_way`) before it reads, so this is the row of the one
@@ -271,7 +273,11 @@ class ApproveView(LeagueView):
         if review is None or review.evidence is None:
             return []
         current = await season_fingerprint_service.take_fingerprint(
-            self._db_path, review.season_id, drawing=self._image_drawing
+            self._db_path,
+            review.season_id,
+            drawing=self._image_drawing,
+            module_service=self._module_service,
+            fingerprint_areas_read=self._fingerprint_areas_read,
         )
         return season_fingerprint_service.SeasonFingerprint(review.evidence).differs_from(current)
 
@@ -375,6 +381,7 @@ class ApproveView(LeagueView):
                 confirmation_refused=self._confirmation_refused,
                 driver_names_read=self._driver_names_read,
                 division_channel_faults_read=self._division_channel_faults_read,
+                fingerprint_areas_read=self._fingerprint_areas_read,
                 now=self._now,
                 deadline=review.deadline,
                 what=self._button,
@@ -477,6 +484,7 @@ class ConfirmMidSeasonPlacementsView(ApproveView):
             change_queue=self._change_queue,
             driver_names_read=self._driver_names_read,
             division_channel_faults_read=self._division_channel_faults_read,
+            fingerprint_areas_read=self._fingerprint_areas_read,
             what=what,
             fingerprint=fingerprint,
         )
@@ -523,6 +531,7 @@ class ConfirmConfigurationView(ApproveView):
             image_drawing=self._image_drawing,
             change_queue=self._change_queue,
             confirmation_refused=self._confirmation_refused,
+            fingerprint_areas_read=self._fingerprint_areas_read,
             what=what,
             fingerprint=fingerprint,
         )

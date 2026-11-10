@@ -418,9 +418,6 @@ async def test_a_role_discord_refuses_stops_the_queue_and_once_discarded_is_name
 # ── The checks ──────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: the fingerprint does not yet ask each module for its own areas"
-)
 async def test_the_approval_s_check_takes_the_fingerprint_with_the_image_module_s_drawing(
     tmp_path, monkeypatch,
 ):

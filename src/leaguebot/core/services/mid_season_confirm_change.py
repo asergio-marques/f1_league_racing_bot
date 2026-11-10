@@ -195,6 +195,7 @@ def mid_season_confirm_change(
     rasteriser_fault: Callable[[], str | None],
     driver_names_read: AwaitedHook,
     division_channel_faults_read: AwaitedHook,
+    fingerprint_areas_read: AwaitedHook,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that confirms a season's placements mid-season; see the module.
@@ -203,8 +204,9 @@ def mid_season_confirm_change(
     roles, a division's lineup), the image module's own drawing (*drawing*) and
     *rasteriser_fault* (what is wrong with the host's drawing program, None where nothing is),
     *driver_names_read* (the hook an unsettled driver is named through),
-    *division_channel_faults_read* (the hook each module names its own channels' faults through)
-    and *now* (the queue's clock, which stamps the lineup's audit).
+    *division_channel_faults_read* (the hook each module names its own channels' faults through),
+    *fingerprint_areas_read* (the hook each module's own areas of the fingerprint are asked
+    through) and *now* (the queue's clock, which stamps the lineup's audit).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -223,7 +225,13 @@ def mid_season_confirm_change(
 
         # The report read is the report confirmed: the press compares the review's fingerprint,
         # and so does the run, since the season may have changed while it waited.
-        current = await take_fingerprint(ctx.db_path, season_id, drawing=drawing)
+        current = await take_fingerprint(
+            ctx.db_path,
+            season_id,
+            drawing=drawing,
+            module_service=modules,
+            fingerprint_areas_read=fingerprint_areas_read,
+        )
         changed = SeasonFingerprint(areas=dict(ctx.payload["fingerprint"])).differs_from(current)
         if changed:
             bullets = "\n".join(f"• {area}" for area in changed)

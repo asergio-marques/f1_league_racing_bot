@@ -14,9 +14,15 @@ which.
 changed" is actionable where "something changed" is not — so each area is hashed alone
 and compared alone.
 
-This replaced a full trial render at approval (2026-09-07). The render only ever caught a
-change that broke a *drawing*; this catches any change at all, and costs a dozen indexed
-reads rather than an Inkscape pass per division.
+A full trial render at approval would only ever catch a change that broke a *drawing*; this
+catches any change at all, and costs a dozen indexed reads rather than an Inkscape pass per
+division.
+
+**Core reads its own tables and no module's.** What the review reports of a module is asked of
+the module, through the `fingerprint_areas_read` hook, on the connection the fingerprint holds
+open: each subscriber hands back the rows of its own configuration by area, whatever its switch,
+and this digests them. Which modules are on is asked of each module's switch reader through the
+module service, and the artwork on disk of the image module's drawing.
 
 **Ordering is explicit everywhere.** Every query carries an ``ORDER BY`` and every mapping
 is serialised through ``sorted()``. A digest that depended on dict insertion order or on
@@ -30,9 +36,14 @@ import hashlib
 import json
 import logging
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
-from leaguebot.core.db.database import get_connection
+from leaguebot.core.db.database import get_connection, tuple_rows
 from leaguebot.core.services.image_drawing import ImageDrawing
+
+if TYPE_CHECKING:
+    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.utils.hooks import AwaitedHook
 
 log = logging.getLogger(__name__)
 
@@ -40,8 +51,9 @@ __all__ = ["SeasonFingerprint", "AREA_LABELS", "take_fingerprint"]
 
 
 #: Every area, and the phrase a refusal uses for it. The keys are what a digest is stored
-#: under; a new area added to `take_fingerprint` belongs here too, or the refusal naming it
-#: would fall back to the bare key.
+#: under, and what a module hands the `fingerprint_areas_read` hook its rows under; a new area,
+#: core's or a module's, belongs here too, or the refusal naming it would fall back to the bare
+#: key.
 AREA_LABELS: dict[str, str] = {
     "season": "the season's own settings",
     "divisions": "the divisions",
@@ -93,33 +105,42 @@ def _digest(value) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
-async def _rows(db, sql: str, *params) -> list[tuple]:
-    """Every row as a plain tuple, so a digest does not depend on the row factory."""
-    cursor = await db.execute(sql, params)
-    return [tuple(row) for row in await cursor.fetchall()]
-
-
 async def take_fingerprint(
-    db_path: str, season_id: int, *, drawing: ImageDrawing
+    db_path: str,
+    season_id: int,
+    *,
+    drawing: ImageDrawing,
+    module_service: ModuleService,
+    fingerprint_areas_read: AwaitedHook,
 ) -> SeasonFingerprint:
     """Fingerprint everything `/season placements-review` reports for *season_id*, read from
-    *db_path*. *drawing* is the image module's own drawing (`bot.image_drawing`), asked for the
-    league's artwork signature — the one area a database read cannot see.
+    *db_path*. Core's own areas are read here; each module's are asked of it, through
+    *fingerprint_areas_read* (`bot.fingerprint_areas_read`), handed the connection held and the
+    season; which modules are on is asked of each switch reader through *module_service*; and
+    *drawing* is the image module's own drawing (`bot.image_drawing`), asked for the league's
+    artwork signature, the one area a database read cannot see.
 
     One connection for the lot. Never raises: a fingerprint that could not be taken is an
-    empty one, and an empty fingerprint differs from every other, so a fault here refuses
-    an approval whose review was read rather than waving it through: its catch-all logs the fault
-    on the host and gives that empty one.
+    empty one, and an empty fingerprint differs from every other, so a fault here, a module's
+    included, refuses an approval whose review was read rather than waving it through: its
+    catch-all logs the fault on the host and gives that empty one.
     """
     areas: dict[str, str] = {}
     try:
         async with get_connection(db_path) as db:
+            # What each module hands of its own configuration, by area, in the order the
+            # modules signed up.
+            handed: dict[str, list[Any]] = {}
+            for each in await fingerprint_areas_read.call(db, season_id):
+                for area, value in each.items():
+                    handed.setdefault(area, []).append(value)
+
             # The stage as well as the status: confirming a configuration, or mid-season
             # placements, moves the stage alone, and a review of the stage left behind no
-            # longer describes the season (#439). An approval's own review, check and
+            # longer describes the season. An approval's own review, check and
             # re-judgement all read it in Placements, so it never moves between them.
             areas["season"] = _digest(
-                await _rows(
+                await tuple_rows(
                     db,
                     "SELECT start_date, status, stage, season_number, game_edition "
                     "FROM seasons WHERE id = ?",
@@ -128,7 +149,7 @@ async def take_fingerprint(
             )
 
             areas["divisions"] = _digest(
-                await _rows(
+                await tuple_rows(
                     db,
                     "SELECT id, name, tier, mention_role_id, status "
                     "FROM divisions WHERE season_id = ? ORDER BY id",
@@ -137,7 +158,7 @@ async def take_fingerprint(
             )
 
             areas["rounds"] = _digest(
-                await _rows(
+                await tuple_rows(
                     db,
                     "SELECT r.division_id, r.round_number, r.format, r.track_name, "
                     "       r.scheduled_at, r.status "
@@ -149,7 +170,7 @@ async def take_fingerprint(
             )
 
             areas["teams"] = _digest(
-                await _rows(
+                await tuple_rows(
                     db,
                     "SELECT ti.division_id, ti.id, ti.name, ti.full_name, ti.max_seats, "
                     "       ti.is_reserve, "
@@ -164,7 +185,7 @@ async def take_fingerprint(
             )
 
             areas["drivers"] = _digest(
-                await _rows(
+                await tuple_rows(
                     db,
                     "SELECT dsa.division_id, dsa.driver_profile_id, dsa.team_seat_id, "
                     "       dp.current_state "
@@ -176,13 +197,13 @@ async def take_fingerprint(
                 )
             )
 
-            # Every signup still unsettled on the server (issue #220): the review names each, and
+            # Every signup still unsettled on the server: the review names each, and
             # confirming placements waits on them, so a signup approved, rejected or sent back
             # after the report is a change to what would be confirmed.
             from leaguebot.core.services.season_lifecycle_service import UNSETTLED_STATES
 
             areas["unsettled signups"] = _digest(
-                await _rows(
+                await tuple_rows(
                     db,
                     "SELECT id, discord_user_id, current_state FROM driver_profiles "
                     f"WHERE current_state IN ({','.join('?' for _ in UNSETTLED_STATES)}) "
@@ -191,80 +212,45 @@ async def take_fingerprint(
                 )
             )
 
-            # Every channel the season posts to: the three on the divisions row, the three
-            # of the results config and the two of the attendance config.
+            # Every channel the season posts to: the lineup and calendar channels on the divisions
+            # row, which are core's, then each module's own, in the order they signed up.
             areas["channels"] = _digest(
                 [
-                    await _rows(
+                    await tuple_rows(
                         db,
-                        "SELECT id, forecast_channel_id, lineup_channel_id, "
-                        "       calendar_channel_id "
+                        "SELECT id, lineup_channel_id, calendar_channel_id "
                         "FROM divisions WHERE season_id = ? ORDER BY id",
                         season_id,
                     ),
-                    await _rows(
-                        db,
-                        "SELECT c.division_id, c.results_channel_id, "
-                        "       c.standings_channel_id, c.penalty_channel_id, "
-                        "       c.reserves_in_standings "
-                        "FROM division_results_config c "
-                        "JOIN divisions d ON d.id = c.division_id "
-                        "WHERE d.season_id = ? ORDER BY c.division_id",
-                        season_id,
-                    ),
-                    await _rows(
-                        db,
-                        "SELECT c.division_id, c.rsvp_channel_id, c.attendance_channel_id "
-                        "FROM attendance_division_config c "
-                        "JOIN divisions d ON d.id = c.division_id "
-                        "WHERE d.season_id = ? ORDER BY c.division_id",
-                        season_id,
-                    ),
+                    *handed.pop("channels", []),
                 ]
             )
 
-            # The four module switches, which live in three places: weather and signup on
-            # the server row, results and attendance each in their own config table.
+            # Which modules are on, each asked of its own switch reader on this connection.
             areas["modules"] = _digest(
-                [
-                    await _rows(
-                        db,
-                        "SELECT weather_module_enabled, signup_module_enabled "
-                        "FROM server_configs",
-                    ),
-                    await _rows(
-                        db,
-                        "SELECT module_enabled FROM results_module_config "
-                        "",
-                    ),
-                    await _rows(
-                        db,
-                        "SELECT module_enabled FROM attendance_config",
-                    ),
-                    await _rows(
-                        db,
-                        "SELECT module_enabled FROM image_config",
-                    ),
-                ]
+                {
+                    module: await module_service.is_enabled_on(db, module)
+                    for module in ("weather", "signup", "results", "attendance", "images")
+                }
             )
 
             # Test mode and the server's team list are what confirming a configuration
-            # fixes for the season (issue #220), so a change to either after the report
+            # fixes for the season, so a change to either after the report
             # is a change to what would be confirmed.
             areas["test mode"] = _digest(
-                await _rows(
+                await tuple_rows(
                     db,
                     "SELECT test_mode_active FROM server_configs",
                 )
             )
             areas["team list"] = _digest(
                 [
-                    await _rows(
+                    await tuple_rows(
                         db,
                         "SELECT name, full_name, max_seats, is_reserve FROM default_teams "
                         " ORDER BY name",
                     ),
-                    await _rows(
+                    await tuple_rows(
                         db,
                         "SELECT team_name, role_id FROM team_role_configs "
                         " ORDER BY team_name",
@@ -272,114 +258,17 @@ async def take_fingerprint(
                 ]
             )
 
-            areas["points"] = _digest(
-                [
-                    await _rows(
-                        db,
-                        "SELECT config_name FROM season_points_links "
-                        "WHERE season_id = ? ORDER BY config_name",
-                        season_id,
-                    ),
-                    await _rows(
-                        db,
-                        "SELECT config_name, session_type, position, points "
-                        "FROM season_points_entries WHERE season_id = ? "
-                        "ORDER BY config_name, session_type, position",
-                        season_id,
-                    ),
-                    await _rows(
-                        db,
-                        "SELECT config_name, session_type, fl_points, fl_position_limit "
-                        "FROM season_points_fl WHERE season_id = ? "
-                        "ORDER BY config_name, session_type",
-                        season_id,
-                    ),
-                    # What the approval copies onto the season: the server's own entries and
-                    # fastest-lap rows of the attached configurations, which an edit before the
-                    # approval would otherwise change without the fingerprint noticing.
-                    await _rows(
-                        db,
-                        "SELECT s.config_name, e.session_type, e.position, e.points "
-                        "FROM points_config_entries e "
-                        "JOIN points_config_store s ON s.id = e.config_id "
-                        "WHERE s.config_name IN "
-                        "(SELECT config_name FROM season_points_links WHERE season_id = ?) "
-                        "ORDER BY s.config_name, e.session_type, e.position",
-                        season_id,
-                    ),
-                    await _rows(
-                        db,
-                        "SELECT s.config_name, f.session_type, f.fl_points, f.fl_position_limit "
-                        "FROM points_config_fl f "
-                        "JOIN points_config_store s ON s.id = f.config_id "
-                        "WHERE s.config_name IN "
-                        "(SELECT config_name FROM season_points_links WHERE season_id = ?) "
-                        "ORDER BY s.config_name, f.session_type",
-                        season_id,
-                    ),
-                ]
-            )
-
-            # The league's two roles, core's rather than the signup module's (issue #276).
+            # The league's two roles, core's rather than the signup module's.
             # Only the configuration review reports them; confirming the configuration fixes
             # them, so at placements they cannot differ and this area never trips.
             areas["roles"] = _digest(
-                await _rows(db, "SELECT base_role_id, driver_role_id FROM server_configs")
+                await tuple_rows(db, "SELECT base_role_id, driver_role_id FROM server_configs")
             )
 
-            areas["signup"] = _digest(
-                [
-                    await _rows(
-                        db,
-                        "SELECT signup_channel_id, "
-                        "       signups_open, selected_tracks_json, close_at "
-                        "FROM signup_module_config",
-                    ),
-                    await _rows(
-                        db,
-                        "SELECT nationality_required, time_type, time_image_required "
-                        "FROM signup_module_settings",
-                    ),
-                    await _rows(
-                        db,
-                        "SELECT id, day_of_week, time_hhmm "
-                        "FROM signup_availability_slots "
-                        " ORDER BY id",
-                    ),
-                ]
-            )
-
-            areas["attendance"] = _digest(
-                await _rows(
-                    db,
-                    "SELECT module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
-                    "       rsvp_deadline_hours, no_rsvp_penalty, absent_penalty, "
-                    "       no_show_penalty, autoreserve_threshold, autosack_threshold "
-                    "FROM attendance_config",
-                )
-            )
-
-            areas["weather"] = _digest(
-                await _rows(
-                    db,
-                    "SELECT phase_1_days, phase_2_days, phase_3_hours "
-                    "FROM weather_pipeline_config",
-                )
-            )
-
-            image_config = await _rows(
-                db, "SELECT * FROM image_config"
-            )
-            areas["images"] = _digest(
-                [
-                    image_config,
-                    await _rows(
-                        db,
-                        "SELECT aspect, enabled FROM image_aspect_toggles "
-                        " ORDER BY aspect",
-                    ),
-                ]
-            )
+            # Every other area a module handed, each the digest of what the modules handed under
+            # it.
+            for area, values in handed.items():
+                areas[area] = _digest(values)
 
         areas["artwork"] = _digest(await drawing.artwork_signature())
     except Exception as exc:  # noqa: BLE001 — an unreadable season is a changed one

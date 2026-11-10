@@ -282,6 +282,7 @@ def season_approval_change(
     placements_confirmed: AwaitedHook,
     placements_confirmed_steps: Hook,
     division_channel_faults_read: AwaitedHook,
+    fingerprint_areas_read: AwaitedHook,
     rasteriser_fault: Callable[[], str | None],
     snapshot_points_on: Callable[[aiosqlite.Connection, int], Awaitable[None]],
     now: Callable[[], datetime],
@@ -290,13 +291,14 @@ def season_approval_change(
 
     The builder hands in *modules* and *config* (which modules are on, and test mode), the
     *seasons* service (the divisions and rounds the check, the arming and the calendar read), the
-    *scheduler* and the *placement* service, the image module's own drawing (*drawing*, #283),
+    *scheduler* and the *placement* service, the image module's own drawing (*drawing*),
     *round_windows_read* (the hook the enabled modules' windows are read through),
     *placements_confirmed* (the hook each module's opening post is planned through, called
     inside the save for each division in turn, on the save's connection) and
     *placements_confirmed_steps* (each module's step definitions for its own opening post, by
     name), *division_channel_faults_read* (the hook each module names its own channels' faults
-    through), *rasteriser_fault* (what is wrong with the host's drawing program, None where nothing
+    through), *fingerprint_areas_read* (the hook each module's own areas of the fingerprint are
+    asked through), *rasteriser_fault* (what is wrong with the host's drawing program, None where nothing
     is), results' *snapshot_points_on* (the points snapshot on a handed save, which reads
     results' own switch) and *now* (the queue's clock).
     """
@@ -314,7 +316,13 @@ def season_approval_change(
 
         # The report read is the report approved: the press compares the review's fingerprint,
         # and so does the run, since the season may have changed while it waited.
-        current = await take_fingerprint(ctx.db_path, season_id, drawing=drawing)
+        current = await take_fingerprint(
+            ctx.db_path,
+            season_id,
+            drawing=drawing,
+            module_service=modules,
+            fingerprint_areas_read=fingerprint_areas_read,
+        )
         changed = SeasonFingerprint(areas=dict(ctx.payload["fingerprint"])).differs_from(current)
         if changed:
             bullets = "\n".join(f"• {area}" for area in changed)

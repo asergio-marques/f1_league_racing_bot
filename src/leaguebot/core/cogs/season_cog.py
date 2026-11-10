@@ -161,7 +161,11 @@ class SeasonCog(commands.Cog):
         if offered:
             evidence = (
                 await take_fingerprint(
-                    self.bot.db_path, season_id, drawing=self.bot.image_drawing
+                    self.bot.db_path,
+                    season_id,
+                    drawing=self.bot.image_drawing,
+                    module_service=self.bot.module_service,
+                    fingerprint_areas_read=self.bot.fingerprint_areas_read,
                 )
             ).areas
             if question is None:

@@ -38,10 +38,6 @@ from tests.support.review_workflows import take_season_fingerprint
 SERVER_ID = 8811
 _NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
 
-#: Why each test of the fingerprint asking the modules fails until it does.
-_MODULES_ASKED = "#283: the fingerprint does not yet ask each module for its own areas"
-_SWITCHES_ASKED = "#283: the modules area is not yet answered by each module's switch reader"
-
 #: The modules, by the name each signs its switch reader up under.
 _MODULES = ("weather", "signup", "results", "attendance", "images")
 
@@ -281,7 +277,6 @@ async def test_the_modules_area(season, module):
     assert changed == [AREA_LABELS[area] for area in sorted(["modules", *also])]
 
 
-@pytest.mark.xfail(strict=True, reason=_SWITCHES_ASKED)
 async def test_the_modules_area_is_answered_by_each_module_s_switch_reader(season):
     """Every module's flag in the database stays off; each module's switch reader is a stand-in
     answering what the test sets. Images' reader answering on between the review and the button
@@ -582,7 +577,6 @@ async def test_an_edit_to_a_module_s_configuration_changes_what_that_module_hand
     assert changed == [(_MODULE_AREAS[module], {area})]
 
 
-@pytest.mark.xfail(strict=True, reason=_MODULES_ASKED)
 @pytest.mark.parametrize("fault", ["a module's read fails", "no module hands its areas"])
 async def test_a_module_s_areas_not_read_leave_an_empty_fingerprint_logged(
     season, caplog, fault,

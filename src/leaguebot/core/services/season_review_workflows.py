@@ -96,6 +96,7 @@ async def confirm_configuration(
     image_drawing: ImageDrawing,
     change_queue: ChangeQueue,
     confirmation_refused: AwaitedHook,
+    fingerprint_areas_read: AwaitedHook,
     what: str | None = None,
     fingerprint: dict | None = None,
 ) -> bool:
@@ -151,7 +152,13 @@ async def confirm_configuration(
 
     if fingerprint is None:
         fingerprint = (
-            await take_fingerprint(db_path, season.id, drawing=image_drawing)
+            await take_fingerprint(
+                db_path,
+                season.id,
+                drawing=image_drawing,
+                module_service=module_service,
+                fingerprint_areas_read=fingerprint_areas_read,
+            )
         ).areas
     confirmation = {
         "season_id": season.id,
@@ -182,6 +189,7 @@ async def confirm_mid_season_placements(
     change_queue: ChangeQueue,
     driver_names_read: AwaitedHook,
     division_channel_faults_read: AwaitedHook,
+    fingerprint_areas_read: AwaitedHook,
     what: str | None = None,
     fingerprint: dict | None = None,
 ) -> bool:
@@ -242,7 +250,15 @@ async def confirm_mid_season_placements(
         return False
 
     if fingerprint is None:
-        fingerprint = (await take_fingerprint(db_path, season.id, drawing=image_drawing)).areas
+        fingerprint = (
+            await take_fingerprint(
+                db_path,
+                season.id,
+                drawing=image_drawing,
+                module_service=module_service,
+                fingerprint_areas_read=fingerprint_areas_read,
+            )
+        ).areas
     # The review comes down ahead of the confirmation's own jobs, but only for a request
     # the queue accepts: one it refuses at once leaves the review standing.
     confirmation = {
@@ -504,6 +520,7 @@ async def approve_season(
     confirmation_refused: AwaitedHook,
     driver_names_read: AwaitedHook,
     division_channel_faults_read: AwaitedHook,
+    fingerprint_areas_read: AwaitedHook,
     now: Callable[[], datetime],
     deadline: datetime | None = None,
     what: str | None = None,
@@ -799,7 +816,15 @@ async def approve_season(
         return False
 
     if fingerprint is None:
-        fingerprint = (await take_fingerprint(db_path, season.id, drawing=image_drawing)).areas
+        fingerprint = (
+            await take_fingerprint(
+                db_path,
+                season.id,
+                drawing=image_drawing,
+                module_service=module_service,
+                fingerprint_areas_read=fingerprint_areas_read,
+            )
+        ).areas
     # The review comes down ahead of the approval's own jobs, but only for an approval the
     # queue accepts: a request it refuses at once leaves the review standing (core
     # "Confirming placements"). So the two are asked in one save, the take-down first, and a
