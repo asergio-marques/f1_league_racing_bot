@@ -2898,9 +2898,9 @@ def test_a_listed_clock_read_that_is_gone_fails_the_clock_checks():
 # ── 17. A catch-all sits in one of the five places ──────────────────────────────────────────
 
 #: The functions whose catch-all is one of the five places and is not recognised by its shape, for
-#: good, and why: the failure paths of place 1, the stated exceptions, place 2's handlers called
-#: for each item, the guards around reporting and the fifth place's handlers (architecture.md, "A
-#: catch-all error handler"). A handler that re-raises, that calls `report_failure`, or that sits
+#: good, and why: the failure paths of place 1, the stated exceptions, place 3's guards around
+#: reporting and writing a log line, and the fifth place's handlers (architecture.md, "A catch-all
+#: error handler"). A handler that re-raises, that calls `report_failure`, or that sits
 #: directly in the body of a loop needs no entry.
 CATCH_ALLS_ALLOWED = {
     ("core/services/change_queue.py", "ChangeQueue._work_lane"):
@@ -2914,21 +2914,29 @@ CATCH_ALLS_ALLOWED = {
     ("core/utils/autocomplete.py", "bounded_autocomplete.decorate.wrapper"):
         "the autocompletes' failure path: no choices, and the error to the host's log",
     ("core/services/change_queue.py", "ChangeQueue._acknowledge"):
-        "a stated exception: the queue's own telling of a change's outcome never fails the change",
+        "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
+        "undoes what it tells",
     ("core/services/change_queue.py", "ChangeQueue._acknowledge_saved"):
-        "a stated exception: the queue's own telling of a change's outcome never fails the change",
+        "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
+        "undoes what it tells",
     ("core/services/change_queue.py", "ChangeQueue._finish"):
-        "a stated exception: the queue's own telling of a change's outcome never fails the change",
+        "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
+        "undoes what it tells",
     ("core/services/change_queue.py", "ChangeQueue._name_job"):
-        "a stated exception: the queue's own telling of a change's outcome never fails the change",
+        "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
+        "undoes what it tells",
     ("core/services/change_queue.py", "ChangeQueue._post_notice"):
-        "a stated exception: the queue's own telling of a change's outcome never fails the change",
+        "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
+        "undoes what it tells",
     ("core/services/change_queue.py", "ChangeQueue._tell"):
-        "a stated exception: the queue's own telling of a change's outcome never fails the change",
+        "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
+        "undoes what it tells",
     ("core/services/change_queue.py", "ChangeQueue._tell_origin"):
-        "a stated exception: the queue's own telling of a change's outcome never fails the change",
+        "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
+        "undoes what it tells",
     ("core/services/change_queue.py", "ChangeQueue._update_reply"):
-        "a stated exception: the queue's own telling of a change's outcome never fails the change",
+        "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
+        "undoes what it tells",
     ("core/services/change_queue.py", "ChangeQueue._end_on_check_fault"):
         "a failure path: a hook that raises leads to the lane's stop",
     ("core/services/change_queue.py", "ChangeQueue._refuse"):
@@ -2953,15 +2961,16 @@ CATCH_ALLS_ALLOWED = {
         "place 3, around keeping for retry a log line that could not be posted, the router's own "
         "containment",
     ("core/services/output_router.py", "OutputRouter.strip_view"):
-        "a stated exception: the queue's own telling of a change's outcome never fails the change",
+        "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
+        "undoes what it tells",
     ("core/utils/log_lines.py", "record_refusal"):
         "place 3, around recording a refusal already answered",
     ("core/utils/log_lines.py", "name_of_member"):
         "place 3, around naming a member in a line: one who cannot be looked up is named by mention "
         "alone",
     ("core/services/scheduler_service.py", "SchedulerService._remove_job"):
-        "place 2, called for each job of a teardown list: one job that will not go must not stop "
-        "the rest",
+        "a stated exception: every cancel is a clean-up, so a job that will not go is logged and "
+        "left",
     ("core/services/amendment_service.py", "approval_faults"):
         "a stated exception: an attendance switch that cannot be read never refuses an amendment",
     ("core/services/approval_checks.py", "channel_on_server"):
@@ -3130,8 +3139,9 @@ def test_a_catch_all_handler_sits_in_one_of_the_five_places():
     "A catch-all error handler"): on a failure path, where `report_failure` is called; around a
     list worked item by item, where it sits directly in the loop's body; around reporting a
     failure; around a clean-up that raises the error again; and around work a specification gives
-    a fallback for. The shape tells the first, second and fourth; the stated exceptions and the
-    guards of reporting are named for good in `CATCH_ALLS_ALLOWED`. Any other is a breach, listed
+    a fallback for. The shape tells the first, second and fourth; the failure paths of place 1 the
+    shape does not tell, the stated exceptions, place 3's guards around reporting and writing a log
+    line, and the fifth place's handlers are named for good in `CATCH_ALLS_ALLOWED`. Any other is a breach, listed
     with the issue that will fix it."""
     _check(
         "a catch-all sits in one of the five places",
