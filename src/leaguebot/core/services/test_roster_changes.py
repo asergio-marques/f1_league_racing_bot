@@ -15,7 +15,8 @@ judges them once more on its own connection, ending the change in the same words
 up since, changing nothing and not stopping the lane.
 
 **One SAVE** seats the driver (`seat_on`: the profile, the seat and the season assignment) and
-writes the `TEST_DRIVER_ADDED` audit entry and the log line, stamped by the queue's clock. The
+writes the `TEST_DRIVER_ADDED` audit entry, which records the division's stored name, and the log
+line, which keeps the name as typed, stamped by the queue's clock. The
 synthetic id is allocated inside the save, so two drivers never share one.
 
 **A fault in the save stops the lane**, as a failed job does, for the reason `/division delete`'s
@@ -198,7 +199,7 @@ def test_roster_add_change(*, placement: Callable[[], PlacementService]) -> Chan
             "driver": placed["display_name"],
             "user_id": str(placed["discord_user_id"]),
             "team": placed["team_name"],
-            "division": division,
+            "division": judged.located.division_name,
             "nationality": placed["nationality"],
         }
         line = (
