@@ -752,6 +752,49 @@ async def test_a_module_s_part_of_each_end_save_runs_on_that_save_s_connection(
     assert [row["part"] for row in rows] == ["returned"]
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: the history does not yet ask a driver's standing of the modules",
+)
+@pytest.mark.parametrize("kind", [SEASON_COMPLETE_KIND, SEASON_CANCEL_KIND],
+                         ids=["completion", "cancellation"])
+async def test_the_history_asks_each_driver_s_standing_inside_the_end_save(tmp_path, kind):
+    """A further module signs up to answer a driver's standing in a division for the history,
+    answering nothing, and the season is completed (every round final) or cancelled (ongoing). The
+    module is asked once for each driver in each division they were placed in this season,
+    handed that division and every account the driver holds, each time inside the save that
+    writes the history."""
+    from tests.support.season_league import cancel_season, ongoing_league
+
+    if kind == SEASON_COMPLETE_KIND:
+        league = await pending_completion_league(tmp_path)
+    else:
+        league = await ongoing_league(tmp_path)
+    placed = await league.rows(
+        "SELECT m.division_id, (SELECT GROUP_CONCAT(a.discord_user_id) FROM ("
+        "  SELECT discord_user_id FROM driver_accounts WHERE driver_profile_id = "
+        "  m.driver_profile_id ORDER BY discord_user_id) a) AS held "
+        "FROM driver_division_memberships m WHERE m.season_id = ?",
+        SEASON_ID,
+    )
+    expected = sorted((row["division_id"], tuple(row["held"].split(",")), True) for row in placed)
+    asked: list[tuple[int, tuple[str, ...], bool]] = []
+
+    async def _watching(db: Any, division_id: int, accounts: Any) -> None:
+        asked.append((division_id, tuple(sorted(str(a) for a in accounts)), db.in_transaction))
+        return None
+
+    league.bot.season_standing_read.subscribe(_watching)
+    if kind == SEASON_COMPLETE_KIND:
+        await _asked(league)
+    else:
+        await cancel_season(league)
+
+    await run_queue(league.bot)
+
+    assert expected
+    assert sorted(asked) == expected
+
+
 async def test_a_stop_part_way_is_finished_on_restart_and_posts_no_final_classification_twice(
     tmp_path,
 ):
