@@ -848,6 +848,36 @@ async def test_a_step_may_ask_for_a_change_of_its_own_in_its_own_save(env):
     assert ran == ["o"]
 
 
+async def test_a_follow_on_s_note_that_cannot_be_worded_leaves_the_reply_unnoted(env, caplog):
+    """A follow-on whose note for the reply of the change that asked for it
+    (`ChangeType.tell_origin`) raises is still done, and the reply carries no note: the fault is
+    logged on the host."""
+    api = _api()
+    ran: list[str] = []
+
+    async def _ask_for_more(db, _ctx):
+        return api.StepResult(follow_ons=(api.FollowOn("other", {"x": 1}, "Doing more"),))
+
+    def _unwordable(_ctx):
+        raise RuntimeError("the note broke")
+
+    _queue(
+        env,
+        _type(steps=[api.Step("a", api.StepKind.SAVE, _ask_for_more)]),
+        dataclasses.replace(_type("other", steps=[_act("o", ran)]), tell_origin=_unwordable),
+    )
+    interaction = member_interaction(env.bot)
+
+    await _ask(env, interaction=interaction)
+    with caplog.at_level(logging.ERROR):
+        await run_queue(env.bot)
+
+    assert await _states(env) == ["DONE", "DONE"]
+    assert ran == ["o"]
+    assert updated_reply(interaction) == "✅ Done."
+    assert any(str(r.exc_info[1]) == "the note broke" for r in _host_errors(caplog))
+
+
 # ---------------------------------------------------------------------------
 # Stops and restarts
 # ---------------------------------------------------------------------------
@@ -1072,6 +1102,34 @@ async def test_a_fault_acknowledging_a_saved_change_still_returns_its_id_and_run
     )
 
 
+async def test_a_request_whose_acknowledgement_cannot_be_worded_still_returns_its_id_and_runs(
+    env, caplog
+):
+    """A change type whose `doing` raises as the saved change is acknowledged fails neither the
+    request nor the change: `ask` still returns the change's id, the member is sent no
+    acknowledgement, the change runs, and the fault is logged on the host with its traceback."""
+    ran: list[str] = []
+
+    def _unwordable(_payload):
+        raise RuntimeError("the wording broke")
+
+    _queue(env, dataclasses.replace(_type(steps=[_act("a", ran)]), doing=_unwordable))
+    interaction = member_interaction(env.bot)
+
+    with caplog.at_level(logging.ERROR):
+        change_id = await _ask(env, interaction=interaction)
+    await run_queue(env.bot)
+
+    [row] = await change_rows(env.db_path)
+    assert change_id == row["id"]
+    assert ran == ["a"]
+    assert await _states(env) == ["DONE"]
+    assert acknowledgement(interaction) == ""
+    assert any(
+        str(r.exc_info[1]) == "the wording broke" for r in _host_errors(caplog)
+    )
+
+
 async def test_the_worker_does_not_take_a_change_before_its_acknowledgement_is_recorded(env):
     """The worker, busy with another change, finishes it while the member's answer is still being
     sent: it takes the new change only once that answer is done, and then updates it."""
@@ -1126,8 +1184,8 @@ async def test_the_worker_does_not_take_a_change_before_its_acknowledgement_is_r
 
 async def test_a_check_that_raises_stops_the_queue_and_later_changes_run_once_it_is_discarded(env):
     """A check raising as its change starts stops the queue on that change, and the changes
-    behind it wait; once a league admin discards it they run. An outcome that cannot be worded
-    still leaves its change done."""
+    behind it wait; once a league admin discards it they run. An outcome that cannot be worded,
+    and closing lines that cannot be worded, each still leave their change done."""
     holder = {"raise": False}
     ran: list[str] = []
 
@@ -1139,20 +1197,25 @@ async def test_a_check_that_raises_stops_the_queue_and_later_changes_run_once_it
     def _unwordable(_ctx):
         raise RuntimeError("the outcome broke")
 
+    def _unlined(_ctx):
+        raise RuntimeError("the closing lines broke")
+
     _queue(
         env,
         _type("checked", steps=[_act("c", ran)], check=_check),
         _type("worded", steps=[_act("w", ran)], outcome=_unwordable),
+        dataclasses.replace(_type("lined", steps=[_act("l", ran)]), finished_lines=_unlined),
         _type("dummy", steps=[_act("a", ran)]),
     )
 
     await _ask(env, "checked", what="`/checked`")
     await _ask(env, "worded", what="`/worded`")
+    await _ask(env, "lined", what="`/lined`")
     await _ask(env, "dummy")
     holder["raise"] = True
     await run_queue(env.bot)
 
-    assert await _states(env) == ["QUEUED", "QUEUED", "QUEUED"]
+    assert await _states(env) == ["QUEUED", "QUEUED", "QUEUED", "QUEUED"]
     assert ran == []
     stop = [line for line in await _lines(env) if "The queue is stopped at job #" in line]
     assert len(stop) == 1
@@ -1160,8 +1223,8 @@ async def test_a_check_that_raises_stops_the_queue_and_later_changes_run_once_it
 
     await discard_job(env.bot)
 
-    assert await _states(env) == ["DISCARDED", "DONE", "DONE"]
-    assert ran == ["w", "a"]
+    assert await _states(env) == ["DISCARDED", "DONE", "DONE", "DONE"]
+    assert ran == ["w", "l", "a"]
 
 
 async def test_the_worker_carries_on_after_a_fault_outside_any_change(env, monkeypatch):
@@ -2943,6 +3006,30 @@ async def test_a_failure_s_record_that_raises_leaves_neither_its_row_nor_the_fai
     assert await stopped_job(env.db_path) is None
 
 
+async def test_a_job_whose_description_raises_is_named_by_its_change_s_words(env, caplog):
+    """A job whose `describe` raises as the job stops the queue is named in the stop line by its
+    change's own words, the stop standing as any other, and the fault is logged on the host."""
+    api = _api()
+
+    async def _boom(_ctx):
+        raise RuntimeError("boom")
+
+    async def _undescribable(_ctx):
+        raise RuntimeError("the description broke")
+
+    _queue(env, _type(steps=[api.Step("a", api.StepKind.ACT, _boom, describe=_undescribable)]))
+
+    await _ask(env)
+    with caplog.at_level(logging.ERROR):
+        await run_queue(env.bot)
+
+    job = await stopped_job(env.db_path)
+    stop = STOPPED_AT.format(id=job["id"], job=WHAT, request=WHAT, asker=NAMED,
+                             fault="the bot hit an internal fault")
+    assert any(line.startswith(stop) for line in await _lines(env))
+    assert any(str(r.exc_info[1]) == "the description broke" for r in _host_errors(caplog))
+
+
 # ---------------------------------------------------------------------------
 # A job that ends on a fault rather than stopping its lane (#439, slice 7)
 # ---------------------------------------------------------------------------
@@ -2996,6 +3083,41 @@ async def test_a_step_that_ends_on_a_fault_is_marked_done_and_its_lane_goes_on(e
     assert updated_reply(interaction) == "❌ It failed."
 
 
+async def test_a_step_whose_fault_hook_raises_stops_its_lane_on_its_own_fault(env, caplog):
+    """A step with `on_fault` whose hook itself raises stops the queue at the job, as a step without
+    one does: the stop line names the step's own fault (a refusal from Discord), not the hook's,
+    the change asked behind it waits, and the hook's fault is logged on the host."""
+    api = _api()
+    ran: list[str] = []
+
+    async def _refused(_ctx):
+        ran.append("a")
+        raise http_error(discord.Forbidden, status=403, text="Missing Access")
+
+    def _hook_breaks(_ctx, _error):
+        raise RuntimeError("the fault hook broke")
+
+    _queue(
+        env,
+        _type(steps=[api.Step("a", api.StepKind.ACT, _refused, on_fault=_hook_breaks)]),
+        _type("later", steps=[_act("later", ran)]),
+    )
+
+    await _ask(env)
+    await _ask(env, "later")
+    with caplog.at_level(logging.DEBUG):
+        await run_queue(env.bot)
+
+    assert ran == ["a"]
+    assert (await stopped_job(env.db_path))["name"] == "a"
+    assert (await _states(env))[1] == "QUEUED"
+    [stop] = [line for line in await _lines(env) if "The queue is stopped at job #" in line]
+    assert "(Discord refused or failed a request from the bot)" in stop
+    assert any(
+        r.exc_info and str(r.exc_info[1]) == "the fault hook broke" for r in caplog.records
+    )
+
+
 @pytest.mark.parametrize("fault_in", ["its run", "its audit entry"])
 async def test_a_save_that_ends_on_a_fault_has_its_writes_rolled_back(env, monkeypatch, fault_in):
     """A `SAVE` step with `on_fault` that faults, in its own run or in the queue's write of its
@@ -3043,8 +3165,9 @@ async def test_a_check_fault_as_a_member_s_change_starts_ends_it_as_a_failure_wh
 ):
     """A check that raises as a member's change starts, where its type has `on_check_fault`, ends
     the change: the acknowledgement is updated with what `on_check_fault` returns, one failure line
-    is written and no refusal line, and the lane goes on. A bot's change of the same type, and a
-    member's change of a type without it, still stop the lane."""
+    is written and no refusal line, and the lane goes on. A bot's change of the same type, a
+    member's change of a type without it, and a member's change whose `on_check_fault` itself
+    raises, still stop the lane."""
     api = _api()
     holder = {"raise": False}
     ran: list[str] = []
@@ -3054,6 +3177,9 @@ async def test_a_check_fault_as_a_member_s_change_starts_ends_it_as_a_failure_wh
         told.append((what, type(error).__name__))
         return f"❌ {what} could not be checked."
 
+    def _hook_raising(what: str, payload: dict, error: BaseException) -> str:
+        raise RuntimeError("the check-fault hook broke")
+
     checked = dataclasses.replace(
         _type("checked", steps=[_act("c", ran)], check=_check_raising_when(holder)),
         on_check_fault=_on_check_fault,
@@ -3062,6 +3188,10 @@ async def test_a_check_fault_as_a_member_s_change_starts_ends_it_as_a_failure_wh
         env,
         checked,
         _type("unhooked", steps=[_act("u", ran)], check=_check_raising_when(holder)),
+        dataclasses.replace(
+            _type("breaking", steps=[_act("b", ran)], check=_check_raising_when(holder)),
+            on_check_fault=_hook_raising,
+        ),
         _type("dummy", steps=[_act("a", ran)]),
     )
     interaction = member_interaction(env.bot)
@@ -3096,6 +3226,14 @@ async def test_a_check_fault_as_a_member_s_change_starts_ends_it_as_a_failure_wh
     await run_queue(env.bot)
 
     assert (await stopped_job(env.db_path))["name"] == "u"
+    await discard_job(env.bot)
+
+    holder["raise"] = False
+    await _ask(env, "breaking", what="`/breaking`")
+    holder["raise"] = True
+    await run_queue(env.bot)
+
+    assert (await stopped_job(env.db_path))["name"] == "b"
     assert ran == ["a"]
 
 

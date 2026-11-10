@@ -10,8 +10,10 @@ change types and the league are `test_change_queue.py`'s.
 from __future__ import annotations
 
 import logging
+import sqlite3
 from datetime import datetime, timedelta
 from typing import Any
+from unittest.mock import AsyncMock
 
 import discord
 import pytest
@@ -367,6 +369,75 @@ async def test_the_stop_notice_loses_its_buttons_once_the_job_clears(env):
 
     assert await stopped_job(env.db_path) is None
     assert await _states(env) == ["DONE", "DONE", "DONE"]
+
+
+async def test_a_stop_notice_that_cannot_be_formed_leaves_the_stop_and_is_posted_at_a_later_try(
+    env, caplog
+):
+    """A database fault forming a stop notice (here the look-up of whether it is to mention the
+    league admins) leaves the stop standing with no notice landed, the fault logged on the host;
+    the notice is posted, with its buttons, at a later try."""
+    holder = {"fail": RuntimeError("boom")}
+    queue = _queue(env, _type(steps=[_fails_while(holder,
+                                                  describe=_described("posting the dummy"))]))
+    looked_up = queue._admins_to_notify
+    faults = {"left": 1}
+
+    async def _admins_to_notify(*args, **kwargs):
+        if faults["left"]:
+            faults["left"] -= 1
+            raise sqlite3.OperationalError("database is locked")
+        return await looked_up(*args, **kwargs)
+
+    queue._admins_to_notify = _admins_to_notify
+
+    await _ask(env)
+    with caplog.at_level(logging.ERROR):
+        await run_queue(env.bot)
+
+    job = await stopped_job(env.db_path)
+    assert faults["left"] == 0
+    assert job["tries"] == 1 and job["notice_message_id"] is None
+    assert any(isinstance(r.exc_info[1], sqlite3.OperationalError) for r in _host_errors(caplog))
+    await _try_at(env, 1)
+    await _try_at(env, 5)
+
+    job = await stopped_job(env.db_path)
+    [notice] = [m for m in env.bot.log_channel.posted
+                if m.content.startswith(f"❌ The queue is stopped at job #{job['id']}")]
+    assert job["notice_message_id"] == notice.id
+    assert _buttons(notice) == {"queue:retry", "queue:discard"}
+
+
+async def test_a_discard_whose_answer_to_the_presser_fails_is_still_carried_out(env, caplog):
+    """A league admin's Discard whose answer to them Discord refuses is carried out all the same:
+    the job is dropped, the change asked behind it runs, and the refusal is logged on the
+    host."""
+    holder = {"fail": RuntimeError("boom")}
+    ran: list[str] = []
+    _queue(
+        env,
+        _type(steps=[_fails_while(holder, describe=_described("posting the dummy"))]),
+        _type("later", steps=[_act("later", ran)]),
+    )
+    await _ask(env)
+    await _ask(env, "later")
+    await run_queue(env.bot)
+
+    job = await stopped_job(env.db_path)
+    interaction = member_interaction(env.bot, user=tier_member("admin"))
+    interaction.message.id = job["notice_message_id"]
+    interaction.response.send_message = AsyncMock(side_effect=http_error())
+    interaction.followup.send = AsyncMock(side_effect=http_error())
+    with caplog.at_level(logging.WARNING):
+        await maybe_await(env.bot.change_queue.discard(job["notice_message_id"], interaction))
+    await run_queue(env.bot)
+
+    assert await _states(env) == ["DONE", "DONE"]
+    assert ran == ["later"]
+    assert await stopped_job(env.db_path) is None
+    assert any(r.exc_info and isinstance(r.exc_info[1], discord.HTTPException)
+               for r in caplog.records)
 
 
 async def test_a_stop_notice_the_log_channel_refuses_is_posted_again_with_its_buttons(env):

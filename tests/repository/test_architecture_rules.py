@@ -2912,6 +2912,28 @@ CATCH_ALLS_ALLOWED = {
         "the queue's catch of a check that raises, a failure path: it stops the lane or ends the job",
     ("core/utils/autocomplete.py", "bounded_autocomplete.decorate.wrapper"):
         "the autocompletes' failure path: no choices, and the error to the host's log",
+    ("core/services/change_queue.py", "ChangeQueue._acknowledge"):
+        "a stated exception: the queue's own telling of a change's outcome never fails the change",
+    ("core/services/change_queue.py", "ChangeQueue._acknowledge_saved"):
+        "a stated exception: the queue's own telling of a change's outcome never fails the change",
+    ("core/services/change_queue.py", "ChangeQueue._finish"):
+        "a stated exception: the queue's own telling of a change's outcome never fails the change",
+    ("core/services/change_queue.py", "ChangeQueue._name_job"):
+        "a stated exception: the queue's own telling of a change's outcome never fails the change",
+    ("core/services/change_queue.py", "ChangeQueue._post_notice"):
+        "a stated exception: the queue's own telling of a change's outcome never fails the change",
+    ("core/services/change_queue.py", "ChangeQueue._tell"):
+        "a stated exception: the queue's own telling of a change's outcome never fails the change",
+    ("core/services/change_queue.py", "ChangeQueue._tell_origin"):
+        "a stated exception: the queue's own telling of a change's outcome never fails the change",
+    ("core/services/change_queue.py", "ChangeQueue._update_reply"):
+        "a stated exception: the queue's own telling of a change's outcome never fails the change",
+    ("core/services/change_queue.py", "ChangeQueue._end_on_check_fault"):
+        "a stated exception: a hook that raises stops the lane",
+    ("core/services/change_queue.py", "ChangeQueue._refuse"):
+        "a stated exception: a hook that raises stops the lane",
+    ("core/services/change_queue.py", "ChangeQueue._step_failed"):
+        "a stated exception: a hook that raises stops the lane",
     ("core/services/change_queue.py", "ChangeQueue._discard_follow_ons"):
         "a stated exception: a hook that raises must not hold a Discard, the queue's last way past a stop",
     ("core/services/change_queue.py", "ChangeQueue._undiscardable_refusal"):
@@ -3017,17 +3039,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
     ("core/services/amendment_service.py", "approval_faults"): (1, PASS["core"]),
     ("core/services/approval_checks.py", "channel_on_server"): (1, PASS["core"]),
-    ("core/services/change_queue.py", "ChangeQueue._acknowledge"): (1, PASS["core"]),
-    ("core/services/change_queue.py", "ChangeQueue._acknowledge_saved"): (2, PASS["core"]),
-    ("core/services/change_queue.py", "ChangeQueue._end_on_check_fault"): (1, PASS["core"]),
-    ("core/services/change_queue.py", "ChangeQueue._finish"): (2, PASS["core"]),
-    ("core/services/change_queue.py", "ChangeQueue._name_job"): (1, PASS["core"]),
-    ("core/services/change_queue.py", "ChangeQueue._post_notice"): (1, PASS["core"]),
-    ("core/services/change_queue.py", "ChangeQueue._refuse"): (1, PASS["core"]),
-    ("core/services/change_queue.py", "ChangeQueue._step_failed"): (1, PASS["core"]),
-    ("core/services/change_queue.py", "ChangeQueue._tell"): (1, PASS["core"]),
-    ("core/services/change_queue.py", "ChangeQueue._tell_origin"): (1, PASS["core"]),
-    ("core/services/change_queue.py", "ChangeQueue._update_reply"): (1, PASS["core"]),
     ("core/services/output_router.py", "OutputRouter._enqueue_if_configured"): (1, PASS["core"]),
     ("core/services/output_router.py", "OutputRouter.strip_view"): (1, PASS["core"]),
     ("core/services/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
