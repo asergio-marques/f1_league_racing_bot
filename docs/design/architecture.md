@@ -154,14 +154,15 @@ opening rules). Stewarding adds a second [STW-MOD-007].
 falling due, a round amended or its timed work armed again, a round's timing windows read, a round,
 a division or a season cancelled, a round's results made final, placements confirmed, a season's
 configuration confirmed, a review gathering its lines, the placements review gathering each
-division's lines, a division's channel faults read, a driver's name read, a season's confirmation
-judged, a season ending, a season, division, round or driver deleted, a driver merged into another
-or turned down, a driver's account changed, a base role changed, the bot packed, test mode turned
-on, the bot's in-memory state cleared, the hub's panel gathering its options, a module's switch
-read), core declares a hook. The builder signs each module up to it before the bot connects. Core
-calls whoever signed up, and never imports a module, the bot's type aside (see "How the code is laid
-out"). A module turned on or off is not a hook but a change of the module's own, which core asks for
-by its kind (see "Each module turns itself on and off").
+division's lines, a division's channel faults read, a driver's name read, a season's fingerprint
+taken, a season's confirmation judged, a season ending, a season, division, round or driver
+deleted, a driver merged into another or turned down, a driver's account changed, a base role
+changed, the bot packed, test mode turned on, the bot's in-memory state cleared, the hub's panel
+gathering its options, a module's switch read), core declares a hook. The builder signs each module
+up to it before the bot connects. Core calls whoever signed up, and never imports a module, the
+bot's type aside (see "How the code is laid out"). A module turned on or off is not a hook but a
+change of the module's own, which core asks for by its kind (see "Each module turns itself on and
+off").
 
 **A hook core declares is a list of subscribers.** Core declares the moment and what it hands over:
 what the moment concerns, where it concerns anything (the rows, the round), and, where core holds
@@ -1243,12 +1244,12 @@ and `approval_checks.channel_on_server`) are stated exceptions too: each puts th
 host's log and reads an attendance switch as off (a switch nobody signed up for aside) or a channel
 as present, because a reader that
 cannot answer must not refuse an amendment or a season (their docstrings say so); a season's
-fingerprint that cannot be taken (`season_fingerprint_service.take_fingerprint`) is a stated
-exception: it is signed as an empty one, which refuses an approval whose review was read, because a
-fingerprint that could not be read must not wave one through (its docstring says so); the factory
-reset's Discord clean-up (`bot_cog._clean_up`) is a stated exception: it says in the reset's last
-report and closing line that its clean-up stopped, because a reset must not end in silence (its
-docstring says so); and the scheduler's removal of one job (`SchedulerService._remove_job`) is a
+fingerprint that cannot be taken (`season_fingerprint_service.take_fingerprint`, a module's fault
+in handing its areas among them) is a stated exception: it is signed as an empty one, which refuses
+an approval whose review was read, because a fingerprint that could not be read must not wave one
+through (its docstring says so); the factory reset's Discord clean-up (`bot_cog._clean_up`) is a
+stated exception: it says in the reset's last report and closing line that its clean-up stopped,
+because a reset must not end in silence (its docstring says so); and the scheduler's removal of one job (`SchedulerService._remove_job`) is a
 stated exception: every cancel is a clean-up, so a job that will not go is logged on the host and
 left, a teardown list going on past it (`SchedulerService` says so).
 
