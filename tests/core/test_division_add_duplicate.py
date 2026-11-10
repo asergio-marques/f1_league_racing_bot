@@ -49,6 +49,7 @@ from tests.support.setup_rounds import (
     refusal_line,
     repeated,
     round_moments,
+    round_rows,
     setup_league,
 )
 from tests.support.undecorate import undecorate
@@ -495,6 +496,9 @@ async def test_a_duplicate_its_rounds_teams_audit_entry_and_line_are_one_save(tm
     assert await _division_rows(league.db_path) == listed
     copied = _shifted(_PRO_ROUNDS, days=1, hours=1.5)
     assert await round_moments(league.db_path, "Am") == copied
+    assert [at for *_, at in await round_rows(league.db_path, "Am")] == [
+        "2026-11-02T19:30:00+00:00", "2026-11-09T19:30:00+00:00"
+    ]
     assert await _team_rows(league.db_path, "Am") == [
         ("Alpha", "Alpha Racing", 2, 0, [None, None]),
         ("Reserve", "Reserve", -1, 1, []),

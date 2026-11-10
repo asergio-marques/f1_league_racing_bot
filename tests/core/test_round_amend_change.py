@@ -59,6 +59,9 @@ from tests.support.season_league import (
 )
 from tests.support.mentions import NOBODY, notified
 
+#: Why the tests of an amended moment fail until the build stores it with its offset.
+_NO_OFFSET = "#283: /round amend of a raced season's round still stores its moment without an offset"
+
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 R3, R4 = round_id(PRO, 3), round_id(PRO, 4)
 HORIZONS = (5, 2, 2)
@@ -169,9 +172,10 @@ def _at(league: Any, **delta: float) -> str:
 
 
 async def _moment(league: Any, rid: int = R3) -> datetime:
+    """Round *rid*'s moment, parsed as stored: one stored without its offset is left naive, and so
+    equals no moment in UTC."""
     [row] = await league.rows("SELECT scheduled_at FROM rounds WHERE id = ?", rid)
-    moment = datetime.fromisoformat(row["scheduled_at"])
-    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+    return datetime.fromisoformat(row["scheduled_at"])
 
 
 def _when(league: Any, **delta: float) -> datetime:
@@ -392,6 +396,7 @@ async def _clear_blocker(league: Any) -> None:
 # ── The defects ─────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_a_stop_after_the_amendment_is_saved_arms_the_round_again_on_restart(tmp_path):
     """Pro's round 3 moved past round 4. The queue is stopped once the save is made; after a
     restart the round is armed against its new moment, the rounds stand renumbered and one
@@ -970,6 +975,7 @@ async def test_a_discarded_amendment_is_named_by_the_number_the_round_bears_when
     assert "round 3" not in _outcome(press)
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_the_arming_cannot_be_discarded_and_once_retried_arms_the_round(tmp_path):
     """The arming fails and stops the queue. A league admin's Discard on it is refused,
     privately and with one line in the log channel; the queue stays stopped at the arming, and
@@ -1193,6 +1199,7 @@ async def _place_r3(league: Any, **delta: float) -> None:
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_OFFSET)
 async def test_a_phase_that_fell_due_while_the_save_stood_stopped_is_drawn_at_once(
     tmp_path, phases,
 ):
