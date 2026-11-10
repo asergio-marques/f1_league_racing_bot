@@ -751,8 +751,9 @@ as it starts, and one save of the flag and its audit entry; the flag it leaves f
 save is read into the payload at the ask (`fill`). `/test-mode roster add` is `core.test_roster_add`
 (`test_roster_changes`): the driver is judged without a write (`judge_add_on`) at the ask and as it
 starts, and one save seats them (`seat_on`) with the audit entry; the roster's writers take the
-connection of the save and commit nothing. The change is handed the placement service as a getter, so
-the template capacities are measured by the bot's own. `/test-mode roster add-bulk` is
+connection of the save and commit nothing. The change measures the template capacities with the
+bot's own placement service, the one carrying the image module's drawing, as a real placement is
+measured. `/test-mode roster add-bulk` is
 `core.test_roster_add_bulk` in the same module: the form refuses what the file shows wrong on its
 own before the ask, the change judges the whole roster without a write (`judge_bulk_on`) at the ask
 and as it starts, and one save seats it (`seat_bulk_on`) with an audit entry for each driver. `/test-mode roster
