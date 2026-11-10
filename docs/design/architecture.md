@@ -155,9 +155,9 @@ falling due, a round amended or its timed work armed again, a round's timing win
 a division or a season cancelled, a round's results made final, placements confirmed, a season's
 configuration confirmed, a review gathering its lines, the placements review gathering each
 division's lines, a division's channel faults read, a driver's name read, the divisions a driver's
-accounts raced in read, a driver's standing in a division read for the history a season's completion
-or cancellation writes, a season's fingerprint taken, a season's pending test-mode steps read, the
-test-mode review's marks read, a season's confirmation judged, a season ending, a season, division,
+accounts raced in read, a driver's standing in a division read for the season's history, a season's
+fingerprint taken, a season's pending test-mode steps read, the test-mode review's marks read, a
+season's confirmation judged, a division's final round read, a season ending, a season, division,
 round or driver deleted, a driver merged into another or turned down, a driver's account changed, a
 base role changed, the bot packed, test mode turned on, the bot's in-memory state cleared, the hub's
 panel gathering its options, a module's switch read), core declares a hook. The builder signs each
@@ -165,7 +165,6 @@ module up to it before the bot connects. Core calls whoever signed up, and never
 the bot's type aside (see "How the code is laid out"). A module turned on or off is not a hook but a
 change of the module's own, which core asks for by its kind (see "Each module turns itself on and
 off").
-
 **A hook core declares is a list of subscribers.** Core declares the moment and what it hands over:
 what the moment concerns, where it concerns anything (the rows, the round, the driver's accounts,
 the time its subscribers judge at, the jobs the scheduler holds), and, where core holds one open,
