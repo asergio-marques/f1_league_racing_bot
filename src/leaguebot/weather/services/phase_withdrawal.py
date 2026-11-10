@@ -11,10 +11,12 @@ architecture rules that read the tables and columns a module writes can read the
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 import aiosqlite
+
+from leaguebot.weather.services.round_phases import phases_drawn_on
 
 
 async def withdraw_phases_on(
@@ -56,15 +58,15 @@ async def round_amended_on(
     round_id: int,
     *,
     withdrawn: Sequence[int],
-    drawn: Mapping[int, bool],
     **_context: Any,
 ) -> dict[str, Any]:
     """Weather's part of the amendment's save: withdraw the *withdrawn* phases of the round on
     *db*, committing nothing. Subscribed to core's `round_amended`.
 
-    *drawn* is what the round's flags say of each phase before the withdrawal clears them. Hands
-    back what the amendment's arming reads of it, kept with the save: the phases withdrawn and
-    those of them that were posted.
+    Reads the round's flags for each phase before the withdrawal clears them. Hands back what the
+    amendment's arming reads of it, kept with the save: the phases withdrawn and those of them
+    that were posted.
     """
+    drawn = (await phases_drawn_on(db, [round_id]))[round_id]
     await withdraw_phases_on(db, round_id, withdrawn)
     return {"withdrawn": list(withdrawn), "posted": [n for n in withdrawn if drawn[n]]}

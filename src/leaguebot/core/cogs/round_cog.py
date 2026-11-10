@@ -26,7 +26,7 @@ from leaguebot.core.services.cancellation_changes import (
     cancellation_holding_amendment,
 )
 from leaguebot.core.services.round_amend_change import ROUND_AMEND, payload_changes
-from leaguebot.core.services.round_moments import read_round_windows
+from leaguebot.core.services.round_moments import read_phases_drawn, read_round_windows
 from leaguebot.core.services.round_add_changes import (
     ADD as ROUND_ADD,
     IMPORT as ROUND_IMPORT,
@@ -637,8 +637,11 @@ async def _judge_round_amendment(
     # posted while weather was on is still posted.
     attendance, weather = await read_round_windows(bot.round_windows_read, amending=True)
 
+    drawn = await read_phases_drawn(bot.phases_drawn_read, [rnd.id])
+
     return judge_amendment(
-        rnd, dict(amendments), now=now, attendance=attendance, weather=weather
+        rnd, dict(amendments), now=now, attendance=attendance, weather=weather,
+        drawn=drawn.get(rnd.id),
     )
 
 

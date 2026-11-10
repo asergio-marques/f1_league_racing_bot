@@ -182,16 +182,20 @@ def judge_amendment(
     now: datetime,
     attendance: AttendanceWindows | None = None,
     weather: WeatherWindows | None = None,
+    drawn: Mapping[int, bool] | None = None,
 ) -> AmendmentVerdict:
     """Judge *changes* against *rnd* as it will stand once they are in.
 
     Args:
-        rnd:        The round as it stands, carrying its status and its phase-done flags.
+        rnd:        The round as it stands, carrying its status.
         changes:    ``{field: new value}`` over `AMENDABLE_FIELDS`. An empty set is refused.
         now:        The moment to judge against. Required, and never the wall clock.
         attendance: The check-in lead times, or None where the module is disabled — with it off
                     the round has no check-in to lose and none of its windows are judged.
         weather:    The forecast horizons, or None where the module is disabled.
+        drawn:      Whether each of Phases 1 to 3 has been drawn, by phase number, as the weather
+                    module says (`read_phases_drawn`); none where it has none to say, as a round
+                    no forecast has been drawn for.
 
     Returns:
         An `AmendmentVerdict`. Where `refusals` is non-empty the rest describes the amendment
@@ -301,13 +305,14 @@ def judge_amendment(
         outcome = phases.get(number)
         return outcome is None or outcome.stands
 
-    if "track_name" in changes and rnd.phase1_done and _still_stands(1):
+    drawn = drawn or {}
+    if "track_name" in changes and drawn.get(1, False) and _still_stands(1):
         refusals.append(
             "The first forecast for this round has already been posted, and it was drawn for "
             "its present circuit. Amend the round's moment as well to put the forecasts back "
             "in question."
         )
-    if "format" in changes and rnd.phase2_done and _still_stands(2):
+    if "format" in changes and drawn.get(2, False) and _still_stands(2):
         refusals.append(
             "The second forecast for this round has already been posted, and it was drawn for "
             "its present sessions. Amend the round's moment as well to put the forecasts back "

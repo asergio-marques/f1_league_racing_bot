@@ -62,6 +62,7 @@ from leaguebot.core.services.amendment_rules_service import (
     status_refusal,
 )
 from leaguebot.core.services.round_moments import (
+    read_phases_drawn,
     read_round_windows,
     round_event_moments,
 )
@@ -200,6 +201,7 @@ def round_amend_change(
     amendment_steps: Hook,
     amendment_step_failure: Hook,
     round_windows_read: AwaitedHook,
+    phases_drawn_read: AwaitedHook,
     round_amended: AwaitedHook,
     round_armed: AwaitedHook,
     round_clean_ups_due: AwaitedHook,
@@ -212,14 +214,16 @@ def round_amend_change(
     does is read as holding every division of that season (`review_changes.division_job_in_hand`).
     The builder hands in the *modules* (each post's `still_due`), the *seasons* service, the
     *scheduler*, *round_windows_read* (the hook their windows are
-    read through), *round_amended* (the moment inside the save), *round_armed* and
+    read through), *phases_drawn_read* (the hook the phases drawn are read through, weather's
+    record of them), *round_amended* (the moment inside the save), *round_armed* and
     *round_clean_ups_due* (the moments the round is armed again, at which the modules plan their
     posts and their clean-ups) and the queue's clock *now*.
     """
     return _round_change(
         rearm=False, modules=modules, seasons=seasons, scheduler=scheduler,
         amendment_steps=amendment_steps, amendment_step_failure=amendment_step_failure,
-        round_windows_read=round_windows_read, round_amended=round_amended,
+        round_windows_read=round_windows_read, phases_drawn_read=phases_drawn_read,
+        round_amended=round_amended,
         round_armed=round_armed, round_clean_ups_due=round_clean_ups_due, now=now,
     )
 
@@ -232,6 +236,7 @@ def round_rearm_change(
     amendment_steps: Hook,
     amendment_step_failure: Hook,
     round_windows_read: AwaitedHook,
+    phases_drawn_read: AwaitedHook,
     round_amended: AwaitedHook,
     round_armed: AwaitedHook,
     round_clean_ups_due: AwaitedHook,
@@ -248,7 +253,8 @@ def round_rearm_change(
     return _round_change(
         rearm=True, modules=modules, seasons=seasons, scheduler=scheduler,
         amendment_steps=amendment_steps, amendment_step_failure=amendment_step_failure,
-        round_windows_read=round_windows_read, round_amended=round_amended,
+        round_windows_read=round_windows_read, phases_drawn_read=phases_drawn_read,
+        round_amended=round_amended,
         round_armed=round_armed, round_clean_ups_due=round_clean_ups_due, now=now,
     )
 
@@ -262,6 +268,7 @@ def _round_change(
     amendment_steps: Hook,
     amendment_step_failure: Hook,
     round_windows_read: AwaitedHook,
+    phases_drawn_read: AwaitedHook,
     round_amended: AwaitedHook,
     round_armed: AwaitedHook,
     round_clean_ups_due: AwaitedHook,
@@ -313,12 +320,14 @@ def _round_change(
         if rnd is None:
             return Verdict.refuse(ROUND_GONE)
         attendance, weather = await read_windows()
+        drawn = await read_phases_drawn(phases_drawn_read, [rnd.id])
         verdict = judge_amendment(
             rnd,
             amended_values(payload["changes"]),
             now=now(),
             attendance=attendance,
             weather=weather,
+            drawn=drawn.get(rnd.id),
         )
         if not verdict.allowed:
             return Verdict.refuse(
@@ -398,10 +407,14 @@ def _round_change(
         return judged(ctx) is not None and unarmed(ctx)
 
     def judged_again(
-        row: aiosqlite.Row, changes: Iterable[Sequence[str]], judgement: dict[str, Any]
+        row: aiosqlite.Row,
+        changes: Iterable[Sequence[str]],
+        judgement: dict[str, Any],
+        drawn: Mapping[int, bool],
     ) -> AmendmentVerdict:
-        """*changes* judged once more, against the round as the save reads it, at the windows
-        `judge` kept and at the queue's clock.
+        """*changes* judged once more, against the round as the save reads it and the phases
+        *drawn* as weather says of them on the save's connection, at the windows `judge` kept and
+        at the queue's clock.
 
         `judge` reached its verdict when it ran, and a job after it can stop and be tried again
         hours later: the save would otherwise write an amendment whose window has since passed,
@@ -415,9 +428,6 @@ def _round_change(
             format=RoundFormat(row["format"]),
             track_name=row["track_name"],
             scheduled_at=read_scheduled_at(row["scheduled_at"]),
-            phase1_done=bool(row["phase1_done"]),
-            phase2_done=bool(row["phase2_done"]),
-            phase3_done=bool(row["phase3_done"]),
             status=row["status"],
         )
         return judge_amendment(
@@ -426,6 +436,7 @@ def _round_change(
             now=now(),
             attendance=AttendanceWindows(**attendance) if attendance is not None else None,
             weather=WeatherWindows(**windows["weather"]),
+            drawn=drawn,
         )
 
     async def apply(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
@@ -445,19 +456,20 @@ def _round_change(
         judgement = judged(ctx) or {}
         round_id = int(ctx.payload["round_id"])
         cursor = await db.execute(
-            "SELECT id, status, round_number, division_id, track_name, format, scheduled_at, "
-            "phase1_done, phase2_done, phase3_done FROM rounds WHERE id = ?",
+            "SELECT id, status, round_number, division_id, track_name, format, scheduled_at "
+            "FROM rounds WHERE id = ?",
             (round_id,),
         )
         row = await cursor.fetchone()
         refusal = None
         verdict: AmendmentVerdict | None = None
+        drawn = (await read_phases_drawn(phases_drawn_read, [round_id], db=db)).get(round_id, {})
         if row is None:
             refusal = ROUND_GONE
         elif row["status"] not in ROUND_CANCELLABLE:
             refusal = no_longer_amendable([status_refusal(row["status"])])
         else:
-            verdict = judged_again(row, ctx.payload["changes"], judgement)
+            verdict = judged_again(row, ctx.payload["changes"], judgement, drawn)
             if not verdict.allowed:
                 refusal = no_longer_amendable(verdict.refusals)
         if row is None or verdict is None or refusal is not None:
@@ -501,9 +513,8 @@ def _round_change(
         # deadline has passed is refused above.
         reopened = bool(verdict.check_in) and not verdict.check_in_stays_closed
         kept: dict[str, Any] = {}
-        drawn = {n: bool(row[f"phase{n}_done"]) for n in (1, 2, 3)}
         for part in await round_amended.call(
-            db, round_id, withdrawn=withdrawn, drawn=drawn, reopened=reopened
+            db, round_id, withdrawn=withdrawn, reopened=reopened
         ):
             kept.update(part or {})
         if any(field == "scheduled_at" for field, _ in ctx.payload["changes"]):
@@ -531,10 +542,10 @@ def _round_change(
         )
         return now() < moments["weather_p1"]
 
-    def phases_due(rnd: Round, weather: dict[str, Any]) -> list[int]:
-        """The forecast phases to draw at once, as the round stands at the queue's clock and the
-        windows `judge` read (`round_moments.phases_due`)."""
-        return round_moments_phases_due(rnd, WeatherWindows(**weather), now())
+    def phases_due(rnd: Round, weather: dict[str, Any], drawn: Mapping[int, bool]) -> list[int]:
+        """The forecast phases to draw at once, as the round stands at the queue's clock, the
+        phases *drawn* and the windows `judge` read (`round_moments.phases_due`)."""
+        return round_moments_phases_due(rnd, WeatherWindows(**weather), now(), drawn=drawn)
 
     async def arm_due(ctx: StepContext) -> bool:
         """The arming is due where the timed work was removed and the round may still be
@@ -592,7 +603,8 @@ def _round_change(
                     forecast=weather_on, check_in=check_in_on, now=now(),
                 )
             return StepResult(result={"armed": True, "round_number": rnd.round_number}, then=planned)
-        draw = phases_due(rnd, weather) if weather_on else []
+        drawn = (await read_phases_drawn(phases_drawn_read, [rnd.id])).get(rnd.id, {})
+        draw = phases_due(rnd, weather, drawn) if weather_on else []
         planned = await plan_posts(ctx, rnd, judgement, draw=draw)
         if weather_on and (
             rnd.format != RoundFormat.MYSTERY or first_horizon_ahead(rnd, weather)

@@ -14,8 +14,9 @@ reads, and the kind names its keys match (`ROUND_JOB_KINDS`), are plain data and
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from leaguebot.core.models.round import AttendanceWindows, Round, RoundFormat, WeatherWindows
 from leaguebot.core.utils.hooks import AwaitedHook
@@ -44,20 +45,38 @@ async def read_round_windows(
     return attendance, weather
 
 
-def phases_due(rnd: Round, weather: WeatherWindows, at: datetime) -> list[int]:
-    """The forecast phases to draw at once at *at*: each not yet drawn whose horizon has passed,
-    for a round whose moment is still ahead and which is no mystery round, as the start-up recovery
-    judges a missed phase (`_recover_missed_phases`)."""
+async def read_phases_drawn(
+    phases_drawn_read: AwaitedHook, round_ids: Sequence[int], *, db: Any = None
+) -> dict[int, dict[int, bool]]:
+    """Whether each of Phases 1 to 3 has been drawn, by phase number, for each round in
+    *round_ids*, by round id, as the module that draws them says: they are its own record, not a
+    column of core's round. A round nobody answers for is absent, and its phases count as not
+    drawn.
+
+    With *db*, the connection a save holds, the subscribers read on it and so see what that save
+    has written and not yet committed; without, each reads on a connection of its own.
+    """
+    drawn: dict[int, dict[int, bool]] = {}
+    for part in await phases_drawn_read.call(round_ids, db=db):
+        drawn.update(part or {})
+    return drawn
+
+
+def phases_due(
+    rnd: Round, weather: WeatherWindows, at: datetime, *, drawn: Mapping[int, bool]
+) -> list[int]:
+    """The forecast phases to draw at once at *at*: each not yet drawn (*drawn*, by phase number,
+    as `read_phases_drawn` gives it for the round) whose horizon has passed, for a round whose
+    moment is still ahead and which is no mystery round, as the start-up recovery judges a missed
+    phase (`_recover_missed_phases`)."""
     moment = rnd.scheduled_at
     if rnd.format == RoundFormat.MYSTERY or moment <= at:
         return []
     moments = round_event_moments(moment, weather=weather, attendance=None)
     horizons = {
-        1: (rnd.phase1_done, moments["weather_p1"]),
-        2: (rnd.phase2_done, moments["weather_p2"]),
-        3: (rnd.phase3_done, moments["weather_p3"]),
+        n: moments[f"weather_p{n}"] for n in (1, 2, 3)
     }
-    return [n for n, (done, horizon) in horizons.items() if not done and horizon <= at]
+    return [n for n, horizon in horizons.items() if not drawn.get(n, False) and horizon <= at]
 
 
 def as_utc(moment: datetime) -> datetime:

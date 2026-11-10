@@ -82,6 +82,7 @@ from leaguebot.weather.services import (
 )
 from leaguebot.weather.services.draw_guard import weather_enabled_on
 from leaguebot.weather.services.forecast_channel import forecast_channels_on
+from leaguebot.weather.services.round_phases import phases_drawn_on
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.weather.utils.message_builder import forecast_text, invalidation_message
 
@@ -921,7 +922,9 @@ def amendment_steps(
         _, weather = judged_windows(ctx)
         if rnd is None or weather is None:
             return False
-        return int(ctx.step_payload["phase"]) in phases_due(rnd, weather, now())
+        async with get_connection(ctx.db_path) as db:
+            drawn = (await phases_drawn_on(db, [rnd.id])).get(rnd.id, {})
+        return int(ctx.step_payload["phase"]) in phases_due(rnd, weather, now(), drawn=drawn)
 
     async def rerun_phase(ctx: StepContext) -> StepResult:
         """Plan the draw of a phase whose horizon has already passed, by the amended moment or while

@@ -13,7 +13,7 @@ from collections.abc import Sequence
 
 import aiosqlite
 
-from leaguebot.core.db.database import tuple_rows_in
+from leaguebot.core.db.database import get_connection, tuple_rows_in
 
 
 async def phases_drawn_on(
@@ -33,3 +33,16 @@ async def phases_drawn_on(
     return {
         int(row[0]): {1: bool(row[1]), 2: bool(row[2]), 3: bool(row[3])} for row in rows
     }
+
+
+async def phases_drawn(
+    db_path: str, round_ids: Sequence[int], *, db: aiosqlite.Connection | None = None
+) -> dict[int, dict[int, bool]]:
+    """`phases_drawn_on`, as core's `phases_drawn_read` hook asks it: on the connection the
+    asker holds where it hands one (*db*, an amendment's save), on one of its own opened on
+    *db_path* otherwise. Whatever the module's switch: a forecast posted while weather was on is
+    still posted. Reads only."""
+    if db is not None:
+        return await phases_drawn_on(db, round_ids)
+    async with get_connection(db_path) as own:
+        return await phases_drawn_on(own, round_ids)

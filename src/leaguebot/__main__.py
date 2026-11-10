@@ -220,14 +220,17 @@ def _sign_up_to_base_role_changed(bot: LeagueBot) -> None:
 
 def _sign_up_to_amendments(bot: LeagueBot) -> None:
     """Make the hooks an amended round declares, and sign each module's part up to them, in the
-    order core calls them: inside the save, weather's withdrawal of the forecasts the amendment
-    withdraws, then attendance's reopening of its check-in; as the round is armed again, the posts
-    each owes, attendance's then weather's, then the clean-ups due a day after the round,
+    order core calls them: the phases weather says are drawn, asked of a round as it is judged and
+    again inside the save on its connection; inside the save, weather's withdrawal of the
+    forecasts the amendment withdraws, then attendance's reopening of its check-in; as the round
+    is armed again, the posts each owes, attendance's then weather's, then the clean-ups due a day after the round,
     weather's then attendance's; the steps each defines for the amendment, weather's then
     attendance's; and the words an outcome gives a step left undone, weather's for a forecast."""
     from leaguebot.attendance.services import check_in_changes
-    from leaguebot.weather.services import forecast_changes, phase_withdrawal
+    from leaguebot.weather.services import forecast_changes, phase_withdrawal, round_phases
 
+    bot.phases_drawn_read = AwaitedHook()
+    bot.phases_drawn_read.subscribe(partial(round_phases.phases_drawn, bot.db_path))
     bot.round_amended = AwaitedHook()
     bot.round_amended.subscribe(phase_withdrawal.round_amended_on)
     bot.round_amended.subscribe(check_in_changes.round_amended_on)
@@ -1510,6 +1513,7 @@ def register_change_types(bot: LeagueBot) -> None:
             amendment_steps=bot.amendment_steps,
             amendment_step_failure=bot.amendment_step_failure,
             round_windows_read=bot.round_windows_read,
+            phases_drawn_read=bot.phases_drawn_read,
             round_amended=bot.round_amended,
             round_armed=bot.round_armed,
             round_clean_ups_due=bot.round_clean_ups_due,
@@ -1524,6 +1528,7 @@ def register_change_types(bot: LeagueBot) -> None:
             amendment_steps=bot.amendment_steps,
             amendment_step_failure=bot.amendment_step_failure,
             round_windows_read=bot.round_windows_read,
+            phases_drawn_read=bot.phases_drawn_read,
             round_amended=bot.round_amended,
             round_armed=bot.round_armed,
             round_clean_ups_due=bot.round_clean_ups_due,
