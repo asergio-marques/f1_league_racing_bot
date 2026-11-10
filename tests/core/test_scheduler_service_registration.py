@@ -50,13 +50,12 @@ def _service():
     return service
 
 
-def _round(round_id=21, division_id=11, number=3, *, naive=False):
-    at = datetime(2026, 3, 1, 18, tzinfo=timezone.utc)
+def _round(round_id=21, division_id=11, number=3):
     return SimpleNamespace(
         id=round_id,
         division_id=division_id,
         round_number=number,
-        scheduled_at=at.replace(tzinfo=None) if naive else at,
+        scheduled_at=datetime(2026, 3, 1, 18, tzinfo=timezone.utc),
     )
 
 
@@ -199,14 +198,6 @@ def test_the_submission_job_id_carries_the_round_id():
     job = _added(service)[0].kwargs
     assert job["id"] == "results_s7_d1_r3_id21"
     assert job["replace_existing"] is True
-
-
-def test_a_naive_round_time_is_read_as_utc():
-    service = _service()
-
-    service.schedule_result_submission_jobs([_round(naive=True)], division_meta={11: (7, 1)})
-
-    assert _added(service)[0].kwargs["trigger"].run_date.utcoffset() == timedelta(0)
 
 
 def test_a_submission_run_at_once_replaces_the_round_s_job_and_runs_however_late():

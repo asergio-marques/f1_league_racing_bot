@@ -44,13 +44,6 @@ def test_a_deadline_of_zero_hours_stands_at_the_rounds_own_start():
     assert derive_checkin_deadline(start, 0) == start
 
 
-def test_the_deadline_is_timezone_aware_even_from_a_naive_round():
-    naive = datetime(2026, 8, 13, 20, 0)
-    result = derive_checkin_deadline(naive, 3)
-    assert result.tzinfo is not None
-    assert result == datetime(2026, 8, 13, 17, 0, tzinfo=timezone.utc)
-
-
 def test_the_deadline_crosses_a_day_boundary_correctly():
     start = datetime(2026, 8, 13, 2, 0, tzinfo=timezone.utc)
     assert derive_checkin_deadline(start, 5) == datetime(

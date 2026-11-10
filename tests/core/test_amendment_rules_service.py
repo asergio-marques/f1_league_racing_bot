@@ -449,17 +449,17 @@ def test_a_round_nudged_within_its_closed_check_in_stays_closed():
 # is tested in `test_division_no_op_judgement.py`.
 
 #: A round as `/round amend` holds it before it asks for anything: its track, its format as a
-#: `RoundFormat` and its moment as a naive UTC `datetime`, which is what `_row_to_round` makes of
+#: `RoundFormat` and its moment as an aware UTC `datetime`, which is what `_row_to_round` makes of
 #: the stored row on the active path and what the pending path's round already carries.
 _STANDING = {
     "track_name": "Bahrain International Circuit",
     "format": RoundFormat.SPRINT,
-    "scheduled_at": datetime(2026, 7, 1, 18, 0),
+    "scheduled_at": datetime(2026, 7, 1, 18, 0, tzinfo=timezone.utc),
 }
 
 
 def _asked_moment(text: str) -> datetime:
-    """A moment as `/round amend` holds it once typed: through `parse_datetime`, naive UTC."""
+    """A moment as `/round amend` holds it once typed: through `parse_datetime`, aware UTC."""
     from leaguebot.core.utils.input_validator import parse_datetime
 
     moment = parse_datetime(text)

@@ -218,13 +218,6 @@ class TestDiscordTimestamp:
         date_field = next(f for f in embed.fields if "Date" in f.name)
         assert f"<t:{_FIXED_UNIX}:F>" in date_field.value
 
-    def test_naive_datetime_treated_as_utc(self):
-        naive = datetime(2025, 7, 20, 18, 0, 0)  # no tzinfo
-        embed = _build(scheduled_at=naive)
-        date_field = next(f for f in embed.fields if "Date" in f.name)
-        # The unix timestamp should be same as the UTC-aware version
-        assert f"<t:{_FIXED_UNIX}:F>" in date_field.value
-
 
 # ---------------------------------------------------------------------------
 # 6. Event type label
