@@ -63,7 +63,10 @@ async def _section(db_path, *, on: bool, review: str):
                                 division_ids=[10])
 
 
-@pytest.mark.parametrize("on", [True, False])
+@pytest.mark.parametrize("on", [
+    pytest.param(True),
+    pytest.param(False),
+])
 async def test_the_placements_review_names_the_attached_configurations(db_path, on):
     """Standard attached and sound: the placements review names it, results on or off, and
     reports no fault."""

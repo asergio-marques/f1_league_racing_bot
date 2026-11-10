@@ -18,7 +18,10 @@ def _modules(on: bool) -> MagicMock:
     return modules
 
 
-@pytest.mark.parametrize("review", ["PLACEMENTS", "CONFIGURATION"])
+@pytest.mark.parametrize("review", [
+    pytest.param("PLACEMENTS"),
+    pytest.param("CONFIGURATION"),
+])
 async def test_weather_hands_its_deadlines_to_each_review(tmp_path, review):
     """Weather on, its deadlines as stored: the Weather Config section, its deadlines in the
     words `describe_deadlines` gives them; off, no section."""

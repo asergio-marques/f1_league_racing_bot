@@ -85,7 +85,10 @@ async def test_attendance_never_configured_shows_its_channels_alone():
     }
 
 
-@pytest.mark.parametrize("review", ["PLACEMENTS", "CONFIGURATION"])
+@pytest.mark.parametrize("review", [
+    pytest.param("PLACEMENTS"),
+    pytest.param("CONFIGURATION"),
+])
 async def test_attendance_hands_nothing_while_it_is_off(review):
     """Attendance off: no section and no channel lines, and nothing of attendance's is read."""
     service = _service()

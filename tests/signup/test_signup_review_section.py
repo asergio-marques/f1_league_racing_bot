@@ -50,8 +50,8 @@ async def _section(service, on: bool, review: str):
 
 
 @pytest.mark.parametrize(("review", "note"), [
-    ("PLACEMENTS", "Channel: <#900>"),
-    ("CONFIGURATION", None),
+    pytest.param("PLACEMENTS", "Channel: <#900>"),
+    pytest.param("CONFIGURATION", None),
 ])
 async def test_signup_hands_its_section_to_each_review(review, note):
     """Signup on, its channel set, its settings and one slot: each review gets the Signup Config
@@ -83,7 +83,10 @@ async def test_a_placements_review_with_no_signup_channel_says_so_beside_its_mod
     assert section.lines[1] == "  • Channel: *(not configured)*"
 
 
-@pytest.mark.parametrize("review", ["PLACEMENTS", "CONFIGURATION"])
+@pytest.mark.parametrize("review", [
+    pytest.param("PLACEMENTS"),
+    pytest.param("CONFIGURATION"),
+])
 async def test_signup_hands_nothing_while_it_is_off(review):
     """Signup off: no section, and nothing of signup's is read."""
     service = _service()
