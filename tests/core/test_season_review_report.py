@@ -482,6 +482,34 @@ async def test_a_disabled_modules_configuration_is_not_reviewed(db_path):
 
 
 @pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
+async def test_each_subsection_is_its_own_message_in_the_order_a_manager_reads_them(db_path):
+    """Every module on, the image module's section running past Discord's 2000 characters: the
+    review asked of the queue opens with the season and its modules, then signup's, attendance's,
+    results', weather's and the image module's sections, each a message of its own, ahead of the
+    divisions. The long section is split, not lost: no message passes 2000 characters, and every
+    one of its lines is posted."""
+    cog = _cog(db_path, weather=True, signup=True, results=True, attendance=True, images=True)
+    image_lines = [f"  Output {n}: " + "x" * 70 for n in range(40)]
+    cog._build_image_review_section = AsyncMock(
+        return_value=["**Image output**", *image_lines, ""]
+    )
+
+    messages = await _review(cog, _interaction())
+
+    report = _asked(cog)["report"]
+    assert "**Modules**" in report[0]
+    headings = ["**Signup Config**", "**Attendance Config**", "**Points Configs:**",
+                "**Weather Config**", "**Image output**"]
+    assert [
+        message.startswith(heading) for message, heading in zip(report[1:6], headings)
+    ] == [True] * 5
+    assert all(len(message) <= 2000 for message in report)
+    public = _public(messages)
+    assert all(line.strip() in public for line in image_lines)
+    assert public.index("**Image output**") < public.index("# PRO (Tier 1)")
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_the_weather_deadlines_are_reviewed(db_path):
     cog = _cog(db_path, weather=True)
     messages = await _review(cog, _interaction())
