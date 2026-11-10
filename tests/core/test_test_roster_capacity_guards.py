@@ -253,13 +253,13 @@ async def test_the_command_refuses_it_in_placements(tmp_path, monkeypatch):
     its first seat and its second seat free, and the driver standings template holds one row, so
     Am's standings could not draw a second driver. Admin (77) runs `/test-mode roster add` of Mock
     to McLaren in Am. Nothing about the stage is stubbed: the roster change is allowed there, and
-    it is the template that refuses it, measured by the image module's drawing as the bot's
-    placement service measures it. Admin is refused at once, seen by them alone, the reply saying
+    it is the template that refuses it, measured by the bot's own placement service, here one
+    whose image drawing holds that template, so a service made apart from the bot would let the
+    driver through. Admin is refused at once, seen by them alone, the reply saying
     the driver was **not** assigned; nothing is queued, no fake driver is created, nothing is
     audited, and the log channel takes the refusal as its only line, naming the command and Admin.
     """
     from leaguebot.core.cogs import test_mode_cog
-    from leaguebot.core.services.placement_service import PlacementService
     from tests.support.change_queue import change_rows, member
     from tests.support.season_league import AM, MCLAREN, season_league
     from tests.support.settings_league import audit_rows, said, unruled
@@ -270,14 +270,11 @@ async def test_the_command_refuses_it_in_placements(tmp_path, monkeypatch):
     await league.write(
         "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 2)", MCLAREN
     )
-    templated = _service(league.db_path, {DRIVERS: _standings(tmp_path, rows=1)})
-    measure = PlacementService.guard_roster_capacity
-
-    async def _measured(service, division_id, added):
-        """The bot's placement service, measuring against the one-row standings template."""
-        await measure(templated, division_id, added)
-
-    monkeypatch.setattr(PlacementService, "guard_roster_capacity", _measured)
+    monkeypatch.setattr(
+        league.bot,
+        "placement_service",
+        _service(league.db_path, {DRIVERS: _standings(tmp_path, rows=1)}),
+    )
     cog = test_mode_cog.TestModeCog.__new__(test_mode_cog.TestModeCog)
     cog.bot = league.bot
     interaction = member_asks(

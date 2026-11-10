@@ -222,12 +222,15 @@ async def test_the_roster_is_held_to_the_template_capacities(league, monkeypatch
     Placements under test mode, Am empty and McLaren's three seats free. Admin (77) submits
     `/test-mode roster add-bulk`'s form naming Mock Alpha and Mock Beta at McLaren in Am, and the
     queue runs the change. The change is queued as `core.test_roster_add_bulk`, every time the
-    capacities are asked it is of Am with two drivers for McLaren, and both are seated."""
+    capacities are asked it is of Am with two drivers for McLaren and by the bot's own placement
+    service, the one carrying the image module's drawing, and both are seated."""
     asked: list[tuple[int, dict[str, int]]] = []
+    measurers: list[PlacementService] = []
     measure = PlacementService.guard_roster_capacity
 
     async def _measured(service, division_id, added):
         asked.append((division_id, dict(added)))
+        measurers.append(service)
         await measure(service, division_id, added)
 
     monkeypatch.setattr(PlacementService, "guard_roster_capacity", _measured)
@@ -239,6 +242,7 @@ async def test_the_roster_is_held_to_the_template_capacities(league, monkeypatch
     await run_queue(league.bot)
 
     assert asked and set(map(repr, asked)) == {repr((AM, {"McLaren": 2}))}
+    assert all(service is league.bot.placement_service for service in measurers)
     assert [row["discord_user_id"] for row in await _fake_drivers(league)] == [ALPHA, BETA]
 
 
