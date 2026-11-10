@@ -161,11 +161,6 @@ async def test_a_queue_that_fails_to_start_still_resumes_the_scheduler(caplog):
     assert error.exc_info is not None and error.exc_info[0] is RuntimeError
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: the expired review prompts' recovery catches a fault reading the database "
-    "itself, so start-up never records the step as failed",
-)
 async def test_a_review_prompt_recovery_that_cannot_read_the_database_fails_its_step(
     tmp_path, caplog
 ):

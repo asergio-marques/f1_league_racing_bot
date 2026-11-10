@@ -108,7 +108,8 @@ async def take_fingerprint(
 
     One connection for the lot. Never raises: a fingerprint that could not be taken is an
     empty one, and an empty fingerprint differs from every other, so a fault here refuses
-    an approval rather than waving it through.
+    an approval rather than waving it through: its catch-all logs the fault on the host and
+    stands aside with that empty one.
     """
     areas: dict[str, str] = {}
     try:

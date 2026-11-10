@@ -117,6 +117,9 @@ async def approval_faults(db_path: str, season_id: int, bot: LeagueBot) -> list[
     **Each module answers for its own channels.** The results module knows what its repost
     needs and the attendance module knows what its recalculation needs; this function only
     composes them, and reaches into neither's configuration itself.
+
+    A fault reading whether the attendance module is on stands aside, logged on the host and read
+    as off: an attendance switch that cannot be read never refuses an amendment.
     """
     from leaguebot.results.services import results_post_service
 

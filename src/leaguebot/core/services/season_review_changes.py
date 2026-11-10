@@ -863,20 +863,18 @@ async def recover_expired_review_prompts(
     (a press reads the row, which says its five minutes ran).
 
     The *queue* is the change queue the take-downs are asked of, handed in by the builder.
+
+    A fault reading the prompts or the queued take-downs is not caught here: this is a start-up
+    step, and start-up's step containment records it as the step's failure and carries on.
     """
-    try:
-        async with get_connection(bot.db_path) as db:
-            cursor = await db.execute(
-                "SELECT message_id, reviewer_id, review, verb FROM season_review_prompts"
-            )
-            prompts = await cursor.fetchall()
-        in_hand = {
-            int(payload["question_id"])
-            for payload in await unfinished(bot.db_path, [TAKE_DOWN])
-        }
-    except Exception:
-        log.exception("could not read the standing season review prompts")
-        return
+    async with get_connection(bot.db_path) as db:
+        cursor = await db.execute(
+            "SELECT message_id, reviewer_id, review, verb FROM season_review_prompts"
+        )
+        prompts = await cursor.fetchall()
+    in_hand = {
+        int(payload["question_id"]) for payload in await unfinished(bot.db_path, [TAKE_DOWN])
+    }
 
     for row in prompts:
         question_id = int(row["message_id"])

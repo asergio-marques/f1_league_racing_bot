@@ -687,6 +687,9 @@ async def _clean_up(guild, bot_user_id: int, targets, report, close, *, now: dat
     However it ends, *close(ending, detail)* is then awaited once, to leave the reset's closing
     line: after the clean-up, so that its deletions leave the line standing. *now* is the
     moment the clean-up judges a message's age by.
+
+    A clean-up that stops part-way is caught whatever the fault, logged on the host in full, and
+    said so in the last report and the closing line, which a reset that ends in silence would not.
     """
     try:
         outcome = await factory_reset_service.clean_discord(

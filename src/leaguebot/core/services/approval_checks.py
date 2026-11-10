@@ -118,8 +118,8 @@ async def channel_on_server(guild, channel_id: int) -> bool:
     """Whether *channel_id* is still a channel of *guild*, only NotFound answering no.
 
     The cache is asked first and the API second, the cache holding no channel it has not
-    seen. Any failure but NotFound answers yes: a check that could not tell must not be the
-    thing that refuses a season.
+    seen. Any failure but NotFound answers yes, logged on the host: a check that could not tell
+    must not be the thing that refuses a season.
     """
     if guild.get_channel(channel_id) is not None:
         return True
