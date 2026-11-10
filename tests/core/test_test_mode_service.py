@@ -10,6 +10,7 @@ from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.models.round import read_scheduled_at
 from leaguebot.core.services.scheduler_service import SchedulerService
 from leaguebot.core.services.season_service import SeasonService
 from leaguebot.core.services.test_mode_service import (
@@ -1421,3 +1422,227 @@ async def test_a_raced_step_advance_would_not_offer_anyway_is_not_named_as_passe
 
     assert [step["phase_number"] for step in steps] == left
 
+
+
+# ---------------------------------------------------------------------------
+# The steps each module hands back, ordered by core
+# ---------------------------------------------------------------------------
+# Core reads the active season's rounds and asks each module, through the `pending_steps_read`
+# hook, which of its steps are still pending and which advance passes over; it orders what they
+# hand back and picks the first. Each subscriber here stands in for a module and hands back the
+# steps it is given, as (round, phase, kind).
+
+#: Why each test of this section fails until core asks the modules for their steps.
+MODULE_STEPS = "#283: core does not yet ask each module for its pending steps"
+
+
+def _steps_hook(*modules, handed_to: list | None = None):
+    """A `pending_steps_read` hook with one subscriber per *modules* entry, each a (pending,
+    passed over) pair of (round, phase, kind) lists it hands back; each records the rounds and the
+    moment it was handed in *handed_to*, where given."""
+    from leaguebot.core.services.test_mode_service import ModuleSteps, PendingStep
+    from leaguebot.core.utils.hooks import AwaitedHook
+
+    hook = AwaitedHook()
+    for pending, passed_over in modules:
+        async def subscriber(db_path, rounds, *, now, _pending=pending, _over=passed_over):
+            if handed_to is not None:
+                handed_to.append((list(rounds), now))
+            return ModuleSteps(
+                pending=[PendingStep(*step) for step in _pending],
+                passed_over=[PendingStep(*step) for step in _over],
+            )
+        hook.subscribe(subscriber)
+    return hook
+
+
+async def _three_rounds(db_path: str) -> None:
+    """Round 1 (Division A) and round 3 (Division B) race in three days, round 2 (Division A) in
+    seven: core reads them in the order 1, 3, 2."""
+    in_days = lambda days: (NOW + timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    await run_migrations(db_path)
+    await _seed(db_path, [
+        {"division_id": 1, "scheduled_at": in_days(3), "track_name": "Bahrain"},
+        {"division_id": 1, "scheduled_at": in_days(7), "track_name": "Jeddah"},
+        {"division_id": 2, "scheduled_at": in_days(3), "track_name": "Imola"},
+    ])
+
+
+@pytest.mark.xfail(strict=True, reason=MODULE_STEPS)
+@pytest.mark.parametrize("weather, attendance, results, expected", [
+    pytest.param([(2, 1, "weather_p1")], [(1, 7, "rsvp_deadline")], [],
+                 (1, 7, "rsvp_deadline", "Division A", "Bahrain"), id="an earlier round first"),
+    pytest.param([(3, 1, "weather_p1"), (1, 3, "weather_p3")], [], [],
+                 (1, 3, "weather_p3", "Division A", "Bahrain"), id="the division breaks a tie"),
+    pytest.param([(1, 0, "weather_p1")], [(1, 5, "rsvp_notice")], [],
+                 (1, 0, "weather_p1", "Division A", "Bahrain"), id="the notice before the call"),
+    pytest.param([(1, 2, "weather_p2")], [(1, 5, "rsvp_notice")], [],
+                 (1, 5, "rsvp_notice", "Division A", "Bahrain"), id="the call before phase 2"),
+    pytest.param([(1, 3, "weather_p3")], [(1, 6, "rsvp_last_notice")], [],
+                 (1, 6, "rsvp_last_notice", "Division A", "Bahrain"),
+                 id="the last notice before phase 3"),
+    pytest.param([(1, 3, "weather_p3")], [(1, 7, "rsvp_deadline")], [],
+                 (1, 3, "weather_p3", "Division A", "Bahrain"), id="phase 3 before the deadline"),
+    pytest.param([], [(1, 7, "rsvp_deadline")], [(1, 4, "results")],
+                 (1, 7, "rsvp_deadline", "Division A", "Bahrain"),
+                 id="the deadline before result submission"),
+    pytest.param([(1, 8, "cleanup"), (2, 1, "weather_p1")], [], [],
+                 (2, 1, "weather_p1", "Division A", "Jeddah"),
+                 id="clean-ups after every other step"),
+    pytest.param([(2, 8, "cleanup")], [(1, 9, "rsvp_cleanup")], [],
+                 (1, 9, "rsvp_cleanup", "Division A", "Bahrain"),
+                 id="the clean-ups in the order the rounds race"),
+    pytest.param([], [], [], None, id="nothing pending"),
+])
+async def test_core_offers_the_first_of_the_steps_the_modules_hand_back(
+    tmp_path, weather, attendance, results, expected,
+) -> None:
+    """The season has round 1 (Bahrain, Division A) and round 3 (Imola, Division B) racing in
+    three days and round 2 (Jeddah, Division A) in seven, and the scheduler holds no job. Each
+    module hands back the steps it has pending, and advance offers the first of them all: the
+    earliest round first, a division breaking a tie, then within a round the notice or Phase 1,
+    the check-in call, Phase 2, the last notice, Phase 3, the deadline and result submission;
+    the clean-ups come after every other step of every round, in the order the rounds race."""
+    from leaguebot.core.services.test_mode_service import get_next_pending_phase
+
+    db_path = str(tmp_path / "ordered.db")
+    await _three_rounds(db_path)
+    hook = _steps_hook((weather, []), (attendance, []), (results, []))
+
+    entry = await get_next_pending_phase(
+        db_path, _StubScheduler(), now=NOW, pending_steps_read=hook
+    )
+
+    if expected is None:
+        assert entry is None
+        return
+    assert (
+        entry["round_id"], entry["phase_number"], entry["kind"], entry["division_name"],
+        entry["track_name"],
+    ) == expected
+    assert entry["job_id"] is None
+
+
+@pytest.mark.xfail(strict=True, reason=MODULE_STEPS)
+@pytest.mark.parametrize("handed, jobs, expected", [
+    pytest.param([(1, 0, "weather_p1")], [_job(1, 1, days=2)], (1, 0, "job_1_r1"),
+                 id="a job taken as the step its module hands back for its kind"),
+    pytest.param([], [_job(1, 1, days=2)], None,
+                 id="a job its module hands back no step for is stale"),
+    pytest.param([(1, 4, "results"), (2, 1, "weather_p1")], [_job(2, 1, days=6)], (1, 4, None),
+                 id="an earlier round's step before a later round's job"),
+])
+async def test_a_queued_job_is_offered_as_its_module_s_step(
+    tmp_path, handed, jobs, expected,
+) -> None:
+    """Round 1 (Bahrain, Division A) races in three days and round 2 (Jeddah) in seven. The
+    scheduler holds a `weather_p1` job, and the modules hand back their pending steps. A job is
+    offered as the step its module hands back for its round and kind, with the job's id: for a
+    mystery round, the notice weather hands back under `weather_p1`. A job whose module hands back
+    no step of its kind for its round is stale, and passed over. A step of an earlier round comes
+    before a later round's job, with no job id of its own."""
+    from leaguebot.core.services.test_mode_service import get_next_pending_phase
+
+    db_path = str(tmp_path / "jobs.db")
+    await _three_rounds(db_path)
+    hook = _steps_hook((handed, []))
+
+    entry = await get_next_pending_phase(
+        db_path, _StubScheduler(jobs), now=NOW, pending_steps_read=hook
+    )
+
+    if expected is None:
+        assert entry is None
+        return
+    assert (entry["round_id"], entry["phase_number"], entry["job_id"]) == expected
+
+
+@pytest.mark.xfail(strict=True, reason=MODULE_STEPS)
+@pytest.mark.parametrize("status", ["FINAL", "AWAITING_APPEAL_VERDICTS"])
+async def test_a_round_that_has_ended_is_offered_its_clean_ups_alone(tmp_path, status) -> None:
+    """Round 1 (Bahrain) has ended, or its appeals are being judged. Weather hands back its
+    Phase 1 and its forecast clean-up, and results its submission: advance offers the clean-up
+    alone, as a round that has ended offers nothing else."""
+    from leaguebot.core.services.test_mode_service import get_next_pending_phase
+
+    db_path = str(tmp_path / "ended.db")
+    await _three_rounds(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET status = ? WHERE id = 1", (status,))
+        await db.execute("DELETE FROM rounds WHERE id IN (2, 3)")
+        await db.commit()
+    hook = _steps_hook(
+        ([(1, 1, "weather_p1"), (1, 8, "cleanup")], []), ([(1, 4, "results")], []),
+    )
+
+    entry = await get_next_pending_phase(
+        db_path, _StubScheduler(), now=NOW, pending_steps_read=hook
+    )
+
+    assert entry is not None
+    assert (entry["round_id"], entry["phase_number"]) == (1, 8)
+
+
+@pytest.mark.xfail(strict=True, reason=MODULE_STEPS)
+async def test_the_steps_passed_over_are_the_modules_in_the_order_the_rounds_race(
+    tmp_path,
+) -> None:
+    """Weather names Phase 1 of round 2 (Jeddah), Phases 3 and 2 of round 1 (Bahrain) and
+    Phase 1 of round 3 (Imola) as passed over, in that order, and round 2 has ended. Advance names
+    round 1's Phases 2 and 3, then round 3's Phase 1: by the order the rounds race, the division,
+    then the phase, and nothing of a round that has ended."""
+    from leaguebot.core.services.test_mode_service import get_passed_over_steps
+
+    db_path = str(tmp_path / "passed_over_gathered.db")
+    await _three_rounds(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET status = 'FINAL' WHERE id = 2")
+        await db.commit()
+    hook = _steps_hook(
+        ([], [(2, 1, "weather_p1"), (1, 3, "weather_p3"), (1, 2, "weather_p2"),
+              (3, 1, "weather_p1")]),
+        ([], []),
+    )
+
+    steps = await get_passed_over_steps(db_path, now=NOW, pending_steps_read=hook)
+
+    assert [(s["round_id"], s["phase_number"], s["kind"], s["track_name"]) for s in steps] == [
+        (1, 2, "weather_p2", "Bahrain"), (1, 3, "weather_p3", "Bahrain"),
+        (3, 1, "weather_p1", "Imola"),
+    ]
+
+
+@pytest.mark.xfail(strict=True, reason=MODULE_STEPS)
+async def test_each_module_is_handed_the_active_season_s_rounds_as_core_reads_them(
+    tmp_path,
+) -> None:
+    """Round 1 (Bahrain) is to be raced, round 2 (Jeddah) ended cancelled because every session
+    was entered as not held, and round 3 (Imola) was called off. Each of two modules is handed
+    rounds 1 and 2, in the order they race, as core reads them, and the moment advance judges
+    at: round 2 for its clean-ups alone, round 3 not at all."""
+    from leaguebot.core.services.test_mode_service import get_next_pending_phase
+
+    db_path = str(tmp_path / "handed.db")
+    await _three_rounds(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET status = 'CANCELLED', not_held = 1 WHERE id = 2")
+        await db.execute("UPDATE rounds SET status = 'CANCELLED' WHERE id = 3")
+        await db.commit()
+    handed: list = []
+    hook = _steps_hook(([], []), ([], []), handed_to=handed)
+
+    await get_next_pending_phase(db_path, _StubScheduler(), now=NOW, pending_steps_read=hook)
+
+    assert len(handed) == 2
+    for rounds, now in handed:
+        assert now == NOW
+        assert [r.round_id for r in rounds] == [1, 2]
+        first = rounds[0]
+        assert (
+            first.round_number, first.division_id, first.division_name, first.format,
+            first.track_name, first.status,
+        ) == (1, 1, "Division A", "NORMAL", "Bahrain", "NOT_RUN")
+        assert first.scheduled_at == read_scheduled_at(
+            (NOW + timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        )
+        assert rounds[1].status == "CANCELLED"
