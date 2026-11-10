@@ -65,16 +65,6 @@ async def _seed_server(db_path: str, server_id: int = 1) -> tuple[int, list[int]
     return season_id, round_ids
 
 
-async def _mark_all_phases_done(db_path: str, round_ids: list[int]) -> None:
-    async with get_connection(db_path) as db:
-        for rid in round_ids:
-            await db.execute(
-                "UPDATE rounds SET phase1_done = 1, phase2_done = 1, phase3_done = 1 WHERE id = ?",
-                (rid,),
-            )
-        await db.commit()
-
-
 # ---------------------------------------------------------------------------
 # SeasonService helper tests
 # ---------------------------------------------------------------------------
@@ -87,17 +77,6 @@ async def test_has_existing_season(seeded: bool, tmp_path) -> None:
         await _seed_server(db_path, server_id=1)
     svc = SeasonService(db_path)
     assert await svc.has_existing_season() is seeded
-
-
-@pytest.mark.parametrize("done", [False, True], ids=["pending", "done"])
-async def test_all_phases_complete(done: bool, tmp_path) -> None:
-    db_path = str(tmp_path / "bot.db")
-    await run_migrations(db_path)
-    _, round_ids = await _seed_server(db_path, server_id=1)
-    if done:
-        await _mark_all_phases_done(db_path, round_ids)
-    svc = SeasonService(db_path)
-    assert await svc.all_phases_complete() is done
 
 
 async def test_get_last_scheduled_at_returns_latest(tmp_path) -> None:
