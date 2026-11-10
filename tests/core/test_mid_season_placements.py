@@ -20,7 +20,11 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.placement_service import PlacementService
 from tests.support.change_queue import acknowledgement
-from tests.support.review_workflows import record_review_views, run_workflow
+from tests.support.review_workflows import (
+    record_review_views,
+    run_workflow,
+    sign_up_driver_names_read,
+)
 from tests.support.season_league import PLACEMENTS_CONFIRM_KIND as KIND
 from tests.support.setup_reads import hold_setup
 from tests.support.undecorate import undecorate
@@ -110,6 +114,7 @@ def _cog(db_path, stage: SeasonStage) -> SeasonCog:
     # gave.
     cog.bot.image_drawing.calendar_wanted = AsyncMock(return_value=False)
     cog.bot.image_drawing.lineup_wanted = AsyncMock(return_value=False)
+    sign_up_driver_names_read(cog.bot)
     return cog
 
 

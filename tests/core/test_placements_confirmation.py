@@ -15,7 +15,11 @@ import pytest
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage
-from tests.support.review_workflows import run_workflow
+from tests.support.review_workflows import (
+    run_check,
+    run_workflow,
+    sign_up_driver_names_read,
+)
 from tests.support.setup_reads import hold_setup
 
 from tests.support.undecorate import undecorate
@@ -59,16 +63,21 @@ def _cog(db_path, *, weather=False, results=False, attendance=False) -> SeasonCo
     cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=weather)
     cog.bot.module_service.is_results_enabled = AsyncMock(return_value=results)
     cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
+    sign_up_driver_names_read(cog.bot)
     return cog
 
 
 async def _faults(cog, guild=None) -> tuple[list[str], list[str]]:
     """What stops the season's placements being confirmed: the gate both confirmations run,
-    handed the league's modules and database, and *guild* to look its channels up on."""
-    from leaguebot.core.services import approval_checks
-
-    return await approval_checks.placement_confirmation_faults(
-        cog.bot.module_service, cog.bot.db_path, SEASON_ID, guild
+    handed the league's modules and database, *guild* to look its channels up on, and every hook
+    it asks the modules through off the bot."""
+    return await run_check(
+        "placement_confirmation_faults",
+        cog.bot,
+        cog.bot.module_service,
+        cog.bot.db_path,
+        SEASON_ID,
+        guild,
     )
 
 

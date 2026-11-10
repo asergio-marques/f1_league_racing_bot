@@ -46,6 +46,24 @@ def sign_up_confirmation_refused(bot: Any) -> None:
     bot.confirmation_refused.subscribe(results_refusals)
 
 
+def sign_up_driver_names_read(bot: Any) -> None:
+    """Give *bot* the hook a driver's name is read through (`driver_names_read`), signup's names
+    signed up as the builder signs them: signup's module service over *bot*'s database, then the
+    drivers' profile ids. Signup's function is looked up as the hook is called, so a stand-in bot
+    carries the hook whether or not any check asks it yet."""
+    from leaguebot.core.utils.hooks import AwaitedHook
+
+    async def signup_names(*args: Any, **kwargs: Any) -> Any:
+        from leaguebot.signup.services import signup_module_service
+
+        return await signup_module_service.driver_names(
+            signup_module_service.SignupModuleService(bot.db_path), *args, **kwargs
+        )
+
+    bot.driver_names_read = AwaitedHook()
+    bot.driver_names_read.subscribe(signup_names)
+
+
 def _services(target: Any, bot: Any, given: dict[str, Any]) -> dict[str, Any]:
     """Every keyword-only parameter of *target* that has no default and is not in *given*, each
     taken off *bot* by its name, but `now`, which is the queue's clock as the views hand it."""

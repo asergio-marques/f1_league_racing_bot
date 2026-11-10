@@ -112,6 +112,32 @@ async def test_an_approved_signup_outranks_a_later_one_that_was_not(tmp_path):
     assert await _driver_nationality(db_path, int(B)) == "PT"
 
 
+@pytest.mark.parametrize(
+    "approved, name",
+    [
+        pytest.param(True, "Racer", id="the-approved-one"),
+        pytest.param(False, "Rejected Answers", id="the-latest-where-none-is-approved"),
+    ],
+)
+@pytest.mark.xfail(
+    strict=True, reason="#283: signup has no reader of a driver's name across their accounts"
+)
+async def test_signup_names_a_driver_from_their_signup_across_accounts(tmp_path, approved, name):
+    """Signup's reader of the name each driver gave in their signup, the one core's hook a
+    driver's name is read by asks. The driver signed up on their past account A as Racer, and
+    later on their current account B as Rejected Answers. With A's signup approved, the
+    approved one outranks the later: signup names them Racer. With neither approved, the
+    latest speaks for them: Rejected Answers."""
+    from leaguebot.signup.services.signup_module_service import driver_names
+
+    db_path, profile_id = await _make_db(tmp_path)
+    if approved:
+        await _mark_approved(SignupModuleService(db_path), db_path, A)
+    await _newer_rejected_signup_on_b(db_path)
+
+    assert await driver_names(SignupModuleService(db_path), [profile_id]) == {profile_id: name}
+
+
 async def _signup_on(db_path: str) -> None:
     async with get_connection(db_path) as db:
         await db.execute("UPDATE server_configs SET signup_module_enabled = 1")

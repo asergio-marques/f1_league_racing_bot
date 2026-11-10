@@ -91,11 +91,20 @@ async def test_the_channel_faults_are_read_by_the_service(db_path, pro_lineup):
     ]
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: core still reads signup_records for the names, with no names hook"
+)
 async def test_the_unsettled_signups_are_read_by_the_service(db_path):
     """Alice is not yet placed, Bob awaits approval, driver 3 is correcting their signup, and
     two others are placed or signed out. The service names the three unsettled, as the review
-    and the confirmation name them."""
+    and the confirmation name them, each by the name signup holds for them, asked through the
+    hook a driver's name is read by as the builder signs signup up to it; driver 3, with no
+    signup, by their user id."""
+    from types import SimpleNamespace
+
+    from leaguebot.__main__ import _sign_up_to_driver_names_read
     from leaguebot.core.services.approval_checks import unsettled_signups
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     async with get_connection(db_path) as db:
         for user_id, state, name in (
@@ -117,7 +126,10 @@ async def test_the_unsettled_signups_are_read_by_the_service(db_path):
                 )
         await db.commit()
 
-    unsettled = await unsettled_signups(db_path)
+    bot = SimpleNamespace(db_path=db_path, signup_module_service=SignupModuleService(db_path))
+    _sign_up_to_driver_names_read(bot)
+
+    unsettled = await unsettled_signups(db_path, bot.driver_names_read)
 
     assert sorted(unsettled) == sorted([
         "**Alice** — not yet placed",
