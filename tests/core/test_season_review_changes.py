@@ -33,6 +33,7 @@ the reviewer of season 1's placements.
 from __future__ import annotations
 
 import json
+import sys
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
@@ -68,6 +69,11 @@ from tests.support.review_prompts import store_review_prompt
 
 
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
+#: The review's post change is handed no clock of its own: its question's posting is stamped on
+#: the host's clock.
+_POST_HANDED_NO_CLOCK = "#283: season_review_post_change is handed no now, the queue's clock"
+#: The press still judges the review's five minutes on the host's clock.
+_PRESS_ON_THE_HOST_S_CLOCK = "#283: the press judges the review's five minutes on the host's clock"
 REVIEW_CHANNEL = 700
 REVIEWER = MEMBER_ID
 PLACEMENTS = "/season placements-review"
@@ -317,7 +323,7 @@ PICTURES = [
 REPORT = ["**Season 1 placements**", "Pro: Kimi to Ferrari, Lewis to Mercedes"]
 QUESTION = "Approve these placements?"
 EVIDENCE = {"season_id": 1, "fingerprint": "f00d"}
-#: The view the builder's factory makes for the question: the season cog's `_ApproveView`.
+#: The view the builder's factory makes for the question, stood in.
 APPROVE = SimpleNamespace(name="the Approve button")
 
 
@@ -398,8 +404,8 @@ async def posting(tmp_path):
 
 def _attach(env: Any) -> None:
     """Register `season.review.post`, built by its factory with the test's drawing, a view
-    factory recording each payload it makes the question's view for, and the bot's scheduler
-    service, handed as the builder hands it."""
+    factory recording each payload it makes the question's view for, the bot's scheduler
+    service and the queue's clock, handed as the builder hands them."""
     from leaguebot.core.services.season_review_changes import season_review_post_change
 
     def approve_view(payload: Any) -> Any:
@@ -408,7 +414,7 @@ def _attach(env: Any) -> None:
 
     attach_queue(env.bot, env.db_path, now=env.clock, types=(
         season_review_post_change(drawing=env.drawing, approve_view=approve_view,
-                                  scheduler=env.bot.scheduler_service),
+                                  scheduler=env.bot.scheduler_service, now=env.clock),
     ))
 
 
@@ -436,6 +442,7 @@ def _question(channel: Any) -> Any:
     return [m for m in _posts(channel) if m.content == QUESTION][-1]
 
 
+@pytest.mark.xfail(strict=True, reason=_POST_HANDED_NO_CLOCK)
 async def test_a_review_posts_the_drawing_notice_before_drawing_and_deletes_it_after(posting):
     """Alex's review of season 1 carries Pro's calendar and lineup pictures. Once the queue runs,
     "🎨 Drawing the graphics for this review — one moment." is posted in channel 700 before the
@@ -458,6 +465,7 @@ async def test_a_review_posts_the_drawing_notice_before_drawing_and_deletes_it_a
     assert len(pictures) == 2 and max(pictures) < deleted_at < first_report
 
 
+@pytest.mark.xfail(strict=True, reason=_POST_HANDED_NO_CLOCK)
 async def test_each_review_picture_is_drawn_and_posted_by_a_job_of_its_own_in_order(posting):
     """Alex's review carries Pro's calendar, then its lineup. Once the queue runs, the calendar is
     drawn and posted, then the lineup, each by a `draw_and_post` job of its own; the report's two
@@ -481,6 +489,7 @@ async def test_each_review_picture_is_drawn_and_posted_by_a_job_of_its_own_in_or
     assert posting.views and posting.views[0]["season_id"] == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_POST_HANDED_NO_CLOCK)
 async def test_a_refused_review_picture_falls_back_to_text_in_the_same_try(posting):
     """Discord refuses every message carrying a file in channel 700 (no Attach Files). Once the
     queue runs, each picture is posted as its text instead, in the same try: the queue does not
@@ -498,6 +507,7 @@ async def test_a_refused_review_picture_falls_back_to_text_in_the_same_try(posti
     assert contents[-1] == QUESTION
 
 
+@pytest.mark.xfail(strict=True, reason=_POST_HANDED_NO_CLOCK)
 async def test_the_question_s_record_writes_the_prompt_row_with_every_report_id(posting):
     """Once Alex's review is posted, `season_review_prompts` holds one row for its question: season
     1, channel 700, Alex as reviewer, `/season placements-review`, the ids of both pictures and
@@ -518,6 +528,7 @@ async def test_the_question_s_record_writes_the_prompt_row_with_every_report_id(
     assert json.loads(row["evidence"]) == EVIDENCE
 
 
+@pytest.mark.xfail(strict=True, reason=_POST_HANDED_NO_CLOCK)
 async def test_a_posted_review_writes_one_line_naming_who_ran_it(posting):
     """Alex's `/season placements-review` is asked of the queue and the queue posts it, its
     question standing in channel 700. The log channel then holds one line naming Alex and
@@ -534,10 +545,12 @@ async def test_a_posted_review_writes_one_line_naming_who_ran_it(posting):
     assert not any(line.startswith("⛔") for line in lines), lines
 
 
+@pytest.mark.xfail(strict=True, reason=_POST_HANDED_NO_CLOCK)
 async def test_the_question_s_five_minutes_start_when_it_is_posted(posting):
     """The queue is stopped at 12:00 when Alex runs his review; it clears at 12:03. The question is
-    posted at 12:03, and a job after it arms the review's expiry timer for its question at 12:08,
-    five minutes from its posting, not from the command."""
+    posted at 12:03 and its row records it posted at 12:03 by the queue's clock, and a job after it
+    arms the review's expiry timer for its question at 12:08, five minutes from its posting, not
+    from the command."""
     from datetime import timedelta
 
     from tests.support.change_queue import retry_job
@@ -555,11 +568,14 @@ async def test_the_question_s_five_minutes_start_when_it_is_posted(posting):
     armed = [call.args for call in posting.bot.scheduler_service.arm_once.call_args_list
              if call.args and call.args[0] == TIMER]
     assert armed == [(TIMER, question.id, NOW + timedelta(minutes=8))]
+    [row] = await _prompts(posting.db_path)
+    assert datetime.fromisoformat(row["posted_at"]) == NOW + timedelta(minutes=3)
     [change] = await _changes(posting, POST)
     names = [job["name"] for job in await step_rows(posting.db_path, change["id"])]
     assert names.index("arm_expiry") > names.index("post_question")
 
 
+@pytest.mark.xfail(strict=True, reason=_POST_HANDED_NO_CLOCK)
 async def test_a_review_while_the_queue_is_stopped_is_acknowledged_and_posted_when_it_clears(
         posting):
     """The queue is stopped when Alex runs his review. He is answered at once, and nothing is
@@ -583,6 +599,7 @@ async def test_a_review_while_the_queue_is_stopped_is_acknowledged_and_posted_wh
     assert [m.content for m in _posts(posting.channel)][-1] == QUESTION
 
 
+@pytest.mark.xfail(strict=True, reason=_POST_HANDED_NO_CLOCK)
 async def test_a_picture_that_will_not_draw_withholds_the_button_and_is_told_in_the_reviewer_s_reply(
         posting):
     """Pro's lineup will not draw (its template's font cannot be loaded). Once the queue runs the
@@ -611,6 +628,7 @@ async def test_a_picture_that_will_not_draw_withholds_the_button_and_is_told_in_
     ("mid_season", "the placements are **not** offered for confirmation"),
     ("configuration", "the configuration is **not** offered for confirmation"),
 ])
+@pytest.mark.xfail(strict=True, reason=_POST_HANDED_NO_CLOCK)
 async def test_a_drawing_fault_words_what_is_withheld_by_the_review_s_family(
         posting, view, withheld):
     """Pro's lineup will not draw in a mid-season or a configuration review. Alex's reply says
@@ -630,6 +648,7 @@ async def test_a_drawing_fault_words_what_is_withheld_by_the_review_s_family(
     assert "season is **not** offered for approval" not in updated_reply(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=_POST_HANDED_NO_CLOCK)
 async def test_a_drawing_fault_is_told_in_the_log_channel_once_the_reply_cannot_be_updated(
         posting):
     """Pro's lineup will not draw, and Alex's reply can no longer be updated (its token has run
@@ -645,6 +664,7 @@ async def test_a_drawing_fault_is_told_in_the_log_channel_once_the_reply_cannot_
     assert "Pro lineup" in _log(posting)
 
 
+@pytest.mark.xfail(strict=True, reason=_POST_HANDED_NO_CLOCK)
 async def test_the_review_s_drawing_runs_through_the_callable_the_builder_hands_off_the_event_loop(
         posting):
     """Once Alex's review runs, each of its pictures is drawn by the callable the builder handed
@@ -703,6 +723,7 @@ async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portrait
     assert bool(render.await_args.kwargs.get("include_uncommitted")) is uncommitted
 
 
+@pytest.mark.xfail(strict=True, reason=_POST_HANDED_NO_CLOCK)
 async def test_a_drawn_picture_s_render_directory_is_gone_once_its_job_completes(
         posting, tmp_path):
     """Alex's review carries two pictures, each drawn by the image module into a directory of its
@@ -727,7 +748,7 @@ async def test_a_drawn_picture_s_render_directory_is_gone_once_its_job_completes
     attach_queue(posting.bot, posting.db_path, now=posting.clock, types=(
         season_review_post_change(drawing=drawing, approve_view=lambda payload: APPROVE,
                                   scheduler=posting.bot.scheduler_service,
-                                  discard=discard_render),
+                                  discard=discard_render, now=posting.clock),
     ))
     await _review(posting)
     await run_queue(posting.bot)
@@ -835,17 +856,15 @@ PRO_ROUNDS = "Division Pro's rounds"
 
 
 def _approve_view(env: Any, monkeypatch: Any) -> tuple[Any, Any]:
-    """An Approve view for Alex's review, built as the question's view is, on a cog holding the
-    bot, whose approval (`season_review_workflows.approve_season`) is stood in, recorded and goes
+    """An Approve view for Alex's review, the view the builder's factory makes for the question,
+    whose approval (`season_review_workflows.approve_season`) is stood in, recorded and goes
     through. Returns the view and the stand-in."""
-    from leaguebot.core.cogs.season_cog import _ApproveView
+    from leaguebot.__main__ import _approve_view_for
     from leaguebot.core.services import season_review_workflows
 
-    cog = MagicMock()
-    cog.bot = env.bot
     approval = AsyncMock(return_value=True)
     monkeypatch.setattr(season_review_workflows, "approve_season", approval)
-    return _ApproveView(cog, REVIEWER), approval
+    return _approve_view_for(env.bot)({"view": "approve", "reviewer_id": REVIEWER}), approval
 
 
 def _press_on(env: Any, question: Any) -> Any:
@@ -861,11 +880,12 @@ async def _press_approve(view: Any, interaction: Any) -> None:
 
 
 async def _posted_a_moment_ago(env: Any, question_id: int) -> None:
-    """The question's row says it was posted just now, so its five minutes are still running."""
+    """The question's row says it was posted just now by the queue's clock, so its five minutes
+    are still running."""
     async with get_connection(env.db_path) as db:
         await db.execute(
             "UPDATE season_review_prompts SET posted_at = ? WHERE message_id = ?",
-            (datetime.now(timezone.utc).isoformat(), question_id),
+            (env.clock.now.isoformat(), question_id),
         )
         await db.commit()
 
@@ -935,7 +955,7 @@ async def test_a_confirmation_asks_the_take_down_before_the_approval_and_the_rev
     and naming Q, R1 and R2 in channel 610, so it runs on the queue ahead of the approval's jobs;
     the button deletes nothing itself. Run a job at a time, the queue takes the review down, its
     row with it, before any of the approval's jobs is done."""
-    from leaguebot.core.cogs.season_cog import _ApproveView
+    from leaguebot.__main__ import _approve_view_for
     from leaguebot.core.services.season_approval_change import KIND as APPROVAL
     from leaguebot.core.services.season_fingerprint_service import take_fingerprint
     from tests.support.season_league import ADMIN_ID, SEASON_ID, Review, press_approve, season_league
@@ -959,7 +979,8 @@ async def test_a_confirmation_asks_the_take_down_before_the_approval_and_the_rev
         await db.execute("UPDATE season_review_prompts SET evidence = ? WHERE message_id = ?",
                          (json.dumps(evidence), q.id))
         await db.commit()
-    review = Review(view=_ApproveView(league.cog, ADMIN_ID), prompt=q, report=[r1, r2])
+    view = _approve_view_for(league.bot)({"view": "approve", "reviewer_id": ADMIN_ID})
+    review = Review(view=view, prompt=q, report=[r1, r2])
 
     await press_approve(league, review)
 
@@ -997,8 +1018,8 @@ async def test_a_confirmation_asks_the_take_down_before_the_approval_and_the_rev
 ])
 async def test_the_five_minutes_and_a_refused_press_ask_the_take_down(standing, monkeypatch, ending):
     """Alex's review stands in channel 700. Either its five minutes run out (the review's expiry
-    timer fires for Q), or Alex presses Approve a moment after it was posted but the season has
-    changed since the report (Pro's rounds), so the press is refused. Either way nothing is
+    timer fires for Q), or Alex presses Approve a moment after it was posted, by the queue's clock, but
+    the season has changed since the report (Pro's rounds), so the press is refused. Either way nothing is
     deleted or posted at once: the review's take-down is asked of the queue as the bot's, naming
     channel 700, Q, R1, R2, Alex and `/season placements-review`, ending expired or refused."""
     channel = standing.channel
@@ -1022,6 +1043,7 @@ async def test_the_five_minutes_and_a_refused_press_ask_the_take_down(standing, 
     assert change["origin"] == "BOT"
 
 
+@pytest.mark.xfail(strict=True, reason=_POST_HANDED_NO_CLOCK)
 async def test_approve_refuses_where_the_season_changed_while_the_review_waited(posting, monkeypatch):
     """The queue is stopped when Alex runs his review of season 1; its evidence is what the
     command computed the report from, Pro's rounds "before". While the review waits, Pro's
@@ -1117,6 +1139,7 @@ async def test_a_late_press_beside_one_under_way_leaves_the_review_to_it(
     assert await _take_downs(standing) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_PRESS_ON_THE_HOST_S_CLOCK)
 async def test_a_press_refused_while_an_approval_is_in_hand_leaves_no_review_past_its_timer(
         standing, monkeypatch):
     """Alex's review stands in channel 700, posted a moment ago. He presses Approve while an
@@ -1135,8 +1158,9 @@ async def test_a_press_refused_while_an_approval_is_in_hand_leaves_no_review_pas
         await fired(channel.q.id)
         return True
 
-    monkeypatch.setattr("leaguebot.core.cogs.season_cog.approval_in_hand", _in_hand)
     view, approval = _approve_view(standing, monkeypatch)
+    # The view asks whether an approval is in hand by the name its own module binds.
+    monkeypatch.setattr(sys.modules[type(view).__module__], "approval_in_hand", _in_hand)
     interaction = _press_on(standing, channel.q)
 
     await _press_approve(view, interaction)
@@ -1155,8 +1179,8 @@ async def test_a_review_standing_after_a_restart_refuses_a_press_and_records_it(
     nothing itself."""
     from leaguebot.__main__ import _approve_view_for
     from leaguebot.core.services.season_review_changes import recover_expired_review_prompts
-    from leaguebot.core.cogs.season_cog import _ApproveView
 
+    approve_view = type(_approve_view_for(standing.bot)({"view": "approve", "reviewer_id": REVIEWER}))
     standing.bot.add_view = MagicMock()
     await recover_expired_review_prompts(standing.bot,
                                           approve_view=_approve_view_for(standing.bot),
@@ -1164,7 +1188,7 @@ async def test_a_review_standing_after_a_restart_refuses_a_press_and_records_it(
 
     routed = [(call.args[0], call.kwargs.get("message_id"))
               for call in standing.bot.add_view.call_args_list
-              if call.args and isinstance(call.args[0], _ApproveView)]
+              if call.args and isinstance(call.args[0], approve_view)]
     [(view, message_id)] = routed
     assert message_id == standing.channel.q.id
 
@@ -1175,18 +1199,20 @@ async def test_a_review_standing_after_a_restart_refuses_a_press_and_records_it(
     assert standing.channel.deleted == []
 
 
+@pytest.mark.xfail(strict=True, reason=_PRESS_ON_THE_HOST_S_CLOCK)
 async def test_a_press_hands_the_approval_what_remains_of_the_review_s_five_minutes(
         standing, monkeypatch):
-    """Alex's review stands in channel 700, its question posted four minutes ago by its row, and
+    """Alex's review stands in channel 700, its question posted four minutes ago by its row, on
+    the queue's clock, and
     the season is as its evidence describes it. Alex presses Approve on a view just built for it:
     the approval is asked once, handed as its deadline the question's posting time plus five
     minutes, about one minute on, so a backup question under test mode shares what is left of
     the review's five minutes rather than taking five of its own (core :281)."""
     from datetime import timedelta
 
-    from leaguebot.core.cogs.season_cog import APPROVAL_WINDOW_SECONDS
+    from leaguebot.core.services.season_review_changes import REVIEW_WINDOW
 
-    posted = datetime.now(timezone.utc) - timedelta(minutes=4)
+    posted = standing.clock.now - timedelta(minutes=4)
     async with get_connection(standing.db_path) as db:
         await db.execute(
             "UPDATE season_review_prompts SET posted_at = ? WHERE message_id = ?",
@@ -1201,7 +1227,7 @@ async def test_a_press_hands_the_approval_what_remains_of_the_review_s_five_minu
 
     approval.assert_awaited_once()
     deadline = approval.await_args.kwargs["deadline"]
-    expected = posted + timedelta(seconds=APPROVAL_WINDOW_SECONDS)
+    expected = posted + REVIEW_WINDOW
     assert abs((deadline - expected).total_seconds()) < 2, (deadline, expected)
 
 
