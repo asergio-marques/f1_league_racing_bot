@@ -182,9 +182,10 @@ dependency table (above). The key is the name the module's switch is asked by: `
 image module, the module's own name for the rest. So a module added later adds its
 `is_<module>_enabled` to core's module service as well as signing up; core knows its name for its
 switch and nothing more. A module that never signed up is a fault in the bot's assembly, and asking
-for it raises `LookupError`, which no reader that stands aside takes for an answer. A link the
-dependency table allows between two modules is not one of core's hooks: there the module depended on
-may name what it asks of its dependant, as results does of attendance (below).
+for it raises `SwitchNotSignedUp`, a `LookupError` of its own type, which no reader that stands
+aside takes for an answer: each lets that type through by name and stands aside from any other
+fault. A link the dependency table allows between two modules is not one of core's hooks: there the
+module depended on may name what it asks of its dependant, as results does of attendance (below).
 
 *Rejected:* a hook as one object of named operations the builder fills in, one for each module's
 part, which leaves core knowing what each module does at that moment. *Rejected:* only writing the
