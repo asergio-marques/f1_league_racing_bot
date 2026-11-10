@@ -246,9 +246,10 @@ def test_roster_add_change(*, placement: Callable[[], PlacementService]) -> Chan
         nationality_line = f"Nationality: **{saved['nationality']}**\n" if saved["nationality"] else ""
         # The division is named because a team name repeats across divisions, so the team alone
         # does not say where the driver landed, which is the one thing the manager is choosing.
+        # As typed, like the line: only the audit entry records the stored name.
         return (
             f"✅ Added fake driver **{saved['driver']}** to **{saved['team']}** "
-            f"in **{saved['division']}**.\n"
+            f"in **{ctx.payload['division']}**.\n"
             f"{nationality_line}"
             f"Mention string (copy-paste into results): `<@{saved['user_id']}>`"
         )

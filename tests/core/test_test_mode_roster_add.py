@@ -105,10 +105,6 @@ def _lines(league) -> list[str]:
         pytest.param(True, None, None, "Am", id="nationality switched off, none given"),
         pytest.param(
             False, "united kingdom", "British", "am", id="the division typed in another case",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="#283: the reply names the division by its stored name, not as typed",
-            ),
         ),
     ],
 )
