@@ -26,7 +26,8 @@ and `portrait_fault`. The image module words each in full; core places them bene
 the templates out, for core to refuse on — a check that never ran is not a pass; `review_section`
 lets a fault out, for core to state the section as unreadable; and `colour_shortfall_problems`
 and `portrait_fault` are read behind core's own `try`, so a fault in either stands aside rather
-than blocking a season it could not read.
+than blocking a season it could not read. A switch nobody signed up for (`SwitchNotSignedUp`) is
+let out of each, and core raises it: a fault in the bot's assembly is not a reading.
 """
 from __future__ import annotations
 
@@ -229,7 +230,8 @@ class ImageDrawing(Protocol):
         `"**Image output**"` heading: the drawing program's absence, each aspect and its
         template's state, the asset directories, and the driver-portrait settings. A fault
         reading the configuration is let out, for core to state the section as unreadable in
-        its own words rather than the image module guessing at a partial section."""
+        its own words rather than the image module guessing at a partial section. A switch
+        nobody signed up for (`SwitchNotSignedUp`) is let out too, and core raises it."""
 
     async def template_faults(self) -> list[str]:
         """Every broken template a switched-on output draws, each a sentence ending in a full
