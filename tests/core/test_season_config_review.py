@@ -128,6 +128,11 @@ def _bot(
     bot.output_router.post_log = AsyncMock()
     # Results' refusals, through the hook a season's confirmation is refused through (#283).
     sign_up_confirmation_refused(bot)
+    # The configuration's faults, as the builder hands the review them: the gate, handed this
+    # bot's services by name as they stand when it is asked, the gates a test stands in included.
+    bot.configuration_faults = AsyncMock(side_effect=lambda season_id, guild=None: run_check(
+        "configuration_faults", bot, season_id, guild
+    ))
     return bot
 
 
@@ -769,6 +774,57 @@ async def test_a_faulty_configuration_is_reported_without_a_button(monkeypatch):
     assert "**base role** — `/bot base-role`" in messages[-1]
     assert "/season config-review" in messages[-1]
     assert not any("Do you confirm this season's configuration?" in m for m in messages)
+
+
+#: Why a test of the review handed its faults fails until the build.
+HANDED_FAULTS = "#283: /season config-review still reads signup's service on the bot for its faults"
+
+
+@pytest.mark.xfail(strict=True, reason=HANDED_FAULTS)
+async def test_the_review_reports_the_faults_the_builder_hands_it(monkeypatch):
+    """Signup is on and a fault stands in the configuration. The review asks the configuration's
+    faults of the reader the builder puts on the bot, for season 31 on the manager's server, and
+    reads no module's service on the bot to do it (architecture.md, "Core reaches a module only
+    through hooks"): the review asked of the queue ends in that reader's fault and asks no
+    question to confirm."""
+    bot = _report_bot(signup=True)
+    bot.configuration_faults = AsyncMock(return_value=["The stand-in fault — `/stand-in`."])
+    cog = _cog(bot)
+    interaction = _interaction()
+    # Read after the hooks above were signed up: the review itself must not reach for it.
+    del bot.signup_module_service
+
+    messages = await _report(cog, interaction, monkeypatch)
+
+    bot.configuration_faults.assert_awaited_once_with(SEASON_ID, interaction.guild)
+    assert "cannot be confirmed yet" in messages[-1]
+    assert "The stand-in fault — `/stand-in`." in messages[-1]
+    assert not any("Do you confirm this season's configuration?" in m for m in messages)
+
+
+@pytest.mark.xfail(strict=True, reason=HANDED_FAULTS)
+async def test_the_builder_s_faults_read_signup_s_settings_as_they_stand(tmp_path):
+    """The bot the entry point builds, on an empty league's database, signup switched on, then
+    signup's service replaced (as a league's own is, after the build) by one whose signup
+    channel is unset. The configuration's faults the builder put on the bot name the missing
+    signup channel and `/signup channel`: signup's settings are read as they stand when asked,
+    not as they stood when the bot was built."""
+    from leaguebot.core.db.database import run_migrations
+    from tests.support.change_queue import league_bot
+
+    db_path = str(tmp_path / "config_faults.db")
+    await run_migrations(db_path)
+    bot = await league_bot(db_path, real_config=True)
+    bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
+    bot.module_service.is_results_enabled = AsyncMock(return_value=False)
+    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+    bot.signup_module_service = SimpleNamespace(
+        get_config=AsyncMock(return_value=_signup_config(channel=None))
+    )
+
+    faults = await bot.configuration_faults(SEASON_ID, None)
+
+    assert "The signup module has no **signup channel** — `/signup channel`." in faults
 
 
 async def test_the_followup_is_restored_after_the_report(monkeypatch):

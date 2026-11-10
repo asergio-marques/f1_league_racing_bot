@@ -88,6 +88,9 @@ async def _seed_season_points(db_path: str, season_id: int) -> None:
 # recorded rather than run, patched before the league is built; a check-in call is posted by
 # attendance's own service and read from what its check-in channel was sent.
 
+#: Why a test of `approval_faults` handing it the module service fails until the build.
+HANDED_SWITCHES = "#283: approval_faults is not yet handed the module service it asks the attendance switch of"
+
 BAHRAIN = "Bahrain International Circuit"
 SILVERSTONE = "Silverstone Circuit"
 AM_3 = round_id(AM, 3)
@@ -1261,12 +1264,14 @@ async def test_an_amendment_is_refused_when_the_attendance_channel_is_gone(db_pa
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=HANDED_SWITCHES)
 async def test_approval_faults_names_a_cancelled_division_s_deleted_attendance_channel(db_path):
     """A division cancelled mid-season, attendance on, whose attendance channel (601) has been
     deleted: the approval reposts and recalculates its raced rounds too, so the check names the
     channel, as the results specification's "every division's" channels require (owner,
-    2026-10-06, "Refuse at the press")."""
-    from unittest.mock import AsyncMock
+    2026-10-06, "Refuse at the press"). Whether attendance is on is asked of the module service
+    the check is handed, not of one it looks up on the bot."""
+    from unittest.mock import AsyncMock, MagicMock
 
     from leaguebot.core.services.amendment_service import approval_faults
 
@@ -1288,10 +1293,13 @@ async def test_approval_faults_names_a_cancelled_division_s_deleted_attendance_c
         await db.commit()
     await _staged_amendment(path, season_id)
 
+    # The switches are handed in: the bot's own module service, which says attendance is off, is
+    # never asked (architecture.md, "Services stay attached to the bot").
     bot = await _bot_recording_reposts(path, [], missing=(601,))
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
+    switches = MagicMock()
+    switches.is_attendance_enabled = AsyncMock(return_value=True)
 
-    faults = await approval_faults(path, season_id, bot)
+    faults = await approval_faults(path, season_id, bot, module_service=switches)
 
     assert len(faults) == 1, faults
     assert "attendance channel (id 601)" in faults[0]
@@ -1343,11 +1351,12 @@ async def test_the_attendance_channels_are_not_checked_while_the_module_is_off(d
 
 
 @pytest.mark.asyncio
+@pytest.mark.xfail(strict=True, reason=HANDED_SWITCHES)
 async def test_an_attendance_switch_nobody_signed_up_for_is_raised_not_read_as_off(db_path):
     """The attendance module's switch reader was never signed up (`SwitchNotSignedUp`): that is a fault
     in the bot's assembly, not a switch that cannot be read, so `approval_faults` raises it rather
-    than standing aside and reading the module as off."""
-    from unittest.mock import AsyncMock
+    than standing aside and reading the module as off. The switch is the handed module service's."""
+    from unittest.mock import AsyncMock, MagicMock
 
     from leaguebot.core.services.amendment_service import approval_faults
 
@@ -1359,12 +1368,11 @@ async def test_an_attendance_switch_nobody_signed_up_for_is_raised_not_read_as_o
     bot = await _bot_recording_reposts(path, [])
     from leaguebot.core.services.module_service import SwitchNotSignedUp
 
-    bot.module_service.is_attendance_enabled = AsyncMock(
-        side_effect=SwitchNotSignedUp("attendance")
-    )
+    switches = MagicMock()
+    switches.is_attendance_enabled = AsyncMock(side_effect=SwitchNotSignedUp("attendance"))
 
     with pytest.raises(SwitchNotSignedUp, match="attendance"):
-        await approval_faults(path, season_id, bot)
+        await approval_faults(path, season_id, bot, module_service=switches)
 
 
 @pytest.mark.asyncio
