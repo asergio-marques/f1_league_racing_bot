@@ -194,9 +194,9 @@ the tests and the settings files that pin them.
   pick one that has the property and `pytest.skip` with a reason where none does. Make the test
   host-agnostic rather than bend CI. Pinning `requirements.txt` governs a virtualenv, not apt's
   `dist-packages`.
-- **No test may depend on `.env`.** `tests/conftest.py` gives `BOT_TOKEN` a placeholder, so
-  `leaguebot.__main__` may be imported at module level; add no per-file default
-  (`test_suite_needs_no_dotenv.py`).
+- **No test may depend on `.env`.** The entry point reads its settings in `main`, never at import,
+  so `leaguebot.__main__` may be imported at module level with no token set; give no test a
+  placeholder token (`test_suite_needs_no_dotenv.py`).
 - **A test that constructs a `discord.ui.View` or `Modal` is `async def`** (`asyncio_mode = auto`
   needs no decorator); never `asyncio.run()` in a sync test.
 - **Run with the virtualenv that carries the pins**, built from `requirements.txt` with the bot
