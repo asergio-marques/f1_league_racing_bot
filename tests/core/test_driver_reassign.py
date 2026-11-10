@@ -516,8 +516,9 @@ async def test_a_driver_reassign_asks_where_each_side_raced_in_its_check_and_its
     9002 as his current account and 9006 as a past one. A further module signs up to answer which
     divisions a driver's accounts raced in, answering none. The league manager runs `/driver
     reassign` of Valtteri onto 9002, and the queue runs it. The module is asked for each side's
-    accounts, Valtteri's (106) and the other driver's (9002 and 9006), once as the change is
-    checked and once inside the save's transaction, and the two are merged as before."""
+    accounts, Valtteri's (106) and the other driver's (9002 and 9006), twice outside any
+    transaction, as the change is checked when asked and again as the queue starts it, and once
+    inside the save's transaction; and the two are merged as before."""
     from tests.support.change_queue import run_queue
     from tests.support.season_league import UNASSIGNED, profile_id
 
@@ -544,7 +545,7 @@ async def test_a_driver_reassign_asks_where_each_side_raced_in_its_check_and_its
 
     sides = [("106",), tuple(sorted((str(_OTHER), str(_OTHER_PAST))))]
     assert sorted(asked) == sorted(
-        [(side, False) for side in sides] + [(side, True) for side in sides]
+        [(side, False) for side in sides] * 2 + [(side, True) for side in sides]
     )
     accounts = await _accounts(league)
     assert accounts[profile_id(UNASSIGNED)][0] == str(_OTHER)
