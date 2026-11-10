@@ -25,7 +25,8 @@ async def _add_default_team(db_path: str, name: str) -> None:
     """Team *name* on the server's list: the Reserve team is the new database's own."""
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) VALUES (?, ?, 2, 0)",
+            "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
+            "VALUES (?, ?, 2, 0)",
             (name, name),
         )
         await db.commit()

@@ -9,9 +9,10 @@ writing nothing, and the lane goes on.
 These run on `configuring_league`'s season 3, in Configuration, where the team list is open. The
 server's list holds Ferrari ("Scuderia Ferrari", role 811), McLaren ("McLaren F1 Team", role 812)
 and the Reserve team. Admin (77) asks every change, as a league manager for `/team add`,
-`/team modify` and `/team reserve-role` and as a league admin for `/team remove`. Alpine's role (813) and Haas's (814) are
-on the server, held by no team, and the bot can grant all four roles. Where a team's role moves
-the drivers seated in it, they run on `ongoing_league`'s season instead, with the same list.
+`/team modify` and `/team reserve-role` and as a league admin for `/team remove`. Alpine's role
+(813) and Haas's (814) are on the server, held by no team, and the bot can grant all four roles.
+Where a team's role moves the drivers seated in it, they run on `ongoing_league`'s season instead,
+with the same list.
 """
 from __future__ import annotations
 
@@ -211,16 +212,16 @@ _LIST_FIXED_STAGES = ("WAITING", "SIGNUPS", "PLACEMENTS", "ONGOING")
 async def test_a_team_add_its_row_mapping_audit_entries_and_line_are_one_save(tmp_path, season):
     """The core specification's team list, and its record of what changed. Season 3 is in
     Configuration, or completed, the server holding no live season. Admin submits the "Add a team"
-    form with the shorthand "  Alpine  " and the full
-    name " Alpine Racing ", stray spaces typed about both, and the role 813. They are answered at once with the queue's acknowledgement,
+    form with the shorthand "  Alpine  " and the full name " Alpine Racing ", stray spaces typed
+    about both, and the role 813. They are answered at once with the queue's acknowledgement,
     "Adding **Alpine Racing**", naming its first job, and nothing is written until the queue runs
     the change, of kind `core.team_add`. Once it has, the server's list holds Alpine, "Alpine
-    Racing", the form having trimmed both names, mapped to 813; two audit entries, by Admin, on no division, stamped with the queue's
-    clock, record the team added (`TEAM_ADD`: the shorthand and full name) and then its role
-    (`TEAM_ROLE_CONFIG`: Alpine, 813, where it had none); the log channel holds today's success
-    line once; no role is given or taken on Discord; no division's teams change, the server's
-    list alone being the command's; and the acknowledgement is updated to today's reply. Takes
-    the place of `test_team_cog.py`'s mocked "with role, no season" and "in
+    Racing", the form having trimmed both names, mapped to 813; two audit entries, by Admin, on no
+    division, stamped with the queue's clock, record the team added (`TEAM_ADD`: the shorthand and
+    full name) and then its role (`TEAM_ROLE_CONFIG`: Alpine, 813, where it had none); the log
+    channel holds today's success line once; no role is given or taken on Discord; no division's
+    teams change, the server's list alone being the command's; and the acknowledgement is updated to
+    today's reply. Takes the place of `test_team_cog.py`'s mocked "with role, no season" and "in
     configuration" tests and `test_team_modals.py`'s "submitting the form records all three"."""
     from tests.support.change_queue import change_rows, run_queue, step_rows
     from tests.support.settings_league import last_said, log_lines, said
@@ -413,16 +414,16 @@ async def test_a_team_add_is_judged_again_as_it_starts(tmp_path, meanwhile, repl
 @pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
 async def test_a_refusal_found_inside_the_save_ends_the_team_add_and_the_lane_goes_on(tmp_path):
     """The one-save decision: the refusals are read again inside the save, so a role taken between
-    the check and the write cannot leave a team behind without one. The season is in
-    Configuration. Admin submits the "Add a team" form for Alpine (813), then for Haas ("Haas F1
-    Team", 814), before the queue runs. As Alpine's change starts its check passes, and McLaren is
-    then given 813 before its save. Alpine's add ends in today's words, '⛔ <@&813> is already the
-    role of "McLaren". A role belongs to one team only.', its acknowledgement updated to them, and
-    the log channel takes that refusal as a line: no Alpine row, no mapping of its own, no audit
-    entry. The lane is not stopped, and Haas's add, asked after, goes through: Haas is on the list
-    with 814, and its success line follows Alpine's refusal. Takes the place of `test_team_cog.py`'s
-    "a role taken at the last moment takes the new team away again" and `test_team_cog_refusals.py`'s
-    mocked "add form role taken at the last moment"."""
+    the check and the write cannot leave a team behind without one. The season is in Configuration.
+    Admin submits the "Add a team" form for Alpine (813), then for Haas ("Haas F1 Team", 814),
+    before the queue runs. As Alpine's change starts its check passes, and McLaren is then given 813
+    before its save. Alpine's add ends in today's words, '⛔ <@&813> is already the role of
+    "McLaren". A role belongs to one team only.', its acknowledgement updated to them, and the log
+    channel takes that refusal as a line: no Alpine row, no mapping of its own, no audit entry. The
+    lane is not stopped, and Haas's add, asked after, goes through: Haas is on the list with 814,
+    and its success line follows Alpine's refusal. Takes the place of `test_team_cog.py`'s "a role
+    taken at the last moment takes the new team away again" and `test_team_cog_refusals.py`'s mocked
+    "add form role taken at the last moment"."""
     from tests.support.change_queue import run_queue, stopped_job
     from tests.support.settings_league import last_said, log_lines
 
@@ -899,22 +900,23 @@ async def test_a_team_modify_its_row_mapping_audit_entries_and_line_are_one_save
     """The core specification's team list, and its record of what changed. Season 3 is in
     Configuration, or completed, the server holding no live season. Admin runs `/team modify` of
     McLaren and submits the "Modify a team" form with the shorthand MCL, the full name "McLaren
-    Racing" and Alpine's role, 813; with the full name "McLaren Racing" alone; or with the
-    shorthand MCL alone; what is not named left as the form offered it. They are answered at once with the queue's
-    acknowledgement, "Changing **McLaren F1 Team**", naming its first job, and nothing is written
-    until the queue runs the change, of kind `core.team_modify`. Once it has, the server's list
-    holds MCL, "McLaren Racing", mapped to 813, and no McLaren; McLaren, "McLaren Racing", still
-    mapped to 812; or MCL, "McLaren F1 Team", its mapping to 812 following the new shorthand. The audit entries, by Admin, on no division, stamped with the queue's
-    clock, record the names (`TEAM_NAMES`: McLaren, "McLaren F1 Team" to MCL, "McLaren Racing", or
-    to McLaren, "McLaren Racing", or to MCL, "McLaren F1 Team") and then, where the mapping
-    changed, the mapping (`TEAM_ROLE_CONFIG`: McLaren, 812 to MCL, 813, or to MCL, 812, the same
-    role under both shorthands), one entry for the mapping; a change of the full name alone writes
-    no `TEAM_ROLE_CONFIG` entry. The log channel holds today's success line once, no seated driver
+    Racing" and Alpine's role, 813; with the full name "McLaren Racing" alone; or with the shorthand
+    MCL alone; what is not named left as the form offered it. They are answered at once with the
+    queue's acknowledgement, "Changing **McLaren F1 Team**", naming its first job, and nothing is
+    written until the queue runs the change, of kind `core.team_modify`. Once it has, the server's
+    list holds MCL, "McLaren Racing", mapped to 813, and no McLaren; McLaren, "McLaren Racing",
+    still mapped to 812; or MCL, "McLaren F1 Team", its mapping to 812 following the new shorthand.
+    The audit entries, by Admin, on no division, stamped with the queue's clock, record the names
+    (`TEAM_NAMES`: McLaren, "McLaren F1 Team" to MCL, "McLaren Racing", or to McLaren, "McLaren
+    Racing", or to MCL, "McLaren F1 Team") and then, where the mapping changed, the mapping
+    (`TEAM_ROLE_CONFIG`: McLaren, 812 to MCL, 813, or to MCL, 812, the same role under both
+    shorthands), one entry for the mapping; a change of the full name alone writes no
+    `TEAM_ROLE_CONFIG` entry. The log channel holds today's success line once, no seated driver
     moved, naming the role only where it changed; no role is given or taken on Discord, no driver
     being seated; no division's teams change; and the acknowledgement is updated to today's reply,
-    naming each change: both names', the artwork's new filename and the role; the full name's
-    alone; or the shorthand's and the artwork's new filename. Takes the place of
-    `test_team_modals.py`'s mocked "changing both names records them and names the artwork file",
+    naming each change: both names', the artwork's new filename and the role; the full name's alone;
+    or the shorthand's and the artwork's new filename. Takes the place of `test_team_modals.py`'s
+    mocked "changing both names records them and names the artwork file",
     `test_team_service_crud.py`'s "a change of name is recorded in the audit log" and
     `test_placement_role_configs.py`'s "a rename records the same role under both names"."""
     from tests.support.change_queue import change_rows, run_queue, step_rows
@@ -996,19 +998,19 @@ async def test_a_team_modify_its_row_mapping_audit_entries_and_line_are_one_save
     ],
 )
 async def test_a_team_modify_is_refused_at_the_ask(tmp_path, meanwhile, fields, reply, standing):
-    """The season is in Configuration. Admin runs `/team modify` of McLaren, and the "Modify a
-    team" form is submitted where it cannot be done: McLaren taken off the list while the form
-    stood open; a full name changed, with Alpine's role, once the season's configuration was
-    confirmed while it stood open, which writes not even the role; Alpine's role, which an integration manages; Ferrari's role, 811; Ferrari's shorthand;
-    Ferrari's full name; Ferrari's shorthand together with Alpine's role, which #490 saw save the
-    role though the names were refused; or Alpine's role once every division is done (the season
-    Pending completion while the form stood open). They are refused at once, in today's words, and
-    the log channel takes the refusal, naming the form, as its one line. Nothing is asked of the
-    queue: the server's list and its mappings stand as they were before the form was submitted,
-    no audit entry is written, and no role is given or taken on Discord. Takes the place of
-    `test_team_modals.py`'s mocked "name changed after the list was fixed", "role another team
-    holds" and "team removed while the form stood open", and `test_team_cog_refusals.py`'s five
-    mocked "modify form" cases."""
+    """The season is in Configuration. Admin runs `/team modify` of McLaren, and the "Modify a team"
+    form is submitted where it cannot be done: McLaren taken off the list while the form stood open;
+    a full name changed, with Alpine's role, once the season's configuration was confirmed while it
+    stood open, which writes not even the role; Alpine's role, which an integration manages;
+    Ferrari's role, 811; Ferrari's shorthand; Ferrari's full name; Ferrari's shorthand together with
+    Alpine's role, which #490 saw save the role though the names were refused; or Alpine's role once
+    every division is done (the season Pending completion while the form stood open). They are
+    refused at once, in today's words, and the log channel takes the refusal, naming the form, as
+    its one line. Nothing is asked of the queue: the server's list and its mappings stand as they
+    were before the form was submitted, no audit entry is written, and no role is given or taken on
+    Discord. Takes the place of `test_team_modals.py`'s mocked "name changed after the list was
+    fixed", "role another team holds" and "team removed while the form stood open", and
+    `test_team_cog_refusals.py`'s five mocked "modify form" cases."""
     from tests.support.change_queue import change_rows
     from tests.support.settings_league import last_said, log_lines
 
@@ -1445,20 +1447,20 @@ async def test_a_team_reserve_role_its_mapping_audit_entry_and_line_are_one_save
     tmp_path, role_id, role_name, season,
 ):
     """The core specification's team list, and its record of what changed. Season 3 is in
-    Configuration, or completed, the server holding no live season, and the Reserve team is mapped to the role 815. Admin runs
-    `/team reserve-role` with the role 816, "Reserves", or with no role, clearing it. They are
-    answered at once with the queue's acknowledgement, "Setting the Reserve team's role" or
-    "Clearing the Reserve team's role", naming its first job, and nothing is written until the
-    queue runs the change, of kind `core.team_reserve_role`. Once it has, the Reserve team is
-    mapped to 816, or to no role; one audit entry, by Admin, on no division, stamped with the
-    queue's clock, records it (`TEAM_ROLE_CONFIG`: Reserve, 815 to 816 or to none), the team's
-    row being unchanged; the log channel holds today's success line once, naming the role or
-    "cleared"; no role is given or taken on Discord, no driver being seated in the Reserve team;
-    no division's teams change; and the acknowledgement is updated to today's reply, "✅ Reserve
-    team role set to <@&816>." or "✅ Reserve team role cleared.". Takes the place of
-    `test_team_cog.py`'s mocked "set role calls set config" and "clear role calls delete config",
-    and `test_team_lineup_command.py`'s "setting the reserve role is logged with the role" and
-    "clearing the reserve role is logged as cleared"."""
+    Configuration, or completed, the server holding no live season, and the Reserve team is mapped
+    to the role 815. Admin runs `/team reserve-role` with the role 816, "Reserves", or with no role,
+    clearing it. They are answered at once with the queue's acknowledgement, "Setting the Reserve
+    team's role" or "Clearing the Reserve team's role", naming its first job, and nothing is written
+    until the queue runs the change, of kind `core.team_reserve_role`. Once it has, the Reserve team
+    is mapped to 816, or to no role; one audit entry, by Admin, on no division, stamped with the
+    queue's clock, records it (`TEAM_ROLE_CONFIG`: Reserve, 815 to 816 or to none), the team's row
+    being unchanged; the log channel holds today's success line once, naming the role or "cleared";
+    no role is given or taken on Discord, no driver being seated in the Reserve team; no division's
+    teams change; and the acknowledgement is updated to today's reply, "✅ Reserve team role set to
+    <@&816>." or "✅ Reserve team role cleared.". Takes the place of `test_team_cog.py`'s mocked "set
+    role calls set config" and "clear role calls delete config", and `test_team_lineup_command.py`'s
+    "setting the reserve role is logged with the role" and "clearing the reserve role is logged as
+    cleared"."""
     from tests.support.change_queue import change_rows, run_queue, step_rows
     from tests.support.settings_league import last_said, log_lines, said
     from tests.support.setup_rounds import acknowledged
