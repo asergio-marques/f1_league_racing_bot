@@ -2248,17 +2248,72 @@ READS_OF_OWN_COLUMNS: dict[tuple[str, str], tuple[str, str]] = {
 }
 
 
+#: A statement that reads a table named at run time: the SQL up to the table, whose name is spliced
+#: into an f-string. A `DELETE FROM` changes the table and is the write check's, not this one's.
+_SPLICED_READ = re.compile(r"(?P<delete>\bDELETE\s+)?\b(?:FROM|JOIN)\s+\"?\Z")
+
+
+def _spliced_reads(node: ast.JoinedStr) -> int:
+    """How many tables the f-string *node* reads whose names are spliced in."""
+    return sum(
+        1
+        for part, following in zip(node.values, node.values[1:])
+        if isinstance(part, ast.Constant) and isinstance(part.value, str)
+        and isinstance(following, ast.FormattedValue)
+        and (match := _SPLICED_READ.search(part.value)) is not None
+        and not match.group("delete")
+    )
+
+
+#: Functions that read tables named at run time, read by hand and found to name only tables their
+#: own module owns: how many such tables, and which. The scan cannot tell whose table a spliced
+#: name is, so every other such read counts as a read outside the owner. The count is held exactly
+#: (`test_every_spliced_read_read_by_hand_is_still_what_it_was`), so a read added later is read by
+#: hand too.
+SPLICED_READS_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
+    ("core/services/channel_registry_service.py", "find_channel_use"):
+        (2, "core's own settings tables, `SERVER_SOURCES` and `DIVISION_SOURCES`"),
+    ("core/services/factory_reset_service.py", "gather_targets"): (
+        1,
+        "core's own settings tables, `SERVER_SOURCES` and `DIVISION_SOURCES`, and core's "
+        "`season_review_prompts` and `pending_messages`",
+    ),
+    ("results/services/amendment_mode_service.py", "_staged_rows_on"):
+        (1, "results' own live and staged points tables"),
+    ("results/services/result_submission_service.py", "_repoint_verdicts"):
+        (1, "results' own session result tables"),
+    ("results/services/result_submission_service.py", "snapshot_before_amendment_on"):
+        (1, "results' own session result tables"),
+    ("results/services/review_posting.py", "withdraw_round_standings_on"):
+        (1, "results' own standings snapshots"),
+    ("results/services/season_points_service.py", "_points_table"):
+        (2, "results' own live and staged points tables, handed by its callers"),
+    ("results/services/standings_service.py", "previous_standing_positions"):
+        (1, "results' own standings snapshots"),
+    ("results/services/verdict_records.py", "select_verdicts"):
+        (2, "`VERDICT_TABLES` and the session result tables, results' own"),
+    ("results/services/verdict_records.py", "delete_verdicts"):
+        (1, "the session result tables, results' own"),
+}
+
+
 def _reads_outside_the_owner_among(nodes) -> Counter[tuple[str, str]]:
     """The reads among *nodes*, each ``(file, function, node)``, of a table the file's module does
     not own, counted by file and function: each table named after `FROM` or `JOIN` in a string of
     SQL. The entry point owns no table, so each table it reads counts. The scan sees tables, not
     columns, so a module's read of a core table it has columns of its own on (`OWN_COLUMNS`) is
     counted unless its function is named in `READS_OF_OWN_COLUMNS`; such a function is passed over
-    for the one table its entry names, and a read of any other table in it still counts."""
+    for the one table its entry names, and a read of any other table in it still counts. A table
+    whose name is spliced into an f-string after `FROM` or `JOIN` cannot be told, so each counts,
+    unless its function was read by hand (`SPLICED_READS_READ_BY_HAND`)."""
     nodes = list(nodes)
     docstrings = _docstrings_among(nodes)
     found: Counter[tuple[str, str]] = Counter()
     for path, function, node in nodes:
+        if isinstance(node, ast.JoinedStr):
+            if (path, function) not in SPLICED_READS_READ_BY_HAND:
+                found[(path, function)] += _spliced_reads(node)
+            continue
         if not (isinstance(node, ast.Constant) and isinstance(node.value, str)) or id(node) in docstrings:
             continue
         module = _module_of(path)
@@ -2280,7 +2335,8 @@ def _reads_outside_the_owner() -> Counter[tuple[str, str]]:
 
 #: Today's reads of a table outside its owner, under the design pass that removes each: a module's
 #: pass for its own files, and the pass of the module whose recovery the entry point's function
-#: carries. A table whose name is spliced into the statement at run time is not read here.
+#: carries. A table whose name is spliced into the statement at run time counts here, unless its
+#: function was read by hand (`SPLICED_READS_READ_BY_HAND`).
 KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("__main__.py", "_recover_missed_check_in_calls"): (6, PASS["attendance"]),
     ("__main__.py", "_recover_missed_cleanups"): (6, CLEANUPS),
@@ -2503,8 +2559,10 @@ def test_each_table_is_read_by_the_module_that_owns_it():
     that names a table after `FROM` or `JOIN` is a read, wherever the string is built. The entry
     point owns no table, so every read in it counts. The scan sees tables and not columns, so a
     module's read of its own columns on a core table (`OWN_COLUMNS`) is counted as well, unless
-    its function is named for good in `READS_OF_OWN_COLUMNS`. A breach is keyed by the reading
-    function, and listed with the issue that will fix it."""
+    its function is named for good in `READS_OF_OWN_COLUMNS`. A table spliced in at run time is a
+    read the scan cannot tell, and counts unless its function was read by hand
+    (`SPLICED_READS_READ_BY_HAND`). A breach is keyed by the reading function, and listed with the
+    issue that will fix it."""
     _check(
         "each table is read by the module that owns it",
         _reads_outside_the_owner(),
@@ -2528,12 +2586,18 @@ _OWN_COLUMN = re.compile(r"\b(?P<column>" + "|".join(sorted(_COLUMN_OWNER)) + r"
 def _own_columns_outside_the_owner_among(nodes) -> Counter[tuple[str, str]]:
     """The mentions among *nodes*, each ``(file, function, node)``, of a module's own column on a
     core table (`OWN_COLUMNS`) in a file of another module, counted by file and function: each
-    such column named in a string, in SQL or as a row's key, outside a docstring. The entry point
-    is no module's, so each it names counts."""
+    such column named in a string, in SQL or as a row's key, outside a docstring, and each
+    attribute named for one, read or set (`division.forecast_channel_id`). The entry point is no
+    module's, so each it names counts."""
     nodes = list(nodes)
     docstrings = _docstrings_among(nodes)
     found: Counter[tuple[str, str]] = Counter()
     for path, function, node in nodes:
+        if isinstance(node, ast.Attribute):
+            owner = _COLUMN_OWNER.get(node.attr)
+            if owner is not None and owner != _module_of(path):
+                found[(path, function)] += 1
+            continue
         if not (isinstance(node, ast.Constant) and isinstance(node.value, str)) or id(node) in docstrings:
             continue
         module = _module_of(path)
@@ -2556,8 +2620,8 @@ KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
 def test_a_module_s_own_column_is_read_and_set_by_that_module_alone():
     """A module's own column on a core table is that module's alone, to read and to set
     (architecture.md, "The database"): the table check sees tables, not columns, so this one
-    counts each such column another module's file names in a string, in SQL or as a row's key.
-    A breach is keyed by the naming function, and listed with the issue that will fix it."""
+    counts each such column another module's file names in a string, in SQL or as a row's key,
+    or as an attribute it reads or sets. A breach is keyed by the naming function, and listed with the issue that will fix it."""
     _check(
         "a module's own column is read and set by that module alone",
         _own_columns_outside_the_owner_among(_nodes()),
@@ -2612,6 +2676,77 @@ def test_the_read_check_passes_a_function_that_reads_only_its_module_s_own_colum
         "    await db.execute('SELECT name FROM rounds JOIN divisions d ON 1')\n"
     )
     assert _reads_outside_the_owner_among(_sample(source, path)) == Counter({(path, function): 2})
+
+
+def test_the_read_check_counts_a_table_spliced_in_unless_its_function_was_read_by_hand():
+    """A table named at run time, spliced into an f-string after `FROM` or `JOIN`, cannot be told,
+    so each counts as a read outside the owner, even of the module's own table, and a spliced
+    `DELETE FROM` is the write check's; a function read by hand (`SPLICED_READS_READ_BY_HAND`) is
+    passed over for its spliced reads, and its literal reads still count."""
+    source = (
+        "async def handler(db, table, other):\n"
+        "    for name in ('signup_wizard_records', 'round_submission_channels'):\n"
+        "        await db.execute(f'SELECT channel_id FROM {name} WHERE channel_id IS NOT NULL')\n"
+        "    await db.execute(f'SELECT * FROM {table} t JOIN {other} o ON o.id = t.id')\n"
+        "    await db.execute(f'DELETE FROM {table} WHERE id = ?')\n"
+        "    await db.execute(f'SELECT {table} FROM seasons')\n"
+    )
+
+    assert _reads_outside_the_owner_among(_sample(source, "results/services/sample_service.py")) == Counter(
+        {("results/services/sample_service.py", "handler"): 4}
+    )
+
+    path, function = "core/services/factory_reset_service.py", "gather_targets"
+    assert (path, function) in SPLICED_READS_READ_BY_HAND
+    read_by_hand = source.replace("handler", function)
+    assert _reads_outside_the_owner_among(_sample(read_by_hand, path)) == Counter()
+    assert _reads_outside_the_owner_among(_sample(read_by_hand, "results/services/sample.py")) == Counter(
+        {("results/services/sample.py", function): 4}
+    )
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: the reset still reads the channels the bot created out of the modules' tables, "
+    "spliced in",
+)
+def test_every_spliced_read_read_by_hand_is_still_what_it_was():
+    """Each function in `SPLICED_READS_READ_BY_HAND` reads as many tables spliced in as were read
+    by hand, with a reason: one added since, or one gone, fails here until it is read again and the
+    count set to match. The factory reset reads one, core's own channel tables, in one statement,
+    having asked each module for the channels it created and posted to."""
+    spliced: Counter[tuple[str, str]] = Counter()
+    for path, function, node in _nodes():
+        if (path, function) in SPLICED_READS_READ_BY_HAND and isinstance(node, ast.JoinedStr):
+            spliced[(path, function)] += _spliced_reads(node)
+
+    assert dict(spliced) == {
+        key: count for key, (count, _reason) in SPLICED_READS_READ_BY_HAND.items()
+    }
+    assert all(reason for _, reason in SPLICED_READS_READ_BY_HAND.values())
+
+
+def test_the_column_check_counts_an_attribute_named_for_another_module_s_column():
+    """An attribute named for a module's own column on a core table counts in another module's
+    file, read or set, and in the entry point; in its own module's file it does not, nor does a
+    longer name or a docstring naming it."""
+    source = (
+        "def handler(division, round_):\n"
+        '    """Reads division.forecast_channel_id, as prose."""\n'
+        "    channel = division.forecast_channel_id\n"
+        "    round_.checkin_cleared = True\n"
+        "    return division.forecast_channel_idx, channel\n"
+    )
+
+    def counted(path: str) -> Counter[tuple[str, str]]:
+        return _own_columns_outside_the_owner_among(_sample(source, path))
+
+    assert counted("core/cogs/season_cog.py") == Counter({("core/cogs/season_cog.py", "handler"): 2})
+    assert counted("__main__.py") == Counter({("__main__.py", "handler"): 2})
+    assert counted("weather/services/sample.py") == Counter({("weather/services/sample.py", "handler"): 1})
+    assert counted("attendance/services/sample.py") == Counter(
+        {("attendance/services/sample.py", "handler"): 1}
+    )
 
 
 def test_every_read_of_own_columns_allowed_for_good_still_reads_one():
