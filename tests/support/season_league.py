@@ -497,7 +497,7 @@ async def make_db(tmp_path: Any, now: datetime, *, extra_drivers: bool) -> str:
                 (team_id, division_id, name, full_name),
             )
             await db.execute(
-                "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)", (name, role)
+                "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES (?, ?, '2031-03-04T05:06:07+00:00')", (name, role)
             )
         seats = dict(SEATS)
         if extra_drivers:

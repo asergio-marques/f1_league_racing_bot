@@ -16,6 +16,8 @@ the common case an error.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import os
 
 import pytest
@@ -29,6 +31,7 @@ from leaguebot.core.services.placement_service import (
 SERVER_ID = 9408
 ROLE_ID = 4242
 OTHER_ROLE_ID = 5353
+NOW = datetime(2031, 3, 4, 5, 6, 7, tzinfo=timezone.utc)
 
 
 # ---------------------------------------------------------------------------
@@ -54,7 +57,7 @@ async def _map(db_path: str, team_name: str, role_id: int) -> None:
     of the mapping's writers map their teams here."""
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)",
+            "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES (?, ?, '2031-03-04T05:06:07+00:00')",
             (team_name, role_id),
         )
         await db.commit()
@@ -114,16 +117,22 @@ async def test_a_team_with_no_role_reads_as_none(tmp_path):
 
 async def test_a_role_is_mapped_to_a_team(tmp_path):
     """Alpha, with no role, is given 4242 as a `/team` change's save gives it. The mapping
-    holds Alpha with 4242, and the writer leaves the audit entry to the change, writing none."""
+    holds Alpha with 4242, stamped with the save's time as handed in, and the writer leaves
+    the audit entry to the change, writing none."""
     db_path = await _make_db(tmp_path)
     service = PlacementService(db_path)
 
-    await _write(db_path, lambda s, db: s.set_team_role_config_on(db, "Alpha", ROLE_ID))
+    await _write(db_path, lambda s, db: s.set_team_role_config_on(db, "Alpha", ROLE_ID, now=NOW))
 
     config = await service.get_team_role_config("Alpha")
     assert config is not None
     assert config.role_id == ROLE_ID
     assert config.team_name == "Alpha"
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT updated_at FROM team_role_configs WHERE team_name = 'Alpha'"
+        )
+        assert (await cursor.fetchone())["updated_at"] == NOW.isoformat()
     assert await _audit(db_path) == []
 
 
@@ -133,7 +142,7 @@ async def test_remapping_a_team_replaces_rather_than_duplicates(tmp_path):
     service = PlacementService(db_path)
     await _map(db_path, "Alpha", ROLE_ID)
 
-    await _write(db_path, lambda s, db: s.set_team_role_config_on(db, "Alpha", OTHER_ROLE_ID))
+    await _write(db_path, lambda s, db: s.set_team_role_config_on(db, "Alpha", OTHER_ROLE_ID, now=NOW))
 
     assert (await service.get_team_role_config("Alpha")).role_id == OTHER_ROLE_ID
     assert len(await service.get_all_team_role_configs()) == 1
@@ -181,7 +190,7 @@ async def test_a_mapping_follows_its_team_through_a_rename(tmp_path):
     service = PlacementService(db_path)
     await _map(db_path, "Alpha", ROLE_ID)
 
-    await _write(db_path, lambda s, db: s.rename_team_role_config_on(db, "Alpha", "Beta"))
+    await _write(db_path, lambda s, db: s.rename_team_role_config_on(db, "Alpha", "Beta", now=NOW))
 
     assert await service.get_team_role_config("Alpha") is None
     renamed = await service.get_team_role_config("Beta")
@@ -193,7 +202,7 @@ async def test_renaming_a_team_with_no_mapping_is_a_no_op(tmp_path):
     """Ghost has no mapping: renaming it to Beta raises nothing and writes nothing."""
     db_path = await _make_db(tmp_path)
 
-    await _write(db_path, lambda s, db: s.rename_team_role_config_on(db, "Ghost", "Beta"))
+    await _write(db_path, lambda s, db: s.rename_team_role_config_on(db, "Ghost", "Beta", now=NOW))
 
     assert await PlacementService(db_path).get_all_team_role_configs() == []
     assert await _audit(db_path) == []
@@ -214,7 +223,7 @@ async def test_a_role_another_team_holds_is_refused_and_nothing_written(tmp_path
     await _map(db_path, "Beta", OTHER_ROLE_ID)
 
     with pytest.raises(ValueError, match='already the role of "Alpha"'):
-        await _write(db_path, lambda s, db: s.set_team_role_config_on(db, "Beta", ROLE_ID))
+        await _write(db_path, lambda s, db: s.set_team_role_config_on(db, "Beta", ROLE_ID, now=NOW))
 
     assert (await service.get_team_role_config("Beta")).role_id == OTHER_ROLE_ID
     assert await _audit(db_path) == []
@@ -225,7 +234,7 @@ async def test_the_reserve_s_role_is_one_no_other_team_may_hold(tmp_path):
     await _map(db_path, "Reserve", ROLE_ID)
 
     with pytest.raises(ValueError, match='"Reserve"'):
-        await _write(db_path, lambda s, db: s.set_team_role_config_on(db, "Alpha", ROLE_ID))
+        await _write(db_path, lambda s, db: s.set_team_role_config_on(db, "Alpha", ROLE_ID, now=NOW))
 
 
 async def test_a_team_may_be_given_the_role_it_already_holds(tmp_path):
@@ -233,7 +242,7 @@ async def test_a_team_may_be_given_the_role_it_already_holds(tmp_path):
     service = PlacementService(db_path)
     await _map(db_path, "Alpha", ROLE_ID)
 
-    await _write(db_path, lambda s, db: s.set_team_role_config_on(db, "Alpha", ROLE_ID))
+    await _write(db_path, lambda s, db: s.set_team_role_config_on(db, "Alpha", ROLE_ID, now=NOW))
 
     assert (await service.get_team_role_config("Alpha")).role_id == ROLE_ID
 
@@ -255,10 +264,10 @@ async def test_the_schema_refuses_two_teams_one_role(tmp_path):
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO team_role_configs (team_name, role_id) VALUES ('Alpha', ?)", (ROLE_ID,)
+            "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES ('Alpha', ?, '2031-03-04T05:06:07+00:00')", (ROLE_ID,)
         )
         with pytest.raises(sqlite3.IntegrityError):
             await db.execute(
-                "INSERT INTO team_role_configs (team_name, role_id) VALUES ('Beta', ?)",
+                "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES ('Beta', ?, '2031-03-04T05:06:07+00:00')",
                 (ROLE_ID,),
             )

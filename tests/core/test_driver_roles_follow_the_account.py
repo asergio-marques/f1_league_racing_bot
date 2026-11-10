@@ -52,7 +52,7 @@ async def _league(tmp_path, *, state: str = "ASSIGNED", committed: int = 1,
             "VALUES (1, 1, 'Alpha', 'Alpha', 2, 0)"
         )
         await db.execute(
-            "INSERT INTO team_role_configs (team_name, role_id) VALUES ('Alpha', ?)",
+            "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES ('Alpha', ?, '2031-03-04T05:06:07+00:00')",
             (TEAM_ROLE,),
         )
         cursor = await db.execute(

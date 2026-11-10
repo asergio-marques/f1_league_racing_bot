@@ -107,7 +107,7 @@ async def _seat(db_path: str, division_id: int, *, profile_id: int = PROFILE_ID)
 async def _map_role(db_path: str, team_name: str, role_id: int = ROLE_ID) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)",
+            "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES (?, ?, '2031-03-04T05:06:07+00:00')",
             (team_name, role_id),
         )
         await db.commit()

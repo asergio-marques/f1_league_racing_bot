@@ -836,7 +836,7 @@ async def _seat(db, div_id: int, team: str, drivers: list[tuple[int, str]],
     ti_id = cur.lastrowid
     if role_id is not None:
         await db.execute(
-            "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)",
+            "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES (?, ?, '2031-03-04T05:06:07+00:00')",
             (team, role_id),
         )
     for seat_number, (user_id, _name) in enumerate(drivers, start=1):

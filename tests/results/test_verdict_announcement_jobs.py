@@ -786,7 +786,7 @@ async def test_a_review_s_sanction_whose_role_change_discord_refuses_stops_the_q
             (reserve.lastrowid,),
         )
         await db.executemany(
-            "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)",
+            "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES (?, ?, '2031-03-04T05:06:07+00:00')",
             [("Team 3001", TEAM_ROLE), ("Reserve", RESERVE_ROLE)],
         )
         await db.execute(

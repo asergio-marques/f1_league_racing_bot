@@ -21,6 +21,7 @@ are covered where they live.
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 
 import pytest
 
@@ -31,6 +32,9 @@ from leaguebot.results.services.result_submission_service import (
 from tests.support.teams import seed_team_instances
 from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
 from tests.support.final_hook import rounds_made_final
+
+NOW = datetime(2031, 3, 4, 5, 6, 7, tzinfo=timezone.utc)
+
 
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -541,6 +545,7 @@ async def test_cancelling_a_season_closes_a_round_whose_verdicts_are_open(tmp_pa
     assert await _former(db_path, 32) == 0, "a did-not-start entry marked a driver"
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the driver pass does not take the save's now yet")
 async def test_a_driver_of_a_closed_round_survives_the_driver_pass(tmp_path):
     """The harm the close prevents, stated end to end (#216).
 
@@ -564,7 +569,7 @@ async def test_a_driver_of_a_closed_round_survives_the_driver_pass(tmp_path):
 
     await _close_raced(db_path)
     async with get_connection(db_path) as db:
-        await run_driver_pass_on(db, **delete_hooks(*DRIVER_HOOKS))
+        await run_driver_pass_on(db, now=NOW, **delete_hooks(*DRIVER_HOOKS))
         await db.commit()
 
     async with get_connection(db_path) as db:

@@ -27,6 +27,8 @@ division, and the audit inserts are raw SQL — none of which a double would che
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import os
 
 import pytest
@@ -36,6 +38,11 @@ from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.driver_service import DriverService
 from tests.support.teams import seed_team_instances
 from tests.support.driver_transitions import reassigned, transitioned
+
+NOW = datetime(2031, 3, 4, 5, 6, 7, tzinfo=timezone.utc)
+#: Why a test setting the flag fails until it takes now.
+FLAG_TAKES_NOW = "#283: set_former_driver does not take now yet"
+
 
 SERVER_ID = 9108
 OLD_USER = "4242"
@@ -379,6 +386,7 @@ async def test_a_refused_re_key_over_racing_records_changes_nothing(tmp_path):
         pytest.param(True, False, (True, False), id="cleared"),
     ],
 )
+@pytest.mark.xfail(strict=True, reason=FLAG_TAKES_NOW)
 async def test_the_former_driver_flag_is_set_or_cleared_and_reports_both_values(
     tmp_path, former, value, reported
 ):
@@ -390,7 +398,7 @@ async def test_the_former_driver_flag_is_set_or_cleared_and_reports_both_values(
     service = DriverService(db_path)
 
     old, new = await service.set_former_driver(
-        OLD_USER, value, ACTOR_ID, "Manager"
+        OLD_USER, value, ACTOR_ID, "Manager", now=NOW
     )
 
     assert (old, new) == reported
@@ -398,42 +406,50 @@ async def test_the_former_driver_flag_is_set_or_cleared_and_reports_both_values(
     assert profile.former_driver is value
 
 
+@pytest.mark.xfail(strict=True, reason=FLAG_TAKES_NOW)
 async def test_setting_the_flag_for_a_user_with_no_profile_is_refused(tmp_path):
     db_path = await _make_db(tmp_path)
     service = DriverService(db_path)
 
     with pytest.raises(ValueError, match="No driver profile"):
         await service.set_former_driver(
-            OLD_USER, True, ACTOR_ID, "Manager"
+            OLD_USER, True, ACTOR_ID, "Manager", now=NOW
         )
 
 
+@pytest.mark.xfail(strict=True, reason=FLAG_TAKES_NOW)
 async def test_setting_the_flag_is_audited(tmp_path):
+    """The entry is written at the time the command hands in, never the host's clock."""
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, former=False)
 
     await DriverService(db_path).set_former_driver(
-        OLD_USER, True, ACTOR_ID, "Manager"
+        OLD_USER, True, ACTOR_ID, "Manager", now=NOW
     )
 
     entry = (await _audit(db_path))[0]
     assert entry["change_type"] == "TEST_FORMER_DRIVER_FLAG_SET"
     assert entry["old_value"] != entry["new_value"]
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT timestamp FROM audit_entries")
+        assert (await cursor.fetchone())["timestamp"] == NOW.isoformat()
 
 
+@pytest.mark.xfail(strict=True, reason=FLAG_TAKES_NOW)
 async def test_the_flag_decides_whether_a_departure_destroys_the_profile(tmp_path):
     """The two halves of this file meeting: setting the flag changes what the destructive
     transition does to the same driver."""
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, state="UNASSIGNED", former=False)
     service = DriverService(db_path)
-    await service.set_former_driver(OLD_USER, True, ACTOR_ID, "Manager")
+    await service.set_former_driver(OLD_USER, True, ACTOR_ID, "Manager", now=NOW)
 
     await transitioned(db_path, OLD_USER, DriverState.NOT_SIGNED_UP)
 
     assert await _profile_count(db_path) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=FLAG_TAKES_NOW)
 async def test_the_flag_is_set_through_a_past_account(tmp_path):
     """Any account names the driver (issue #243), the test-mode command included."""
     db_path = await _make_db(tmp_path)
@@ -442,7 +458,7 @@ async def test_the_flag_is_set_through_a_past_account(tmp_path):
     await reassigned(db_path, OLD_USER, NEW_USER)
 
     assert await service.set_former_driver(
-        OLD_USER, True, ACTOR_ID, "Manager"
+        OLD_USER, True, ACTOR_ID, "Manager", now=NOW
     ) == (False, True)
 
 

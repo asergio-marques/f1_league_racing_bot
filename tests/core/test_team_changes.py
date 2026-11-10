@@ -1413,7 +1413,7 @@ async def _reserve_holds(league, role_id: int = RESERVE_ROLE):
     """The Reserve team mapped to *role_id*, a role on the server named "Reserve" that the bot
     can grant; the role `/team reserve-role` moves it to, 816, named "Reserves", grantable too."""
     await league.write(
-        "INSERT INTO team_role_configs (team_name, role_id) VALUES ('Reserve', ?)", role_id
+        "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES ('Reserve', ?, '2031-03-04T05:06:07+00:00')", role_id
     )
     _grantable(league, role_id, "Reserve")
     _grantable(league, RESERVES_ROLE, "Reserves")

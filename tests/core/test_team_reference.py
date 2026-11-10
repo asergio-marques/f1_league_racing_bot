@@ -110,7 +110,7 @@ async def _make_db(tmp_path) -> str:
             "VALUES (1, 1, 'Elite', 1, 900)"
         )
         await db.execute(
-            "INSERT INTO team_role_configs (team_name, role_id) VALUES ('RBR', 111)"
+            "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES ('RBR', 111, '2031-03-04T05:06:07+00:00')"
         )
         await db.commit()
     service = TeamService(db_path)

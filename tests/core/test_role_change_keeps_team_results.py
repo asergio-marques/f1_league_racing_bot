@@ -77,7 +77,7 @@ async def _league(tmp_path) -> tuple[str, dict[str, int]]:
                 (name, name, -1 if is_reserve else 2, is_reserve),
             )
             await db.execute(
-                "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)",
+                "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES (?, ?, '2031-03-04T05:06:07+00:00')",
                 (name, role),
             )
             cursor = await db.execute(

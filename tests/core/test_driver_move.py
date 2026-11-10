@@ -58,7 +58,7 @@ async def db_path(tmp_path):
                     )
         for team, role in ROLES.items():
             await db.execute(
-                "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)",
+                "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES (?, ?, '2031-03-04T05:06:07+00:00')",
                 (team, role),
             )
         await db.execute(

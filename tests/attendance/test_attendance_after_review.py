@@ -131,7 +131,7 @@ async def _db(tmp_path, *, attendance: bool = True, autoreserve: int | None = 10
             )
         for team, role in (("Alpha", ALPHA_ROLE), ("Reserve", RESERVE_ROLE)):
             await db.execute(
-                "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)", (team, role)
+                "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES (?, ?, '2031-03-04T05:06:07+00:00')", (team, role)
             )
         session = await db.execute(
             "INSERT INTO session_results (round_id, division_id, session_type, status, "
