@@ -145,17 +145,22 @@ async def _role_refusal(
 ) -> Verdict | None:
     """The refusal of the role *role_id* for a team, or None: a role no longer on the server, one
     the bot cannot grant, or one a team other than *other_than* holds, each in its words, *suffix*
-    following it."""
+    following it.
+
+    Where the league's server is not in the cache the role cannot be looked up and is not refused
+    for it: only the holder is checked, and a role job that finds no server ends with the problem
+    named, as the queue's role step does."""
     guild = await league_guild(ctx.bot)
-    role = None if guild is None else guild.get_role(role_id)
-    if role is None:
-        return Verdict.refuse(
-            f"⛔ <@&{role_id}> is no longer a role on the server. Choose a role of the team's "
-            f"own.{suffix}"
-        )
-    refusal = role_grant_refusal(role)
-    if refusal is not None:
-        return Verdict.refuse(f"⛔ {refusal}{suffix}")
+    if guild is not None:
+        role = guild.get_role(role_id)
+        if role is None:
+            return Verdict.refuse(
+                f"⛔ <@&{role_id}> is no longer a role on the server. Choose a role of the "
+                f"team's own.{suffix}"
+            )
+        refusal = role_grant_refusal(role)
+        if refusal is not None:
+            return Verdict.refuse(f"⛔ {refusal}{suffix}")
     holder = await placement.team_holding_role(role_id, other_than=other_than)
     if holder is not None:
         return Verdict.refuse(
