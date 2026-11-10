@@ -795,6 +795,56 @@ async def test_the_history_asks_each_driver_s_standing_inside_the_end_save(tmp_p
     assert sorted(asked) == expected
 
 
+@pytest.mark.parametrize("kind", [SEASON_COMPLETE_KIND, SEASON_CANCEL_KIND],
+                         ids=["completion", "cancellation"])
+async def test_the_history_holds_each_driver_s_final_standing_as_the_bot_is_built(tmp_path, kind):
+    """The season is completed (every round final, results accepted for Pro's rounds 1 and 2,
+    Lewis then Max at 25 and 18 points, and Am's round 1, Charles alone at 25) or cancelled
+    (ongoing, results accepted for Pro's round 1 alone, Lewis then Max at 25 and 18), on the bot as
+    it is built, no further module answering. Every driver is a former driver, so that the
+    driver pass keeps their history. Each driver's history entry for season 3 states
+    their final position and points and their gap to the division's winner: Lewis first on 25,
+    no gap; Max second on 18, 7 behind; Charles, in Am, first on 25, no gap where Am has results,
+    and no position, no points and no gap where it has none."""
+    from tests.support.season_league import cancel_season, ongoing_league
+
+    if kind == SEASON_COMPLETE_KIND:
+        league = await pending_completion_league(tmp_path)
+        charles = (1, 25, 0)
+    else:
+        league = await ongoing_league(tmp_path)
+        for position, user_id in enumerate((LEWIS, MAX), start=1):
+            await league.write(
+                "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
+                "driver_profile_id, standing_position, total_points) VALUES (?, ?, ?, "
+                "(SELECT driver_profile_id FROM driver_accounts WHERE discord_user_id = ?), ?, ?)",
+                round_id(PRO, 1), PRO, user_id, str(user_id), position, (25, 18)[position - 1],
+            )
+        charles = (0, 0, 0)
+    await league.write("UPDATE driver_profiles SET former_driver = 1")
+    if kind == SEASON_COMPLETE_KIND:
+        await _asked(league)
+    else:
+        await cancel_season(league)
+
+    await run_queue(league.bot)
+
+    rows = await league.rows(
+        "SELECT discord_user_id, division_name, final_position, final_points, "
+        "points_gap_to_winner FROM driver_history_entries WHERE season_number = 3"
+    )
+    held = {
+        (row["discord_user_id"], row["division_name"]):
+            (row["final_position"], row["final_points"], row["points_gap_to_winner"])
+        for row in rows
+    }
+    assert held == {
+        (str(LEWIS), "Pro"): (1, 25, 0),
+        (str(MAX), "Pro"): (2, 18, 7),
+        (str(CHARLES), "Am"): charles,
+    }
+
+
 async def test_a_stop_part_way_is_finished_on_restart_and_posts_no_final_classification_twice(
     tmp_path,
 ):
