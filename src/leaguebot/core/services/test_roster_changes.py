@@ -57,7 +57,6 @@ from leaguebot.core.services.test_roster_service import (
     AddPlan,
     BulkPlan,
     FakeDriver,
-    clear_test_drivers_in_division_on,
     delete_test_drivers_on,
     fake_drivers_in_division_on,
     find_test_driver_on,
@@ -528,9 +527,10 @@ def test_roster_clear_change(*, profiles_deleted: AwaitedHook) -> ChangeType:
                 "  reason: no fake drivers to remove"
             )
             return StepResult(result={"saved": True, "removed": 0}, lines=(line,))
-        removed = await clear_test_drivers_in_division_on(
-            db, division_id, profiles_deleted=profiles_deleted
+        await delete_test_drivers_on(
+            db, [driver.profile_id for driver in drivers], profiles_deleted=profiles_deleted
         )
+        removed = len(drivers)
         audits = []
         for driver in drivers:
             old = _removed_entry(driver)
