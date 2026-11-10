@@ -10,6 +10,7 @@ rather than closing defect 12 unproved.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -26,6 +27,9 @@ from tests.attendance.test_attendance_config_commands import (
 )
 from tests.support.change_queue import league_double, seed_server
 
+#: The time the log writer stamps its lines with.
+NOW = datetime(2026, 11, 1, 12, 0, tzinfo=timezone.utc)
+
 #: What `OutputRouter` puts beneath every line it sends to the log channel.
 SEPARATOR = "\n" + "―" * 36
 
@@ -38,7 +42,7 @@ async def _league(db_path: str) -> AttendanceCog:
     async with get_connection(db_path) as db:
         await db.execute("INSERT INTO attendance_config (id, module_enabled) VALUES (1, 1)")
         await db.commit()
-    bot = league_double(db_path)
+    bot = league_double(db_path, now=lambda: NOW)
     bot.attendance_service = AttendanceService(db_path)
     bot.module_service = MagicMock()
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
@@ -64,7 +68,6 @@ async def _saved(db_path: str, column: str) -> tuple:
 
 
 @pytest.mark.parametrize("command,value,column,expected", CONFIG_SETTERS, ids=CONFIG_SETTER_IDS)
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_each_attendance_settings_command_records_its_audit_entry(
     tmp_path, command, value, column, expected
 ):
@@ -115,7 +118,6 @@ async def test_a_fault_in_the_save_leaves_neither_value_entry_nor_line(
     assert cog.bot.log_channel.sent == []
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_the_line_is_sent_once_its_save_is_made_with_the_text_it_always_had(tmp_path):
     """The line reaches the log channel after the value, its entry and the line are committed,
     worded as the command always worded it: the member, the command, the outcome, and the value
@@ -144,7 +146,6 @@ async def test_the_line_is_sent_once_its_save_is_made_with_the_text_it_always_ha
     assert (await _saved(db_path, "rsvp_notice_days"))[2] == []
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the output router takes the change queue's clock")
 async def test_a_value_already_held_still_records_that_nothing_changed(tmp_path):
     """A value the setting already holds writes no value and no entry, but its "Nothing
     changed" line is saved and sent as before."""
