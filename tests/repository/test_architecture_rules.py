@@ -2908,6 +2908,10 @@ CATCH_ALLS_ALLOWED = {
         "the dispatcher, a failure path: a fault in starting the lanes goes to the host's log",
     ("core/services/change_queue.py", "ChangeQueue._run_step"):
         "the queue's catch of a step that raises, a failure path: it stops the lane or ends the job",
+    ("core/services/change_queue.py", "ChangeQueue._start"):
+        "the queue's catch of a check that raises, a failure path: it stops the lane or ends the job",
+    ("core/utils/autocomplete.py", "bounded_autocomplete.decorate.wrapper"):
+        "the autocompletes' failure path: no choices, and the error to the host's log",
     ("core/services/change_queue.py", "ChangeQueue._discard_follow_ons"):
         "a stated exception: a hook that raises must not hold a Discard, the queue's last way past a stop",
     ("core/services/change_queue.py", "ChangeQueue._undiscardable_refusal"):
@@ -3020,7 +3024,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/change_queue.py", "ChangeQueue._name_job"): (1, PASS["core"]),
     ("core/services/change_queue.py", "ChangeQueue._post_notice"): (1, PASS["core"]),
     ("core/services/change_queue.py", "ChangeQueue._refuse"): (1, PASS["core"]),
-    ("core/services/change_queue.py", "ChangeQueue._start"): (1, PASS["core"]),
     ("core/services/change_queue.py", "ChangeQueue._step_failed"): (1, PASS["core"]),
     ("core/services/change_queue.py", "ChangeQueue._tell"): (1, PASS["core"]),
     ("core/services/change_queue.py", "ChangeQueue._tell_origin"): (1, PASS["core"]),
@@ -3033,7 +3036,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/scheduler_service.py", "_one_off_timer_job"): (1, BACKGROUND_FAILURES),
     ("core/services/season_fingerprint_service.py", "take_fingerprint"): (1, PASS["core"]),
     ("core/services/season_review_changes.py", "recover_expired_review_prompts"): (1, PASS["core"]),
-    ("core/utils/autocomplete.py", "bounded_autocomplete.decorate.wrapper"): (1, PASS["core"]),
     ("core/utils/log_lines.py", "name_of_member"): (1, PASS["core"]),
     ("core/utils/log_lines.py", "record_refusal"): (1, PASS["core"]),
     ("image/cogs/image_cog.py", "ImageCog._division_autocomplete"): (1, PASS["image"]),
