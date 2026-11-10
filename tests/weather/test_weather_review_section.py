@@ -45,6 +45,5 @@ async def test_weather_hands_its_deadlines_to_each_review(tmp_path, review):
         "",
     ]
     assert section.modules_note is None
-    assert dict(section.division_lines) == {}
     assert await review_section(_modules(False), db_path, review=Review[review], season_id=1,
                                 division_ids=[10]) is None

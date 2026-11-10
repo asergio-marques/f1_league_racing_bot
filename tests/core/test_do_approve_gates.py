@@ -619,19 +619,6 @@ def _cog_with_results(db_path, **overrides):
     # place the intent existed — and a test meaning to cover a league without the results
     # module would have covered this one just the same.
     cog.bot.module_service.is_results_enabled = AsyncMock(return_value=True)
-    # With the module genuinely on, the results gate reads each division's three channels
-    # before it reaches the points table these tests are about. One fully configured
-    # division, so the gate passes on its merits and the points gate is what refuses.
-    cog.bot.season_service.get_divisions_with_results_config = AsyncMock(
-        return_value=[
-            SimpleNamespace(
-                name="Pro",
-                results_channel_id=700,
-                standings_channel_id=701,
-                penalty_channel_id=702,
-            )
-        ]
-    )
     cog.bot.config_service.get_server_config = AsyncMock(
         return_value=SimpleNamespace(test_mode_active=False)
     )

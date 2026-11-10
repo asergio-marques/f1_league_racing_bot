@@ -620,8 +620,7 @@ async def test_the_save_reads_nothing_but_its_own_connection(tmp_path, monkeypat
     for cls, names in (
         (ModuleService, ("is_weather_enabled", "is_results_enabled", "is_attendance_enabled",
                          "is_images_enabled", "is_signup_enabled")),
-        (SeasonService, ("get_divisions", "get_division_rounds", "get_stage",
-                         "get_divisions_with_results_config")),
+        (SeasonService, ("get_divisions", "get_division_rounds", "get_stage")),
     ):
         for name in names:
             monkeypatch.setattr(cls, name, _guarded(getattr(cls, name)))

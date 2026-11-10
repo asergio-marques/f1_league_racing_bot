@@ -1,5 +1,6 @@
 """Attendance's section of a season review, handed to core through the review sections hook
-(#283): its configuration, and each division's RSVP and attendance channels.
+(#283): its configuration; and each division's RSVP and attendance channels, handed to the
+placements review through the hook it gathers each division's module lines by.
 
 Its words are those the season cog wrote until the section moved into the module.
 """
@@ -51,6 +52,17 @@ async def _section(service, on: bool, review: str, division_ids):
                                 division_ids=division_ids)
 
 
+#: Why a test of attendance's division lines fails until they are handed through their own hook.
+_NO_LINES_HOOK = "#283: attendance's channel lines still ride on its review section"
+
+
+async def _lines(service, on: bool, division_ids):
+    from leaguebot.attendance.services.attendance_service import division_lines
+
+    return await division_lines(service, _modules(on), season_id=1, division_ids=division_ids)
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_LINES_HOOK)
 async def test_attendance_hands_the_placements_review_its_configuration_and_channels():
     """Attendance on and configured, one division with its RSVP channel set and no attendance
     channel, another with neither: the Attendance Config section, and for each division its RSVP
@@ -60,7 +72,7 @@ async def test_attendance_hands_the_placements_review_its_configuration_and_chan
     assert section.module == "attendance"
     assert section.lines == _LINES
     assert section.modules_note is None
-    assert dict(section.division_lines) == {
+    assert await _lines(_service(), True, [10, 11]) == {
         10: ["  RSVP channel: <#801>", "  Attendance channel: *(not set)*"],
         11: ["  RSVP channel: *(not set)*", "  Attendance channel: *(not set)*"],
     }
@@ -71,28 +83,29 @@ async def test_attendance_hands_the_configuration_review_its_configuration_alone
     section = await _section(_service(), True, "CONFIGURATION", [])
 
     assert section.lines == _LINES
-    assert dict(section.division_lines) == {}
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_LINES_HOOK)
 async def test_attendance_never_configured_shows_its_channels_alone():
     """Attendance on with no configuration stored: no Attendance Config section, as today, and
     each division's channel lines still."""
     section = await _section(_service(configured=False), True, "PLACEMENTS", [10])
 
     assert section.lines == []
-    assert dict(section.division_lines) == {
+    assert await _lines(_service(configured=False), True, [10]) == {
         10: ["  RSVP channel: <#801>", "  Attendance channel: *(not set)*"],
     }
 
 
 @pytest.mark.parametrize("review", [
-    pytest.param("PLACEMENTS"),
-    pytest.param("CONFIGURATION"),
+    pytest.param("PLACEMENTS", marks=pytest.mark.xfail(strict=True, reason=_NO_LINES_HOOK)),
+    pytest.param("CONFIGURATION", marks=pytest.mark.xfail(strict=True, reason=_NO_LINES_HOOK)),
 ])
 async def test_attendance_hands_nothing_while_it_is_off(review):
     """Attendance off: no section and no channel lines, and nothing of attendance's is read."""
     service = _service()
 
     assert await _section(service, False, review, [10]) is None
+    assert not any((await _lines(service, False, [10])).values())
     service.get_config.assert_not_awaited()
     service.get_division_config.assert_not_awaited()

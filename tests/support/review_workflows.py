@@ -102,6 +102,34 @@ def sign_up_division_channel_faults_read(bot: Any) -> None:
         bot.division_channel_faults_read.subscribe(subscriber)
 
 
+def sign_up_division_lines_read(bot: Any) -> None:
+    """Give *bot* the hook the placements review gathers each division's module lines through
+    (`division_lines_read`), each module signed up as the builder signs them, in the order the
+    review lays the lines out: results' three channels, handed *bot*'s database, then
+    attendance's two, handed its service and the module service; then each is handed the season
+    and its divisions. What each is handed is taken off *bot* as it signs up, as the builder's
+    partials take it; each module's function is looked up as the hook is called, so a stand-in
+    bot carries the hook whether or not the review asks it yet. This copies the builder's
+    sign-up, as no builder function for it exists before the build."""
+    from leaguebot.core.utils.hooks import AwaitedHook
+
+    db_path, service, modules = bot.db_path, bot.attendance_service, bot.module_service
+
+    async def results_lines(*args: Any, **kwargs: Any) -> Any:
+        from leaguebot.results.services import division_channels
+
+        return await division_channels.division_lines(db_path, *args, **kwargs)
+
+    async def attendance_lines(*args: Any, **kwargs: Any) -> Any:
+        from leaguebot.attendance.services import attendance_service
+
+        return await attendance_service.division_lines(service, modules, *args, **kwargs)
+
+    bot.division_lines_read = AwaitedHook()
+    bot.division_lines_read.subscribe(results_lines)
+    bot.division_lines_read.subscribe(attendance_lines)
+
+
 def _services(target: Any, bot: Any, given: dict[str, Any]) -> dict[str, Any]:
     """Every keyword-only parameter of *target* that has no default and is not in *given*, each
     taken off *bot* by its name, but `now`, which is the queue's clock as the views hand it."""

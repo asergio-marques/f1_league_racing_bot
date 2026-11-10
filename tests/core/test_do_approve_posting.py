@@ -168,7 +168,6 @@ def _cog(
     season_svc.get_division_rounds = AsyncMock(
         side_effect=lambda div_id: [_round(div_id * 10, div_id)]
     )
-    season_svc.get_divisions_with_results_config = AsyncMock(return_value=[])
     # The season being set up, read from the database (#283).
     hold_setup(season_svc, _pending(), divisions=False)
 

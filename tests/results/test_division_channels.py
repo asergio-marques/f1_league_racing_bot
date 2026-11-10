@@ -239,3 +239,50 @@ async def test_results_names_each_division_s_missing_or_deleted_channels(tmp_pat
         ],
     }
     assert await faults(False) == {}
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#283: results does not yet hand the review its division channel lines"
+)
+async def test_results_hands_the_review_each_division_s_channel_lines(tmp_path):
+    """Division 11 has its results channel 120 and no standings or verdicts channel; Am has its
+    standings channel 221 and verdicts channel 222 and no results channel; Club has no results
+    configuration at all. Results hands the placements review three lines for each, results,
+    standings then verdicts: a channel set is named, a results or standings channel not set reads
+    "*(none)*", and a verdicts channel not set "*(not configured)*". It asks no switch, the
+    review showing them whether results is on or off."""
+    from leaguebot.results.services.division_channels import division_lines
+
+    db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, mention_role_id, tier) "
+            "VALUES (12, 1, 'Am', 1, 12), (13, 1, 'Club', 1, 13)"
+        )
+        await db.execute(
+            "INSERT INTO division_results_config (division_id, results_channel_id, "
+            "standings_channel_id, penalty_channel_id) VALUES (?, 120, NULL, NULL), "
+            "(12, NULL, 221, '222')",
+            (DIVISION_ID,),
+        )
+        await db.commit()
+
+    lines = await division_lines(db_path, season_id=1, division_ids=[DIVISION_ID, 12, 13])
+
+    assert lines == {
+        DIVISION_ID: [
+            "  Results channel: <#120>",
+            "  Standings channel: *(none)*",
+            "  Verdicts channel: *(not configured)*",
+        ],
+        12: [
+            "  Results channel: *(none)*",
+            "  Standings channel: <#221>",
+            "  Verdicts channel: <#222>",
+        ],
+        13: [
+            "  Results channel: *(none)*",
+            "  Standings channel: *(none)*",
+            "  Verdicts channel: *(not configured)*",
+        ],
+    }

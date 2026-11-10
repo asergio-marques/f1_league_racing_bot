@@ -50,7 +50,7 @@ from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.utils.hooks import AwaitedHook
 from tests.support.review_workflows import (
-    record_review_views, run_workflow, sign_up_confirmation_refused,
+    record_review_views, run_workflow, sign_up_confirmation_refused, sign_up_division_lines_read,
 )
 from tests.support.setup_reads import hold_setup
 
@@ -133,6 +133,12 @@ async def db_path(tmp_path):
             "VALUES (?, ?, 'Pro', 1, 555)",
             (DIVISION_ID, SEASON_ID),
         )
+        # Pro's results, standings and verdicts channels, as `_division` gives them.
+        await db.execute(
+            "INSERT INTO division_results_config (division_id, results_channel_id, "
+            "standings_channel_id, penalty_channel_id) VALUES (?, 703, 704, '705')",
+            (DIVISION_ID,),
+        )
         await db.commit()
     return path
 
@@ -209,6 +215,8 @@ def _cog(
 
     _sign_up_to_round_windows(bot)
     _sign_up_to_review_sections(bot)
+    # Each division's results and attendance lines, through the hook the review gathers them by.
+    sign_up_division_lines_read(bot)
     # Results' refusals, through the hook a season's confirmation is refused through.
     sign_up_confirmation_refused(bot)
     cog.bot = bot
@@ -268,9 +276,15 @@ def _cog(
     bot.team_service.get_division_teams = AsyncMock(
         return_value=teams if teams is not None else [{"name": "Red", "full_name": "Red"}]
     )
-    bot.season_service.get_divisions_with_results_config = AsyncMock(
+    # The divisions the review shows, read with the season's divisions; until the reader of
+    # them with results' channels goes, through it too.
+    from leaguebot.core.services.season_service import SeasonService
+
+    bot.season_service.get_divisions = AsyncMock(
         return_value=divisions if divisions is not None else [_division()]
     )
+    if hasattr(SeasonService, "get_divisions_with_results_config"):
+        bot.season_service.get_divisions_with_results_config = bot.season_service.get_divisions
     bot.season_service.get_division_rounds = AsyncMock(
         return_value=rounds if rounds is not None else [_round()]
     )
@@ -636,7 +650,11 @@ async def test_a_divisions_channels_are_listed(db_path):
 
 
 async def test_an_unset_channel_says_so_rather_than_being_left_out(db_path):
-    """An absent line and a configured channel read the same to someone skimming."""
+    """An absent line and a configured channel read the same to someone skimming. Pro has no
+    verdicts channel and no lineup channel."""
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE division_results_config SET penalty_channel_id = NULL")
+        await db.commit()
     cog = _cog(db_path, divisions=[_division(penalty_channel_id=None, lineup_channel_id=None)])
     messages = await _review(cog, _interaction())
 
@@ -1278,7 +1296,7 @@ async def test_the_review_reaches_each_module_through_its_section_alone(db_path)
     """Signup and attendance on, their services stubbed as the builder signs their sections up,
     then taken off the bot: the review still reports the signup channel among the modules, the
     signup and attendance configurations, and each division's RSVP and attendance channels, in
-    today's words."""
+    today's words, after its verdicts channel and before its weather channel."""
     cog = _cog(db_path, signup=True, attendance=True)
     cog.bot.signup_module_service = _NotLookedUp("signup_module_service")
     cog.bot.attendance_service = _NotLookedUp("attendance_service")
@@ -1290,7 +1308,10 @@ async def test_the_review_reaches_each_module_through_its_section_alone(db_path)
     assert "  • Available slots: Sunday 20:00" in public
     assert "**Attendance Config**" in public
     assert "  • Auto-sack threshold: 10 pts" in public
-    assert "  RSVP channel: <#801>\n  Attendance channel: *(not set)*\n  Weather channel:" in public
+    assert (
+        "  Verdicts channel: <#705>\n  RSVP channel: <#801>\n  Attendance channel: *(not set)*\n"
+        "  Weather channel:"
+    ) in public
 
 
 async def test_the_review_judges_its_calendar_on_the_queue_s_clock(db_path):

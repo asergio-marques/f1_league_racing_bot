@@ -67,3 +67,57 @@ async def test_a_section_that_cannot_be_read_fails_the_review_as_today():
 
     with pytest.raises(RuntimeError, match="could not be read"):
         await read_review_sections(hook, Review.PLACEMENTS, season_id=3, division_ids=[])
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#283: no hook gathers each division's module lines for the review"
+)
+async def test_the_builder_signs_results_division_lines_up_before_attendance_s(tmp_path):
+    """Attendance on, and Pro holding its results channel 120 and its RSVP channel 130. The
+    builder signs results and then attendance up to the hook the placements review gathers each
+    division's module lines through, so results' three channel lines come back before
+    attendance's two, as the review has always laid them out."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, MagicMock
+
+    from leaguebot.__main__ import _sign_up_to_division_lines_read
+    from leaguebot.attendance.services.attendance_service import AttendanceService
+    from leaguebot.core.db.database import get_connection, run_migrations
+
+    db_path = str(tmp_path / "lines.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute("INSERT INTO server_configs (server_id) VALUES (1)")
+        await db.execute(
+            "INSERT INTO seasons (id, start_date, status) VALUES (1, '2026-11-01', 'SETUP')"
+        )
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, mention_role_id, tier) "
+            "VALUES (10, 1, 'Pro', 1, 1)"
+        )
+        await db.execute(
+            "INSERT INTO division_results_config (division_id, results_channel_id) "
+            "VALUES (10, 120)"
+        )
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, rsvp_channel_id) "
+            "VALUES (10, '130')"
+        )
+        await db.commit()
+    modules = MagicMock()
+    modules.is_attendance_enabled = AsyncMock(return_value=True)
+    bot = SimpleNamespace(
+        db_path=db_path, module_service=modules, attendance_service=AttendanceService(db_path)
+    )
+    _sign_up_to_division_lines_read(bot)
+
+    handed = await bot.division_lines_read.call(season_id=1, division_ids=[10])
+
+    assert handed == [
+        {10: [
+            "  Results channel: <#120>",
+            "  Standings channel: *(none)*",
+            "  Verdicts channel: *(not configured)*",
+        ]},
+        {10: ["  RSVP channel: <#130>", "  Attendance channel: *(not set)*"]},
+    ]

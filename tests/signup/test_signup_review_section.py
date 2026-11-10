@@ -62,7 +62,6 @@ async def test_signup_hands_its_section_to_each_review(review, note):
     assert section.module == "signup"
     assert section.lines == _LINES
     assert section.modules_note == note
-    assert dict(section.division_lines) == {}
 
 
 async def test_a_placements_review_with_no_signup_configuration_names_no_channel():

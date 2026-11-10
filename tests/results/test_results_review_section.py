@@ -77,7 +77,6 @@ async def test_the_placements_review_names_the_attached_configurations(db_path, 
     assert section.module == "results"
     assert section.lines == ["**Points Configs:** Standard", ""]
     assert section.modules_note is None
-    assert dict(section.division_lines) == {}
 
 
 async def test_the_placements_review_says_nothing_is_attached(db_path):
