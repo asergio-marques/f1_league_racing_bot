@@ -195,6 +195,18 @@ async def test_the_review_section_survives_a_configuration_it_cannot_read():
     ]
 
 
+async def test_the_review_section_raises_a_switch_nobody_signed_up_for():
+    """A module's switch reader was never signed up, so the image module's section raises
+    `SwitchNotSignedUp`: a fault in the bot's assembly, which the section raises rather than
+    stating as a configuration it cannot read."""
+    from leaguebot.core.services.module_service import SwitchNotSignedUp
+
+    cog = _section_cog(SwitchNotSignedUp("results"))
+
+    with pytest.raises(SwitchNotSignedUp, match="results"):
+        await cog._build_image_review_section()
+
+
 def test_the_approval_gate_returns_rather_than_merely_reporting():
     """The portrait settings refuse through the image configuration gate (#396), whose
     refusal must stop the approval rather than report and carry on, before the approval is
