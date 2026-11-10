@@ -35,6 +35,7 @@ const SPECS = {
 // hold the plan to beyond architecture.md, which the architecture check already covers.
 const DESIGN_FILES = {
   steward: 'docs/design/steward_module.md',
+  core: 'docs/design/core.md',
 }
 
 // Each role's model and effort. Every model and effort is set explicitly, so that a session on
