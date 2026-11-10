@@ -126,6 +126,7 @@ def _doing(value: bool) -> str:
         pytest.param(False, True, False, id="set"),
         pytest.param(True, False, False, id="cleared"),
         pytest.param(False, True, True, id="through an account Racer has left"),
+        pytest.param(False, False, False, id="unchanged"),
     ],
 )
 async def test_the_flag_and_its_audit_entry_and_line_are_one_save(
@@ -134,7 +135,8 @@ async def test_the_flag_and_its_audit_entry_and_line_are_one_save(
     """The core specification's former-driver flag set by hand under test mode, and its record of
     what changed. The server is in test mode; Racer holds a profile whose flag is *former*, and in
     the third case has since moved to another account, the one Admin picks being the account
-    Racer left. Admin (77) runs `/test-mode set-former-driver` for Racer with *value*. They are
+    Racer left; in the fourth the flag already reads *value*, and the change is saved, audited and
+    answered all the same, as the command always has. Admin (77) runs `/test-mode set-former-driver` for Racer with *value*. They are
     answered at once with the queue's acknowledgement, "Setting **Racer**'s former-driver flag to
     **<value>**", naming its first job, and nothing is written until the queue runs the change, of
     kind `core.test_mode_former_driver`. Once it has, Racer's flag reads *value*; one audit entry,
