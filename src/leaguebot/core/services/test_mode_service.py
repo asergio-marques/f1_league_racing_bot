@@ -107,6 +107,18 @@ PHASE_KINDS = {phase: kind for kind, phase in ROUND_JOB_PHASES.items()} | {
 }
 
 
+#: A step's place among those of its round, by phase number: the notice or Phase 1 (0, 1), the
+#: check-in call (5), Phase 2, the last notice (6), Phase 3, the deadline (7) and result
+#: submission (4), then the clean-ups (8, 9), which fall a day after the round. A round has the
+#: notice or Phase 1, never both. It is the order the modules' steps fall in at their default
+#: lead times, which core keeps because no module knows another's.
+STEP_ORDER = {0: 0, 1: 0, 5: 1, 2: 2, 6: 3, 3: 4, 7: 5, 4: 6, 8: 7, 9: 8}
+
+#: The clean-ups: offered once nothing else is pending anywhere, and the only steps a round that
+#: has ended still has.
+CLEAN_UP_PHASES = frozenset({8, 9})
+
+
 # ---------------------------------------------------------------------------
 # The step advance runs for each kind of round job
 # ---------------------------------------------------------------------------
@@ -333,17 +345,6 @@ def _race_run(scheduled_at: str, now: datetime) -> bool:
     """Whether a round stored as scheduled at *scheduled_at* has been raced by *now*."""
     return read_scheduled_at(scheduled_at) <= now
 
-
-#: A step's place among those of its round, by phase number: the notice or Phase 1 (0, 1), the
-#: check-in call (5), Phase 2, the last notice (6), Phase 3, the deadline (7) and result
-#: submission (4), then the clean-ups (8, 9), which fall a day after the round. A round has the
-#: notice or Phase 1, never both. It is the order the modules' steps fall in at their default
-#: lead times, which core keeps because no module knows another's.
-STEP_ORDER = {0: 0, 1: 0, 5: 1, 2: 2, 6: 3, 3: 4, 7: 5, 4: 6, 8: 7, 9: 8}
-
-#: The clean-ups: offered once nothing else is pending anywhere, and the only steps a round that
-#: has ended still has.
-CLEAN_UP_PHASES = frozenset({8, 9})
 
 #: The statuses of a round that has ended, or whose appeals are being judged.
 _ENDED_STATUSES = frozenset({"FINAL", "AWAITING_APPEAL_VERDICTS", "CANCELLED"})
