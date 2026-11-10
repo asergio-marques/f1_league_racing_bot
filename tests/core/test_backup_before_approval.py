@@ -21,23 +21,42 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-from leaguebot.core.cogs.season_cog import (
-    SeasonCog,
-    _BackupBeforeApprovalView,
-)
+import pytest
+
+from tests.support.review_workflows import build_view, run_workflow
 from tests.support.scheduler import PausingScheduler
 
 SERVER_ID = 9100
 
+#: The backup question is still `SeasonCog._offer_backup_before_approving`, its view the cog's.
+_ON_THE_COG = (
+    "#283: the backup question is not yet season_review_workflows.offer_backup_before_approving"
+)
+
+
+def _view_class():
+    """The question's view, `season_review_workflows.BackupBeforeApprovalView`."""
+    from leaguebot.core.services.season_review_workflows import BackupBeforeApprovalView
+
+    return BackupBeforeApprovalView
+
+
+async def _offer(cog, interaction, deadline):
+    """Put the backup question, as the approval does after its last gate."""
+    return await run_workflow(
+        "offer_backup_before_approving", cog.bot, interaction, deadline=deadline
+    )
+
 
 def _cog(*, test_mode: bool = True, db_path: str = ":memory:"):
-    cog = SeasonCog.__new__(SeasonCog)
-    cog.bot = MagicMock()
+    cog = SimpleNamespace(bot=MagicMock())
     cog.bot.db_path = db_path
     cog.bot.config_service.get_server_config = AsyncMock(
         return_value=SimpleNamespace(test_mode_active=test_mode)
     )
     cog.bot.scheduler_service = PausingScheduler(db_path)
+    # The time left is read from the queue's clock, here the host's.
+    cog.bot.change_queue.now = MagicMock(side_effect=lambda: datetime.now(timezone.utc))
     # The log channel takes a line, as a real one does, so a save that records itself is not
     # stopped by the test's own stand-in.
     cog.bot.output_router.post_log = AsyncMock()
@@ -66,49 +85,47 @@ def _later(seconds: float) -> datetime:
 # ── When the question is asked at all ─────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_the_question_is_asked_under_test_mode(monkeypatch):
     cog = _cog()
     interaction = _interaction()
-    monkeypatch.setattr(_BackupBeforeApprovalView, "wait", AsyncMock())
+    view_class = _view_class()
+    monkeypatch.setattr(view_class, "wait", AsyncMock())
 
     # The view is answered "skip" the moment it is constructed, standing in for a press.
-    original_init = _BackupBeforeApprovalView.__init__
+    original_init = view_class.__init__
 
     def _answered(self, *args, **kwargs):
         original_init(self, *args, **kwargs)
         self.answer = "skip"
 
-    monkeypatch.setattr(_BackupBeforeApprovalView, "__init__", _answered)
+    monkeypatch.setattr(view_class, "__init__", _answered)
 
-    assert await cog._offer_backup_before_approving(
-        interaction, _later(300)
-    ) is True
+    assert await _offer(cog, interaction, _later(300)) is True
     assert "Save the databases" in _reply(interaction)
 
 
 # ── The window, which the question shares rather than extends ─────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_an_already_expired_window_approves_nothing():
     """The review ran out between the button and this point."""
     cog = _cog()
     interaction = _interaction()
 
-    assert await cog._offer_backup_before_approving(
-        interaction, _later(-1)
-    ) is False
+    assert await _offer(cog, interaction, _later(-1)) is False
     assert "Nothing has been approved" in _reply(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_silence_expires_the_approval(monkeypatch):
     """`answer` stays None on a timeout, which is how silence is told from a spoken no."""
     cog = _cog()
     interaction = _interaction()
-    monkeypatch.setattr(_BackupBeforeApprovalView, "wait", AsyncMock())
+    monkeypatch.setattr(_view_class(), "wait", AsyncMock())
 
-    assert await cog._offer_backup_before_approving(
-        interaction, _later(300)
-    ) is False
+    assert await _offer(cog, interaction, _later(300)) is False
     assert "expired" in _reply(interaction)
     assert "Nothing has been approved" in _reply(interaction)
 
@@ -118,18 +135,20 @@ async def test_silence_expires_the_approval(monkeypatch):
 
 async def _answered(cog, monkeypatch, answer: str):
     interaction = _interaction()
-    original_init = _BackupBeforeApprovalView.__init__
+    view_class = _view_class()
+    original_init = view_class.__init__
 
     def _set(self, *args, **kwargs):
         original_init(self, *args, **kwargs)
         self.answer = answer
 
-    monkeypatch.setattr(_BackupBeforeApprovalView, "__init__", _set)
-    monkeypatch.setattr(_BackupBeforeApprovalView, "wait", AsyncMock())
-    result = await cog._offer_backup_before_approving(interaction, _later(300))
+    monkeypatch.setattr(view_class, "__init__", _set)
+    monkeypatch.setattr(view_class, "wait", AsyncMock())
+    result = await _offer(cog, interaction, _later(300))
     return result, interaction
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_cancelling_approves_nothing(monkeypatch):
     result, interaction = await _answered(_cog(), monkeypatch, "cancel")
 
@@ -141,9 +160,10 @@ async def test_cancelling_approves_nothing(monkeypatch):
 
 
 def _view(cog, timeout: float = 300):
-    return _BackupBeforeApprovalView(cog, timeout=timeout)
+    return build_view("BackupBeforeApprovalView", cog.bot, timeout=timeout)
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_the_view_offers_three_answers():
     """Save, don't, and stop — a manager who realises something is wrong at this point
     must not have to approve the season to escape the question."""
@@ -154,6 +174,7 @@ async def test_the_view_offers_three_answers():
     assert len(buttons) == 3
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_saving_takes_a_backup(tmp_path):
     import sqlite3
 
@@ -168,12 +189,13 @@ async def test_saving_takes_a_backup(tmp_path):
         connection.close()
 
     view = _view(_cog(db_path=str(live)))
-    await _BackupBeforeApprovalView.save(view, _interaction(), MagicMock())
+    await type(view).save(view, _interaction(), MagicMock())
 
     assert backup_service.backup_path(live).is_file()
     assert view.answer == "save"
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_backup_that_cannot_be_taken_does_not_refuse_the_season(tmp_path):
     """The manager asked for a convenience. Making them run the review again because it
     was unavailable would be a refusal for a reason that has nothing to do with the season.
@@ -181,16 +203,17 @@ async def test_a_backup_that_cannot_be_taken_does_not_refuse_the_season(tmp_path
     view = _view(_cog(db_path=str(tmp_path / "nothing-here.db")))
     interaction = _interaction()
 
-    await _BackupBeforeApprovalView.save(view, interaction, MagicMock())
+    await type(view).save(view, interaction, MagicMock())
 
     assert view.answer == "skip", "a failed backup stopped the approval"
     assert "anyway" in _reply(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_the_scheduler_is_resumed_after_a_failed_save(tmp_path):
     cog = _cog(db_path=str(tmp_path / "nothing-here.db"))
     view = _view(cog)
 
-    await _BackupBeforeApprovalView.save(view, _interaction(), MagicMock())
+    await type(view).save(view, _interaction(), MagicMock())
 
     assert cog.bot.scheduler_service.events == ["pause", "resume"]
