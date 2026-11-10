@@ -264,17 +264,26 @@ async def test_the_results_module_needs_a_points_configuration(tmp_path):
 
     db_path = str(tmp_path / "config_review.db")
     await run_migrations(db_path)
-    bot = _bot(results=True)
+    bot = _bot(results=True, images=True)
     bot.db_path = db_path
     cog = _cog(bot)
+    cog.team_name_problems = AsyncMock(return_value=["'Red/Blue' contains a character"])
     cog.missing_points_config_problems = AsyncMock(return_value=["Ghost"])
     cog.points_ordering_problems = AsyncMock(return_value=["Standard: 2nd above 1st"])
+    cog.image_configuration_faults = AsyncMock(return_value=["Inkscape is not installed."])
 
     faults = await _faults(cog)
 
-    assert any("No points configuration is attached" in f for f in faults)
-    assert any("**Ghost** does not exist" in f for f in faults)
-    assert any("out of order" in f for f in faults)
+    # Each line whole, and in its place between the team names' and the image module's (#283:
+    # results' lines move into results with no word changed).
+    assert faults == [
+        "Team name: 'Red/Blue' contains a character",
+        "No points configuration is attached to this season \u2014 `/results config append`.",
+        "The attached points configuration **Ghost** does not exist \u2014 build it with "
+        "`/results config add`, or drop it with `/results config detach`.",
+        "Points table out of order: Standard: 2nd above 1st",
+        "Inkscape is not installed.",
+    ]
 
 
 async def test_the_image_module_faults_are_included():

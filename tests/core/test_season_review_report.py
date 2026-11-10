@@ -841,13 +841,71 @@ async def test_the_review_judges_the_channels_upon_its_own_server(db_path):
     assert interaction.guild in call.args or call.kwargs.get("guild") is interaction.guild
 
 
+#: The review's private reply on an image fault "Inkscape is not installed on this host.", word
+#: for word.
+_IMAGE_REPLY = (
+    "\u26d4 **The image module is not correctly configured.**\n"
+    "\u2022 Inkscape is not installed on this host.\n"
+    "The season is **not** offered for approval while that stands. "
+    "Put it right, then run `/season placements-review` again."
+)
+#: The review's private reply on a season with no points configuration attached, word for word.
+_NOTHING_ATTACHED_REPLY = (
+    "\u26d4 **No points configuration is attached to this season.**\n"
+    "Without one there is nothing to score its results by. The season is "
+    "**not** offered for approval while that stands \u2014 attach one with "
+    "`/results config append`, then run `/season placements-review` again."
+)
+#: The review's private reply on a season attached to "Standrad", which does not exist.
+_PHANTOM_REPLY = (
+    "\u26d4 **This season is attached to a points configuration that does not exist.**\n"
+    "\u2022 **Standrad**\n"
+    "Nothing of that name is in the server's points store, so there is "
+    "nothing for the approval to copy. The season is **not** offered for "
+    "approval while that stands \u2014 build it with `/results config add`, or "
+    "drop it with `/results config detach`, then run `/season placements-review` "
+    "again."
+)
+#: The review's private reply on the points fault "Feature Race: P2 beats P1".
+_ORDERING_REPLY = (
+    "\u26d4 **This season's points tables are out of order.**\n"
+    "\u2022 Feature Race: P2 beats P1\n"
+    "A lower position cannot be worth as much as the one above it. The "
+    "season is **not** offered for approval while that stands \u2014 repair "
+    "the tables with `/results config session`, then run `/season placements-review` "
+    "again."
+)
+#: The review's private reply on a team name no lineup field may carry.
+_NAMES_REPLY = (
+    "\u26d4 **Some team names cannot be used as artwork filenames.** Each is "
+    "named at the head of the review. The season is **not** offered for "
+    "approval while that stands. The team list is fixed once the "
+    "configuration is confirmed, so the season must be aborted with "
+    "`/season abort` and configured again."
+)
+
+
+def _private_replies(messages) -> list[str]:
+    """The review's private replies, each whole, in the order they were sent."""
+    return [text for text, ephemeral in messages if ephemeral]
+
+
 @pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
 async def test_a_phantom_points_configuration_withholds_approval(db_path):
-    cog = _cog(db_path, results=True, phantoms=["Standrad"])
+    """Each private reply whole, and in the order a manager reads them: the image module's, then
+    the points configurations', then the team names' (#283: results' replies move into results
+    with no word changed, and keep their place)."""
+    cog = _cog(
+        db_path, results=True, phantoms=["Standrad"], points_faults=["Feature Race: P2 beats P1"],
+        images=True, image_faults=["Inkscape is not installed on this host."],
+        name_problems=["'Red/Blue' contains a character no field id may"],
+    )
     messages = await _review(cog, _interaction())
 
     assert not _offered(cog)
-    assert "points configuration that does not exist" in _private(messages)
+    assert _private_replies(messages) == [
+        _IMAGE_REPLY, _PHANTOM_REPLY, _ORDERING_REPLY, _NAMES_REPLY,
+    ]
     assert "Standrad" in _public(messages)
 
 
@@ -861,13 +919,17 @@ async def test_a_season_with_no_points_attached_withholds_approval(db_path, test
     `/results config detach` stays open in Placements, so the review has to say so too. Test
     mode attaches Standard and Half Points when it is enabled and at no other moment (decided
     2026-09-23), so a test season that has had them detached is refused as any other."""
-    cog = _cog(db_path, results=True, test_mode=test_mode, nothing_attached=True)
+    cog = _cog(
+        db_path, results=True, test_mode=test_mode, nothing_attached=True,
+        images=True, image_faults=["Inkscape is not installed on this host."],
+        name_problems=["'Red/Blue' contains a character no field id may"],
+    )
     messages = await _review(cog, _interaction())
 
     assert not _offered(cog)
     assert "No points configuration attached** — this blocks approval" in _public(messages)
-    assert "No points configuration is attached to this season" in _private(messages)
-    assert "`/results config append`" in _private(messages)
+    # Whole, between the image module's reply and the team names' (#283).
+    assert _private_replies(messages) == [_IMAGE_REPLY, _NOTHING_ATTACHED_REPLY, _NAMES_REPLY]
 
 
 @pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)
@@ -886,11 +948,10 @@ async def test_an_out_of_order_points_table_withholds_approval(db_path):
     messages = await _review(cog, _interaction())
 
     assert not _offered(cog)
-    assert "points tables are out of order" in _private(messages)
-    # Shown in the report as well, and refused on its own words, never folded into the image
-    # module's refusal, which would send a manager to its templates over a points table.
+    # Shown in the report as well, and refused on its own words, whole, never folded into the
+    # image module's refusal, which would send a manager to its templates over a points table.
     assert "Points tables out of order" in _public(messages)
-    assert "image module is not correctly configured" not in _private(messages)
+    assert _private_replies(messages) == [_ORDERING_REPLY]
 
 
 @pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)

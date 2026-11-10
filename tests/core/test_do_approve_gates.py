@@ -659,9 +659,12 @@ async def test_a_wrongly_ordered_points_table_refuses_a_first_approval(db_path):
 
     await _run(cog, interaction)
 
-    replies = _replies(interaction)
-    assert "violates monotonic ordering" in replies
-    assert "BROKEN" in replies
+    # In full: the refusal moves into results with no word changed (#283).
+    assert _replies(interaction) == (
+        "\u274c Season cannot be approved \u2014 points configuration violates monotonic "
+        "ordering:\n\u2022 Config 'BROKEN', FEATURE_RACE: position 1 (10 pts) < "
+        "position 2 (25 pts)"
+    )
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
@@ -786,22 +789,38 @@ async def test_approve_refuses_and_names_a_phantom_points_config(db_path):
 
     await _run(cog, interaction)
 
-    replies = _replies(interaction)
-    assert "Standrad" in replies, "the refusal must name the configuration that is missing"
-    assert "does not exist" in replies
+    # In full, naming the configuration that is missing: the refusal moves into results with
+    # no word changed (#283).
+    assert _replies(interaction) == _PHANTOM_REFUSAL
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-async def test_a_phantom_alongside_a_real_config_is_still_refused(db_path):
-    """One good configuration does not excuse the one that is not there."""
-    await _attach(db_path, "GOOD", [(1, 25), (2, 18)])
+#: The approval's refusal of a season attached to a points configuration named "Standrad" that
+#: does not exist, word for word.
+_PHANTOM_REFUSAL = (
+    "\u274c Season cannot be approved \u2014 R&S prerequisites not met:\n"
+    "\u2022 points configuration **Standrad** is attached to this season but does not exist "
+    "\u2014 create it with `/results config add`, or drop it with "
+    "`/results config detach Standrad`"
+)
+
+
+@pytest.mark.parametrize("points", [
+    pytest.param([(1, 25), (2, 18)], id="a sound table"),
+    pytest.param([(1, 10), (2, 25)], id="a table out of order"),
+])
+async def test_a_phantom_alongside_a_real_config_is_still_refused(db_path, points):
+    """One good configuration does not excuse the one that is not there; and where the other
+    is out of order as well, the approval stops at the missing one, its one refusal naming it
+    and not the ordering."""
+    await _attach(db_path, "OTHER", points)
     await _attach_phantom(db_path, "Standrad")
     cog = _cog_with_results(db_path)
     interaction = _interaction()
 
     await _run(cog, interaction)
 
-    assert "Standrad" in _replies(interaction)
+    assert _replies(interaction) == _PHANTOM_REFUSAL
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
