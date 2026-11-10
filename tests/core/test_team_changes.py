@@ -181,10 +181,37 @@ _STANDING = {
 }
 
 
+async def _no_live_season(league):
+    """Season 3 completed: the server holds no live season, as between seasons."""
+    await league.write("UPDATE seasons SET status = 'COMPLETED', stage = 'COMPLETED'")
+
+
+def _season_in(stage: str):
+    """A setup moving season 3 on to *stage*, its configuration confirmed: set up before the
+    season starts, active from `ONGOING`."""
+    status = "ACTIVE" if stage.startswith("ONGOING") else "SETUP"
+
+    async def _moved(league):
+        await league.write("UPDATE seasons SET status = ?, stage = ?", status, stage)
+
+    return _moved
+
+
+#: Where a change to the team list may be made: season 3 in Configuration, or no live season.
+_LIST_OPEN = [
+    pytest.param(None, id="in-configuration"),
+    pytest.param(_no_live_season, id="no-live-season"),
+]
+#: The stages past Configuration in which the team list is fixed.
+_LIST_FIXED_STAGES = ("WAITING", "SIGNUPS", "PLACEMENTS", "ONGOING")
+
+
 @pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
-async def test_a_team_add_its_row_mapping_audit_entries_and_line_are_one_save(tmp_path):
-    """The core specification's team list, and its record of what changed. The season is in
-    Configuration. Admin submits the "Add a team" form with the shorthand "  Alpine  " and the full
+@pytest.mark.parametrize("season", _LIST_OPEN)
+async def test_a_team_add_its_row_mapping_audit_entries_and_line_are_one_save(tmp_path, season):
+    """The core specification's team list, and its record of what changed. Season 3 is in
+    Configuration, or completed, the server holding no live season. Admin submits the "Add a team"
+    form with the shorthand "  Alpine  " and the full
     name " Alpine Racing ", stray spaces typed about both, and the role 813. They are answered at once with the queue's acknowledgement,
     "Adding **Alpine Racing**", naming its first job, and nothing is written until the queue runs
     the change, of kind `core.team_add`. Once it has, the server's list holds Alpine, "Alpine
@@ -200,6 +227,8 @@ async def test_a_team_add_its_row_mapping_audit_entries_and_line_are_one_save(tm
     from tests.support.setup_rounds import acknowledged
 
     league = await _team_league(tmp_path)
+    if season is not None:
+        await season(league)
     divisions = await _division_teams(league)
     asked = await _ask_add(league, "  Alpine  ", " Alpine Racing ")
 
@@ -237,10 +266,13 @@ def _unmanaged(league):
 @pytest.mark.parametrize(
     "setup, shorthand, full_name, role_id, reply",
     [
-        pytest.param(
-            _configuration_confirmed, "Alpine", "Alpine Racing", ALPINE_ROLE,
-            _FIXED.format(command="add"), id="the-team-list-fixed",
-        ),
+        *[
+            pytest.param(
+                _season_in(stage), "Alpine", "Alpine Racing", ALPINE_ROLE,
+                _FIXED.format(command="add"), id=f"the-team-list-fixed-{stage.lower()}",
+            )
+            for stage in _LIST_FIXED_STAGES
+        ],
         pytest.param(
             "managed", "Alpine", "Alpine Racing", ALPINE_ROLE,
             "⛔ <@&813> is managed by an integration — a bot, a subscription or a linked role — "
@@ -268,7 +300,8 @@ def _unmanaged(league):
 async def test_a_team_add_is_refused_at_the_ask(tmp_path, setup, shorthand, full_name, role_id,
                                                reply):
     """The season is in Configuration. Admin submits the "Add a team" form where it cannot be
-    done: once the season's configuration is confirmed (the season in Signups); with a role managed
+    done: once the season's configuration is confirmed, the form having been opened before (the
+    season Waiting, in Signups, in Placements or Ongoing); with a role managed
     by an integration; with Ferrari's role, 811; under the Reserve team's name; under Ferrari's
     shorthand; or under Ferrari's full name. They are refused at once, in today's words, and the
     log channel takes the refusal, naming the form, as its one line. Nothing is asked of the queue,
@@ -480,8 +513,10 @@ _NO_MCLAREN = "⛔ No team in the server's list has the shorthand `McLaren`."
 
 
 @pytest.mark.xfail(strict=True, reason=_ON_THE_QUEUE)
-async def test_a_team_remove_its_row_mapping_audit_entries_and_line_are_one_save(tmp_path):
-    """The season is in Configuration. The league admin Admin runs `/team remove` of McLaren. They
+@pytest.mark.parametrize("season", _LIST_OPEN)
+async def test_a_team_remove_its_row_mapping_audit_entries_and_line_are_one_save(tmp_path, season):
+    """Season 3 is in Configuration, or completed, the server holding no live season. The league
+    admin Admin runs `/team remove` of McLaren. They
     are answered at once with the queue's acknowledgement, "Removing **McLaren F1 Team**", naming
     its first job, and nothing is written until the queue runs the change, of kind
     `core.team_remove`. Once it has, McLaren is gone from the server's list and its mapping to 812
@@ -496,6 +531,8 @@ async def test_a_team_remove_its_row_mapping_audit_entries_and_line_are_one_save
     from tests.support.setup_rounds import acknowledged
 
     league = await _team_league(tmp_path)
+    if season is not None:
+        await season(league)
     divisions = await _division_teams(league)
     asked = await _ask_remove(league)
 
@@ -527,8 +564,11 @@ async def test_a_team_remove_its_row_mapping_audit_entries_and_line_are_one_save
 @pytest.mark.parametrize(
     "setup, name, reply",
     [
-        pytest.param(_configuration_confirmed, "McLaren", _FIXED.format(command="remove"),
-                     id="the-team-list-fixed"),
+        *[
+            pytest.param(_season_in(stage), "McLaren", _FIXED.format(command="remove"),
+                         id=f"the-team-list-fixed-{stage.lower()}")
+            for stage in _LIST_FIXED_STAGES
+        ],
         pytest.param(None, "Ghost", "⛔ No team in the server's list has the shorthand `Ghost`.",
                      id="no-such-team"),
         pytest.param(None, "Reserve", _PROTECTED, id="the-reserve-team"),
@@ -536,7 +576,8 @@ async def test_a_team_remove_its_row_mapping_audit_entries_and_line_are_one_save
 )
 async def test_a_team_remove_is_refused_at_the_ask(tmp_path, setup, name, reply):
     """The season is in Configuration. The league admin runs `/team remove` where it cannot be
-    done: once the season's configuration is confirmed (the season in Signups); of Ghost, which no
+    done: once the season's configuration is confirmed (the season Waiting, in Signups, in
+    Placements or Ongoing); of Ghost, which no
     team is; or of the Reserve team. They are refused at once, in today's words, and the log
     channel takes the refusal as its one line. Nothing is asked of the queue, the server's list and
     its role mappings stand, and no audit entry is written. Takes the place of `test_team_cog.py`'s
@@ -798,9 +839,10 @@ async def _mac_added_meanwhile(league):
 
 
 @pytest.mark.xfail(strict=True, reason=_MODIFY_ON_THE_QUEUE)
-async def test_a_team_modify_its_row_mapping_audit_entries_and_line_are_one_save(tmp_path):
-    """The core specification's team list, and its record of what changed. The season is in
-    Configuration. Admin runs `/team modify` of McLaren and submits the "Modify a team" form with
+@pytest.mark.parametrize("season", _LIST_OPEN)
+async def test_a_team_modify_its_row_mapping_audit_entries_and_line_are_one_save(tmp_path, season):
+    """The core specification's team list, and its record of what changed. Season 3 is in
+    Configuration, or completed, the server holding no live season. Admin runs `/team modify` of McLaren and submits the "Modify a team" form with
     the shorthand MCL, the full name "McLaren Racing" and Alpine's role, 813. They are answered at
     once with the queue's acknowledgement, "Changing **McLaren F1 Team**", naming its first job,
     and nothing is written until the queue runs the change, of kind `core.team_modify`. Once it
@@ -818,6 +860,8 @@ async def test_a_team_modify_its_row_mapping_audit_entries_and_line_are_one_save
     from tests.support.setup_rounds import acknowledged
 
     league = await _team_league(tmp_path)
+    if season is not None:
+        await season(league)
     divisions = await _division_teams(league)
     asked = await _ask_modify(league, shorthand="MCL", full_name="McLaren Racing",
                               role_id=ALPINE_ROLE)
@@ -1342,15 +1386,16 @@ async def _reserves_role_now_managed(league):
 
 
 @pytest.mark.xfail(strict=True, reason=_RESERVE_ON_THE_QUEUE)
+@pytest.mark.parametrize("season", _LIST_OPEN)
 @pytest.mark.parametrize(
     "role_id, role_name",
     [pytest.param(RESERVES_ROLE, "Reserves", id="set"), pytest.param(None, None, id="cleared")],
 )
 async def test_a_team_reserve_role_its_mapping_audit_entry_and_line_are_one_save(
-    tmp_path, role_id, role_name,
+    tmp_path, role_id, role_name, season,
 ):
-    """The core specification's team list, and its record of what changed. The season is in
-    Configuration, and the Reserve team is mapped to the role 815. Admin runs
+    """The core specification's team list, and its record of what changed. Season 3 is in
+    Configuration, or completed, the server holding no live season, and the Reserve team is mapped to the role 815. Admin runs
     `/team reserve-role` with the role 816, "Reserves", or with no role, clearing it. They are
     answered at once with the queue's acknowledgement, "Setting the Reserve team's role" or
     "Clearing the Reserve team's role", naming its first job, and nothing is written until the
@@ -1369,6 +1414,8 @@ async def test_a_team_reserve_role_its_mapping_audit_entry_and_line_are_one_save
     from tests.support.setup_rounds import acknowledged
 
     league = await _reserve_team_league(tmp_path)
+    if season is not None:
+        await season(league)
     divisions = await _division_teams(league)
     asked = await _ask_reserve_role(league, role_id)
 
