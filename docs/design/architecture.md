@@ -155,20 +155,22 @@ falling due, a round amended or its timed work armed again, a round's timing win
 a division or a season cancelled, a round's results made final, placements confirmed, a season's
 configuration confirmed, a review gathering its lines, the placements review gathering each
 division's lines, a division's channel faults read, a driver's name read, a season's fingerprint
-taken, a season's pending test-mode steps read, a season's confirmation judged, a season ending, a
-season, division, round or driver deleted, a driver merged into another or turned down, a driver's
-account changed, a base role changed, the bot packed, test mode turned on, the bot's in-memory state
-cleared, the hub's panel gathering its options, a module's switch read), core declares a hook. The
+taken, a season's pending test-mode steps read, the test-mode review's marks read, a season's
+confirmation judged, a season ending, a season, division, round or driver deleted, a driver merged
+into another or turned down, a driver's account changed, a base role changed, the bot packed, test
+mode turned on, the bot's in-memory state cleared, the hub's panel gathering its options, a
+module's switch read), core declares a hook. The
 builder signs each module up to it before the bot connects. Core calls whoever signed up, and never
 imports a module, the bot's type aside (see "How the code is laid out"). A module turned on or off
 is not a hook but a change of the module's own, which core asks for by its kind (see "Each module
 turns itself on and off").
 
 **A hook core declares is a list of subscribers.** Core declares the moment and what it hands over:
-what the moment concerns, where it concerns anything (the rows, the round), and, where core holds
-one open, the connection its subscribers read and write on (the save's own where the moment falls
-inside one, so that what they write is part of the save), and, where core holds none, at most the
-database's path, each subscriber opening its own connection. Each module signs up a function of its
+what the moment concerns, where it concerns anything (the rows, the round, the time it is judged
+at, the jobs the scheduler holds), and, where core holds one open, the connection its subscribers
+read and write on (the save's own where the moment falls inside one, so that what they write is
+part of the save), and, where core holds none, at most the database's path, each subscriber
+opening its own connection. Each module signs up a function of its
 own, and core calls each in the order they signed up. A subscriber may hand something back, which
 the hook gathers in that order; what core does with them, if anything, is the moment's: a value to
 read or to keep, a line to write, a step to plan or to register, a refusal to give. The hook names
