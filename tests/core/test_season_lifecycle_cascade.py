@@ -32,8 +32,6 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.season_service import SeasonService, refresh_division_status_on
 
-HISTORY_ASKS_RESULTS = "#283: the history does not yet ask results for each driver's standing"
-
 SERVER_ID = 7654
 ACTOR_ID = 999
 ACTOR_NAME = "Race Director"
@@ -539,7 +537,6 @@ async def _history(db_path):
         return [(r["division_name"], r["cancelled"]) for r in await cur.fetchall()]
 
 
-@pytest.mark.xfail(strict=True, reason=HISTORY_ASKS_RESULTS)
 async def test_history_marks_a_cancelled_division_and_not_a_finished_one(tmp_path) -> None:
     from leaguebot.core.services.season_end_service import write_driver_history_entries_on
     from tests.support.driver_records_hooks import season_standing_read
@@ -566,7 +563,6 @@ async def test_history_marks_a_cancelled_division_and_not_a_finished_one(tmp_pat
     assert await _history(db_path) == [("Div A", 0), ("Div B", 1)]
 
 
-@pytest.mark.xfail(strict=True, reason=HISTORY_ASKS_RESULTS)
 async def test_a_test_driver_gets_a_history_entry_like_anybody_else(tmp_path) -> None:
     """Mock drivers are drivers, artificially injected — they are not filtered out."""
     from leaguebot.core.services.season_end_service import write_driver_history_entries_on
@@ -592,7 +588,6 @@ async def test_a_test_driver_gets_a_history_entry_like_anybody_else(tmp_path) ->
     assert written == 2, "both drivers should be recorded"
 
 
-@pytest.mark.xfail(strict=True, reason=HISTORY_ASKS_RESULTS)
 async def test_cancelling_a_season_records_its_drivers_as_cancelled(tmp_path) -> None:
     """A cancelled season used to leave no trace in anybody's history at all."""
     from leaguebot.core.services.season_end_service import write_driver_history_entries_on
@@ -631,7 +626,6 @@ async def test_the_flag_defaults_to_not_cancelled(tmp_path) -> None:
     assert cols["cancelled"]["notnull"] == 1
 
 
-@pytest.mark.xfail(strict=True, reason=HISTORY_ASKS_RESULTS)
 async def test_writing_the_history_twice_adds_nothing(tmp_path) -> None:
     """The history written a second time for the same season adds no second set.
 
@@ -662,7 +656,6 @@ async def test_writing_the_history_twice_adds_nothing(tmp_path) -> None:
     assert await _history(db_path) == first == [("Div A", 0)]
 
 
-@pytest.mark.xfail(strict=True, reason=HISTORY_ASKS_RESULTS)
 async def test_a_driver_moved_between_divisions_keeps_an_entry_for_each(tmp_path) -> None:
     """The unique key includes the division, so two divisions in one season is not a duplicate."""
     from leaguebot.core.services.season_end_service import write_driver_history_entries_on

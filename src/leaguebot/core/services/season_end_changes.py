@@ -28,7 +28,8 @@ fails:
    posts in `season_standings_posts` and `sheet_posting`.
 3. A `revoke_roles` for each real driver, then `close_window`, then `flush_forecasts` where test
    mode is on.
-4. `end` (one save): the history, the driver pass, test mode switched off and the season marked
+4. `end` (one save): the history (each driver's last standing asked of the modules through
+   `season_standing_read`), the driver pass, test mode switched off and the season marked
    completed, **last**, with its audit record. A fault leaves the season as it was, Pending
    completion, for the queue to retry.
 5. Then the Discord side of the driver pass (`signup_notice` and `close_signup` for each signup
@@ -496,6 +497,7 @@ def season_complete_change(
     scheduler: "SchedulerService",
     placement: "PlacementService",
     final_round_read: AwaitedHook,
+    season_standing_read: AwaitedHook,
     season_completed: AwaitedHook,
     season_completed_steps: Hook,
     season_end_refused: AwaitedHook,
@@ -514,10 +516,10 @@ def season_complete_change(
     The builder hands in the *seasons* service (the season the check reads), the *scheduler*
     (whose season-end job `settle` removes), the *placement* service (which takes back roles), the
     hooks the modules sign up to
-    (*final_round_read*, *season_completed*, *season_completed_steps*, *season_end_refused*,
-    *season_end_closes*, *drivers_returned*, *driver_turned_down*, *driver_returned_jobs*,
-    *season_end_steps*, *test_mode_flushed*, *drivers_deleted*), the hook each driver deleted
-    calls (*profiles_deleted*) and the queue's clock *now*, which stamps the audit entries of the
+    (*final_round_read*, *season_standing_read*, *season_completed*, *season_completed_steps*,
+    *season_end_refused*, *season_end_closes*, *drivers_returned*, *driver_turned_down*,
+    *driver_returned_jobs*, *season_end_steps*, *test_mode_flushed*, *drivers_deleted*), the hook
+    each driver deleted calls (*profiles_deleted*) and the queue's clock *now*, which stamps the audit entries of the
     turn-down and the driver pass.
     """
 
@@ -642,7 +644,9 @@ def season_complete_change(
         number = int(season["season_number"])
 
         test_mode = await test_mode_on(db)
-        await write_driver_history_entries_on(db, season_id, number)
+        await write_driver_history_entries_on(
+            db, season_id, number, season_standing_read=season_standing_read
+        )
         driver_pass = await run_driver_pass_on(
             db, profiles_deleted=profiles_deleted, now=now()
         )

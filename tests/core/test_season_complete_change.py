@@ -752,9 +752,6 @@ async def test_a_module_s_part_of_each_end_save_runs_on_that_save_s_connection(
     assert [row["part"] for row in rows] == ["returned"]
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: the history does not yet ask a driver's standing of the modules",
-)
 @pytest.mark.parametrize("kind", [SEASON_COMPLETE_KIND, SEASON_CANCEL_KIND],
                          ids=["completion", "cancellation"])
 async def test_the_history_asks_each_driver_s_standing_inside_the_end_save(tmp_path, kind):

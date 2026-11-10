@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 from leaguebot.core.models.change import StepKind, StepResult
 from leaguebot.core.services import backup_service, standing_posts
 from leaguebot.core.services.change_queue import Step, StepContext
+from leaguebot.core.services.driver_service import accounts_of_profile
 from leaguebot.core.services.season_lifecycle_service import (
     close_signup_steps,
     require_guild,
@@ -60,6 +61,7 @@ async def write_driver_history_entries_on(
     season_id: int,
     season_number: int,
     *,
+    season_standing_read: "AwaitedHook",
     force_cancelled: bool = False,
 ) -> None:
     """Write a DriverHistoryEntry for every division each driver took part in during the season.
@@ -74,8 +76,10 @@ async def write_driver_history_entries_on(
 
     Sources:
     - season_number, division_name, division_tier: from the season/division rows
-    - final_position, final_points: from the most recent driver_standings_snapshots row
-    - points_gap_to_winner: derived from final points vs the division winner's final points
+    - final_position, final_points: the driver's last standing in the division, asked of the
+      modules through *season_standing_read*
+    - points_gap_to_winner: derived from final points vs the division winner's points, which the
+      same answer carries
     - cancelled: whether the driver's division was cancelled
 
     **Idempotent, and deliberately so.** Both ends of a season write the history in the one save
@@ -113,29 +117,6 @@ async def write_driver_history_entries_on(
         )
         return
 
-    # For each division, determine the winner's final points (max at last round)
-    division_ids = list({row["division_id"] for row in assignments})
-    division_winner_points: dict[int, int] = {}
-    for div_id in division_ids:
-        cursor = await db.execute(
-            """
-            SELECT MAX(dss.total_points)
-            FROM driver_standings_snapshots dss
-            WHERE dss.division_id = ?
-              AND dss.round_id = (
-                  SELECT dss2.round_id
-                  FROM driver_standings_snapshots dss2
-                  JOIN rounds r ON r.id = dss2.round_id
-                  WHERE dss2.division_id = ?
-                  ORDER BY r.round_number DESC
-                  LIMIT 1
-              )
-            """,
-            (div_id, div_id),
-        )
-        row = await cursor.fetchone()
-        division_winner_points[div_id] = (row[0] if row and row[0] is not None else 0)
-
     # Write a history entry for each driver × division
     for asgn in assignments:
         driver_profile_id = asgn["driver_profile_id"]
@@ -147,28 +128,18 @@ async def write_driver_history_entries_on(
         # the whole answer however the cancellation was ordered.
         cancelled = 1 if (force_cancelled or asgn["division_status"] == "CANCELLED") else 0
 
-        # Fetch the most recent standings snapshot for this driver × division, under
-        # whichever of their accounts it stands (issue #243): a driver who changed
-        # account after the last round finished it under the old one.
-        cursor = await db.execute(
-            """
-            SELECT dss.total_points, dss.standing_position
-            FROM driver_standings_snapshots dss
-            JOIN rounds r ON r.id = dss.round_id
-            JOIN driver_accounts da
-              ON CAST(da.discord_user_id AS INTEGER) = dss.driver_user_id
-            WHERE dss.division_id = ? AND da.driver_profile_id = ?
-            ORDER BY r.round_number DESC
-            LIMIT 1
-            """,
-            (div_id, driver_profile_id),
-        )
-        snap = await cursor.fetchone()
-        final_points = snap["total_points"] if snap else 0
-        final_position = snap["standing_position"] if snap else 0
-
-        winner_points = division_winner_points.get(div_id, 0)
-        points_gap = winner_points - final_points
+        # The driver's last standing in the division and the winner's points, asked of the
+        # modules under every account the driver has held (a driver who changed account after the
+        # last round finished it under the old one). The first module to answer is taken; with
+        # none answering, the driver has no standing and the division no winner.
+        standing, winner_points = None, None
+        accounts = await accounts_of_profile(db, driver_profile_id)
+        for answer in await season_standing_read.call(db, div_id, accounts):
+            if answer is not None:
+                standing, winner_points = answer
+                break
+        final_position, final_points = (standing[0], standing[1]) if standing else (0, 0)
+        points_gap = (winner_points or 0) - final_points
 
         await db.execute(
             """

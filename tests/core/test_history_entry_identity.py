@@ -11,8 +11,6 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.driver_transitions import reassigned
 
-HISTORY_ASKS_RESULTS = "#283: the history does not yet ask results for each driver's standing"
-
 SERVER_ID = 22120
 
 
@@ -129,7 +127,6 @@ async def _seed_a_finished_season(db_path: str) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason=HISTORY_ASKS_RESULTS)
 async def test_a_re_keyed_driver_s_history_carries_their_final_standing(db_path):
     """Issue #222, as a league sees it: the season ends and the driver's history is right."""
     from leaguebot.core.services.season_end_service import write_driver_history_entries_on
@@ -156,7 +153,6 @@ async def test_a_re_keyed_driver_s_history_carries_their_final_standing(db_path)
     assert rows == [(_NEW_USER, 2, 88, 12)]
 
 
-@pytest.mark.xfail(strict=True, reason=HISTORY_ASKS_RESULTS)
 async def test_with_no_module_answering_the_history_records_no_standing(db_path):
     """The same finished season, our driver second on 88 points behind a winner on 100, but no
     module signed up to answer a driver's standing (results never built). The season's end

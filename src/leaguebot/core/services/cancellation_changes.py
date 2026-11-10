@@ -1218,6 +1218,7 @@ def season_cancel_change(
     rounds_made_final: AwaitedHook,
     cancellation_steps: Hook,
     season_end_refused: AwaitedHook,
+    season_standing_read: AwaitedHook,
     season_end_closes: Hook,
     drivers_returned: AwaitedHook,
     driver_returned_jobs: Hook,
@@ -1233,9 +1234,9 @@ def season_cancel_change(
     service, the *scheduler*, the *placement* service (which takes back roles), the image
     module's drawing (*drawing*, #283), the hooks the modules sign up to (*cancellation_refused*,
     *rounds_called_off*, *cancellation_notices*, *rounds_made_final*, *cancellation_steps*,
-    *season_end_refused*, *season_end_closes*, *drivers_returned*, *driver_returned_jobs*,
-    *season_end_steps*, *test_mode_flushed*, *drivers_deleted*), the hook each driver deleted
-    calls (*profiles_deleted*) and the queue's clock *now*.
+    *season_end_refused*, *season_standing_read*, *season_end_closes*, *drivers_returned*,
+    *driver_returned_jobs*, *season_end_steps*, *test_mode_flushed*, *drivers_deleted*), the hook
+    each driver deleted calls (*profiles_deleted*) and the queue's clock *now*.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -1425,7 +1426,10 @@ def season_cancel_change(
         number = int(season["season_number"])
 
         test_mode = await test_mode_on(db)
-        await write_driver_history_entries_on(db, season_id, number, force_cancelled=True)
+        await write_driver_history_entries_on(
+            db, season_id, number, season_standing_read=season_standing_read,
+            force_cancelled=True,
+        )
         driver_pass = await run_driver_pass_on(
             db, profiles_deleted=profiles_deleted, now=now()
         )
