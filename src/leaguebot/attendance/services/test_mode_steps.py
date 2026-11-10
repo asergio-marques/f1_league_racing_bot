@@ -99,21 +99,34 @@ def _deadline_has_run(call: Any) -> bool:
     return bool(call[3] or call[2])
 
 
+async def _check_in_state(
+    db_path: str, round_ids: list[int]
+) -> tuple[bool, set[int], dict[int, Any]] | None:
+    """What advance and the review both judge the check-in of *round_ids* by, read once: whether
+    the last notice is sent at all, the rounds whose check-in has been taken down, and each
+    standing call; None while attendance is off. A last notice set to 0 is never sent and no job is
+    armed for it, and the setting cannot change while a season runs."""
+    async with get_connection(db_path) as db:
+        if not await attendance_enabled_on(db):
+            return None
+        cursor = await db.execute("SELECT rsvp_last_notice_hours FROM attendance_config")
+        found = await cursor.fetchone()
+        last_notice_on = found is not None and bool(found["rsvp_last_notice_hours"])
+        cleared = await check_ins_cleared(db, round_ids)
+        calls = await _calls_standing(db, round_ids)
+    return last_notice_on, cleared, calls
+
+
 async def pending_steps(
     db_path: str, rounds: Sequence[ActiveRound], *, now: datetime
 ) -> ModuleSteps:
     """Attendance's pending steps of *rounds*. It passes nothing over, so *now* judges nothing;
     nothing is handed back while attendance is off."""
     round_ids = [r.round_id for r in rounds]
-    async with get_connection(db_path) as db:
-        if not await attendance_enabled_on(db):
-            return ModuleSteps(pending=[])
-        cursor = await db.execute("SELECT rsvp_last_notice_hours FROM attendance_config")
-        found = await cursor.fetchone()
-        # A last notice set to 0 is never sent, and no job is armed for it.
-        last_notice_on = found is not None and bool(found["rsvp_last_notice_hours"])
-        cleared = await check_ins_cleared(db, round_ids)
-        calls = await _calls_standing(db, round_ids)
+    state = await _check_in_state(db_path, round_ids)
+    if state is None:
+        return ModuleSteps(pending=[])
+    last_notice_on, cleared, calls = state
     in_hand = await _check_ins_in_hand(db_path)
 
     pending: list[PendingStep] = []
@@ -152,16 +165,10 @@ async def review_marks(
     A check-in step in hand on the change queue is pending though its scheduler job was cancelled
     by the advance that asked for it, so it counts as queued."""
     round_ids = [r.round_id for r in rounds]
-    async with get_connection(db_path) as db:
-        if not await attendance_enabled_on(db):
-            return {}
-        cursor = await db.execute("SELECT rsvp_last_notice_hours FROM attendance_config")
-        found = await cursor.fetchone()
-        # A last notice set to 0 is never sent, and is left out like a step of a module that is
-        # off: the setting cannot change while a season runs, so no job was ever armed.
-        last_notice_on = found is not None and bool(found["rsvp_last_notice_hours"])
-        cleared = await check_ins_cleared(db, round_ids)
-        calls = await _calls_standing(db, round_ids)
+    state = await _check_in_state(db_path, round_ids)
+    if state is None:
+        return {}
+    last_notice_on, cleared, calls = state
     if queued is not None:
         queued = queued | {
             (rid, _CHECK_IN_EVENTS[phase]) for rid, phase in await _check_ins_in_hand(db_path)

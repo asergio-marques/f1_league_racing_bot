@@ -64,7 +64,8 @@ class PhaseEntry(TypedDict):
 @dataclass(frozen=True)
 class ActiveRound:
     """A round of the active season as core reads it, handed to each module through the
-    `pending_steps_read` hook: core's own columns of it alone, its race time read as a moment."""
+    `pending_steps_read` and `review_marks_read` hooks: core's own columns of it alone, its race
+    time read as a moment."""
 
     round_id: int
     round_number: int
