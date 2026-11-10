@@ -366,20 +366,34 @@ async def _team_list_since_the_review(env, monkeypatch, now: str = "as reviewed"
     monkeypatch.setattr(sfs, "take_fingerprint", _now)
 
 
-def _confirm_view(env, *, goes_through: bool = True):
-    """Alex's review's ✅ Confirm configuration, built as the question's view is, on a cog whose
-    confirmation is recorded and goes through, or is refused at its own check."""
+#: The workflow of `season_review_workflows` the ✅ Confirm configuration button hands a press on to.
+CONFIRM = "confirm_configuration"
+
+#: The ✅ Confirm configuration button still hands a press on to the season cog's method.
+_BUTTON_ON_THE_COG = (
+    "#283: the Confirm configuration button does not yet run "
+    "season_review_workflows.confirm_configuration"
+)
+
+
+def _confirm_view(env, monkeypatch, *, goes_through: bool = True):
+    """Alex's review's ✅ Confirm configuration, built as the question's view is, whose
+    confirmation, `season_review_workflows.confirm_configuration`, is stood in and recorded, and
+    goes through or is refused at its own check. Returns the view and the stand-ins, the
+    confirmation's under `CONFIRM`."""
     from tests.core.test_review_outcomes_recorded import _view_on
 
-    view, cog = _view_on(env, _ConfirmConfigurationView, "_do_confirm_configuration")
-    cog._do_confirm_configuration = AsyncMock(return_value=goes_through)
-    return view, cog
+    view, workflows = _view_on(env, _ConfirmConfigurationView, CONFIRM, monkeypatch)
+    getattr(workflows, CONFIRM).return_value = goes_through
+    return view, workflows
 
 
-def asking_the_take_down(env, cog, helper: str) -> None:
+def asking_the_take_down(env, workflows) -> None:
+    """Make the stood-in confirmation ask the review's take-down, ending confirmed, as the real
+    one does once its gates pass."""
     from tests.core.test_review_outcomes_recorded import asking_the_take_down as asking
 
-    asking(env, cog, helper)
+    asking(env, workflows, CONFIRM)
 
 
 def _press(env, user_id: int = REVIEWER, name: str = "Alex", *, question=None):
@@ -413,6 +427,7 @@ async def _prompt_rows(env) -> int:
     return count
 
 
+@pytest.mark.xfail(strict=True, reason=_BUTTON_ON_THE_COG)
 async def test_a_refused_confirmation_leaves_the_review_standing(tmp_path, monkeypatch):
     """Every review's button alike: Alex presses ✅ Confirm configuration a moment after the
     question appears, the season unchanged, and the confirmation is refused at its own check (a
@@ -423,11 +438,11 @@ async def test_a_refused_confirmation_leaves_the_review_standing(tmp_path, monke
 
     env = await _standing_review(tmp_path)
     await _team_list_since_the_review(env, monkeypatch)
-    view, cog = _confirm_view(env, goes_through=False)
+    view, workflows = _confirm_view(env, monkeypatch, goes_through=False)
 
     await _ConfirmConfigurationView.approve(view, _press(env), MagicMock())
 
-    cog._do_confirm_configuration.assert_awaited_once()
+    getattr(workflows, CONFIRM).assert_awaited_once()
     assert env.channel.deleted == [] and env.channel.sent == []
     assert await _take_downs(env) == []
     assert await _prompt_rows(env) == 1
@@ -477,6 +492,7 @@ async def test_a_confirmation_that_goes_through_takes_the_review_down(tmp_path, 
     assert [line for line in league.bot.log_channel.sent if line.startswith("⌛")] == []
 
 
+@pytest.mark.xfail(strict=True, reason=_BUTTON_ON_THE_COG)
 async def test_confirming_one_review_ends_another_of_the_same_season_when_pressed(
     tmp_path, monkeypatch
 ):
@@ -502,19 +518,19 @@ async def test_confirming_one_review_ends_another_of_the_same_season_when_presse
         )
         await db.commit()
     await _team_list_since_the_review(env, monkeypatch)
-    view, cog = _confirm_view(env)
-    asking_the_take_down(env, cog, "_do_confirm_configuration")
+    view, workflows = _confirm_view(env, monkeypatch)
+    asking_the_take_down(env, workflows)
     await _ConfirmConfigurationView.approve(view, _press(env, question=newer), MagicMock())
     await run_queue(env.bot)
     assert [m.id for m in channel.deleted] == [newer.id]
     assert channel.sent == []
     await _team_list_since_the_review(env, monkeypatch, now="moved on")
-    older_view, older_cog = _confirm_view(env)
+    older_view, older_workflows = _confirm_view(env, monkeypatch)
     pressing = _press(env)
 
     await _ConfirmConfigurationView.approve(older_view, pressing, MagicMock())
 
-    older_cog._do_confirm_configuration.assert_not_awaited()
+    getattr(older_workflows, CONFIRM).assert_not_awaited()
     assert "Nothing has been confirmed" in acknowledgement(pressing)
     await run_queue(env.bot)
     assert {m.id for m in channel.deleted} == {newer.id, channel.q.id, channel.r1.id,
@@ -889,6 +905,7 @@ async def test_an_unreadable_colour_or_portrait_check_stands_aside(unreadable, k
 # ── The button, on a season unchanged since the report ─────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_BUTTON_ON_THE_COG)
 async def test_an_unchanged_configuration_is_handed_to_the_confirmation_with_its_evidence(
     tmp_path, monkeypatch
 ):
@@ -901,15 +918,17 @@ async def test_an_unchanged_configuration_is_handed_to_the_confirmation_with_its
 
     env = await _standing_review(tmp_path)
     await _team_list_since_the_review(env, monkeypatch)
-    view, cog = _confirm_view(env)
+    view, workflows = _confirm_view(env, monkeypatch)
     interaction = _press(env)
 
     await _ConfirmConfigurationView.approve(view, interaction, MagicMock())
 
-    cog._do_confirm_configuration.assert_awaited_once_with(
-        interaction, what=_review_button("Confirm configuration", CONFIG_REVIEW),
-        fingerprint={TEAM_LIST: "as reviewed"},
-    )
+    confirmation = getattr(workflows, CONFIRM)
+    confirmation.assert_awaited_once()
+    assert confirmation.await_args.args == (interaction,)
+    asked = confirmation.await_args.kwargs
+    assert asked["what"] == _review_button("Confirm configuration", CONFIG_REVIEW)
+    assert asked["fingerprint"] == {TEAM_LIST: "as reviewed"}
     assert env.channel.deleted == []
     assert await _take_downs(env) == []
 
