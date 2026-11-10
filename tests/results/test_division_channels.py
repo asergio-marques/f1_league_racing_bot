@@ -199,7 +199,8 @@ async def test_results_names_each_division_s_missing_or_deleted_channels(tmp_pat
     the server cannot say whether its verdicts channel 122 is there; Am has none of the three.
     Results on names Division 11's standings channel as gone, taking the verdicts channel as there, and each of
     Am's three as missing, in the order results, standings, verdicts, each with the command that
-    sets it. Results off names nothing."""
+    sets it. With no server to check, Am's three alone are named, Division 11's set channels
+    being taken as there. Results off names nothing."""
     from unittest.mock import AsyncMock, MagicMock
 
     from leaguebot.results.services.division_channels import division_channel_faults
@@ -219,25 +220,29 @@ async def test_results_names_each_division_s_missing_or_deleted_channels(tmp_pat
         await db.commit()
     guild = server_holding(gone=(121,), unreadable=(122,))
 
-    async def faults(on: bool) -> dict[int, list[str]]:
+    async def faults(on: bool, server=guild) -> dict[int, list[str]]:
         modules = MagicMock()
         modules.is_results_enabled = AsyncMock(return_value=on)
         found = await division_channel_faults(
-            modules, db_path, divisions={DIVISION_ID: "Division 11", 12: "Am"}, guild=guild
+            modules, db_path, divisions={DIVISION_ID: "Division 11", 12: "Am"}, guild=server
         )
         return {division_id: lines for division_id, lines in found.items() if lines}
 
-    assert await faults(True) == {
-        DIVISION_ID: [
-            "**Division 11**'s standings channel is no longer on the server — "
-            "`/results channel standings`.",
-        ],
+    am = {
         12: [
             "**Am** has no results channel — `/results channel results`.",
             "**Am** has no standings channel — `/results channel standings`.",
             "**Am** has no verdicts channel — `/results channel verdicts`.",
         ],
     }
+    assert await faults(True) == {
+        DIVISION_ID: [
+            "**Division 11**'s standings channel is no longer on the server — "
+            "`/results channel standings`.",
+        ],
+        **am,
+    }
+    assert await faults(True, None) == am
     assert await faults(False) == {}
 
 
