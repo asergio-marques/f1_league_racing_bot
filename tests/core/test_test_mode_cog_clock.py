@@ -13,8 +13,6 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-
 from leaguebot.core.cogs import test_mode_cog as cog_module
 from leaguebot.core.cogs.test_mode_cog import TestModeCog as _Cog
 from tests.support.undecorate import undecorate

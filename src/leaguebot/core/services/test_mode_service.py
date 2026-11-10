@@ -358,9 +358,9 @@ async def get_next_pending_phase(
     is read for its clean-ups alone, a day after its start as any round's: it offers no other step.
     A round called off is not read at all.
 
-    A weather step of a round whose race has been run by *now* (the present, where not given) is
-    passed over, since the change queue drops a forecast for a race already run as not due
-    (A25). Rehearsing weather in test mode needs rounds dated in the future (owner, 2026-10-12).
+    A weather step of a round whose race has been run by *now* is passed over, since the change
+    queue drops a forecast for a race already run as not due (A25). Rehearsing weather in test mode
+    needs rounds dated in the future (owner, 2026-10-12).
 
     A weather step whose forecast or clean-up is already in hand on the change queue (asked by
     an earlier advance, and not yet run) is passed over, so a second advance before the queue
@@ -717,11 +717,12 @@ async def get_next_pending_phase(
 async def get_passed_over_steps(
     db_path: str, *, now: datetime
 ) -> list[PhaseEntry]:
-    """Every weather step `get_next_pending_phase` passes over as *now* stands: each Phase 1 to 3, or mystery round notice, still owed (`_weather_steps_undone`)
-    for a round whose race has been run, the change queue dropping a forecast for a race already
-    run (A25). All of them, wherever they fall against the step advance offers, ordered by the
-    round's race time, then its division, then the phase. `/test-mode advance` names each in its
-    reply before the step it advances (owner, 2026-10-12, "Advance names what it skipped").
+    """Every weather step `get_next_pending_phase` passes over as *now* stands: each Phase 1 to 3,
+    or mystery round notice, still owed (`_weather_steps_undone`) for a round whose race has been
+    run, the change queue dropping a forecast for a race already run (A25). All of them, wherever
+    they fall against the step advance offers, ordered by the round's race time, then its division,
+    then the phase. `/test-mode advance` names each in its reply before the step it advances (owner,
+    2026-10-12, "Advance names what it skipped").
 
     Only while the weather module is on, as nothing of it is armed while it is off, and never a
     step already in hand on the change queue. A round that has ended, or whose appeals are being
@@ -832,11 +833,11 @@ async def build_review_summary(
       ⏳ = job is present in APScheduler (will fire automatically)
       ⚠️  = job is absent (misfired, evicted, or never created — needs /advance)
 
-    A weather step left undone on a round whose race has been run by *now* (the present, where
-    not given) is marked ⏭️ (`PASSED_OVER`), scheduler or not: `get_next_pending_phase` passes it
-    over, the change queue dropping a forecast for a race already run (A25), so neither ⏳ nor
-    "use /test-mode advance" would be true of it. Such a round's clean-up is done once nothing
-    of Phases 1 to 3 stands, whether or not Phase 3 ever ran.
+    A weather step left undone on a round whose race has been run by *now* is marked ⏭️
+    (`PASSED_OVER`), scheduler or not: `get_next_pending_phase` passes it over, the change queue
+    dropping a forecast for a race already run (A25), so neither ⏳ nor "use /test-mode advance"
+    would be true of it. Such a round's clean-up is done once nothing of Phases 1 to 3 stands,
+    whether or not Phase 3 ever ran.
 
     Returns an informative message string if no active season exists.
     """
@@ -939,7 +940,6 @@ async def build_review_summary(
 
     if not rows:
         return f"**Season: {season_name} — ACTIVE**\n\nNo rounds have been configured yet."
-
 
     # The jobs the scheduler holds, as (round_id, event_type) — when one is available.
     round_ids: set[int] = {r["round_id"] for r in rows}

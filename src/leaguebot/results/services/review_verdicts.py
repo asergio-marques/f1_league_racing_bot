@@ -116,8 +116,8 @@ def verdict_steps(
     now: Callable[[], datetime], attendance: AttendanceAfterReview
 ) -> dict[str, Step]:
     """The jobs of this module, keyed by their names, for a change type's `steps`. *now* is the
-    queue's clock, which stamps the heading's record; *attendance* the hook the builder handed
-    the change type, which the jobs use and never look up on the bot."""
+    queue's clock, which stamps the heading's record and the lineup's audit; *attendance* the hook
+    the builder handed the change type, which the jobs use and never look up on the bot."""
 
     def bound(fn: Any) -> Any:
         async def run(ctx: StepContext) -> Any:
