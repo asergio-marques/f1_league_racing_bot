@@ -9,7 +9,7 @@ import threading
 import weakref
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Callable, Iterable, TypeVar, overload
+from typing import Any, AsyncIterator, Callable, Iterable, Sequence, TypeVar, overload
 
 import aiosqlite
 
@@ -339,6 +339,14 @@ async def tuple_rows(db: aiosqlite.Connection, sql: str, *params: Any) -> list[t
     depend on the row factory the connection carries."""
     cursor = await db.execute(sql, params)
     return [tuple(row) for row in await cursor.fetchall()]
+
+
+async def tuple_rows_in(
+    db: aiosqlite.Connection, sql: str, ids: Sequence[int]
+) -> list[tuple[Any, ...]]:
+    """`tuple_rows` for *sql* whose `{marks}` stands for an `IN` list of *ids*, each bound as a
+    parameter: one placeholder for each id."""
+    return await tuple_rows(db, sql.format(marks=", ".join("?" for _ in ids)), *ids)
 
 
 def inserted_id(cursor: aiosqlite.Cursor) -> int:

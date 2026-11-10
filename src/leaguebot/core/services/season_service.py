@@ -580,6 +580,11 @@ class SeasonService:
         )
         return [_row_to_division(r) for r in await cursor.fetchall()]
 
+    async def division_ids_on(self, db: aiosqlite.Connection, season_id: int) -> list[int]:
+        """The ids of every division of *season_id*, cancelled ones included, in id order, read on
+        *db*: an order that does not move when a division's tier does."""
+        return sorted(division.id for division in await self.get_divisions_on(db, season_id))
+
     async def get_division(self, division_id: int) -> Division | None:
         """Return the division *division_id*, or None where there is none."""
         async with get_connection(self._db_path) as db:
