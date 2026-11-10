@@ -117,28 +117,52 @@ async def test_an_approved_signup_outranks_a_later_one_that_was_not(tmp_path):
     assert await _driver_nationality(db_path, int(B)) == "PT"
 
 
+async def _in_two_seasons(db_path: str) -> None:
+    """Put A's signup in season 1, since completed, and B's in season 2, in setup, renamed Racer
+    Now and still pending."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO seasons (id, start_date, status) "
+            "VALUES (1, '2025-01-01', 'COMPLETED'), (2, '2026-01-01', 'SETUP')"
+        )
+        await db.execute("UPDATE signup_records SET season_id = 1 WHERE discord_user_id = ?", (A,))
+        await db.execute(
+            "UPDATE signup_records SET season_id = 2, server_display_name = 'Racer Now' "
+            "WHERE discord_user_id = ?",
+            (B,),
+        )
+        await db.commit()
+
+
 @pytest.mark.parametrize(
-    "approved, name",
+    "approved, two_seasons, name",
     [
-        pytest.param(True, "Racer", id="the-approved-one"),
-        pytest.param(False, "Rejected Answers", id="the-latest-where-none-is-approved"),
+        pytest.param(True, False, "Racer", id="the-approved-one"),
+        pytest.param(False, False, "Rejected Answers", id="the-latest-where-none-is-approved"),
+        pytest.param(True, True, "Racer Now", id="the-later-season-s-over-an-earlier-approved-one"),
     ],
 )
 @pytest.mark.xfail(
     strict=True, reason="#283: signup has no reader of a driver's name across their accounts"
 )
-async def test_signup_names_a_driver_from_their_signup_across_accounts(tmp_path, approved, name):
+async def test_signup_names_a_driver_from_their_signup_across_accounts(
+    tmp_path, approved, two_seasons, name
+):
     """Signup's reader of the name each driver gave in their signup, the one core's hook a
     driver's name is read by asks. The driver signed up on their past account A as Racer, and
     later on their current account B as Rejected Answers. With A's signup approved, the
     approved one outranks the later: signup names them Racer. With neither approved, the
-    latest speaks for them: Rejected Answers."""
+    latest speaks for them: Rejected Answers. With A's signup approved in season 1, since
+    completed, and B's, as Racer Now, pending in season 2, the later season's signup speaks for
+    them, approved or not: Racer Now."""
     from leaguebot.signup.services.signup_module_service import driver_names
 
     db_path, profile_id = await _make_db(tmp_path)
     if approved:
         await _mark_approved(SignupModuleService(db_path), db_path, A)
     await _newer_rejected_signup_on_b(db_path)
+    if two_seasons:
+        await _in_two_seasons(db_path)
 
     assert await driver_names(SignupModuleService(db_path), [profile_id]) == {profile_id: name}
 
