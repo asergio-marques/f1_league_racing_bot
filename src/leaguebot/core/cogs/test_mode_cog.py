@@ -37,6 +37,7 @@ from leaguebot.core.services.test_roster_changes import (
     NOT_PLACING,
     TEST_ROSTER_ADD,
     TEST_ROSTER_ADD_BULK,
+    TEST_ROSTER_CLEAR,
     TEST_ROSTER_REMOVE,
     bulk_payload,
 )
@@ -742,50 +743,17 @@ class TestModeCog(commands.Cog):
         interaction: discord.Interaction,
         division: str,
     ) -> None:
-        config = await self.bot.config_service.get_server_config(
+        """Ask the change that clears the division of its fake drivers.
 
+        Test mode, the season's stage and the division are judged by the change, as it is asked
+        and as it starts (`test_roster_changes`).
+        """
+        await self.bot.change_queue.ask(
+            TEST_ROSTER_CLEAR,
+            {"division": division},
+            interaction=interaction,
+            what=describe(interaction),
         )
-        if config is None or not config.test_mode_active:
-            await refuse(
-                interaction,
-                NOT_IN_TEST_MODE,
-                what=describe(interaction),
-            )
-            return
-        if await self._refuse_roster_change_outside_placements(interaction):
-            return
-
-        from leaguebot.core.services.test_roster_service import clear_test_drivers
-
-        result = await clear_test_drivers(
-            division_name=division,
-            db_path=self.bot.db_path,
-            profiles_deleted=self.bot.profiles_deleted,
-        )
-
-        if isinstance(result, str):
-            await refuse(interaction, f"⛔ {result}", what=describe(interaction))
-            return
-
-        if result == 0:
-            await interaction.response.send_message(
-                f"ℹ️ No fake drivers found in **{division}**.", ephemeral=True
-            )
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
-                "/test-mode roster clear | Nothing changed\n"
-                f"  division: {division}\n"
-                "  reason: no fake drivers to remove",
-            )
-        else:
-            await interaction.response.send_message(
-                f"✅ Removed **{result}** fake driver(s) from **{division}**.", ephemeral=True
-            )
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode roster clear | Success\n"
-                f"  division: {division}\n"
-                f"  removed_drivers: {result}",
-            )
 
     # (submit-results removed — use /test-mode advance which now handles result submission)
 

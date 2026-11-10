@@ -56,10 +56,13 @@ from leaguebot.core.services.test_roster_service import (
     AddPlan,
     BulkPlan,
     FakeDriver,
+    clear_test_drivers_in_division_on,
     delete_test_drivers_on,
+    fake_drivers_in_division_on,
     find_test_driver_on,
     judge_add_on,
     judge_bulk_on,
+    locate_division_on,
     locate_on,
     seat_bulk_on,
     seat_on,
@@ -75,6 +78,7 @@ from leaguebot.core.utils.roster_import import (
 TEST_ROSTER_ADD = "core.test_roster_add"
 TEST_ROSTER_ADD_BULK = "core.test_roster_add_bulk"
 TEST_ROSTER_REMOVE = "core.test_roster_remove"
+TEST_ROSTER_CLEAR = "core.test_roster_clear"
 
 #: The name of the step that seats the driver and writes its audit entry and its line.
 SAVE = "save"
@@ -107,6 +111,15 @@ REMOVE_COMMAND = "/test-mode roster remove"
 NOBODY_REMOVED = (
     "Nothing was removed: **{driver_name}** is still seated in **{division}**. "
     "Run `/test-mode roster remove` again."
+)
+
+#: `/test-mode roster clear` as the line names it.
+CLEAR_COMMAND = "/test-mode roster clear"
+
+#: The reply once a league admin has discarded the stopped save: nobody was removed.
+NOBODY_CLEARED = (
+    "Nothing was removed: the fake drivers in **{division}** are still seated. "
+    "Run `/test-mode roster clear` again."
 )
 
 #: The reply once a league admin has discarded the stopped save: nobody was added.
@@ -466,15 +479,111 @@ def test_roster_remove_change(*, profiles_deleted: AwaitedHook) -> ChangeType:
     )
 
 
+# ─── /test-mode roster clear ──────────────────────────────────────────────────
+
+
+def test_roster_clear_change(*, profiles_deleted: AwaitedHook) -> ChangeType:
+    """The `core.test_roster_clear` change type, for the builder to register: *profiles_deleted*
+    is the hook each module signs up to so that it deletes its own rows of the drivers deleted.
+
+    A change type of its own on the league lane, **carrying the division as typed**.
+
+    **The refusals are the check's**, judged at the ask and again as the change starts, for run
+    against a live season the command would delete real drivers: test mode not on, the season not
+    in Placements, and no such division in the live season. **One SAVE** judges once more on its
+    own connection, deletes every fake driver seated in the division, keeping their history, and
+    writes a `TEST_DRIVER_REMOVED` audit entry for each, in the order they were created, and the
+    line. A division holding no fake driver is an ordinary answer: it is said, and the line says
+    nothing changed, with no audit entry. A fault in the save stops the lane.
+    """
+
+    async def judge(db: aiosqlite.Connection, payload: dict[str, Any]) -> tuple[int, str] | str:
+        refusal = await standing_refusal_on(db)
+        if refusal is not None:
+            return refusal
+        located = await locate_division_on(db, str(payload["division"]))
+        return f"⛔ {located}" if isinstance(located, str) else located
+
+    async def check(ctx: CheckContext) -> Verdict:
+        async with get_connection(ctx.db_path) as db:
+            judged = await judge(db, ctx.payload)
+        return Verdict.refuse(judged) if isinstance(judged, str) else Verdict.go()
+
+    async def save(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """Delete the drivers, and write the audit entries and the line."""
+        judged = await judge(db, ctx.payload)
+        if isinstance(judged, str):
+            return StepResult(
+                result={"refused": judged},
+                lines=(refusal_line(ctx.named, ctx.what, reply_reason(judged)),),
+            )
+        division_id, _name = judged
+        division = str(ctx.payload["division"])
+        drivers = await fake_drivers_in_division_on(db, division_id)
+        if not drivers:
+            line = (
+                f"{ctx.named} | {CLEAR_COMMAND} | Nothing changed\n"
+                f"  division: {division}\n"
+                "  reason: no fake drivers to remove"
+            )
+            return StepResult(result={"saved": True, "removed": 0}, lines=(line,))
+        removed = await clear_test_drivers_in_division_on(
+            db, division_id, profiles_deleted=profiles_deleted
+        )
+        audits = []
+        for driver in drivers:
+            old = _removed_entry(driver)
+            audits.append(
+                AuditRecord(
+                    "TEST_DRIVER_REMOVED", old, dict.fromkeys(old), division_id=driver.division_id
+                )
+            )
+        line = (
+            f"{ctx.named} | {CLEAR_COMMAND} | Success\n"
+            f"  division: {division}\n"
+            f"  removed_drivers: {removed}"
+        )
+        return StepResult(
+            result={"saved": True, "removed": removed}, audits=tuple(audits), lines=(line,)
+        )
+
+    def doing(payload: dict[str, Any]) -> str:
+        return f"Clearing the fake drivers from **{payload['division']}**"
+
+    def outcome(ctx: OutcomeContext) -> str:
+        saved = saved_result(ctx)
+        division = ctx.payload["division"]
+        if saved.get("refused"):
+            return str(saved["refused"])
+        if not saved.get("saved"):
+            return NOBODY_CLEARED.format(division=division)
+        if not saved["removed"]:
+            return f"ℹ️ No fake drivers found in **{division}**."
+        return f"✅ Removed **{saved['removed']}** fake driver(s) from **{division}**."
+
+    return ChangeType(
+        kind=TEST_ROSTER_CLEAR,
+        opening=(PlannedStep(SAVE),),
+        steps={SAVE: Step(SAVE, StepKind.SAVE, save)},
+        check=check,
+        key=lambda payload: f"{TEST_ROSTER_CLEAR}|{json.dumps(payload['division'])}",
+        doing=doing,
+        outcome=outcome,
+        lane=lambda _payload: LEAGUE_LANE,
+    )
+
+
 __all__ = [
     "NATIONALITY_SWITCHED_OFF",
     "NOT_PLACING",
     "TEST_ROSTER_ADD",
     "TEST_ROSTER_ADD_BULK",
+    "TEST_ROSTER_CLEAR",
     "TEST_ROSTER_REMOVE",
     "bulk_payload",
     "standing_refusal_on",
     "test_roster_add_bulk_change",
     "test_roster_add_change",
+    "test_roster_clear_change",
     "test_roster_remove_change",
 ]

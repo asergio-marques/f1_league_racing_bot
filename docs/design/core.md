@@ -325,6 +325,7 @@ Every core change type runs on the league lane; none is a conversation's. Each i
 | `core.test_roster_add` | `/test-mode roster add` | the fake driver, its seat and assignment, and the audit entry | — |
 | `core.test_roster_add_bulk` | `/test-mode roster add-bulk` | every driver of the file, their seats and assignments, and an audit entry for each | — |
 | `core.test_roster_remove` | `/test-mode roster remove` | the fake driver deleted, their history kept, and the audit entry | — |
+| `core.test_roster_clear` | `/test-mode roster clear` | every fake driver of the division deleted, their history kept, and an audit entry for each | — |
 | `hub.refresh` | the bot, wherever what the panel offers may change | none: the panel's id is its job's `record` | the old panel deleted where the hub moved |
 | `calendar.sync` | `/division calendar-sync` | `close`, last: a save writing the line | before it: the post, then the deletion of the calendar it replaced |
 | `lineup.post` | the bot, after a change made off the queue moves a driver | none: the lineup's id and audit entry are its post's `record` | the post, then the deletion of the lineup it replaced |
@@ -758,7 +759,10 @@ and as it starts, and one save seats it (`seat_bulk_on`) with an audit entry for
 remove` is `core.test_roster_remove`: the driver is judged at the ask and as it starts
 (`find_test_driver_on`), and one save deletes them through the bot's delete hook, keeping their
 history, with the audit entry; the name and division the reply of a discarded save needs are read
-into the payload at the ask (`fill`).
+into the payload at the ask (`fill`). `/test-mode roster clear` is `core.test_roster_clear`: test
+mode, the stage and the division are judged at the ask and as it starts, and one save deletes the
+division's fake drivers (`clear_test_drivers_in_division_on`) with an audit entry for each; a
+division holding none is answered, and the line says nothing changed, with no entry.
 
 **Fake drivers are seeded, not moved through the state machine.** `test_roster_service` inserts a
 fake driver at Assigned, flagged as a test driver, with a synthetic id above any real Discord id;

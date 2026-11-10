@@ -1,12 +1,15 @@
 """test_roster_service.py — Fake driver management for test mode.
 
-Provides helpers consumed by TestModeCog:
-  - add_test_driver_on:     create a synthetic driver and seat them in a division team
-  - list_test_drivers:      retrieve all fake drivers in a division (for cheat sheet)
-  - remove_test_driver:     remove one fake driver by their synthetic user ID
-  - clear_test_drivers:     remove all fake drivers from a named division
-  - clear_all_test_drivers_on: remove all fake drivers from every division, on a save's
-                            connection (toggle-off)
+The writers of the roster's changes (`test_roster_changes`) take the connection of the save they
+belong to and commit nothing:
+  - judge_add_on / seat_on:        judge a fake driver's seating without a write, then write it
+  - judge_bulk_on / seat_bulk_on:  the same for a whole roster, seated at once or not at all
+  - find_test_driver_on:           the fake driver holding a synthetic id, or the refusal
+  - remove_test_driver_on:         remove one fake driver by their synthetic user ID
+  - clear_test_drivers_in_division_on: remove all fake drivers from a division
+  - clear_all_test_drivers_on:     remove all fake drivers from every division (toggle-off)
+  - list_test_drivers:             retrieve all fake drivers in a division (for cheat sheet), a
+                                   read on a connection of its own
 
 A synthetic driver is inserted straight into `driver_profiles` at ASSIGNED, flagged as a test
 driver, and not through `write_transition`: the core specification's test-mode transition (Not
@@ -644,29 +647,6 @@ async def list_test_drivers(
     ]
 
 
-async def clear_test_drivers(
-    division_name: str,
-    db_path: str,
-    *,
-    profiles_deleted: AwaitedHook,
-) -> int | str:
-    """Remove all fake drivers from *division_name* and return the count removed.
-
-    Returns an error string if the division does not exist.
-    """
-    season_id = await _get_active_season_id(db_path)
-    if season_id is None:
-        return "No active or setup season found."
-
-    division_id = await _get_division_id(season_id, division_name, db_path)
-    if division_id is None:
-        return f"Division '{division_name}' not found in the active season."
-
-    return await _delete_test_drivers_in_division(
-        division_id, db_path, profiles_deleted=profiles_deleted
-    )
-
-
 @dataclass(frozen=True)
 class FakeDriver:
     """A fake driver as the roster's removals and the audit entries of them name them: the profile,
@@ -780,27 +760,38 @@ async def clear_all_test_drivers_on(
     return len(profile_ids)
 
 
-async def _delete_test_drivers_in_division(
-    division_id: int, db_path: str, *, profiles_deleted: AwaitedHook
-) -> int:
-    """Delete every fake driver seated in *division_id*, keeping their history."""
-    from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
+async def locate_division_on(
+    db: aiosqlite.Connection, division_name: str
+) -> tuple[int, str] | str:
+    """The id and stored name of the division *division_name* names in the live season, or the
+    refusal, in its words."""
+    season_id = await _get_active_season_id_on(db)
+    if season_id is None:
+        return "No active or setup season found."
+    division = await _get_division_on(db, season_id, division_name)
+    if division is None:
+        return f"Division '{division_name}' not found in the active season."
+    return division["id"], division["name"]
 
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT dp.id AS profile_id
-            FROM driver_profiles dp
-            JOIN team_seats ts     ON ts.driver_profile_id = dp.id
-            JOIN team_instances ti ON ti.id = ts.team_instance_id
-            WHERE dp.is_test_driver = 1
-              AND ti.division_id = ?
-            """,
-            (division_id,),
-        )
-        profile_ids = [r["profile_id"] for r in await cursor.fetchall()]
-        await delete_driver_profiles(
-            db, profile_ids, keep_history=True, profiles_deleted=profiles_deleted
-        )
-        await db.commit()
-    return len(profile_ids)
+
+async def fake_drivers_in_division_on(
+    db: aiosqlite.Connection, division_id: int
+) -> list[FakeDriver]:
+    """Every fake driver seated in *division_id*, in the order they were created."""
+    cursor = await db.execute(
+        _FAKE_DRIVER_SELECT + "WHERE dp.is_test_driver = 1 AND ti.division_id = ? ORDER BY dp.id",
+        (division_id,),
+    )
+    return [_fake_driver(row) for row in await cursor.fetchall()]
+
+
+async def clear_test_drivers_in_division_on(
+    db: aiosqlite.Connection, division_id: int, *, profiles_deleted: AwaitedHook
+) -> int:
+    """Delete every fake driver seated in *division_id*, keeping their history, on *db*,
+    committing nothing: the save it belongs to does. Returns the count removed."""
+    drivers = await fake_drivers_in_division_on(db, division_id)
+    await delete_test_drivers_on(
+        db, [driver.profile_id for driver in drivers], profiles_deleted=profiles_deleted
+    )
+    return len(drivers)
