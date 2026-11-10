@@ -745,25 +745,18 @@ and the audit entry. Turning it off is one save too (`switch_test_mode_off_on`),
 driver through `delete_driver_profiles`, followed by jobs that clear the forecasts posted under test
 mode and delete the saved backup. A season's end switches it off in its own `end` save. Whether a
 real driver stands in the way is counted by `count_live_real_drivers`. `/test-mode nationality` is a
-`Setting`. `/test-mode set-former-driver` is a change of its own, `core.test_mode_former_driver`,
-carrying the account picked and the value, with test mode and the profile judged at the ask and
-as it starts, and one save of the flag and its audit entry; the flag it leaves for a discarded
-save is read into the payload at the ask (`fill`). `/test-mode roster add` is `core.test_roster_add`
-(`test_roster_changes`): the driver is judged without a write (`judge_add_on`) at the ask and as it
-starts, and one save seats them (`seat_on`) with the audit entry; the roster's writers take the
-connection of the save and commit nothing. The change measures the template capacities with the
-bot's own placement service, the one carrying the image module's drawing, as a real placement is
-measured. `/test-mode roster add-bulk` is
-`core.test_roster_add_bulk` in the same module: the form refuses what the file shows wrong on its
-own before the ask, the change judges the whole roster without a write (`judge_bulk_on`) at the ask
-and as it starts, and one save seats it (`seat_bulk_on`) with an audit entry for each driver. `/test-mode roster
-remove` is `core.test_roster_remove`: the driver is judged at the ask and as it starts
-(`find_test_driver_on`), and one save deletes them through the bot's delete hook, keeping their
-history, with the audit entry; the name and division the reply of a discarded save needs are read
-into the payload at the ask (`fill`). `/test-mode roster clear` is `core.test_roster_clear`: test
-mode, the stage and the division are judged at the ask and as it starts, and one save deletes the
-division's fake drivers (`clear_test_drivers_in_division_on`) with an audit entry for each; a
-division holding none is answered, and the line says nothing changed, with no entry.
+`Setting`.
+
+**The other five test-mode commands are each a change of their own, in one shape:**
+`/test-mode set-former-driver` (`core.test_mode_former_driver`) and the four roster commands of
+`test_roster_changes` (`core.test_roster_add`, `core.test_roster_add_bulk`, `core.test_roster_remove`,
+`core.test_roster_clear`). Each carries what was typed, is judged without a write at the ask and
+again as it starts, and is one save of its rows and their audit entries, the roster's writers
+taking the connection of the save and committing nothing. What the reply of a discarded save needs
+is read into the payload at the ask (`fill`), and a fault in a save stops the lane. What each kind
+judges and writes is its docstring's. A roster is measured against the template capacities with the
+bot's own placement service, the one carrying the image module's drawing, as a real placement is,
+and one the file shows wrong on its own is refused by the form before the ask.
 
 **Fake drivers are seeded, not moved through the state machine.** `test_roster_service` inserts a
 fake driver at Assigned, flagged as a test driver, with a synthetic id above any real Discord id;
