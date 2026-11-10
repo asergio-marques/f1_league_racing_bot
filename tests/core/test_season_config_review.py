@@ -16,7 +16,9 @@ import pytest
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.models.server_config import ServerConfig
-from tests.support.review_workflows import record_review_views, run_check, run_workflow
+from tests.support.review_workflows import (
+    record_review_views, run_check, run_workflow, sign_up_confirmation_refused,
+)
 from tests.support.season_league import reply as _told
 from tests.support.setup_reads import hold_setup
 
@@ -30,20 +32,28 @@ ADMIN_ROLE = 444
 #: The gates a test stands in, each a function of `approval_checks` that the review command and
 #: the confirmation's workflow call alike.
 _GATES = (
-    "configuration_faults", "team_name_problems", "missing_points_config_problems",
-    "points_ordering_problems", "image_configuration_faults",
+    "configuration_faults", "team_name_problems", "image_configuration_faults",
+)
+
+#: Results' points gates a test stands in, each a function of results' `season_points_service`
+#: that its review section and its refusals call alike (#283).
+_POINTS_GATES = (
+    "missing_points_config_problems", "no_points_config_attached", "points_ordering_problems",
 )
 
 
 @contextmanager
 def _gates_of(cog):
-    """Each gate *cog* stands in for, patched on `approval_checks` for as long as it is held."""
+    """Each gate *cog* stands in for, patched on `approval_checks`, or on results' service for a
+    points gate, for as long as it is held."""
     from leaguebot.core.services import approval_checks
+    from leaguebot.results.services import season_points_service
 
     with ExitStack() as stack:
-        for gate in _GATES:
-            if gate in vars(cog):
-                stack.enter_context(patch.object(approval_checks, gate, vars(cog)[gate]))
+        for module, gates in ((approval_checks, _GATES), (season_points_service, _POINTS_GATES)):
+            for gate in gates:
+                if gate in vars(cog):
+                    stack.enter_context(patch.object(module, gate, vars(cog)[gate]))
         yield
 
 
@@ -116,6 +126,8 @@ def _bot(
     )
     bot.season_service.get_stage = AsyncMock(return_value=stage)
     bot.output_router.post_log = AsyncMock()
+    # Results' refusals, through the hook a season's confirmation is refused through (#283).
+    sign_up_confirmation_refused(bot)
     return bot
 
 
@@ -246,6 +258,7 @@ async def test_team_names_of_the_server_list_are_checked():
     assert faults == ["Team name: **!!!** reduces to nothing"]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: results has no points gates of its own; core reads them in approval_checks")
 async def test_the_results_module_needs_a_points_configuration(tmp_path):
     from leaguebot.core.db.database import run_migrations
 

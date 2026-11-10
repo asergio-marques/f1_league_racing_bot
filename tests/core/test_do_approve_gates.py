@@ -47,7 +47,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from tests.support.review_workflows import run_workflow
+from tests.support.review_workflows import run_workflow, sign_up_confirmation_refused
 from tests.support.season_points import snapshot_points
 from tests.support.setup_reads import hold_setup
 
@@ -178,6 +178,8 @@ def _cog(db_path, **overrides):
 
     for name, value in overrides.items():
         setattr(cog, name, value)
+    # Results' refusals, through the hook as the builder signs them up (#283).
+    sign_up_confirmation_refused(cog.bot)
     return cog
 
 

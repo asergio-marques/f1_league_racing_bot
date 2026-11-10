@@ -55,8 +55,7 @@ async def test_the_uncommitted_placements_are_listed(db_path):
 #: the confirmation's workflow call alike.
 _GATES = (
     "placement_confirmation_faults", "mid_season_configuration_faults",
-    "image_configuration_faults", "missing_points_config_problems", "points_ordering_problems",
-    "team_name_problems",
+    "image_configuration_faults", "team_name_problems",
 )
 
 
@@ -551,7 +550,7 @@ async def test_nothing_is_drawn_or_announced_where_the_lineup_graphic_is_off(mon
     assert "**Pro** — lineup once confirmed" in "\n".join(m for m, _ in messages)
 
 
-async def test_only_the_image_checks_of_the_configuration_review_are_repeated():
+async def test_only_the_image_checks_of_the_configuration_review_are_repeated(monkeypatch):
     """The season settled the rest (#374): its roles, its signup configuration and its team
     list are fixed, and its points were recorded upon it. A server points configuration
     removed or reordered mid-season must not stop drivers being placed."""
@@ -560,13 +559,20 @@ async def test_only_the_image_checks_of_the_configuration_review_are_repeated():
     cog.bot.module_service.is_results_enabled = AsyncMock(return_value=True)
     cog.bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
     cog.image_configuration_faults = AsyncMock(return_value=["Inkscape is not installed."])
-    cog.missing_points_config_problems = AsyncMock(return_value=["Standrad"])
-    cog.points_ordering_problems = AsyncMock(return_value=["P2 beats P1"])
+    # Results' points gates, stood in where results keeps them (#283).
+    from leaguebot.results.services import season_points_service
+
+    missing = AsyncMock(return_value=["Standrad"])
+    ordering = AsyncMock(return_value=["P2 beats P1"])
+    monkeypatch.setattr(season_points_service, "missing_points_config_problems", missing,
+                        raising=False)
+    monkeypatch.setattr(season_points_service, "points_ordering_problems", ordering,
+                        raising=False)
     cog.team_name_problems = AsyncMock(return_value=["a bad name"])
 
     assert await _mid_season_faults(cog) == ["Inkscape is not installed."]
-    cog.missing_points_config_problems.assert_not_awaited()
-    cog.points_ordering_problems.assert_not_awaited()
+    missing.assert_not_awaited()
+    ordering.assert_not_awaited()
 
 
 async def test_no_image_check_is_made_while_the_module_is_off():

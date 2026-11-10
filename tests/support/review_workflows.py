@@ -26,6 +26,24 @@ import inspect
 from typing import Any
 
 
+def sign_up_confirmation_refused(bot: Any) -> None:
+    """Give *bot* the hook a season's confirmation is refused through (`confirmation_refused`),
+    results' refusals signed up to it as the builder signs them: handed *bot*'s module service and
+    database, then what the hook is called with. Results' function is looked up as the hook is
+    called, so a stand-in bot carries the hook whether or not any workflow asks it yet."""
+    from leaguebot.core.utils.hooks import AwaitedHook
+
+    async def results_refusals(*args: Any, **kwargs: Any) -> Any:
+        from leaguebot.results.services import season_points_service
+
+        return await season_points_service.confirmation_refusals(
+            bot.module_service, bot.db_path, *args, **kwargs
+        )
+
+    bot.confirmation_refused = AwaitedHook()
+    bot.confirmation_refused.subscribe(results_refusals)
+
+
 def _services(target: Any, bot: Any, given: dict[str, Any]) -> dict[str, Any]:
     """Every keyword-only parameter of *target* that has no default and is not in *given*, each
     taken off *bot* by its name, but `now`, which is the queue's clock as the views hand it."""

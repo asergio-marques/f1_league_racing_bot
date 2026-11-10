@@ -49,7 +49,9 @@ import pytest
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.utils.hooks import AwaitedHook
-from tests.support.review_workflows import record_review_views, run_workflow
+from tests.support.review_workflows import (
+    record_review_views, run_workflow, sign_up_confirmation_refused,
+)
 from tests.support.setup_reads import hold_setup
 
 from tests.support.undecorate import undecorate
@@ -64,21 +66,29 @@ COMMAND_CHANNEL = 2
 #: The gates a test stands in, each a function of `approval_checks` that the review command and
 #: the approval's workflow call alike.
 _GATES = (
-    "team_name_problems", "missing_points_config_problems", "no_points_config_attached",
-    "points_ordering_problems", "lineup_problems", "image_configuration_faults",
+    "team_name_problems", "lineup_problems", "image_configuration_faults",
     "placement_confirmation_faults", "season_has_divisions",
+)
+
+#: Results' points gates a test stands in, each a function of results' `season_points_service`
+#: that its review section and its refusals call alike (#283).
+_POINTS_GATES = (
+    "missing_points_config_problems", "no_points_config_attached", "points_ordering_problems",
 )
 
 
 @contextmanager
 def _gates_of(cog):
-    """Each gate *cog* stands in for, patched on `approval_checks` for as long as it is held."""
+    """Each gate *cog* stands in for, patched on `approval_checks`, or on results' service for a
+    points gate, for as long as it is held."""
     from leaguebot.core.services import approval_checks
+    from leaguebot.results.services import season_points_service
 
     with ExitStack() as stack:
-        for gate in _GATES:
-            if gate in vars(cog):
-                stack.enter_context(patch.object(approval_checks, gate, vars(cog)[gate]))
+        for module, gates in ((approval_checks, _GATES), (season_points_service, _POINTS_GATES)):
+            for gate in gates:
+                if gate in vars(cog):
+                    stack.enter_context(patch.object(module, gate, vars(cog)[gate]))
         yield
 
 
@@ -205,6 +215,8 @@ def _cog(
 
     _sign_up_to_round_windows(bot)
     _sign_up_to_review_sections(bot)
+    # Results' refusals, through the hook a season's confirmation is refused through.
+    sign_up_confirmation_refused(bot)
     cog.bot = bot
 
     # The season being set up, read from the database (#283).
@@ -875,6 +887,10 @@ async def test_an_out_of_order_points_table_withholds_approval(db_path):
 
     assert not _offered(cog)
     assert "points tables are out of order" in _private(messages)
+    # Shown in the report as well, and refused on its own words, never folded into the image
+    # module's refusal, which would send a manager to its templates over a points table.
+    assert "Points tables out of order" in _public(messages)
+    assert "image module is not correctly configured" not in _private(messages)
 
 
 @pytest.mark.xfail(strict=True, reason=_NO_SECTIONS_HOOK)

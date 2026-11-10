@@ -5,7 +5,9 @@ It collected every other blocker and not this one — which was harmless only wh
 was dead (#131), and stopped being harmless the moment the gate started refusing: a season
 could review clean and then be refused for a fault the report had just said nothing about.
 
-Both surfaces read `approval_checks.points_ordering_problems`, and the drift is what these pin. A
+Both surfaces read results' `season_points_service.points_ordering_problems`, through results'
+section of the placements review and results' refusals of a season's confirmation, and the drift
+is what these pin. A
 copy of the logic in each would pass every test in this file on the day it was written and diverge
 the first time either was touched.
 """
@@ -23,6 +25,7 @@ from tests.support.season_points import snapshot_points
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 SERVER_ID = 5500
+_NOT_YET = "#283: the points gates are core's, in approval_checks; results keeps none of its own"
 SEASON_ID = 12
 
 
@@ -49,9 +52,9 @@ async def _problems(db_path) -> list[str]:
     """Every place the season's points would score a lower position above a higher one, the
     gate handed the database alone (issue #240: a reader that grew a second dependency could not
     be given one here)."""
-    from leaguebot.core.services import approval_checks
+    from leaguebot.results.services import season_points_service
 
-    return await approval_checks.points_ordering_problems(db_path, SEASON_ID)
+    return await season_points_service.points_ordering_problems(db_path, SEASON_ID)
 
 
 async def _attach(db_path, config_name: str, points: list[tuple[int, int]]) -> None:
@@ -65,12 +68,11 @@ async def _attach(db_path, config_name: str, points: list[tuple[int, int]]) -> N
     )
 
 
-#: Where each surface lives: the review command stays on the season cog, the approval and the
-#: configuration's gate are core services.
+#: Where each surface lives: results' section of the placements review, and results' refusals of a
+#: season's confirmation, which the approval and the configuration's gate read through core's hook.
 _FILES = {
-    "season_review": "core/cogs/season_cog.py",
-    "approve_season": "core/services/season_review_workflows.py",
-    "configuration_faults": "core/services/approval_checks.py",
+    "review_section": "results/services/season_points_service.py",
+    "confirmation_refusals": "results/services/season_points_service.py",
 }
 
 
@@ -87,6 +89,7 @@ def _function_source(name: str) -> str:
 # ── The shared helper ─────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.asyncio
 async def test_a_well_built_table_raises_nothing(db_path):
     await _attach(db_path, "GOOD", [(1, 25), (2, 18), (3, 15)])
@@ -94,6 +97,7 @@ async def test_a_well_built_table_raises_nothing(db_path):
     assert await _problems(db_path) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.asyncio
 async def test_a_table_the_season_has_not_copied_yet_is_still_found(db_path):
     """The whole of #131: the season's own table is empty until approval copies into it."""
@@ -105,6 +109,7 @@ async def test_a_table_the_season_has_not_copied_yet_is_still_found(db_path):
     assert "BROKEN" in faults[0]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.asyncio
 async def test_entries_left_by_an_earlier_approval_are_found_too(db_path):
     """The snapshot clears nothing, so a re-approval can hold rows no config mentions."""
@@ -124,6 +129,7 @@ async def test_entries_left_by_an_earlier_approval_are_found_too(db_path):
     assert any("GONE" in fault for fault in faults)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.asyncio
 async def test_a_fault_visible_from_both_sides_is_named_once(db_path):
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
@@ -137,45 +143,25 @@ async def test_a_fault_visible_from_both_sides_is_named_once(db_path):
 # ── The two surfaces read the same helper ─────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 def test_the_review_asks_the_helper_rather_than_the_services_itself():
-    source = _function_source("season_review")
+    source = _function_source("review_section")
 
-    assert "approval_checks.points_ordering_problems" in source
+    assert "points_ordering_problems(" in source
     for own_check in ("validate_attached_config_ordering", "validate_monotonic_ordering"):
         assert own_check not in source, (
-            f"season_review calls {own_check} directly — a second copy of the rule, free "
+            f"results' review section calls {own_check} directly — a second copy of the rule, free "
             f"to drift from the one the approval refuses on"
         )
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 def test_the_approval_gate_asks_the_same_helper():
-    source = _function_source("approve_season")
+    source = _function_source("confirmation_refusals")
 
-    assert "approval_checks.points_ordering_problems" in source
+    assert "points_ordering_problems(" in source
     for own_check in ("validate_attached_config_ordering", "validate_monotonic_ordering"):
         assert own_check not in source, (
-            f"approve_season calls {own_check} directly — the report and the refusal can "
+            f"results' refusals call {own_check} directly — the report and the refusal can "
             f"now disagree about the same season"
         )
-
-
-def test_the_review_withholds_the_approve_button_on_a_points_fault():
-    """Reporting it and then offering the button anyway would be the worse half-measure."""
-    source = _function_source("season_review")
-
-    assert "not points_faults" in source, (
-        "the approval prompt is posted without consulting the points faults"
-    )
-
-
-def test_the_points_faults_get_their_own_refusal_rather_than_the_image_one():
-    """`approval_blockers` is reported as "the image module is not correctly configured".
-
-    Folding a points fault into that list would name the wrong thing to fix, and send a
-    manager looking at templates and artwork over a points table.
-    """
-    source = _function_source("season_review")
-
-    assert "This season's points tables are out of order" in source
-    assert "The image module is not correctly configured" in source
-    assert "Points tables out of order" in source, "and it is shown in the report, not only on refusal"

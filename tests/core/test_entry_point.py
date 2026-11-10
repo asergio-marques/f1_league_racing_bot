@@ -952,3 +952,28 @@ async def test_the_builder_signs_every_module_up_to_the_review_sections(tmp_path
     assert called == [
         (part, Review.PLACEMENTS, 7, (70, 71)) for _module, _name, part in _REVIEW_SECTION_PARTS
     ]
+
+
+@pytest.mark.xfail(strict=True, reason="#283: no hook a season's confirmation is refused through; "
+                   "core reads results' points gates itself")
+async def test_the_builder_signs_results_up_to_a_confirmation_refused(tmp_path, monkeypatch):
+    """Straight after `build`, results' refusals are signed up to the hook a season's confirmation
+    is refused through, nothing called yet: handed the league's modules and the database, then
+    what the hook is called with (the season, and which confirmation is judged)."""
+    from leaguebot.results.services import season_points_service
+
+    called: list[tuple] = []
+
+    async def refusals_spy(*args, **kwargs):
+        called.append((args, kwargs))
+        return []
+
+    monkeypatch.setattr(season_points_service, "confirmation_refusals", refusals_spy,
+                        raising=False)
+
+    bot = await built_bot(tmp_path, now=_NOW)
+    assert called == []
+
+    await bot.confirmation_refused.call(7, "the placements review")
+
+    assert called == [((bot.module_service, bot.db_path, 7, "the placements review"), {})]

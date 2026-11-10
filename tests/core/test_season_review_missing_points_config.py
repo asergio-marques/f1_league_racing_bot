@@ -10,7 +10,9 @@ carries no error handler to turn that into a reply.
 The approval now refuses on it, which makes it a blocker — and a blocker the review does not
 mention is the failure #131 already taught: a season that reviews clean and is then refused
 for something the report had just said nothing about. So both surfaces read
-`approval_checks.missing_points_config_problems`, and the drift between them is what these pin.
+results' `season_points_service.missing_points_config_problems`, through results' section of the
+placements review and results' refusals of a season's confirmation, and the drift between them is
+what these pin.
 """
 from __future__ import annotations
 
@@ -25,6 +27,7 @@ from tests.support import saves
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 SERVER_ID = 5600
+_NOT_YET = "#283: the points gates are core's, in approval_checks; results keeps none of its own"
 SEASON_ID = 13
 
 
@@ -51,9 +54,9 @@ async def _problems(db_path) -> list[str]:
     """The attached points configurations of the season that no longer exist, the gate handed
     the database alone (issue #240: a reader that grew a second dependency could not be given
     one here)."""
-    from leaguebot.core.services import approval_checks
+    from leaguebot.results.services import season_points_service
 
-    return await approval_checks.missing_points_config_problems(db_path, SEASON_ID)
+    return await season_points_service.missing_points_config_problems(db_path, SEASON_ID)
 
 
 async def _attach_real(db_path, config_name: str) -> None:
@@ -76,12 +79,11 @@ async def _attach_phantom(db_path, config_name: str) -> None:
         await db.commit()
 
 
-#: Where each surface lives: the review command stays on the season cog, the approval and the
-#: configuration's gate are core services.
+#: Where each surface lives: results' section of the placements review, and results' refusals of a
+#: season's confirmation, which the approval and the configuration's gate read through core's hook.
 _FILES = {
-    "season_review": "core/cogs/season_cog.py",
-    "approve_season": "core/services/season_review_workflows.py",
-    "configuration_faults": "core/services/approval_checks.py",
+    "review_section": "results/services/season_points_service.py",
+    "confirmation_refusals": "results/services/season_points_service.py",
 }
 
 
@@ -98,6 +100,7 @@ def _function_source(name: str) -> str:
 # ── The shared helper ─────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.asyncio
 async def test_a_season_whose_configs_all_exist_raises_nothing(db_path):
     await _attach_real(db_path, "Standard")
@@ -105,6 +108,7 @@ async def test_a_season_whose_configs_all_exist_raises_nothing(db_path):
     assert await _problems(db_path) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.asyncio
 async def test_a_mistyped_name_is_found(db_path):
     """The whole of #132, at the surface that was supposed to warn about it."""
@@ -116,6 +120,7 @@ async def test_a_mistyped_name_is_found(db_path):
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.asyncio
 async def test_a_config_removed_from_under_the_season_is_found(db_path):
     """The second way in: the season was fine and became unapprovable untouched."""
@@ -131,6 +136,7 @@ async def test_a_config_removed_from_under_the_season_is_found(db_path):
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.asyncio
 async def test_a_season_with_nothing_attached_raises_nothing_here(db_path):
     """"Nothing attached" is the prerequisite gate's complaint, not this one's."""
@@ -140,30 +146,23 @@ async def test_a_season_with_nothing_attached_raises_nothing_here(db_path):
 # ── The two surfaces read the same helper ─────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 def test_the_review_asks_the_helper_rather_than_the_service_itself():
-    source = _function_source("season_review")
+    source = _function_source("review_section")
 
-    assert "approval_checks.missing_points_config_problems" in source
+    assert "missing_points_config_problems(" in source
     assert "missing_attached_configs" not in source, (
-        "season_review calls missing_attached_configs directly — a second copy of the rule, "
+        "results' review section calls missing_attached_configs directly — a second copy of the rule, "
         "free to drift from the one the approval refuses on"
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 def test_the_approval_gate_asks_the_same_helper():
-    source = _function_source("approve_season")
+    source = _function_source("confirmation_refusals")
 
-    assert "approval_checks.missing_points_config_problems" in source
+    assert "missing_points_config_problems(" in source
     assert "missing_attached_configs" not in source, (
-        "approve_season calls missing_attached_configs directly — the report and the refusal "
+        "results' refusals call missing_attached_configs directly — the report and the refusal "
         "can now disagree about the same season"
-    )
-
-
-def test_the_review_withholds_the_approve_button_on_a_phantom_config():
-    """Naming it and offering the button anyway is the half-measure #131 already cost us."""
-    source = _function_source("season_review")
-
-    assert "not phantom_configs" in source, (
-        "the approval prompt is posted without consulting the phantom configs"
     )
