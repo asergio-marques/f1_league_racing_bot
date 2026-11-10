@@ -1,7 +1,7 @@
 """How core gathers the modules' sections of a season review (#283).
 
 Each module signs its section up to the hook a review gathers its lines through, and core lays
-what they hand back out in the review's order, whatever the order they signed up in.
+what they hand back out in the order they signed up, which the builder's order makes the review's.
 """
 
 from __future__ import annotations
@@ -28,14 +28,15 @@ def _hook(*handed_back):
 
 @pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_the_sections_are_laid_out_in_the_review_s_order():
-    """Weather, results, attendance and signup signed up in that order, and one subscriber
+    """Signup, attendance, results and weather signed up in that order, and a fifth subscriber
     handing nothing: the review reads signup's, attendance's, results' then weather's, each
-    subscriber handed the review, the season and the divisions. With only weather and signup
-    handing a section, those two alone, signup's first."""
+    subscriber handed the review, the season and the divisions. With weather signed up before
+    signup, and only those two handing a section, weather's then signup's: core keeps the order
+    they signed up in and sorts by no module's name."""
     from leaguebot.core.services.review_sections import Review, ReviewSection, read_review_sections
 
     hook = _hook(*(ReviewSection(module=module, lines=[f"**{module}**"])
-                   for module in ("weather", "results", "attendance", "signup")), None)
+                   for module in ("signup", "attendance", "results", "weather")), None)
 
     sections = await read_review_sections(hook, Review.PLACEMENTS, season_id=3,
                                           division_ids=[30])
@@ -51,7 +52,7 @@ async def test_the_sections_are_laid_out_in_the_review_s_order():
     sections = await read_review_sections(hook, Review.CONFIGURATION, season_id=3,
                                           division_ids=[])
 
-    assert [section.module for section in sections] == ["signup", "weather"]
+    assert [section.module for section in sections] == ["weather", "signup"]
 
 
 @pytest.mark.xfail(strict=True, reason=_NOT_YET)
