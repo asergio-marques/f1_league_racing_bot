@@ -1524,28 +1524,33 @@ async def test_core_offers_the_first_of_the_steps_the_modules_hand_back(
 
 
 @pytest.mark.xfail(strict=True, reason=MODULE_STEPS)
-@pytest.mark.parametrize("handed, jobs, expected", [
-    pytest.param([(1, 0, "weather_p1")], [_job(1, 1, days=2)], (1, 0, "job_1_r1"),
+@pytest.mark.parametrize("round_format, handed, jobs, expected", [
+    pytest.param("MYSTERY", [[(1, 0, "weather_p1")]], [_job(1, 1, days=2)], (1, 0, "job_1_r1"),
                  id="a job taken as the step its module hands back for its kind"),
-    pytest.param([], [_job(1, 1, days=2)], None,
+    pytest.param("NORMAL", [[]], [_job(1, 1, days=2)], None,
                  id="a job its module hands back no step for is stale"),
-    pytest.param([(1, 4, "results"), (2, 1, "weather_p1")], [_job(2, 1, days=6)], (1, 4, None),
-                 id="an earlier round's step before a later round's job"),
+    pytest.param("NORMAL", [[(1, 4, "results")], [(2, 1, "weather_p1")]], [_job(2, 1, days=6)],
+                 (1, 4, None), id="an earlier round's step before a later round's job"),
 ])
 async def test_a_queued_job_is_offered_as_its_module_s_step(
-    tmp_path, handed, jobs, expected,
+    tmp_path, round_format, handed, jobs, expected,
 ) -> None:
     """Round 1 (Bahrain, Division A) races in three days and round 2 (Jeddah) in seven. The
-    scheduler holds a `weather_p1` job, and the modules hand back their pending steps. A job is
-    offered as the step its module hands back for its round and kind, with the job's id: for a
-    mystery round, the notice weather hands back under `weather_p1`. A job whose module hands back
-    no step of its kind for its round is stale, and passed over. A step of an earlier round comes
-    before a later round's job, with no job id of its own."""
+    scheduler holds a `weather_p1` job, and each stand-in module hands back its pending steps.
+    A job is offered as the step its module hands back for its round and kind, with the job's id:
+    round 1 a mystery round, the one stand-in hands back its notice (Phase 0) under `weather_p1`.
+    A job whose module hands back no step of its kind for its round is stale, and passed over.
+    A step of an earlier round comes before a later round's job, with no job id of its own: one
+    stand-in hands back round 1's result submission, the other round 2's Phase 1, whose job the
+    scheduler holds."""
     from leaguebot.core.services.test_mode_service import get_next_pending_phase
 
     db_path = str(tmp_path / "jobs.db")
     await _three_rounds(db_path)
-    hook = _steps_hook((handed, []))
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE rounds SET format = ? WHERE id = 1", (round_format,))
+        await db.commit()
+    hook = _steps_hook(*((pending, []) for pending in handed))
 
     entry = await get_next_pending_phase(
         db_path, _StubScheduler(jobs), now=NOW, pending_steps_read=hook
