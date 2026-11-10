@@ -18,9 +18,6 @@ NOW = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
 AHEAD = "2026-10-19T12:00:00+00:00"
 RACED = "2026-10-12T11:00:00+00:00"
 
-#: Why each test here fails until weather answers for its own steps.
-WEATHER_STEPS = "#283: weather does not yet hand core its own test-mode steps"
-
 
 async def _seed(
     db_path: str,
@@ -92,7 +89,6 @@ def _round(*, format: str, scheduled_at: str):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=WEATHER_STEPS)
 @pytest.mark.parametrize("state, pending, passed_over", [
     pytest.param({}, [(1, "weather_p1"), (2, "weather_p2"), (3, "weather_p3")], [],
                  id="a round still to race with nothing posted"),

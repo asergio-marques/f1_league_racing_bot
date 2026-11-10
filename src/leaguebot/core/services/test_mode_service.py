@@ -65,6 +65,41 @@ class PhaseEntry(TypedDict):
     job_id: str | None
 
 
+@dataclass(frozen=True)
+class ActiveRound:
+    """A round of the active season as core reads it, handed to each module through the
+    `pending_steps_read` hook: core's own columns of it alone, its race time read as a moment."""
+
+    round_id: int
+    round_number: int
+    division_id: int
+    division_name: str
+    format: str
+    track_name: str | None
+    scheduled_at: datetime
+    status: str
+
+
+@dataclass(frozen=True)
+class PendingStep:
+    """A step a module hands back as pending or passed over: its round, its phase number (see
+    `PhaseEntry`) and the kind of round job it is armed under, which names the step the module
+    signed up for it (`register_advance`)."""
+
+    round_id: int
+    phase_number: int
+    kind: str
+
+
+@dataclass(frozen=True)
+class ModuleSteps:
+    """What one module hands back of the rounds it was handed: its *pending* steps, and those
+    advance *passed_over* because the change queue would drop them as not due."""
+
+    pending: list[PendingStep]
+    passed_over: list[PendingStep] = field(default_factory=list)
+
+
 #: The kind of round job each phase number is armed under: `weather_p1` for the mystery notice
 #: (0) too, which weather's step tells from Phase 1 by the round's format.
 PHASE_KINDS = {phase: kind for kind, phase in ROUND_JOB_PHASES.items()} | {
