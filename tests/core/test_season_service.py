@@ -45,7 +45,7 @@ async def _make_db(tmp_path) -> str:
             await db.execute(
                 "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
                 "scheduled_at, status) VALUES (?, ?, ?, 'NORMAL', 'Silverstone', "
-                "'2026-06-01', ?)",
+                "'2026-06-01T00:00:00+00:00', ?)",
                 (round_id, DIVISION_ID, number, status),
             )
         await db.commit()

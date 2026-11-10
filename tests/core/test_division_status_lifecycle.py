@@ -102,7 +102,7 @@ async def _add_round(
         await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, track_name, "
             "scheduled_at, status) "
-            "VALUES (?, ?, 'NORMAL', ?, '2026-06-01', ?)",
+            "VALUES (?, ?, 'NORMAL', ?, '2026-06-01T00:00:00+00:00', ?)",
             (division_id, number, track, status),
         )
         await db.commit()

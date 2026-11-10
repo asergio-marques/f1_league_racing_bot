@@ -139,7 +139,7 @@ async def test_a_driver_who_changed_account_after_the_last_round_keeps_their_sta
         past = (await cursor.fetchone())[0]
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
-            "VALUES (?, 1, 'NORMAL', '2026-01-01T18:00:00')",
+            "VALUES (?, 1, 'NORMAL', '2026-01-01T18:00:00+00:00')",
             (PRO,),
         )
         await db.execute(

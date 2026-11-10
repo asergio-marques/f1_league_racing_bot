@@ -57,7 +57,7 @@ async def db_path(tmp_path):
                 await db.execute(
                     "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
                     "scheduled_at, status) VALUES (?, ?, ?, 'NORMAL', 'Silverstone Circuit', "
-                    "'2026-06-01T14:00:00', 'FINAL')",
+                    "'2026-06-01T14:00:00+00:00', 'FINAL')",
                     (division_id * 100 + number, division_id, number),
                 )
         for pid in range(1, 7):

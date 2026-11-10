@@ -53,7 +53,7 @@ async def _make_db(tmp_path) -> str:
             await seed_team_instances(db, division, 501)
             await db.execute(
                 "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at) "
-                "VALUES (?, ?, 1, 'NORMAL', '2026-01-20T18:00:00')",
+                "VALUES (?, ?, 1, 'NORMAL', '2026-01-20T18:00:00+00:00')",
                 (division, division),
             )
             await db.execute(

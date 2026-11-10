@@ -42,7 +42,7 @@ async def _db(tmp_path, stage=SeasonStage.ONGOING, divisions=(("ACTIVE", "FINAL"
                 await db.execute(
                     "INSERT INTO rounds (division_id, round_number, format, track_name, "
                     "scheduled_at, status) VALUES (?, 1, 'NORMAL', 'Silverstone Circuit', "
-                    "'2026-06-01T14:00:00', ?)",
+                    "'2026-06-01T14:00:00+00:00', ?)",
                     (index, round_status),
                 )
         await db.commit()

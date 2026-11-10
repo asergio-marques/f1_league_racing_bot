@@ -33,7 +33,7 @@ async def db_path(tmp_path):
         )
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, scheduled_at) "
-            "VALUES (1, 1, 1, 'NORMAL', 'Silverstone Circuit', '2026-06-01T14:00:00')"
+            "VALUES (1, 1, 1, 'NORMAL', 'Silverstone Circuit', '2026-06-01T14:00:00+00:00')"
         )
         await db.execute(
             "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "

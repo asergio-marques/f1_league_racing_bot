@@ -72,7 +72,7 @@ async def _add_round(db, *, round_id, round_number, division_id=10, status="NOT_
     await db.execute(
         "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at, status) "
         "VALUES (?, ?, ?, 'NORMAL', ?, ?)",
-        (round_id, division_id, round_number, f"2026-06-{round_number * 7:02d}T18:00:00", status),
+        (round_id, division_id, round_number, f"2026-06-{round_number * 7:02d}T18:00:00+00:00", status),
     )
 
 
@@ -677,7 +677,7 @@ async def _make_two_round_db(tmp_path):
         for round_number in (1, 2):
             cursor = await db.execute(
                 "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
-                "VALUES (?, ?, 'STANDARD', 'AWAITING_APPEAL_VERDICTS', '2026-06-01T18:00:00')",
+                "VALUES (?, ?, 'STANDARD', 'AWAITING_APPEAL_VERDICTS', '2026-06-01T18:00:00+00:00')",
                 (division_id, round_number),
             )
             round_id = cursor.lastrowid

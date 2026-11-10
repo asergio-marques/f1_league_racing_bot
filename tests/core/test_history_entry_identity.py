@@ -110,7 +110,7 @@ async def _seed_a_finished_season(db_path: str) -> None:
         )
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at, status) "
-            "VALUES (?, ?, 1, 'NORMAL', '2026-09-20T18:00:00', 'FINAL')",
+            "VALUES (?, ?, 1, 'NORMAL', '2026-09-20T18:00:00+00:00', 'FINAL')",
             (_ROUND_ID, _DIVISION_ID),
         )
         await db.execute(

@@ -91,7 +91,7 @@ async def season(tmp_path):
         )
         await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, track_name, "
-            "scheduled_at) VALUES (?, 1, 'NORMAL', 'Hungaroring', '2026-06-14T18:00:00')",
+            "scheduled_at) VALUES (?, 1, 'NORMAL', 'Hungaroring', '2026-06-14T18:00:00+00:00')",
             (division_id,),
         )
         await db.execute("INSERT INTO image_config (id) VALUES (?)", (1,))
@@ -187,7 +187,7 @@ async def test_the_rounds_area(season):
     before = await _take(season)
     await _assert_only(
         season, before, "rounds",
-        "UPDATE rounds SET scheduled_at = '2026-06-21T18:00:00' WHERE division_id = ?",
+        "UPDATE rounds SET scheduled_at = '2026-06-21T18:00:00+00:00' WHERE division_id = ?",
         season.division_id,
     )
 

@@ -65,7 +65,7 @@ async def _seed(db_path: str, rounds: list[dict]) -> None:
 
         default_sched = (
             NOW + timedelta(days=7)
-        ).strftime("%Y-%m-%dT%H:%M:%S")
+        ).strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
         for i, r in enumerate(rounds, start=1):
             await db.execute(
@@ -221,10 +221,10 @@ async def test_phase_number_ordering_within_round(tmp_path) -> None:
 async def test_earliest_scheduled_round_comes_first(tmp_path) -> None:
     """The round with the earlier scheduled_at is returned first."""
     earlier = (NOW + timedelta(days=5)).strftime(
-        "%Y-%m-%dT%H:%M:%S"
+        "%Y-%m-%dT%H:%M:%S+00:00"
     )
     later = (NOW + timedelta(days=10)).strftime(
-        "%Y-%m-%dT%H:%M:%S"
+        "%Y-%m-%dT%H:%M:%S+00:00"
     )
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
@@ -241,7 +241,7 @@ async def test_earliest_scheduled_round_comes_first(tmp_path) -> None:
 async def test_division_id_tiebreak_same_scheduled_at(tmp_path) -> None:
     """When two rounds have the same scheduled_at, lower division id comes first."""
     shared_sched = (NOW + timedelta(days=7)).strftime(
-        "%Y-%m-%dT%H:%M:%S"
+        "%Y-%m-%dT%H:%M:%S+00:00"
     )
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
@@ -493,10 +493,10 @@ async def test_earlier_misfired_round_beats_later_scheduler_job(tmp_path) -> Non
     round whose scheduler job is still pending, its entry named by the `weather_p1` kind. The
     earlier round is still to be raced: a raced round's weather steps are passed over (#439)."""
     earlier = (NOW + timedelta(days=2)).strftime(
-        "%Y-%m-%dT%H:%M:%S"
+        "%Y-%m-%dT%H:%M:%S+00:00"
     )
     later = (NOW + timedelta(days=5)).strftime(
-        "%Y-%m-%dT%H:%M:%S"
+        "%Y-%m-%dT%H:%M:%S+00:00"
     )
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
@@ -677,8 +677,8 @@ async def test_a_forecast_cleanup_with_no_forecast_standing_is_stale(tmp_path) -
 async def test_an_earlier_round_s_cleanup_does_not_jump_a_later_round_s_step(tmp_path) -> None:
     """A double-header: Sunday's deadline falls before Saturday's cleanup. The check of the
     rounds before a job must not offer Saturday's cleanup ahead of it."""
-    saturday = (NOW + timedelta(days=6)).strftime("%Y-%m-%dT%H:%M:%S")
-    sunday = (NOW + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
+    saturday = (NOW + timedelta(days=6)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    sunday = (NOW + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
     db_path = str(tmp_path / "double_header.db")
     await run_migrations(db_path)
     await _seed_all_done(
@@ -1030,7 +1030,7 @@ async def test_a_mystery_round_s_phase_2_and_3_jobs_are_passed_over(
 async def _last_notice_switched_off(db_path: str) -> None:
     """The check-in on with its last notice set to 0, and round 1's call and distribution posted
     — so no last notice, the one a live season would never have sent."""
-    fortnight = (NOW + timedelta(days=14)).strftime("%Y-%m-%dT%H:%M:%S")
+    fortnight = (NOW + timedelta(days=14)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
     await run_migrations(db_path)
     await _seed(db_path, [{"track_name": "Monaco"}, {"track_name": "Spa", "scheduled_at": fortnight}])
     async with get_connection(db_path) as db:
@@ -1184,7 +1184,7 @@ async def test_a_raced_round_s_weather_steps_are_passed_over(tmp_path, scheduler
     drops a forecast for a race already run (A25), so advance offers round 2's Phase 1, and not
     round 1's: whether round 1's Phase 1 job is still in the store, the store is empty, or no
     scheduler is given."""
-    raced = (NOW - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
+    raced = (NOW - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
     db_path = str(tmp_path / "raced.db")
     await run_migrations(db_path)
     await _seed_with_weather(db_path, [
@@ -1207,7 +1207,7 @@ async def test_a_raced_round_s_result_submission_is_still_offered(tmp_path) -> N
     """Weather and results are on. Round 1 (Bahrain) was raced an hour ago with none of its
     phases done and no results submitted: advance passes over its weather steps alone, and
     offers its result submission, of kind `results`."""
-    raced = (NOW - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
+    raced = (NOW - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
     db_path = str(tmp_path / "raced_results.db")
     await run_migrations(db_path)
     await _seed_with_weather(db_path, [
@@ -1234,14 +1234,14 @@ async def test_the_review_marks_a_raced_round_s_weather_steps_as_passed_over(tmp
     nothing standing to delete and is done, round 2's still has its Phase 2 forecast to delete.
     Round 4's steps are still to be advanced, ⚠️ with no job, and the legend explains ⏭️."""
     now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
-    raced = "2026-10-12T11:00:00"
+    raced = "2026-10-12T11:00:00+00:00"
     db_path = str(tmp_path / "review_raced.db")
     await run_migrations(db_path)
     await _seed_with_weather(db_path, [
         {"track_name": "Bahrain", "scheduled_at": raced},
         {"track_name": "Monza", "scheduled_at": raced, "phase1_done": 1, "phase2_done": 1},
         {"track_name": "Mystery", "scheduled_at": raced, "format": "MYSTERY"},
-        {"track_name": "Spa", "scheduled_at": "2026-10-19T12:00:00"},
+        {"track_name": "Spa", "scheduled_at": "2026-10-19T12:00:00+00:00"},
     ])
     await _stand(db_path, 2, forecast=True, forecast_phase=2)
 
@@ -1265,8 +1265,8 @@ async def test_a_raced_mystery_round_s_notice_is_passed_over(tmp_path, scheduler
     db_path = str(tmp_path / "raced_mystery.db")
     await run_migrations(db_path)
     await _seed_with_weather(db_path, [
-        {"track_name": "Mystery", "format": "MYSTERY", "scheduled_at": "2026-10-12T11:00:00"},
-        {"track_name": "Monza", "scheduled_at": "2026-10-19T12:00:00"},
+        {"track_name": "Mystery", "format": "MYSTERY", "scheduled_at": "2026-10-12T11:00:00+00:00"},
+        {"track_name": "Monza", "scheduled_at": "2026-10-19T12:00:00+00:00"},
     ])
     stub = {
         "job left in the store": _StubScheduler([_job(1, 1, days=-2)]),
@@ -1295,7 +1295,7 @@ async def test_the_steps_passed_over_are_a_raced_round_s_undone_weather_steps(tm
     from leaguebot.core.services.test_mode_service import get_passed_over_steps
 
     now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
-    raced = "2026-10-12T11:00:00"
+    raced = "2026-10-12T11:00:00+00:00"
     db_path = str(tmp_path / "passed_over.db")
     await run_migrations(db_path)
     await _seed_with_weather(db_path, [
@@ -1303,7 +1303,7 @@ async def test_the_steps_passed_over_are_a_raced_round_s_undone_weather_steps(tm
         {"track_name": "Mystery", "scheduled_at": raced, "format": "MYSTERY"},
         {"track_name": "Monza", "scheduled_at": raced,
          "phase1_done": 1, "phase2_done": 1, "phase3_done": 1},
-        {"track_name": "Spa", "scheduled_at": "2026-10-19T12:00:00"},
+        {"track_name": "Spa", "scheduled_at": "2026-10-19T12:00:00+00:00"},
     ])
 
     steps = await get_passed_over_steps(db_path, now=now)
@@ -1322,7 +1322,7 @@ async def test_no_step_is_passed_over_while_the_weather_module_is_off(tmp_path) 
     now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
     db_path = str(tmp_path / "passed_over_off.db")
     await run_migrations(db_path)
-    await _seed(db_path, [{"track_name": "Bahrain", "scheduled_at": "2026-10-12T11:00:00"}])
+    await _seed(db_path, [{"track_name": "Bahrain", "scheduled_at": "2026-10-12T11:00:00+00:00"}])
 
     assert await get_passed_over_steps(db_path, now=now) == []
 
@@ -1363,7 +1363,7 @@ async def test_a_raced_step_advance_would_not_offer_anyway_is_not_named_as_passe
     db_path = str(tmp_path / "passed_over_limits.db")
     await run_migrations(db_path)
     await _seed_with_weather(db_path, [
-        {"track_name": "Bahrain", "scheduled_at": "2026-10-12T11:00:00"},
+        {"track_name": "Bahrain", "scheduled_at": "2026-10-12T11:00:00+00:00"},
     ])
     if case == "phase 1 in hand":
         await _queue_forecast(db_path, 1, 1)

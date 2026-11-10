@@ -212,7 +212,7 @@ async def _season(db_path: str, *, rounds: int = 1, verdicts: int = 0) -> list[i
             cur = await db.execute(
                 "INSERT INTO rounds (division_id, round_number, track_name, scheduled_at, "
                 "format, status) VALUES (?, ?, 'Bahrain', ?, 'NORMAL', 'AWAITING_RESULTS')",
-                (division_id, index + 1, f"2026-0{index + 1}-01T12:00:00"),
+                (division_id, index + 1, f"2026-0{index + 1}-01T12:00:00+00:00"),
             )
             round_id = cur.lastrowid
             round_ids.append(round_id)

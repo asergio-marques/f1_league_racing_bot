@@ -149,8 +149,8 @@ async def sheet_db(tmp_path):
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
             "scheduled_at, status) VALUES (?, 7, ?, 'NORMAL', ?, ?, ?)",
             [
-                (3, 3, "Silverstone Circuit", "2026-06-07T18:00:00", "NOT_RUN"),
-                (9, 9, "Circuit Zandvoort", "2026-08-09T18:00:00", "CANCELLED"),
+                (3, 3, "Silverstone Circuit", "2026-06-07T18:00:00+00:00", "NOT_RUN"),
+                (9, 9, "Circuit Zandvoort", "2026-08-09T18:00:00+00:00", "CANCELLED"),
             ],
         )
         await db.execute(

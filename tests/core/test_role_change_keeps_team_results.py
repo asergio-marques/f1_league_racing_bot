@@ -108,7 +108,7 @@ async def _league(tmp_path) -> tuple[str, dict[str, int]]:
             await db.execute(
                 "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at) "
                 "VALUES (?, ?, ?, 'NORMAL', ?)",
-                (round_id, DIVISION_ID, number, f"2026-0{number}-01T18:00:00"),
+                (round_id, DIVISION_ID, number, f"2026-0{number}-01T18:00:00+00:00"),
             )
         await db.commit()
     return db_path, teams

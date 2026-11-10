@@ -305,7 +305,7 @@ async def _seed_mystery_round(db_path: str, round_id: int = 1) -> None:
         await db.execute(
             "INSERT INTO rounds "
             "(id, division_id, round_number, format, track_name, scheduled_at) "
-            "VALUES (?, 1, 1, 'MYSTERY', NULL, '2026-06-01T14:00:00')",
+            "VALUES (?, 1, 1, 'MYSTERY', NULL, '2026-06-01T14:00:00+00:00')",
             (round_id,),
         )
         await db.commit()

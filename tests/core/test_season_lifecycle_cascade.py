@@ -72,7 +72,7 @@ async def _seed(db_path, *, divisions=("Div A",), rounds_per_division=2, season_
                 cur = await db.execute(
                     "INSERT INTO rounds (division_id, round_number, track_name, scheduled_at, "
                     "format) VALUES (?, ?, 'Bahrain', ?, 'NORMAL')",
-                    (div_id, i, f"2026-0{i + 3}-01T12:00:00"),
+                    (div_id, i, f"2026-0{i + 3}-01T12:00:00+00:00"),
                 )
                 round_ids.append(cur.lastrowid)
             built[name] = (div_id, round_ids)

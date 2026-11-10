@@ -78,7 +78,7 @@ async def _seed(tmp_path, *, admin_role_id: int | None = ADMIN_ROLE) -> str:
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
             "scheduled_at) VALUES (1, 1, 1, 'NORMAL', 'Silverstone Circuit', ?)",
-            ("2026-06-01T14:00:00",),
+            ("2026-06-01T14:00:00+00:00",),
         )
         await db.commit()
     return db_path

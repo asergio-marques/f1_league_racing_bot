@@ -56,7 +56,7 @@ async def _seed_base(db_path: str, server_id: int = 1, test_mode: int = 0) -> tu
         )
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, scheduled_at) "
-            "VALUES (1, 1, 1, 'NORMAL', 'Bahrain', '2026-06-01T14:00:00')"
+            "VALUES (1, 1, 1, 'NORMAL', 'Bahrain', '2026-06-01T14:00:00+00:00')"
         )
         await db.commit()
     return 1, 1  # division_id=1, round_id=1

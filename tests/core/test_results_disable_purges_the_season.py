@@ -241,7 +241,7 @@ async def _seed(
             cur = await db.execute(
                 "INSERT INTO rounds (division_id, round_number, track_name, scheduled_at, "
                 "format, status) VALUES (?, ?, 'Bahrain', ?, 'NORMAL', ?)",
-                (division_id, number, f"2026-0{number}-01T12:00:00", status),
+                (division_id, number, f"2026-0{number}-01T12:00:00+00:00", status),
             )
             round_ids.append(cur.lastrowid)
         await db.commit()

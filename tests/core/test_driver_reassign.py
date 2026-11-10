@@ -659,7 +659,7 @@ async def _valtteri_in_a_past_seasons_pro(league):
     )
     await league.write(
         "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at) "
-        "VALUES (?, ?, 1, 'NORMAL', '2026-01-20T18:00:00')",
+        "VALUES (?, ?, 1, 'NORMAL', '2026-01-20T18:00:00+00:00')",
         _PAST_PRO, _PAST_PRO,
     )
     await league.write(

@@ -75,7 +75,7 @@ async def test_the_opening_standings_are_drawn_against_the_division_s_first_roun
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
-            "VALUES (?, 2, 'NORMAL', '2026-03-01T18:00:00')",
+            "VALUES (?, 2, 'NORMAL', '2026-03-01T18:00:00+00:00')",
             (division_ids[0],),
         )
         await db.commit()

@@ -59,7 +59,7 @@ async def _seed(db_path: str, *, stage: str = "COMPLETED", test_mode: int = 0) -
                 lineup_message_id, calendar_channel_id, calendar_message_id)
             VALUES (1, 1, 'Pro', 50, 51, 52, 53, '54');
             INSERT INTO rounds (id, division_id, round_number, format, scheduled_at)
-            VALUES (1, 1, 1, 'NORMAL', '2026-01-08T18:00:00');
+            VALUES (1, 1, 1, 'NORMAL', '2026-01-08T18:00:00+00:00');
             INSERT INTO forecast_messages (round_id, division_id, phase_number, message_id,
                 posted_at) VALUES (1, 1, 1, 60, '2026-01-03');
             INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id,

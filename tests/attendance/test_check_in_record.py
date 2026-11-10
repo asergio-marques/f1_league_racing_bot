@@ -79,7 +79,7 @@ async def _with_call(db_path, *, round_id=ROUND_ID) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, scheduled_at)"
-            " VALUES (?, ?, 3, 'NORMAL', 'Monza', '2026-10-01T18:00:00')",
+            " VALUES (?, ?, 3, 'NORMAL', 'Monza', '2026-10-01T18:00:00+00:00')",
             (round_id, DIVISION_ID),
         )
         await db.execute(

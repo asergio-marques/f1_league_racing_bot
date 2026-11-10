@@ -175,7 +175,7 @@ async def _seed_channels(db_path: str) -> None:
             INSERT INTO attendance_division_config (division_id, rsvp_channel_id,
                 attendance_channel_id) VALUES (2, '26', '27');
             INSERT INTO rounds (id, division_id, round_number, format, scheduled_at)
-            VALUES (1, 2, 1, 'NORMAL', '2026-01-08T18:00:00');
+            VALUES (1, 2, 1, 'NORMAL', '2026-01-08T18:00:00+00:00');
             INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id,
                 posted_at) VALUES (1, 2, '1', '28', '2026-01-03');
             INSERT INTO round_submission_channels (round_id, channel_id, created_at)

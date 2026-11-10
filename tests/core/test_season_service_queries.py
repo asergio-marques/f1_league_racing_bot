@@ -99,7 +99,7 @@ async def _seed_full_division(
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
-            "scheduled_at) VALUES (?, ?, 1, 'NORMAL', 'Silverstone Circuit', '2026-06-01')",
+            "scheduled_at) VALUES (?, ?, 1, 'NORMAL', 'Silverstone Circuit', '2026-06-01T00:00:00+00:00')",
             (division_id * 10, division_id),
         )
         await db.execute(

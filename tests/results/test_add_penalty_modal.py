@@ -109,7 +109,7 @@ async def _make_db(
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
             "scheduled_at, status) "
-            "VALUES (?, ?, 3, 'NORMAL', 'Silverstone Circuit', '2026-06-01', ?)",
+            "VALUES (?, ?, 3, 'NORMAL', 'Silverstone Circuit', '2026-06-01T00:00:00+00:00', ?)",
             (ROUND_ID, DIVISION_ID, round_status),
         )
         # The submission channel the review runs in. A penalty is staged only while the review

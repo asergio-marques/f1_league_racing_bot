@@ -350,7 +350,7 @@ async def test_a_disable_whose_season_cannot_be_wound_down_says_so_in_its_line(
         await db.execute("UPDATE divisions SET status = 'ACTIVE' WHERE id = 1")
         await db.execute(
             "INSERT INTO rounds (division_id, round_number, track_name, scheduled_at, format, "
-            "status) VALUES (1, 1, 'Bahrain', '2026-01-01T12:00:00', 'NORMAL', "
+            "status) VALUES (1, 1, 'Bahrain', '2026-01-01T12:00:00+00:00', 'NORMAL', "
             "'AWAITING_RESULTS')"
         )
         # The database refuses to move the season on to Pending completion.

@@ -272,7 +272,7 @@ class TestRemovingOneDriver:
             division_id = (await cursor.fetchone())["id"]
             cursor = await db.execute(
                 "INSERT INTO rounds (division_id, round_number, format, track_name, scheduled_at) "
-                "VALUES (?, 1, 'NORMAL', 'Silverstone Circuit', '2026-06-01T14:00:00')",
+                "VALUES (?, 1, 'NORMAL', 'Silverstone Circuit', '2026-06-01T14:00:00+00:00')",
                 (division_id,),
             )
             round_id = cursor.lastrowid
