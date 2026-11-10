@@ -870,6 +870,23 @@ _MODIFY_CHANGES = [
         _modified("McLaren Racing", 'Full name: "McLaren F1 Team" → "McLaren Racing"'),
         id="the-full-name-alone",
     ),
+    pytest.param(
+        {"shorthand": "MCL"},
+        {**_WITHOUT_MCLAREN, "MCL": ("McLaren F1 Team", 812)},
+        [
+            ("TEAM_NAMES", _NAMED_FROM, {"shorthand": "MCL", "full_name": "McLaren F1 Team"}),
+            ("TEAM_ROLE_CONFIG", {"team": "McLaren", "role_id": 812},
+             {"team": "MCL", "role_id": 812}),
+        ],
+        _modify_line("McLaren F1 Team", "MCL", None),
+        _modified(
+            "McLaren F1 Team",
+            "Shorthand: `McLaren` → `MCL`",
+            "Its artwork is now looked for as `mcl`, not `mclaren` — rename the file in the team "
+            "image directory.",
+        ),
+        id="the-shorthand-alone",
+    ),
 ]
 
 
@@ -882,22 +899,24 @@ async def test_a_team_modify_its_row_mapping_audit_entries_and_line_are_one_save
     """The core specification's team list, and its record of what changed. Season 3 is in
     Configuration, or completed, the server holding no live season. Admin runs `/team modify` of
     McLaren and submits the "Modify a team" form with the shorthand MCL, the full name "McLaren
-    Racing" and Alpine's role, 813; or with the full name "McLaren Racing" alone, the shorthand
-    and role left as the form offered them. They are answered at once with the queue's
+    Racing" and Alpine's role, 813; with the full name "McLaren Racing" alone; or with the
+    shorthand MCL alone; what is not named left as the form offered it. They are answered at once with the queue's
     acknowledgement, "Changing **McLaren F1 Team**", naming its first job, and nothing is written
     until the queue runs the change, of kind `core.team_modify`. Once it has, the server's list
-    holds MCL, "McLaren Racing", mapped to 813, and no McLaren; or McLaren, "McLaren Racing",
-    still mapped to 812. The audit entries, by Admin, on no division, stamped with the queue's
+    holds MCL, "McLaren Racing", mapped to 813, and no McLaren; McLaren, "McLaren Racing", still
+    mapped to 812; or MCL, "McLaren F1 Team", its mapping to 812 following the new shorthand. The audit entries, by Admin, on no division, stamped with the queue's
     clock, record the names (`TEAM_NAMES`: McLaren, "McLaren F1 Team" to MCL, "McLaren Racing", or
-    to McLaren, "McLaren Racing") and then, where the role changed, the role (`TEAM_ROLE_CONFIG`:
-    McLaren, 812 to MCL, 813), one entry for the mapping; a change of the full name alone writes
+    to McLaren, "McLaren Racing", or to MCL, "McLaren F1 Team") and then, where the mapping
+    changed, the mapping (`TEAM_ROLE_CONFIG`: McLaren, 812 to MCL, 813, or to MCL, 812, the same
+    role under both shorthands), one entry for the mapping; a change of the full name alone writes
     no `TEAM_ROLE_CONFIG` entry. The log channel holds today's success line once, no seated driver
     moved, naming the role only where it changed; no role is given or taken on Discord, no driver
     being seated; no division's teams change; and the acknowledgement is updated to today's reply,
-    naming each change: both names', the artwork's new filename and the role, or the full name's
-    alone. Takes the place of `test_team_modals.py`'s mocked "changing both names records them and
-    names the artwork file" and `test_team_service_crud.py`'s "a change of name is recorded in the
-    audit log"."""
+    naming each change: both names', the artwork's new filename and the role; the full name's
+    alone; or the shorthand's and the artwork's new filename. Takes the place of
+    `test_team_modals.py`'s mocked "changing both names records them and names the artwork file",
+    `test_team_service_crud.py`'s "a change of name is recorded in the audit log" and
+    `test_placement_role_configs.py`'s "a rename records the same role under both names"."""
     from tests.support.change_queue import change_rows, run_queue, step_rows
     from tests.support.settings_league import last_said, log_lines, said
     from tests.support.setup_rounds import acknowledged
