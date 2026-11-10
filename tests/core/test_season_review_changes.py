@@ -576,6 +576,37 @@ async def test_the_question_s_five_minutes_start_when_it_is_posted(posting):
 
 
 @pytest.mark.xfail(strict=True, reason=_POST_HANDED_NO_CLOCK)
+async def test_a_question_whose_posting_was_not_marked_arms_its_five_minutes_on_the_queue_s_clock(
+        posting):
+    """Alex's question 9001 is posted, but the queue holds no mark of when its job was done. The
+    queue's clock reads 12:00 on 1 October; the host's is left alone. The review's `arm_expiry`
+    job arms the expiry timer for question 9001 at 12:05 on 1 October by the queue's clock, and
+    says so in its result."""
+    from datetime import timedelta
+
+    from leaguebot.core.services.change_queue import StepContext, StepView
+    from leaguebot.core.services.season_review_changes import season_review_post_change
+
+    change_type = season_review_post_change(
+        drawing=posting.drawing, approve_view=lambda payload: APPROVE,
+        scheduler=posting.bot.scheduler_service, now=posting.clock,
+    )
+    ctx = StepContext(
+        bot=posting.bot, db_path=posting.db_path, change_id=1, kind=POST, payload=_payload(),
+        what="posting the placements review", actor_id=REVIEWER, actor_name="Alex",
+        named="Alex", step_name="arm_expiry",
+        steps=(StepView("post_question", {}, {"new": 9001}, True),),
+    )
+
+    result = await change_type.steps["arm_expiry"].run(ctx)
+
+    posting.bot.scheduler_service.arm_once.assert_called_once_with(
+        TIMER, 9001, NOW + timedelta(minutes=5)
+    )
+    assert result.result == {"armed": (NOW + timedelta(minutes=5)).isoformat()}
+
+
+@pytest.mark.xfail(strict=True, reason=_POST_HANDED_NO_CLOCK)
 async def test_a_review_while_the_queue_is_stopped_is_acknowledged_and_posted_when_it_clears(
         posting):
     """The queue is stopped when Alex runs his review. He is answered at once, and nothing is
