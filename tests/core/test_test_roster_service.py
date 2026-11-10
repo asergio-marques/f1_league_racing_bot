@@ -16,12 +16,11 @@ import aiosqlite
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.test_roster_service import (
-    add_test_driver,
-    list_test_drivers,
-    remove_test_driver,
-)
+from leaguebot.core.services.test_roster_service import list_test_drivers
 from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
+
+#: What is not yet true of the test roster's writers.
+ON_A_CONNECTION = "#283: the test roster's writers do not yet write on a handed connection"
 
 SERVER_ID = 7373
 DIVISION = "Division 1"
@@ -72,7 +71,27 @@ async def _seed_season(db_path):
 
 
 async def _add(db_path, name="Mock Alpha", team="Redline", **kwargs):
-    return await add_test_driver(name, team, DIVISION, db_path, **kwargs)
+    """Seat *name* at *team* in Division 1 through the roster's writer, on a connection of the
+    test's own, committed as a change's save commits it."""
+    from leaguebot.core.services.test_roster_service import add_test_driver_on
+
+    async with get_connection(db_path) as db:
+        result = await add_test_driver_on(db, name, team, DIVISION, **kwargs)
+        await db.commit()
+    return result
+
+
+async def _remove(db_path, discord_user_id: int):
+    """Remove the fake driver *discord_user_id* through the roster's writer, on a connection of
+    the test's own, committed as a change's save commits it."""
+    from leaguebot.core.services.test_roster_service import remove_test_driver_on
+
+    async with get_connection(db_path) as db:
+        result = await remove_test_driver_on(
+            db, discord_user_id, **delete_hooks(*DRIVER_HOOKS)
+        )
+        await db.commit()
+    return result
 
 
 async def _stored_nationality(db_path, profile_id: int):
@@ -89,29 +108,34 @@ async def _stored_nationality(db_path, profile_id: int):
 
 
 class TestTheNationalityIsRecorded:
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_an_adjective_is_stored_canonically(self, db_path):
         result = await _add(db_path, nationality="british")
 
         assert result["nationality"] == "British"
         assert await _stored_nationality(db_path, result["profile_id"]) == "British"
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_a_country_name_is_stored_as_the_adjective(self, db_path):
         """The wizard accepts either, and stores the one flags are resolved from."""
         result = await _add(db_path, nationality="United Kingdom")
 
         assert result["nationality"] == "British"
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_other_is_a_value_and_not_an_absence(self, db_path):
         result = await _add(db_path, nationality="OTHER")
 
         assert result["nationality"] == "Other"
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_omitting_it_records_none(self, db_path):
         result = await _add(db_path)
 
         assert result["nationality"] is None
         assert await _stored_nationality(db_path, result["profile_id"]) is None
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_a_blank_string_records_none(self, db_path):
         result = await _add(db_path, nationality="   ")
 
@@ -119,18 +143,21 @@ class TestTheNationalityIsRecorded:
 
 
 class TestAnUnusableNationalityIsRefused:
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_an_unknown_word_is_refused(self, db_path):
         result = await _add(db_path, nationality="Martian")
 
         assert isinstance(result, str)
         assert "Martian" in result
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_a_two_letter_code_is_refused(self, db_path):
         """The wizard rejects ISO codes, so the roster command must too."""
         result = await _add(db_path, nationality="gb")
 
         assert isinstance(result, str)
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_no_driver_is_created_by_a_refused_command(self, db_path):
         await _add(db_path, nationality="Martian")
 
@@ -142,6 +169,7 @@ class TestAnUnusableNationalityIsRefused:
             ).fetchone()
         assert row["n"] == 0
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_it_is_refused_before_the_season_is_even_looked_for(self, db_path):
         """A typo is a typo whatever state the league is in, and says so plainly."""
         async with get_connection(db_path) as db:
@@ -158,6 +186,7 @@ class TestAnUnusableNationalityIsRefused:
 
 
 class TestTheRosterListCarriesIt:
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_each_driver_reports_its_own(self, db_path):
         await _add(db_path, name="Mock Alpha", nationality="Dutch")
         await _add(db_path, name="Mock Bravo", nationality="brazil")
@@ -169,6 +198,7 @@ class TestTheRosterListCarriesIt:
             ("Mock Bravo", "Brazilian"),
         ]
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_a_driver_created_without_one_reports_none(self, db_path):
         await _add(db_path)
 
@@ -176,12 +206,11 @@ class TestTheRosterListCarriesIt:
 
         assert drivers[0]["nationality"] is None
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_a_removed_driver_takes_its_nationality_with_it(self, db_path):
         result = await _add(db_path, nationality="Dutch")
 
-        await remove_test_driver(
-            result["discord_user_id"], db_path, **delete_hooks(*DRIVER_HOOKS)
-        )
+        await _remove(db_path, result["discord_user_id"])
 
         assert await list_test_drivers(DIVISION, db_path) == []
 
@@ -192,6 +221,7 @@ class TestTheRosterListCarriesIt:
 class TestSeating:
     """Not new, but unasserted until now, and the nationality rides on all of it."""
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_a_full_team_is_refused(self, db_path):
         await _add(db_path, name="Mock Alpha")
         await _add(db_path, name="Mock Bravo")
@@ -201,6 +231,7 @@ class TestSeating:
         assert isinstance(result, str)
         assert "No free seats" in result
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_the_reserve_team_grows_a_seat_instead(self, db_path):
         first = await _add(db_path, name="Mock Alpha", team="Reserve", nationality="Dutch")
         second = await _add(db_path, name="Mock Bravo", team="Reserve")
@@ -209,17 +240,20 @@ class TestSeating:
         assert not isinstance(second, str)
         assert second["discord_user_id"] == first["discord_user_id"] + 1
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_an_unknown_team_is_refused(self, db_path):
         result = await _add(db_path, team="Nowhere", nationality="Dutch")
 
         assert isinstance(result, str)
         assert "Nowhere" in result
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_a_team_is_named_by_its_shorthand_in_any_case(self, db_path):
         result = await _add(db_path, team="REDLINE")
 
         assert not isinstance(result, str), result
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_a_role_mention_is_refused_saying_to_use_the_shorthand(self, db_path):
         """A role is only for mentioning a team, never for naming one (#381)."""
         result = await _add(db_path, team="<@&123456789012345678>")
@@ -232,6 +266,7 @@ class TestSeating:
 
 
 class TestTheNameIsChecked:
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_a_test_driver_named_with_a_role_mention_is_refused(self, db_path):
         """A mock driver's name is drawn on graphics as a real driver's is."""
         result = await _add(db_path, name="<@&987654321098765432> Alpha")
@@ -239,12 +274,14 @@ class TestTheNameIsChecked:
         assert isinstance(result, str)
         assert "driver name" in result
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_a_test_driver_named_with_an_emoji_is_refused(self, db_path):
         result = await _add(db_path, name="Alpha \U0001F3CE\uFE0F")
 
         assert isinstance(result, str)
 
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_a_test_driver_named_with_a_member_mention_is_refused(self, db_path):
         """The name is printed wherever the driver is, so the member would be notified each
         time (#388)."""
@@ -261,6 +298,7 @@ class TestTheNameIsChecked:
 class TestRemovingOneDriver:
     """`roster remove` deletes by the route `roster clear` and switching test mode off take."""
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_a_driver_holding_attendance_and_standings_rows_is_deleted(self, db_path):
         """The command is refused outside Placements, before any round has run, so only a fake
         driver outliving a season whose switch-off failed holds either. The deletion `remove`
@@ -288,7 +326,7 @@ class TestRemovingOneDriver:
             )
             await db.commit()
 
-        removed = await remove_test_driver(uid, db_path, **delete_hooks(*DRIVER_HOOKS))
+        removed = await _remove(db_path, uid)
 
         assert removed == {"display_name": "Mock Alpha", "team_name": "Redline"}
         async with get_connection(db_path) as db:
@@ -301,6 +339,7 @@ class TestRemovingOneDriver:
             )
             assert [tuple(r) for r in await cursor.fetchall()] == [(uid, None)]
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_their_history_is_kept_by_identifier(self, db_path):
         """As switching test mode off keeps it: a driver created again under the same
         identifier holds it as their own (#220)."""
@@ -314,9 +353,7 @@ class TestRemovingOneDriver:
             )
             await db.commit()
 
-        await remove_test_driver(
-            result["discord_user_id"], db_path, **delete_hooks(*DRIVER_HOOKS)
-        )
+        await _remove(db_path, result["discord_user_id"])
 
         async with get_connection(db_path) as db:
             cursor = await db.execute(
@@ -329,6 +366,7 @@ class TestRemovingOneDriver:
 # ── A profile that cannot be written (#442) ───────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_a_test_driver_profile_that_cannot_be_written_raises(db_path):
     """A fault in the database is the bot's, not a refusal the manager can act on: it is
     raised, so the command's failure path reports it, and nothing is seated."""

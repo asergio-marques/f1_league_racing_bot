@@ -15,8 +15,10 @@ from __future__ import annotations
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.test_roster_service import add_test_drivers_in_bulk
 from leaguebot.core.utils.roster_import import SYNTHETIC_ID_BASE, parse_roster_csv
+
+#: What is not yet true of the test roster's writers.
+ON_A_CONNECTION = "#283: the test roster's writers do not yet write on a handed connection"
 
 SERVER_ID = 7700
 
@@ -71,10 +73,21 @@ def _row(offset, name, team="Alpine", div="Elite", nat="British"):
     return f"{SYNTHETIC_ID_BASE + offset},{name},{team},{div},{nat}"
 
 
+async def _bulk(path, drivers):
+    """Seat *drivers* through the roster's writer, on a connection of the test's own, committed
+    as a change's save commits it."""
+    from leaguebot.core.services.test_roster_service import add_test_drivers_in_bulk_on
+
+    async with get_connection(path) as db:
+        result = await add_test_drivers_in_bulk_on(db, drivers)
+        await db.commit()
+    return result
+
+
 async def _apply(path, text):
     drivers, errors = parse_roster_csv(text)
     assert errors == [], f"the parser refused before the apply: {errors}"
-    return await add_test_drivers_in_bulk(drivers, path)
+    return await _bulk(path, drivers)
 
 
 async def _seated(path) -> list[tuple[str, str]]:
@@ -91,6 +104,7 @@ async def _seated(path) -> list[tuple[str, str]]:
 # ── The happy path ────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_a_roster_is_seated(season):
     seated, errors = await _apply(season, _csv(_row(1, "Quicksilver"), _row(2, "Badger")))
 
@@ -99,6 +113,7 @@ async def test_a_roster_is_seated(season):
     assert [name for _uid, name in await _seated(season)] == ["Quicksilver", "Badger"]
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 @pytest.mark.parametrize("first, second", [(7, 9), (40, 41)],
                          ids=["7 and 9", "40 and 41, not consecutive with 1"])
 async def test_the_ids_written_are_the_ids_the_file_named(season, first, second):
@@ -112,6 +127,7 @@ async def test_the_ids_written_are_the_ids_the_file_named(season, first, second)
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_a_driver_is_seated_and_the_seat_is_taken(season):
     await _apply(season, _csv(_row(1, "Quicksilver")))
 
@@ -122,6 +138,7 @@ async def test_a_driver_is_seated_and_the_seat_is_taken(season):
         assert (await cursor.fetchone())["taken"] == 1
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_the_nationality_is_stored_canonically(season):
     """Accepted as the signup wizard accepts it — adjective, country or 'other'."""
     await _apply(season, _csv(_row(1, "Quicksilver", nat="united kingdom")))
@@ -131,6 +148,7 @@ async def test_the_nationality_is_stored_canonically(season):
         assert (await cursor.fetchone())[0] == "British"
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_a_driver_with_no_nationality_is_seated_without_one(season):
     seated, errors = await _apply(season, _csv(_row(1, "Quicksilver", nat="")))
 
@@ -138,6 +156,7 @@ async def test_a_driver_with_no_nationality_is_seated_without_one(season):
     assert seated == 1
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_several_divisions_are_seated_in_one_import(season):
     seated, errors = await _apply(
         season,
@@ -148,6 +167,7 @@ async def test_several_divisions_are_seated_in_one_import(season):
     assert seated == 2
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_a_reserve_team_takes_as_many_as_it_is_given(season):
     """It has no seat limit, so seats are created as the drivers arrive."""
     seated, errors = await _apply(
@@ -166,6 +186,7 @@ async def test_a_reserve_team_takes_as_many_as_it_is_given(season):
 # ── Nothing is applied on a fault ─────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_an_unknown_division_seats_nobody(season):
     seated, errors = await _apply(
         season, _csv(_row(1, "Quicksilver"), _row(2, "Badger", div="Rookie"))
@@ -176,6 +197,7 @@ async def test_an_unknown_division_seats_nobody(season):
     assert any("Rookie" in problem for problem in errors)
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_an_unknown_team_seats_nobody(season):
     seated, errors = await _apply(season, _csv(_row(1, "Quicksilver", team="Ferrari")))
 
@@ -184,6 +206,7 @@ async def test_an_unknown_team_seats_nobody(season):
     assert any("ferrari" in problem.lower() for problem in errors)
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_a_team_is_named_by_its_shorthand_in_any_case(season):
     """A roster names a team by its shorthand (#381), as a submission does."""
     seated, errors = await _apply(season, _csv(_row(1, "Quicksilver", team="ALPINE")))
@@ -192,6 +215,7 @@ async def test_a_team_is_named_by_its_shorthand_in_any_case(season):
     assert seated == 1
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 @pytest.mark.parametrize("team", ["<@&123456789012345678>", "@everyone", "<@123456789012345678>"])
 async def test_a_team_named_any_other_way_seats_nobody_and_says_why(season, team):
     """A role is only for mentioning a team, and a member or `@everyone` is none at all."""
@@ -201,6 +225,7 @@ async def test_a_team_named_any_other_way_seats_nobody_and_says_why(season, team
     assert any(problem.startswith("Line ") and "shorthand" in problem for problem in errors)
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_a_bad_nationality_seats_nobody(season):
     seated, errors = await _apply(season, _csv(_row(1, "Quicksilver", nat="Martian")))
 
@@ -209,6 +234,7 @@ async def test_a_bad_nationality_seats_nobody(season):
     assert any("Martian" in problem for problem in errors)
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_a_team_given_more_drivers_than_it_has_seats_is_refused(season):
     """Counted across the whole import: each row passes on its own, and three into a
     two-seat team does not."""
@@ -222,6 +248,7 @@ async def test_a_team_given_more_drivers_than_it_has_seats_is_refused(season):
     assert any("free seat" in problem for problem in errors)
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_every_fault_is_reported_at_once(season):
     seated, errors = await _apply(
         season,
@@ -232,12 +259,13 @@ async def test_every_fault_is_reported_at_once(season):
     assert len(errors) >= 2
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_no_season_is_reported(tmp_path):
     path = str(tmp_path / "empty.db")
     await run_migrations(path)
     drivers, _ = parse_roster_csv(_csv(_row(1, "Quicksilver")))
 
-    seated, errors = await add_test_drivers_in_bulk(drivers, path)
+    seated, errors = await _bulk(path, drivers)
 
     assert seated == 0
     assert "No active or setup season" in errors[0]
@@ -246,6 +274,7 @@ async def test_no_season_is_reported(tmp_path):
 # ── A division that already holds drivers ─────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 @pytest.mark.parametrize(
     "beside", [False, True], ids=["the seated division alone", "beside an empty division"]
 )
@@ -264,6 +293,7 @@ async def test_a_roster_naming_a_seated_division_seats_nobody(season, beside):
     assert [name for _uid, name in await _seated(season)] == ["Quicksilver"]
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_an_empty_division_is_still_importable_beside_a_full_one(season):
     """A second paste naming only the empty division lands, which is how a split roster
     goes in."""
@@ -275,12 +305,13 @@ async def test_an_empty_division_is_still_importable_beside_a_full_one(season):
     assert seated == 1
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_an_id_already_on_the_server_is_refused(season):
     """Which is what importing the same file twice looks like."""
     await _apply(season, _csv(_row(1, "Quicksilver")))
     drivers, _ = parse_roster_csv(_csv(_row(1, "Quicksilver", div="Challenger")))
 
-    seated, errors = await add_test_drivers_in_bulk(drivers, season)
+    seated, errors = await _bulk(season, drivers)
 
     assert seated == 0
     assert any("already on this server" in problem for problem in errors)
@@ -289,6 +320,7 @@ async def test_an_id_already_on_the_server_is_refused(season):
 # ── The real file ─────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_the_import_is_what_roster_add_would_have_produced(season):
     """Seated drivers must be indistinguishable from ones added one at a time, or the
     rest of test mode — listing, results, attendance — would treat them differently."""

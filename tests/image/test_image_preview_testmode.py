@@ -31,6 +31,9 @@ from leaguebot.image.services.image_config_service import ImageConfigService
 from leaguebot.image.services.image_preview_service import resolve_context
 from leaguebot.core.services.season_service import SeasonService
 
+#: What is not yet true of the test roster's writers.
+ON_A_CONNECTION = "#283: the test roster's writers do not yet write on a handed connection"
+
 SERVER_ID = 8484
 
 #: Pinned alongside every seeded date.
@@ -117,13 +120,15 @@ async def _seed_test_season(
     # drift from what test mode actually creates.
     for index, name in enumerate(MOCK_NAMES):
         team = "Redline" if index < 2 else "Bluewave"
-        result = await test_roster_service.add_test_driver(
-            name,
-            team,
-            "Division 1",
-            db_path,
-            nationality=nationalities[index % len(nationalities)] if nationalities else None,
-        )
+        async with get_connection(db_path) as db:
+            result = await test_roster_service.add_test_driver_on(
+                db,
+                name,
+                team,
+                "Division 1",
+                nationality=nationalities[index % len(nationalities)] if nationalities else None,
+            )
+            await db.commit()
         assert not isinstance(result, str), result
     return SimpleNamespace(season_id=season_id, division_id=division_id)
 
@@ -134,6 +139,7 @@ async def _seed_test_season(
 class TestMockDriversAreDrawnByTheirMockName:
     """FR-026."""
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     @pytest.mark.parametrize("status", ["SETUP", "ACTIVE"])
     async def test_every_mock_name_is_drawn(self, bot, db_path, status):
         await _seed_test_season(db_path, status=status)
@@ -142,6 +148,7 @@ class TestMockDriversAreDrawnByTheirMockName:
 
         assert sorted(d.display_name for d in context.drivers) == sorted(MOCK_NAMES)
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_the_seats_carry_the_mock_names_too(self, bot, db_path):
         """The lineup draws the seats, not the flat list, so both must be right."""
         await _seed_test_season(db_path)
@@ -155,6 +162,7 @@ class TestMockDriversAreDrawnByTheirMockName:
         ]
         assert sorted(n for n in seated if n) == sorted(MOCK_NAMES)
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     @pytest.mark.parametrize(
         "kind", ["results", "standings", "attendance", "verdict"]
     )
@@ -167,6 +175,7 @@ class TestMockDriversAreDrawnByTheirMockName:
 
         assert sorted(d.display_name for d in context.drivers) == sorted(MOCK_NAMES)
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_a_mock_driver_is_never_invented_over(self, bot, db_path):
         """FR-027 — a mock driver is a seated driver, not an empty seat."""
         await _seed_test_season(db_path)
@@ -183,6 +192,7 @@ class TestMockDriversAreDrawnByTheirMockName:
 class TestTheNationalityTally:
     """FR-028. A mock driver records the nationality it was created with, or none."""
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_mock_drivers_are_counted(self, bot, db_path):
         await _seed_test_season(db_path)
 
@@ -191,6 +201,7 @@ class TestTheNationalityTally:
         assert context.nationality_collected is True
         assert context.drivers_without_nationality == len(MOCK_NAMES)
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_they_are_drawn_without_a_flag_rather_than_given_one(
         self, bot, db_path
     ):
@@ -200,6 +211,7 @@ class TestTheNationalityTally:
 
         assert all(d.nationality in (None, "") for d in context.drivers)
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_nothing_is_counted_where_the_league_collects_no_nationality(
         self, bot, db_path
     ):
@@ -217,6 +229,7 @@ class TestTheNationalityTally:
         assert context.nationality_collected is False
         assert context.drivers_without_nationality == 0
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_a_driver_who_records_one_is_not_counted(self, bot, db_path):
         """The tally is of drivers drawn without a flag, not of test drivers."""
         await _seed_test_season(db_path)
@@ -237,6 +250,7 @@ class TestTheNationalityTally:
 
         assert context.drivers_without_nationality == len(MOCK_NAMES) - 1
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_a_roster_created_with_nationalities_is_drawn_with_flags(
         self, bot, db_path
     ):
@@ -254,6 +268,7 @@ class TestTheNationalityTally:
             "Dutch",
         ]
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_the_test_mode_switch_stands_in_while_test_mode_is_on(
         self, bot, db_path
     ):

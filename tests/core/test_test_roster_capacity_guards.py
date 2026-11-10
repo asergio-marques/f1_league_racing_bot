@@ -24,6 +24,9 @@ from lxml import etree
 
 from leaguebot.core.db.database import get_connection, run_migrations
 
+#: What is not yet true of the test roster's writers.
+ON_A_CONNECTION = "#283: the test roster's writers do not yet write on a handed connection"
+
 SVG_NS = "http://www.w3.org/2000/svg"
 LINEUP = "lineup_template"
 SHEET = "attendance_template"
@@ -186,17 +189,23 @@ async def _seated(path: str) -> int:
 
 
 async def _add(path, service, team, division="Alpha", name="Mock"):
-    from leaguebot.core.services.test_roster_service import add_test_driver
+    """Seat *name* at *team* in *division* through the roster's writer, held to *service*'s
+    capacities, on a connection of the test's own, committed as a change's save commits it."""
+    from leaguebot.core.services.test_roster_service import add_test_driver_on
 
-    return await add_test_driver(
-        driver_name=name,
-        team_name=team,
-        division_name=division,
-        db_path=path,
-        placement_service=service,
-    )
+    async with get_connection(path) as db:
+        result = await add_test_driver_on(
+            db,
+            driver_name=name,
+            team_name=team,
+            division_name=division,
+            placement_service=service,
+        )
+        await db.commit()
+    return result
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_a_reserve_past_the_lineup_s_reserve_slots_is_refused(tmp_path):
     path, _divisions = await _seed(tmp_path)
     service = _service(path, {LINEUP: _lineup(tmp_path, reserve_slots=1)})
@@ -210,6 +219,7 @@ async def test_a_reserve_past_the_lineup_s_reserve_slots_is_refused(tmp_path):
     assert await _seated(path) == 1, "the refused driver was written anyway"
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_a_driver_past_the_sheet_rows_is_refused(tmp_path):
     path, _divisions = await _seed(tmp_path)
     service = _service(path, {SHEET: _sheet(tmp_path, rows=2)})
@@ -222,6 +232,7 @@ async def test_a_driver_past_the_sheet_rows_is_refused(tmp_path):
     assert await _seated(path) == 2
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_a_driver_past_the_standings_rows_is_refused_but_a_reserve_is_not(tmp_path):
     path, _divisions = await _seed(tmp_path)
     service = _service(path, {DRIVERS: _standings(tmp_path, rows=2)})
@@ -235,6 +246,7 @@ async def test_a_driver_past_the_standings_rows_is_refused_but_a_reserve_is_not(
     assert isinstance(reserve, dict), "a reserve adds no entry to the classification"
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_the_command_refuses_it_in_placements(tmp_path):
     """Through the cog, in the one stage the roster may change in (issue #220).
 
@@ -302,11 +314,17 @@ def _roster(*rows: tuple[str, str], nationality: str | None = "British"):
 
 
 async def _bulk(path, service, drivers):
-    from leaguebot.core.services.test_roster_service import add_test_drivers_in_bulk
+    """Seat *drivers* through the roster's writer, held to *service*'s capacities, on a
+    connection of the test's own, committed as a change's save commits it."""
+    from leaguebot.core.services.test_roster_service import add_test_drivers_in_bulk_on
 
-    return await add_test_drivers_in_bulk(drivers, path, placement_service=service)
+    async with get_connection(path) as db:
+        result = await add_test_drivers_in_bulk_on(db, drivers, placement_service=service)
+        await db.commit()
+    return result
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_a_roster_outgrowing_the_standings_across_its_teams_seats_nobody(tmp_path):
     """No team overflows on its own. The division does, and the import is refused whole."""
     path, _divisions = await _seed(tmp_path)
@@ -324,6 +342,7 @@ async def test_a_roster_outgrowing_the_standings_across_its_teams_seats_nobody(t
     assert await _seated(path) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_each_division_is_measured_on_its_own(tmp_path):
     """Three rows each: two divisions of three drivers fit, though six drivers would not."""
     path, _divisions = await _seed(tmp_path)
@@ -339,6 +358,7 @@ async def test_each_division_is_measured_on_its_own(tmp_path):
     assert seated == 6
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_the_reserves_of_a_roster_are_measured_against_the_reserve_block(tmp_path):
     path, _divisions = await _seed(tmp_path)
     service = _service(path, {LINEUP: _lineup(tmp_path, reserve_slots=1)})
@@ -350,6 +370,7 @@ async def test_the_reserves_of_a_roster_are_measured_against_the_reserve_block(t
     assert any("2 reserve drivers" in error for error in errors)
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_a_capacity_fault_is_named_beside_every_other(tmp_path):
     """Every fault is named at once, so a manager fixes the file in one pass."""
     path, _divisions = await _seed(tmp_path)

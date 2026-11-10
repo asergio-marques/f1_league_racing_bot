@@ -10,6 +10,9 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
 
+#: What is not yet true of the test roster's writers.
+ON_A_CONNECTION = "#283: the test roster's writers do not yet write on a handed connection"
+
 SERVER_ID = 22140
 
 
@@ -135,10 +138,14 @@ async def test_a_server_not_in_test_mode_is_left_alone(db_path, setup):
         assert [row[0] for row in await cursor.fetchall()] in ([0], [])
 
 
+@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_clearing_one_division_deletes_its_fake_drivers_and_keeps_their_history(db_path):
-    from leaguebot.core.services.test_roster_service import _delete_test_drivers_in_division
+    from leaguebot.core.services.test_roster_service import clear_test_drivers_in_division_on
 
-    assert await _delete_test_drivers_in_division(1, db_path, **delete_hooks(*DRIVER_HOOKS)) == 1
+    async with get_connection(db_path) as db:
+        cleared = await clear_test_drivers_in_division_on(db, 1, **delete_hooks(*DRIVER_HOOKS))
+        await db.commit()
+    assert cleared == 1
 
     # The seated fake driver goes; the unseated one and the real driver stay.
     assert await _profiles(db_path) == [2, 3]

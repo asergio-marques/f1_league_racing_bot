@@ -20,6 +20,9 @@ import pytest
 
 from leaguebot.core.db.database import run_migrations
 
+#: What is not yet true of the test roster's writers.
+ON_A_CONNECTION = "#283: the test roster's writers do not yet write on a handed connection"
+
 #: The fault each case raises, as `int()` words one.
 BUG = "invalid literal for int() with base 10: 'x'"
 
@@ -71,25 +74,29 @@ def _placement_check(factory: str) -> Callable[..., Awaitable[None]]:
 
 async def _test_driver_added(tmp_path, monkeypatch) -> None:
     """`/test-mode driver add` of a driver to Team 1 in Alpha, the capacity guard raising."""
-    from leaguebot.core.services.test_roster_service import add_test_driver
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.core.services.test_roster_service import add_test_driver_on
     from tests.core.test_test_roster_capacity_guards import TEAMS, _seed
 
     path, _divisions = await _seed(tmp_path)
-    await add_test_driver(
-        driver_name="Mock", team_name=TEAMS[0], division_name="Alpha", db_path=path,
-        placement_service=_faulty_placement(),
-    )
+    async with get_connection(path) as db:
+        await add_test_driver_on(
+            db, driver_name="Mock", team_name=TEAMS[0], division_name="Alpha",
+            placement_service=_faulty_placement(),
+        )
 
 
 async def _test_roster_imported(tmp_path, monkeypatch) -> None:
     """A test roster of one driver for Team 1 in Alpha imported, the capacity guard raising."""
-    from leaguebot.core.services.test_roster_service import add_test_drivers_in_bulk
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.core.services.test_roster_service import add_test_drivers_in_bulk_on
     from tests.core.test_test_roster_capacity_guards import TEAMS, _roster, _seed
 
     path, _divisions = await _seed(tmp_path)
-    await add_test_drivers_in_bulk(
-        _roster((TEAMS[0], "Alpha")), path, placement_service=_faulty_placement(),
-    )
+    async with get_connection(path) as db:
+        await add_test_drivers_in_bulk_on(
+            db, _roster((TEAMS[0], "Alpha")), placement_service=_faulty_placement(),
+        )
 
 
 #: Ferrari, as the server's team list holds it, with no role mapped.
@@ -283,8 +290,10 @@ CATCHES = [
     pytest.param(_placement_check("driver_release_change"), id="driver release check"),
     pytest.param(_placement_check("driver_assign_change"), id="driver assign check"),
     pytest.param(_placement_check("driver_unassign_change"), id="driver unassign check"),
-    pytest.param(_test_driver_added, id="test driver added"),
-    pytest.param(_test_roster_imported, id="test roster imported"),
+    pytest.param(_test_driver_added, id="test driver added",
+                 marks=pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)),
+    pytest.param(_test_roster_imported, id="test roster imported",
+                 marks=pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)),
     pytest.param(_team_check("team_add_change", _TEAM_ADDED), id="team add check"),
     pytest.param(_team_save("team_add_change", _TEAM_ADDED), id="team add save"),
     pytest.param(_team_check("team_remove_change", _TEAM_REMOVED), id="team remove check"),

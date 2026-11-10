@@ -40,6 +40,9 @@ from tests.support.settings_league import audit_rows, last_said, said, unruled
 from tests.support.settings_league import interaction as member_asks
 from tests.support.undecorate import undecorate
 
+#: What is not yet true of the test roster's writers.
+ON_A_CONNECTION = "#283: the test roster's writers do not yet write on a handed connection"
+
 SERVER_ID = 6161
 DIVISION = "Division 1"
 
@@ -155,12 +158,14 @@ def cog(db_path):
 async def _add(cog, *, name="Mock Alpha", nationality=None, team="Redline"):
     """Mock driver *name* seated at *team* in Division 1 by the roster's writer: the listing's
     tests need fake drivers seated, not the command that seats them."""
-    from leaguebot.core.services.test_roster_service import add_test_driver
+    from leaguebot.core.services.test_roster_service import add_test_driver_on
 
-    result = await add_test_driver(
-        driver_name=name, team_name=team, division_name=DIVISION, db_path=cog.bot.db_path,
-        nationality=nationality,
-    )
+    async with get_connection(cog.bot.db_path) as db:
+        result = await add_test_driver_on(
+            db, driver_name=name, team_name=team, division_name=DIVISION,
+            nationality=nationality,
+        )
+        await db.commit()
     assert not isinstance(result, str), result
 
 
@@ -467,11 +472,13 @@ class TestRosterListShowsIt:
         await _unwrap(test_mode_cog.TestModeCog.roster_list)(cog, interaction, DIVISION)
         return "\n".join(interaction.sent)
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_the_column_is_headed(self, cog):
         await _add(cog, nationality="Dutch")
 
         assert "Nationality" in await self._list(cog)
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_a_drivers_own_is_printed(self, cog):
         await _add(cog, name="Mock Alpha", nationality="brazil")
 
@@ -479,6 +486,7 @@ class TestRosterListShowsIt:
 
         assert "Brazilian" in rendered
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_a_driver_without_one_prints_a_dash(self, cog):
         await _add(cog, name="Mock Alpha")
 
@@ -487,6 +495,7 @@ class TestRosterListShowsIt:
         assert "Mock Alpha" in rendered
         assert "—" in rendered
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_the_team_column_still_stands_beside_it(self, cog):
         await _add(cog, name="Mock Alpha", nationality="Dutch")
 
@@ -495,6 +504,7 @@ class TestRosterListShowsIt:
         assert "Redline" in rendered
         assert rendered.index("Redline") < rendered.index("Dutch")
 
+    @pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
     async def test_a_roster_too_large_for_one_message_is_sent_as_several(
         self, cog, db_path
     ):
