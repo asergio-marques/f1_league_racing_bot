@@ -115,3 +115,73 @@ async def test_the_unsettled_signups_are_read_by_the_service(db_path):
         "**Bob** — awaiting approval",
         "**3** — correcting their signup",
     ])
+
+
+def _division(division_id: int, name: str):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(id=division_id, name=name)
+
+
+def _round(at):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(scheduled_at=at)
+
+
+def test_the_divisions_with_no_rounds_are_named_in_order():
+    """The core specification's approval: a season is approved only with a round in every
+    division. Pro holds one round, Am and Academy none; the check names Am and Academy, in the
+    order given, and none where every division holds a round."""
+    from datetime import datetime, timezone
+
+    from leaguebot.core.services import approval_checks
+
+    at = datetime(2026, 11, 20, 19, tzinfo=timezone.utc)
+    divisions = [_division(1, "Pro"), _division(2, "Am"), _division(3, "Academy")]
+
+    assert approval_checks.divisions_without_rounds(
+        divisions, {1: [_round(at)], 2: [], 3: []}
+    ) == ["Am", "Academy"]
+    assert approval_checks.divisions_without_rounds(divisions[:1], {1: [_round(at)]}) == []
+
+
+def test_a_division_holding_two_rounds_at_one_moment_is_named_once():
+    """No two rounds of a division may share a moment. Pro holds three rounds, two at 19:00 on
+    20 November, and Am two at different moments; the check names Pro once, with the moment
+    repeated as Discord shows it, and Am not at all."""
+    from datetime import datetime, timedelta, timezone
+
+    from leaguebot.core.services import approval_checks
+    from leaguebot.core.utils.formatting import discord_ts
+
+    at = datetime(2026, 11, 20, 19, tzinfo=timezone.utc)
+    later = at + timedelta(days=7)
+    divisions = [_division(1, "Pro"), _division(2, "Am")]
+
+    assert approval_checks.duplicate_round_times(
+        divisions, {1: [_round(at), _round(at), _round(later)], 2: [_round(at), _round(later)]}
+    ) == [f"**Pro** has multiple rounds scheduled at {discord_ts(at)}"]
+
+
+@pytest.mark.parametrize(
+    "enabled, config, problems",
+    [
+        pytest.param(True, MagicMock(signup_channel_id=None),
+                     ["**Signup channel** (use `/signup channel`)"], id="no-signup-channel"),
+        pytest.param(True, MagicMock(signup_channel_id=55), [], id="channel-set"),
+        pytest.param(True, None, [], id="no-configuration"),
+        pytest.param(False, MagicMock(signup_channel_id=None), [], id="signup-off"),
+    ],
+)
+async def test_the_signup_module_lacks_only_its_channel_while_it_is_on(enabled, config, problems):
+    """While the signup module is on, a season is approved only once its signup channel is set;
+    with signup off, or no signup configuration at all, nothing is lacking."""
+    from leaguebot.core.services import approval_checks
+
+    module_service = MagicMock(is_signup_enabled=AsyncMock(return_value=enabled))
+    signup_module_service = MagicMock(get_config=AsyncMock(return_value=config))
+
+    assert await approval_checks.signup_prerequisite_problems(
+        module_service=module_service, signup_module_service=signup_module_service
+    ) == problems

@@ -577,7 +577,7 @@ async def approve_season(
         div_rounds[div_db.id] = await season_service.get_division_rounds(div_db.id)
 
     # ── Gate 0: every division must have at least one round ────────────────
-    empty_divs = [d.name for d in divisions if not div_rounds[d.id]]
+    empty_divs = approval_checks.divisions_without_rounds(divisions, div_rounds)
     if empty_divs:
         names = ", ".join(f"**{n}**" for n in empty_divs)
         await refuse(
@@ -589,16 +589,7 @@ async def approve_season(
         return False
 
     # ── Gate 0b: no two rounds in the same division may share a datetime ──
-    duplicate_errors: list[str] = []
-    for div_db in divisions:
-        seen: set = set()
-        for rnd in div_rounds[div_db.id]:
-            if rnd.scheduled_at in seen:
-                duplicate_errors.append(
-                    f"**{div_db.name}** has multiple rounds scheduled at {discord_ts(rnd.scheduled_at)}"
-                )
-                break
-            seen.add(rnd.scheduled_at)
+    duplicate_errors = approval_checks.duplicate_round_times(divisions, div_rounds)
     if duplicate_errors:
         bullet_list = "\n\u2022 ".join(duplicate_errors)
         await refuse(
@@ -662,25 +653,20 @@ async def approve_season(
             return False
 
     # ── Gate 2b: signup module config prerequisites ───────────────────────
-    # The league's two roles are not checked again: confirming the configuration
-    # required them while signup was enabled, and fixed them until the season ends.
-    if await module_service.is_signup_enabled():
-        signup_cfg = await signup_module_service.get_config()
-        if signup_cfg:
-            missing: list[str] = []
-            if signup_cfg.signup_channel_id is None:
-                missing.append("**Signup channel** (use `/signup channel`)")
-            if missing:
-                bullet_list = "\n\u2022 ".join(missing)
-                await refuse(
-                    interaction,
-                    f"\u274c Season cannot be approved \u2014 signup module is enabled but "
-                    f"missing required configuration:\n\u2022 {bullet_list}",
-                    what=what,
-                    reason="signup module is enabled but missing required configuration:\n"
-                    + "\n".join(missing),
-                )
-                return False
+    missing = await approval_checks.signup_prerequisite_problems(
+        module_service=module_service, signup_module_service=signup_module_service
+    )
+    if missing:
+        bullet_list = "\n\u2022 ".join(missing)
+        await refuse(
+            interaction,
+            f"\u274c Season cannot be approved \u2014 signup module is enabled but "
+            f"missing required configuration:\n\u2022 {bullet_list}",
+            what=what,
+            reason="signup module is enabled but missing required configuration:\n"
+            + "\n".join(missing),
+        )
+        return False
 
     # ── Gate 2d: no round may already have run, nor be inside a window
     #

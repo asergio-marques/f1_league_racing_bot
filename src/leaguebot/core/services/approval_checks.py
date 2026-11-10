@@ -14,7 +14,7 @@ importing it by name, so that a test standing one in replaces it for every calle
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Protocol, TypeVar
@@ -22,7 +22,8 @@ from typing import Any, Protocol, TypeVar
 import discord
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
+from leaguebot.core.models.division import Division
+from leaguebot.core.models.round import AttendanceWindows, Round, WeatherWindows
 from leaguebot.core.services.approval_window_service import calendar_faults
 from leaguebot.core.services.config_service import ConfigService
 from leaguebot.core.services.image_drawing import DivisionTeams, ImageDrawing, TeamSeats
@@ -31,6 +32,7 @@ from leaguebot.core.services.season_service import SeasonService
 from leaguebot.core.services.team_service import TeamService, validate_team_name
 from leaguebot.core.utils.asset_slug import normalise
 from leaguebot.core.utils.channel_guard import league_role_faults
+from leaguebot.core.utils.formatting import discord_ts
 from leaguebot.results.services import season_points_service
 
 log = logging.getLogger(__name__)
@@ -243,6 +245,47 @@ class SignupModuleSettings(Protocol):
     async def get_config(self) -> SignupSettings | None: ...
 
 
+def divisions_without_rounds(
+    divisions: Sequence[Division], rounds_of: Mapping[int, Sequence[Round]]
+) -> list[str]:
+    """The names of the divisions in *divisions* with no round in *rounds_of*, keyed by the
+    division's id, in the order given: a season is approved only with a round in every one."""
+    return [division.name for division in divisions if not rounds_of[division.id]]
+
+
+def duplicate_round_times(
+    divisions: Sequence[Division], rounds_of: Mapping[int, Sequence[Round]]
+) -> list[str]:
+    """One line for each division in *divisions* holding two rounds at the same moment, naming
+    the first moment repeated, in the order given: no two rounds of a division may share one."""
+    problems: list[str] = []
+    for division in divisions:
+        seen: set[datetime] = set()
+        for round_ in rounds_of[division.id]:
+            if round_.scheduled_at in seen:
+                problems.append(
+                    f"**{division.name}** has multiple rounds scheduled at "
+                    f"{discord_ts(round_.scheduled_at)}"
+                )
+                break
+            seen.add(round_.scheduled_at)
+    return problems
+
+
+async def signup_prerequisite_problems(
+    *, module_service: ModuleService, signup_module_service: SignupModuleSettings
+) -> list[str]:
+    """What the signup module, while it is on, still lacks for a season to be approved: its
+    signup channel. The league's two roles are not checked again, since confirming the
+    configuration required them while signup was on, and fixed them until the season ends."""
+    if not await module_service.is_signup_enabled():
+        return []
+    config = await signup_module_service.get_config()
+    if config is None or config.signup_channel_id is not None:
+        return []
+    return ["**Signup channel** (use `/signup channel`)"]
+
+
 async def points_ordering_problems(db_path: str, season_id: int) -> list[str]:
     """Every place this season's points would score a lower position above a higher one.
 
@@ -318,8 +361,8 @@ async def team_name_problems(team_service: TeamService, season_id: int | None) -
 
     A stated exception (architecture.md, "A catch-all error handler"): the check only keeps a
     team name from becoming a bad artwork filename, so where the teams cannot be read it finds
-    nothing wrong, and every review and confirmation carries on with the names unchecked. The
-    fault goes to the host's log alone.
+    nothing wrong, and each review and confirmation that checks the names carries on with them
+    unchecked. The fault goes to the host's log alone.
     """
     problems: list[str] = []
     try:
