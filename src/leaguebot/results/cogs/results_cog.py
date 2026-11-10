@@ -1378,13 +1378,11 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        from leaguebot.core.services.amendment_service import (
-            approval_faults,
-            get_modification_store_diff,
-            validate_modification_ordering,
-        )
+        from leaguebot.core.services.amendment_service import approval_faults
         from leaguebot.results.services.amendment_mode_service import (
             get_amendment_state,
+            get_modification_store_diff,
+            validate_modification_ordering,
         )
 
         season = await season_for_command(

@@ -180,11 +180,6 @@ async def test_the_mode_writers_commit_nothing(tmp_path):
         assert (await _rows(path, MODE), await _rows(path, STAGED)) == before[path]
 
 
-#: Why the amendment's ordering check and diff tests below fail until the build moves them here.
-NOT_YET_RESULTS = "#283: the amendment's ordering check and diff are still core's amendment_service"
-
-
-@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_validate_modification_ordering_passes_a_table_running_down(tmp_path):
     """Season 1 in amendment mode with the Feature Race's P1 staged at 30 over P2's 18: the
     staged table still runs down, so the approval's ordering check finds nothing."""
@@ -196,7 +191,6 @@ async def test_validate_modification_ordering_passes_a_table_running_down(tmp_pa
     assert await validate_modification_ordering(db_path, SEASON_ID) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_validate_modification_ordering_names_a_staged_inversion(tmp_path):
     """Season 1 in amendment mode with the Feature Race's P2 staged at 30, above P1's 25: one
     ordering error, naming the configuration and the session."""
@@ -212,7 +206,6 @@ async def test_validate_modification_ordering_names_a_staged_inversion(tmp_path)
     assert "FEATURE_RACE" in errors[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 async def test_validate_modification_ordering_judges_each_session_on_its_own(tmp_path):
     """A qualifying table staged worth 1 for P1 and 3 for P2 is wrong; it does not make the
     race table, still 25 and 18, wrong: one error, naming the qualifying session."""
@@ -235,7 +228,6 @@ async def _stage_a_removal_and_an_addition(db_path: str) -> None:
     await _save(db_path, "stage_points_on", SEASON_ID, CONFIG, "FEATURE_RACE", [(3, 5)])
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET_RESULTS)
 @pytest.mark.parametrize(
     ("staged", "expected"),
     [

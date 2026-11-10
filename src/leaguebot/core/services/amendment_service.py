@@ -6,86 +6,12 @@ A round amendment is a change on the queue (`round_amend_change`), not a method 
 from __future__ import annotations
 
 import logging
-from itertools import groupby
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.results.utils.points_ordering import ordering_message, ordering_violations
 from leaguebot.core.utils.league_server import league_guild
 
 log = logging.getLogger(__name__)
-
-
-# ===========================================================================
-# Mid-season points amendment workflow (T024)
-# ===========================================================================
-
-async def validate_modification_ordering(db_path: str, season_id: int) -> list[str]:
-    """Return ordering errors in the modification store, in approval's own words.
-
-    The mid-season counterpart to the season approval's ordering gate. Both guard the
-    same thing — the table a championship is scored on — and a rule that held only at
-    approval would be a rule a league could step around by amending afterwards, with
-    every round rescored against the bad table on the spot.
-    """
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT config_name, session_type, position, points "
-            "FROM season_modification_entries WHERE season_id = ? "
-            "ORDER BY config_name, session_type, position",
-            (season_id,),
-        )
-        rows = await cursor.fetchall()
-
-    errors: list[str] = []
-    for (config_name, session_type), group in groupby(
-        rows, key=lambda r: (r["config_name"], r["session_type"])
-    ):
-        pairs = [(r["position"], r["points"]) for r in group]
-        errors.extend(
-            ordering_message(config_name, session_type, violation)
-            for violation in ordering_violations(pairs)
-        )
-    return errors
-
-
-async def get_modification_store_diff(db_path: str, season_id: int) -> str:
-    """Return a human-readable diff of season_points_entries vs modification store."""
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT config_name, session_type, position, points FROM season_points_entries WHERE season_id = ?",
-            (season_id,),
-        )
-        current_rows = {
-            (r["config_name"], r["session_type"], r["position"]): r["points"]
-            for r in await cursor.fetchall()
-        }
-        cursor = await db.execute(
-            "SELECT config_name, session_type, position, points FROM season_modification_entries WHERE season_id = ?",
-            (season_id,),
-        )
-        mod_rows = {
-            (r["config_name"], r["session_type"], r["position"]): r["points"]
-            for r in await cursor.fetchall()
-        }
-
-    all_keys = sorted(set(current_rows) | set(mod_rows))
-    lines = []
-    changed = 0
-    for key in all_keys:
-        old_pts = current_rows.get(key)
-        new_pts = mod_rows.get(key)
-        if old_pts != new_pts:
-            config, session, pos = key
-            lines.append(
-                f"{config}/{session}/P{pos}: {old_pts if old_pts is not None else '?'} → {new_pts if new_pts is not None else '(removed)'}"
-            )
-            changed += 1
-
-    if not lines:
-        return "No changes in modification store."
-    header = f"**{changed} change{'s' if changed != 1 else ''} staged:**"
-    return header + "\n" + "\n".join(lines)
 
 
 async def _season_exists(db_path: str, season_id: int) -> bool:
@@ -105,8 +31,8 @@ async def approval_faults(db_path: str, season_id: int, bot: LeagueBot) -> list[
     panel, so a manager sees what is wrong while deciding rather than after pressing Approve;
     the points approval's check calls it again at the press and once more when the approval
     runs, before it writes anything, so the refusal cannot be stepped around by a panel drawn
-    when the channels were still sound. This is how `validate_modification_ordering` is already
-    used, and how `approval_checks.placement_confirmation_faults` serves the season's own review and
+    when the channels were still sound. This is how `amendment_mode_service.validate_modification_ordering` is
+    already used, and how `approval_checks.placement_confirmation_faults` serves the season's own review and
     confirmation — the report and the refusal are the same reading, so they cannot drift.
 
     **A cancelled division is included** (owner, 2026-10-06, "Refuse at the press"): the
