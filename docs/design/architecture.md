@@ -1224,8 +1224,9 @@ the season's reading of the image module's configuration faults
 (`approval_checks.image_configuration_faults`) is a stated exception too: each of its catch-alls
 puts the error in the host's log; a fault reading the templates is stated as a fault of its own,
 which refuses the season, because a check that never ran is not a pass, while a fault reading the
-per-tier colours or the portrait settings stands aside and lets the season through, because a reader
-that cannot answer must not be the thing that refuses a season (its docstring says so); the season's
+per-tier colours or the portrait settings (a switch nobody signed up for aside) stands aside and
+lets the season through, because a reader that cannot answer must not be the thing that refuses a
+season (its docstring says so); the season's
 team-name check (`approval_checks.team_name_problems`) is a stated exception too: its catch-all puts
 the error in the host's log alone and finds nothing wrong, so each review and confirmation that
 checks the names carries on with them unchecked, because the check only keeps a team name from
