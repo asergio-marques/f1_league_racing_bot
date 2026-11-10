@@ -102,7 +102,6 @@ async def test_results_hands_back_its_own_pending_step(tmp_path, state, pending)
     assert steps.passed_over == []
 
 
-@pytest.mark.xfail(strict=True, reason="#283: results does not yet hand the review its own marks")
 @pytest.mark.parametrize("state, queued, mark", [
     pytest.param({}, None, "⏳", id="a round not yet run, with no scheduler"),
     pytest.param({}, set(), "⚠️", id="a round not yet run, with no job queued"),
