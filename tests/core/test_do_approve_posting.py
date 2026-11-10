@@ -25,7 +25,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.utils.hooks import AwaitedHook
-from tests.support.review_workflows import run_workflow
+from tests.support.review_workflows import run_workflow, sign_up_confirmation_refused
 from tests.support.setup_reads import hold_setup
 
 SERVER_ID = 12608
@@ -147,6 +147,8 @@ def _cog(
     cog.bot.change_queue.now = MagicMock(side_effect=lambda: datetime.now(timezone.utc))
     # No module's window counts: a windows hook nothing is signed up to.
     cog.bot.round_windows_read = AwaitedHook()
+    # Results' refusals, through the hook the approval asks them of, as the builder signs them.
+    sign_up_confirmation_refused(cog.bot)
     cog.bot.output_router.post_log = AsyncMock()
     # In Placements, every signup settled and every channel set (issue #220; tested in
     # test_placements_confirmation.py).

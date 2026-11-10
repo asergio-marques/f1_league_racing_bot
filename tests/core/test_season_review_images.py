@@ -369,6 +369,7 @@ async def _gated_view(tmp_path, monkeypatch, *, round_in_days: float = 30.0,
     from leaguebot.core.services import approval_checks
     from leaguebot.core.services import season_fingerprint_service as sfs
     from tests.support.review_prompts import store_review_prompt
+    from tests.support.review_workflows import sign_up_confirmation_refused
 
     db_path = str(tmp_path / "review.db")
     await run_migrations(db_path)
@@ -435,6 +436,8 @@ async def _gated_view(tmp_path, monkeypatch, *, round_in_days: float = 30.0,
 
     # No module's window counts: a windows hook nothing is signed up to.
     bot.round_windows_read = AwaitedHook()
+    # Results' refusals, through the hook the approval asks them of, as the builder signs them.
+    sign_up_confirmation_refused(bot)
     monkeypatch.setattr(approval_checks, "team_name_problems", AsyncMock(return_value=[]))
     monkeypatch.setattr(approval_checks, "lineup_problems", AsyncMock(return_value=[]))
 
