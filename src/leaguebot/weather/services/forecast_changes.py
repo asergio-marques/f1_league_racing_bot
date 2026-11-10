@@ -81,6 +81,7 @@ from leaguebot.weather.services import (
     phase3_service,
 )
 from leaguebot.weather.services.draw_guard import weather_enabled_on
+from leaguebot.weather.services.forecast_channel import forecast_channels_on
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.weather.utils.message_builder import forecast_text, invalidation_message
 
@@ -880,18 +881,21 @@ def amendment_steps(
     async def notify_invalidation(ctx: StepContext) -> StepResult:
         """Tell the division's forecast channel that its forecasts no longer stand. A channel never
         set is done and unnamed; one set and gone, or a send Discord refuses, stops the queue."""
-        division = await seasons.get_division(int(ctx.payload["division_id"]))
-        if division is None:
+        division_id = int(ctx.payload["division_id"])
+        async with get_connection(ctx.db_path) as db:
+            channels = await forecast_channels_on(db, [division_id])
+        if division_id not in channels:
             raise LookupError(f"division {ctx.payload['division_id']} is no longer there")
-        if not division.forecast_channel_id:
+        forecast_channel_id = channels[division_id]
+        if not forecast_channel_id:
             return StepResult(result={"unset": True})
         guild = await league_guild(ctx.bot)
         if guild is None:
             raise GuildUnavailable("the league's server is not in the cache")
-        channel = guild.get_channel(int(division.forecast_channel_id))
+        channel = guild.get_channel(int(forecast_channel_id))
         if channel is None:
             raise StepFailedOnDiscord(
-                f"the channel <#{division.forecast_channel_id}> is no longer on the server"
+                f"the channel <#{forecast_channel_id}> is no longer on the server"
             )
         try:
             await send_notice(
@@ -901,7 +905,7 @@ def amendment_steps(
             )
         except discord.HTTPException as exc:
             raise StepFailedOnDiscord(
-                f"the message could not be posted to <#{division.forecast_channel_id}>: {exc}"
+                f"the message could not be posted to <#{forecast_channel_id}>: {exc}"
             ) from exc
         return StepResult(result={"sent": True})
 

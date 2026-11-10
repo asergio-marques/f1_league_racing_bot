@@ -9,12 +9,12 @@ module for the channel's faults through core's `division_channel_faults_read` ho
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection, sole_row
+from leaguebot.core.db.database import get_connection, sole_row, tuple_rows_in
 from leaguebot.core.services.approval_checks import channel_fault
 
 if TYPE_CHECKING:
@@ -42,6 +42,20 @@ async def set_division_forecast_channel(
             "UPDATE divisions SET forecast_channel_id = ? WHERE id = ?", (channel_id, division_id)
         )
     return old_id
+
+
+async def forecast_channels_on(
+    db: aiosqlite.Connection, division_ids: Sequence[int]
+) -> dict[int, int | None]:
+    """The forecast channel of each division in *division_ids*, by division id, `None` for one
+    with no channel set; a division that does not exist is left out.
+
+    Reads on the connection it is handed. Reads only.
+    """
+    rows = await tuple_rows_in(
+        db, "SELECT id, forecast_channel_id FROM divisions WHERE id IN ({marks})", division_ids
+    )
+    return {int(row[0]): row[1] for row in rows}
 
 
 async def division_channel_faults(

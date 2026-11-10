@@ -50,7 +50,6 @@ async def _make_db(tmp_path) -> str:
     return db_path
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_weather_reads_which_phases_each_round_has_had_drawn(tmp_path):
     """Rounds 101 (Phase 1 drawn), 102 (Phases 1 and 2) and 103 (nothing) asked for, with round
     999, which does not exist: each round's three phases come back, drawn or not, and the round
@@ -68,7 +67,6 @@ async def test_weather_reads_which_phases_each_round_has_had_drawn(tmp_path):
     }
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_weather_reads_the_phases_drawn_on_the_connection_it_is_handed(tmp_path):
     """Round 103's Phase 1 marked drawn on a connection and not yet committed, as an amendment's
     save holds it: weather's reader, handed that connection, sees the phase drawn."""
@@ -83,7 +81,6 @@ async def test_weather_reads_the_phases_drawn_on_the_connection_it_is_handed(tmp
     assert drawn == {103: {1: True, 2: False, 3: False}}
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_YET)
 async def test_weather_reads_each_division_s_forecast_channel(tmp_path):
     """Divisions 11 (channel 706), 12 (none set) and 999 (no such division) asked for: 11's
     channel and 12's absence come back, and the division that does not exist is left out."""
