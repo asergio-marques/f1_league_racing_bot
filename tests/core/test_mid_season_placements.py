@@ -54,6 +54,59 @@ async def test_the_uncommitted_placements_are_listed(db_path):
     assert placements[0]["team_name"] == "Alpha"
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: the season review reads a division's lineup in the cog"
+)
+async def test_a_division_s_lineup_is_its_assigned_drivers_by_team(db_path):
+    """The lineup the season review shows, read of the placements service (#283). Beside the
+    fixture's Alpha (1001 committed, 1002 uncommitted, 1003 seated with no placement), a reserve
+    team holds test driver 1004 shown as "Tester", and 1005 holds a placement in Alpha but is
+    no longer assigned. The lineup is every assigned driver with a placement, committed or not,
+    ordered by the team's full name and then the driver, each with the team's full name,
+    whether it is the reserve team, and the test driver's display name."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, "
+            "is_reserve) VALUES (11, ?, 'Res', 'Reserves', 3, 1)",
+            (DIVISION_ID,),
+        )
+        for profile_id, uid, state, test_name, team, seat in (
+            (4, "1004", "ASSIGNED", "Tester", 11, 1),
+            (5, "1005", "NOT_SIGNED_UP", None, 10, 5),
+        ):
+            await db.execute(
+                "INSERT INTO driver_profiles (id, discord_user_id, current_state, "
+                "is_test_driver, test_display_name) VALUES (?, ?, ?, ?, ?)",
+                (profile_id, uid, state, int(test_name is not None), test_name),
+            )
+            cursor = await db.execute(
+                "INSERT INTO team_seats (team_instance_id, seat_number, driver_profile_id) "
+                "VALUES (?, ?, ?)",
+                (team, seat, profile_id),
+            )
+            await db.execute(
+                "INSERT INTO driver_season_assignments "
+                "(driver_profile_id, season_id, division_id, team_seat_id, committed) "
+                "VALUES (?, 1, ?, ?, 1)",
+                (profile_id, DIVISION_ID, cursor.lastrowid),
+            )
+        await db.commit()
+
+    lineup = await PlacementService(db_path).division_lineup(DIVISION_ID)
+
+    assert [
+        (
+            r["discord_user_id"], r["team_name"], bool(r["is_reserve"]),
+            bool(r["is_test_driver"]), r["test_display_name"],
+        )
+        for r in lineup
+    ] == [
+        ("1001", "Alpha", False, False, None),
+        ("1002", "Alpha", False, False, None),
+        ("1004", "Reserves", True, True, "Tester"),
+    ]
+
+
 # ── The command ────────────────────────────────────────────────────────────────────
 
 #: The gates a test stands in, each a function of `approval_checks` that the review command and

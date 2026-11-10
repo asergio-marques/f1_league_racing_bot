@@ -130,3 +130,47 @@ class TestResolveTrackName:
     async def test_empty_is_no_track(self, db) -> None:
         from leaguebot.core.services.track_service import resolve_track_name
         assert await resolve_track_name(db, "   ") is None
+
+
+# ---------------------------------------------------------------------------
+# Read on a connection of the service's own, from the database's path
+# ---------------------------------------------------------------------------
+
+#: The tracks a cog reads it asks of the service by the database's path, and opens no connection
+#: of its own (#283).
+_NOT_BY_PATH = "#283: the cogs read the tracks on a connection of their own"
+
+
+@pytest.fixture
+async def db_file(tmp_path) -> str:
+    """A migrated database's path, its registry the one every league starts with."""
+    from leaguebot.core.db.database import run_migrations
+
+    path = str(tmp_path / "tracks.db")
+    await run_migrations(path)
+    return path
+
+
+class TestReadByPath:
+    @pytest.mark.xfail(strict=True, reason=_NOT_BY_PATH)
+    async def test_every_track_is_listed_in_id_order(self, db_file) -> None:
+        """What `/track list` and the circuit autocomplete show: every track, by id."""
+        from leaguebot.core.db.database import get_connection
+        from leaguebot.core.services.track_service import get_all_tracks, list_tracks
+
+        async with get_connection(db_file) as db:
+            expected = [tuple(r) for r in await get_all_tracks(db)]
+
+        rows = await list_tracks(db_file)
+
+        assert [tuple(r) for r in rows] == expected
+        assert [r["id"] for r in rows] == sorted(r["id"] for r in rows)
+
+    @pytest.mark.xfail(strict=True, reason=_NOT_BY_PATH)
+    async def test_a_track_is_resolved_from_the_label_or_found_unknown(self, db_file) -> None:
+        """What `/round amend track:` resolves: the autocomplete's label names its track, and
+        a number naming none is unknown."""
+        from leaguebot.core.services.track_service import resolve_track
+
+        assert await resolve_track(db_file, f"05 \u2013 {JEDDAH}") == JEDDAH
+        assert await resolve_track(db_file, "99") is None

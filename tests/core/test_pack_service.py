@@ -134,6 +134,44 @@ async def _tables(db_path: str) -> dict[str, list[str]]:
 # ── Refused while a season is current ──────────────────────────────────────
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#283: what stops a pack is read in the cog, not asked of the pack's service",
+)
+@pytest.mark.parametrize(
+    ("stage", "queued", "expected"),
+    [
+        ("COMPLETED", False, (None, None)),
+        ("ONGOING", True, ((1, "ONGOING"), (12, False, "league"))),
+    ],
+)
+async def test_what_stops_a_pack_is_asked_of_the_service_by_the_database_s_path(
+    db_path, stage, queued, expected
+):
+    """The refusals `/bot pack` asks before it writes its log line, read by the service on a
+    connection of its own (#283): the current season as its number and stage, and the job a
+    pack would wait on as its number, whether it is stopped, and its lane. A finished season
+    and an empty queue stop nothing."""
+    from leaguebot.core.services.pack_service import what_stops_a_pack
+
+    await _seed(db_path, stage=stage)
+    if queued:
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "INSERT INTO queued_changes (kind, dedup_key, origin, state, actor_id, "
+                "actor_name, actor_display, what) VALUES ('dummy', 'dummy', 'MEMBER', "
+                "'QUEUED', 8, 'member', 'Member', '`/dummy`')"
+            )
+            await db.execute(
+                "INSERT INTO queued_change_steps (id, change_id, position, name) "
+                "VALUES (12, ?, 0, 'a')",
+                (cursor.lastrowid,),
+            )
+            await db.commit()
+
+    assert await what_stops_a_pack(db_path) == expected
+
+
 @pytest.mark.parametrize(
     "stage",
     [s.value for s in SeasonStage if s not in (SeasonStage.COMPLETED, SeasonStage.CANCELLED)],

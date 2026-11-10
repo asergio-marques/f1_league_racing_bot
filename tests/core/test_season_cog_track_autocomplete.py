@@ -113,3 +113,27 @@ async def test_an_autocomplete_that_hangs_offers_nothing(cog, monkeypatch):
     released.set()
     left_running = asyncio.all_tasks() - {asyncio.current_task()}
     await asyncio.wait(left_running, timeout=5)
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#283: the autocomplete opens its own connection to read the tracks"
+)
+async def test_it_asks_the_service_with_a_lock_wait_short_enough_to_answer_in_time(
+    cog, monkeypatch
+):
+    """The tracks are asked of the service by the database's path, with the autocomplete's
+    shorter lock wait: waiting the ordinary five seconds on a contended database would
+    overshoot Discord's three-second budget and answer into an expired token."""
+    import leaguebot.core.services.track_service as track_service
+
+    seen = {}
+
+    async def _capture(db_path, *, timeout=None):
+        seen["read"] = (db_path, timeout)
+        return []
+
+    monkeypatch.setattr(track_service, "list_tracks", _capture)
+
+    await cog._track_autocomplete(_Interaction(), "")
+
+    assert seen["read"] == (cog.bot.db_path, AUTOCOMPLETE_TIMEOUT_SECONDS)

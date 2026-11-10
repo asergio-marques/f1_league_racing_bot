@@ -48,6 +48,7 @@ import pytest
 
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.core.utils.hooks import AwaitedHook
 from tests.support.review_workflows import (
     record_review_views, run_workflow, sign_up_confirmation_refused, sign_up_division_lines_read,
@@ -272,6 +273,8 @@ def _cog(
     bot.team_service.get_division_teams = AsyncMock(
         return_value=teams if teams is not None else [{"name": "Red", "full_name": "Red"}]
     )
+    # Each division's lineup, read of the placements on the review's database (#283).
+    bot.placement_service = PlacementService(db_path)
     # The divisions the review shows, read with the season's divisions.
     bot.season_service.get_divisions = AsyncMock(
         return_value=divisions if divisions is not None else [_division()]
