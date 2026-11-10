@@ -24,8 +24,6 @@ from lxml import etree
 
 from leaguebot.core.db.database import get_connection, run_migrations
 
-#: What is not yet true of the test roster's writers.
-ON_A_CONNECTION = "#283: the test roster's writers do not yet write on a handed connection"
 
 SVG_NS = "http://www.w3.org/2000/svg"
 LINEUP = "lineup_template"
@@ -330,7 +328,6 @@ async def _bulk(path, service, drivers):
     return result
 
 
-@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_a_roster_outgrowing_the_standings_across_its_teams_seats_nobody(tmp_path):
     """No team overflows on its own. The division does, and the import is refused whole."""
     path, _divisions = await _seed(tmp_path)
@@ -348,7 +345,6 @@ async def test_a_roster_outgrowing_the_standings_across_its_teams_seats_nobody(t
     assert await _seated(path) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_each_division_is_measured_on_its_own(tmp_path):
     """Three rows each: two divisions of three drivers fit, though six drivers would not."""
     path, _divisions = await _seed(tmp_path)
@@ -364,7 +360,6 @@ async def test_each_division_is_measured_on_its_own(tmp_path):
     assert seated == 6
 
 
-@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_the_reserves_of_a_roster_are_measured_against_the_reserve_block(tmp_path):
     path, _divisions = await _seed(tmp_path)
     service = _service(path, {LINEUP: _lineup(tmp_path, reserve_slots=1)})
@@ -376,7 +371,6 @@ async def test_the_reserves_of_a_roster_are_measured_against_the_reserve_block(t
     assert any("2 reserve drivers" in error for error in errors)
 
 
-@pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)
 async def test_a_capacity_fault_is_named_beside_every_other(tmp_path):
     """Every fault is named at once, so a manager fixes the file in one pass."""
     path, _divisions = await _seed(tmp_path)

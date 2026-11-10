@@ -323,6 +323,7 @@ Every core change type runs on the league lane; none is a conversation's. Each i
 | `core.test_mode_toggle` | `/test-mode toggle` | the flag, the modules' part, the audit entry; turned off, every fake driver deleted | forecasts cleared, the backup deleted |
 | `core.test_mode_former_driver` | `/test-mode set-former-driver` | the flag and the audit entry | — |
 | `core.test_roster_add` | `/test-mode roster add` | the fake driver, its seat and assignment, and the audit entry | — |
+| `core.test_roster_add_bulk` | `/test-mode roster add-bulk` | every driver of the file, their seats and assignments, and an audit entry for each | — |
 | `hub.refresh` | the bot, wherever what the panel offers may change | none: the panel's id is its job's `record` | the old panel deleted where the hub moved |
 | `calendar.sync` | `/division calendar-sync` | `close`, last: a save writing the line | before it: the post, then the deletion of the calendar it replaced |
 | `lineup.post` | the bot, after a change made off the queue moves a driver | none: the lineup's id and audit entry are its post's `record` | the post, then the deletion of the lineup it replaced |
@@ -749,7 +750,10 @@ save is read into the payload at the ask (`fill`). `/test-mode roster add` is `c
 (`test_roster_changes`): the driver is judged without a write (`judge_add_on`) at the ask and as it
 starts, and one save seats them (`seat_on`) with the audit entry; the roster's writers take the
 connection of the save and commit nothing. The change is handed the placement service as a getter, so
-the template capacities are measured by the bot's own.
+the template capacities are measured by the bot's own. `/test-mode roster add-bulk` is
+`core.test_roster_add_bulk` in the same module: the form refuses what the file shows wrong on its
+own before the ask, the change judges the whole roster without a write (`judge_bulk_on`) at the ask
+and as it starts, and one save seats it (`seat_bulk_on`) with an audit entry for each driver.
 
 **Fake drivers are seeded, not moved through the state machine.** `test_roster_service` inserts a
 fake driver at Assigned, flagged as a test driver, with a synthetic id above any real Discord id;

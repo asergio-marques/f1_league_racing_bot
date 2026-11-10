@@ -29,8 +29,6 @@ from tests.support.settings_league import audit_rows, last_said, said, unruled
 from tests.support.settings_league import interaction as member_asks
 from tests.support.setup_rounds import acknowledged
 
-#: What is not yet true of the command.
-ON_THE_QUEUE = "#283: /test-mode roster add-bulk is not yet a change on the queue"
 
 ACTOR_ID = 77
 _NAMED = f"Admin (`<@{ACTOR_ID}>`)"
@@ -142,7 +140,6 @@ _ALPHA_ENTRY = {"driver": "Mock Alpha", "user_id": ALPHA, "team": "McLaren F1 Te
                 "division": "Am", "nationality": "British"}
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 @pytest.mark.parametrize(
     "setup, text, doing, seated, entries, reply, divisions",
     [
@@ -270,7 +267,6 @@ async def test_a_roster_it_cannot_seat_is_refused_at_the_ask(league, text, refus
     assert _lines(league) == [_refused(refusal)]
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_the_roster_is_held_to_the_template_capacities(league, monkeypatch):
     """The bot's placement service holds the roster to the template capacities a real placement
     is held to, counting every driver the roster gives a division at once. The season is in
@@ -328,7 +324,6 @@ async def _am_seated(league) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 @pytest.mark.parametrize(
     "meanwhile, refusal",
     [
@@ -367,7 +362,6 @@ async def test_it_is_judged_again_as_it_starts(league, meanwhile, refusal):
         ) == [{"discord_user_id": "105"}]
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 @pytest.mark.parametrize(
     "setup, text, divisions",
     [
@@ -424,7 +418,6 @@ async def test_a_fault_in_the_save_seats_nobody(league, setup, text, divisions):
     assert await stopped_job(league.db_path) is None
 
 
-@pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
 async def test_the_same_roster_while_the_first_waits_is_refused_as_a_repeat(league):
     """The core specification's "How a change is carried out": a request repeating a change that
     has not started, with nothing else asked for since on its lane, is refused, saying so. The

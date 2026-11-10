@@ -152,3 +152,21 @@ def divisions_named(drivers: list[ParsedDriver]) -> list[str]:
         if driver.division_name not in ordered:
             ordered.append(driver.division_name)
     return ordered
+
+
+def format_roster_errors(errors: list[str]) -> str:
+    """One shape for every refusal, capped so a systematically wrong file still replies.
+
+    A file whose every row is wrong produces one fault per row, and fifty-one of them
+    exceed Discord's 2000-character limit — which refuses the whole message rather than
+    truncating it, leaving the manager with no reply at all.
+    """
+    shown = errors[:15]
+    lines = [
+        f"⛔ The roster was not imported — {len(errors)} problem(s). "
+        f"**No drivers were added.**"
+    ]
+    lines += [f"• {problem}" for problem in shown]
+    if len(errors) > len(shown):
+        lines.append(f"…and {len(errors) - len(shown)} more.")
+    return "\n".join(lines)

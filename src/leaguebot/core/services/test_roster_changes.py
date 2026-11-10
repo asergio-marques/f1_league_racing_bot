@@ -54,13 +54,22 @@ from leaguebot.core.services.season_lifecycle_service import live_season_stage_o
 from leaguebot.core.services.test_mode_settings import NOT_IN_TEST_MODE
 from leaguebot.core.services.test_roster_service import (
     AddPlan,
+    BulkPlan,
     judge_add_on,
+    judge_bulk_on,
     locate_on,
+    seat_bulk_on,
     seat_on,
 )
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
+from leaguebot.core.utils.roster_import import (
+    ParsedDriver,
+    divisions_named,
+    format_roster_errors,
+)
 
 TEST_ROSTER_ADD = "core.test_roster_add"
+TEST_ROSTER_ADD_BULK = "core.test_roster_add_bulk"
 
 #: The name of the step that seats the driver and writes its audit entry and its line.
 SAVE = "save"
@@ -75,6 +84,15 @@ NOT_PLACING = "⛔ The test roster can only be changed while the season is in pl
 NATIONALITY_SWITCHED_OFF = (
     "⛔ Nationality is switched off for test mode, so one cannot be recorded. "
     "Turn it on with `/test-mode nationality`, or leave the parameter out."
+)
+
+#: `/test-mode roster add-bulk` as the line names it.
+ADD_BULK_COMMAND = "/test-mode roster add-bulk"
+
+#: The reply once a league admin has discarded the stopped save of a roster: nobody was added.
+ROSTER_NOT_ADDED = (
+    "Nothing was added: no test driver is seated in {divisions}. "
+    "Run `/test-mode roster add-bulk` again."
 )
 
 #: The reply once a league admin has discarded the stopped save: nobody was added.
@@ -210,10 +228,136 @@ def test_roster_add_change(*, placement: Callable[[], PlacementService]) -> Chan
     )
 
 
+# ─── /test-mode roster add-bulk ───────────────────────────────────────────────
+
+
+def bulk_payload(drivers: list[ParsedDriver]) -> dict[str, Any]:
+    """The request the import form makes: every driver the file names, as the file names them."""
+    return {
+        "drivers": [
+            {
+                "line": driver.line,
+                "discord_user_id": driver.discord_user_id,
+                "driver_name": driver.driver_name,
+                "team_name": driver.team_name,
+                "division_name": driver.division_name,
+                "nationality": driver.nationality,
+            }
+            for driver in drivers
+        ]
+    }
+
+
+def _drivers_of(payload: dict[str, Any]) -> list[ParsedDriver]:
+    return [ParsedDriver(**driver) for driver in payload["drivers"]]
+
+
+def test_roster_add_bulk_change(*, placement: Callable[[], PlacementService]) -> ChangeType:
+    """The `core.test_roster_add_bulk` change type, for the builder to register: *placement* gives
+    the placement service each division is held to the template capacities through, asked for
+    each time it is needed.
+
+    **The refusals are the check's**, judged at the ask and again as the change starts: test mode
+    not on, the season not in Placements, and every fault the database shows in the roster
+    (`judge_bulk_on`), listed together as the form has always listed them. A fault the file shows
+    on its own is refused by the form, before the ask. **One SAVE** judges once more on its own
+    connection, seats every driver (`seat_bulk_on`) and writes a `TEST_DRIVER_ADDED` audit entry
+    for each, on the division they are seated in, in the file's order, and the line. A fault in
+    the save stops the lane, as in `/test-mode roster add`.
+    """
+
+    async def judge(db: aiosqlite.Connection, payload: dict[str, Any]) -> BulkPlan | str:
+        """The plan to seat the roster, or the reply refusing it."""
+        refusal = await standing_refusal_on(db)
+        if refusal is not None:
+            return refusal
+        judged = await judge_bulk_on(db, _drivers_of(payload), placement())
+        return format_roster_errors(judged) if isinstance(judged, list) else judged
+
+    async def check(ctx: CheckContext) -> Verdict:
+        """The refusals, in the order they come, each read from the database."""
+        async with get_connection(ctx.db_path) as db:
+            judged = await judge(db, ctx.payload)
+        return Verdict.refuse(judged) if isinstance(judged, str) else Verdict.go()
+
+    async def save(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
+        """Seat every driver, and write the audit entries and the line."""
+        judged = await judge(db, ctx.payload)
+        if isinstance(judged, str):
+            return StepResult(
+                result={"refused": judged},
+                lines=(refusal_line(ctx.named, ctx.what, reply_reason(judged)),),
+            )
+        seated = await seat_bulk_on(db, judged)
+        audits = []
+        for planned in judged.seats:
+            new = {
+                "driver": planned.driver.driver_name,
+                "user_id": str(planned.driver.discord_user_id),
+                "team": planned.team_full_name,
+                "division": planned.division_name,
+                "nationality": planned.nationality,
+            }
+            audits.append(
+                AuditRecord(
+                    "TEST_DRIVER_ADDED", dict.fromkeys(new), new, division_id=planned.division_id
+                )
+            )
+        divisions = divisions_named(_drivers_of(ctx.payload))
+        line = (
+            f"{ctx.named} | {ADD_BULK_COMMAND} | Success\n"
+            f"  drivers_seated: {seated}\n"
+            f"  divisions: {', '.join(divisions)}"
+        )
+        return StepResult(
+            result={"saved": True, "seated": seated, "divisions": divisions},
+            audits=tuple(audits),
+            lines=(line,),
+        )
+
+    def divisions_in(payload: dict[str, Any]) -> list[str]:
+        return divisions_named(_drivers_of(payload))
+
+    def doing(payload: dict[str, Any]) -> str:
+        count = len(payload["drivers"])
+        named = ", ".join(f"**{name}**" for name in divisions_in(payload))
+        return f"Seating {count} test driver{'' if count == 1 else 's'} in {named}"
+
+    def outcome(ctx: OutcomeContext) -> str:
+        saved = saved_result(ctx)
+        if saved.get("refused"):
+            return str(saved["refused"])
+        if not saved.get("saved"):
+            return ROSTER_NOT_ADDED.format(
+                divisions=", ".join(f"**{name}**" for name in divisions_in(ctx.payload))
+            )
+        divisions = saved["divisions"]
+        return (
+            f"✅ Seated **{saved['seated']}** test driver(s) across "
+            f"{len(divisions)} division(s): {', '.join(divisions)}.\n"
+            f"`/test-mode roster list` shows a division's drivers with the mentions "
+            f"result submission wants."
+        )
+
+    return ChangeType(
+        kind=TEST_ROSTER_ADD_BULK,
+        opening=(PlannedStep(SAVE),),
+        steps={SAVE: Step(SAVE, StepKind.SAVE, save)},
+        check=check,
+        key=lambda payload: f"{TEST_ROSTER_ADD_BULK}|{json.dumps(payload['drivers'])}",
+        doing=doing,
+        outcome=outcome,
+        lane=lambda _payload: LEAGUE_LANE,
+    )
+
+
 __all__ = [
     "NATIONALITY_SWITCHED_OFF",
     "NOT_PLACING",
     "TEST_ROSTER_ADD",
+    "TEST_ROSTER_ADD_BULK",
+    "bulk_payload",
     "standing_refusal_on",
+    "test_roster_add_bulk_change",
     "test_roster_add_change",
 ]

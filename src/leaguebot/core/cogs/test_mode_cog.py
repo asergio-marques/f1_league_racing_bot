@@ -33,7 +33,12 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.services.test_mode_settings import NOT_IN_TEST_MODE
-from leaguebot.core.services.test_roster_changes import NOT_PLACING, TEST_ROSTER_ADD
+from leaguebot.core.services.test_roster_changes import (
+    NOT_PLACING,
+    TEST_ROSTER_ADD,
+    TEST_ROSTER_ADD_BULK,
+    bulk_payload,
+)
 from leaguebot.core.services.test_mode_former_driver_change import TEST_MODE_FORMER_DRIVER
 from leaguebot.core.services.test_mode_toggle_change import TEST_MODE_TOGGLE
 from leaguebot.core.services.test_mode_service import (
@@ -53,6 +58,8 @@ from leaguebot.core.utils.formatting import paginate_fenced
 from leaguebot.core.utils.league_server import LeagueModal, LeagueView
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.messages import chunk_message
+from leaguebot.core.utils.roster_import import format_roster_errors as _format_roster_errors
+from leaguebot.core.utils.roster_import import parse_roster_csv
 
 log = logging.getLogger(__name__)
 
@@ -844,9 +851,12 @@ class _RosterImportModal(LeagueModal, title="Import a test roster"):
         self._cog = cog
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        from leaguebot.core.services.test_roster_service import add_test_drivers_in_bulk
-        from leaguebot.core.utils.roster_import import divisions_named, parse_roster_csv
+        """Ask the change that seats the roster, once the file reads on its own.
 
+        What a file shows wrong by itself is refused here, before the ask. Test mode, the
+        season's stage and everything the database must answer are judged by the change, as it is
+        asked and as it starts (`test_roster_changes`).
+        """
         await interaction.response.defer(ephemeral=True)
 
         drivers, errors = parse_roster_csv(str(self.csv_text.value))
@@ -858,32 +868,11 @@ class _RosterImportModal(LeagueModal, title="Import a test roster"):
             )
             return
 
-        seated, errors = await add_test_drivers_in_bulk(
-            drivers,
-            self._cog.bot.db_path,
-            placement_service=self._cog.bot.placement_service,
-        )
-        if errors:
-            await refuse(
-                interaction,
-                _format_roster_errors(errors),
-                what=describe_form(self),
-            )
-            return
-
-        divisions = divisions_named(drivers)
-        await interaction.followup.send(
-            f"✅ Seated **{seated}** test driver(s) across "
-            f"{len(divisions)} division(s): {', '.join(divisions)}.\n"
-            f"`/test-mode roster list` shows a division's drivers with the mentions "
-            f"result submission wants.",
-            ephemeral=True,
-        )
-        await self._cog.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
-            "/test-mode roster add-bulk | Success\n"
-            f"  drivers_seated: {seated}\n"
-            f"  divisions: {', '.join(divisions)}",
+        await self._cog.bot.change_queue.ask(
+            TEST_ROSTER_ADD_BULK,
+            bulk_payload(drivers),
+            interaction=interaction,
+            what=describe_form(self),
         )
 
 
@@ -897,24 +886,6 @@ def _passed_over_line(step: PhaseEntry) -> str:
         else f"**Phase {step['phase_number']}**"
     )
     return f"⏭️ {what} for {where} was not due: its race has been run."
-
-
-def _format_roster_errors(errors: list[str]) -> str:
-    """One shape for every refusal, capped so a systematically wrong file still replies.
-
-    A file whose every row is wrong produces one fault per row, and fifty-one of them
-    exceed Discord's 2000-character limit — which refuses the whole message rather than
-    truncating it, leaving the manager with no reply at all.
-    """
-    shown = errors[:15]
-    lines = [
-        f"⛔ The roster was not imported — {len(errors)} problem(s). "
-        f"**No drivers were added.**"
-    ]
-    lines += [f"• {problem}" for problem in shown]
-    if len(errors) > len(shown):
-        lines.append(f"…and {len(errors) - len(shown)} more.")
-    return "\n".join(lines)
 
 
 class _ConfirmRestoreView(LeagueView):

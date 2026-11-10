@@ -20,9 +20,6 @@ import pytest
 
 from leaguebot.core.db.database import run_migrations
 
-#: What is not yet true of the test roster's writers.
-ON_A_CONNECTION = "#283: the test roster's writers do not yet write on a handed connection"
-
 #: The fault each case raises, as `int()` words one.
 BUG = "invalid literal for int() with base 10: 'x'"
 
@@ -291,8 +288,7 @@ CATCHES = [
     pytest.param(_placement_check("driver_assign_change"), id="driver assign check"),
     pytest.param(_placement_check("driver_unassign_change"), id="driver unassign check"),
     pytest.param(_test_driver_added, id="test driver added"),
-    pytest.param(_test_roster_imported, id="test roster imported",
-                 marks=pytest.mark.xfail(strict=True, reason=ON_A_CONNECTION)),
+    pytest.param(_test_roster_imported, id="test roster imported"),
     pytest.param(_team_check("team_add_change", _TEAM_ADDED), id="team add check"),
     pytest.param(_team_save("team_add_change", _TEAM_ADDED), id="team add save"),
     pytest.param(_team_check("team_remove_change", _TEAM_REMOVED), id="team remove check"),
