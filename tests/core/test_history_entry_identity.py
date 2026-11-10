@@ -11,6 +11,8 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.driver_transitions import reassigned
 
+HISTORY_ASKS_RESULTS = "#283: the history does not yet ask results for each driver's standing"
+
 SERVER_ID = 22120
 
 
@@ -127,15 +129,20 @@ async def _seed_a_finished_season(db_path: str) -> None:
         await db.commit()
 
 
+@pytest.mark.xfail(strict=True, reason=HISTORY_ASKS_RESULTS)
 async def test_a_re_keyed_driver_s_history_carries_their_final_standing(db_path):
     """Issue #222, as a league sees it: the season ends and the driver's history is right."""
     from leaguebot.core.services.season_end_service import write_driver_history_entries_on
+    from tests.support.driver_records_hooks import season_standing_read
 
     await _seed_a_finished_season(db_path)
     await reassigned(db_path, _OLD_USER, _NEW_USER)
 
     async with get_connection(db_path) as db:
-        await write_driver_history_entries_on(db, _SEASON_ID, 4)
+        await write_driver_history_entries_on(
+            db, _SEASON_ID, 4,
+            season_standing_read=season_standing_read(),
+        )
         await db.commit()
 
     async with get_connection(db_path) as db:
@@ -147,3 +154,31 @@ async def test_a_re_keyed_driver_s_history_carries_their_final_standing(db_path)
         rows = [tuple(r) for r in await cursor.fetchall()]
 
     assert rows == [(_NEW_USER, 2, 88, 12)]
+
+
+@pytest.mark.xfail(strict=True, reason=HISTORY_ASKS_RESULTS)
+async def test_with_no_module_answering_the_history_records_no_standing(db_path):
+    """The same finished season, our driver second on 88 points behind a winner on 100, but no
+    module signed up to answer a driver's standing (results never built). The season's end
+    writes our driver's entry as it would with no standings at all: no position, no points and no
+    gap, rather than reading results' standings itself."""
+    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
+    from leaguebot.core.utils.hooks import AwaitedHook
+
+    await _seed_a_finished_season(db_path)
+
+    async with get_connection(db_path) as db:
+        await write_driver_history_entries_on(
+            db, _SEASON_ID, 4, season_standing_read=AwaitedHook(),
+        )
+        await db.commit()
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT discord_user_id, final_position, final_points, points_gap_to_winner "
+            "FROM driver_history_entries WHERE driver_profile_id = ?",
+            (_PROFILE_ID,),
+        )
+        rows = [tuple(r) for r in await cursor.fetchall()]
+
+    assert rows == [(_OLD_USER, 0, 0, 0)]
