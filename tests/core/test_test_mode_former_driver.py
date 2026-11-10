@@ -5,18 +5,17 @@ league admin picked, the value carried with it, the queue's acknowledgement its 
 one save setting the driver's former-driver flag and writing its `TEST_FORMER_DRIVER_FLAG_SET`
 audit entry, stamped with the queue's clock, then the reply and the line in the words the command
 used before the queue. Test mode, and a profile for the account named, are judged at the ask and
-again as the change starts. Nothing follows the save, so a fault in it ends the change with
-nothing saved rather than stopping the lane.
+again as the change starts. A driver's flag is not a league's setting, so a fault in the save
+stops the league's lane, as any change's does, with nothing saved; once a league admin discards
+the stopped job, the reply says nothing was changed and to run the command again.
 
 These run on the bot the entry point builds, its configuration read from the database, with the
 real queue and "now" pinned: the server in test mode, and Racer (4242) a driver holding a profile.
 """
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -232,35 +231,34 @@ async def test_it_is_judged_again_as_it_starts(league, meanwhile):
 
 
 @pytest.mark.xfail(strict=True, reason=ON_THE_QUEUE)
-async def test_a_fault_in_the_save_saves_neither_the_flag_nor_its_audit(league, monkeypatch):
+async def test_a_fault_in_the_save_saves_neither_the_flag_nor_its_audit(league):
     """The server is in test mode; Racer holds a profile whose flag is false. Admin (77) runs the
     command for Racer with true, and the audit entry's write fails on the database as the queue
-    runs the change. The flag is not saved either: it is still false and no audit entry stands.
-    Admin is told the command stopped on a fault in the bot and to run it again; the log channel
-    gets the one failure line and no success line; the queue is not stopped, nothing waiting on
-    the save."""
-    from leaguebot.core.services import change_queue
+    runs the change. The flag is not saved either, the flag and its audit entry being one save: it
+    is still false, no audit entry stands and the log channel holds no success line. The league's
+    lane stops at the job. Once a league admin discards the stopped job, Admin's reply says
+    "Nothing was changed: **Racer**'s former-driver flag is still **False**. Run
+    `/test-mode set-former-driver` again."; and the lane is clear."""
+    from tests.support.change_queue import discard_job
+    from tests.support.settings_league import fault_in
 
     await _seed_racer(league.db_path, former=False)
-    monkeypatch.setattr(
-        change_queue, "record_change_on",
-        AsyncMock(side_effect=sqlite3.OperationalError("disk I/O error")),
-    )
     interaction = _asks(league)
 
     await _ask(league, interaction, True)
-    await run_queue(league.bot)
+    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+        await run_queue(league.bot)
 
     assert await _flags(league.db_path) == [False]
     assert await audit_rows(league.db_path) == []
-    reply = last_said(interaction)
-    assert reply.startswith(
-        "❌ `/test-mode set-former-driver` stopped on a fault in the bot, not on anything you "
-        "entered, and did not finish."
+    assert not any("| Success" in line for line in _lines(league))
+    assert await stopped_job(league.db_path) is not None
+
+    await discard_job(league.bot)
+
+    assert last_said(interaction) == (
+        "Nothing was changed: **Racer**'s former-driver flag is still **False**. "
+        "Run `/test-mode set-former-driver` again."
     )
-    assert "Run `/test-mode set-former-driver` again" in reply
-    assert _lines(league) == [
-        f"❌ `/test-mode set-former-driver` failed for {_NAMED} — OperationalError. The details "
-        f"are in the host's log."
-    ]
+    assert await _flags(league.db_path) == [False]
     assert await stopped_job(league.db_path) is None
