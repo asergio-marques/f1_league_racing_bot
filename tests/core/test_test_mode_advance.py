@@ -338,11 +338,6 @@ async def test_an_empty_queue_says_so_and_names_what_comes_next(tmp_path):
 # Each kind's own step
 # ---------------------------------------------------------------------------
 
-#: Not yet true of `/test-mode advance` (#283).
-_STEPS_ON_THE_BUILDER = "#283: the advance steps are signed up in a registry the module keeps, not on an object the builder makes"
-
-
-@pytest.mark.xfail(strict=True, reason=_STEPS_ON_THE_BUILDER)
 @pytest.mark.parametrize("job_id", ["queued_job", None], ids=["from-the-job-store", "from-state"])
 @pytest.mark.parametrize(
     "phase_number",
@@ -393,7 +388,6 @@ async def test_advance_runs_the_kinds_own_step(tmp_path, monkeypatch, phase_numb
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=_STEPS_ON_THE_BUILDER)
 async def test_advance_reports_a_kind_with_no_step_signed_up(tmp_path, monkeypatch):
     """Round 3 of Division 1's Phase 2 is next, and the bot's advance steps hold none for
     `weather_p2`.

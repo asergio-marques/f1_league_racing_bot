@@ -7,9 +7,10 @@ Provides async functions consumed by TestModeCog, among them:
   - get_next_pending_phase, get_passed_over_steps: the next step to advance and the steps advance
                                   passes over, each module handing back its own through the
                                   bot's `pending_steps_read` hook, which core orders
-  - register_advance, advance_next_step: the step `/test-mode advance` runs for each kind of a
-                                  round's job, signed up by its module, and the one call that
-                                  picks it, takes its job down and runs it
+  - AdvanceSteps, advance_next_step: the step `/test-mode advance` runs for each kind of a
+                                  round's job, signed up by its module on the object the builder
+                                  makes, and the one call that picks it, takes its job down and
+                                  runs it
   - build_review_summary:         format a full season/division/round status string, core laying
                                   out the divisions and rounds and each module handing back its
                                   own marks of them through the bot's `review_marks_read` hook
@@ -52,7 +53,7 @@ class PhaseEntry(TypedDict):
     phase_number: int
     #: The kind of round job the step is armed under (`ROUND_JOB_KINDS`): `weather_p1` for the
     #: mystery notice (0) as for Phase 1, the key of the step its module signed up
-    #: (`register_advance`).
+    #: (`AdvanceSteps.register_step`).
     kind: str
     track_name: str
     division_name: str
@@ -81,7 +82,7 @@ class ActiveRound:
 class PendingStep:
     """A step a module hands back as pending or passed over: its round, its phase number (see
     `PhaseEntry`) and the kind of round job it is armed under, which names the step the module
-    signed up for it (`register_advance`)."""
+    signed up for it (`AdvanceSteps.register_step`)."""
 
     round_id: int
     phase_number: int
@@ -170,20 +171,37 @@ class AdvanceStepFailed(Exception):
 #: from the fault, to be named.
 AdvanceStep = Callable[[PhaseEntry], Awaitable[AdvanceOutcome]]
 
-#: Each round job kind's step, signed up by the builder before the bot connects, as the
-#: scheduler's handler of the kind is (`register_timer`).
-_ADVANCE_STEPS: dict[str, AdvanceStep] = {}
+class AdvanceSteps:
+    """Each round job kind's `/test-mode advance` step, one for each kind.
 
+    The builder makes one, hands it to every module's sign-up and keeps it on the bot
+    (`LeagueBot.advance_steps`), as it signs a kind's handler up with the scheduler
+    (`register_timer`) and a module's switch reader with the module service (`register_switch`): a
+    keyed hook is an object of its own, never a registry the module keeps for the process
+    (architecture.md, "How modules and core fit together").
+    """
 
-def register_advance(kind: str, step: AdvanceStep) -> None:
-    """Sign up *step* as what `/test-mode advance` runs for a job of *kind*."""
-    _ADVANCE_STEPS[kind] = step
+    def __init__(self) -> None:
+        self._steps: dict[str, AdvanceStep] = {}
+
+    def register_step(self, kind: str, step: AdvanceStep) -> None:
+        """Sign up *step* as what `/test-mode advance` runs for a job of *kind*: the builder's,
+        once for each kind, before the bot connects."""
+        self._steps[kind] = step
+
+    def step_for(self, kind: str) -> AdvanceStep:
+        """The step signed up for *kind*. Raises `LookupError` naming it where none is: a fault in
+        the bot's assembly."""
+        step = self._steps.get(kind)
+        if step is None:
+            raise LookupError(f"no /test-mode advance step is signed up for {kind}")
+        return step
 
 
 async def run_advance_step(
-    scheduler_service: SchedulerService, entry: PhaseEntry
+    scheduler_service: SchedulerService, entry: PhaseEntry, *, advance_steps: AdvanceSteps
 ) -> AdvanceOutcome:
-    """Run the step signed up for the *entry*'s kind and return what became of it.
+    """Run the step *advance_steps* holds for the *entry*'s kind and return what became of it.
 
     The round's job of that kind is taken down first, by round and kind, whether the entry came
     from the job store or was found from database state: left queued, it would fire the step
@@ -192,11 +210,10 @@ async def run_advance_step(
     naming the kind, as a step that fails does, and takes no job down.
     """
     kind = entry["kind"]
-    step = _ADVANCE_STEPS.get(kind)
-    if step is None:
-        raise AdvanceStepFailed(kind) from LookupError(
-            f"no /test-mode advance step is signed up for {kind}"
-        )
+    try:
+        step = advance_steps.step_for(kind)
+    except LookupError as exc:
+        raise AdvanceStepFailed(kind) from exc
     scheduler_service.cancel_round(entry["round_id"], only=frozenset({kind}))
     return await step(entry)
 
@@ -224,10 +241,11 @@ async def advance_next_step(
     now: datetime,
     announce: Callable[[PhaseEntry, list[PhaseEntry]], Awaitable[None]],
     pending_steps_read: AwaitedHook,
+    advance_steps: AdvanceSteps,
 ) -> AdvanceRun:
     """Pick the next step and the steps passed over at the one moment *now*, announce them, take
-    the step's job down and run its kind's step (`run_advance_step`), the steps read through
-    *pending_steps_read*.
+    the step's job down and run its kind's step (`run_advance_step`) from *advance_steps*, the
+    steps read through *pending_steps_read*.
 
     One moment judges both, so that a race time falling between two readings cannot leave a step
     both offered and named, or neither. *announce* is awaited with the entry and the steps passed
@@ -246,7 +264,7 @@ async def advance_next_step(
         return AdvanceRun(None, passed_over)
     await announce(entry, passed_over)
     try:
-        outcome = await run_advance_step(scheduler_service, entry)
+        outcome = await run_advance_step(scheduler_service, entry, advance_steps=advance_steps)
     except AdvanceStepFailed as exc:
         return AdvanceRun(entry, passed_over, failure=exc)
     return AdvanceRun(entry, passed_over, outcome=outcome)

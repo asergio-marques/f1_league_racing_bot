@@ -154,6 +154,7 @@ class TestModeCog(commands.Cog):
             now=self.bot.change_queue.now(),
             announce=functools.partial(self._announce_advance, interaction),
             pending_steps_read=self.bot.pending_steps_read,
+            advance_steps=self.bot.advance_steps,
         )
         entry = run.entry
 

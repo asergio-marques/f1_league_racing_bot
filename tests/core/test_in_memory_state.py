@@ -84,10 +84,6 @@ LEAVING = {
     # The weather phases' callables bound at start-up: the bot's wiring, not the league's data.
     # Exempt while it stands; it goes when every kind is signed up in `_timer_callbacks` (#283).
     ("core/services/scheduler_service.py", "_phase_callbacks"): "#283 S7a",
-    # Each round job kind's `/test-mode advance` step, in a registry the module kept for the
-    # process: the bot's wiring, not the league's data. It goes when the steps are held by an
-    # object the builder makes (#283 S21f2).
-    ("core/services/test_mode_service.py", "_ADVANCE_STEPS"): "#283 S21f2",
 }
 
 #: Stores the plan moves with no change, by (file, name): the file each moves to and the commit

@@ -1605,7 +1605,8 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
     """Sign up the handler of every kind of job the scheduler fires, through `register_timer`:
     the weather phases, the forecast clean-up, the result submission, the four check-in jobs, the
     portrait refresh, the amendment sweep and the signup close; and, beside the handler of each
-    kind of a round's job, the step `/test-mode advance` runs for it (`register_advance`).
+    kind of a round's job, the step `/test-mode advance` runs for it, signed up on the bot's
+    `advance_steps`.
 
     Each asks the change queue. Weather's handlers hold the queue they were handed here
     (`timer_callbacks`); the others read it from the bot when they fire. The bot keeps the one
@@ -1614,7 +1615,6 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
     registered before the bot starts and before the scheduler does.
     """
     # Wire weather's handlers into the scheduler: each asks the change queue
-    from leaguebot.core.services.test_mode_service import register_advance
     from leaguebot.weather.services.forecast_changes import advance_steps, timer_callbacks
 
     scheduler = bot.scheduler_service
@@ -1623,7 +1623,7 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
         scheduler.register_timer(f"weather_p{phase}", handler)
     scheduler.register_timer("cleanup", callbacks.clean_up)
     for kind, advance in advance_steps(bot.change_queue, bot.db_path).items():
-        register_advance(kind, advance)
+        bot.advance_steps.register_step(kind, advance)
 
     # Register result submission callback
     from leaguebot.results.services.submission_changes import advance_step, ask_submission_open
@@ -1632,7 +1632,7 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
         await ask_submission_open(bot.change_queue, bot.db_path, round_id)
 
     scheduler.register_timer("results", _result_submission_cb)
-    register_advance("results", advance_step(bot.change_queue, bot.db_path))
+    bot.advance_steps.register_step("results", advance_step(bot.change_queue, bot.db_path))
 
     # Register RSVP attendance callbacks
     from leaguebot.attendance.services.check_in_changes import (
@@ -1669,7 +1669,7 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
     scheduler.register_timer("rsvp_deadline", _rsvp_deadline_cb)
     scheduler.register_timer("rsvp_cleanup", _rsvp_cleanup_cb)
     for kind, advance in check_in_advance_steps(bot.change_queue, bot.db_path).items():
-        register_advance(kind, advance)
+        bot.advance_steps.register_step(kind, advance)
 
     # Register the daily driver-portrait refresh and re-arm it after a restart. Unlike
     # every other job here the trigger is recurring, so recovery re-adds it rather than
@@ -1845,6 +1845,9 @@ async def build(settings: Settings) -> LeagueBot:
     _sign_up_to_deletes(bot)
     _sign_up_to_pack(bot)
     register_change_types(bot)
+    from leaguebot.core.services.test_mode_service import AdvanceSteps
+
+    bot.advance_steps = AdvanceSteps()
     register_scheduler_callbacks(bot)
 
     # --- Load Cogs ---
