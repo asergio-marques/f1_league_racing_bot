@@ -67,7 +67,7 @@ def _interaction():
     return interaction
 
 
-async def _cog(db_path, *, attendance: bool = True):
+async def _cog(db_path, *, attendance: bool = True, now: datetime | None = None):
     cog = RoundCog.__new__(RoundCog)
     # The league's bot (`league_bot`), with each awaited member it reads named (issue #240). A
     # whole-bot ``AsyncMock`` answers an unpinned reader with a truthy mock, which for a file
@@ -90,8 +90,9 @@ async def _cog(db_path, *, attendance: bool = True):
     cog.bot.output_router.deliver_queued = AsyncMock()
     cog.bot.output_router.strip_view = AsyncMock()
     # A real change queue with the bot's own change types, so that Confirm asks it for the
-    # amendment and its check judges it as it would in the league.
-    league_queue(cog.bot, db_path, now=datetime.now(timezone.utc))
+    # amendment and its check judges it as it would in the league. Its clock reads *now*, the
+    # host's where none is given.
+    league_queue(cog.bot, db_path, now=now or datetime.now(timezone.utc))
     # No season being set up, so the command takes its active-season path.
     hold_setup(cog.bot.season_service, None, divisions=False)
     if hasattr(RoundCog, "clear_pending"):
@@ -147,17 +148,23 @@ async def test_bringing_a_round_inside_its_check_in_deadline_is_refused(tmp_path
     assert not _offered_a_confirmation(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason="#283: /round amend judges by the host's clock")
 async def test_moving_a_round_backwards_is_refused_with_attendance_off(tmp_path):
-    """The command consults the rule, and with no module standing in for it.
+    """The command consults the rule, and with no module standing in for it, at the change
+    queue's time: the queue's clock reads 4 March 2031, years past the host's, so an hour before
+    it is still ahead of the host's and only the queue's clock finds it in the past.
 
     Attendance off deliberately: its deadline rule refuses a backwards move as well, so a test
     that left the module on would pass whether or not the command reached the rule at all.
     """
-    path = await _db(tmp_path, scheduled_at=datetime.now(timezone.utc) + timedelta(days=30))
+    now = datetime(2031, 3, 4, 5, 6, tzinfo=timezone.utc)
+    path = await _db(tmp_path, scheduled_at=now + timedelta(days=30))
     interaction = _interaction()
-    past = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(tzinfo=None)
+    past = (now - timedelta(hours=1)).replace(tzinfo=None)
 
-    await _amend(await _cog(path, attendance=False), interaction, scheduled_at=past.isoformat())
+    await _amend(
+        await _cog(path, attendance=False, now=now), interaction, scheduled_at=past.isoformat()
+    )
 
     assert "cannot be moved into the past" in _reply(interaction)
     assert not _offered_a_confirmation(interaction), "a refused amendment must not be offered"

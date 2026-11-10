@@ -1291,19 +1291,23 @@ async def test_advance_with_only_raced_steps_left_names_them_and_says_nothing_el
     assert "above" not in refusals[0]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: advance reads the host's clock, not the queue's")
 async def test_advance_reads_the_clock_once_for_the_step_it_offers_and_those_it_passes_over(
     tmp_path,
 ):
     """The step advance offers and the steps it names as passed over are judged at one moment,
     so that a race time falling between two readings of the clock cannot leave a step both
-    offered and named as passed over, or neither."""
+    offered and named as passed over, or neither. That moment is the change queue's clock, never
+    the host's."""
     cog = _make_cog(await _make_db(tmp_path))
+    queue_now = datetime(2031, 3, 4, 5, 6, tzinfo=timezone.utc)
+    cog.bot.change_queue.now = MagicMock(return_value=queue_now)
     with _advancing(cog.bot, None) as reads:
         await undecorate(_Cog.advance)(cog, _interaction())
     offered, passed = reads["get_next_pending_phase"], reads["get_passed_over_steps"]
 
     moment = offered.await_args.kwargs["now"]
-    assert moment is not None
+    assert moment == queue_now
     assert passed.await_args.kwargs["now"] == moment
 
 

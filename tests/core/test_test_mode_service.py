@@ -18,6 +18,10 @@ from leaguebot.core.services.test_mode_service import (
     build_review_summary,
 )
 
+#: The moment every step is judged at, as the command hands it from the change queue's clock: one
+#: reading, so that the rounds seeded relative to it and the reads judging them agree.
+NOW = datetime.now(timezone.utc)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -30,7 +34,7 @@ async def _seed(db_path: str, rounds: list[dict]) -> None:
         division_id  (default 1)
         format       (default 'NORMAL')
         track_name   (default 'Bahrain')
-        scheduled_at (default now + 7 days)
+        scheduled_at (default NOW + 7 days)
         phase1_done  (default 0)
         phase2_done  (default 0)
         phase3_done  (default 0)
@@ -60,7 +64,7 @@ async def _seed(db_path: str, rounds: list[dict]) -> None:
         )
 
         default_sched = (
-            datetime.now(timezone.utc) + timedelta(days=7)
+            NOW + timedelta(days=7)
         ).strftime("%Y-%m-%dT%H:%M:%S")
 
         for i, r in enumerate(rounds, start=1):
@@ -172,7 +176,7 @@ async def test_empty_queue_returns_none(tmp_path) -> None:
     await _seed(db_path, [
         {"phase1_done": 1, "phase2_done": 1, "phase3_done": 1},
     ])
-    result = await get_next_pending_phase(db_path)
+    result = await get_next_pending_phase(db_path, now=NOW)
     assert result is None
 
 
@@ -184,7 +188,7 @@ async def test_mystery_round_notice_pending_returns_entry(tmp_path) -> None:
     await _seed(db_path, [
         {"format": "MYSTERY", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
     ])
-    result = await get_next_pending_phase(db_path)
+    result = await get_next_pending_phase(db_path, now=NOW)
     assert result is not None
     assert result["phase_number"] == 0
     assert result["kind"] == "weather_p1"
@@ -197,7 +201,7 @@ async def test_mystery_round_notice_done_excluded(tmp_path) -> None:
     await _seed(db_path, [
         {"format": "MYSTERY", "phase1_done": 1, "phase2_done": 0, "phase3_done": 0},
     ])
-    result = await get_next_pending_phase(db_path)
+    result = await get_next_pending_phase(db_path, now=NOW)
     assert result is None
 
 
@@ -208,7 +212,7 @@ async def test_phase_number_ordering_within_round(tmp_path) -> None:
     await _seed(db_path, [
         {"phase1_done": 1, "phase2_done": 0, "phase3_done": 0},
     ])
-    result = await get_next_pending_phase(db_path)
+    result = await get_next_pending_phase(db_path, now=NOW)
     assert result is not None
     assert result["phase_number"] == 2
     assert result["kind"] == "weather_p2"
@@ -216,10 +220,10 @@ async def test_phase_number_ordering_within_round(tmp_path) -> None:
 
 async def test_earliest_scheduled_round_comes_first(tmp_path) -> None:
     """The round with the earlier scheduled_at is returned first."""
-    earlier = (datetime.now(timezone.utc) + timedelta(days=5)).strftime(
+    earlier = (NOW + timedelta(days=5)).strftime(
         "%Y-%m-%dT%H:%M:%S"
     )
-    later = (datetime.now(timezone.utc) + timedelta(days=10)).strftime(
+    later = (NOW + timedelta(days=10)).strftime(
         "%Y-%m-%dT%H:%M:%S"
     )
     db_path = str(tmp_path / "bot.db")
@@ -228,7 +232,7 @@ async def test_earliest_scheduled_round_comes_first(tmp_path) -> None:
         {"track_name": "Monza",   "scheduled_at": later,   "phase1_done": 0},
         {"track_name": "Bahrain", "scheduled_at": earlier, "phase1_done": 0},
     ])
-    result = await get_next_pending_phase(db_path)
+    result = await get_next_pending_phase(db_path, now=NOW)
     assert result is not None
     assert result["track_name"] == "Bahrain"
     assert result["phase_number"] == 1
@@ -236,7 +240,7 @@ async def test_earliest_scheduled_round_comes_first(tmp_path) -> None:
 
 async def test_division_id_tiebreak_same_scheduled_at(tmp_path) -> None:
     """When two rounds have the same scheduled_at, lower division id comes first."""
-    shared_sched = (datetime.now(timezone.utc) + timedelta(days=7)).strftime(
+    shared_sched = (NOW + timedelta(days=7)).strftime(
         "%Y-%m-%dT%H:%M:%S"
     )
     db_path = str(tmp_path / "bot.db")
@@ -256,7 +260,7 @@ async def test_division_id_tiebreak_same_scheduled_at(tmp_path) -> None:
             "phase1_done": 0,
         },
     ])
-    result = await get_next_pending_phase(db_path)
+    result = await get_next_pending_phase(db_path, now=NOW)
     assert result is not None
     assert result["division_id"] == 1
     assert result["track_name"] == "Bahrain"
@@ -278,7 +282,7 @@ async def test_no_active_season_returns_none(tmp_path) -> None:
         )
         await db.commit()
 
-    result = await get_next_pending_phase(db_path)
+    result = await get_next_pending_phase(db_path, now=NOW)
     assert result is None
 
 
@@ -289,7 +293,7 @@ async def test_returns_phase1_for_fresh_round(tmp_path) -> None:
     await _seed(db_path, [
         {"track_name": "Japan", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
     ])
-    result = await get_next_pending_phase(db_path)
+    result = await get_next_pending_phase(db_path, now=NOW)
     assert result is not None
     assert result["phase_number"] == 1
     assert result["track_name"] == "Japan"
@@ -304,7 +308,7 @@ async def test_review_no_active_season(tmp_path) -> None:
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
     # No server_config or season seeded
-    summary = await build_review_summary(db_path)
+    summary = await build_review_summary(db_path, now=NOW)
     assert "No active season" in summary
 
 
@@ -315,7 +319,7 @@ async def test_review_shows_phase_status(tmp_path) -> None:
     await _seed_with_weather(db_path, [
         {"phase1_done": 1, "phase2_done": 0, "phase3_done": 0, "track_name": "Monaco"},
     ])
-    summary = await build_review_summary(db_path)
+    summary = await build_review_summary(db_path, now=NOW)
     assert "Monaco" in summary
     assert "P1: ✅" in summary
     assert "P2: ⏳" in summary
@@ -335,7 +339,7 @@ async def test_review_mystery_round_shows_notice_not_phases(tmp_path) -> None:
             "phase3_done": 0,
         },
     ])
-    summary = await build_review_summary(db_path)
+    summary = await build_review_summary(db_path, now=NOW)
     assert "Silverstone" in summary
     assert "Notice: ⏳" in summary
     assert "P1:" not in summary
@@ -392,7 +396,7 @@ async def test_misfired_fallback_returns_phase1(tmp_path) -> None:
     await _seed_with_weather(db_path, [
         {"track_name": "Monza", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
     ])
-    result = await get_next_pending_phase(db_path, _StubScheduler())
+    result = await get_next_pending_phase(db_path, _StubScheduler(), now=NOW)
     assert result is not None
     assert result["phase_number"] == 1
     assert result["track_name"] == "Monza"
@@ -405,7 +409,7 @@ async def test_misfired_fallback_respects_phase_flags(tmp_path) -> None:
     await _seed_with_weather(db_path, [
         {"track_name": "Spa", "phase1_done": 1, "phase2_done": 0, "phase3_done": 0},
     ])
-    result = await get_next_pending_phase(db_path, _StubScheduler())
+    result = await get_next_pending_phase(db_path, _StubScheduler(), now=NOW)
     assert result is not None
     assert result["phase_number"] == 2
 
@@ -418,7 +422,7 @@ async def test_misfired_fallback_weather_disabled_skips_phases(tmp_path) -> None
     await _seed(db_path, [
         {"track_name": "Monza", "phase1_done": 0, "phase2_done": 0, "phase3_done": 0},
     ])
-    result = await get_next_pending_phase(db_path, _StubScheduler())
+    result = await get_next_pending_phase(db_path, _StubScheduler(), now=NOW)
     assert result is None
 
 
@@ -438,14 +442,14 @@ async def test_misfired_fallback_canonical_order(tmp_path) -> None:
     stub = _StubScheduler()
 
     # Step 1 — phase 1
-    r = await get_next_pending_phase(db_path, stub)
+    r = await get_next_pending_phase(db_path, stub, now=NOW)
     assert r is not None and (r["phase_number"], r["kind"]) == (1, "weather_p1")
     async with get_connection(db_path) as db:
         await db.execute("UPDATE rounds SET phase1_done = 1 WHERE id = 1")
         await db.commit()
 
     # Step 2 — RSVP notice (phase 5)
-    r = await get_next_pending_phase(db_path, stub)
+    r = await get_next_pending_phase(db_path, stub, now=NOW)
     assert r is not None and (r["phase_number"], r["kind"]) == (5, "rsvp_notice")
     async with get_connection(db_path) as db:
         await db.execute(
@@ -456,14 +460,14 @@ async def test_misfired_fallback_canonical_order(tmp_path) -> None:
         await db.commit()
 
     # Step 3 — phase 2
-    r = await get_next_pending_phase(db_path, stub)
+    r = await get_next_pending_phase(db_path, stub, now=NOW)
     assert r is not None and (r["phase_number"], r["kind"]) == (2, "weather_p2")
     async with get_connection(db_path) as db:
         await db.execute("UPDATE rounds SET phase2_done = 1 WHERE id = 1")
         await db.commit()
 
     # Step 4 — RSVP last-notice (phase 6)
-    r = await get_next_pending_phase(db_path, stub)
+    r = await get_next_pending_phase(db_path, stub, now=NOW)
     assert r is not None and (r["phase_number"], r["kind"]) == (6, "rsvp_last_notice")
     async with get_connection(db_path) as db:
         await db.execute(
@@ -473,14 +477,14 @@ async def test_misfired_fallback_canonical_order(tmp_path) -> None:
         await db.commit()
 
     # Step 5 — phase 3
-    r = await get_next_pending_phase(db_path, stub)
+    r = await get_next_pending_phase(db_path, stub, now=NOW)
     assert r is not None and (r["phase_number"], r["kind"]) == (3, "weather_p3")
     async with get_connection(db_path) as db:
         await db.execute("UPDATE rounds SET phase3_done = 1 WHERE id = 1")
         await db.commit()
 
     # Step 6 — RSVP deadline (phase 7)
-    r = await get_next_pending_phase(db_path, stub)
+    r = await get_next_pending_phase(db_path, stub, now=NOW)
     assert r is not None and (r["phase_number"], r["kind"]) == (7, "rsvp_deadline")
 
 
@@ -488,10 +492,10 @@ async def test_earlier_misfired_round_beats_later_scheduler_job(tmp_path) -> Non
     """Earlier round with misfired phases must be advanced before a later
     round whose scheduler job is still pending, its entry named by the `weather_p1` kind. The
     earlier round is still to be raced: a raced round's weather steps are passed over (#439)."""
-    earlier = (datetime.now(timezone.utc) + timedelta(days=2)).strftime(
+    earlier = (NOW + timedelta(days=2)).strftime(
         "%Y-%m-%dT%H:%M:%S"
     )
-    later = (datetime.now(timezone.utc) + timedelta(days=5)).strftime(
+    later = (NOW + timedelta(days=5)).strftime(
         "%Y-%m-%dT%H:%M:%S"
     )
     db_path = str(tmp_path / "bot.db")
@@ -505,9 +509,9 @@ async def test_earlier_misfired_round_beats_later_scheduler_job(tmp_path) -> Non
         "job_id": "phase1_r2",
         "round_id": 2,
         "phase_number": 1,
-        "next_run_time": datetime.now(timezone.utc) + timedelta(days=5),
+        "next_run_time": NOW + timedelta(days=5),
     }])
-    result = await get_next_pending_phase(db_path, stub)
+    result = await get_next_pending_phase(db_path, stub, now=NOW)
     assert result is not None
     assert result["track_name"] == "Bahrain"   # earlier round wins
     assert result["phase_number"] == 1
@@ -570,7 +574,7 @@ def _job(round_id: int, phase: int, *, days: float) -> dict:
         "job_id": f"job_{phase}_r{round_id}",
         "round_id": round_id,
         "phase_number": phase,
-        "next_run_time": datetime.now(timezone.utc) + timedelta(days=days),
+        "next_run_time": NOW + timedelta(days=days),
     }
 
 
@@ -584,13 +588,13 @@ async def test_a_round_ends_with_its_forecast_then_its_check_in_coming_down(tmp_
     await _stand(db_path, 1, forecast=True, call=True, status="FINAL")
     stub = _StubScheduler()
 
-    first = await get_next_pending_phase(db_path, stub)
+    first = await get_next_pending_phase(db_path, stub, now=NOW)
     assert first is not None and (first["phase_number"], first["kind"]) == (8, "cleanup")
     async with get_connection(db_path) as db:
         await db.execute("DELETE FROM forecast_messages")
         await db.commit()
 
-    second = await get_next_pending_phase(db_path, stub)
+    second = await get_next_pending_phase(db_path, stub, now=NOW)
     assert second is not None and (second["phase_number"], second["kind"]) == (9, "rsvp_cleanup")
 
 
@@ -605,7 +609,7 @@ async def test_a_cleared_round_is_not_offered_its_call_again(tmp_path) -> None:
         await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = 1")
         await db.commit()
 
-    assert await get_next_pending_phase(db_path, _StubScheduler()) is None
+    assert await get_next_pending_phase(db_path, _StubScheduler(), now=NOW) is None
 
 
 async def test_a_round_start_already_asked_of_the_queue_is_not_offered_again(tmp_path) -> None:
@@ -621,7 +625,7 @@ async def test_a_round_start_already_asked_of_the_queue_is_not_offered_again(tmp
     await _seed_all_done(db_path, [{"track_name": "Monaco"}], results=True)
     await _stand(db_path, 1, call=True)
     scheduler = _StubScheduler([_job(1, 9, days=1)])
-    offered = await get_next_pending_phase(db_path, scheduler)
+    offered = await get_next_pending_phase(db_path, scheduler, now=NOW)
     assert offered is not None and offered["phase_number"] == 4
 
     async with get_connection(db_path) as db:
@@ -633,7 +637,7 @@ async def test_a_round_start_already_asked_of_the_queue_is_not_offered_again(tmp
         )
         await db.commit()
 
-    again = await get_next_pending_phase(db_path, scheduler)
+    again = await get_next_pending_phase(db_path, scheduler, now=NOW)
 
     assert again is None or again["phase_number"] != 4
 
@@ -647,7 +651,7 @@ async def test_a_finished_round_s_cleanup_job_is_not_stale(tmp_path) -> None:
     await _seed_all_done(db_path, [{"track_name": "Monaco"}], results=True)
     await _stand(db_path, 1, call=True, status="FINAL")
 
-    result = await get_next_pending_phase(db_path, _StubScheduler([_job(1, 9, days=1)]))
+    result = await get_next_pending_phase(db_path, _StubScheduler([_job(1, 9, days=1)]), now=NOW)
 
     assert result is not None
     assert (result["phase_number"], result["job_id"]) == (9, "job_9_r1")
@@ -665,14 +669,16 @@ async def test_a_forecast_cleanup_with_no_forecast_standing_is_stale(tmp_path) -
         await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = 1")
         await db.commit()
 
-    assert await get_next_pending_phase(db_path, _StubScheduler([_job(1, 8, days=1)])) is None
+    assert await get_next_pending_phase(
+        db_path, _StubScheduler([_job(1, 8, days=1)]), now=NOW
+    ) is None
 
 
 async def test_an_earlier_round_s_cleanup_does_not_jump_a_later_round_s_step(tmp_path) -> None:
     """A double-header: Sunday's deadline falls before Saturday's cleanup. The check of the
     rounds before a job must not offer Saturday's cleanup ahead of it."""
-    saturday = (datetime.now(timezone.utc) + timedelta(days=6)).strftime("%Y-%m-%dT%H:%M:%S")
-    sunday = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
+    saturday = (NOW + timedelta(days=6)).strftime("%Y-%m-%dT%H:%M:%S")
+    sunday = (NOW + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
     db_path = str(tmp_path / "double_header.db")
     await run_migrations(db_path)
     await _seed_all_done(
@@ -686,7 +692,7 @@ async def test_an_earlier_round_s_cleanup_does_not_jump_a_later_round_s_step(tmp
     await _stand(db_path, 2, call=True, distributed=False)
     stub = _StubScheduler([_job(2, 7, days=6.9), _job(1, 9, days=7)])
 
-    result = await get_next_pending_phase(db_path, stub)
+    result = await get_next_pending_phase(db_path, stub, now=NOW)
 
     assert result is not None
     assert (result["round_id"], result["phase_number"]) == (2, 7)
@@ -703,7 +709,7 @@ async def test_the_database_fallback_offers_the_cleanups_last(tmp_path) -> None:
     await _stand(db_path, 1, call=True, status="FINAL")
     await _stand(db_path, 2, call=True)
 
-    result = await get_next_pending_phase(db_path, _StubScheduler())
+    result = await get_next_pending_phase(db_path, _StubScheduler(), now=NOW)
 
     assert result is not None
     assert (result["round_id"], result["phase_number"]) == (2, 1)
@@ -726,7 +732,7 @@ async def test_a_forecast_cleanup_is_offered_for_an_earlier_phase_still_standing
         await db.commit()
     stub = _StubScheduler([_job(1, 8, days=1)] if found == "job in the store" else [])
 
-    result = await get_next_pending_phase(db_path, stub)
+    result = await get_next_pending_phase(db_path, stub, now=NOW)
 
     assert result is not None
     assert (result["round_id"], result["phase_number"], result["kind"]) == (1, 8, "cleanup")
@@ -743,8 +749,10 @@ async def test_a_mystery_round_s_notice_is_offered_no_forecast_cleanup(tmp_path)
         await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = 1")
         await db.commit()
 
-    assert await get_next_pending_phase(db_path, _StubScheduler([_job(1, 8, days=1)])) is None
-    assert await get_next_pending_phase(db_path, _StubScheduler()) is None
+    assert await get_next_pending_phase(
+        db_path, _StubScheduler([_job(1, 8, days=1)]), now=NOW
+    ) is None
+    assert await get_next_pending_phase(db_path, _StubScheduler(), now=NOW) is None
 
 
 # ---------------------------------------------------------------------------
@@ -776,7 +784,7 @@ async def test_the_review_shows_the_forecast_cleanup(
     else:
         await _stand(db_path, 1, forecast=True, forecast_phase=forecast_phase)
 
-    assert shown in await build_review_summary(db_path)
+    assert shown in await build_review_summary(db_path, now=NOW)
 
 
 async def test_the_review_shows_a_standing_check_in_as_still_to_clear(tmp_path) -> None:
@@ -785,7 +793,7 @@ async def test_the_review_shows_a_standing_check_in_as_still_to_clear(tmp_path) 
     await _seed_with_attendance(db_path, [{"track_name": "Monaco"}])
     await _stand(db_path, 1, call=True)
 
-    summary = await build_review_summary(db_path)
+    summary = await build_review_summary(db_path, now=NOW)
 
     assert "RSVP: ✅  Last: ✅  Deadline: ✅  Cleared: ⏳" in summary
 
@@ -799,7 +807,7 @@ async def test_the_review_shows_a_cleared_check_in_as_done_throughout(tmp_path) 
         await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = 1")
         await db.commit()
 
-    summary = await build_review_summary(db_path)
+    summary = await build_review_summary(db_path, now=NOW)
 
     assert "RSVP: ✅  Last: ✅  Deadline: ✅  Cleared: ✅" in summary
 
@@ -838,7 +846,7 @@ async def _arm(
     last_notice_hours: int = 24,
 ) -> None:
     """Arm *round_ids* as approval arms them, with the production `schedule_*` writers, the check-in
-    against the wall clock, by which the rounds are placed."""
+    against `NOW`, by which the rounds are placed."""
     season_service = SeasonService(db_path)
     for round_id in round_ids:
         rnd = await season_service.get_round(round_id)
@@ -853,7 +861,7 @@ async def _arm(
                 notice_days=5,
                 last_notice_hours=last_notice_hours,
                 deadline_hours=2,
-                now=datetime.now(timezone.utc),
+                now=NOW,
             )
 
 
@@ -887,7 +895,7 @@ async def test_the_review_marks_every_queued_job_as_queued(tmp_path, paused_sche
     """Every step of a season armed as approval arms it has its job queued, and reads ⏳."""
     db_path = await _season_armed_as_approval_arms_it(tmp_path, paused_scheduler)
 
-    summary = await build_review_summary(db_path, paused_scheduler)
+    summary = await build_review_summary(db_path, paused_scheduler, now=NOW)
 
     check_in = "Results: ⏳  |  RSVP: ⏳  Last: ⏳  Deadline: ⏳  Cleared: ⏳"
     assert _round_row(summary, 1).endswith(f"P1: ⏳  P2: ⏳  P3: ⏳  Cleanup: ⏳  |  {check_in}")
@@ -922,7 +930,7 @@ async def test_a_job_taken_from_the_store_reads_as_missing(
     db_path = await _season_armed_as_approval_arms_it(tmp_path, paused_scheduler)
     paused_scheduler.cancel_round(round_id, only=frozenset({event_type}))
 
-    row = _round_row(await build_review_summary(db_path, paused_scheduler), round_id)
+    row = _round_row(await build_review_summary(db_path, paused_scheduler, now=NOW), round_id)
 
     assert f"{cell}: ⚠️" in row
     assert row.count("⚠️") == 1, row
@@ -936,7 +944,7 @@ async def test_the_review_shows_no_weather_step_while_weather_is_off(tmp_path) -
     await run_migrations(db_path)
     await _seed(db_path, [{"track_name": "Monaco"}, {"format": "MYSTERY", "track_name": None}])
 
-    summary = await build_review_summary(db_path)
+    summary = await build_review_summary(db_path, now=NOW)
 
     assert _round_row(summary, 1) and _round_row(summary, 2)
     for cell in ("P1:", "P2:", "P3:", "Cleanup:", "Notice:"):
@@ -975,7 +983,7 @@ async def test_a_mystery_round_s_queued_notice_is_advanced_as_the_notice(
 ) -> None:
     db_path = await _mystery_round_armed(tmp_path, paused_scheduler, notice_posted=False)
 
-    result = await get_next_pending_phase(db_path, paused_scheduler)
+    result = await get_next_pending_phase(db_path, paused_scheduler, now=NOW)
 
     assert result is not None
     assert result["phase_number"] == 0
@@ -992,7 +1000,7 @@ async def test_a_mystery_round_s_notice_job_left_after_its_notice_is_stale(
     db_path = await _mystery_round_armed(tmp_path, paused_scheduler, notice_posted=True)
     paused_scheduler.cancel_round(1, only=frozenset({"weather_p2", "weather_p3"}))
 
-    result = await get_next_pending_phase(db_path, paused_scheduler)
+    result = await get_next_pending_phase(db_path, paused_scheduler, now=NOW)
 
     assert result is not None
     assert result["phase_number"] == 4
@@ -1006,7 +1014,7 @@ async def test_a_mystery_round_s_phase_2_and_3_jobs_are_passed_over(
     db_path = await _mystery_round_armed(tmp_path, paused_scheduler, notice_posted=True)
     paused_scheduler.cancel_round(1, only=frozenset({"weather_p1"}))
 
-    result = await get_next_pending_phase(db_path, paused_scheduler)
+    result = await get_next_pending_phase(db_path, paused_scheduler, now=NOW)
 
     assert result is not None
     assert result["phase_number"] == 4
@@ -1022,7 +1030,7 @@ async def test_a_mystery_round_s_phase_2_and_3_jobs_are_passed_over(
 async def _last_notice_switched_off(db_path: str) -> None:
     """The check-in on with its last notice set to 0, and round 1's call and distribution posted
     — so no last notice, the one a live season would never have sent."""
-    fortnight = (datetime.now(timezone.utc) + timedelta(days=14)).strftime("%Y-%m-%dT%H:%M:%S")
+    fortnight = (NOW + timedelta(days=14)).strftime("%Y-%m-%dT%H:%M:%S")
     await run_migrations(db_path)
     await _seed(db_path, [{"track_name": "Monaco"}, {"track_name": "Spa", "scheduled_at": fortnight}])
     async with get_connection(db_path) as db:
@@ -1043,7 +1051,7 @@ async def test_a_switched_off_last_notice_is_never_offered(tmp_path, paused_sche
     await _last_notice_switched_off(db_path)
     await _arm(db_path, paused_scheduler, [2], weather=False, last_notice_hours=0)
 
-    result = await get_next_pending_phase(db_path, paused_scheduler)
+    result = await get_next_pending_phase(db_path, paused_scheduler, now=NOW)
 
     assert result is not None
     assert (result["round_id"], result["phase_number"]) == (2, 5)
@@ -1058,7 +1066,7 @@ async def test_the_review_leaves_out_a_switched_off_last_notice(tmp_path) -> Non
         await db.execute("UPDATE rounds SET checkin_cleared = 1 WHERE id = 2")
         await db.commit()
 
-    summary = await build_review_summary(db_path)
+    summary = await build_review_summary(db_path, now=NOW)
 
     assert "Last:" not in summary, summary
     assert _round_row(summary, 1).endswith("RSVP: ✅  Deadline: ✅  Cleared: ⏳")
@@ -1077,7 +1085,7 @@ async def test_no_mystery_notice_is_offered_while_weather_is_off(tmp_path) -> No
     await run_migrations(db_path)
     await _seed(db_path, [{"format": "MYSTERY", "track_name": None}])
 
-    assert await get_next_pending_phase(db_path, _StubScheduler()) is None
+    assert await get_next_pending_phase(db_path, _StubScheduler(), now=NOW) is None
 
 
 
@@ -1096,7 +1104,7 @@ async def test_a_weather_step_in_hand_on_the_queue_is_not_offered_again(tmp_path
     db_path = os.path.join(tmp_path, "test.db")
     await run_migrations(db_path)
     await _seed_with_weather(db_path, [{"track_name": "Monza"}])
-    first = await get_next_pending_phase(db_path, _StubScheduler())
+    first = await get_next_pending_phase(db_path, _StubScheduler(), now=NOW)
     assert first is not None
     assert (first["round_id"], first["phase_number"]) == (1, 1)
 
@@ -1110,7 +1118,7 @@ async def test_a_weather_step_in_hand_on_the_queue_is_not_offered_again(tmp_path
         )
         await db.commit()
 
-    result = await get_next_pending_phase(db_path, _StubScheduler())
+    result = await get_next_pending_phase(db_path, _StubScheduler(), now=NOW)
     assert result is None or (result["round_id"], result["phase_number"]) != (1, 1)
 
 
@@ -1150,7 +1158,7 @@ async def test_a_check_in_step_in_hand_on_the_queue_is_not_offered_again(
         if phase == 9:
             await db.execute("UPDATE rounds SET status = 'FINAL' WHERE id = 1")
         await db.commit()
-    first = await get_next_pending_phase(db_path, _StubScheduler())
+    first = await get_next_pending_phase(db_path, _StubScheduler(), now=NOW)
     assert first is not None and (first["round_id"], first["phase_number"]) == (1, phase)
 
     async with get_connection(db_path) as db:
@@ -1161,7 +1169,7 @@ async def test_a_check_in_step_in_hand_on_the_queue_is_not_offered_again(
         )
         await db.commit()
 
-    again = await get_next_pending_phase(db_path, _StubScheduler())
+    again = await get_next_pending_phase(db_path, _StubScheduler(), now=NOW)
     assert again is None or (again["round_id"], again["phase_number"]) != (1, phase)
 
 
@@ -1176,7 +1184,7 @@ async def test_a_raced_round_s_weather_steps_are_passed_over(tmp_path, scheduler
     drops a forecast for a race already run (A25), so advance offers round 2's Phase 1, and not
     round 1's: whether round 1's Phase 1 job is still in the store, the store is empty, or no
     scheduler is given."""
-    raced = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
+    raced = (NOW - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
     db_path = str(tmp_path / "raced.db")
     await run_migrations(db_path)
     await _seed_with_weather(db_path, [
@@ -1189,7 +1197,7 @@ async def test_a_raced_round_s_weather_steps_are_passed_over(tmp_path, scheduler
         "no scheduler": None,
     }[scheduler]
 
-    result = await get_next_pending_phase(db_path, stub)
+    result = await get_next_pending_phase(db_path, stub, now=NOW)
 
     assert result is not None
     assert (result["round_id"], result["phase_number"]) == (2, 1)
@@ -1199,7 +1207,7 @@ async def test_a_raced_round_s_result_submission_is_still_offered(tmp_path) -> N
     """Weather and results are on. Round 1 (Bahrain) was raced an hour ago with none of its
     phases done and no results submitted: advance passes over its weather steps alone, and
     offers its result submission, of kind `results`."""
-    raced = (datetime.now(timezone.utc) - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
+    raced = (NOW - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
     db_path = str(tmp_path / "raced_results.db")
     await run_migrations(db_path)
     await _seed_with_weather(db_path, [
@@ -1210,7 +1218,7 @@ async def test_a_raced_round_s_result_submission_is_still_offered(tmp_path) -> N
         await db.execute("INSERT INTO results_module_config (id, module_enabled) VALUES (1, 1)")
         await db.commit()
 
-    result = await get_next_pending_phase(db_path, _StubScheduler())
+    result = await get_next_pending_phase(db_path, _StubScheduler(), now=NOW)
 
     assert result is not None
     assert (result["round_id"], result["phase_number"], result["kind"]) == (1, 4, "results")
