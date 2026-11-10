@@ -609,12 +609,10 @@ async def approve_season(
     # and attendance channels among them — is judged at Gate S above, by the helper the
     # review withholds its button on.
 
-    # ── Gate 2: what the modules refuse the approval on (FR-013, FR-008) ───
+    # ── Gate 2: the first refusal a module gives the approval ─────────────
     #
-    # Results' points configurations: the first refusal, the prerequisites (FR-013) before the
-    # monotonic ordering (FR-008), read through the same helpers `/season placements-review`
-    # reports from, so the report a manager was given and the refusal they then meet cannot
-    # disagree.
+    # Read through the hook `/season placements-review` reports from, so the report a manager
+    # was given and the refusal they then meet cannot disagree.
     refusals = await read_refusals(confirmation_refused, season.id, Confirmation.APPROVAL)
     if refusals:
         await refuse(

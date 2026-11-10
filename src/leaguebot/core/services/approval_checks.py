@@ -564,7 +564,7 @@ async def configuration_faults(
         for problem in await team_name_problems(team_service, None)
     ]
 
-    # ── The modules' own refusals: results' points configurations ─────────
+    # ── What the modules refuse the configuration on ───────────────────────
     faults += [
         refusal.message
         for refusal in await read_refusals(
