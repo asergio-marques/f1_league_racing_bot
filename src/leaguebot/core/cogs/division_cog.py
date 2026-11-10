@@ -2,7 +2,7 @@
 
 Commands:
   /division add              — add a division to pending setup
-  /division duplicate        — copy a division with datetime offset (setup only)
+  /division duplicate        — copy a division with datetime offset, in placements
   /division delete           — remove a division from pending setup
   /division rename           — rename a division while the season is in placements
   /division amend            — amend a division's name, tier or role while the season is in placements
