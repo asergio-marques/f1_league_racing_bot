@@ -23,12 +23,11 @@ league's server holds every channel above, the review's channel (610) among them
 and the three drivers; `absent`, `fetch_fails`, `grant_fails` and `roles_gone` make Discord answer
 otherwise.
 
-Two of the press's gates read the season through helpers whose own tests stand elsewhere, and are
-answered "nothing wrong" here unless a test says otherwise: the team names and the lineups
-(`league.cog._team_name_problems`, `league.cog._lineup_problems`); so is the image module's
-configuration (`_image_configuration_faults`), whose rasteriser is judged again when the approval
-runs, through the image module's drawing the builder hands it, which reads `converter_available`
-when asked; `season_league` points that at `league.rasteriser_on` when handed *monkeypatch*.
+The press's gates read the league as it stands, its team names, lineups and image configuration
+among them, and find nothing wrong with it. The image module's rasteriser is judged again when the
+approval runs, through the image module's drawing the builder hands it, which reads
+`converter_available` when asked; `season_league` points that at `league.rasteriser_on` when handed
+*monkeypatch*.
 
 `post_review` posts a review's ✅ Approve prompt, with the season's fingerprint, in the review's
 channel; `press_approve` presses it, answering the backup question under test mode with *backup*.
@@ -266,7 +265,6 @@ class SeasonLeague:
         bot.image_config_service.get_toggles = AsyncMock(return_value={})
         bot.image_validity_service.colour_shortfall = AsyncMock(return_value={})
         self.cog = SeasonCog(bot)
-        self._hold_setup(self.cog)
         bot.get_cog = MagicMock(side_effect=lambda name: self.cog if name == "SeasonCog" else None)
         league_queue(bot, db_path, now=self.clock)
 
@@ -358,15 +356,6 @@ class SeasonLeague:
             row = await (await db.execute("SELECT * FROM attendance_config WHERE id = 1")).fetchone()
         return SimpleNamespace(**dict(row))
 
-    @staticmethod
-    def _hold_setup(cog: Any) -> None:
-        """The cog's checks of team names, lineups and image configuration, stubbed to find
-        nothing. The season's setup is the database's, read whenever a command asks for it (#283),
-        so nothing of it is put on the cog."""
-        cog._team_name_problems = AsyncMock(return_value=[])
-        cog._lineup_problems = AsyncMock(return_value=[])
-        cog._image_configuration_faults = AsyncMock(return_value=[])
-
     # ── What the test reads and changes ─────────────────────────────────────────
 
     def channel(self, cid: int) -> Any:
@@ -424,8 +413,6 @@ class SeasonLeague:
         await recover_expired_review_prompts(
             self.bot, approve_view=_approve_view_for(self.bot), queue=self.bot.change_queue)
         self.cog = SeasonCog(self.bot)
-        if (await self.season())["status"] == "SETUP":
-            self._hold_setup(self.cog)
         await restart_queue(self.bot)
 
 
@@ -614,7 +601,7 @@ async def press_approve(league: SeasonLeague, review: Review | None = None, *,
     question is answered *backup* ("save", "skip" or "cancel"; "skip" where None), each answer
     recorded in `league.backup_answers` with how many changes had been asked by then.
     """
-    from leaguebot.core.cogs.season_cog import _BackupBeforeApprovalView
+    from leaguebot.core.utils.league_server import LeagueView
 
     review = review or await post_review(league)
     press = member_interaction(league.bot, user=user or tier_member("admin", member_id=ADMIN_ID))
@@ -629,7 +616,8 @@ async def press_approve(league: SeasonLeague, review: Review | None = None, *,
         league.backup_answers.append((view.answer, len(await change_rows(league.db_path))))
         return False
 
-    with patch.object(_BackupBeforeApprovalView, "wait", _answer):
+    # The backup question is the one view the press waits on.
+    with patch.object(LeagueView, "wait", _answer):
         try:
             await review.view.approve.callback(press)
         except Exception as error:  # noqa: BLE001 — as the bot's error handler would catch it
