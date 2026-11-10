@@ -1744,10 +1744,6 @@ async def build(settings: Settings) -> LeagueBot:
         f", made {made.isoformat()}" if made is not None else "",
     )
 
-    # Registers the hub's About option, core's one, before start-up recovers the hub and
-    # routes the panel's buttons (#258).
-    import leaguebot.core.services.about_service  # noqa: F401
-
     # Services are attached to bot for cog access
     from leaguebot.core.services.driver_service import DriverService
     from leaguebot.core.services.team_service import TeamService
