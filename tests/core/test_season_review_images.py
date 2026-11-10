@@ -23,6 +23,15 @@ from tests.support.setup_reads import hold_setup
 
 SRC = Path(__file__).resolve().parents[2] / "src"
 
+#: The approval, which the review's Approve button hands a press on to, is a core service.
+WORKFLOWS = SRC / "leaguebot" / "core" / "services" / "season_review_workflows.py"
+
+#: The approval still runs as `SeasonCog._do_approve`, its gates and backup question the cog's.
+_APPROVAL_ON_THE_COG = (
+    "#283: the approval is not yet season_review_workflows.approve_season, its gates "
+    "approval_checks'"
+)
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -78,14 +87,16 @@ def test_the_approval_windows_are_read_once_for_the_whole_season():
 # already in hand.
 
 
+@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 def test_the_approval_draws_nothing_itself():
     """The render pass is gone, and must not creep back in."""
-    approve = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "_do_approve", code_only=True)
+    approve = _function_source(WORKFLOWS, "approve_season", code_only=True)
 
     for drawn in ("_undrawable_graphics", "render_for_command", "render_lineup"):
         assert drawn not in approve, f"{drawn} draws at approval; the review does that"
 
 
+@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 def test_approval_refuses_before_it_commits_anything():
     """The fingerprint stands where the render stood: ahead of everything committed. Who is
     pressing is settled first, so a press by somebody who may not approve costs no query."""
@@ -95,16 +106,17 @@ def test_approval_refuses_before_it_commits_anything():
     assert source.index("_may_approve") < gate_at, (
         "who is pressing is settled before what they are pressing on"
     )
-    assert gate_at < source.index("_do_approve"), (
+    assert gate_at < source.index("approve_season("), (
         "the season must be proven unchanged before it is approved"
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 def test_a_changed_season_approves_nothing():
     """The refusal returns rather than merely reporting."""
     source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "approve")
 
-    branch = source[source.index("if changed:") : source.index("await self._cog._do_approve")]
+    branch = source[source.index("if changed:") : source.index("approve_season(")]
     assert "return" in branch
     assert "Nothing has been approved" in branch
 
@@ -112,10 +124,11 @@ def test_a_changed_season_approves_nothing():
     # to pay for a rasterisation it was never going to keep (settled 2026-09-07).
 
 
+@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 def test_the_review_and_the_approval_read_the_same_evaluation():
     """Both must refuse on the same fault, or a manager can commit past the review."""
     review = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "season_review")
-    approve = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "_do_approve")
+    approve = _function_source(WORKFLOWS, "approve_season")
 
     assert "approval_blockers" in review
     # The review still withholds its button on a graphic that will not draw. The approval
@@ -131,8 +144,8 @@ def test_the_review_and_the_approval_read_the_same_evaluation():
     # The image configuration blocks on both surfaces too, and through one helper so that
     # the two cannot disagree about whether a season may be approved (#396). The review
     # reads the portrait settings through it.
-    assert "_image_configuration_faults" in review
-    assert "_image_configuration_faults" in approve
+    assert "approval_checks.image_configuration_faults" in review
+    assert "approval_checks.image_configuration_faults" in approve
 
 
 # ── The image section of both reviews ─────────────────────────────────────
@@ -179,11 +192,12 @@ async def test_the_review_section_survives_a_configuration_it_cannot_read():
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 def test_the_approval_gate_returns_rather_than_merely_reporting():
     """The portrait settings refuse through the image configuration gate (#396), whose
     refusal must stop the approval rather than report and carry on, before the approval is
     asked of the change queue (#439). Driven, not read, in `test_do_approve_gates.py`."""
-    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "_do_approve")
+    source = _function_source(WORKFLOWS, "approve_season")
 
     branch = source[source.index("if image_faults:"):]
     branch = branch[: branch.index("change_queue.ask")]
@@ -230,12 +244,13 @@ async def _standing_placements(tmp_path):
     return await _standing(tmp_path, "/season placements-review")
 
 
-def _view_on(env):
-    """Alex's review's Approve button, built as the question's view is, on a cog whose approval
-    (`_do_approve`) is recorded and goes through."""
+def _view_on(env, monkeypatch):
+    """Alex's review's Approve button, built as the question's view is, whose approval
+    (`season_review_workflows.approve_season`) is stood in, recorded and goes through. Returns
+    the view and the stand-ins, the approval's under `approve_season`."""
     from tests.core.test_review_outcomes_recorded import _view_on as view_on
 
-    return view_on(env, _ApproveView, "_do_approve")
+    return view_on(env, _ApproveView, "approve_season", monkeypatch)
 
 
 def _press(env, user_id: int = REVIEWER, *, league_admin: bool = False):
@@ -264,19 +279,21 @@ async def _take_downs(env) -> list[dict]:
     return await take_downs(env)
 
 
+@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 async def test_a_league_admin_may_approve_somebody_elses_review(tmp_path, monkeypatch):
     """Alex's placements review stands, the season unchanged. Sam, who holds the league's admin
     role but did not run the review, presses Approve: the approval is worked."""
     env = await _standing_placements(tmp_path)
     await _season_unchanged(env, monkeypatch)
-    view, cog = _view_on(env)
+    view, workflows = _view_on(env, monkeypatch)
 
     await _ApproveView.approve(view, _press(env, 99, league_admin=True), MagicMock())
 
-    cog._do_approve.assert_awaited_once()
+    workflows.approve_season.assert_awaited_once()
 
 
-async def test_nobody_but_the_reviewer_may_approve_while_no_admin_role_is_set(tmp_path):
+@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
+async def test_nobody_but_the_reviewer_may_approve_while_no_admin_role_is_set(tmp_path, monkeypatch):
     """A league with no admin role set (one that predates it, or deleted it). Sam, holding the
     role the league once used and so Discord's old way in, presses Approve on Alex's review: he
     is refused, nothing is approved, and no take-down is asked."""
@@ -285,12 +302,12 @@ async def test_nobody_but_the_reviewer_may_approve_while_no_admin_role_is_set(tm
     env = await _standing_placements(tmp_path)
     config = await env.bot.config_service.get_server_config(7)
     config.league_admin_role_id = None
-    view, cog = _view_on(env)
+    view, workflows = _view_on(env, monkeypatch)
     interaction = _press(env, 99, league_admin=True)
 
     await _ApproveView.approve(view, interaction, MagicMock())
 
-    cog._do_approve.assert_not_awaited()
+    workflows.approve_season.assert_not_awaited()
     assert "Nothing has been approved" in acknowledgement(interaction)
     assert await _take_downs(env) == []
 
@@ -332,8 +349,8 @@ async def test_a_report_message_already_gone_does_not_stop_the_rest(tmp_path):
 # approval's own gates, or cancelled at the test-mode backup question, leaves the review and its
 # button standing, to be pressed again within its five minutes, as a press that fails on a fault
 # does. A press whose approval goes through asks the queue to take the review down, ahead of the
-# approval's work, whatever then becomes of it (core :288). These drive the real `_do_approve`
-# behind the button, so that what the helper tells the view is what is tested, not what a double
+# approval's work, whatever then becomes of it (core :288). These drive the real approval,
+# `season_review_workflows.approve_season`, behind the button, so that what the helper tells the view is what is tested, not what a double
 # says. The review is read from its row: its question Q (999) posted a moment ago in channel 111,
 # its report R (900–902), the evidence its report was computed from matching the season now.
 
@@ -343,9 +360,11 @@ GATED_REPORT = (900, 901, 902)
 
 async def _gated_view(tmp_path, monkeypatch, *, round_in_days: float = 30.0,
                       test_mode: bool = False):
-    """A posted review whose button reaches the real `_do_approve`, its prompt recorded in a
-    migrated database. Every gate answers "nothing wrong" but the date of its one round, which
-    *round_in_days* places, and every module is off. The queue's ask answers with a change's id."""
+    """A posted review whose button reaches the real `season_review_workflows.approve_season`,
+    its prompt recorded in a migrated database. Every gate answers "nothing wrong" but the date
+    of its one round, which *round_in_days* places, and every module is off; the gates stood in
+    are `approval_checks`'. The queue's ask answers with a change's id, and its clock is the
+    host's."""
     import json
     from datetime import datetime, timedelta, timezone
     from types import SimpleNamespace
@@ -355,6 +374,7 @@ async def _gated_view(tmp_path, monkeypatch, *, round_in_days: float = 30.0,
     from leaguebot.core.models.round import Round, RoundFormat
     from leaguebot.core.models.season import SeasonStage
     from leaguebot.core.models.server_config import ServerConfig
+    from leaguebot.core.services import approval_checks
     from leaguebot.core.services import season_fingerprint_service as sfs
     from tests.support.review_prompts import store_review_prompt
 
@@ -380,6 +400,7 @@ async def _gated_view(tmp_path, monkeypatch, *, round_in_days: float = 30.0,
     bot.db_path = db_path
     bot.change_queue.ask = AsyncMock(return_value=1)
     bot.change_queue.ask_after = AsyncMock(return_value=1)
+    bot.change_queue.now = MagicMock(side_effect=lambda: datetime.now(timezone.utc))
     bot.output_router.post_log = AsyncMock()
     bot.config_service.get_server_config = AsyncMock(
         return_value=ServerConfig(
@@ -397,8 +418,9 @@ async def _gated_view(tmp_path, monkeypatch, *, round_in_days: float = 30.0,
         divisions=False,
     )
     bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
-    cog._season_has_divisions = AsyncMock(return_value=True)
-    cog._placement_confirmation_faults = AsyncMock(return_value=([], []))
+    monkeypatch.setattr(approval_checks, "season_has_divisions", AsyncMock(return_value=True))
+    monkeypatch.setattr(approval_checks, "placement_confirmation_faults",
+                        AsyncMock(return_value=([], [])))
     bot.season_service.validate_division_tiers = AsyncMock()
     bot.season_service.get_divisions = AsyncMock(
         return_value=[SimpleNamespace(id=1, name="Premier", tier=1)]
@@ -420,8 +442,8 @@ async def _gated_view(tmp_path, monkeypatch, *, round_in_days: float = 30.0,
 
     # No module's window counts: a windows hook nothing is signed up to.
     bot.round_windows_read = AwaitedHook()
-    cog._team_name_problems = AsyncMock(return_value=[])
-    cog._lineup_problems = AsyncMock(return_value=[])
+    monkeypatch.setattr(approval_checks, "team_name_problems", AsyncMock(return_value=[]))
+    monkeypatch.setattr(approval_checks, "lineup_problems", AsyncMock(return_value=[]))
 
     question = MagicMock(id=GATED_QUESTION, delete=AsyncMock())
     question.channel.id = 111
@@ -485,6 +507,7 @@ def _assert_standing(cog, question) -> None:
     assert _asked(cog, "season.review.take_down") == []
 
 
+@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 async def test_a_press_refused_by_a_gate_leaves_the_review_standing(tmp_path, monkeypatch):
     """The review's one round is dated 90 days ago, so Alex's Approve is refused at the press,
     told its round's date has already gone by. Nothing is asked of the queue, the review is left
@@ -509,19 +532,20 @@ async def test_a_press_refused_by_a_gate_leaves_the_review_standing(tmp_path, mo
     assert await _prompt_rows(cog) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 async def test_a_press_cancelled_at_the_backup_question_leaves_the_review_standing(
     tmp_path, monkeypatch
 ):
     """Under test mode Alex presses Approve and cancels at the backup question: he is told
     nothing has been approved or saved, nothing is asked of the queue, and the review stands with
     its row, to be pressed again."""
-    from leaguebot.core.cogs.season_cog import _BackupBeforeApprovalView
+    from leaguebot.core.services.season_review_workflows import BackupBeforeApprovalView
 
     async def _cancelled(self):
         self.answer = "cancel"
         return True
 
-    monkeypatch.setattr(_BackupBeforeApprovalView, "wait", _cancelled)
+    monkeypatch.setattr(BackupBeforeApprovalView, "wait", _cancelled)
     view, cog, question = await _gated_view(tmp_path, monkeypatch, test_mode=True)
     interaction = _gated_press(question)
 
@@ -533,6 +557,7 @@ async def test_a_press_cancelled_at_the_backup_question_leaves_the_review_standi
     assert await _prompt_rows(cog) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 async def test_a_review_lapsed_at_the_backup_question_is_still_taken_down(
     tmp_path, monkeypatch
 ):
@@ -543,7 +568,7 @@ async def test_a_review_lapsed_at_the_backup_question_is_still_taken_down(
     deleting and posting nothing itself."""
     from datetime import datetime, timedelta, timezone
 
-    from leaguebot.core.cogs.season_cog import _BackupBeforeApprovalView
+    from leaguebot.core.services.season_review_workflows import BackupBeforeApprovalView
     from leaguebot.core.db.database import get_connection
 
     holder = {}
@@ -558,7 +583,7 @@ async def test_a_review_lapsed_at_the_backup_question_is_still_taken_down(
         self.answer = None
         return True
 
-    monkeypatch.setattr(_BackupBeforeApprovalView, "wait", _unanswered)
+    monkeypatch.setattr(BackupBeforeApprovalView, "wait", _unanswered)
     view, cog, question = await _gated_view(tmp_path, monkeypatch, test_mode=True)
     holder["db_path"] = cog.bot.db_path
     interaction = _gated_press(question)
@@ -644,6 +669,7 @@ async def _kinds_queued(cog) -> list[str]:
     return [row["kind"] for row in await change_rows(cog.bot.db_path)]
 
 
+@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 async def test_a_press_the_queue_refuses_at_once_leaves_the_review_standing(tmp_path, monkeypatch):
     """Every gate at the press passes, so Alex's approval goes through the button to the queue,
     whose own check refuses it at once (a round's date gone by while the press was worked). That
@@ -674,6 +700,7 @@ async def test_a_press_the_queue_refuses_at_once_leaves_the_review_standing(tmp_
     question.delete.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 async def test_a_press_the_queue_refuses_for_a_changed_season_ends_the_review_as_expired(
     tmp_path, monkeypatch
 ):
@@ -721,6 +748,7 @@ async def test_a_press_the_queue_refuses_for_a_changed_season_ends_the_review_as
     question.channel.send.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_APPROVAL_ON_THE_COG)
 async def test_a_press_asked_of_the_queue_takes_the_review_down(tmp_path, monkeypatch):
     """The one press that ends the review: every gate passed, Alex's approval is asked of the
     change queue, and the review's take-down is asked before it, ending confirmed and naming Q
