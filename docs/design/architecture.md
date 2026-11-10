@@ -172,12 +172,16 @@ read or to keep, a line to write, a step to plan or to register, a refusal to gi
 no module and no module's operation, so a module's part of the moment is the module's own code, and
 a module added later signs up without core changing. A hook keyed by a kind takes one function for
 each key instead, as a kind of timed job takes its one handler (see "Timed work and restarts").
-**A module's switch read is a keyed hook:** one reader for each module, which the module's own
-work also calls, and core asks for it by the module's name (`is_<module>_enabled`), so a module
-added later adds its name to core's list as well as signing up. A module that never signed up is
-a fault in the bot's assembly, and asking for it raises `LookupError` rather than reading as
-off. A link the dependency table allows between two modules is not one of core's hooks: there the
-module depended on may name what it asks of its dependant, as results does of attendance (below).
+**A module's switch read is a keyed hook:** one reader for each module, keyed by the module's
+name, which the module's own work also calls; core asks for it by that name (`is_<module>_enabled`,
+or `is_enabled_on` on a connection a save holds), because core names the modules: it shows which
+are on in the reviews and keeps the table of what each depends on (the core specification's
+"Modules"). So a module added later adds its `is_<module>_enabled` to core's module service as
+well as signing up; core knows its name for its switch and nothing more. A module that never
+signed up is a fault in the bot's assembly, and asking for it raises `LookupError`, which no reader
+that stands aside takes for an answer. A link the dependency table allows between two modules is not
+one of core's hooks: there the module depended on may name what it asks of its dependant, as results
+does of attendance (below).
 
 *Rejected:* a hook as one object of named operations the builder fills in, one for each module's
 part, which leaves core knowing what each module does at that moment. *Rejected:* only writing the
@@ -186,7 +190,8 @@ registering a module object for each module, more machinery than a handful of mo
 
 Each module still checks its own on/off switch where its own work starts.
 `tests/attendance/test_attendance_module_gate.py` pins that for attendance. A hook does not replace
-the switch. It only means core no longer needs to know the module is there.
+the switch. It only means core no longer needs to know what the module does: for its switch, core
+knows the module's name, and nothing else.
 
 The image module is used by the others to draw their posts, and a module that finds it turned off
 posts text instead, as the image module specification's "Configuration" section (the
@@ -1380,5 +1385,7 @@ How the checks run, and how to work with the lists of today's breaches they hold
 under "Testing".
 
 Not every rule has its check yet. The rules about how things are built (the hooks, the one builder,
-start-up, the sweep) cannot all be checked by reading the code, and the rule that a refusal is
-raised and caught by name ("Errors and failures") has no check yet.
+start-up, the sweep) cannot all be checked by reading the code; the rule that a refusal is raised
+and caught by name ("Errors and failures") has no check yet; and the check of a table read by its
+owner alone reads tables, not columns, so core reading a module's own column on a core table is not
+yet counted.
