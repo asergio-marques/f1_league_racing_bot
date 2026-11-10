@@ -104,30 +104,12 @@ def sign_up_division_channel_faults_read(bot: Any) -> None:
 
 def sign_up_division_lines_read(bot: Any) -> None:
     """Give *bot* the hook the placements review gathers each division's module lines through
-    (`division_lines_read`), each module signed up as the builder signs them, in the order the
-    review lays the lines out: results' three channels, handed *bot*'s database, then
-    attendance's two, handed its service and the module service; then each is handed the season
-    and its divisions. What each is handed is taken off *bot* as it signs up, as the builder's
-    partials take it; each module's function is looked up as the hook is called, so a stand-in
-    bot carries the hook whether or not the review asks it yet. It mirrors the
-    builder's `_sign_up_to_division_lines_read`."""
-    from leaguebot.core.utils.hooks import AwaitedHook
+    (`division_lines_read`), made by the builder's own `_sign_up_to_division_lines_read`, so that
+    the modules signed up to it, and the order the review lays their lines out in, are the bot's
+    and not a copy."""
+    from leaguebot.__main__ import _sign_up_to_division_lines_read
 
-    db_path, service, modules = bot.db_path, bot.attendance_service, bot.module_service
-
-    async def results_lines(*args: Any, **kwargs: Any) -> Any:
-        from leaguebot.results.services import division_channels
-
-        return await division_channels.division_lines(db_path, *args, **kwargs)
-
-    async def attendance_lines(*args: Any, **kwargs: Any) -> Any:
-        from leaguebot.attendance.services import attendance_service
-
-        return await attendance_service.division_lines(service, modules, *args, **kwargs)
-
-    bot.division_lines_read = AwaitedHook()
-    bot.division_lines_read.subscribe(results_lines)
-    bot.division_lines_read.subscribe(attendance_lines)
+    _sign_up_to_division_lines_read(bot)
 
 
 def _services(target: Any, bot: Any, given: dict[str, Any]) -> dict[str, Any]:
