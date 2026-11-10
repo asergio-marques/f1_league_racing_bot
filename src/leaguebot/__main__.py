@@ -497,27 +497,37 @@ def _review_drawing(bot: LeagueBot) -> "Callable[[Mapping[str, Any]], Path]":
 
 
 def _approve_view_for(bot: LeagueBot) -> "Callable[[dict[str, Any]], discord.ui.View]":
-    """The factory of a review question's view, handed to `season.review.post`: the season cog's
-    view of the review the payload names (its ``view``: ``approve``, ``mid_season`` or
-    ``configuration``), holding the evidence the report was computed from."""
-    from leaguebot.core.cogs.season_cog import (
-        SeasonCog,
-        _ApproveView,
-        _ConfirmConfigurationView,
-        _ConfirmMidSeasonPlacementsView,
+    """The factory of a review question's view, handed to `season.review.post`: the view of the
+    review the payload names (its ``view``: ``approve``, ``mid_season`` or ``configuration``),
+    handed the services it reads as the bot carries them and the queue's clock. It finds and
+    builds no cog, so a review's buttons are served whether or not the season cog is loaded."""
+    from leaguebot.core.services.season_review_views import (
+        ApproveView,
+        ConfirmConfigurationView,
+        ConfirmMidSeasonPlacementsView,
     )
     families = {
-        "approve": _ApproveView,
-        "mid_season": _ConfirmMidSeasonPlacementsView,
-        "configuration": _ConfirmConfigurationView,
+        "approve": ApproveView,
+        "mid_season": ConfirmMidSeasonPlacementsView,
+        "configuration": ConfirmConfigurationView,
     }
 
     def make(payload: dict[str, Any]) -> discord.ui.View:
-        # The season cog is loaded by the time a review is posted. A restart routes the buttons of
-        # the reviews left standing before it is, and those are served by a cog of the same bot.
-        loaded = bot.get_cog("SeasonCog")
-        cog = loaded if isinstance(loaded, SeasonCog) else SeasonCog(bot)
-        return families[str(payload.get("view", "approve"))](cog, int(payload["reviewer_id"]))
+        return families[str(payload.get("view", "approve"))](
+            int(payload["reviewer_id"]),
+            season_service=bot.season_service,
+            module_service=bot.module_service,
+            signup_module_service=bot.signup_module_service,
+            config_service=bot.config_service,
+            team_service=bot.team_service,
+            db_path=bot.db_path,
+            image_drawing=bot.image_drawing,
+            change_queue=bot.change_queue,
+            scheduler_service=bot.scheduler_service,
+            output_router=bot.output_router,
+            round_windows_read=bot.round_windows_read,
+            now=bot.change_queue.now,
+        )
 
     return make
 

@@ -630,15 +630,18 @@ async def _on_a_real_queue(tmp_path, monkeypatch, approval):
     with *approval* as the season's approval and the real take-down of a season review."""
     from datetime import datetime, timezone
 
+    from leaguebot.__main__ import _approve_view_for
     from leaguebot.core.services.season_review_changes import season_review_take_down_change
     from tests.support.change_queue import attach_queue, league_double, seed_server
 
-    view, cog, question = await _gated_view(tmp_path, monkeypatch)
+    _, cog, question = await _gated_view(tmp_path, monkeypatch)
     queued = league_double(cog.bot.db_path)
     await seed_server(cog.bot.db_path)
     attach_queue(queued, cog.bot.db_path, now=datetime.now(timezone.utc),
                  types=[approval, season_review_take_down_change()])
     cog.bot.change_queue = queued.change_queue
+    # The view holds the queue it is handed, so it is made again on the real one.
+    view = _approve_view_for(cog.bot)({"view": "approve", "reviewer_id": REVIEWER})
     return view, cog, question, queued
 
 

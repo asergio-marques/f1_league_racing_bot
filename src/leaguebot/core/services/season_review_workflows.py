@@ -505,7 +505,7 @@ async def approve_season(
     Returns whether the approval was asked of the queue and saved. False where a gate
     refused the press, the backup question was cancelled or went unanswered, or the queue's
     own check refused the approval: the button's review then stands
-    (`_ApproveView.approve`), and nothing has been approved.
+    (`ApproveView.approve`), and nothing has been approved.
 
     *deadline* is when the review stops being approvable, carried in from the view so
     the backup question below can be given what is left of that window rather than a

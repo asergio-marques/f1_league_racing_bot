@@ -421,7 +421,6 @@ async def test_each_standing_review_is_routed_under_its_own_button(league, revie
         assert ids == [custom_id]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the view factory imports the season cog's views")
 @pytest.mark.parametrize(("kind", "custom_id"), [
     pytest.param("approve", "season_review:approve", id="approval"),
     pytest.param("mid_season", "season_review:confirm_placements", id="mid-season placements"),

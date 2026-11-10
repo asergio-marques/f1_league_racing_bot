@@ -44,9 +44,6 @@ _COG_WORK = (
     "_approval_windows",
 )
 
-#: The review's buttons are still the season cog's views, each holding a cog.
-_VIEWS_ON_THE_COG = "#283: the review's views are still the season cog's, each holding a cog"
-
 PASSED_DATES = "❌ Season cannot be approved — its calendar holds dates that have already gone by:"
 
 
@@ -66,7 +63,6 @@ async def _configuration(league: Any) -> list[dict[str, Any]]:
     return await _asked(league, CONFIGURATION_CONFIRM_KIND)
 
 
-@pytest.mark.xfail(strict=True, reason=_VIEWS_ON_THE_COG)
 @pytest.mark.parametrize("build, post, asked", [
     pytest.param(season_league, post_review, _approval, id="approval"),
     pytest.param(placing_league, post_mid_season_review, _mid_season, id="mid-season placements"),

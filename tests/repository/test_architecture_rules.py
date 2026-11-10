@@ -2647,9 +2647,6 @@ def _module_lookups_in_core_among(nodes, attributes: frozenset[str]) -> Counter[
 KNOWN_MODULE_LOOKUPS_IN_CORE: dict[tuple[str, str], tuple[int, str]] = {
     ("core/cogs/season_cog.py", "SeasonCog._attendance_review_lines"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog._signup_review_lines"): (3, PASS["core"]),
-    ("core/cogs/season_cog.py", "_ApproveView.approve"): (1, PASS["core"]),
-    ("core/cogs/season_cog.py", "_ConfirmConfigurationView._confirm_configuration"):
-        (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.season_config_review"): (1, PASS["core"]),
     ("core/cogs/season_cog.py", "SeasonCog.season_review"): (2, PASS["core"]),
 }
@@ -2814,6 +2811,8 @@ KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
         (1, PASS["core"]),
     ("core/services/season_review_changes.py", "season_review_post_change.post_question"):
         (1, PASS["core"]),
+    ("core/services/season_review_views.py", "ApproveView._press_worked"): (1, PASS["core"]),
+    ("core/services/season_review_views.py", "ApproveView._refuse_if_expired"): (1, PASS["core"]),
     ("core/services/test_mode_service.py", "build_review_summary"): (1, PASS["core"]),
     ("core/services/test_mode_service.py", "get_next_pending_phase"): (1, PASS["core"]),
     ("core/services/test_mode_service.py", "get_passed_over_steps"): (1, PASS["core"]),
