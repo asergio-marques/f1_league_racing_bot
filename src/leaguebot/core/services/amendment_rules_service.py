@@ -141,7 +141,7 @@ def amendment_changes_nothing(standing: Mapping[str, Any], changes: Mapping[str,
 
     Args:
         standing: The round's present values, by field: its ``track_name``, its ``format`` and its
-                  ``scheduled_at`` (naive datetimes are UTC, as out of the database).
+                  ``scheduled_at`` (an aware moment).
         changes:  ``{field: new value}``, as `judge_amendment` takes it. An empty set asks for
                   nothing to be judged here: it is `judge_amendment`'s to refuse.
 

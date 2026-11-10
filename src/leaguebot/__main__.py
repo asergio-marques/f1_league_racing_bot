@@ -1922,11 +1922,11 @@ async def _recover_missed_phases(bot: LeagueBot) -> None:
 
     Only a round still to be run is recovered (issue #272): never a cancelled round, a round of a
     cancelled division, or a round whose race time has passed. Cancellation is filtered in the
-    query. The race time is judged here, after the timestamp is made aware, because rows written
-    without an offset still exist, and SQL would compare them as text against a timestamp that
-    carries one. It is the race time rather than the round's status that decides, since a round leaves
-    ``NOT_RUN`` only by its result-submission job, and a job that fell due while the bot was down
-    was discarded by the scheduler's misfire grace rather than run.
+    query. The race time is judged here, on the aware moment the one reader hands back, and not in
+    SQL, which would compare the stored text against a timestamp. It is the race time rather
+    than the round's status that decides, since a round leaves ``NOT_RUN`` only by its
+    result-submission job, and a job that fell due while the bot was down was discarded by the
+    scheduler's misfire grace rather than run.
     """
     from leaguebot.core.db.database import get_connection
     from leaguebot.weather.services.forecast_changes import ask_forecast
