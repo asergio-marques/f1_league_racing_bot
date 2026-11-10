@@ -64,7 +64,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 from collections.abc import Awaitable, Callable, Iterable, Mapping
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import aiohttp
@@ -90,7 +90,13 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.attendance.services.check_in_record import checkin_record
-from leaguebot.core.models.round import ROUND_CANCELLABLE, AttendanceWindows, Round, RoundFormat
+from leaguebot.core.models.round import (
+    ROUND_CANCELLABLE,
+    AttendanceWindows,
+    Round,
+    RoundFormat,
+    read_scheduled_at,
+)
 from leaguebot.core.services import season_service, standing_posts
 from leaguebot.core.services.change_queue import (
     ChangeQueue,
@@ -268,8 +274,7 @@ def _notice_not_due(
 
 
 def _scheduled(row: aiosqlite.Row) -> datetime:
-    scheduled = datetime.fromisoformat(str(row["scheduled_at"]))
-    return scheduled if scheduled.tzinfo else scheduled.replace(tzinfo=timezone.utc)
+    return read_scheduled_at(str(row["scheduled_at"]))
 
 
 def _deadline(row: aiosqlite.Row) -> datetime:

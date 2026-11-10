@@ -11,7 +11,7 @@ import discord
 from leaguebot.attendance.models.attendance import RsvpEmbedMessage
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.round import RoundFormat
+from leaguebot.core.models.round import RoundFormat, read_scheduled_at
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import LeagueView
 
@@ -60,8 +60,6 @@ def build_rsvp_embed(
     title = f"Season {season_number} Round {round_number} — {track_display}"
 
     # Dynamic Discord timestamp (full date + time format)
-    if scheduled_at.tzinfo is None:
-        scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
     unix_ts = int(scheduled_at.timestamp())
     timestamp_str = f"<t:{unix_ts}:F>"
 
@@ -755,11 +753,7 @@ async def _rebuild_embed_for_round(round_id: int, division_id: int, bot: LeagueB
         for team in roster
     ]
 
-    scheduled_at_raw = row["scheduled_at"]
-    if isinstance(scheduled_at_raw, str):
-        scheduled_at = datetime.fromisoformat(scheduled_at_raw)
-    else:
-        scheduled_at = scheduled_at_raw
+    scheduled_at = read_scheduled_at(row["scheduled_at"])
 
     return build_rsvp_embed(
         season_number=row["season_number"],

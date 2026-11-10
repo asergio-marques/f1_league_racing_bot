@@ -33,7 +33,7 @@ import json
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
@@ -52,7 +52,7 @@ from leaguebot.core.models.change import (
     Verdict,
     forecasts_named,
 )
-from leaguebot.core.models.round import Round, RoundStatus, WeatherWindows
+from leaguebot.core.models.round import Round, RoundStatus, WeatherWindows, read_scheduled_at
 from leaguebot.core.services import standing_posts
 from leaguebot.core.services.change_queue import (
     ChangeQueue,
@@ -125,10 +125,7 @@ async def _round_row(db: aiosqlite.Connection, round_id: int) -> aiosqlite.Row |
 
 def _raced(row: aiosqlite.Row, now: datetime) -> bool:
     """Whether the round's race time has passed by *now*."""
-    scheduled = datetime.fromisoformat(row["scheduled_at"])
-    if scheduled.tzinfo is None:
-        scheduled = scheduled.replace(tzinfo=timezone.utc)
-    return scheduled <= now
+    return read_scheduled_at(row["scheduled_at"]) <= now
 
 
 def _not_due(

@@ -56,7 +56,7 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.models.round import RoundStatus
+from leaguebot.core.models.round import RoundStatus, read_scheduled_at
 from leaguebot.core.services.change_queue import (
     ChangeQueue,
     ChangeType,
@@ -188,7 +188,7 @@ async def _facts(db: aiosqlite.Connection, payload: dict[str, Any]) -> _Facts | 
     held = await cursor.fetchone()
     return _Facts(
         found=held["rsvp_status"] if held is not None else "NO_RSVP",
-        scheduled_at=_aware(round_row["scheduled_at"]),
+        scheduled_at=read_scheduled_at(round_row["scheduled_at"]),
         deadline_hours=round_row["rsvp_deadline_hours"] or 0,
         is_reserve=bool(seat["is_reserve"]),
     )
