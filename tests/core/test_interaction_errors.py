@@ -287,6 +287,81 @@ async def test_a_failed_form_tells_the_member_and_the_log_channel():
     assert "ValueError" in line
 
 
+# ── Discord events ────────────────────────────────────────────────────────
+
+#: Why the event tests fail until the build: discord.py's own `Client.on_error` only logs.
+NO_EVENT_HANDLER = (
+    "#283: the builder attaches no error handler for Discord events, so a listener that raises "
+    "reaches discord.py's own handler, which only logs"
+)
+
+#: The log channel's line for a Discord event whose listener raised: the failure line's shape,
+#: with no member to name.
+EVENT_LINE = (
+    "❌ The bot's handling of the Discord event `on_message` failed — KeyError. "
+    "The details are in the host's log."
+)
+
+
+def _raising(error: Exception):
+    async def listener(*_args: object) -> None:
+        raise error
+
+    return listener
+
+
+def _handler_records(caplog) -> list[logging.LogRecord]:
+    return [
+        record
+        for record in caplog.records
+        if record.name == "leaguebot.core.utils.league_server" and record.exc_info
+    ]
+
+
+@pytest.mark.xfail(strict=True, reason=NO_EVENT_HANDLER)
+async def test_a_failed_event_goes_to_the_host_log_and_the_log_channel(caplog):
+    """A listener that raises reaches the one error handler for Discord events, which the
+    builder attaches to the bot (architecture.md, "Errors and failures"): the full error goes to
+    the host's log, and one line, naming the event and the exception's type, to the log
+    channel."""
+    from leaguebot.__main__ import create_bot
+
+    bot = create_bot()
+    bot.output_router = MagicMock(post_log=AsyncMock())
+    error = KeyError("x")
+
+    with caplog.at_level(logging.ERROR, logger="leaguebot.core.utils.league_server"):
+        await bot._run_event(_raising(error), "on_message", MagicMock())
+
+    bot.output_router.post_log.assert_awaited_once_with(EVENT_LINE)
+    records = _handler_records(caplog)
+    assert [record.exc_info[1] for record in records] == [error]
+    assert "on_message" in records[0].getMessage()
+
+
+@pytest.mark.xfail(strict=True, reason=NO_EVENT_HANDLER)
+@pytest.mark.parametrize("log_channel", ["refuses", "not built"])
+async def test_the_event_error_handler_never_raises(log_channel, caplog):
+    """The handler is itself a failure path: where the line cannot be recorded, whether the
+    log channel's writer raises or the bot has none yet, the error still reaches the host's
+    log and nothing is raised from the handler."""
+    from leaguebot.__main__ import create_bot
+
+    bot = create_bot()
+    if log_channel == "refuses":
+        bot.output_router = MagicMock(
+            post_log=AsyncMock(side_effect=sqlite3.OperationalError("database is locked"))
+        )
+    error = KeyError("x")
+
+    with caplog.at_level(logging.ERROR, logger="leaguebot.core.utils.league_server"):
+        await bot._run_event(_raising(error), "on_member_remove", MagicMock())
+
+    records = _handler_records(caplog)
+    assert records, "the error never reached the host's log through the handler"
+    assert records[0].exc_info[1] is error
+
+
 # ── A command that undoes itself says what became of the change (#442) ────
 
 
