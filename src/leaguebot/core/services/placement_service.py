@@ -19,6 +19,7 @@ from leaguebot.core.models.refusal import Refused
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.driver_service import write_transition
 from leaguebot.core.services.image_drawing import CapacityProblem, ImageDrawing
+from leaguebot.core.services.module_service import SwitchNotSignedUp
 from leaguebot.core.services.standing_post_handler import post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.models.team import TeamRoleConfig
@@ -480,6 +481,8 @@ class PlacementService:
             if seated is None:
                 return None
             return await ask(self._drawing, seated)
+        except SwitchNotSignedUp:
+            raise  # a module that never signed up is a fault in the bot's assembly, not a reading
         except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
             log.error("%s capacity guard could not run: %s", guard, exc, exc_info=True)
             return None

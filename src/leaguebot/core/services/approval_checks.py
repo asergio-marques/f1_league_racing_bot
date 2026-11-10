@@ -28,7 +28,7 @@ from leaguebot.core.services.approval_window_service import calendar_faults
 from leaguebot.core.services.config_service import ConfigService
 from leaguebot.core.services.confirmation_refusals import Confirmation, read_refusals
 from leaguebot.core.services.image_drawing import DivisionTeams, ImageDrawing, TeamSeats
-from leaguebot.core.services.module_service import ModuleService
+from leaguebot.core.services.module_service import ModuleService, SwitchNotSignedUp
 from leaguebot.core.services.season_service import SeasonService
 from leaguebot.core.services.team_service import TeamService, validate_team_name
 from leaguebot.core.utils.asset_slug import normalise
@@ -364,6 +364,8 @@ async def ask_drawing(
         if counted is None:
             return nothing
         return await ask(counted)
+    except SwitchNotSignedUp:
+        raise  # a module that never signed up is a fault in the bot's assembly, not a reading
     except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
         log.error("%s capacity check could not run: %s", guard, exc, exc_info=True)
         return nothing

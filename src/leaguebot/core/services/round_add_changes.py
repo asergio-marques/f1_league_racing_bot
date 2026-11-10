@@ -55,6 +55,7 @@ from leaguebot.core.services.change_queue import (
     Step,
     StepContext,
 )
+from leaguebot.core.services.module_service import SwitchNotSignedUp
 from leaguebot.core.services.season_service import renumber_rounds_on
 from leaguebot.core.utils.formatting import discord_ts, format_round_list
 from leaguebot.core.utils.input_validator import parse_datetime
@@ -96,6 +97,8 @@ async def calendar_round_refusal(drawing: "ImageDrawing", would_hold: int) -> st
     """
     try:
         problem = await drawing.round_capacity_problem(would_hold)
+    except SwitchNotSignedUp:
+        raise  # a module that never signed up is a fault in the bot's assembly, not a reading
     except Exception as exc:  # noqa: BLE001 — a stated exception, see the docstring
         log.error("round add: calendar capacity check could not run: %s", exc, exc_info=True)
         return None

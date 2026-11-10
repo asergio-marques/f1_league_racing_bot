@@ -559,6 +559,8 @@ class ImageDrawing:
         try:
             path = await self._drawn_template("lineup", LINEUP_TEMPLATE_KEY)
             return path is not None
+        except SwitchNotSignedUp:
+            raise  # a module that never signed up is a fault in the bot's assembly, not a reading
         except Exception:  # noqa: BLE001 — a stated exception, see the docstring
             log.exception("lineup: could not read the image gates")
             return False
