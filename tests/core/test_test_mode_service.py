@@ -1667,3 +1667,36 @@ async def test_each_module_is_handed_the_active_season_s_rounds_as_core_reads_th
             (NOW + timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%S+00:00")
         )
         assert rounds[1].status == "CANCELLED"
+
+
+@pytest.mark.xfail(strict=True, reason=MODULE_STEPS)
+async def test_the_builder_signs_weather_attendance_and_results_up_for_their_steps(
+    tmp_path, monkeypatch,
+) -> None:
+    """Weather hands back round 1's Phase 1, attendance its check-in call and results its result
+    submission. The hook as the builder makes it asks all three, each handed the database, the
+    rounds and the moment advance judges at, and gathers the step each hands back."""
+    from leaguebot.core.services.test_mode_service import ModuleSteps, PendingStep
+    from tests.support.pending_steps_hook import pending_steps_read
+
+    asked: dict[str, tuple] = {}
+    for module, step in (
+        ("weather", (1, 1, "weather_p1")),
+        ("attendance", (1, 5, "rsvp_notice")),
+        ("results", (1, 4, "results")),
+    ):
+        async def answer(db_path, rounds, *, now, _module=module, _step=step):
+            asked[_module] = (db_path, rounds, now)
+            return ModuleSteps(pending=[PendingStep(*_step)], passed_over=[])
+        monkeypatch.setattr(f"leaguebot.{module}.services.test_mode_steps.pending_steps", answer)
+    db_path = str(tmp_path / "signed_up.db")
+    rounds: list = []
+
+    answers = await pending_steps_read().call(db_path, rounds, now=NOW)
+
+    assert sorted(asked) == ["attendance", "results", "weather"]
+    for handed in asked.values():
+        assert handed == (db_path, rounds, NOW)
+    assert sorted(
+        (step.round_id, step.phase_number, step.kind) for each in answers for step in each.pending
+    ) == [(1, 1, "weather_p1"), (1, 4, "results"), (1, 5, "rsvp_notice")]

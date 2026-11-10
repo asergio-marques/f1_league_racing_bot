@@ -1311,6 +1311,23 @@ async def test_advance_reads_the_clock_once_for_the_step_it_offers_and_those_it_
 
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: advance does not yet ask the modules' steps of the bot's hook"
+)
+async def test_advance_asks_the_step_it_offers_and_those_it_passes_over_of_the_bot_s_hook(
+    tmp_path,
+):
+    """Test mode on, nothing left to advance. Advance reads the step it offers and the steps it
+    passes over through the hook the bot carries, which the builder signs each module up to, so
+    that each module answers for its own steps."""
+    cog = _make_cog(await _make_db(tmp_path))
+    with _advancing(cog.bot, None) as reads:
+        await undecorate(_Cog.advance)(cog, _interaction())
+
+    for read in ("get_next_pending_phase", "get_passed_over_steps"):
+        assert reads[read].await_args.kwargs["pending_steps_read"] is cog.bot.pending_steps_read
+
+
 # ---------------------------------------------------------------------------
 # A past-dated round's check-in, advanced by hand on a real queue (attendance spec :221-222)
 # ---------------------------------------------------------------------------
