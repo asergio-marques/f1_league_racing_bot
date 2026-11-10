@@ -11,7 +11,7 @@ Commands:
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import discord
@@ -454,7 +454,12 @@ class RoundCog(commands.Cog):
 
         summary_lines = [f"**Amend Round {rnd.round_number}** in division **{div.name}**:"]
         for f_name, f_val in amendments:
-            summary_lines.append(f"  \u2022 `{f_name}` \u2192 `{f_val}`")
+            # A moment is shown in UTC without its offset, as it always has been.
+            shown = (
+                f_val.astimezone(timezone.utc).replace(tzinfo=None)
+                if isinstance(f_val, datetime) else f_val
+            )
+            summary_lines.append(f"  \u2022 `{f_name}` \u2192 `{shown}`")
 
         # Name the forecasts this actually throws away rather than claiming all of them: a
         # phase that would still have run under the round's new moment is kept.
