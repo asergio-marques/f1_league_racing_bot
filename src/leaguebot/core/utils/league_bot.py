@@ -249,7 +249,7 @@ class LeagueBot(commands.Bot):
     #: completion's and the cancellation's second save), given the connection, the division's id
     #: and the accounts the driver has held: each module signing up its own read, handing back
     #: the driver's last standing as (position, points) or None, and the division's winner's
-    #: points or None (results'). Core takes the first answer a module gives and writes the
+    #: points or None (results'). Core takes the first answer that is not None and writes the
     #: history itself; with no subscriber the history records no position, no points and no gap.
     #: The builder makes it and hands it to both changes.
     season_standing_read: AwaitedHook

@@ -513,14 +513,13 @@ def season_complete_change(
 ) -> ChangeType:
     """The change that completes the confirmed season; see the module.
 
-    The builder hands in the *seasons* service (the season the check reads), the *scheduler*
-    (whose season-end job `settle` removes), the *placement* service (which takes back roles), the
-    hooks the modules sign up to
-    (*final_round_read*, *season_standing_read*, *season_completed*, *season_completed_steps*,
-    *season_end_refused*, *season_end_closes*, *drivers_returned*, *driver_turned_down*,
-    *driver_returned_jobs*, *season_end_steps*, *test_mode_flushed*, *drivers_deleted*), the hook
-    each driver deleted calls (*profiles_deleted*) and the queue's clock *now*, which stamps the audit entries of the
-    turn-down and the driver pass.
+    The builder hands in the *seasons* service (the season the check reads), the *scheduler* (whose
+    season-end job `settle` removes), the *placement* service (which takes back roles), the hooks
+    the modules sign up to (*final_round_read*, *season_standing_read*, *season_completed*,
+    *season_completed_steps*, *season_end_refused*, *season_end_closes*, *drivers_returned*,
+    *driver_turned_down*, *driver_returned_jobs*, *season_end_steps*, *test_mode_flushed*,
+    *drivers_deleted*), the hook each driver deleted calls (*profiles_deleted*) and the queue's
+    clock *now*, which stamps the audit entries of the turn-down and the driver pass.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
