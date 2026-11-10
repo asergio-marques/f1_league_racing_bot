@@ -508,6 +508,48 @@ async def test_a_driver_merge_is_one_save_with_the_profiles_merged_hook(tmp_path
     )
 
 
+@pytest.mark.xfail(strict=True, reason=REASSIGN_ASKS_RESULTS)
+async def test_a_driver_reassign_asks_where_each_side_raced_in_its_check_and_its_save(
+    tmp_path, monkeypatch,
+):
+    """The season is in Placements; Valtteri (106) is Unassigned; a driver of past seasons has
+    9002 as his current account and 9006 as a past one. A further module signs up to answer which
+    divisions a driver's accounts raced in, answering none. The league manager runs `/driver
+    reassign` of Valtteri onto 9002, and the queue runs it. The module is asked for each side's
+    accounts, Valtteri's (106) and the other driver's (9002 and 9006), once as the change is
+    checked and once inside the save's transaction, and the two are merged as before."""
+    from tests.support.change_queue import run_queue
+    from tests.support.season_league import UNASSIGNED, profile_id
+
+    league = await _queue_league(tmp_path)
+    await league.write(
+        "INSERT INTO driver_profiles (discord_user_id, current_state, former_driver) "
+        "VALUES (?, 'NOT_SIGNED_UP', 1)",
+        str(_OTHER_PAST),
+    )
+    await league.write(
+        "UPDATE driver_profiles SET discord_user_id = ? WHERE discord_user_id = ?",
+        str(_OTHER), str(_OTHER_PAST),
+    )
+    asked: list[tuple[tuple[str, ...], bool]] = []
+
+    async def _watching(db, accounts):
+        asked.append((tuple(sorted(accounts)), db.in_transaction))
+        return set()
+
+    league.bot.divisions_raced_read.subscribe(_watching)
+    _portraits_discarded(league, monkeypatch)
+    await _ask_reassign(league, UNASSIGNED, _OTHER)
+    await run_queue(league.bot)
+
+    sides = [("106",), tuple(sorted((str(_OTHER), str(_OTHER_PAST))))]
+    assert sorted(asked) == sorted(
+        [(side, False) for side in sides] + [(side, True) for side in sides]
+    )
+    accounts = await _accounts(league)
+    assert accounts[profile_id(UNASSIGNED)][0] == str(_OTHER)
+
+
 async def test_a_failed_driver_reassign_changes_nothing(tmp_path, monkeypatch):
     """The season is in Placements; Valtteri (106) is Unassigned. The league manager runs `/driver
     reassign` of Valtteri onto 9001, and as the queue runs it the database fails writing the audit

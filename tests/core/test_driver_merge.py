@@ -294,6 +294,42 @@ async def test_both_taking_part_in_one_seasons_division_is_refused(tmp_path, par
 
 
 @pytest.mark.xfail(strict=True, reason=REASSIGN_ASKS_RESULTS)
+@pytest.mark.parametrize("part", ["raced", "seated"])
+async def test_with_no_module_answering_only_a_shared_seat_is_refused(tmp_path, part):
+    """No module signed up to answer which divisions a driver raced in (results never built). A
+    and B, each a driver of their own, both took part in Season 1 Pro: racing there, neither
+    seated, or seated there. Results' rows are not read by core, so a shared race alone is no
+    obstacle and the two are merged as though neither had raced, B's account becoming the
+    driver's; a shared seat, which core records itself, is still refused in today's words,
+    changing nothing."""
+    from leaguebot.core.models.refusal import Refused
+    from leaguebot.core.utils.hooks import AwaitedHook
+    from tests.support.delete_hooks import MERGE_HOOKS, delete_hooks
+
+    db_path = await _make_db(tmp_path)
+    a = await _profile(db_path, A)
+    b = await _profile(db_path, B)
+    if part == "seated":
+        await _seated(db_path, a, S1_PRO)
+        await _seated(db_path, b, S1_PRO)
+    else:
+        await _raced(db_path, A, S1_PRO, a)
+        await _raced(db_path, B, S1_PRO, b)
+    hooks = {**delete_hooks(*MERGE_HOOKS), "divisions_raced_read": AwaitedHook()}
+
+    if part == "seated":
+        before = await _snapshot(db_path)
+        with pytest.raises(Refused, match="both took part in Season 1 Pro"):
+            await _reassign(db_path, A, B, hooks=hooks)
+        assert await _snapshot(db_path) == before
+        return
+    outcome = await _reassign(db_path, A, B, hooks=hooks)
+    assert outcome.profile.discord_user_id == B
+    assert outcome.merged_accounts == [B]
+    assert len(await _profiles(db_path)) == 1
+
+
+@pytest.mark.xfail(strict=True, reason=REASSIGN_ASKS_RESULTS)
 async def test_leftover_results_in_a_shared_division_are_refused(tmp_path):
     """E31: B holds no profile, but raced season 1 Pro, as did the driver."""
     db_path = await _make_db(tmp_path)
