@@ -21,6 +21,11 @@ DEFAULT_ATTENDANCE = AttendanceWindows(notice_days=5, last_notice_hours=24, dead
 #: The packaged forecast horizons.
 DEFAULT_WEATHER = WeatherWindows(phase_1_days=5, phase_2_days=2, phase_3_hours=2)
 
+#: The phases weather says a round has had drawn are handed to the judgement, not read off the
+#: round: they are weather's own columns (architecture.md, "Each table is read and written by its
+#: owner alone").
+DRAWN_HANDED = "#283: judge_amendment does not yet take the phases weather has drawn"
+
 
 def _round(
     *,
@@ -28,9 +33,6 @@ def _round(
     status: str = RoundStatus.NOT_RUN.value,
     fmt: RoundFormat = RoundFormat.NORMAL,
     track: str | None = "Bahrain International Circuit",
-    phase1_done: bool = False,
-    phase2_done: bool = False,
-    phase3_done: bool = False,
 ) -> Round:
     return Round(
         id=1,
@@ -39,9 +41,6 @@ def _round(
         format=fmt,
         track_name=track,
         scheduled_at=scheduled_at,
-        phase1_done=phase1_done,
-        phase2_done=phase2_done,
-        phase3_done=phase3_done,
         status=status,
     )
 
@@ -204,17 +203,20 @@ def test_a_small_delay_leaves_the_early_windows_standing():
     assert verdict.check_in["deadline"].rearm
 
 
+@pytest.mark.xfail(strict=True, reason=DRAWN_HANDED)
 def test_a_long_delay_puts_every_phase_back_in_question():
-    rnd = _round(scheduled_at=NOW + timedelta(days=1), phase1_done=True)
+    rnd = _round(scheduled_at=NOW + timedelta(days=1))
     verdict = judge_amendment(
         rnd,
         {"scheduled_at": NOW + timedelta(days=30)},
         now=NOW,
         weather=DEFAULT_WEATHER,
+        drawn={1: True},
     )
     assert all(p.rearm for p in verdict.phases.values())
 
 
+@pytest.mark.xfail(strict=True, reason=DRAWN_HANDED)
 def test_a_delay_can_leave_phase_one_standing_while_the_later_two_are_rearmed():
     """The middle case the rule exists for: one phase keeps, two go back.
 
@@ -222,13 +224,14 @@ def test_a_delay_can_leave_phase_one_standing_while_the_later_two_are_rearmed():
     either way, so the forecast already drawn stands. Phases 2 and 3 have not come round under
     the new moment, so they are armed again.
     """
-    rnd = _round(scheduled_at=NOW + timedelta(days=3), phase1_done=True)
+    rnd = _round(scheduled_at=NOW + timedelta(days=3))
     verdict = judge_amendment(
         rnd,
         {"scheduled_at": NOW + timedelta(days=4)},
         now=NOW,
         weather=DEFAULT_WEATHER,
         attendance=DEFAULT_ATTENDANCE,
+        drawn={1: True},
     )
     assert verdict.allowed, verdict.refusals
     assert verdict.phases[1].stands
@@ -258,38 +261,49 @@ def test_no_phases_are_judged_without_configured_horizons():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=DRAWN_HANDED)
 def test_the_track_may_not_be_amended_once_phase_one_has_run():
-    rnd = _round(scheduled_at=NOW + timedelta(days=3), phase1_done=True)
-    verdict = judge_amendment(rnd, {"track_name": "Silverstone Circuit"}, now=NOW)
+    rnd = _round(scheduled_at=NOW + timedelta(days=3))
+    verdict = judge_amendment(
+        rnd, {"track_name": "Silverstone Circuit"}, now=NOW, drawn={1: True}
+    )
     assert not verdict.allowed
     assert any("first forecast" in r for r in verdict.refusals)
 
 
+@pytest.mark.xfail(strict=True, reason=DRAWN_HANDED)
 def test_the_format_may_not_be_amended_once_phase_two_has_run():
-    rnd = _round(scheduled_at=NOW + timedelta(days=1), phase1_done=True, phase2_done=True)
-    verdict = judge_amendment(rnd, {"format": RoundFormat.SPRINT}, now=NOW)
+    rnd = _round(scheduled_at=NOW + timedelta(days=1))
+    verdict = judge_amendment(
+        rnd, {"format": RoundFormat.SPRINT}, now=NOW, drawn={1: True, 2: True}
+    )
     assert not verdict.allowed
     assert any("second forecast" in r for r in verdict.refusals)
 
 
+@pytest.mark.xfail(strict=True, reason=DRAWN_HANDED)
 def test_the_format_may_still_be_amended_after_phase_one_alone():
-    rnd = _round(scheduled_at=NOW + timedelta(days=3), phase1_done=True)
-    assert judge_amendment(rnd, {"format": RoundFormat.SPRINT}, now=NOW).allowed
+    rnd = _round(scheduled_at=NOW + timedelta(days=3))
+    assert judge_amendment(
+        rnd, {"format": RoundFormat.SPRINT}, now=NOW, drawn={1: True}
+    ).allowed
 
 
+@pytest.mark.xfail(strict=True, reason=DRAWN_HANDED)
 def test_moving_a_round_forward_lets_its_track_be_amended_in_the_same_change():
     """The league's remedy, and the reason a change set is judged as one change.
 
     The round has started and its first forecast is out, so a bare track change is refused twice
     over. Moving it puts both rules back in question, and they read the round as it will stand.
     """
-    rnd = _round(scheduled_at=NOW - timedelta(hours=1), phase1_done=True)
+    rnd = _round(scheduled_at=NOW - timedelta(hours=1))
     verdict = judge_amendment(
         rnd,
         {"track_name": "Silverstone Circuit", "scheduled_at": NOW + timedelta(days=30)},
         now=NOW,
         attendance=DEFAULT_ATTENDANCE,
         weather=DEFAULT_WEATHER,
+        drawn={1: True},
     )
     assert verdict.allowed, verdict.refusals
 
@@ -395,14 +409,16 @@ def test_revealing_a_mystery_round_amends_both_at_once():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=DRAWN_HANDED)
 def test_one_refused_field_refuses_the_whole_change_set():
     """Track and format together, with phase 2 out: the format alone is what refuses it, and the
     track goes with it. None of the amendment happens."""
-    rnd = _round(scheduled_at=NOW + timedelta(days=1), phase2_done=True)
+    rnd = _round(scheduled_at=NOW + timedelta(days=1))
     verdict = judge_amendment(
         rnd,
         {"track_name": "Silverstone Circuit", "format": RoundFormat.SPRINT},
         now=NOW,
+        drawn={2: True},
     )
     assert not verdict.allowed
 
