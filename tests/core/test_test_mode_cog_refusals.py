@@ -5,10 +5,12 @@ line naming the member, what was refused and why, and only a view, a list, a pre
 About record nothing. Each case below turns a league admin away at one of the test-mode cog's own
 checks, and expects today's reply, seen by them alone, and exactly one standard refusal line; a
 refusal on the roster import form names the form. The refusal to change the roster outside
-placements is recorded already and is not a case, and neither is a refusal `/test-mode roster
-remove`, `clear` or the import form makes of what the database holds: each is judged as the change
-is asked of the queue (#283), and is tested with its command in `test_test_mode_roster_remove.py`,
-`test_test_mode_roster_clear.py` and `test_test_mode_roster_add_bulk.py`. The restore
+placements is recorded already and is not a case, and neither is a refusal
+`/test-mode set-former-driver` makes, nor one `/test-mode roster remove`, `clear` or the import
+form makes of what the database holds: each is judged as the change is asked of the queue (#283),
+and is tested with its command in `test_test_mode_former_driver.py`,
+`test_test_mode_roster_remove.py`, `test_test_mode_roster_clear.py` and
+`test_test_mode_roster_add_bulk.py`. The restore
 confirmation is tested in `test_test_mode_backup.py`. `/test-mode nationality` is refused by its
 setting's check, which the change queue makes (#283), and is tested with the command in
 `test_test_mode_cog_roster.py`;
@@ -35,7 +37,6 @@ from leaguebot.results.services import result_submission_service
 from tests.support.undecorate import undecorate
 
 ADMIN_ID = 4242
-DRIVER_ID = 5151
 
 #: The marks a reply may open with, which a refusal's log line leaves out of its reason.
 _REPLY_MARKS = ("❌", "⛔", "⚠️", "⚠", "ℹ️", "ℹ", "⏳", "⛓", "⏸️", "⏸")
@@ -90,13 +91,6 @@ def _interaction(cog: _Cog, command: str | None) -> MagicMock:
     interaction.response.send_modal = AsyncMock(side_effect=_answer)
     interaction.followup.send = AsyncMock()
     return interaction
-
-
-def _member() -> MagicMock:
-    member = MagicMock()
-    member.id = DRIVER_ID
-    member.display_name = "Racer"
-    return member
 
 
 # ── How a case makes the cog refuse ───────────────────────────────────────────
@@ -242,12 +236,6 @@ _CASES = {
         _command("advance"),
         _submission_open("FINAL"),
         "is already in progress",
-    ),
-    "set-former-driver outside test mode": (
-        "test-mode set-former-driver",
-        _command("set_former_driver", _member(), True),
-        _not_in_test_mode,
-        "only available when test mode is enabled",
     ),
     "backup save outside test mode": (
         "test-mode backup save",

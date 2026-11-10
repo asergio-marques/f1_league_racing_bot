@@ -179,22 +179,41 @@ async def test_the_flag_and_its_audit_entry_and_line_are_one_save(
     ]
 
 
-async def test_a_member_with_no_profile_is_refused_at_the_ask(league):
-    """The server is in test mode and Racer holds no profile. Admin (77) runs the command for
-    Racer: they are refused at once, seen by them alone, in the words the command has always
-    used, naming the account; nothing is queued or audited, and the log channel takes the refusal
-    line."""
+async def _test_mode_off(league) -> None:
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE server_configs SET test_mode_active = 0")
+        await db.commit()
+
+
+@pytest.mark.parametrize(
+    "racer_held, meanwhile, refusal",
+    [
+        pytest.param(False, None, _NO_PROFILE, id="no profile"),
+        pytest.param(True, _test_mode_off, _NOT_IN_TEST_MODE, id="test mode off"),
+    ],
+)
+async def test_it_is_refused_at_the_ask(league, racer_held, meanwhile, refusal):
+    """The server is in test mode and Racer holds no profile; or Racer holds one whose flag is
+    false and test mode is switched off. Admin (77) runs the command for Racer with true: they are
+    refused at once, seen by them alone, in the words the command has always used, naming the
+    account where it is the profile that is missing; nothing is queued or audited, Racer's flag is
+    untouched, and the log channel takes the refusal line."""
+    if racer_held:
+        await _seed_racer(league.db_path, former=False)
+    if meanwhile is not None:
+        await meanwhile(league)
     interaction = _asks(league)
 
     await _ask(league, interaction, True)
 
-    assert said(interaction) == [_NO_PROFILE]
+    assert said(interaction) == [refusal]
     [reply] = interaction.response.send_message.await_args_list
     assert reply.kwargs.get("ephemeral") is True
     assert await change_rows(league.db_path) == []
+    assert await _flags(league.db_path) == ([False] if racer_held else [])
     assert await audit_rows(league.db_path) == []
     assert _lines(league) == [
-        f"⛔ `/test-mode set-former-driver` refused for {_NAMED} — {_NO_PROFILE[2:]}"
+        f"⛔ `/test-mode set-former-driver` refused for {_NAMED} — {refusal[2:]}"
     ]
 
 
