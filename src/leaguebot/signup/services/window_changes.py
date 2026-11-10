@@ -48,7 +48,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
 from leaguebot.core.models.change import (
     AuditRecord,
     PlannedStep,
@@ -518,11 +518,10 @@ def return_drivers_step(
         returned: list[tuple[str, int | None]] = []
         for row in rows:
             account = str(row["discord_user_id"])
+            current = DriverState(row["current_state"])
             try:
-                await write_transition(
-                    db, int(row["id"]), DriverState(row["current_state"]), DriverState.NOT_SIGNED_UP
-                )
-            except ValueError:
+                await write_transition(db, int(row["id"]), current, DriverState.NOT_SIGNED_UP)
+            except InvalidDriverTransition:
                 continue  # the state machine's refusal: the driver moved on since they were read
             await signup_module_service().end_wizard_on(db, account)
             cursor = await db.execute(

@@ -61,7 +61,7 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
 from leaguebot.core.services.change_queue import (
     ChangeType,
     CheckContext,
@@ -1000,7 +1000,7 @@ def member_left_change(
         # swallowed (#457).
         try:
             await drivers().transition_on(db, user_id, DriverState.NOT_SIGNED_UP)
-        except ValueError:
+        except InvalidDriverTransition:
             pass
         if ctx.step_payload.get("channel_id") is None:
             await signup().delete_wizard_on(db, user_id)

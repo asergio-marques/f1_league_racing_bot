@@ -21,9 +21,6 @@ from tests.support.teams import seed_team_instances
 from tests.support.delete_hooks import MERGE_HOOKS, delete_hooks
 from tests.support.driver_transitions import reassigned
 
-#: Why a merge refusal test fails until #283's build raises the member's refusal by name.
-MERGE_REFUSAL = "#283: a merge still refuses with a bare ValueError, not Refused"
-
 SERVER_ID = 2440
 A, B, C = "6501", "6502", "6503"
 
@@ -263,7 +260,6 @@ async def _refused(db_path: str, match: str) -> None:
     assert await _snapshot(db_path) == before
 
 
-@pytest.mark.xfail(strict=True, reason=MERGE_REFUSAL)
 async def test_both_holding_the_live_season_is_refused(tmp_path):
     db_path = await _make_db(tmp_path)
     await _profile(db_path, A, state="ASSIGNED")
@@ -273,7 +269,6 @@ async def test_both_holding_the_live_season_is_refused(tmp_path):
 
 
 @pytest.mark.parametrize("part", ["seated", "raced"])
-@pytest.mark.xfail(strict=True, reason=MERGE_REFUSAL)
 async def test_both_taking_part_in_one_seasons_division_is_refused(tmp_path, part):
     """A is seated in Season 1 Pro, and B, who holds a profile, took part in it too: seated
     there (E25: by seat alone, neither having raced), or racing there."""
@@ -289,7 +284,6 @@ async def test_both_taking_part_in_one_seasons_division_is_refused(tmp_path, par
     await _refused(db_path, "both took part in Season 1 Pro")
 
 
-@pytest.mark.xfail(strict=True, reason=MERGE_REFUSAL)
 async def test_leftover_results_in_a_shared_division_are_refused(tmp_path):
     """E31: B holds no profile, but raced season 1 Pro, as did the driver."""
     db_path = await _make_db(tmp_path)

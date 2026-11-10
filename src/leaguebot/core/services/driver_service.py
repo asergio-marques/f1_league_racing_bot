@@ -13,6 +13,7 @@ from leaguebot.core.db.database import get_connection, inserted_id
 from leaguebot.core.models.driver_profile import (
     DriverProfile, DriverState, InvalidDriverTransition,
 )
+from leaguebot.core.models.refusal import Refused
 from leaguebot.core.utils.hooks import AwaitedHook
 
 log = logging.getLogger(__name__)
@@ -367,7 +368,7 @@ async def _refuse_a_shared_division(
 ) -> None:
     shared = sorted(ours & theirs)
     if shared:
-        raise ValueError(
+        raise Refused(
             f"This driver and {who} both took part in {await _describe_division(db, shared[0])}. "
             "One person cannot stand twice in one season's standings, so the accounts cannot "
             "be joined."
@@ -426,7 +427,7 @@ async def _merge(
 
 def _refuse_a_signup_in_progress(row, who: str) -> None:
     if row["current_state"] in SIGNUP_IN_PROGRESS:
-        raise ValueError(
+        raise Refused(
             f"{who[0].upper()}{who[1:]} has a signup in progress. Finish it — approve or reject "
             "it — or have it withdrawn first."
         )
@@ -447,30 +448,30 @@ class _Judged:
 
 
 async def _judge_reassign(db, old_user_id: str, new_user_id: str) -> _Judged:
-    """Judge a reassign on *db*, writing nothing; raises ValueError for each refusal in the order
+    """Judge a reassign on *db*, writing nothing; raises Refused for each refusal in the order
     `DriverService.reassign_user_id_on` documents."""
     driver = await _profile_holding(db, old_user_id)
     if driver is None:
-        raise ValueError(f"No driver profile found for user {old_user_id} on this server.")
+        raise Refused(f"No driver profile found for user {old_user_id} on this server.")
     if driver["is_test_driver"]:
-        raise ValueError(
+        raise Refused(
             "That driver was created by test mode. A test-mode driver cannot be "
             "given a real account, nor a real driver a test-mode one."
         )
     replaced = str(driver["discord_user_id"])
     if replaced == str(new_user_id):
-        raise ValueError(f"<@{new_user_id}> is already this driver's current account.")
+        raise Refused(f"<@{new_user_id}> is already this driver's current account.")
 
     owner = await _profile_holding(db, new_user_id)
     switched_back = owner is not None and owner["id"] == driver["id"]
     if owner is not None and not switched_back:
         if str(owner["discord_user_id"]) != str(new_user_id):
-            raise ValueError(
+            raise Refused(
                 f"<@{new_user_id}> is a past account of another driver in this "
                 "league, and an account belongs to one driver."
             )
         if owner["is_test_driver"]:
-            raise ValueError(
+            raise Refused(
                 f"<@{new_user_id}> is a test-mode driver. A test-mode driver cannot "
                 "be merged with a real one."
             )
@@ -482,7 +483,7 @@ async def _judge_reassign(db, old_user_id: str, new_user_id: str) -> _Judged:
         if driver["current_state"] in _HOLDS_THE_LIVE_SEASON and (
             owner["current_state"] in _HOLDS_THE_LIVE_SEASON
         ):
-            raise ValueError(
+            raise Refused(
                 f"This driver and <@{new_user_id}> both hold a seat or a signup in "
                 "the live season, so they cannot be merged into one driver."
             )
@@ -603,7 +604,7 @@ class DriverService:
     async def judge_reassign_on(
         self, db: aiosqlite.Connection, old_user_id: str, new_user_id: str
     ) -> None:
-        """Judge a reassign on *db*, writing nothing: raises ValueError, in the words a league is
+        """Judge a reassign on *db*, writing nothing: raises Refused, in the words a league is
         told, for what `reassign_user_id_on` would refuse."""
         await _judge_reassign(db, old_user_id, new_user_id)
 
@@ -638,7 +639,7 @@ class DriverService:
         flag, and it is deleted. The merge's audit entry is stamped *now*; the reassign's own is
         its change's to write.
 
-        Refused with ValueError, having written nothing, when: no driver holds *old_user_id*;
+        Refused, having written nothing, when: no driver holds *old_user_id*;
         *new_user_id* is already the driver's current account; it is a past account of another
         driver; either side is a test-mode driver; either side has a signup in progress; both
         sides hold a seat or a signup in the live season; or both took part in one division —
@@ -704,7 +705,7 @@ class DriverService:
             await self.current_account(discord_user_id)
         )
         if profile is None:
-            raise ValueError(
+            raise Refused(
                 f"No driver profile found for user {discord_user_id} on this server."
             )
         old_value = profile.former_driver

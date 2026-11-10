@@ -31,11 +31,6 @@ USER_ID = "4242"
 #: The state stored for the driver in the cases that read one: no `DriverState` is named so.
 GARBLED_STATE = "x"
 
-#: Why each case fails until #283's build catches the state machine's refusal by name.
-CAUGHT_AS_MOVED_ON = (
-    "#283: signup's catch still takes any ValueError for the state machine's refusal"
-)
-
 
 async def _league(tmp_path: Any, state: str) -> str:
     """A database holding one driver, 4242, in *state*."""
@@ -154,14 +149,10 @@ async def _window_closed(tmp_path, monkeypatch) -> None:
 
 #: One case per catch: the save it guards, and how a bug's `ValueError` is raised inside it.
 CATCHES = [
-    pytest.param(_with_garbled_state(_correction_chosen), id="correction choice",
-                 marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_MOVED_ON)),
-    pytest.param(_with_garbled_state(_correction_lapsed), id="correction lapse",
-                 marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_MOVED_ON)),
-    pytest.param(_with_garbled_state(_member_left), id="member left",
-                 marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_MOVED_ON)),
-    pytest.param(_window_closed, id="window close",
-                 marks=pytest.mark.xfail(strict=True, reason=CAUGHT_AS_MOVED_ON)),
+    pytest.param(_with_garbled_state(_correction_chosen), id="correction choice"),
+    pytest.param(_with_garbled_state(_correction_lapsed), id="correction lapse"),
+    pytest.param(_with_garbled_state(_member_left), id="member left"),
+    pytest.param(_window_closed, id="window close"),
 ]
 
 

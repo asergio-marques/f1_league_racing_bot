@@ -40,6 +40,7 @@ from leaguebot.core.services.test_mode_service import (
     AdvanceStatus,
     advance_next_step,
 )
+from leaguebot.core.models.refusal import Refused
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import backup_service
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
@@ -313,7 +314,7 @@ class TestModeCog(commands.Cog):
                 str(interaction.user),
                 now=self.bot.change_queue.now(),
             )
-        except ValueError as exc:
+        except Refused as exc:
             await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
             return
 

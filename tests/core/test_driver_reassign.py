@@ -32,9 +32,6 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.driver_service import DriverService
 from tests.support.driver_transitions import reassigned
 
-#: Why a reassign refusal test fails until #283's build raises the member's refusal by name.
-REASSIGN_REFUSAL = "#283: a reassign still refuses with a bare ValueError, not Refused"
-
 
 SERVER_ID = 2437
 A, B, C, D = "6201", "6202", "6203", "6204"
@@ -136,14 +133,12 @@ async def test_a_past_account_may_be_made_current_again(tmp_path):
 # ── What is refused ────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=REASSIGN_REFUSAL)
 async def test_an_account_no_driver_holds_is_refused(tmp_path):
     """E17."""
     db_path = await _make_db(tmp_path)
     await _refused(db_path, A, B, "No driver profile")
 
 
-@pytest.mark.xfail(strict=True, reason=REASSIGN_REFUSAL)
 async def test_the_current_account_is_refused_as_the_new_one(tmp_path):
     """E15."""
     db_path = await _make_db(tmp_path)
@@ -153,7 +148,6 @@ async def test_the_current_account_is_refused_as_the_new_one(tmp_path):
     await _refused(db_path, A, B, "already this driver's current account")
 
 
-@pytest.mark.xfail(strict=True, reason=REASSIGN_REFUSAL)
 async def test_another_drivers_past_account_is_refused(tmp_path):
     """E18: C's driver once held D; D belongs to them."""
     db_path = await _make_db(tmp_path)
@@ -165,7 +159,6 @@ async def test_another_drivers_past_account_is_refused(tmp_path):
 
 
 @pytest.mark.parametrize("test_side", ["driver", "new account"])
-@pytest.mark.xfail(strict=True, reason=REASSIGN_REFUSAL)
 async def test_a_test_mode_driver_on_either_side_is_refused(tmp_path, test_side):
     """E19."""
     db_path = await _make_db(tmp_path)
@@ -181,7 +174,6 @@ async def test_a_test_mode_driver_on_either_side_is_refused(tmp_path, test_side)
     "AWAITING_CORRECTION_PARAMETER",
     "PENDING_DRIVER_CORRECTION",
 ])
-@pytest.mark.xfail(strict=True, reason=REASSIGN_REFUSAL)
 async def test_a_signup_in_progress_on_the_driver_is_refused(tmp_path, state):
     """E20."""
     db_path = await _make_db(tmp_path)
@@ -190,7 +182,6 @@ async def test_a_signup_in_progress_on_the_driver_is_refused(tmp_path, state):
     await _refused(db_path, A, B, "This driver has a signup in progress")
 
 
-@pytest.mark.xfail(strict=True, reason=REASSIGN_REFUSAL)
 async def test_a_signup_in_progress_on_the_new_account_is_refused(tmp_path):
     """E20, and E35's first half: the usual case waits for the new account's signup."""
     db_path = await _make_db(tmp_path)

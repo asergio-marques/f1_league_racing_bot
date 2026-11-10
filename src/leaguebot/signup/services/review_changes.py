@@ -95,7 +95,7 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
 from leaguebot.core.services import standing_posts, track_service
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.change_queue import (
@@ -629,7 +629,7 @@ def choose_change(
         # cannot be raced, and a refused one means the request has ended all the same.
         try:
             await drivers().transition_on(db, user_id, DriverState.PENDING_DRIVER_CORRECTION)
-        except ValueError:
+        except InvalidDriverTransition:
             return StepResult(result={"ended": True})
         reason = wizard.draft_answers.pop("_correction_reason", "")
         wizard.wizard_state = target
@@ -902,7 +902,7 @@ def lapse_change(
         # cannot be raced, and a refused one means the window has nothing left to lapse.
         try:
             await drivers().transition_on(db, user_id, DriverState.PENDING_ADMIN_APPROVAL)
-        except ValueError:
+        except InvalidDriverTransition:
             return StepResult(result={"ended": True})
         wizard = await signup().get_wizard_on(db, user_id)
         if wizard is None:

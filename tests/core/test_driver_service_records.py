@@ -41,9 +41,6 @@ from tests.support.driver_transitions import reassigned, transitioned
 
 NOW = datetime(2031, 3, 4, 5, 6, 7, tzinfo=timezone.utc)
 
-#: Why a driver service refusal test fails until #283's build raises the member's refusal by name.
-DRIVER_REFUSAL = "#283: the driver service still refuses with a bare ValueError, not Refused"
-
 
 SERVER_ID = 9108
 OLD_USER = "4242"
@@ -307,7 +304,6 @@ async def test_a_profile_is_re_keyed_to_the_new_account(tmp_path):
     assert await service.get_profile(OLD_USER) is None
 
 
-@pytest.mark.xfail(strict=True, reason=DRIVER_REFUSAL)
 async def test_re_keying_a_user_with_no_profile_is_refused(tmp_path):
     from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
@@ -317,7 +313,6 @@ async def test_re_keying_a_user_with_no_profile_is_refused(tmp_path):
         await reassigned(db_path, OLD_USER, NEW_USER)
 
 
-@pytest.mark.xfail(strict=True, reason=DRIVER_REFUSAL)
 async def test_two_drivers_both_in_the_live_season_are_not_merged(tmp_path):
     """The new account is a driver of its own, and both are signed up for the live season.
     Merging them is the one thing an account holding a profile could mean (issue #243), and
@@ -336,7 +331,6 @@ async def test_two_drivers_both_in_the_live_season_are_not_merged(tmp_path):
     assert await _audit(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=DRIVER_REFUSAL)
 async def test_an_account_whose_leftover_results_share_a_division_is_refused(tmp_path):
     """The new account holds no profile but results of its own — a driver deleted for never
     having raced a round in full — in the very division the driver raced. Joined, one person
@@ -365,7 +359,6 @@ async def test_an_account_holding_only_history_of_its_own_is_accepted(tmp_path):
     assert outcome.profile.discord_user_id == NEW_USER
 
 
-@pytest.mark.xfail(strict=True, reason=DRIVER_REFUSAL)
 async def test_a_refused_re_key_over_racing_records_changes_nothing(tmp_path):
     from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
@@ -416,7 +409,6 @@ async def test_the_former_driver_flag_is_set_or_cleared_and_reports_both_values(
     assert profile.former_driver is value
 
 
-@pytest.mark.xfail(strict=True, reason=DRIVER_REFUSAL)
 async def test_setting_the_flag_for_a_user_with_no_profile_is_refused(tmp_path):
     from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
