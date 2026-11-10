@@ -17,19 +17,29 @@ is `test_season_approval_change.py`'s.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from contextlib import ExitStack
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.utils.hooks import AwaitedHook
+from tests.support.review_workflows import run_workflow
 from tests.support.setup_reads import hold_setup
 
 SERVER_ID = 12608
 SEASON_ID = 11
 USER_ID = 77
+
+#: The approval still runs as `SeasonCog._do_approve`, its gates the cog's methods.
+_ON_THE_COG = "#283: the approval is not yet season_review_workflows.approve_season"
+
+#: The gates stood in, each a function of `approval_checks` the workflow calls.
+_GATES = (
+    "placement_confirmation_faults", "season_has_divisions", "team_name_problems",
+    "lineup_problems",
+)
 
 
 
@@ -130,13 +140,14 @@ def _cog(
     results_enabled: bool = False,
     roles=(3001, 3002),
 ):
-    cog = SeasonCog.__new__(SeasonCog)
+    cog = SimpleNamespace()
     # Member by member, not one whole-bot ``AsyncMock`` (issue #240): every unstubbed
     # ``await`` on that form answers with a truthy mock, so a branch nobody chose runs and
     # the test passes reporting on it. ``MagicMock`` raises ``TypeError`` on the same slip.
     cog.bot = MagicMock()
     cog.bot.db_path = db_path
     cog.bot.change_queue.ask = AsyncMock(return_value=None)
+    cog.bot.change_queue.now = MagicMock(side_effect=lambda: datetime.now(timezone.utc))
     # No module's window counts: a windows hook nothing is signed up to.
     cog.bot.round_windows_read = AwaitedHook()
     cog.bot.output_router.post_log = AsyncMock()
@@ -145,11 +156,11 @@ def _cog(
     from leaguebot.core.models.season import SeasonStage
 
     cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
-    cog._placement_confirmation_faults = AsyncMock(return_value=([], []))
+    cog.placement_confirmation_faults = AsyncMock(return_value=([], []))
     # A season with no division is refused on its own terms, pinned in test_placements_confirmation.py.
-    cog._season_has_divisions = AsyncMock(return_value=True)
-    cog._team_name_problems = AsyncMock(return_value=[])
-    cog._lineup_problems = AsyncMock(return_value=[])
+    cog.season_has_divisions = AsyncMock(return_value=True)
+    cog.team_name_problems = AsyncMock(return_value=[])
+    cog.lineup_problems = AsyncMock(return_value=[])
 
     divisions = divisions if divisions is not None else [_division(1, "Pro")]
     season_svc = cog.bot.season_service
@@ -199,7 +210,14 @@ def _attendance_config(*, rsvp=700, attendance=701):
 
 
 async def _approve(cog, interaction):
-    await SeasonCog._do_approve(cog, interaction)
+    """Press ✅ Approve: the approval's workflow, handed *cog*'s bot's services, with the gates
+    *cog* stands in for patched on `approval_checks`."""
+    from leaguebot.core.services import approval_checks
+
+    with ExitStack() as stack:
+        for gate in _GATES:
+            stack.enter_context(patch.object(approval_checks, gate, getattr(cog, gate)))
+        await run_workflow("approve_season", cog.bot, interaction)
 
 
 def _assert_asked(cog) -> None:
@@ -225,6 +243,7 @@ def _replied(interaction) -> str:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_configured_signup_module_does_not_block_approval(db_path):
     cog = _cog(db_path, signup_enabled=True, signup_config=_signup_config())
     interaction = _interaction()
@@ -234,6 +253,7 @@ async def test_a_configured_signup_module_does_not_block_approval(db_path):
     _assert_asked(cog)
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_an_unconfigured_signup_module_blocks_approval(db_path):
     """Approving without a channel arms a season whose signups open into nothing — a module
     failing to produce output while switched on."""
@@ -248,6 +268,7 @@ async def test_an_unconfigured_signup_module_blocks_approval(db_path):
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_the_league_s_roles_are_not_checked_again_at_placements(db_path):
     """Confirming the configuration required both roles while signup was enabled, and
     fixed them until the season ends (issue #276): they cannot have gone missing since."""
@@ -262,6 +283,7 @@ async def test_the_league_s_roles_are_not_checked_again_at_placements(db_path):
     _assert_asked(cog)
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_signup_module_with_no_configuration_row_does_not_block(db_path):
     """Nothing has been configured at all, which `/signup channel` will create — and a
     refusal naming three commands when the module was merely switched on and forgotten
@@ -274,6 +296,7 @@ async def test_a_signup_module_with_no_configuration_row_does_not_block(db_path)
     _assert_asked(cog)
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_disabled_signup_module_is_not_checked(db_path):
     """A league that does not run signups through the bot has no configuration to be
     missing."""
@@ -290,6 +313,7 @@ async def test_a_disabled_signup_module_is_not_checked(db_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_configured_attendance_module_does_not_block_approval(db_path):
     cog = _cog(
         db_path, attendance_enabled=True, attendance_config=_attendance_config()
@@ -306,6 +330,7 @@ async def test_a_configured_attendance_module_does_not_block_approval(db_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_season_with_no_points_configuration_attached_is_refused(db_path):
     """The results module cannot score a race it has no points table for, and the failure
     would otherwise arrive at the first submitted result."""
@@ -318,6 +343,7 @@ async def test_a_season_with_no_points_configuration_attached_is_refused(db_path
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_ON_THE_COG)
 async def test_a_disabled_results_module_is_not_checked(db_path):
     """A league not running results is asked for none of its settings.
 
