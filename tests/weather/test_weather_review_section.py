@@ -11,8 +11,6 @@ import pytest
 
 from leaguebot.core.db.database import run_migrations
 
-_NOT_YET = "#283: weather hands no review section; the season cog writes it"
-
 
 def _modules(on: bool) -> MagicMock:
     modules = MagicMock()
@@ -20,10 +18,7 @@ def _modules(on: bool) -> MagicMock:
     return modules
 
 
-@pytest.mark.parametrize("review", [
-    pytest.param("PLACEMENTS", marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
-    pytest.param("CONFIGURATION", marks=pytest.mark.xfail(strict=True, reason=_NOT_YET)),
-])
+@pytest.mark.parametrize("review", ["PLACEMENTS", "CONFIGURATION"])
 async def test_weather_hands_its_deadlines_to_each_review(tmp_path, review):
     """Weather on, its deadlines as stored: the Weather Config section, its deadlines in the
     words `describe_deadlines` gives them; off, no section."""

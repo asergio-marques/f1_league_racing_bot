@@ -16,6 +16,7 @@ import aiosqlite
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import AuditRecord
 from leaguebot.core.models.round import WeatherWindows
+from leaguebot.core.services.review_sections import Review, ReviewSection
 from leaguebot.core.services.setting_change import Saved
 from leaguebot.weather.models.weather_config import WeatherPipelineConfig
 
@@ -42,6 +43,27 @@ async def round_window(
         phase_1_days=config.phase_1_days,
         phase_2_days=config.phase_2_days,
         phase_3_hours=config.phase_3_hours,
+    )
+
+
+async def review_section(
+    modules: "ModuleService",
+    db_path: str,
+    *,
+    review: Review,
+    season_id: int,
+    division_ids: list[int],
+) -> ReviewSection | None:
+    """Weather's section of a season review: its three deadlines, in both reviews alike; None
+    where the module is off.
+
+    Subscribed to core's `review_sections_read`. Reads only.
+    """
+    if not await modules.is_weather_enabled():
+        return None
+    config = await get_weather_pipeline_config(db_path)
+    return ReviewSection(
+        module="weather", lines=["**Weather Config**", *describe_deadlines(config), ""]
     )
 
 

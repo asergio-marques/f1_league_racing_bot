@@ -153,6 +153,7 @@ def _sign_up_to_review_sections(bot: LeagueBot) -> None:
     its own switch."""
     from leaguebot.attendance.services import attendance_service
     from leaguebot.signup.services import signup_module_service
+    from leaguebot.weather.services import weather_config_service
 
     bot.review_sections_read = AwaitedHook()
     bot.review_sections_read.subscribe(partial(
@@ -160,6 +161,9 @@ def _sign_up_to_review_sections(bot: LeagueBot) -> None:
     ))
     bot.review_sections_read.subscribe(partial(
         attendance_service.review_section, bot.attendance_service, bot.module_service
+    ))
+    bot.review_sections_read.subscribe(partial(
+        weather_config_service.review_section, bot.module_service, bot.db_path
     ))
 
 
