@@ -1800,3 +1800,105 @@ async def test_the_builder_signs_weather_attendance_and_results_up_for_their_ste
         (step.round_id, step.phase_number, step.kind) for each in answers for step in each.pending
     ) == [(1, 1, "weather_p1"), (1, 4, "results"), (1, 5, "rsvp_notice")]
 
+
+@pytest.mark.xfail(strict=True, reason=MARKS_ASKED_OF_THE_MODULES)
+async def test_the_builder_signs_weather_results_and_attendance_up_for_their_review_marks(
+    tmp_path, monkeypatch,
+) -> None:
+    """Weather, results and attendance each hand back their marks of round 1. The hook as the
+    builder makes it asks all three in the order the review lays their marks out (weather,
+    results, then attendance), each handed the database, the rounds, the moment the review judges
+    at and the jobs the scheduler holds, and gathers the marks each hands back."""
+    from tests.support.review_marks_hook import review_marks_read
+
+    asked: list[tuple] = []
+    for module, marks in (
+        ("weather", [("P1", "✅")]),
+        ("results", [("Results", "⏳")]),
+        ("attendance", [("RSVP", "⚠️")]),
+    ):
+        async def answer(db_path, rounds, *, now, queued, _module=module, _marks=marks):
+            asked.append((_module, db_path, rounds, now, queued))
+            return {1: _marks}
+        monkeypatch.setattr(f"leaguebot.{module}.services.test_mode_steps.review_marks", answer)
+    db_path = str(tmp_path / "signed_up.db")
+    rounds: list = []
+    queued = {(1, "weather_p1")}
+
+    answers = await review_marks_read().call(db_path, rounds, now=NOW, queued=queued)
+
+    assert asked == [
+        (module, db_path, rounds, NOW, queued) for module in ("weather", "results", "attendance")
+    ]
+    assert answers == [{1: [("P1", "✅")]}, {1: [("Results", "⏳")]}, {1: [("RSVP", "⚠️")]}]
+
+
+# ---------------------------------------------------------------------------
+# The marks each module hands the review, laid out by core
+# ---------------------------------------------------------------------------
+# Core reads the active season's rounds and lays out its divisions and rounds; each module hands
+# back, through the `review_marks_read` hook, its own marks of each round. Each subscriber here
+# stands in for a module and hands back the marks it is given, by round, as (label, mark) pairs.
+
+def _marks_hook(*modules, handed_to: list | None = None):
+    """A `review_marks_read` hook with one subscriber per *modules* entry, each the marks it hands
+    back by round id, as (label, mark) pairs; each records the ids of the rounds, the moment and
+    the scheduler's jobs it was handed in *handed_to*, where given."""
+    from leaguebot.core.utils.hooks import AwaitedHook
+
+    hook = AwaitedHook()
+    for marks in modules:
+        async def subscriber(db_path, rounds, *, now, queued, _marks=marks):
+            if handed_to is not None:
+                handed_to.append(([r.round_id for r in rounds], now, queued))
+            return _marks
+        hook.subscribe(subscriber)
+    return hook
+
+
+@pytest.mark.xfail(strict=True, reason=MARKS_ASKED_OF_THE_MODULES)
+@pytest.mark.parametrize("scheduler", ["a scheduler", "no scheduler"])
+async def test_core_lays_out_the_marks_each_module_hands_the_review(tmp_path, scheduler) -> None:
+    """The season, starting 1 January 2026, has round 1 (Bahrain, Division A) and round 3 (Imola,
+    Division B) racing in three days and round 2 (Jeddah, Division A) in seven. One stand-in
+    module marks round 1's P1 done and its P2 queued, and round 3's P1 missing its job; another
+    marks round 1's results queued and round 2's finalized. The review heads the season, lists
+    each division's rounds under it in the order they race, and writes each round's marks after
+    its number, track and date: each module's in turn, apart by a bar, a module that hands nothing
+    for a round showing nothing of it. Each module is handed the rounds, the moment the review
+    judges at and the jobs the scheduler holds, where there is a scheduler; and with a scheduler
+    the review ends with the legend of the marks."""
+    db_path = str(tmp_path / "laid_out.db")
+    await _three_rounds(db_path)
+    handed: list = []
+    hook = _marks_hook(
+        {1: [("P1", "✅"), ("P2", "⏳")], 3: [("P1", "⚠️")]},
+        {1: [("Results", "⏳")], 2: [("Results", "✅ finalized")]},
+        handed_to=handed,
+    )
+    stub = _StubScheduler() if scheduler == "a scheduler" else None
+
+    summary = await build_review_summary(db_path, stub, now=NOW, review_marks_read=hook)
+
+    def day(days: int) -> str:
+        return (NOW + timedelta(days=days)).date().isoformat()
+
+    lines = [
+        "**Season: Season starting 2026-01-01 — ACTIVE**",
+        "",
+        "**Division A**",
+        f"  Round 1 · {'Bahrain':<15} · {day(3)}  P1: ✅  P2: ⏳  |  Results: ⏳",
+        f"  Round 2 · {'Jeddah':<15} · {day(7)}  Results: ✅ finalized",
+        "",
+        "**Division B**",
+        f"  Round 3 · {'Imola':<15} · {day(3)}  P1: ⚠️",
+    ]
+    if stub is not None:
+        lines += [
+            "",
+            "*Legend: ✅ done  ⏳ pending (job scheduled)  ⚠️ pending (no job — use /test-mode "
+            "advance)  ⏭️ passed over (its race has been run)*",
+        ]
+    assert summary == "\n".join(lines)
+    queued = set() if stub is not None else None
+    assert handed == [([1, 2, 3], NOW, queued), ([1, 2, 3], NOW, queued)]

@@ -4,14 +4,16 @@
 architecture.md, "The time is always passed in": the change queue's clock is the bot's clock, and
 a cog hands a service its `now` from `bot.change_queue.now()`, never the host's. `/test-mode
 advance` is held to it in `test_test_mode_advance.py`; these are the review and the former-driver
-flag. Each queue's clock reads a moment years from the host's, so that a host reading cannot pass
-for it.
+flag, and beside them the hook the review reads each module's marks through. Each queue's clock
+reads a moment years from the host's, so that a host reading cannot pass for it.
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from leaguebot.core.cogs import test_mode_cog as cog_module
 from leaguebot.core.cogs.test_mode_cog import TestModeCog as _Cog
@@ -60,6 +62,22 @@ async def test_the_review_judges_the_season_at_the_queue_s_time(monkeypatch):
     assert summary.await_args.kwargs.get("now") == QUEUE_NOW
     interaction.response.send_message.assert_awaited_once_with("Season review", ephemeral=True)
 
+
+
+@pytest.mark.xfail(
+    strict=True, reason="#283: the review does not yet ask the modules' marks of the bot's hook"
+)
+async def test_the_review_asks_each_module_s_marks_of_the_bot_s_hook(monkeypatch):
+    """With test mode on, Alex runs `/test-mode review`. The summary reads each module's marks
+    through the hook the bot carries, which the builder signs each module up to, so that each
+    module marks its own steps."""
+    cog = _cog()
+    summary = AsyncMock(return_value="Season review")
+    monkeypatch.setattr(cog_module, "build_review_summary", summary)
+
+    await undecorate(_Cog.review)(cog, _interaction("test-mode review"))
+
+    assert summary.await_args.kwargs.get("review_marks_read") is cog.bot.review_marks_read
 
 async def test_the_former_driver_flag_is_set_at_the_queue_s_time():
     """With test mode on, Alex sets Racer's former-driver flag. The service is handed the change
