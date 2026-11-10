@@ -419,3 +419,29 @@ async def test_each_standing_review_is_routed_under_its_own_button(league, revie
         assert "season_review:confirm_placements" not in ids
     else:
         assert ids == [custom_id]
+
+
+@pytest.mark.xfail(strict=True, reason="#283: the view factory imports the season cog's views")
+@pytest.mark.parametrize(("kind", "custom_id"), [
+    pytest.param("approve", "season_review:approve", id="approval"),
+    pytest.param("mid_season", "season_review:confirm_placements", id="mid-season placements"),
+    pytest.param("configuration", "season_review:confirm_configuration", id="configuration"),
+])
+async def test_the_view_factory_makes_each_review_s_view_with_no_season_cog(
+    league, monkeypatch, kind, custom_id,
+):
+    """No season cog is loaded on the bot, and the season cog's module cannot be imported. The
+    builder's factory of the reviews' views is asked for a view of each kind, for Alex's review:
+    it makes one, carrying the review's own button and no other, without importing or finding
+    the season cog."""
+    import sys
+
+    from leaguebot.__main__ import _approve_view_for
+
+    league.bot.get_cog = MagicMock(return_value=None)
+    monkeypatch.setitem(sys.modules, "leaguebot.core.cogs.season_cog", None)
+
+    view = _approve_view_for(league.bot)({"view": kind, "reviewer_id": REVIEWER_ID})
+
+    assert [item.custom_id for item in view.children] == [custom_id]
+    league.bot.get_cog.assert_not_called()
