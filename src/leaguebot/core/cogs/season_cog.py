@@ -27,7 +27,7 @@ from leaguebot.core.services.cancellation_changes import SEASON_CANCEL
 from leaguebot.core.services.image_drawing import Held
 from leaguebot.core.services.round_moments import read_round_windows
 from leaguebot.core.services.confirmation_refusals import Confirmation, read_refusals
-from leaguebot.core.services.review_sections import Review, read_review_sections
+from leaguebot.core.services.review_sections import Review, read_division_lines, read_review_sections
 from leaguebot.core.services.season_setup_change import KIND as SEASON_SETUP
 from leaguebot.core.services.season_review_changes import POST as SEASON_REVIEW_POST, REVIEW_WINDOW
 from leaguebot.core.services.season_end_changes import (
@@ -430,14 +430,18 @@ class SeasonCog(commands.Cog):
         # own channels, and the manager reading this is the one person able to fix it.
         approval_blockers: list[str] = []
 
-        # The divisions the review shows, read before the modules are asked for their sections,
-        # which hand lines for each of them.
-        db_divisions = await self.bot.season_service.get_divisions_with_results_config(season.id)
+        # The divisions the review shows, read before the modules are asked for their sections
+        # and for their lines of each division's configuration, which they hand for each of them.
+        db_divisions = await self.bot.season_service.get_divisions(season.id)
+        shown_ids = [division.id for division in db_divisions if division.name]
         sections = await read_review_sections(
             self.bot.review_sections_read,
             Review.PLACEMENTS,
             season_id=season.id,
-            division_ids=[division.id for division in db_divisions if division.name],
+            division_ids=shown_ids,
+        )
+        module_division_lines = await read_division_lines(
+            self.bot.division_lines_read, season_id=season.id, division_ids=shown_ids
         )
 
         # ── Modules ───────────────────────────────────────────────
@@ -585,21 +589,15 @@ class SeasonCog(commands.Cog):
             # ── Message 1: config (role + channels) ──────────────
             cal_chan = f"<#{div.calendar_channel_id}>" if div.calendar_channel_id else "*(not set)*"
             lineup_chan = f"<#{div.lineup_channel_id}>" if div.lineup_channel_id else "*(not set)*"
-            results_chan = f"<#{div.results_channel_id}>" if div.results_channel_id else "*(none)*"
-            standings_chan = f"<#{div.standings_channel_id}>" if div.standings_channel_id else "*(none)*"
-            verdicts_chan = f"<#{div.penalty_channel_id}>" if div.penalty_channel_id else "*(not configured)*"
             weather_chan = f"<#{div.forecast_channel_id}>" if div.forecast_channel_id else "*(none)*"
             cfg_lines: list[str] = [
                 "\U0001f4c2 **Configuration**",
                 f"  Role: <@&{div.mention_role_id}>",
                 f"  Calendar channel: {cal_chan}",
                 f"  Lineup channel: {lineup_chan}",
-                f"  Results channel: {results_chan}",
-                f"  Standings channel: {standings_chan}",
-                f"  Verdicts channel: {verdicts_chan}",
             ]
-            for section in sections:
-                cfg_lines += section.division_lines.get(div.id, [])
+            for lines_of_module in module_division_lines:
+                cfg_lines += lines_of_module.get(div.id, [])
             cfg_lines.append(f"  Weather channel: {weather_chan}")
             report.append("\n".join(cfg_lines))
 

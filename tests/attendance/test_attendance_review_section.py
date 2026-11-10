@@ -52,17 +52,12 @@ async def _section(service, on: bool, review: str, division_ids):
                                 division_ids=division_ids)
 
 
-#: Why a test of attendance's division lines fails until they are handed through their own hook.
-_NO_LINES_HOOK = "#283: attendance's channel lines still ride on its review section"
-
-
 async def _lines(service, on: bool, division_ids):
     from leaguebot.attendance.services.attendance_service import division_lines
 
     return await division_lines(service, _modules(on), season_id=1, division_ids=division_ids)
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_LINES_HOOK)
 async def test_attendance_hands_the_placements_review_its_configuration_and_channels():
     """Attendance on and configured, one division with its RSVP channel set and no attendance
     channel, another with neither: the Attendance Config section, and for each division its RSVP
@@ -85,7 +80,6 @@ async def test_attendance_hands_the_configuration_review_its_configuration_alone
     assert section.lines == _LINES
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_LINES_HOOK)
 async def test_attendance_never_configured_shows_its_channels_alone():
     """Attendance on with no configuration stored: no Attendance Config section, as today, and
     each division's channel lines still."""
@@ -97,10 +91,7 @@ async def test_attendance_never_configured_shows_its_channels_alone():
     }
 
 
-@pytest.mark.parametrize("review", [
-    pytest.param("PLACEMENTS", marks=pytest.mark.xfail(strict=True, reason=_NO_LINES_HOOK)),
-    pytest.param("CONFIGURATION"),
-])
+@pytest.mark.parametrize("review", ["PLACEMENTS", "CONFIGURATION"])
 async def test_attendance_hands_nothing_while_it_is_off(review):
     """Attendance off: no section and, for the placements review, the only one that shows
     divisions, no channel lines; and nothing of attendance's is read."""

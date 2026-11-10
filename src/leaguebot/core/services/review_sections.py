@@ -37,14 +37,12 @@ class ReviewSection:
 
     *lines* are the section's own message, headed by the module's title; an empty list is a
     module with nothing to say of itself. *modules_note* is what the review's Modules section
-    shows beside the module's on-or-off line, or None. *division_lines* are lines the review
-    adds to a division's configuration message, by division id.
+    shows beside the module's on-or-off line, or None.
     """
 
     module: str
     lines: list[str] = field(default_factory=list)
     modules_note: str | None = None
-    division_lines: dict[int, list[str]] = field(default_factory=dict)
 
 
 async def read_review_sections(
@@ -60,3 +58,18 @@ async def read_review_sections(
         review=review, season_id=season_id, division_ids=list(division_ids)
     )
     return [section for section in handed if section is not None]
+
+
+async def read_division_lines(
+    division_lines_read: AwaitedHook,
+    *,
+    season_id: int,
+    division_ids: Sequence[int],
+) -> list[dict[int, list[str]]]:
+    """The lines the modules hand back for each division's configuration message in the
+    placements review, one mapping by division id for each module that answered, in the order
+    they signed up (results' channels, then attendance's): the review lays them out as they come.
+    A module with nothing to say hands an empty mapping."""
+    return list(
+        await division_lines_read.call(season_id=season_id, division_ids=list(division_ids))
+    )

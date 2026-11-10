@@ -119,6 +119,14 @@ class LeagueBot(commands.Bot):
     #: service (architecture.md, "A hook core declares is a list of subscribers");
     #: `read_review_sections` gathers what they hand back.
     review_sections_read: AwaitedHook
+    #: The moment the placements review gathers the lines of each division's configuration message
+    #: that belong to a module: each module signs up a function handing back, by division id, the
+    #: lines naming its channels, handed the season and the divisions the review shows. Results'
+    #: lines come whatever its switch, attendance's only while it is on. The builder makes it and
+    #: signs them up in the order the review lays the lines out (results, attendance), so that
+    #: core's review reads no module's table (architecture.md, "A hook core declares is a list of
+    #: subscribers"); `read_division_lines` gathers what they hand back.
+    division_lines_read: AwaitedHook
     #: The base role changed (`/bot base-role`), awaited from an `After` step once the queue has
     #: saved it, given the server, the role replaced and the role now set, and handing no
     #: connection: each subscriber opens its own (signup's move of the signup channel's overwrite

@@ -593,37 +593,6 @@ class SeasonService:
             row = await cursor.fetchone()
         return _row_to_division(row) if row is not None else None
 
-    async def get_divisions_with_results_config(
-        self, season_id: int
-    ) -> list[Division]:
-        """Return divisions with results_channel_id and standings_channel_id populated
-        via LEFT JOIN to division_results_config. Used by the approval gate."""
-        async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                """
-                SELECT d.id, d.season_id, d.name, d.mention_role_id, d.forecast_channel_id,
-                       d.status, d.tier,
-                       d.lineup_channel_id, d.calendar_channel_id, d.lineup_message_id,
-                       d.calendar_message_id,
-                       drc.results_channel_id, drc.standings_channel_id,
-                       drc.penalty_channel_id
-                FROM divisions d
-                LEFT JOIN division_results_config drc ON drc.division_id = d.id
-                WHERE d.season_id = ?
-                ORDER BY d.tier
-                """,
-                (season_id,),
-            )
-            rows = await cursor.fetchall()
-        result: list[Division] = []
-        for r in rows:
-            div = _row_to_division(r)
-            div.results_channel_id = r["results_channel_id"]
-            div.standings_channel_id = r["standings_channel_id"]
-            div.penalty_channel_id = r["penalty_channel_id"]
-            result.append(div)
-        return result
-
     async def capacity_counts(self, season_id: int) -> SeasonCapacityCounts:
         """What the season review's warnings ask of the image module: the division holding
         the most rounds, the most seated drivers (reserves among them) and the most race

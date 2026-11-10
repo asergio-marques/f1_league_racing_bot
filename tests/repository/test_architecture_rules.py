@@ -2332,8 +2332,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/driver_service.py", "divisions_taken_part_in"): (5, PASS["core"]),
     ("core/services/season_end_service.py", "write_driver_history_entries_on"): (3, PASS["core"]),
     ("core/services/season_fingerprint_service.py", "take_fingerprint"): (21, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.get_divisions_with_results_config"):
-        (1, PASS["core"]),
     ("core/services/test_mode_service.py", "build_review_summary"): (5, PASS["core"]),
     ("core/services/test_mode_service.py", "get_next_pending_phase"): (5, PASS["core"]),
     ("image/services/driver_portrait_service.py", "assigned_driver_ids"): (3, PASS["image"]),
@@ -2560,8 +2558,6 @@ KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/season_service.py", "SeasonService.get_division"): (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.get_division_rounds_on"): (3, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.get_divisions_on"): (1, PASS["core"]),
-    ("core/services/season_service.py", "SeasonService.get_divisions_with_results_config"):
-        (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.get_previewable_divisions"):
         (1, PASS["core"]),
     ("core/services/season_service.py", "SeasonService.get_round"): (3, PASS["core"]),

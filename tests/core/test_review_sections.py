@@ -69,9 +69,6 @@ async def test_a_section_that_cannot_be_read_fails_the_review_as_today():
         await read_review_sections(hook, Review.PLACEMENTS, season_id=3, division_ids=[])
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: no hook gathers each division's module lines for the review"
-)
 async def test_the_builder_signs_results_division_lines_up_before_attendance_s(tmp_path):
     """Attendance on, and Pro holding its results channel 120 and its RSVP channel 130. The
     builder signs results and then attendance up to the hook the placements review gathers each

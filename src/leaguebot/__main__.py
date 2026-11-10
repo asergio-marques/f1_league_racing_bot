@@ -406,6 +406,22 @@ def _sign_up_to_driver_names_read(bot: LeagueBot) -> None:
     )
 
 
+def _sign_up_to_division_lines_read(bot: LeagueBot) -> None:
+    """Make the hook the placements review gathers each division's module lines through, and sign
+    each module up to it, in the order the review lays the lines out: results' three channels,
+    handed the database, then attendance's two, handed its service and the module service. Each
+    is handed the season and the divisions the review shows (architecture.md, "How modules and
+    core fit together")."""
+    from leaguebot.attendance.services import attendance_service
+    from leaguebot.results.services import division_channels
+
+    bot.division_lines_read = AwaitedHook()
+    bot.division_lines_read.subscribe(partial(division_channels.division_lines, bot.db_path))
+    bot.division_lines_read.subscribe(
+        partial(attendance_service.division_lines, bot.attendance_service, bot.module_service)
+    )
+
+
 def _sign_up_to_division_channel_faults_read(bot: LeagueBot) -> None:
     """Make the hook a division's channel faults are read through, and sign each module's part up
     to it: the lines naming that module's own channels not set or not on the server, by division,
@@ -1688,6 +1704,7 @@ async def build(settings: Settings) -> LeagueBot:
     _sign_up_to_driver_turned_down(bot)
     _sign_up_to_driver_names_read(bot)
     _sign_up_to_division_channel_faults_read(bot)
+    _sign_up_to_division_lines_read(bot)
     _sign_up_to_driver_account_changed(bot)
     _sign_up_to_placements_confirmed(bot)
     _sign_up_to_season_completed(bot)

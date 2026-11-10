@@ -728,11 +728,10 @@ async def review_section(
     season_id: int,
     division_ids: list[int],
 ) -> ReviewSection | None:
-    """Attendance's section of a season review: its configuration, and in the placements review
-    each division's RSVP and attendance channels; None where the module is off.
+    """Attendance's section of a season review: its configuration; None where the module is off.
 
     Subscribed to core's `review_sections_read`. A module never configured has no configuration
-    to show, its section then holding the divisions' channels alone. Reads only.
+    to show, its section then empty. Reads only.
     """
     if not await modules.is_attendance_enabled():
         return None
@@ -760,25 +759,42 @@ async def review_section(
             f"  • Auto-sack threshold: {autosack_text}",
             "",
         ]
-    division_lines: dict[int, list[str]] = {}
-    if review is Review.PLACEMENTS:
-        for division_id in division_ids:
-            channels = await service.get_division_config(division_id)
-            rsvp = (
-                f"<#{channels.rsvp_channel_id}>"
-                if channels and channels.rsvp_channel_id
-                else "*(not set)*"
-            )
-            attendance = (
-                f"<#{channels.attendance_channel_id}>"
-                if channels and channels.attendance_channel_id
-                else "*(not set)*"
-            )
-            division_lines[division_id] = [
-                f"  RSVP channel: {rsvp}",
-                f"  Attendance channel: {attendance}",
-            ]
-    return ReviewSection(module="attendance", lines=lines, division_lines=division_lines)
+    return ReviewSection(module="attendance", lines=lines)
+
+
+async def division_lines(
+    service: AttendanceService,
+    modules: "ModuleService",
+    *,
+    season_id: int,
+    division_ids: list[int],
+) -> dict[int, list[str]]:
+    """The RSVP and attendance channel lines the placements review shows for each division in
+    *division_ids*, "*(not set)*" where a channel is not; nothing where the module is off.
+
+    Subscribed to core's `division_lines_read`, which hands the season (as it does every
+    subscriber; the divisions named are what is read) and its divisions. Reads only.
+    """
+    if not await modules.is_attendance_enabled():
+        return {}
+    lines: dict[int, list[str]] = {}
+    for division_id in division_ids:
+        channels = await service.get_division_config(division_id)
+        rsvp = (
+            f"<#{channels.rsvp_channel_id}>"
+            if channels and channels.rsvp_channel_id
+            else "*(not set)*"
+        )
+        attendance = (
+            f"<#{channels.attendance_channel_id}>"
+            if channels and channels.attendance_channel_id
+            else "*(not set)*"
+        )
+        lines[division_id] = [
+            f"  RSVP channel: {rsvp}",
+            f"  Attendance channel: {attendance}",
+        ]
+    return lines
 
 
 async def division_channel_faults(

@@ -11,13 +11,15 @@ it replaced, and **writes nothing where the channel is already the one held**, s
 tell that nothing changed. `penalty_channel_id` is a TEXT column, the other two INTEGER; each gives
 its previous value back as an integer.
 
-The module hands core its channels' faults, too, through core's `division_channel_faults_read`
-hook (`division_channel_faults`), asking the module's switch of itself.
+The module hands core its channels, too, through two of core's hooks: the lines the placements
+review shows for each division (`division_lines`, the review showing them whether the module is on
+or off) and the faults a season's confirmation judges them by (`division_channel_faults`, asking
+the module's switch of itself).
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
 import aiosqlite
@@ -105,6 +107,28 @@ async def set_division_penalty_channel(
             (division_id, channel_id),
         )
     return old_id
+
+
+async def division_lines(
+    db_path: str, *, season_id: int, division_ids: Sequence[int]
+) -> dict[int, list[str]]:
+    """The three channel lines the placements review shows for each division in *division_ids*:
+    results, standings, then verdicts, a channel set named and one not set shown as the review
+    always showed it. Asked no switch: the review shows them whether results is on or off.
+
+    Subscribed to core's `division_lines_read`, which hands the season (as it does every
+    subscriber; the divisions named are what is read) and its divisions. Reads only.
+    """
+    channels = await _channels_of(db_path)
+    lines: dict[int, list[str]] = {}
+    for division_id in division_ids:
+        row = channels.get(division_id)
+        lines[division_id] = [
+            f"  {label.capitalize()}: "
+            + (f"<#{row[column]}>" if row is not None and row[column] else unset)
+            for column, label, _command, unset in _CHANNELS
+        ]
+    return lines
 
 
 async def division_channel_faults(

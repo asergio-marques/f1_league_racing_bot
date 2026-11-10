@@ -243,9 +243,6 @@ async def test_results_names_each_division_s_missing_or_deleted_channels(tmp_pat
     assert await faults(False) == {}
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#283: results does not yet hand the review its division channel lines"
-)
 async def test_results_hands_the_review_each_division_s_channel_lines(tmp_path):
     """Division 11 has its results channel 120 and no standings or verdicts channel; Am has its
     standings channel 221 and verdicts channel 222 and no results channel; Club has no results
