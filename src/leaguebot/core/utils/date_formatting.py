@@ -95,9 +95,7 @@ def format_time(moment: datetime, time_format: str | None) -> str:
 
 
 def to_zone(moment: datetime, zone: ZoneInfo) -> datetime:
-    """*moment* in *zone*, reading a naive value as UTC."""
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=ZoneInfo("UTC"))
+    """The aware *moment* in *zone*."""
     return moment.astimezone(zone)
 
 
