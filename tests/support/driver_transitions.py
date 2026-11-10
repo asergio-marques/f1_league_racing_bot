@@ -5,9 +5,9 @@ of its own.
 nothing; a test of the transition table alone has no save around it, so `transitioned` opens one,
 moves the driver, and commits. `DriverService.reassign_user_id_on` judges and then writes a
 reassign, the two halves `/driver reassign`'s save runs in turn, and `reassigned` opens a save
-around it for a test of the reassign without the queue. A reassign asks results which divisions each side raced in, through
-`divisions_raced_read` (`tests.support.driver_records_hooks`), which `reassigned` hands beside the
-merge hook.
+around it for a test of the reassign without the queue. A reassign asks results which divisions each
+side raced in, through `divisions_raced_read` (`tests.support.driver_records_hooks`), which
+`reassigned` hands beside the merge hook.
 """
 from __future__ import annotations
 

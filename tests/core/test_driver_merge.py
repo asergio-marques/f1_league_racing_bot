@@ -127,7 +127,8 @@ async def _snapshot(db_path: str) -> dict[str, list[tuple]]:
 
 
 async def _reassign(db_path: str, old: str, new: str, *, hooks=None):
-    """`/driver reassign`'s save, handed the merge hook the builder makes, or *hooks*."""
+    """`/driver reassign`'s save, handed the hooks a reassign is handed as the builder makes them
+    (`reassign_hooks`), or *hooks*."""
     return await reassigned(db_path, old, new, hooks=hooks)
 
 
