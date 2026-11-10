@@ -1199,6 +1199,7 @@ def register_change_types(bot: LeagueBot) -> None:
             driver=bot.driver_service,
             placement=bot.placement_service,
             profiles_merged=bot.profiles_merged,
+            divisions_raced_read=bot.divisions_raced_read,
             driver_account_changed=bot.driver_account_changed,
             driver_account_changed_steps=bot.driver_account_changed_steps,
             drawing=bot.image_drawing,

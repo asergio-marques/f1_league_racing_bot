@@ -421,7 +421,9 @@ async def divisions_raced_on(db: aiosqlite.Connection, accounts: Sequence[str]) 
     """
     if not accounts:
         return set()
-    held = [int(account) for account in accounts]
+    # Handed as text, as accounts are kept: the INTEGER column converts a numeral on comparing, and
+    # an account that is no numeral matches nothing.
+    held = list(accounts)
     marks = ",".join("?" for _ in held)
     cursor = await db.execute(
         f"""

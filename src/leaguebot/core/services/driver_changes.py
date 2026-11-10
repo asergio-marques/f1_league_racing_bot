@@ -941,6 +941,7 @@ def driver_reassign_change(
     driver: DriverService,
     placement: PlacementService,
     profiles_merged: AwaitedHook,
+    divisions_raced_read: AwaitedHook,
     driver_account_changed: AwaitedHook,
     driver_account_changed_steps: Hook,
     drawing: "ImageDrawing",
@@ -949,11 +950,12 @@ def driver_reassign_change(
     """The `core.driver_reassign` change type, for the builder to register: *driver* is what the
     check judges the reassignment through and the save writes it through, *placement* what the
     roles are read and given through, *profiles_merged* the hook a merge of two drivers calls
-    inside the save, *driver_account_changed* the hook each module's part of the change is
-    planned through, called inside the save with the save's connection and the account replaced
-    and the new one, handing back the jobs it plans, *driver_account_changed_steps* the step
-    definitions of those jobs, by name, *drawing* the image module's drawing, which discards the
-    portrait, and *now* the queue's clock.
+    inside the save, *divisions_raced_read* the hook the modules are asked which divisions each
+    side raced in, in the check and in the save, *driver_account_changed* the hook each module's
+    part of the change is planned through, called inside the save with the save's connection and
+    the account replaced and the new one, handing back the jobs it plans,
+    *driver_account_changed_steps* the step definitions of those jobs, by name, *drawing* the
+    image module's drawing, which discards the portrait, and *now* the queue's clock.
 
     The payload names the accounts (`old_user_id`, any account of the driver's, and `new_user_id`,
     both as strings) and the new member (`new_name`, as the line names them). The roles are read
@@ -966,7 +968,8 @@ def driver_reassign_change(
         new_user_id = str(ctx.payload["new_user_id"])
         try:
             async with get_connection(ctx.db_path) as db:
-                await driver.judge_reassign_on(db, old_user_id, new_user_id)
+                await driver.judge_reassign_on(
+                    db, old_user_id, new_user_id, divisions_raced_read=divisions_raced_read)
         except Refused as refusal:
             return Verdict.refuse(f"⛔ {refusal}")
         return Verdict.go()
@@ -977,7 +980,8 @@ def driver_reassign_change(
             raise RuntimeError("reassigning a driver is the act of a member, and none is recorded")
         old_user_id, new_user_id = str(ctx.payload["old_user_id"]), str(ctx.payload["new_user_id"])
         try:
-            judged = await driver.judge_reassign_on(db, old_user_id, new_user_id)
+            judged = await driver.judge_reassign_on(
+                db, old_user_id, new_user_id, divisions_raced_read=divisions_raced_read)
         except Refused as refusal:
             reply = f"⛔ {refusal}"
             return StepResult(

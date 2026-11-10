@@ -283,10 +283,15 @@ async def current_account_map_for_division(db, division_id: int) -> dict[int, in
 
 
 async def divisions_taken_part_in(
-    db, profile_id: int | None, accounts: list[str]
+    db, profile_id: int | None, accounts: list[str], divisions_raced_read: AwaitedHook,
 ) -> set[int]:
     """Every division the identity took part in: by a confirmed seat, or by a
     result or a standing under any of *accounts*.
+
+    The seats are core's own, read here. What was raced is not: the modules are asked through
+    *divisions_raced_read*, on *db*, handed *accounts*, and each hands back the ids of the
+    divisions it holds a record of any of them in (results'). With no module signed up the
+    identity raced in none.
 
     A division belongs to one season, so two identities sharing one is one person in one
     season's standings twice — which is what a merge must not produce (decided 2026-09-18).
@@ -300,24 +305,8 @@ async def divisions_taken_part_in(
             (profile_id,),
         )
         divisions |= {r[0] for r in await cursor.fetchall()}
-    if accounts:
-        marks = ",".join("?" for _ in accounts)
-        cursor = await db.execute(
-            f"""
-            SELECT sr.division_id FROM race_session_results x
-            JOIN session_results sr ON sr.id = x.session_result_id
-            WHERE x.driver_user_id IN ({marks})
-            UNION
-            SELECT sr.division_id FROM qualifying_session_results x
-            JOIN session_results sr ON sr.id = x.session_result_id
-            WHERE x.driver_user_id IN ({marks})
-            UNION
-            SELECT division_id FROM driver_standings_snapshots
-            WHERE driver_user_id IN ({marks})
-            """,
-            (*accounts, *accounts, *accounts),
-        )
-        divisions |= {r[0] for r in await cursor.fetchall()}
+    for raced in await divisions_raced_read.call(db, accounts):
+        divisions |= set(raced)
     return divisions
 
 
@@ -442,9 +431,12 @@ class ReassignJudgement:
     owner_accounts: list[str] | None
 
 
-async def _judge_reassign(db, old_user_id: str, new_user_id: str) -> ReassignJudgement:
+async def _judge_reassign(
+    db, old_user_id: str, new_user_id: str, divisions_raced_read: AwaitedHook,
+) -> ReassignJudgement:
     """Judge a reassign on *db*, writing nothing; raises Refused for each refusal in the order
-    `DriverService.reassign_user_id_on` documents."""
+    `DriverService.reassign_user_id_on` documents. Where each side raced is asked of the modules
+    through *divisions_raced_read*, on *db*."""
     driver = await _profile_holding(db, old_user_id)
     if driver is None:
         raise Refused(f"No driver profile found for user {old_user_id} on this server.")
@@ -484,14 +476,20 @@ async def _judge_reassign(db, old_user_id: str, new_user_id: str) -> ReassignJud
             )
         owner_accounts = await accounts_of_profile(db, owner["id"])
         await _refuse_a_shared_division(
-            db, await divisions_taken_part_in(db, driver["id"], driver_accounts),
-            await divisions_taken_part_in(db, owner["id"], owner_accounts),
+            db,
+            await divisions_taken_part_in(
+                db, driver["id"], driver_accounts, divisions_raced_read),
+            await divisions_taken_part_in(
+                db, owner["id"], owner_accounts, divisions_raced_read),
             f"<@{new_user_id}>",
         )
     elif owner is None:
         await _refuse_a_shared_division(
-            db, await divisions_taken_part_in(db, driver["id"], driver_accounts),
-            await divisions_taken_part_in(db, None, [str(new_user_id)]),
+            db,
+            await divisions_taken_part_in(
+                db, driver["id"], driver_accounts, divisions_raced_read),
+            await divisions_taken_part_in(
+                db, None, [str(new_user_id)], divisions_raced_read),
             f"<@{new_user_id}>",
         )
     return ReassignJudgement(driver, owner, replaced, switched_back, driver_accounts, owner_accounts)
@@ -597,12 +595,14 @@ class DriverService:
     # ------------------------------------------------------------------
 
     async def judge_reassign_on(
-        self, db: aiosqlite.Connection, old_user_id: str, new_user_id: str
+        self, db: aiosqlite.Connection, old_user_id: str, new_user_id: str,
+        *, divisions_raced_read: AwaitedHook,
     ) -> ReassignJudgement:
         """Judge a reassign on *db*, writing nothing: raises Refused, in the words a league is
         told, for what `reassign_user_id_on` would refuse, and hands back what it was judged
-        against, which `reassign_judged_on` writes."""
-        return await _judge_reassign(db, old_user_id, new_user_id)
+        against, which `reassign_judged_on` writes. *divisions_raced_read* is the hook the
+        modules are asked, on *db*, which divisions each side raced in."""
+        return await _judge_reassign(db, old_user_id, new_user_id, divisions_raced_read)
 
     async def reassign_user_id_on(
         self,
@@ -613,6 +613,7 @@ class DriverService:
         actor_name: str,
         *,
         profiles_merged: AwaitedHook,
+        divisions_raced_read: AwaitedHook,
         now: datetime,
     ) -> ReassignOutcome:
         """Make *new_user_id* the current account of the driver *old_user_id* names, on the
@@ -639,7 +640,8 @@ class DriverService:
         *new_user_id* is already the driver's current account; it is a past account of another
         driver; either side is a test-mode driver; either side has a signup in progress; both
         sides hold a seat or a signup in the live season; or both took part in one division —
-        one season's division, by a confirmed seat or by results. That last applies as much to an
+        one season's division, by a confirmed seat or by a record a module holds (results', asked
+        through *divisions_raced_read*). That last applies as much to an
         account no driver holds whose leftover results sit in such a division: one person would
         stand twice in one season's standings.
 
@@ -648,7 +650,7 @@ class DriverService:
         that has already passed. The Discord side — roles, a held signup channel, a portrait — is
         the change's, in jobs after the save.
         """
-        judged = await _judge_reassign(db, old_user_id, new_user_id)
+        judged = await _judge_reassign(db, old_user_id, new_user_id, divisions_raced_read)
         return await self.reassign_judged_on(
             db, judged, new_user_id, actor_id, actor_name, profiles_merged=profiles_merged,
             now=now,

@@ -52,8 +52,6 @@ from tests.support.delete_hooks import (
 )
 from tests.support.driver_transitions import REASSIGNED_AT, reassigned
 
-REASSIGN_ASKS_RESULTS = "#283: a reassign does not yet ask results where each side raced"
-
 #: A column with no foreign key that names a core row all the same, by what it is called.
 REFERENCE_BY_NAME = {
     "season_id": "seasons",
@@ -358,7 +356,6 @@ async def test_every_delete_leaves_no_orphan(tmp_path, deleted):
     assert left == {}, f"tables not as the delete should leave them: {sorted(left)}"
 
 
-@pytest.mark.xfail(strict=True, reason=REASSIGN_ASKS_RESULTS)
 async def test_a_merge_leaves_nothing_naming_the_driver_absorbed(tmp_path):
     """A row in every table under two seasons, each season's rows naming its own driver. The
     first season's driver is given the second's account, as `/driver reassign` gives it, which

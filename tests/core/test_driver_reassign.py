@@ -33,8 +33,6 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.driver_service import DriverService
 from tests.support.driver_transitions import reassigned
 
-REASSIGN_ASKS_RESULTS = "#283: a reassign does not yet ask results where each side raced"
-
 
 SERVER_ID = 2437
 A, B, C, D = "6201", "6202", "6203", "6204"
@@ -94,7 +92,6 @@ async def _refused(db_path: str, old: str, new: str, match: str) -> None:
 # ── What goes through ──────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=REASSIGN_ASKS_RESULTS)
 async def test_a_new_account_becomes_current_and_the_old_one_is_kept(tmp_path):
     db_path = await _make_db(tmp_path)
     pid = await _profile(db_path, A)
@@ -108,7 +105,6 @@ async def test_a_new_account_becomes_current_and_the_old_one_is_kept(tmp_path):
     assert outcome.switched_back is False
 
 
-@pytest.mark.xfail(strict=True, reason=REASSIGN_ASKS_RESULTS)
 async def test_a_driver_is_named_by_a_past_account(tmp_path):
     """E16: the driver moved A → B; naming them by A moves them on to C, replacing B."""
     db_path = await _make_db(tmp_path)
@@ -121,7 +117,6 @@ async def test_a_driver_is_named_by_a_past_account(tmp_path):
     assert outcome.accounts == [A, B, C]
 
 
-@pytest.mark.xfail(strict=True, reason=REASSIGN_ASKS_RESULTS)
 async def test_a_past_account_may_be_made_current_again(tmp_path):
     """E2: A → B → A. The list stays {A, B}."""
     db_path = await _make_db(tmp_path)
@@ -139,14 +134,12 @@ async def test_a_past_account_may_be_made_current_again(tmp_path):
 # ── What is refused ────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=REASSIGN_ASKS_RESULTS)
 async def test_an_account_no_driver_holds_is_refused(tmp_path):
     """E17."""
     db_path = await _make_db(tmp_path)
     await _refused(db_path, A, B, "No driver profile")
 
 
-@pytest.mark.xfail(strict=True, reason=REASSIGN_ASKS_RESULTS)
 async def test_the_current_account_is_refused_as_the_new_one(tmp_path):
     """E15."""
     db_path = await _make_db(tmp_path)
@@ -156,7 +149,6 @@ async def test_the_current_account_is_refused_as_the_new_one(tmp_path):
     await _refused(db_path, A, B, "already this driver's current account")
 
 
-@pytest.mark.xfail(strict=True, reason=REASSIGN_ASKS_RESULTS)
 async def test_another_drivers_past_account_is_refused(tmp_path):
     """E18: C's driver once held D; D belongs to them."""
     db_path = await _make_db(tmp_path)
@@ -167,7 +159,6 @@ async def test_another_drivers_past_account_is_refused(tmp_path):
     await _refused(db_path, A, D, "past account of another driver")
 
 
-@pytest.mark.xfail(strict=True, reason=REASSIGN_ASKS_RESULTS)
 @pytest.mark.parametrize("test_side", ["driver", "new account"])
 async def test_a_test_mode_driver_on_either_side_is_refused(tmp_path, test_side):
     """E19."""
@@ -184,7 +175,6 @@ async def test_a_test_mode_driver_on_either_side_is_refused(tmp_path, test_side)
     "AWAITING_CORRECTION_PARAMETER",
     "PENDING_DRIVER_CORRECTION",
 ])
-@pytest.mark.xfail(strict=True, reason=REASSIGN_ASKS_RESULTS)
 async def test_a_signup_in_progress_on_the_driver_is_refused(tmp_path, state):
     """E20."""
     db_path = await _make_db(tmp_path)
@@ -193,7 +183,6 @@ async def test_a_signup_in_progress_on_the_driver_is_refused(tmp_path, state):
     await _refused(db_path, A, B, "This driver has a signup in progress")
 
 
-@pytest.mark.xfail(strict=True, reason=REASSIGN_ASKS_RESULTS)
 async def test_a_signup_in_progress_on_the_new_account_is_refused(tmp_path):
     """E20, and E35's first half: the usual case waits for the new account's signup."""
     db_path = await _make_db(tmp_path)
@@ -206,7 +195,6 @@ async def test_a_signup_in_progress_on_the_new_account_is_refused(tmp_path):
 # ── An open review ─────────────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=REASSIGN_ASKS_RESULTS)
 async def test_a_reassign_expires_an_open_placements_review(tmp_path):
     """E41: the review names the driver by the account the reassign replaces. The season is
     fingerprinted as a review's post fingerprints it, with the readers the builder gives the bot."""
@@ -508,7 +496,6 @@ async def test_a_driver_merge_is_one_save_with_the_profiles_merged_hook(tmp_path
     )
 
 
-@pytest.mark.xfail(strict=True, reason=REASSIGN_ASKS_RESULTS)
 async def test_a_driver_reassign_asks_where_each_side_raced_in_its_check_and_its_save(
     tmp_path, monkeypatch,
 ):

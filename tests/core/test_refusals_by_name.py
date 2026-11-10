@@ -305,11 +305,8 @@ CATCHES = [
                  id="team modify save, a role id no number"),
     pytest.param(_team_save("team_reserve_role_change", _RESERVE_ROLE_GARBLED),
                  id="team reserve-role save, a role id no number"),
-    pytest.param(_reassign_checked, id="driver reassign check", marks=pytest.mark.xfail(
-        strict=True, reason="#283: the reassign change is not yet handed divisions_raced_read")),
-    pytest.param(_reassign_merge_hook_faulted, id="driver reassign save, a merge hook's fault",
-                 marks=pytest.mark.xfail(strict=True, reason=(
-                     "#283: the reassign change is not yet handed divisions_raced_read"))),
+    pytest.param(_reassign_checked, id="driver reassign check"),
+    pytest.param(_reassign_merge_hook_faulted, id="driver reassign save, a merge hook's fault"),
     pytest.param(_former_driver_set, id="test-mode set-former-driver"),
     pytest.param(_tiers_checked, id="season approval's tier check"),
 ]

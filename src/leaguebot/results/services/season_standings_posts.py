@@ -267,7 +267,7 @@ async def season_standing_on(
         cursor = await db.execute(
             "SELECT round_id, standing_position, total_points FROM driver_standings_snapshots "
             f"WHERE division_id = ? AND driver_user_id IN ({marks}) ORDER BY id",  # noqa: S608
-            (division_id, *(int(account) for account in accounts)),
+            (division_id, *accounts),
         )
         standings = {int(row[0]): (int(row[1]), int(row[2])) for row in await cursor.fetchall()}
     standing = next((standings[each] for each in rounds if each in standings), None)
