@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.cogs.round_cog import RoundCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import change_rows, league_bot, league_queue, run_queue
 from tests.support.setup_reads import hold_setup
@@ -68,7 +68,7 @@ def _interaction():
 
 
 async def _cog(db_path, *, attendance: bool = True):
-    cog = SeasonCog.__new__(SeasonCog)
+    cog = RoundCog.__new__(RoundCog)
     # The league's bot (`league_bot`), with each awaited member it reads named (issue #240). A
     # whole-bot ``AsyncMock`` answers an unpinned reader with a truthy mock, which for a file
     # about *rules* would mean a rule passing on the stub rather than the round in front of it.
@@ -94,7 +94,7 @@ async def _cog(db_path, *, attendance: bool = True):
     league_queue(cog.bot, db_path, now=datetime.now(timezone.utc))
     # No season being set up, so the command takes its active-season path.
     hold_setup(cog.bot.season_service, None, divisions=False)
-    if hasattr(SeasonCog, "clear_pending"):
+    if hasattr(RoundCog, "clear_pending"):
         # While the cog still keeps a setup in memory, it keeps none here.
         cog._pending = {}
     return cog
@@ -114,7 +114,7 @@ async def _amend(cog, interaction, **kwargs):
     .wraps` leaves the undecorated function on ``__wrapped__``, so the guard is stepped over
     rather than stubbed out.
     """
-    await SeasonCog.round_amend.callback.__wrapped__(cog, interaction, DIVISION, 1, **kwargs)
+    await RoundCog.round_amend.callback.__wrapped__(cog, interaction, DIVISION, 1, **kwargs)
 
 
 def _reply(interaction) -> str:
@@ -248,7 +248,7 @@ async def test_the_summary_does_not_claim_to_withdraw_a_forecast_that_stands(tmp
 
 
 def _view(cog, amendments):
-    from leaguebot.core.cogs.season_cog import _ConfirmView
+    from leaguebot.core.cogs.round_cog import _ConfirmView
 
     return _ConfirmView(
         cog=cog, interaction_user_id=USER_ID, round_id=1, amendments=amendments
@@ -424,7 +424,7 @@ async def test_every_round_amend_refusal_reaches_the_log_channel(tmp_path, case,
         kwargs = dict(kwargs)
         division = kwargs.pop("division", DIVISION)
         round_number = kwargs.pop("round_number", 1)
-        await SeasonCog.round_amend.callback.__wrapped__(
+        await RoundCog.round_amend.callback.__wrapped__(
             cog, interaction, division, round_number, **kwargs
         )
 

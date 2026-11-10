@@ -1,6 +1,6 @@
 """`/round delete` and `/round cancel` — removing a round before a season, and calling one off during it.
 
-Issue #208. Two of `season_cog.py`'s round commands, neither executed by any test. They look
+Issue #208. Two of `round_cog.py`'s round commands, neither executed by any test. They look
 alike and are not: **delete** removes a round that has never existed to a driver, during setup,
 and renumbers the rest; **cancel** calls off a round the league is living through, and is
 irreversible.
@@ -28,7 +28,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.cogs.round_cog import RoundCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.services.season_service import SeasonImmutableError
@@ -88,7 +88,7 @@ def _make_cog(
     mutable: bool = True,
     divisions=None,
     rounds=None,
-) -> SeasonCog:
+) -> RoundCog:
     bot = MagicMock()
     bot.db_path = "/tmp/does-not-matter.db"
 
@@ -113,7 +113,7 @@ def _make_cog(
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
 
-    return SeasonCog(bot)
+    return RoundCog(bot)
 
 
 def _interaction(*, channel=...):
@@ -155,7 +155,7 @@ async def _cancel(
     """Run the command. What the change does once asked is the change queue's, and is tested in
     `test_round_cancel_change.py`; here the command is held to asking it, once, for the right
     round."""
-    await undecorate(SeasonCog.round_cancel)(cog, interaction, division, number, confirm)
+    await undecorate(RoundCog.round_cancel)(cog, interaction, division, number, confirm)
 
 
 async def _migrated(tmp_path) -> str:
@@ -395,7 +395,7 @@ async def _ask_delete(league, division: str = "Pro", number: int = 2):
     from tests.support.settings_league import interaction
 
     asked = interaction(league.bot, "round delete")
-    await undecorate(SeasonCog.round_delete)(SeasonCog(league.bot), asked, division, number)
+    await undecorate(RoundCog.round_delete)(RoundCog(league.bot), asked, division, number)
     return asked
 
 

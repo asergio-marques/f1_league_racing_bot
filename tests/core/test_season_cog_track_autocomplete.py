@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.cogs.round_cog import RoundCog
 from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection, run_migrations
 
 
@@ -24,7 +24,7 @@ class _Interaction:
 
 @pytest.fixture
 async def cog(tmp_path):
-    """A SeasonCog wired to a real, migrated database — tracks come from migration 029."""
+    """A RoundCog wired to a real, migrated database — tracks come from migration 029."""
     from unittest.mock import MagicMock
 
     db_path = str(tmp_path / "bot.db")
@@ -32,7 +32,7 @@ async def cog(tmp_path):
 
     bot = MagicMock()
     bot.db_path = db_path
-    return SeasonCog(bot)
+    return RoundCog(bot)
 
 
 async def test_both_track_parameters_share_one_autocomplete():
@@ -41,8 +41,8 @@ async def test_both_track_parameters_share_one_autocomplete():
     Read off the commands themselves rather than the class, because what matters is what
     discord.py will actually invoke.
     """
-    add = SeasonCog.round_add
-    amend = SeasonCog.round_amend
+    add = RoundCog.round_add
+    amend = RoundCog.round_amend
 
     add_cb = add._params["track"].autocomplete
     amend_cb = amend._params["track"].autocomplete

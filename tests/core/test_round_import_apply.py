@@ -494,11 +494,11 @@ async def test_an_import_is_judged_again_as_it_starts(tmp_path, monkeypatch, mea
     league = await setup_league(tmp_path, divisions=_HELD)
     added = 0
     if meanwhile == "a-round-added-at-that-moment":
-        from leaguebot.core.cogs.season_cog import SeasonCog
+        from leaguebot.core.cogs.round_cog import RoundCog
         from tests.support.undecorate import undecorate
 
-        await undecorate(SeasonCog.round_add)(
-            SeasonCog(league.bot), interaction(league.bot, "round add"), "Pro", "MYSTERY",
+        await undecorate(RoundCog.round_add)(
+            RoundCog(league.bot), interaction(league.bot, "round add"), "Pro", "MYSTERY",
             "2026-06-21T18:00:00", "",
         )
         added = 1

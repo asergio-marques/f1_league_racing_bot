@@ -218,6 +218,7 @@ class SeasonLeague:
     async def build(self) -> None:
         """The league's bot (`league_bot`), its server, services, cog and queue."""
         from leaguebot.core.cogs.division_cog import DivisionCog
+        from leaguebot.core.cogs.round_cog import RoundCog
         from leaguebot.core.cogs.season_cog import SeasonCog
         from leaguebot.core.services.module_service import ModuleService
 
@@ -269,8 +270,9 @@ class SeasonLeague:
         bot.image_config_service.get_toggles = AsyncMock(return_value={})
         bot.image_validity_service.colour_shortfall = AsyncMock(return_value={})
         self.cog = SeasonCog(bot)
-        #: The cog of `/division`, the season's setup being the other's.
+        #: The cogs of `/division` and `/round`, the season's setup being the other's.
         self.division_cog = DivisionCog(bot)
+        self.round_cog = RoundCog(bot)
         bot.get_cog = MagicMock(side_effect=lambda name: self.cog if name == "SeasonCog" else None)
         league_queue(bot, db_path, now=self.clock)
 
@@ -995,10 +997,10 @@ async def cancel_round(league: SeasonLeague, division: str, number: int, *,
                        confirm: str = "CONFIRM") -> Any:
     """Run `/round cancel` for round *number* of *division*, as admin 77; the queue is not run.
     Gives the interaction."""
-    from leaguebot.core.cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.round_cog import RoundCog
 
     interaction = _admin_interaction(league, "round cancel")
-    await undecorate(SeasonCog.round_cancel)(league.cog, interaction, division, number, confirm)
+    await undecorate(RoundCog.round_cancel)(league.round_cog, interaction, division, number, confirm)
     return interaction
 
 
@@ -1037,11 +1039,11 @@ async def amend_round(league: SeasonLeague, division: str, number: int, *, track
     """Run `/round amend` for round *number* of *division* as admin 77, and press the Confirm it
     offered, as admin 77; the queue is not run. Gives the press, or None where nothing was
     offered (the offer refused)."""
-    from leaguebot.core.cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.round_cog import RoundCog
 
     asking = _admin_interaction(league, "round amend")
-    await undecorate(SeasonCog.round_amend)(
-        league.cog, asking, division, number, track, scheduled_at, format
+    await undecorate(RoundCog.round_amend)(
+        league.round_cog, asking, division, number, track, scheduled_at, format
     )
     views = [call.kwargs["view"] for call in asking.followup.send.call_args_list
              if call.kwargs.get("view") is not None]

@@ -18,8 +18,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-import leaguebot.core.cogs.season_cog as season_cog
-from leaguebot.core.cogs.season_cog import BulkRoundModal, SeasonCog, XmlRoundModal
+import leaguebot.core.cogs.round_cog as round_cog
+from leaguebot.core.cogs.round_cog import BulkRoundModal, RoundCog, XmlRoundModal
 from tests.support.setup_rounds import FORMS, NAMED, import_rounds, round_rows, setup_league
 from tests.support.undecorate import undecorate
 
@@ -43,7 +43,7 @@ def _interaction() -> MagicMock:
 
 async def _run_command(name: str, interaction, **kwargs) -> None:
     """The command body, past whatever tier guard it wears."""
-    body = undecorate(getattr(SeasonCog, name))
+    body = undecorate(getattr(RoundCog, name))
     await body(MagicMock(), interaction, **kwargs)
 
 
@@ -226,7 +226,7 @@ def test_a_long_list_of_faults_is_capped():
     refuses an over-long message whole rather than truncating it."""
     errors = [f"Line {n}: unknown track `x`." for n in range(1, 61)]
 
-    rendered = season_cog._format_import_errors(errors)
+    rendered = round_cog._format_import_errors(errors)
 
     assert "60 problem(s)" in rendered
     assert "…and 35 more." in rendered
@@ -246,7 +246,7 @@ async def _run_round_add(league, **kwargs):
     from tests.support.settings_league import interaction
 
     asked = interaction(league.bot, "round add")
-    await undecorate(SeasonCog.round_add)(SeasonCog(league.bot), asked, **kwargs)
+    await undecorate(RoundCog.round_add)(RoundCog(league.bot), asked, **kwargs)
     return asked
 
 
@@ -388,7 +388,7 @@ _NO_SETUP = "No pending season setup. Run `/season setup` first."
     [
         pytest.param(
             "bulk", _BAD_PASTE, "PLACEMENTS", "Import rejected — 2 problem(s)",
-            season_cog.parse_bulk_round_lines(_BAD_PASTE)[1],
+            round_cog.parse_bulk_round_lines(_BAD_PASTE)[1],
             id="bulk_paste_with_bad_lines",
         ),
         pytest.param(
@@ -414,13 +414,13 @@ _NO_SETUP = "No pending season setup. Run `/season setup` first."
         ),
         pytest.param(
             "xml", _BAD_XML, "PLACEMENTS", "Import rejected — 3 problem(s)",
-            season_cog.parse_round_xml(_BAD_XML)[1],
+            round_cog.parse_round_xml(_BAD_XML)[1],
             id="xml_with_bad_rounds",
         ),
         pytest.param(
             "xml", _UNREADABLE_XML, "PLACEMENTS",
             "Import rejected — 1 problem(s)",
-            season_cog.parse_round_xml(_UNREADABLE_XML)[1],
+            round_cog.parse_round_xml(_UNREADABLE_XML)[1],
             id="xml_that_cannot_be_read",
         ),
         pytest.param(

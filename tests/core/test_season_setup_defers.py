@@ -32,6 +32,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from leaguebot.core.cogs.round_cog import RoundCog
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.models.server_config import ServerConfig
 from leaguebot.core.models.season import SeasonStage
@@ -98,9 +99,9 @@ def _bot() -> MagicMock:
     return bot
 
 
-def _cog() -> SeasonCog:
+def _cog() -> RoundCog:
     """A cog on `_bot()`'s league, which holds no season being set up."""
-    return SeasonCog(_bot())
+    return RoundCog(_bot())
 
 
 async def _call(coro_method, interaction, **kwargs):
@@ -155,7 +156,7 @@ def test_every_setup_command_defers_first(command, kwargs):
     """
     import inspect
 
-    src = inspect.getsource(getattr(SeasonCog, command).callback)
+    src = inspect.getsource(getattr(RoundCog, command).callback)
     body = src.split("-> None:", 1)[1]
     defer_at = body.index("interaction.response.defer")
     for earlier in ("await self.bot.", "get_connection(", "await interaction.followup"):
@@ -172,7 +173,7 @@ def test_no_setup_command_replies_through_response(command):
     """After a defer the only valid reply is a followup; send_message would 404."""
     import inspect
 
-    src = inspect.getsource(getattr(SeasonCog, command).callback)
+    src = inspect.getsource(getattr(RoundCog, command).callback)
     assert "interaction.response.send_message" not in src, (
         f"{command} still replies via response.send_message after deferring"
     )

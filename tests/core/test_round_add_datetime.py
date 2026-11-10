@@ -21,7 +21,7 @@ from datetime import datetime
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.cogs.round_cog import RoundCog
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.utils.formatting import discord_ts
 from tests.support.setup_rounds import (
@@ -53,8 +53,8 @@ async def _ask(league, division_name: str = "Pro", format: str = "MYSTERY",
     from tests.support.settings_league import interaction
 
     asked = interaction(league.bot, "round add")
-    await undecorate(SeasonCog.round_add)(
-        SeasonCog(league.bot), asked, division_name, format, scheduled_at, track
+    await undecorate(RoundCog.round_add)(
+        RoundCog(league.bot), asked, division_name, format, scheduled_at, track
     )
     return asked
 

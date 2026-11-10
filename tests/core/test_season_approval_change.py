@@ -971,7 +971,7 @@ async def test_a_round_amended_while_the_posts_wait_is_amended_on_the_ongoing_se
 ):
     """Stopped at Pro's lineup, `/round amend` moving Pro's round 1 a week later is offered as
     an amendment of the running season (decided 2026-09-22)."""
-    from leaguebot.core.cogs.season_cog import SeasonCog, _ConfirmView
+    from leaguebot.core.cogs.round_cog import RoundCog, _ConfirmView
 
     league = await _league_for(tmp_path, monkeypatch)
     _refused(league, PRO_CH.lineup)
@@ -982,8 +982,8 @@ async def test_a_round_amended_while_the_posts_wait_is_amended_on_the_ongoing_se
     amend = member_interaction(league.bot, user=tier_member("admin", member_id=ADMIN_ID))
     amend.guild = league.guild
     later = league.clock.now + timedelta(days=37)
-    await undecorate(SeasonCog.round_amend)(
-        league.cog, amend, division_name="Pro", round_number=1,
+    await undecorate(RoundCog.round_amend)(
+        league.round_cog, amend, division_name="Pro", round_number=1,
         scheduled_at=later.strftime("%Y-%m-%dT%H:%M:%S"),
     )
 

@@ -1607,6 +1607,7 @@ async def build(settings: Settings) -> LeagueBot:
     from leaguebot.core.cogs.bot_cog import BotCog
     from leaguebot.core.cogs.season_cog import SeasonCog
     from leaguebot.core.cogs.division_cog import DivisionCog
+    from leaguebot.core.cogs.round_cog import RoundCog
     from leaguebot.core.cogs.amendment_cog import AmendmentCog
     from leaguebot.core.cogs.test_mode_cog import TestModeCog
     from leaguebot.core.cogs.track_cog import TrackCog
@@ -1625,6 +1626,7 @@ async def build(settings: Settings) -> LeagueBot:
     await bot.add_cog(BotCog(bot))
     await bot.add_cog(SeasonCog(bot))
     await bot.add_cog(DivisionCog(bot))
+    await bot.add_cog(RoundCog(bot))
     await bot.add_cog(AmendmentCog(bot))
     await bot.add_cog(TestModeCog(bot))
     await bot.add_cog(TrackCog(bot))

@@ -160,11 +160,11 @@ async def import_rounds(league: Any, form: str, value: str, division: str = "Pro
     (*form* "bulk") or `/round add-xml`'s (*form* "xml"). Gives the form's interaction."""
     from unittest.mock import MagicMock
 
-    from leaguebot.core.cogs.season_cog import BulkRoundModal, SeasonCog, XmlRoundModal
+    from leaguebot.core.cogs.round_cog import BulkRoundModal, RoundCog, XmlRoundModal
     from tests.support.settings_league import interaction
 
-    cog = SeasonCog(league.bot)
-    league.bot.get_cog = MagicMock(side_effect=lambda name: cog if name == "SeasonCog" else None)
+    cog = RoundCog(league.bot)
+    league.bot.get_cog = MagicMock(side_effect=lambda name: cog if name == "RoundCog" else None)
     modal: Any
     if form == "bulk":
         modal = BulkRoundModal(division)
