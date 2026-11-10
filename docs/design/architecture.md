@@ -1217,17 +1217,6 @@ catch-all, a command catches only the errors it expects by name, and only to tur
 refusal the member can act on, or to hand them to `report_failure` itself with context or an
 outcome, as `/test-mode backup save` does with a backup fault, saying that the previous backup is unchanged.
 
-A refusal whose words the refusing code writes is raised as `Refused` (`core/models/refusal.py`),
-its text what the member reads, and a catch that turns one into a reply names `Refused` around the
-call that refuses and nothing else: parsing a payload, or calling a hook, stays outside it, so a
-save that calls a hook judges inside the catch and calls the hook after it. A fault keeps the bare
-`ValueError`, which Python raises for a bug (`int("x")`, a bad enum value), and goes on as one,
-since no refusal catch takes it. `Refused` subclasses `ValueError` so that a caller with no cause to
-tell the two apart still catches it as one. A refusal the command words itself from fields the error
-carries has a type of its own, not a `ValueError` (`PackRefused`), and is not a `Refused`. The
-driver state machine's refusal of a transition the table does not allow is
-`InvalidDriverTransition`, a fault that a save expecting the race catches by name.
-
 *Rejected:* narrowing the capacity guards' catch to the errors they expect by name, in the
 placement guard or the season's own capacity checks alike: a fault of any other kind would then
 block a placement, a round or a season, when a check that cannot run must not.
@@ -1242,6 +1231,19 @@ would add a line to the log channel for a fault in reading a switch.
 *Rejected:* narrowing the artwork signature's catch to the errors it expects by name: a fault of
 any other kind would empty the whole fingerprint, and the review would read as changed in every
 area.
+
+A refusal whose words the refusing code writes is raised as `Refused` (`core/models/refusal.py`),
+its text what the member reads, or as a refusal type of its own, caught by name; a refusal the
+command words itself from fields the error carries has a type of its own, not a `ValueError`
+(`PackRefused`). A catch that turns a refusal into a reply names its type around the call that
+refuses and holds no parse and no hook: parsing a payload or a row, or calling a hook, stays outside
+it, so a save that calls a hook judges inside the catch and calls the hook after it. Where the edge
+parses what the member typed, a catch may take that parse's own `ValueError` as the refusal, its try
+holding the parse alone. Anywhere else a bare `ValueError` is a fault, which Python raises for a bug
+(`int()` of a stored id, a bad enum value read from the database), and goes on as one, since no
+refusal catch takes it. `Refused` subclasses `ValueError` so that a caller with no cause to tell the
+two apart still catches it as one. The driver state machine's refusal of a transition the table does
+not allow is `InvalidDriverTransition`, a fault that a save expecting the race catches by name.
 
 ---
 
@@ -1337,4 +1339,5 @@ How the checks run, and how to work with the lists of today's breaches they hold
 under "Testing".
 
 Not every rule has its check yet. The rules about how things are built (the hooks, the one
-builder, start-up, the sweep) cannot be checked by reading the code until they exist.
+builder, start-up, the sweep) cannot be checked by reading the code until they exist, and the rule
+that a refusal is raised and caught by name ("Errors and failures") has no check yet.
