@@ -156,11 +156,11 @@ a division or a season cancelled, a round's results made final, placements confi
 configuration confirmed, a review gathering its lines, a season's confirmation judged, a
 season ending, a season, division, round or driver deleted, a driver merged into another or turned
 down, a driver's account changed, a base role changed, the bot packed, test mode turned on, the
-bot's in-memory state cleared, the hub's panel gathering its options, a module's switch read), core declares a hook. The
-builder signs each module up to it before the bot connects. Core calls whoever signed up, and
-never imports a module, the bot's type aside (see "How the code is laid out"). A module turned on or
-off is not a hook but a change of the module's own, which core asks for by its kind (see "Each
-module turns itself on and off").
+bot's in-memory state cleared, the hub's panel gathering its options, a module's switch read),
+core declares a hook. The builder signs each module up to it before the bot connects. Core calls
+whoever signed up, and never imports a module, the bot's type aside (see "How the code is laid
+out"). A module turned on or off is not a hook but a change of the module's own, which core asks
+for by its kind (see "Each module turns itself on and off").
 
 **A hook core declares is a list of subscribers.** Core declares the moment and what it hands over:
 what the moment concerns, where it concerns anything (the rows, the round), and, where core holds
@@ -171,9 +171,13 @@ the hook gathers in that order; what core does with them, if anything, is the mo
 read or to keep, a line to write, a step to plan or to register, a refusal to give. The hook names
 no module and no module's operation, so a module's part of the moment is the module's own code, and
 a module added later signs up without core changing. A hook keyed by a kind takes one function for
-each key instead, as a kind of timed job takes its one handler (see "Timed work and restarts"). A
-link the dependency table allows between two modules is not one of core's hooks: there the module
-depended on may name what it asks of its dependant, as results does of attendance (below).
+each key instead, as a kind of timed job takes its one handler (see "Timed work and restarts").
+**A module's switch read is a keyed hook:** one reader for each module, which the module's own
+work also calls, and core asks for it by the module's name (`is_<module>_enabled`), so a module
+added later adds its name to core's list as well as signing up. A module that never signed up is
+a fault in the bot's assembly, and asking for it raises `LookupError` rather than reading as
+off. A link the dependency table allows between two modules is not one of core's hooks: there the
+module depended on may name what it asks of its dependant, as results does of attendance (below).
 
 *Rejected:* a hook as one object of named operations the builder fills in, one for each module's
 part, which leaves core knowing what each module does at that moment. *Rejected:* only writing the
