@@ -117,7 +117,7 @@ async def test_a_fake_driver_and_its_audit_entry_and_line_are_one_save(
     and in the third case nationality is switched off for test mode. Admin (77) runs
     `/test-mode roster add` of Mock Alpha to McLaren in Am, giving *given* as the nationality.
     They are answered at once with the queue's acknowledgement, "Adding fake driver **Mock Alpha**
-    to **McLaren** in **Am**", naming its first job, and nothing is written until the queue runs
+    to **McLaren F1 Team** in **Am**", naming its first job, and nothing is written until the queue runs
     the change, of kind `core.test_roster_add`. Once it has, Mock Alpha is a fake driver with the
     first synthetic id, Assigned, holding McLaren's second seat and assigned to Am for the season,
     their nationality stored as *kept*; one audit entry, `TEST_DRIVER_ADDED`, by Admin, on Am,
