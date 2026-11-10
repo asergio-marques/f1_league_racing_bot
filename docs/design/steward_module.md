@@ -290,8 +290,8 @@ not work, and the alternatives that do are worse — several *top-level* groups 
 fights the library for no gain.
 
 The cost is one cog file with 53 command bodies in it. It is bounded by keeping those bodies thin:
-a guard, an unpack, a service call, a reply. That lands the cog around 1,000 lines — larger than
-`attendance_cog`, far smaller than `season_cog`, and the size lives in the services where the rest
+a guard, an unpack, a service call, a reply. That lands the cog around 1,000 lines — about the size of
+`attendance_cog` and `season_cog`, well short of `results_cog` and `image_cog`, and the size lives in the services where the rest
 of the bot puts it.
 
 Commands that belong to other modules' groups go to the cogs that declare those groups, for the
