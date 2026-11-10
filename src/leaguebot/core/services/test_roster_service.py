@@ -5,8 +5,10 @@ belong to and commit nothing:
   - judge_add_on / seat_on:        judge a fake driver's seating without a write, then write it
   - judge_bulk_on / seat_bulk_on:  the same for a whole roster, seated at once or not at all
   - find_test_driver_on:           the fake driver holding a synthetic id, or the refusal
-  - remove_test_driver_on:         remove one fake driver by their synthetic user ID
-  - clear_test_drivers_in_division_on: remove all fake drivers from a division
+  - delete_test_drivers_on:        delete fake drivers by profile id, the writer `roster remove` and
+                                   `roster clear` take
+  - remove_test_driver_on:         remove one fake driver by their synthetic user ID (kept for tests)
+  - clear_test_drivers_in_division_on: remove all fake drivers from a division (kept for tests)
   - clear_all_test_drivers_on:     remove all fake drivers from every division (toggle-off)
   - list_test_drivers:             retrieve all fake drivers in a division (for cheat sheet), a
                                    read on a connection of its own
