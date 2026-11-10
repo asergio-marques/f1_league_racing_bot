@@ -29,6 +29,7 @@ from typing import Any
 import aiosqlite
 
 from leaguebot.attendance.services import attendance_service
+from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     ChangeOrigin,
@@ -117,9 +118,7 @@ def sheet_post_change() -> ChangeType:
 
     async def check(ctx: CheckContext) -> Verdict:
         async with get_connection(ctx.db_path) as db:
-            enabled = await (await db.execute(
-                "SELECT module_enabled FROM attendance_config"
-            )).fetchone()
+            enabled = await attendance_enabled_on(db)
             division = await (await db.execute(
                 "SELECT d.name, c.attendance_channel_id FROM divisions d "
                 "LEFT JOIN attendance_division_config c ON c.division_id = d.id WHERE d.id = ?",
@@ -128,7 +127,7 @@ def sheet_post_change() -> ChangeType:
             round_row = await (await db.execute(
                 "SELECT status FROM rounds WHERE id = ?", (int(ctx.payload["round_id"]),)
             )).fetchone()
-        if not (enabled and enabled["module_enabled"]):
+        if not enabled:
             return Verdict.not_due("attendance is off")
         if division is None:
             return Verdict.not_due("the division is gone")

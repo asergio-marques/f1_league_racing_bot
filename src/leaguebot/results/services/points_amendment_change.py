@@ -78,6 +78,7 @@ from leaguebot.results.services.amendment_mode_service import (
     validate_modification_ordering,
 )
 from leaguebot.results.services.attendance_hook import AttendanceAfterReview
+from leaguebot.results.services.module_switch_settings import results_enabled_on
 from leaguebot.results.services.result_submission_service import (
     amendment_wait_text,
     open_amendment_in_season,
@@ -214,9 +215,8 @@ def points_amendment_change(
         db_path = ctx.db_path
         season_id = int(ctx.payload["season_id"])
         async with get_connection(db_path) as db:
-            cursor = await db.execute("SELECT module_enabled FROM results_module_config")
-            row = await cursor.fetchone()
-        if row is None or not row["module_enabled"]:
+            results_on = await results_enabled_on(db)
+        if not results_on:
             return Verdict.refuse(MODULE_OFF)
 
         live = await live_season(db_path)

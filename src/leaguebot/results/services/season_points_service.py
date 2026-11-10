@@ -15,6 +15,7 @@ from leaguebot.core.services.setting_change import Saved
 from leaguebot.results.models.points_changed import PointsChanged, ValueChange
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.results.services import points_config_service
+from leaguebot.results.services.module_switch_settings import results_enabled_on
 from leaguebot.results.utils.points_ordering import ordering_message, ordering_violations
 
 if TYPE_CHECKING:
@@ -127,9 +128,7 @@ async def snapshot_configs_to_season_on(db: aiosqlite.Connection, season_id: int
     results is on. A name attached but no longer held by the server's store raises
     `ConfigNotFoundError`, as the committing form did, and the save rolls back.
     """
-    cursor = await db.execute("SELECT module_enabled FROM results_module_config")
-    switch = await cursor.fetchone()
-    if switch is None or not switch["module_enabled"]:
+    if not await results_enabled_on(db):
         return
     cursor = await db.execute(
         "SELECT config_name FROM season_points_links WHERE season_id = ? ORDER BY config_name",

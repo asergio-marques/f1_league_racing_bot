@@ -23,6 +23,7 @@ from leaguebot.attendance.models.attendance import (
     DriverRoundAttendance,
     RsvpEmbedMessage,
 )
+from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.models.round import AttendanceWindows
@@ -232,9 +233,7 @@ class AttendanceService:
         else saves both in one go: the plain `/module disable attendance` and the cascade from
         turning Results & Standings off both use it.
         """
-        cursor = await db.execute("SELECT module_enabled FROM attendance_config")
-        row = await cursor.fetchone()
-        was_on = row is not None and bool(row["module_enabled"])
+        was_on = await attendance_enabled_on(db)
         await db.execute("UPDATE attendance_config SET module_enabled = 0")
         await db.execute("DELETE FROM attendance_division_config")
         return was_on
