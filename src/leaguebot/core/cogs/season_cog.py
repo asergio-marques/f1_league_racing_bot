@@ -606,30 +606,25 @@ class SeasonCog(commands.Cog):
         )
 
         # ── Modules ───────────────────────────────────────────────
+        # Each module's line, with the note its section hands to show beside it where it is on.
         weather_on = await self.bot.module_service.is_weather_enabled()
-        signup_on = await self.bot.module_service.is_signup_enabled()
         results_on = await self.bot.module_service.is_results_enabled()
-        attendance_on = await self.bot.module_service.is_attendance_enabled()
+        images_on = await self.bot.module_service.is_images_enabled()
+        notes = {section.module: section.modules_note for section in sections}
         on = "✅ Enabled"
         off = "❌ Disabled"
-        if signup_on:
-            signup_note = next(
-                (section.modules_note for section in sections if section.module == "signup"),
-                None,
-            )
-            signup_line = f"  Signup: {on} | {signup_note}" if signup_note else f"  Signup: {on}"
-        else:
-            signup_line = f"  Signup: {off}"
-        images_on = await self.bot.module_service.is_images_enabled()
-        header_lines += [
-            "**Modules**",
-            f"  Weather: {on if weather_on else off}",
-            signup_line,
-            f"  Results: {on if results_on else off}",
-            f"  Attendance: {on if attendance_on else off}",
-            f"  Images: {on if images_on else off}",
-            "",
-        ]
+        header_lines.append("**Modules**")
+        for name, enabled in (
+            ("Weather", weather_on),
+            ("Signup", await self.bot.module_service.is_signup_enabled()),
+            ("Results", results_on),
+            ("Attendance", await self.bot.module_service.is_attendance_enabled()),
+            ("Images", images_on),
+        ):
+            note = notes.get(name.lower()) if enabled else None
+            state = on if enabled else off
+            header_lines.append(f"  {name}: {state} | {note}" if note else f"  {name}: {state}")
+        header_lines.append("")
 
         # ── Image module (FR-033, FR-034) ─────────────────────────
         # When disabled, report that and omit the detail. When enabled, render the

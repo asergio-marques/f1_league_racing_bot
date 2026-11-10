@@ -100,7 +100,7 @@ class LeagueBot(commands.Bot):
     confirmation_refused: AwaitedHook
     #: The moment a season review gathers its lines (`/season placements-review` and
     #: `/season config-review`): each module signs up a function handing back its own section
-    #: of the review, or nothing where its module is off, handed which review is gathered, the
+    #: of the review, or nothing, as its own switch decides, handed which review is gathered, the
     #: season and the divisions the review shows. The builder makes it and signs them up in the
     #: order the review lays the sections out in, so that core's review reads no module's
     #: service (architecture.md, "A hook core declares is a list of subscribers");

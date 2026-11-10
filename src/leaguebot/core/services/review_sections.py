@@ -8,8 +8,9 @@ the review shows, and `read_review_sections` returns what they hand back: each m
 review lays the sections out in, so the builder's order is the review's, and core sorts by no
 module's name.
 
-Each subscriber checks its own module's switch and hands nothing while its module is off, so core
-never asks whether a module is on before asking for its section. **A subscriber that cannot read
+Each subscriber reads its own module's switch and decides what it hands back while its module is
+off, so core never asks whether a module is on before asking for its section: most hand nothing,
+and results still names its configurations in the placements review. **A subscriber that cannot read
 its section is not caught here**: the failure reaches the review command's own failure path, as
 any other read of the review's does.
 """
