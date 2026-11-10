@@ -65,6 +65,8 @@ async def approval_faults(db_path: str, season_id: int, bot: LeagueBot) -> list[
     attendance_on = False
     try:
         attendance_on = await bot.module_service.is_attendance_enabled()
+    except LookupError:
+        raise  # a module that never signed up is a fault in the bot's assembly, not a reading
     except Exception:  # noqa: BLE001 — never refuse an amendment on this reader
         log.exception("approval_faults: could not read the attendance module's state")
     if attendance_on:

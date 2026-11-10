@@ -74,6 +74,7 @@ import discord
 from leaguebot.attendance.models.attendance import AttendanceConfig, RsvpEmbedMessage
 from leaguebot.attendance.services import rsvp_service
 from leaguebot.attendance.services.attendance_service import AttendanceService
+from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.cancellation import CalledOffSteps, CancellationRound
 from leaguebot.core.models.change import (
@@ -202,21 +203,28 @@ async def edit_check_in_message(
     await message.edit(embed=embed, view=view)
 
 
-async def _call_row(db: aiosqlite.Connection, round_id: int) -> aiosqlite.Row | None:
+#: A round as its check-in reads it: its row, with `attendance_on` from attendance's own switch
+#: reader (`attendance_enabled_on`).
+CallRow = Mapping[str, Any]
+
+
+async def _call_row(db: aiosqlite.Connection, round_id: int) -> CallRow | None:
     cursor = await db.execute(
         "SELECT r.id, r.division_id, r.round_number, r.format, r.track_name, r.scheduled_at, "
         "       r.status AS round_status, r.not_held, r.checkin_cleared, "
         "       d.status AS division_status, d.name AS division_name, d.tier AS division_tier, "
         "       d.mention_role_id, d.season_id, s.season_number, "
         "       t.gp_name AS track_gp_name, t.country AS track_country, "
-        "       (SELECT module_enabled FROM attendance_config LIMIT 1) AS attendance_on, "
         "       (SELECT rsvp_deadline_hours FROM attendance_config LIMIT 1) AS deadline_hours "
         "FROM rounds r JOIN divisions d ON d.id = r.division_id "
         "JOIN seasons s ON s.id = d.season_id "
         "LEFT JOIN tracks t ON t.name = r.track_name WHERE r.id = ?",
         (round_id,),
     )
-    return await cursor.fetchone()
+    row = await cursor.fetchone()
+    if row is None:
+        return None
+    return {**dict(row), "attendance_on": await attendance_enabled_on(db)}
 
 
 async def _standing(db: aiosqlite.Connection, round_id: int) -> aiosqlite.Row | None:
@@ -226,7 +234,7 @@ async def _standing(db: aiosqlite.Connection, round_id: int) -> aiosqlite.Row | 
     return await cursor.fetchone()
 
 
-def _round_not_owed(row: aiosqlite.Row | None) -> str | None:
+def _round_not_owed(row: CallRow | None) -> str | None:
     """Why the round is owed nothing of its check-in (no call, no notice), else None."""
     if row is None:
         return "the round is gone"
@@ -242,7 +250,7 @@ def _round_not_owed(row: aiosqlite.Row | None) -> str | None:
 
 
 def _not_due(
-    row: aiosqlite.Row | None, standing: aiosqlite.Row | None, replaces: str | None
+    row: CallRow | None, standing: aiosqlite.Row | None, replaces: str | None
 ) -> str | None:
     """Why the round is owed no call (or no call more), else None.
 
@@ -256,7 +264,7 @@ def _not_due(
 
 
 def _notice_not_due(
-    row: aiosqlite.Row | None, standing: aiosqlite.Row | None, *, now: datetime,
+    row: CallRow | None, standing: aiosqlite.Row | None, *, now: datetime,
     advanced: bool = False,
 ) -> str | None:
     """Why the round is owed no last notice, else None: it needs a call standing to remind of,
@@ -273,15 +281,15 @@ def _notice_not_due(
     return None
 
 
-def _scheduled(row: aiosqlite.Row) -> datetime:
+def _scheduled(row: CallRow) -> datetime:
     return read_scheduled_at(str(row["scheduled_at"]))
 
 
-def _deadline(row: aiosqlite.Row) -> datetime:
+def _deadline(row: CallRow) -> datetime:
     return _scheduled(row) - timedelta(hours=row["deadline_hours"] or 0)
 
 
-def _closed_text(row: aiosqlite.Row, deadline_hours: int) -> str:
+def _closed_text(row: CallRow, deadline_hours: int) -> str:
     """How the moment a call can no longer be answered is told: the deadline, or with none set
     (zero disables the closing of a check-in, not the race) the round's own start."""
     at = int((_scheduled(row) - timedelta(hours=deadline_hours)).timestamp())
@@ -289,7 +297,7 @@ def _closed_text(row: aiosqlite.Row, deadline_hours: int) -> str:
 
 
 def hand_post_refusal(
-    row: aiosqlite.Row,
+    row: CallRow,
     standing: aiosqlite.Row | None,
     cfg: AttendanceConfig | None,
     *,
@@ -439,7 +447,7 @@ async def forget_check_in_call_on(
 async def _forget_vanished_call(
     ctx: StepContext,
     service: AttendanceService,
-    row: aiosqlite.Row,
+    row: CallRow,
     round_id: int,
     division_id: int,
 ) -> Callable[[aiosqlite.Connection], Awaitable[None]]:
@@ -725,7 +733,7 @@ async def _amendment_standing(db: aiosqlite.Connection, round_id: int) -> dict[s
     }
 
 
-def given_up_text(row: aiosqlite.Row) -> str:
+def given_up_text(row: CallRow) -> str:
     """The log channel's line for a round whose call is given up, as the start-up has always
     worded it."""
     return rsvp_service.call_failure_text(
@@ -1431,7 +1439,7 @@ async def _forget_message(db: aiosqlite.Connection, payload: dict[str, Any]) -> 
     )
 
 
-def _not_cleaned(row: aiosqlite.Row | None) -> str | None:
+def _not_cleaned(row: CallRow | None) -> str | None:
     """Why the round is owed no clean-up, else None: unlike a call, a clean-up is owed a round
     whose results are in and whose check-in is over, and so is one that ended cancelled because
     every session was entered as not held (its call stands until the day after, as any round's);
@@ -1602,7 +1610,7 @@ def _doing_deadline(payload: dict[str, Any]) -> str:
 
 
 def _deadline_not_due(
-    row: aiosqlite.Row | None, stored: aiosqlite.Row | None
+    row: CallRow | None, stored: aiosqlite.Row | None
 ) -> str | None:
     """Why the round is owed no deadline run, else None: a deadline runs once for each call."""
     reason = _round_not_owed(row)

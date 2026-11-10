@@ -219,11 +219,9 @@ def configuration_confirm_change(
             # A backstop: the check passed, and something wrote the database after it.
             return _refused(ctx, STAGE_REFUSAL)
 
-        cursor = await db.execute(
-            "SELECT signup_module_enabled, test_mode_active FROM server_configs"
-        )
+        cursor = await db.execute("SELECT test_mode_active FROM server_configs")
         server = await cursor.fetchone()
-        signup_on = server is not None and bool(server["signup_module_enabled"])
+        signup_on = await modules.is_enabled_on(db, "signup")
         test_mode = server is not None and bool(server["test_mode_active"])
         target = SeasonStage.WAITING if signup_on and not test_mode else SeasonStage.PLACEMENTS
         await confirm_configuration_on(db, season_id, target)

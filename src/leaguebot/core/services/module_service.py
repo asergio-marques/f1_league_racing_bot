@@ -33,12 +33,17 @@ class ModuleService:
         module, before the bot connects."""
         self._switch_readers[module] = reader
 
-    async def _is_enabled(self, module: str) -> bool:
+    async def is_enabled_on(self, db: aiosqlite.Connection, module: str) -> bool:
+        """Whether *module* is on, read on *db*, a connection the caller holds: a save asks a
+        module's switch here, so that the read is part of it."""
         reader = self._switch_readers.get(module)
         if reader is None:
             raise LookupError(f"no switch reader is signed up for the {module} module")
+        return await reader(db)
+
+    async def _is_enabled(self, module: str) -> bool:
         async with get_connection(self._db_path) as db:
-            return await reader(db)
+            return await self.is_enabled_on(db, module)
 
     async def is_weather_enabled(self) -> bool:
         return await self._is_enabled("weather")

@@ -101,3 +101,17 @@ async def test_a_switch_no_module_signed_up_for_is_an_error_not_off(db_path):
 
     with pytest.raises(LookupError, match="images"):
         await ModuleService(db_path).is_images_enabled()
+
+
+async def test_a_switch_asked_on_a_held_connection_reads_on_that_connection(db_path):
+    """A save asks a module's switch on the connection it holds (`is_enabled_on`): the reader is
+    handed that connection, so a flag the save has set and not yet committed is what it reads."""
+    from tests.support.season_league import set_module_flag
+
+    svc = _modules(db_path)
+    await set_module_flag(db_path, "signup", False)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE server_configs SET signup_module_enabled = 1")
+        assert await svc.is_enabled_on(db, "signup") is True
+        await db.rollback()
+    assert await svc.is_signup_enabled() is False
