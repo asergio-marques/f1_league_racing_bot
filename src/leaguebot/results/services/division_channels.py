@@ -26,7 +26,11 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.approval_checks import channel_fault
-from leaguebot.core.services.channel_registry_service import ChannelUse, channel_ids_in
+from leaguebot.core.services.channel_registry_service import (
+    ChannelUse,
+    DiscordTargets,
+    channel_ids_in,
+)
 
 if TYPE_CHECKING:
     from leaguebot.core.services.module_service import ModuleService
@@ -168,8 +172,9 @@ async def channel_uses(
     return uses
 
 
-async def setting_channels(db_path: str, *, division_ids: Sequence[int]) -> set[int]:
-    """Every channel a division's results, standings or verdicts channel names, in any season.
+async def setting_channels(db_path: str, *, division_ids: Sequence[int]) -> DiscordTargets:
+    """Every channel a division's results, standings or verdicts channel names, in any season,
+    and, apart from them, every submission and amendment channel the bot created for a round.
 
     Subscribed to core's `setting_channels_read`, which the factory reset asks for the channels
     it cleans up. The divisions' ids are handed, as they are every subscriber, and not used. Reads
@@ -183,7 +188,17 @@ async def setting_channels(db_path: str, *, division_ids: Sequence[int]) -> set[
                 f"SELECT {column} FROM division_results_config WHERE {column} IS NOT NULL",
                 f"division_results_config.{column}",
             )
-    return found
+        created = await channel_ids_in(
+            db,
+            "SELECT channel_id FROM round_submission_channels WHERE channel_id IS NOT NULL",
+            "round_submission_channels.channel_id",
+        )
+        created |= await channel_ids_in(
+            db,
+            "SELECT channel_id FROM round_amend_channels WHERE channel_id IS NOT NULL",
+            "round_amend_channels.channel_id",
+        )
+    return DiscordTargets(created=tuple(sorted(created)), channels=tuple(sorted(found)))
 
 
 async def division_channel_faults(

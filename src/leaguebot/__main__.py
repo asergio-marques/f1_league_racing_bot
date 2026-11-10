@@ -447,8 +447,9 @@ def _sign_up_to_channel_uses_read(bot: LeagueBot) -> None:
 
 
 def _sign_up_to_setting_channels_read(bot: LeagueBot) -> None:
-    """Make the hook the factory reset asks each module through for every channel its settings
-    hold, in any season, and sign each module up to it, handed the database's path, in the same
+    """Make the hook the factory reset asks each module through for every channel it
+    holds (those its settings name, those it posted to and those it created), in any season, and
+    sign each module up to it, handed the database's path, in the same
     order (architecture.md, "How modules and core fit together")."""
     from leaguebot.attendance.services import division_channels as attendance_channels
     from leaguebot.results.services import division_channels as results_channels

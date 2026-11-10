@@ -2708,11 +2708,6 @@ def test_the_read_check_counts_a_table_spliced_in_unless_its_function_was_read_b
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: the reset still reads the channels the bot created out of the modules' tables, "
-    "spliced in",
-)
 def test_every_spliced_read_read_by_hand_is_still_what_it_was():
     """Each function in `SPLICED_READS_READ_BY_HAND` reads as many tables spliced in as were read
     by hand, with a reason: one added since, or one gone, fails here until it is read again and the

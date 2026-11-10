@@ -16,7 +16,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection, sole_row, tuple_rows_in
 from leaguebot.core.services.approval_checks import channel_fault
-from leaguebot.core.services.channel_registry_service import ChannelUse
+from leaguebot.core.services.channel_registry_service import ChannelUse, DiscordTargets
 
 if TYPE_CHECKING:
     from leaguebot.core.services.module_service import ModuleService
@@ -126,13 +126,14 @@ async def channel_uses(
     ]
 
 
-async def setting_channels(db_path: str, *, division_ids: Sequence[int]) -> set[int]:
+async def setting_channels(db_path: str, *, division_ids: Sequence[int]) -> DiscordTargets:
     """Every channel the forecast channel of one of *division_ids* (every division of every
-    season) names.
+    season) names, which the bot posts to; it creates none.
 
     Subscribed to core's `setting_channels_read`, which the factory reset asks for the channels
     it cleans up. Reads only.
     """
     async with get_connection(db_path) as db:
         channels = await forecast_channels_on(db, list(division_ids))
-    return {int(channel) for channel in channels.values() if channel is not None}
+    named = {int(channel) for channel in channels.values() if channel is not None}
+    return DiscordTargets(created=(), channels=tuple(sorted(named)))

@@ -21,8 +21,9 @@ channels, and the interaction, log and hub channels, are core's columns, read he
 channels are the module's own columns (architecture.md, "Each table is read and written by its
 owner alone"), so the registry asks each module for the uses of a channel through the bot's
 `channel_uses_read` hook (:func:`find_channel_use`), and the factory reset asks each for every
-channel its settings hold, in any season, through `setting_channels_read`
-(:func:`channel_ids_in` parses the ids a module's own statement selects, for that).
+channel it holds, in any season, through `setting_channels_read`, each answering with the
+:class:`DiscordTargets` it holds (:func:`channel_ids_in` parses the ids a module's own statement
+selects, for that).
 """
 
 from __future__ import annotations
@@ -41,6 +42,7 @@ log = logging.getLogger(__name__)
 
 __all__ = [
     "ChannelUse",
+    "DiscordTargets",
     "as_text_channel",
     "channel_ids_in",
     "channel_refusal",
@@ -91,6 +93,22 @@ class ChannelUse:
         if self.division_name is None:
             return f"{self.label} channel"
         return f"{self.label} channel for **{self.division_name}**"
+
+
+@dataclass(frozen=True)
+class DiscordTargets:
+    """The channels the factory reset's clean-up visits, as one module or core holds them.
+
+    *created* are the channels the bot made for itself — a signup wizard's, a round's results
+    submission and amendment channels — and are deleted outright. *channels* are every other
+    channel the bot posts to or reads from, in any season, from which only the bot's own
+    messages are deleted. Each is sorted, so the clean-up visits them in a stable order and a
+    report of where it stopped means the same thing on a second run. Each module hands the reset
+    its own through `setting_channels_read`; the reset gathers them with core's.
+    """
+
+    created: tuple[int, ...]
+    channels: tuple[int, ...]
 
 
 #: Core's own per-division settings, as (setting key, table, column), both on the divisions row.

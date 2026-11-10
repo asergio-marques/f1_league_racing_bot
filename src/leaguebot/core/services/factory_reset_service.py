@@ -38,6 +38,7 @@ from leaguebot.core.services.change_queue import (
 from leaguebot.core.services.channel_registry_service import (
     DIVISION_SOURCES,
     SERVER_SOURCES,
+    DiscordTargets,
     channel_ids_in,
 )
 from leaguebot.core.services.in_memory_state import clear_in_memory_state
@@ -111,32 +112,9 @@ def _self_contained(path: Path) -> None:
 # ── What to clean in Discord, gathered before the wipe ────────────────────
 
 
-@dataclass(frozen=True)
-class DiscordTargets:
-    """The channels the clean-up visits, read out of the database before it is wiped.
-
-    *created* are the channels the bot made for itself — a signup wizard's, a round's results
-    submission and amendment channels — and are deleted outright. *channels* are every other
-    channel the bot posts to or reads from, in any season, from which only the bot's own
-    messages are deleted. Each is sorted, so the clean-up visits them in a stable order and a
-    report of where it stopped means the same thing on a second run.
-    """
-
-    created: tuple[int, ...]
-    channels: tuple[int, ...]
-
-
-#: Channels the bot creates, as (table, column).
-_CREATED_SOURCES: tuple[tuple[str, str], ...] = (
-    ("signup_wizard_records", "signup_channel_id"),
-    ("round_submission_channels", "channel_id"),
-    ("round_amend_channels", "channel_id"),
-)
-
-#: Channels the bot posts to that no setting names, as (table, column): where a check-in
-#: call was posted, a review prompt waits, or an undelivered message was bound.
+#: Channels core posts to that no setting names, as (table, column): where a review prompt waits
+#: or an undelivered message was bound. The channels the modules hold are each module's to name.
 _OTHER_SOURCES: tuple[tuple[str, str], ...] = (
-    ("rsvp_embed_messages", "channel_id"),
     ("season_review_prompts", "channel_id"),
     ("pending_messages", "channel_id"),
 )
@@ -146,16 +124,13 @@ async def gather_targets(db_path: str, *, setting_channels_read: AwaitedHook) ->
     """Every channel the clean-up must visit. Read before the wipe, which forgets them all.
 
     Core's own channels are read here, in every season's divisions, not only the current one's:
-    the bot posted in all of them. Each module is asked for the channels its settings hold,
-    in any season, through *setting_channels_read*, the bot's hook, which hands each subscriber the
-    id of every division of every season and gathers a set of channel ids from each.
+    the bot posted in all of them. Each module is asked for the channels it holds, in any season,
+    through *setting_channels_read*, the bot's hook, which hands each subscriber the id of every
+    division of every season and gathers the :class:`DiscordTargets` each holds: the channels its
+    settings name and those it posted to, and apart from them those it created. A channel any
+    module created is deleted, so it is not also one to clear.
     """
     async with get_connection(db_path) as db:
-        created: set[int] = set()
-        for table, column in _CREATED_SOURCES:
-            created |= await channel_ids_in(
-                db, f"SELECT {column} FROM {table} WHERE {column} IS NOT NULL", f"{table}.{column}"
-            )
         settings = [
             (table, column) for _key, table, column in (*SERVER_SOURCES, *DIVISION_SOURCES)
         ]
@@ -166,8 +141,10 @@ async def gather_targets(db_path: str, *, setting_channels_read: AwaitedHook) ->
             )
         cursor = await db.execute("SELECT id FROM divisions")
         division_ids = [int(row[0]) for row in await cursor.fetchall()]
+    created: set[int] = set()
     for held in await setting_channels_read.call(division_ids=division_ids):
-        channels |= set(held)
+        created |= set(held.created)
+        channels |= set(held.channels)
     return DiscordTargets(
         created=tuple(sorted(created)), channels=tuple(sorted(channels - created))
     )

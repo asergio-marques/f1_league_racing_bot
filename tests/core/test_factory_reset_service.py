@@ -227,10 +227,6 @@ async def test_the_channels_the_bot_created_are_gathered_apart(db_path):
     assert not set(targets.created) & set(targets.channels)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#283: the reset still reads signup's, results' and attendance's tables itself",
-)
 async def test_a_module_s_channels_are_gathered_only_by_asking_the_module(db_path):
     """The same two seasons, and the reset asked with no module signed up to its hook: only core's
     own channels are gathered, since core reads no module's table or column. They are the
@@ -251,28 +247,24 @@ async def test_a_module_s_channels_are_gathered_only_by_asking_the_module(db_pat
     assert targets.created == ()
 
 
-#: Not yet true of any module's answer to the reset (#283).
-_HANDS_THEM_APART = "#283: the module hands the reset a set of channel ids, not created and posted apart"
-
-
 @pytest.mark.parametrize(
     ("reader", "created", "channels"),
     [
         pytest.param(
             "leaguebot.weather.services.forecast_channel", (), (10, 20),
-            id="weather", marks=pytest.mark.xfail(strict=True, reason=_HANDS_THEM_APART),
+            id="weather",
         ),
         pytest.param(
             "leaguebot.results.services.division_channels", (40, 41), (23, 24, 25),
-            id="results", marks=pytest.mark.xfail(strict=True, reason=_HANDS_THEM_APART),
+            id="results",
         ),
         pytest.param(
             "leaguebot.attendance.services.division_channels", (), (26, 27, 28),
-            id="attendance", marks=pytest.mark.xfail(strict=True, reason=_HANDS_THEM_APART),
+            id="attendance",
         ),
         pytest.param(
             "leaguebot.signup.services.channel_uses", (42,), (30,),
-            id="signup", marks=pytest.mark.xfail(strict=True, reason=_HANDS_THEM_APART),
+            id="signup",
         ),
     ],
 )
