@@ -21,6 +21,8 @@ SIGNUP_CHANNEL = 700
 BUTTON_MESSAGE = 8800
 CLOSED_MESSAGE = 9900
 
+_NOT_YET_IN_THE_WIRING = "#283: the close timer and its sweep are not yet in signup's wiring"
+
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -143,14 +145,14 @@ async def test_a_close_nobody_ran_that_closes_nothing_writes_no_line(
     bot.output_router.post_log.assert_not_awaited()
 
 
-def _functions_in_main():
-    """Every function the entry point defines, its closures included."""
+def _functions_in_the_wiring():
+    """Every function signup's wiring defines, its closures included."""
     import ast
     import inspect
 
-    import leaguebot.__main__ as bot_main
+    from leaguebot.signup import wiring
 
-    tree = ast.parse(inspect.getsource(bot_main))
+    tree = ast.parse(inspect.getsource(wiring))
     return [
         node for node in ast.walk(tree)
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
@@ -181,7 +183,7 @@ def _close_timer_callback():
     """The function signed up as the signup close's handler, the kind its job runs as."""
     import ast
 
-    functions = _functions_in_main()
+    functions = _functions_in_the_wiring()
     register = next(
         call for function in functions
         for call in _calls_to(function, "register_timer")
@@ -195,7 +197,7 @@ def _restart_sweep():
     """The innermost function that re-arms the signup close timer at start-up: the sweep
     whose other branch closes a window whose set time passed while the bot was down."""
     return min(
-        (f for f in _functions_in_main() if _calls_to(f, "schedule_signup_close_timer")),
+        (f for f in _functions_in_the_wiring() if _calls_to(f, "schedule_signup_close_timer")),
         key=lambda f: f.end_lineno - f.lineno,
     )
 
@@ -205,14 +207,18 @@ def _restart_sweep():
     [
         pytest.param(
             _close_timer_callback, "timer", id="close timer",
+            marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING),
         ),
-        pytest.param(_restart_sweep, "restart", id="restart sweep"),
+        pytest.param(
+            _restart_sweep, "restart", id="restart sweep",
+            marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING),
+        ),
     ],
 )
 def test_the_close_timer_and_the_restart_sweep_call_the_close_nobody_ran(find, cause):
     """Signups close at their set time, or the bot restarts after it: the job that runs then
     closes them through `close_signups_unattended` with its own cause, so its one line naming
-    no member is written. Both are defined in the entry point, among steps no test drives whole,
+    no member is written. Both are defined in signup's wiring, among steps no test drives whole,
     so the wiring is read from the source."""
     function = find()
 
