@@ -140,7 +140,9 @@ point, which would then hold every module's registrations and grow with each mod
   hands a button's press to a service's workflow, which answers through the interaction. It holds no
   database code and no league rule, so every rule a league relies on can be tested by calling a
   service with no Discord interaction involved. A cog holds one command group; when one grows too
-  large, its workflows move into services before it is split. A module's commands sit under its own
+  large, its workflows move into services before it is split. The split keeps the group in one cog:
+  the cog class is composed from one file per subgroup, which discord.py allows because it collects
+  a cog's commands across the classes the cog derives from. A module's commands sit under its own
   top-level group, never under one of core's: `/weather channel`, not `/division weather-channel`.
   So do its tools for test mode, which sit under the module's group and work only while test mode is
   on, rather than under `/test-mode`. A command's name then says which module owns it, and the
@@ -151,7 +153,9 @@ point, which would then hold every module's registrations and grow with each mod
   *Rejected:* core's cog holding a module's commands and handing the work to the module through a
   hook, which puts part of every module in core. *Rejected:* a module binding its own commands to
   core's groups as it loads, which works, but leaves a module's commands under names that are
-  core's.
+  core's. *Rejected:* a cog for each subgroup, bound to the group by hand, which binds outside
+  discord.py's own collection, as the rejection above gives for a module binding its commands to
+  core's groups.
 - **A service** holds the league's rules and all the database code. It may use discord.py: it can
   post to a channel and build the buttons it posts, and a workflow, to which a cog hands a button's
   press, takes the pressed interaction and answers the member through it, while the gates it walks
@@ -254,6 +258,9 @@ for it raises `SwitchNotSignedUp`, a `LookupError` of its own type, which no rea
 aside takes for an answer: each lets that type through by name and stands aside from any other
 fault. A link the dependency table allows between two modules is not one of core's hooks: there the
 module depended on may name what it asks of its dependant, as results does of attendance (below).
+Only core calls a hook it declares. A moment a module reaches is either the module's own, where any
+dependant is reached through what the builder hands it, or a core writer's, which calls its own
+hooks.
 
 *Rejected:* a hook as one object of named operations the builder fills in, one for each module's
 part, which leaves core knowing what each module does at that moment. *Rejected:* only writing the
@@ -384,7 +391,10 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   of the kinds asked for that are queued, running or stopped on a failure, leaving out the one
   whose check is running (`CheckContext.change_id`).
   What a change type refuses is read from the database and the queue, never from a flag kept in
-  memory, so it holds across a restart. A bot's request that this check finds no longer due (a
+  memory, so it holds across a restart. State that may be held in memory is state a module's
+  specification lets a restart lose: the change it feeds reads it, and finds its work no longer due
+  after a restart, as results' penalty-review staging does.
+  A bot's request that this check finds no longer due (a
   review reopened for a round that has since gone final) is dropped, not stopped: only a channel
   missing or unusable stops its lane.
 - **All or nothing in one step.** Where a change must be all or nothing (as the results
@@ -907,6 +917,11 @@ forecast's by `schedule_round` and the check-in's by `schedule_attendance_round`
 `schedule_round_cleanups` arms either or both on their own, and the re-arming calls it alone for a
 round raced, or ended cancelled because every session was entered as not held.
 
+**A standing sweep is an interval job that re-reads its rows each time it runs.** It is the shape
+where an event's handler may refuse while other work is in hand and must be asked again later, as
+results' sweep that undoes an abandoned amendment does while the round has other work in hand.
+It is armed with no lateness limit, and its handler re-reads the rows as any handler does.
+
 **A delay is a one-off timer that asks a change.** The queue holds no delay of its own. Where
 something must happen a set time after a job (a season review's, a correction's or an
 amendment's five minutes running out, a signup left unanswered for a day, a held signup channel's
@@ -1113,7 +1128,12 @@ The exceptions, each with its reason:
 - **Its message id,** wherever the bot might later edit, delete or replace it. The owning module
   saves the id the handler hands back in the posting step, and asks the handler to delete the
   message it replaces in the step after, so each table keeps one writer. A message nobody recorded
-  can never be found again, to be edited or deleted.
+  can never be found again, to be edited or deleted. Where a module's specification takes its output
+  down when the module is switched off, every post in that output counts as one that might later be
+  deleted; each module's design file names, post by post, whether its switch-off takes it down. A
+  posted message's ids are kept on a row whose identity is the posting or the thing posted, never on
+  a row a recalculation deletes or rewrites, where a reordering or a rebuild would carry them off or
+  drop them.
 - **Who it may mention,** stated where it is sent. A log line's mentions are wrapped so that they
   name without notifying, but one: the stop notice's mention of the league admins' role
   (`OutputRouter.post_notice`), the one mention the log channel notifies. Who it mentions is the
@@ -1332,10 +1352,13 @@ which differs from every fingerprint, another empty one included, and so refuses
 review was read, because a fingerprint that could not be read must not wave one through (its
 docstring says so); the factory reset's Discord clean-up (`bot_cog._clean_up`) is a stated
 exception: it says in the reset's last report and closing line that its clean-up stopped, because a
-reset must not end in silence (its docstring says so); and the scheduler's removal of one job
+reset must not end in silence (its docstring says so); the scheduler's removal of one job
 (`SchedulerService._remove_job`) is a stated exception: every cancel is a clean-up, so a job that
 will not go is logged on the host and left, a teardown list going on past it (`SchedulerService`
-says so).
+says so); and the results picker's put-back after a press the bot has already answered
+(`_ConfigSelectView._put_back`) is a stated exception: its catch-all logs the error in full and
+leaves the message as the press's own edit left it, because a report would answer the press twice
+(its docstring says so).
 
 In every case it keeps the full error details for the host's log. Beyond the first place's own
 catch-all, a command catches only the errors it expects by name, and only to turn them into a

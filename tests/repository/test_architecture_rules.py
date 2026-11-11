@@ -3239,6 +3239,9 @@ CATCH_ALLS_ALLOWED = {
         "a stated exception: a lineup gate that cannot be read answers text, so none is lost",
     ("image/services/image_drawing.py", "ImageDrawing.artwork_signature"):
         "a stated exception: artwork that cannot be read is signed as such, and the rest still is",
+    ("results/services/result_submission_service.py", "_ConfigSelectView._put_back"):
+        "a stated exception: a put-back after a press already answered logs the error in full and "
+        "leaves the message as the press's edit left it, for a report would answer the press twice",
 }
 
 
@@ -3344,8 +3347,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/utils/font_metrics.py", "measure"): (1, PASS["image"]),
     ("image/utils/svg_document.py", "_contained"): (2, PASS["image"]),
     ("image/utils/svg_fill.py", "_mandatory_ids"): (1, PASS["image"]),
-    ("results/services/result_submission_service.py", "_ConfigSelectView._put_back"):
-        (1, PASS["results"]),
     ("results/services/results_post_service.py", "produce_session_results"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "produce_standings"): (1, PASS["results"]),
     ("results/services/review_recovery.py", "recover_review"): (1, PASS["results"]),
