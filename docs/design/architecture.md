@@ -751,6 +751,10 @@ handed, so the step still happens all at once.
 and not on a second connection. SQLite lets one writer in at a time, so a post made in the middle
 of a save holds up every other save in the bot for as long as Discord takes to answer, and a second
 connection that tried to write would be kept waiting by the first until it gave up and failed.
+The rule holds as much for a save run on a connection it was handed as for one a function opens
+itself. A function given a save's connection, or run as a change type's save step or as a step's
+record, awaits only that connection, a cursor from it, or a call it hands the connection on to. A
+read it needs is given a form that takes the connection.
 Save first, then post, then record what was posted in a save of its own.
 
 **Each table is read and written by its owner alone.** Every statement that reads or changes a table
@@ -1452,7 +1456,7 @@ later on its own.
   sit only in the named topic folders, each named as plumbing or as league rules, with the
   scheduler's file alone loose.
 - **`tests/repository/test_architecture_rules.py`** checks the rest: database code outside services,
-  awaiting anything but the connection mid-save, cogs handling their own errors, catch-all handlers
+  awaiting anything but the connection mid-save (in a function that opens it and in one handed it), cogs handling their own errors, catch-all handlers
   that lose the error details, background tasks nobody keeps, code reaching past the scheduler
   service, the entry point subscribing a module to a hook only that module joins (that module's
   wiring signs it up), jobs armed with a lateness limit, private names used across modules, a new

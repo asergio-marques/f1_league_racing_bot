@@ -259,9 +259,48 @@ def _on_the_connection(awaited: ast.AST, connection: str) -> bool:
     return any(isinstance(argument, ast.Name) and argument.id == connection for argument in arguments)
 
 
-def _awaits_inside_a_write() -> Counter[tuple[str, str]]:
+#: How a function's annotation names a connection (`list[Connection]` is not one).
+_CONNECTION_TYPES = frozenset({"aiosqlite.Connection", "Connection"})
+
+
+def _handed_connection(function: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
+    """The name of the connection *function* is handed, or None where it is handed none: its first
+    parameter after `self` or `cls`, where that is named `db` or annotated as a connection."""
+    positional = [*function.args.posonlyargs, *function.args.args]
+    if positional and positional[0].arg in ("self", "cls"):
+        positional = positional[1:]
+    if not positional:
+        return None
+    first = positional[0]
+    annotation = ast.unparse(first.annotation).replace("\"", "").replace("'", "") if first.annotation else ""
+    return first.arg if first.arg == "db" or annotation.removesuffix(" | None") in _CONNECTION_TYPES else None
+
+
+def _step_functions(nodes: list[tuple[str, str, ast.AST]]) -> set[tuple[str, str]]:
+    """The functions a `Step(...)` is given to run on the save's connection, as ``(file, name)``:
+    the function passed as the run of a `StepKind.SAVE` step, and the `record=` of any step, where
+    the call names it plainly. What the scan cannot see by name, it cannot follow."""
+    named: set[tuple[str, str]] = set()
+    for path, _function, node in nodes:
+        if not (isinstance(node, ast.Call) and _call_name(node) == "Step"):
+            continue
+        saves = (
+            len(node.args) > 2 and isinstance(node.args[1], ast.Attribute) and node.args[1].attr == "SAVE"
+        )
+        given = [node.args[2]] if saves else []
+        given += [keyword.value for keyword in node.keywords if keyword.arg == "record"]
+        named |= {(path, each.id) for each in given if isinstance(each, ast.Name)}
+    return named
+
+
+def _awaits_inside_a_write(nodes=None) -> Counter[tuple[str, str]]:
+    """Each await, by file and function, that is not the open connection's while a save is open: in
+    an `async with` that opens a connection, between a write and its commit; and in a function
+    handed the connection of a save (`_handed_connection`) or given to a step as its save or its
+    record (`_step_functions`), anywhere in its body, since the save is open throughout."""
+    nodes = list(_nodes() if nodes is None else nodes)
     found: Counter[tuple[str, str]] = Counter()
-    for path, function, node in _nodes():
+    for path, function, node in nodes:
         if not isinstance(node, ast.AsyncWith):
             continue
         for item in node.items:
@@ -284,10 +323,32 @@ def _awaits_inside_a_write() -> Counter[tuple[str, str]]:
                     writing = writing or text is None or bool(_WRITE.match(text))
                 elif writing and not _on_the_connection(call, connection):
                     found[(path, function)] += 1
+    steps = _step_functions(nodes)
+    for path, function, node in nodes:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        connection = _handed_connection(node)
+        if connection is None and (path, node.name) in steps and node.args.args:
+            connection = node.args.args[0].arg
+        if connection is None:
+            continue
+        name = node.name if function == "<module>" else f"{function}.{node.name}"
+        for awaited in _awaits_in_order(node.body):
+            if not _on_the_connection(awaited.value, connection) and not _pure_wait(awaited.value):
+                found[(path, name)] += 1
     return found
 
 
-KNOWN_AWAITS_INSIDE_A_WRITE: dict[tuple[str, str], tuple[int, str]] = {}
+def _pure_wait(awaited: ast.AST) -> bool:
+    """Whether *awaited* is `asyncio.sleep(...)`, which waits on nothing and holds nothing up."""
+    return (isinstance(awaited, ast.Call) and _call_name(awaited) == "sleep"
+            and isinstance(awaited.func, ast.Attribute)
+            and isinstance(awaited.func.value, ast.Name) and awaited.func.value.id == "asyncio")
+
+
+KNOWN_AWAITS_INSIDE_A_WRITE: dict[tuple[str, str], tuple[int, str]] = {
+    ("signup/services/module_switch_settings.py", "module_on_signup.save"): (1, PASS["signup"]),
+}
 
 
 def test_nothing_else_is_awaited_while_a_write_is_open():
@@ -295,12 +356,52 @@ def test_nothing_else_is_awaited_while_a_write_is_open():
     database"; #155). SQLite admits one writer at a time, so a call to Discord made while a
     write is open holds up every other save in the bot until Discord answers, and a second
     connection that writes would wait on the first until it gave up and failed. SQL the check cannot read, being
-    built elsewhere, counts as a write."""
+    built elsewhere, counts as a write. A function handed the connection of a save is held to the
+    rule throughout, and so is one given to a step as its save or its record."""
     _check(
         "nothing is awaited while a write is open",
         _awaits_inside_a_write(),
         KNOWN_AWAITS_INSIDE_A_WRITE,
     )
+
+
+def test_the_await_check_covers_a_function_handed_the_connection_of_a_save():
+    """An await in a function handed a connection, named `db` or annotated as one, or given to a
+    step as its save or its record, is counted unless it is on the connection, on a cursor from
+    it, given it, or `asyncio.sleep`; a pure helper that is given nothing of it is counted, for
+    the scan cannot tell it from a read on a second connection. A list of connections is not a
+    connection, and an await in a function handed none is not counted."""
+    path = "weather/services/sample.py"
+    source = (
+        "import asyncio\n"
+        "async def handed(db: aiosqlite.Connection, row):\n"
+        "    cursor = await db.execute('SELECT 1')\n"
+        "    await cursor.fetchone()\n"
+        "    await helper(db, row)\n"
+        "    await helper(row, db=db)\n"
+        "    await asyncio.sleep(0)\n"
+        "    await config.get_server_config()\n"
+        "async def method(self, _db: 'aiosqlite.Connection'):\n"
+        "    await self.channel.send('x')\n"
+        "async def not_handed(connections: list[aiosqlite.Connection]):\n"
+        "    await close(connections)\n"
+        "def factory():\n"
+        "    async def save(conn, ctx):\n"
+        "        await conn.execute('UPDATE t SET a = 1')\n"
+        "        await post(ctx)\n"
+        "    async def record(link, ctx, result):\n"
+        "        await post(ctx)\n"
+        "    async def run(ctx):\n"
+        "        await post(ctx)\n"
+        "    return {\n"
+        "        'a': Step('a', StepKind.SAVE, save),\n"
+        "        'b': Step('b', StepKind.ACT, run, record=record),\n"
+        "    }\n"
+    )
+
+    assert _awaits_inside_a_write(_sample(source, path)) == Counter({
+        (path, "handed"): 1, (path, "method"): 1, (path, "factory.save"): 1, (path, "factory.record"): 1,
+    })
 
 
 # ── 3. No cog or command handles its own errors ─────────────────────────────────────────────
