@@ -199,7 +199,6 @@ def _service(db_path: str) -> PlacementService:
     roles._revoke_roles = AsyncMock(return_value=None)
     service = PlacementService(db_path, roles=roles)
     service.revoke_all_placement_roles = AsyncMock(return_value=None)
-    service._refresh_lineup_post = AsyncMock(return_value=None)
     return service
 
 
@@ -591,7 +590,7 @@ async def test_the_sack_names_the_divisions_whose_lineup_is_owed(tmp_path):
     guild = _guild()
 
     assert await _sack(service, guild) == [DIVISION_ID]
-    service._refresh_lineup_post.assert_not_awaited()
+    assert not hasattr(service, "_refresh_lineup_post")
 
 
 # ---------------------------------------------------------------------------
@@ -630,7 +629,6 @@ async def test_a_role_discord_refuses_is_logged_and_the_sack_still_saved(tmp_pat
     the driver is back at Not Signed Up with no placement."""
     db_path = await _make_db(tmp_path, name="sack_refused_roles")
     service = PlacementService(db_path, roles=_roles(db_path))
-    service._refresh_lineup_post = AsyncMock(return_value=None)
     guild = _refusing_guild()
 
     with caplog.at_level("WARNING", logger="leaguebot.core.services.team_role_service"):

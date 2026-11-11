@@ -140,9 +140,15 @@ async def _lineup_db(tmp_path) -> str:
     return db_path
 
 
+#: Why the lineup's own test fails until the lineup posting is a service of its own (#283).
+_NOT_YET_A_POSTER = "#283: the lineup posting is not yet a LineupPoster of its own"
+
+
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_a_lineup_refreshed_as_text_draws_nothing(tmp_path):
-    """Pro's lineup tried again after a failure, the placement handed a drawing that would draw
-    it: the drawing is not asked at all, and the textual lineup is posted in channel 600."""
+    """Pro's lineup tried again after a failure, the lineup poster handed a drawing that would
+    draw it: the drawing is not asked at all, and the textual lineup is posted in channel 600."""
+    from leaguebot.core.services.lineup_posting import LineupPoster
     from tests.support.lineup_drawing import LineupDrawingStub
 
     drawing = LineupDrawingStub(picture=tmp_path / "lineup_template.png")
@@ -153,7 +159,7 @@ async def test_a_lineup_refreshed_as_text_draws_nothing(tmp_path):
     guild.get_channel = MagicMock(return_value=channel)
 
     with in_a_job():
-        await PlacementService(db_path, drawing=drawing).refresh_lineup(
+        await LineupPoster(db_path, drawing=drawing).refresh_lineup(
             guild, DIVISION_ID, as_text=True
         )
 

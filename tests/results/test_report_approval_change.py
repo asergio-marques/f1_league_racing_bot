@@ -1538,29 +1538,35 @@ async def _lewis_owed_an_autoreserve(league: ReviewLeague) -> None:
         await db.commit()
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the team roles and the lineup posting are not yet "
+                   "services of their own handed to attendance's hook")
 async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
     """Attendance is on, with its real hook and the real placement service (roles not the
     subject, so granted and revoked by doubles). Lewis is owed an autoreserve in Pro. Alex
     approves round 3's reports: Lewis is moved to Pro's Reserve team, and Pro's lineup is posted
     once, by the review's own job, not by the move as well (core spec: "posted once")."""
     from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
-    from leaguebot.core.services.placement_service import LineupPosted, PlacementService
+    from leaguebot.core.services.lineup_posting import LineupPosted, LineupPoster
+    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.team_role_service import TeamRoleService
     from tests.support.review_league import channel
 
-    placements: list[Any] = []
+    posters: list[Any] = []
 
     def _hook(bot: Any, db_path: str) -> Any:
-        placement = PlacementService(db_path)
-        placements.append(placement)
-        placement._grant_roles = AsyncMock()
-        placement._revoke_roles = AsyncMock()
-        placement.grant_roles = AsyncMock()
-        placement.revoke_roles = AsyncMock()
+        roles = TeamRoleService(db_path)
+        roles._grant_roles = AsyncMock()
+        roles._revoke_roles = AsyncMock()
+        roles.grant_roles = AsyncMock()
+        roles.revoke_roles = AsyncMock()
+        poster = LineupPoster(db_path)
+        posters.append(poster)
         # Pro has no lineup channel of its own here: the post is stood in for, as one posted.
-        placement._refresh_lineup_post = AsyncMock(return_value=LineupPosted(
+        poster._refresh_lineup_post = AsyncMock(return_value=LineupPosted(
             message_id=9100, channel_id=9101, previous=None, division_name="Pro", form="text",
         ))
-        return AttendanceAfterReview(bot, placement)
+        placement = PlacementService(db_path, roles=roles)
+        return AttendanceAfterReview(bot, placement, roles=roles, lineups=poster)
 
     league = await review_league(tmp_path, attendance=True, attendance_hook=_hook)
     await _lewis_owed_an_autoreserve(league)
@@ -1588,8 +1594,8 @@ async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
         "JOIN team_instances ti ON ti.id = ts.team_instance_id "
         "WHERE dsa.driver_profile_id = ?", LEWIS_PROFILE,
     ) == 1, "Lewis was not moved to the Reserve team"
-    [placement] = placements
-    posted = [call.args[1] for call in placement._refresh_lineup_post.await_args_list]
+    [poster] = posters
+    posted = [call.args[1] for call in poster._refresh_lineup_post.await_args_list]
     assert posted == [DIVISION_ID]
 
 

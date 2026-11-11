@@ -372,22 +372,26 @@ async def _lineup_asked(tmp_path: Any, monkeypatch: Any, drawing: Any) -> tuple[
 
 
 async def _review_approved(tmp_path: Any, monkeypatch: Any, drawing: Any) -> tuple[Any, Any]:
-    """Round 3's penalty review in Pro, attendance on with its real hook and the real placement
-    service handed *drawing* (roles granted and revoked by doubles), Pro's lineup channel and
-    attendance channel set. Pro sets an autoreserve threshold of one point and has a Reserve team
+    """Round 3's penalty review in Pro, attendance on with its real hook, the real placement
+    service and the real lineup poster handed *drawing* (roles granted and revoked by doubles on
+    the real team-role service), Pro's lineup channel and attendance channel set. Pro sets an autoreserve threshold of one point and has a Reserve team
     with a free seat; Lewis, raced round 4 without an RSVP, is on the threshold. Alex approves
     round 3's reports with a penalty for Lewis: he is moved to the Reserve team, and the review's
     own job posts Pro's lineup. Returns the league and Alex's interaction."""
     from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
     from leaguebot.core.db.database import get_connection
+    from leaguebot.core.services.lineup_posting import LineupPoster
     from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.template_capacity_service import TemplateCapacityService
     from tests.results.test_report_approval_change import _approve, _lewis_owed_an_autoreserve
     from tests.support.change_queue import set_user
     from tests.support.review_league import DIVISION_ID, LEWIS, channel, penalty, review_league
     from types import SimpleNamespace
     from unittest.mock import MagicMock
 
-    # The drawing placement is handed: the capacity guards finding room, and the lineup *drawing*'s.
+    # The drawing the capacity guards and the lineup poster are handed: the guards finding room,
+    # and the lineup *drawing*'s.
     handed = SimpleNamespace(
         reserve_capacity_problem=AsyncMock(return_value=None),
         sheet_capacity_problem=AsyncMock(return_value=None),
@@ -399,12 +403,17 @@ async def _review_approved(tmp_path: Any, monkeypatch: Any, drawing: Any) -> tup
     )
 
     def _hook(bot: Any, db_path: str) -> Any:
-        placement = PlacementService(db_path, drawing=handed)
-        placement._grant_roles = AsyncMock()
-        placement._revoke_roles = AsyncMock()
-        placement.grant_roles = AsyncMock()
-        placement.revoke_roles = AsyncMock()
-        return AttendanceAfterReview(bot, placement)
+        roles = TeamRoleService(db_path)
+        roles._grant_roles = AsyncMock()
+        roles._revoke_roles = AsyncMock()
+        roles.grant_roles = AsyncMock()
+        roles.revoke_roles = AsyncMock()
+        placement = PlacementService(
+            db_path, capacity=TemplateCapacityService(db_path, drawing=handed), roles=roles
+        )
+        return AttendanceAfterReview(
+            bot, placement, roles=roles, lineups=LineupPoster(db_path, drawing=handed)
+        )
 
     league = await review_league(tmp_path, attendance=True, attendance_hook=_hook)
     await _lewis_owed_an_autoreserve(league)
@@ -463,7 +472,10 @@ async def _placements_confirmed(tmp_path: Any, monkeypatch: Any, drawing: Any) -
     pytest.param(_lineup_asked, "the bot", "posting the lineup of **Pro**", ("Pro",),
                  id="a lineup asked"),
     pytest.param(_review_approved, "Alex (`<@{member_id}>`)",
-                 "✅ Approve on round 3's penalty review", ("Pro",), id="a review's sanction"),
+                 "✅ Approve on round 3's penalty review", ("Pro",), id="a review's sanction",
+                 marks=pytest.mark.xfail(strict=True, reason="#283: the capacity guards, the team "
+                                         "roles and the lineup posting are not yet services of "
+                                         "their own handed to attendance's hook")),
     pytest.param(_placements_approved, "Admin (`<@{admin_id}>`)",
                  "the ✅ Approve button of `/season placements-review`", ("Pro", "Am"),
                  id="the placements approved"),

@@ -70,7 +70,7 @@ class LineupDrawingStub:
 
 
 def draw_lineups_with(bot: Any, monkeypatch: Any, stub: LineupDrawingStub) -> LineupDrawingStub:
-    """Answer the lineup part of *bot*'s drawing, the one the builder handed `PlacementService`,
+    """Answer the lineup part of *bot*'s drawing, the one the builder hands the lineup poster,
     with *stub*'s; gives *stub*. The lineup's two questions are set where the drawing does not
     answer them yet, so a test written before them fails on what it asserts."""
     for name in ("lineup_wanted", "draw_lineup", "discard_picture"):
