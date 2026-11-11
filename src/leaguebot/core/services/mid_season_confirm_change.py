@@ -53,7 +53,8 @@ from leaguebot.core.models.change import (
     Verdict,
     VerdictKind,
 )
-from leaguebot.core.services import approval_checks, lineup_posting, standing_posts
+from leaguebot.core.services import approval_checks, lineup_posting
+from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.queue.queue_records import (
     unfinished,
 )
@@ -67,7 +68,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
     StepView,
 )
-from leaguebot.core.services.channel_tell_change import KIND as CHANNEL_TELL
+from leaguebot.core.services.posting.channel_tell_change import KIND as CHANNEL_TELL
 from leaguebot.core.services.season_approval_change import (
     GRANT_ROLES,
     driver_roles_step,

@@ -27,7 +27,7 @@ import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord
-from leaguebot.core.services.standing_post_handler import post_standing
+from leaguebot.core.services.posting.standing_post_handler import post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.messages import chunk_message
 

@@ -29,7 +29,7 @@ def _content(call):
 
 
 async def test_post_standing_sends_text_an_embed_or_a_file_with_the_mentions_given_and_gives_the_id():
-    from leaguebot.core.services.standing_post_handler import post_standing
+    from leaguebot.core.services.posting.standing_post_handler import post_standing
 
     mentions = discord.AllowedMentions.none()
     embed, picture = discord.Embed(title="Lineup"), MagicMock(name="file")
@@ -57,7 +57,7 @@ async def test_post_standing_sends_text_an_embed_or_a_file_with_the_mentions_giv
 
 
 async def test_edit_standing_edits_with_the_mentions_given():
-    from leaguebot.core.services.standing_post_handler import edit_standing
+    from leaguebot.core.services.posting.standing_post_handler import edit_standing
 
     _channel_, message = _channel()
     mentions = discord.AllowedMentions.none()
@@ -76,7 +76,7 @@ async def test_edit_standing_edits_with_the_mentions_given():
 async def test_edit_standing_takes_a_part_off_when_given_as_none_and_leaves_one_not_given():
     """The hub panel loses its buttons when nothing is offered: a part given as None reaches
     the edit and takes it off, while a part not given is left out and stays as it stands."""
-    from leaguebot.core.services.standing_post_handler import edit_standing
+    from leaguebot.core.services.posting.standing_post_handler import edit_standing
 
     mentions = discord.AllowedMentions.none()
     _channel_, message = _channel()
@@ -97,7 +97,7 @@ async def test_edit_standing_takes_a_part_off_when_given_as_none_and_leaves_one_
 @pytest.mark.parametrize("error", [http_error(), http_error(discord.NotFound, status=404)],
                          ids=["refused", "gone"])
 async def test_delete_standing_deletes_and_raises_what_discord_raises(error):
-    from leaguebot.core.services.standing_post_handler import (
+    from leaguebot.core.services.posting.standing_post_handler import (
         delete_standing,
         edit_standing,
         post_standing,
@@ -125,7 +125,7 @@ async def test_delete_standing_deletes_and_raises_what_discord_raises(error):
 
 
 async def test_a_standing_post_cannot_be_made_without_saying_who_it_may_notify():
-    from leaguebot.core.services.standing_post_handler import edit_standing, post_standing
+    from leaguebot.core.services.posting.standing_post_handler import edit_standing, post_standing
 
     channel, message = _channel()
     with in_a_job():
@@ -139,7 +139,7 @@ async def test_a_standing_post_cannot_be_made_without_saying_who_it_may_notify()
 
 
 async def test_a_standing_post_outside_a_job_is_refused_before_it_is_sent():
-    from leaguebot.core.services.standing_post_handler import (
+    from leaguebot.core.services.posting.standing_post_handler import (
         delete_standing,
         edit_standing,
         post_standing,

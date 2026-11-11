@@ -394,7 +394,7 @@ def _dropped_tasks() -> Counter[tuple[str, str]]:
 
 
 KNOWN_DROPPED_TASKS: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/services/retry_service.py", "_safe_post_log"): (1, BACKGROUND_FAILURES),
+    ("core/services/posting/retry_service.py", "_safe_post_log"): (1, BACKGROUND_FAILURES),
 }
 
 
@@ -486,7 +486,7 @@ def test_no_job_is_armed_with_a_lateness_limit():
 
 @cache
 def _files_by_module_name() -> dict[str, str]:
-    """``"leaguebot.core.services.retry_service"`` to ``"core/services/retry_service.py"``, for
+    """``"leaguebot.core.services.posting.retry_service"`` to ``"core/services/posting/retry_service.py"``, for
     every file of the package."""
     names: dict[str, str] = {}
     for path, _tree in _sources():
@@ -769,7 +769,7 @@ def test_the_private_names_check_leaves_a_module_s_own_private_name_alone():
 
 #: Every file that may name the log channel, and why. Only the first posts to it.
 LOG_CHANNEL_NAMED_BY = {
-    "core/services/output_router.py": "the one writer of the log channel",
+    "core/services/posting/output_router.py": "the one writer of the log channel",
     "core/models/server_config.py": "the setting itself",
     "core/services/config_service.py": "reads and stores the setting",
     "core/cogs/bot_cog.py": "the commands that set it",
@@ -806,14 +806,14 @@ def test_only_the_router_writes_the_log_channel():
 #: the notice handler, the standing-post handler and the bot-owned channel handler (architecture.md,
 #: "Posting to Discord").
 POSTING_ALLOWED = frozenset({
-    "core/services/output_router.py",
-    "core/services/notice_handler.py",
-    "core/services/standing_post_handler.py",
-    "core/services/owned_channel_handler.py",
+    "core/services/posting/output_router.py",
+    "core/services/posting/notice_handler.py",
+    "core/services/posting/standing_post_handler.py",
+    "core/services/posting/owned_channel_handler.py",
 })
 #: The one file the job check passes over: the router, whose log lines, stop notice and turn-away
 #: stay off the queue. Every other handler's functions carry `posts_in_a_job`.
-JOB_CHECK_ALLOWED = frozenset({"core/services/output_router.py"})
+JOB_CHECK_ALLOWED = frozenset({"core/services/posting/output_router.py"})
 #: A `.send` that is not a post, and why.
 NOT_A_POST = {
     ("__main__.py", "build.guild_sync"): (
@@ -1995,9 +1995,9 @@ SAVES_ALLOWED = {
         "the queue's own records, emptied in a restored database before it is put in place",
     ("core/services/queue/queue_records.py", "carry_job_numbering"):
         "the queue's own records, numbering a database put in place after the jobs already named",
-    ("core/services/retry_service.py", "enqueue"): "the retry queue for log lines",
-    ("core/services/retry_service.py", "mark_delivered"): "the retry queue for log lines",
-    ("core/services/retry_service.py", "mark_failed"): "the retry queue for log lines",
+    ("core/services/posting/retry_service.py", "enqueue"): "the retry queue for log lines",
+    ("core/services/posting/retry_service.py", "mark_delivered"): "the retry queue for log lines",
+    ("core/services/posting/retry_service.py", "mark_failed"): "the retry queue for log lines",
     ("core/services/backup_service.py", "_write_empty_database"):
         "writes the scheduler's empty file, not the league's",
     ("core/services/pack_service.py", "pack"):
@@ -2092,9 +2092,9 @@ def test_the_write_check_counts_commits_and_scripts_but_not_a_handed_connection(
         ("core/services/sample_service.py", "build"): 1,
         ("core/services/sample_service.py", "enqueue"): 1,
     })
-    assert _saves_among(nodes("core/services/retry_service.py")) == Counter({
-        ("core/services/retry_service.py", "save"): 1,
-        ("core/services/retry_service.py", "build"): 1,
+    assert _saves_among(nodes("core/services/posting/retry_service.py")) == Counter({
+        ("core/services/posting/retry_service.py", "save"): 1,
+        ("core/services/posting/retry_service.py", "build"): 1,
     })
 
 
@@ -3184,12 +3184,12 @@ CATCH_ALLS_ALLOWED = {
         "place 3, around telling the member of a refusal, which is still recorded",
     ("core/utils/log_lines.py", "record_abandoned"):
         "place 3, around recording that a confirmation ended",
-    ("core/services/output_router.py", "OutputRouter._tell"):
+    ("core/services/posting/output_router.py", "OutputRouter._tell"):
         "place 3, around telling the member that the log channel failed, the router's own containment",
-    ("core/services/output_router.py", "OutputRouter._enqueue_if_configured"):
+    ("core/services/posting/output_router.py", "OutputRouter._enqueue_if_configured"):
         "place 3, around keeping for retry a log line that could not be posted, the router's own "
         "containment",
-    ("core/services/output_router.py", "OutputRouter.strip_view"):
+    ("core/services/posting/output_router.py", "OutputRouter.strip_view"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
     ("core/utils/log_lines.py", "record_refusal"):
@@ -3296,8 +3296,8 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
         (1, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "_checkin_attachment"): (2, PASS["attendance"]),
     ("core/cogs/retry_cog.py", "RetryCog.retry_loop"): (1, BACKGROUND_FAILURES),
-    ("core/services/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
-    ("core/services/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),
+    ("core/services/posting/retry_service.py", "_post_own_line"): (1, BACKGROUND_FAILURES),
+    ("core/services/posting/retry_service.py", "attempt_delivery"): (3, BACKGROUND_FAILURES),
     ("core/services/scheduler_service.py", "_one_off_timer_job"): (1, BACKGROUND_FAILURES),
     ("image/cogs/image_cog.py", "ImageCog._division_autocomplete"): (1, PASS["image"]),
     ("image/services/driver_portrait_service.py", "discard_portraits"): (1, PASS["image"]),

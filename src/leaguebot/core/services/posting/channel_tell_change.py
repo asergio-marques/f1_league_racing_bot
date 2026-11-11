@@ -22,7 +22,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.services.queue.change_types import ChangeType, CheckContext, Step, StepContext
-from leaguebot.core.services.notice_handler import send_notice
+from leaguebot.core.services.posting.notice_handler import send_notice
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 
 KIND = "channel.tell"

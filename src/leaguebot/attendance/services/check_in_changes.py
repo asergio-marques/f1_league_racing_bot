@@ -98,7 +98,8 @@ from leaguebot.core.models.round import (
     RoundFormat,
     read_scheduled_at,
 )
-from leaguebot.core.services import season_service, standing_posts
+from leaguebot.core.services import season_service
+from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
 )
@@ -110,7 +111,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.services.channel_registry_service import as_text_channel
-from leaguebot.core.services.notice_handler import delete_notice
+from leaguebot.core.services.posting.notice_handler import delete_notice
 from leaguebot.core.services.round_moments import clean_up_moment, round_event_moments
 from leaguebot.core.services.round_steps import judged_windows, named_now
 from leaguebot.core.services.test_mode_service import (

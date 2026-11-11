@@ -39,7 +39,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services import standing_posts
+from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.queue.change_types import (
     CheckContext,
     ChangeType,
@@ -50,7 +50,7 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.services.image_drawing import CalendarPicture, ImageDrawing
 from leaguebot.core.services.season_end_changes import SEASON_CANCEL
-from leaguebot.core.services.standing_post_handler import post_standing
+from leaguebot.core.services.posting.standing_post_handler import post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild

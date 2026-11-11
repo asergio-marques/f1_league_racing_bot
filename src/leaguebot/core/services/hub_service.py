@@ -75,8 +75,8 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.services.config_service import ConfigService
 from leaguebot.core.services.queue.setting_change import After
-from leaguebot.core.services.standing_post_handler import edit_standing, post_standing
-from leaguebot.core.services.standing_posts import delete_replaced_step, remove_kept
+from leaguebot.core.services.posting.standing_post_handler import edit_standing, post_standing
+from leaguebot.core.services.posting.standing_posts import delete_replaced_step, remove_kept
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.league_server import CallbackButton, LeagueView, league_guild

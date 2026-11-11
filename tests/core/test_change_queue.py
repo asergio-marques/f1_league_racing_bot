@@ -763,7 +763,7 @@ async def test_a_queued_line_refused_once_the_reply_has_lapsed_goes_to_the_host_
 
 async def test_a_queued_log_line_is_delivered_once_with_the_retry_loop_beside_the_worker(env):
     """The retry loop finds the line while the worker is delivering it, and leaves it."""
-    from leaguebot.core.services.retry_service import attempt_delivery, get_all_pending
+    from leaguebot.core.services.posting.retry_service import attempt_delivery, get_all_pending
 
     channel = env.bot.log_channel
     send = channel.send.side_effect

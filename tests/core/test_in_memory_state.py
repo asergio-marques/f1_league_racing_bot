@@ -143,10 +143,10 @@ EXEMPT = {
     ("core/services/queue/change_queue.py", "_types"),
     # The log-channel warnings being sent to members, each task dropping itself when done
     # (#439).
-    ("core/services/output_router.py", "_tasks"),
+    ("core/services/posting/output_router.py", "_tasks"),
     # The interactions whose member has been warned that the log channel failed, by id; each
     # lapses with its interaction's 14 minutes (#439).
-    ("core/services/output_router.py", "_warned"),
+    ("core/services/posting/output_router.py", "_warned"),
     # The connections kept idle to be lent again: the bot's wiring, not league data. Each is
     # re-checked against the database file's identity before it is lent, so a factory reset or a
     # restore that replaces the file leaves none serving the old one (#540).

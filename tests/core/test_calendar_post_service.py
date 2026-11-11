@@ -238,7 +238,7 @@ async def test_a_raising_post_raises_and_queues_no_retry(tmp_path, monkeypatch, 
     text to the old retry queue: the channel set and no longer on the server, or Discord
     refusing the send."""
     from leaguebot.core.models.change import StepFailedOnDiscord
-    from leaguebot.core.services import retry_service
+    from leaguebot.core.services.posting import retry_service
 
     enqueue = AsyncMock()
     monkeypatch.setattr(retry_service, "enqueue", enqueue)

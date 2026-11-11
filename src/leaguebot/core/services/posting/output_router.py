@@ -400,7 +400,7 @@ class OutputRouter:
         told as :meth:`post_log` tells the member, once; with none, the failure is the host's log's
         alone. Never raises.
         """
-        from leaguebot.core.services import retry_service
+        from leaguebot.core.services.posting import retry_service
 
         db_path = self._retry_db_path
         if not db_path:
@@ -555,7 +555,7 @@ class OutputRouter:
         """
         if self._retry_db_path and wanted:
             try:
-                from leaguebot.core.services.retry_service import enqueue
+                from leaguebot.core.services.posting.retry_service import enqueue
                 await enqueue(
                     self._retry_db_path, channel_id, content, failure_reason, now=self._now()
                 )

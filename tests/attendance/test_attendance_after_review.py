@@ -673,7 +673,7 @@ async def test_a_sheet_discord_refuses_raises_and_is_not_put_on_the_retry_queue(
     channel.send = AsyncMock(side_effect=http_error(status=403, text="Missing Access"))
     hook = _hook(_bot(db_path, channel=channel), _placement())
 
-    with patch("leaguebot.core.services.retry_service.enqueue", new=AsyncMock()) as enqueue:
+    with patch("leaguebot.core.services.posting.retry_service.enqueue", new=AsyncMock()) as enqueue:
         with pytest.raises(StepFailedOnDiscord):
             with in_a_job():
                 await hook.post_sheet(LATEST_ROUND, DIVISION_ID, sanctioned=set(), as_text=False)

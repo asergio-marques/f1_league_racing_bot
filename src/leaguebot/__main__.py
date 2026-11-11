@@ -551,7 +551,7 @@ def register_change_types(bot: LeagueBot) -> None:
         interaction_role_setting,
         log_channel_setting,
     )
-    from leaguebot.core.services.channel_tell_change import channel_tell_change
+    from leaguebot.core.services.posting.channel_tell_change import channel_tell_change
     from leaguebot.core.services.division_settings import division_channel_settings
     from leaguebot.core.services.test_mode_settings import test_mode_nationality_setting
     from leaguebot.core.services.test_mode_former_driver_change import (
@@ -972,7 +972,7 @@ async def build(settings: Settings) -> LeagueBot:
     from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.services.season_service import SeasonService
     from leaguebot.core.services.scheduler_service import SchedulerService
-    from leaguebot.core.services.output_router import OutputRouter
+    from leaguebot.core.services.posting.output_router import OutputRouter
 
     bot = create_bot()
     bot.db_path = settings.db_path

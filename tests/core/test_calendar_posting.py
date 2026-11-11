@@ -146,7 +146,7 @@ async def _post(
     channel = channel if channel is not None else _channel()
     guild = guild if guild is not None else _guild(channel)
     drawing = drawing if drawing is not None else CalendarDrawingStub(wanted=False)
-    with patch("leaguebot.core.services.retry_service.enqueue", new=AsyncMock()):
+    with patch("leaguebot.core.services.posting.retry_service.enqueue", new=AsyncMock()):
         with in_a_job():
             result = await post_division_calendar(
                 drawing,

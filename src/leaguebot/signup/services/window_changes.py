@@ -57,7 +57,8 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.services import standing_posts, track_service
+from leaguebot.core.services import track_service
+from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.driver_service import write_transition
 from leaguebot.core.services.queue.change_types import (
     ChangeType,

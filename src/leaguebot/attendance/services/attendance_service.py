@@ -35,7 +35,7 @@ from leaguebot.core.utils.league_bot import LeagueBot
 if TYPE_CHECKING:
     from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.module_service import ModuleService
-    from leaguebot.core.services.output_router import OutputRouter
+    from leaguebot.core.services.posting.output_router import OutputRouter
 
 
 @asynccontextmanager

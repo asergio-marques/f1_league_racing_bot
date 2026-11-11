@@ -19,14 +19,14 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.retry_service import (
+from leaguebot.core.services.posting.retry_service import (
     RETRY_WARN_THRESHOLD,
     attempt_delivery,
     enqueue,
     get_all_pending,
     mark_failed,
 )
-from leaguebot.core.services.output_router import OutputRouter
+from leaguebot.core.services.posting.output_router import OutputRouter
 
 #: The time handed in, well before the host's clock, so that a stamp read from the host shows.
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
@@ -151,7 +151,7 @@ class TestOutputRouterEnqueuesOnFailure:
         fault = sqlite3.OperationalError("database is locked")
 
         with caplog.at_level(logging.ERROR), patch(
-            "leaguebot.core.services.retry_service.enqueue", AsyncMock(side_effect=fault)
+            "leaguebot.core.services.posting.retry_service.enqueue", AsyncMock(side_effect=fault)
         ):
             result = await router._send(  # must not raise
                 1234, "hello", enqueue_on_failure=True, fallback_label="forecast"
@@ -178,7 +178,7 @@ class TestAttemptDeliverySuccess:
         mock_channel = _make_text_channel_mock()
         bot = _make_bot(db_path, channel=mock_channel)
 
-        with patch("leaguebot.core.services.retry_service._safe_post_log"):
+        with patch("leaguebot.core.services.posting.retry_service._safe_post_log"):
             result = await attempt_delivery(entry, bot, now=NOW)
         assert result is True
 
@@ -192,7 +192,7 @@ class TestAttemptDeliverySuccess:
         mock_channel = _make_text_channel_mock()
         bot = _make_bot(db_path, channel=mock_channel)
 
-        with patch("leaguebot.core.services.retry_service._safe_post_log"):
+        with patch("leaguebot.core.services.posting.retry_service._safe_post_log"):
             await attempt_delivery(entry, bot, now=NOW)
         assert await _row_count(db_path) == 0
 
@@ -206,7 +206,7 @@ class TestAttemptDeliverySuccess:
         mock_channel = _make_text_channel_mock()
         bot = _make_bot(db_path, channel=mock_channel)
 
-        with patch("leaguebot.core.services.retry_service._safe_post_log"):
+        with patch("leaguebot.core.services.posting.retry_service._safe_post_log"):
             await attempt_delivery(entry, bot, now=NOW)
         # The content alone: how it is sent, mentioning nobody, is test_retry_service's to pin.
         (call,) = mock_channel.send.call_args_list
@@ -319,7 +319,7 @@ class TestRetryWarningThreshold:
         )
         bot = _make_bot(db_path, channel=mock_channel)
 
-        with patch("leaguebot.core.services.retry_service._safe_post_log") as mock_safe_log:
+        with patch("leaguebot.core.services.posting.retry_service._safe_post_log") as mock_safe_log:
             await attempt_delivery(entry_at_threshold, bot, now=NOW)
 
         assert mock_safe_log.call_count >= 1
@@ -341,7 +341,7 @@ class TestRetryWarningThreshold:
         )
         bot = _make_bot(db_path, channel=mock_channel)
 
-        with patch("leaguebot.core.services.retry_service._safe_post_log") as mock_safe_log:
+        with patch("leaguebot.core.services.posting.retry_service._safe_post_log") as mock_safe_log:
             await attempt_delivery(entry, bot, now=NOW)
 
         mock_safe_log.assert_not_called()
@@ -374,7 +374,7 @@ class TestTheRetryWorkersOwnLinesAreNotQueued:
 
     @pytest.mark.asyncio
     async def test_its_own_line_goes_to_the_log_channel(self, tmp_path):
-        from leaguebot.core.services.retry_service import _post_own_line
+        from leaguebot.core.services.posting.retry_service import _post_own_line
 
         db_path = await _make_db(str(tmp_path))
         channel = _make_text_channel_mock()
@@ -395,7 +395,7 @@ class TestTheRetryWorkersOwnLinesAreNotQueued:
     ):
         """The log channel refuses the line, is gone, or is no text channel, or the bot is not
         yet set up: no row is queued, and the line is written to the host's log."""
-        from leaguebot.core.services.retry_service import _post_own_line
+        from leaguebot.core.services.posting.retry_service import _post_own_line
 
         db_path = await _make_db(str(tmp_path))
         if fault == "refused":
@@ -428,7 +428,7 @@ class TestTheRetryWorkersOwnLinesAreNotQueued:
         goes to the host's log; the queue still holds the one row."""
         import asyncio
 
-        from leaguebot.core.services.retry_service import attempt_delivery as deliver
+        from leaguebot.core.services.posting.retry_service import attempt_delivery as deliver
 
         db_path = await _make_db(str(tmp_path))
         await enqueue(db_path, 99, "Admin | /module enable weather | Success", "503", now=NOW)
@@ -587,7 +587,7 @@ class TestAWaitingLineGoesToTheLogChannelAsItIsNow:
         queue: the member is warned all the same, about the log channel as it is now."""
         import sqlite3
 
-        from leaguebot.core.services import retry_service
+        from leaguebot.core.services.posting import retry_service
 
         db_path = await _make_db(str(tmp_path))
         await enqueue(db_path, 555, "Admin | /module enable weather | Success", "", now=NOW)

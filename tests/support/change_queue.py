@@ -439,7 +439,7 @@ def league_double(db_path: str, *, now: Any = None) -> Any:
     types (#439), as a league with attendance off sees it (`attendance_hook_double`). A test that
     runs the hook replaces it.
     """
-    from leaguebot.core.services.output_router import OutputRouter
+    from leaguebot.core.services.posting.output_router import OutputRouter
 
     bot = MagicMock()
     bot.db_path = db_path

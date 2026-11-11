@@ -24,7 +24,7 @@ def _channel():
 
 
 async def test_a_post_in_an_owned_channel_gives_the_id_and_notifies_only_whom_it_names():
-    from leaguebot.core.services.owned_channel_handler import post_in_owned_channel
+    from leaguebot.core.services.posting.owned_channel_handler import post_in_owned_channel
 
     channel, message = _channel()
     driver = MagicMock(id=123)
@@ -39,7 +39,7 @@ async def test_a_post_in_an_owned_channel_gives_the_id_and_notifies_only_whom_it
 
 
 async def test_a_post_in_an_owned_channel_carries_its_buttons():
-    from leaguebot.core.services.owned_channel_handler import post_in_owned_channel
+    from leaguebot.core.services.posting.owned_channel_handler import post_in_owned_channel
 
     channel, _message = _channel()
     view = MagicMock(name="view")
@@ -52,7 +52,7 @@ async def test_a_post_in_an_owned_channel_carries_its_buttons():
 
 
 async def test_an_owned_channel_is_deleted_whole_with_its_reason():
-    from leaguebot.core.services.owned_channel_handler import delete_owned_channel
+    from leaguebot.core.services.posting.owned_channel_handler import delete_owned_channel
 
     channel, _message = _channel()
     with in_a_job():
@@ -64,7 +64,7 @@ async def test_an_owned_channel_is_deleted_whole_with_its_reason():
 @pytest.mark.parametrize("error", [http_error(), http_error(discord.NotFound, status=404)],
                          ids=["refused", "gone"])
 async def test_the_owned_channel_handler_raises_what_discord_raises(error):
-    from leaguebot.core.services.owned_channel_handler import (
+    from leaguebot.core.services.posting.owned_channel_handler import (
         delete_owned_channel,
         post_in_owned_channel,
     )
@@ -83,7 +83,7 @@ async def test_the_owned_channel_handler_raises_what_discord_raises(error):
 
 
 async def test_an_owned_channel_post_outside_a_job_is_refused_before_it_is_sent():
-    from leaguebot.core.services.owned_channel_handler import (
+    from leaguebot.core.services.posting.owned_channel_handler import (
         delete_owned_channel,
         post_in_owned_channel,
     )

@@ -461,7 +461,7 @@ class TestDiscordDelete:
 def _spy_on_post_standing(monkeypatch) -> list[tuple[tuple, dict]]:
     """Record every `post_standing` call, wherever the weather service takes it from, and let
     each through to the real handler."""
-    from leaguebot.core.services import standing_post_handler
+    from leaguebot.core.services.posting import standing_post_handler
     from leaguebot.weather.services import forecast_cleanup_service
 
     real = standing_post_handler.post_standing
@@ -508,7 +508,7 @@ async def test_a_text_forecast_goes_through_the_standing_post_handler_in_parts(
     999, letting role 1 notify. Each part `chunk_message` divides it into goes through the
     standing-post handler, in order, to that channel and with role 1's mentions; the ids of the
     messages sent come back in order."""
-    from leaguebot.core.services.output_router import OutputRouter
+    from leaguebot.core.services.posting.output_router import OutputRouter
     from leaguebot.core.utils.messages import chunk_message
     from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
 
@@ -552,7 +552,7 @@ async def test_a_text_forecast_part_refused_keeps_the_parts_sent(tmp_path, monke
       channel <#999> is no longer on the server";
     - not-a-text-channel: the channel is a voice channel: "<#999> is not a text channel"."""
     from leaguebot.core.services.queue.change_queue import ChangeQueue
-    from leaguebot.core.services.output_router import OutputRouter
+    from leaguebot.core.services.posting.output_router import OutputRouter
     from leaguebot.core.utils.messages import chunk_message
     from leaguebot.weather.services.forecast_cleanup_service import post_phase_message
 

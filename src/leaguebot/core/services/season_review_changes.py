@@ -80,7 +80,7 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.services import standing_posts
+from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.queue.queue_records import (
     unfinished,
 )
@@ -93,7 +93,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.services.channel_registry_service import as_text_channel
-from leaguebot.core.services.notice_handler import delete_notice, send_notice
+from leaguebot.core.services.posting.notice_handler import delete_notice, send_notice
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import abandoned_line, name_of_member

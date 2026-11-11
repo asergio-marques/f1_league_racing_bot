@@ -53,7 +53,7 @@ from leaguebot.core.models.change import (
     forecasts_named,
 )
 from leaguebot.core.models.round import Round, RoundStatus, WeatherWindows, read_scheduled_at
-from leaguebot.core.services import standing_posts
+from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
 )
@@ -65,7 +65,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
     StepView,
 )
-from leaguebot.core.services.notice_handler import send_notice
+from leaguebot.core.services.posting.notice_handler import send_notice
 from leaguebot.core.services.round_moments import clean_up_moment, phases_due
 from leaguebot.core.services.round_steps import judged_windows, named_now, round_number_now
 from leaguebot.core.services.test_mode_service import (

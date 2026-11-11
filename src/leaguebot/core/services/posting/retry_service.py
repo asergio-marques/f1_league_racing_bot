@@ -207,7 +207,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot", *, now: date
     """
     import discord
 
-    from leaguebot.core.services.output_router import send_log_text
+    from leaguebot.core.services.posting.output_router import send_log_text
 
     db_path: str = bot.db_path
     async with delivery_lock():

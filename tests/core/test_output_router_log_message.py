@@ -16,7 +16,7 @@ import aiohttp
 import discord
 import pytest
 
-from leaguebot.core.services.output_router import OutputRouter
+from leaguebot.core.services.posting.output_router import OutputRouter
 
 #: The change queue's clock, handed to the router, well before the host's so that a time read
 #: from the host shows.
@@ -193,7 +193,7 @@ async def test_a_line_for_a_given_channel_that_fails_is_neither_queued_nor_redir
     caller names, the configured log channel or another. It is that channel the line is tried
     in. No retry row, no notice in the interaction channel, and no member answered either,
     whatever the failure: the caller puts the line in the host's log instead."""
-    from leaguebot.core.services import retry_service
+    from leaguebot.core.services.posting import retry_service
 
     enqueue = AsyncMock()
     monkeypatch.setattr(retry_service, "enqueue", enqueue)

@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.retry_service import (
+from leaguebot.core.services.posting.retry_service import (
     RETRY_WARN_THRESHOLD,
     enqueue,
     get_all_pending,
@@ -251,7 +251,7 @@ async def _settle() -> None:
 async def test_a_line_never_tried_is_delivered_by_the_retry_loop_without_a_retry_notice(tmp_path):
     """The bot stopped between saving a line and delivering it: nothing failed, so there is no
     retry to announce."""
-    from leaguebot.core.services.retry_service import attempt_delivery
+    from leaguebot.core.services.posting.retry_service import attempt_delivery
 
     db_path = await _make_db(str(tmp_path))
     await enqueue(db_path, 555, "Admin (`<@4242>`) | /module disable results | Success", "", now=NOW)
@@ -269,7 +269,7 @@ async def test_a_line_never_tried_is_delivered_by_the_retry_loop_without_a_retry
 async def test_a_retried_line_is_sent_notifying_nobody(tmp_path):
     import discord
 
-    from leaguebot.core.services.retry_service import attempt_delivery
+    from leaguebot.core.services.posting.retry_service import attempt_delivery
 
     db_path = await _make_db(str(tmp_path))
     await enqueue(db_path, 555, "<@4242> did something", "503", now=NOW)
@@ -290,8 +290,8 @@ async def test_attempt_delivery_sends_through_the_log_writer(tmp_path, monkeypat
     marked delivered."""
     from unittest.mock import AsyncMock
 
-    from leaguebot.core.services import output_router
-    from leaguebot.core.services.retry_service import attempt_delivery
+    from leaguebot.core.services.posting import output_router
+    from leaguebot.core.services.posting.retry_service import attempt_delivery
 
     db_path = await _make_db(str(tmp_path))
     await enqueue(db_path, 555, "Admin (`<@4242>`) | /module disable results | Success", "503", now=NOW)
@@ -315,7 +315,7 @@ async def test_a_late_log_line_delivered_on_retry_reports_its_delivery_as_today(
     the log channel as it is now, 99. The log channel gets exactly one line, saying the delivery to
     99 succeeded, why it first failed, how many retries it took and when: the time the retry was
     handed."""
-    from leaguebot.core.services.retry_service import attempt_delivery
+    from leaguebot.core.services.posting.retry_service import attempt_delivery
 
     db_path = await _make_db(str(tmp_path))
     await enqueue(db_path, 555, "Admin (`<@4242>`) | /module disable results | Success", "503", now=NOW)
@@ -339,7 +339,7 @@ async def test_a_stuck_late_log_line_warns_before_its_retry_as_today(tmp_path):
     99. The log channel is first warned that the entry is stuck, naming 99, the channel tried, how
     often it failed since the time it was queued at and why, and then told the delivery to 99
     succeeded after that many retries, at the time the retry was handed."""
-    from leaguebot.core.services.retry_service import attempt_delivery
+    from leaguebot.core.services.posting.retry_service import attempt_delivery
 
     db_path = await _make_db(str(tmp_path))
     await enqueue(db_path, 555, "Admin (`<@4242>`) | /module disable results | Success", "503", now=NOW)

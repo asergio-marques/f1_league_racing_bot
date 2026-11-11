@@ -53,11 +53,11 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services import standing_posts
+from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.queue.audit_service import record_change_on
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.image_drawing import ImageDrawing
-from leaguebot.core.services.standing_post_handler import post_standing
+from leaguebot.core.services.posting.standing_post_handler import post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_server import league_guild
 

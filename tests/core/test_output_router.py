@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.services.output_router import OutputRouter
+from leaguebot.core.services.posting.output_router import OutputRouter
 from tests.support.change_queue import text_channel
 
 LOG_CHANNEL_ID = 101
@@ -68,7 +68,7 @@ async def test_a_notice_s_role_mention_is_the_only_one_left_unwrapped():
 def test_the_router_posts_no_forecast():
     """The router writes log lines, the stop notice and the turn-away, and nothing else: it has
     no forecast post, nor the stand-ins for a division's forecast channel that only it read."""
-    from leaguebot.core.services import output_router
+    from leaguebot.core.services.posting import output_router
 
     assert not hasattr(OutputRouter, "post_forecast")
     assert not hasattr(output_router, "ForecastTarget")
@@ -79,7 +79,7 @@ async def test_send_log_text_divides_a_long_line_and_notifies_nobody():
     """A log line too long for one message, mentioning member 4242, is handed to the log writer
     for channel 555, as the retry worker hands it, outside any job of a change. It is sent in the
     parts `chunk_message` divides it into, in order, each notifying nobody."""
-    from leaguebot.core.services.output_router import send_log_text
+    from leaguebot.core.services.posting.output_router import send_log_text
     from leaguebot.core.utils.messages import chunk_message
 
     channel = MagicMock(id=555)

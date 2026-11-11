@@ -125,7 +125,7 @@ from leaguebot.core.models.round import (
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
 from leaguebot.core.models.season_end import CANCELLATION
 from leaguebot.core.services import cancellation_notice_service as notices
-from leaguebot.core.services import standing_posts
+from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.calendar_post_service import POST_CALENDAR, calendar_steps
 from leaguebot.core.services.queue.queue_records import (
     in_hand,
