@@ -377,10 +377,11 @@ async def _lineup_asked(tmp_path: Any, monkeypatch: Any, drawing: Any) -> tuple[
 async def _review_approved(tmp_path: Any, monkeypatch: Any, drawing: Any) -> tuple[Any, Any]:
     """Round 3's penalty review in Pro, attendance on with its real hook, the real placement
     service and the real lineup poster handed *drawing* (roles granted and revoked by doubles on
-    the real team-role service), Pro's lineup channel and attendance channel set. Pro sets an autoreserve threshold of one point and has a Reserve team
-    with a free seat; Lewis, raced round 4 without an RSVP, is on the threshold. Alex approves
-    round 3's reports with a penalty for Lewis: he is moved to the Reserve team, and the review's
-    own job posts Pro's lineup. Returns the league and Alex's interaction."""
+    the real team-role service), Pro's lineup channel and attendance channel set. Pro sets an
+    autoreserve threshold of one point and has a Reserve team with a free seat; Lewis, raced round
+    4 without an RSVP, is on the threshold. Alex approves round 3's reports with a penalty for
+    Lewis: he is moved to the Reserve team, and the review's own job posts Pro's lineup. Returns
+    the league and Alex's interaction."""
     from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.services.lineup_posting import LineupPoster

@@ -709,10 +709,9 @@ ATTENDANCE_CHANNEL = 707
 async def test_a_review_s_lineup_with_no_channel_stops_the_queue_naming_the_command(tmp_path):
     """Attendance is on, with its real hook, the real placement service and the real lineup
     poster (roles granted and revoked by doubles on the real team-role service), and division 11
-    (Pro) has an attendance channel but was never given a
-    lineup channel. Pro sets an
-    autoreserve threshold of one point and has a Reserve team with a free seat; Lewis, raced
-    round 4 without an RSVP, is on the threshold. Alex approves round 3's reports: Lewis is moved
+    (Pro) has an attendance channel but was never given a lineup channel. Pro sets an autoreserve
+    threshold of one point and has a Reserve team with a free seat; Lewis, raced round 4 without
+    an RSVP, is on the threshold. Alex approves round 3's reports: Lewis is moved
     to the Reserve team, and the queue stops at the lineup the sanction owes, its stop line
     naming the command that sets the channel, rather than the lineup completing having posted
     nothing."""

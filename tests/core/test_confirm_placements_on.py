@@ -137,24 +137,24 @@ async def _grant(db_path, roles, payload):
 async def test_a_driver_with_no_team_is_granted_their_division_s_role_alone(db_path, monkeypatch):
     """Driver 1002 is placed in Pro with no team seat read (the placements' LEFT JOIN gives no
     team): the step gives Pro's role (1) alone and looks no team role up."""
-    guild, placement = _granting(monkeypatch)
+    guild, roles = _granting(monkeypatch)
 
-    await _grant(db_path, placement,
+    await _grant(db_path, roles,
                  {"user_id": "1002", "division_id": DIVISION_ID, "team_name": None})
 
-    placement.get_team_role_config.assert_not_awaited()
-    placement.grant_roles.assert_awaited_once_with(guild, 1002, 1)
+    roles.get_team_role_config.assert_not_awaited()
+    roles.grant_roles.assert_awaited_once_with(guild, 1002, 1)
 
 
 async def test_a_driver_with_no_role_to_give_is_granted_nothing(db_path, monkeypatch):
     """Pro has no role set (0) and driver 1002 no team: the step reaches Discord for nothing."""
-    _guild, placement = _granting(monkeypatch)
+    _guild, roles = _granting(monkeypatch)
     async with get_connection(db_path) as db:
         await db.execute("UPDATE divisions SET mention_role_id = 0 WHERE id = ?",
                          (DIVISION_ID,))
         await db.commit()
 
-    await _grant(db_path, placement,
+    await _grant(db_path, roles,
                  {"user_id": "1002", "division_id": DIVISION_ID, "team_name": None})
 
-    placement.grant_roles.assert_not_awaited()
+    roles.grant_roles.assert_not_awaited()

@@ -869,7 +869,8 @@ _STEPS_OFFERED_BY_A_WIRING = {
 
 
 @pytest.mark.xfail(strict=True, reason="#283: the amendment sweep's arming and the wizards' "
-                   "recovery are still written by the builder, not offered by their module's wiring")
+                   "recovery are still written by the builder, not offered by their module's "
+                   "wiring")
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     """`build` on paths under `tmp_path` gives the start-up's steps by name, in today's order
     (architecture.md, "Start-up runs once, in one function"), so the order is read from the list

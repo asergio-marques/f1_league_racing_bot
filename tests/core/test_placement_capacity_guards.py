@@ -1,8 +1,8 @@
 """Core's capacity refusals, asked of the image module through the protocol core declares (#283).
 
 `TemplateCapacityService` holds no template. It counts the seats a placement would fill, asks the
-drawing the builder hands it whether the image module could draw that many, and refuses in its own words
-where it could not: the problem and its remedy are the image module's, and that the driver was
+drawing the builder hands it whether the image module could draw that many, and refuses in its own
+words where it could not: the problem and its remedy are the image module's, and that the driver was
 **not** assigned is core's. A drawing that cannot answer lets the placement through, with the full
 error in the host's log, and a service handed no drawing asks nothing.
 

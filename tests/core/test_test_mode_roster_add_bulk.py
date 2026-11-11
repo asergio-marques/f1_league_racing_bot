@@ -269,9 +269,9 @@ async def test_a_roster_it_cannot_seat_is_refused_at_the_ask(league, text, refus
 @pytest.mark.xfail(strict=True, reason="#283: the capacity guards are not yet a "
                    "TemplateCapacityService of their own")
 async def test_the_roster_is_held_to_the_template_capacities(league, monkeypatch):
-    """The bot's template capacity service holds the roster to the template capacities a real placement
-    is held to, counting every driver the roster gives a division at once. The season is in
-    Placements under test mode, Am empty and McLaren's three seats free. Admin (77) submits
+    """The bot's template capacity service holds the roster to the template capacities a real
+    placement is held to, counting every driver the roster gives a division at once. The season is
+    in Placements under test mode, Am empty and McLaren's three seats free. Admin (77) submits
     `/test-mode roster add-bulk`'s form naming Mock Alpha and Mock Beta at McLaren in Am, and the
     queue runs the change. The change is queued as `core.test_roster_add_bulk`, every time the
     capacities are asked it is of Am with two drivers for McLaren and by the bot's own template

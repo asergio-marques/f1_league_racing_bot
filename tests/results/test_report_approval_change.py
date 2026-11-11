@@ -443,9 +443,8 @@ async def test_the_sheet_after_a_review_replaces_the_old_one_by_a_delete_job(tmp
     """Attendance is on, with its real hook (the placement service and the lineup poster
     doubles: no sanction is owed). Pro's attendance channel 707 holds its sheet 8805, recorded as
     the live one. Alex approves round 3's reports: the `attendance_sheet` job posts the new sheet
-    and its save
-    records it, the old one still standing; then a `delete_message` job of the review deletes
-    the old sheet."""
+    and its save records it, the old one still standing; then a `delete_message` job of the
+    review deletes the old sheet."""
     from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
     from tests.support.review_league import channel
 
