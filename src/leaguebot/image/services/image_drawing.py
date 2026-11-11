@@ -3,10 +3,12 @@
 `ImageDrawing` implements `leaguebot.core.services.image_drawing.ImageDrawing`: the builder
 makes one, attaches it to the bot as `bot.image_drawing`, and hands it to
 `TemplateCapacityService` and `LineupPoster`, to every change that posts a division's calendar,
-and to the season approval and mid-season confirmation; the season fingerprint (`take_fingerprint`) is handed it by its callers, and
-`/driver reassign` and `/team lineup` reach it on the bot. So core never imports this module.
-The capacity questions ask whether the aspect is drawn at all, whether the template is valid, and whether it holds that many — answered off the event
-loop, since parsing and measuring a template takes real time. ``calendar_wanted``/
+to `/driver reassign`'s change, and to the season approval and mid-season confirmation; the
+season fingerprint (`take_fingerprint`) is handed it by its callers, and the season review's and
+`/team lineup`'s cogs reach it on the bot. So core never imports this module. The capacity
+questions ask whether the aspect is drawn at all, whether the template is valid, and whether it
+holds that many — answered off the event loop, since parsing and measuring a template takes real
+time. ``calendar_wanted``/
 ``draw_calendar`` and ``lineup_wanted``/``draw_lineup`` answer in the same shape: the two gates,
 the asset directories resolved absolutely, the file named, the render, and the notices reported
 to the log channel in one message. ``artwork_signature`` answers what the league's artwork
