@@ -453,9 +453,13 @@ def _league_role_setting(
         return text
 
     after: dict[str, After] = {}
-    if base_role_changed is not None:
-        after[BASE_ROLE_CHANGED] = _move_signup_overwrite(base_role_changed)
     if is_base_role:
+        if base_role_changed is None:
+            raise TypeError(
+                "the base role's setting plans the base role changed step, so it is built with "
+                "the base_role_changed hook"
+            )
+        after[BASE_ROLE_CHANGED] = _move_signup_overwrite(base_role_changed)
         after[REAPPLY_HUB] = _reapply_hub(command, config)
     after[GRANT_TO_DRIVERS] = _grant_to_drivers(roles, is_base_role=is_base_role)
 

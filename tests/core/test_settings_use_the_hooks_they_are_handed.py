@@ -133,3 +133,13 @@ async def test_the_base_role_follow_on_calls_the_hook_it_was_built_with():
     await setting.after[BASE_ROLE_CHANGED].step.run(ctx)
 
     assert handed == [(guild, 3001, role)]
+
+
+def test_the_base_role_setting_cannot_be_built_without_the_hook_its_save_plans():
+    """The base role's save plans the base role changed step whenever the base role changes, so a
+    setting built without the hook would plan a step it holds no handler for: building it refuses
+    by name instead."""
+    from leaguebot.core.services.settings.bot_settings import _league_role_setting
+
+    with pytest.raises(TypeError, match="base_role_changed"):
+        _league_role_setting("base_role_id", config=_config(), roles=SimpleNamespace())
