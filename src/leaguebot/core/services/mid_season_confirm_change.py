@@ -84,6 +84,7 @@ from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
     from leaguebot.core.services.image_drawing import ImageDrawing
+    from leaguebot.core.services.team_role_service import TeamRoleService
 
 __all__ = [
     "ALREADY_BEING_CONFIRMED",
@@ -193,6 +194,7 @@ def mid_season_confirm_change(
     *,
     modules: Any,
     placement: Any,
+    roles: "TeamRoleService",
     drawing: "ImageDrawing",
     rasteriser_fault: Callable[[], str | None],
     driver_names_read: AwaitedHook,
@@ -202,8 +204,8 @@ def mid_season_confirm_change(
 ) -> ChangeType:
     """The change that confirms a season's placements mid-season; see the module.
 
-    The builder hands in *modules* (which modules are on), the *placement* service (a driver's
-    roles, a division's lineup), the image module's own drawing (*drawing*) and
+    The builder hands in *modules* (which modules are on), the *placement* service (a division's
+    lineup), the team-role service *roles* (a driver's roles), the image module's own drawing (*drawing*) and
     *rasteriser_fault* (what is wrong with the host's drawing program, None where nothing is),
     *driver_names_read* (the hook an unsettled driver is named through),
     *division_channel_faults_read* (the hook each module names its own channels' faults through),
@@ -454,7 +456,7 @@ def mid_season_confirm_change(
     steps: dict[str, Step] = {
         APPLY: Step(APPLY, StepKind.SAVE, apply, describe=describe_apply),
         JUDGE: Step(JUDGE, StepKind.ACT, judge, describe=describe_judge),
-        GRANT_ROLES: driver_roles_step(placement),
+        GRANT_ROLES: driver_roles_step(roles),
         POST_LINEUP: lineup_posting.lineup_step(placement, now=now),
         standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
         TELL_REVIEW_CHANNEL: Step(

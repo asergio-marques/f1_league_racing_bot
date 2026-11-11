@@ -184,8 +184,8 @@ from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.placement_service import PlacementService
     from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.core.services.team_role_service import TeamRoleService
 
 __all__ = [
     "DIVISION_CANCEL",
@@ -1209,7 +1209,7 @@ def season_cancel_change(
     *,
     seasons: SeasonService,
     scheduler: "SchedulerService",
-    placement: "PlacementService",
+    roles: "TeamRoleService",
     drawing: ImageDrawing,
     cancellation_refused: AwaitedHook,
     rounds_called_off: AwaitedHook,
@@ -1230,7 +1230,7 @@ def season_cancel_change(
     """The change that cancels the season being raced; see the module.
 
     The payload is ``{"season_id", "season_number"}``. The builder hands in the *seasons*
-    service, the *scheduler*, the *placement* service (which takes back roles), the image
+    service, the *scheduler*, the the team-role service, *roles* (which takes back roles), the image
     module's drawing (*drawing*), the hooks the modules sign up to (*cancellation_refused*,
     *rounds_called_off*, *cancellation_notices*, *rounds_made_final*, *cancellation_steps*,
     *season_end_refused*, *season_standing_read*, *season_end_closes*, *drivers_returned*,
@@ -1531,7 +1531,7 @@ def season_cancel_change(
     steps: dict[str, Step] = {
         **_follow_steps(seasons=seasons, drawing=drawing),
         **shared_steps(
-            placement, scheduler, season_end_steps=season_end_steps,
+            roles, scheduler, season_end_steps=season_end_steps,
             test_mode_flushed=test_mode_flushed, drivers_deleted=drivers_deleted,
         ),
         **steps_of_the_modules(cancellation_steps),

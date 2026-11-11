@@ -133,7 +133,7 @@ def role_grant_refusal(
     """Why the bot could not grant *role* to a driver, or None where it can.
 
     A team's role is granted to every driver placed in it and revoked when they leave, and
-    `placement_service._grant_roles` only logs a failure — so a role the bot cannot grant costs
+    `team_role_service._grant_roles` only logs a failure — so a role the bot cannot grant costs
     a whole team their role with nobody told. The four cases are refused where the role is set,
     which is the one moment a league is there to choose another:
 

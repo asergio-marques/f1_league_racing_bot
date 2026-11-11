@@ -5,7 +5,7 @@ Each is a change type of its own on the league lane, registered by the builder. 
 under a shorthand, a full name and a role, or removed by its shorthand, from the server's list, which
 is open while no season's configuration is confirmed. The team is named at the ask, and an add or
 a remove is one job, **the save**, which writes the team's row (`TeamService.add_default_team_on`,
-`remove_default_team_on`), its role mapping (`PlacementService.set_team_role_config_on`,
+`remove_default_team_on`), its role mapping (`TeamRoleService.set_team_role_config_on`,
 `delete_team_role_config_on`), an audit entry for each (`TEAM_ADD` or `TEAM_REMOVE`, then
 `TEAM_ROLE_CONFIG`) and the line that records the change, all stamped with the queue's clock and
 saved whole or not at all.
@@ -52,7 +52,7 @@ from leaguebot.core.services.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.placement_service import PlacementService
+from leaguebot.core.services.team_role_service import TeamRoleService
 from leaguebot.core.services.role_moves import MOVE_ROLES, role_move_step
 from leaguebot.core.services.season_service import live_season
 from leaguebot.core.services.team_service import RESERVE_NAME, TeamService, resolve_team_reference
@@ -152,7 +152,7 @@ async def season_done_refusal(db_path: str, command: str) -> Verdict | None:
 
 
 async def _role_refusal(
-    ctx: CheckContext, placement: PlacementService, role_id: int, *,
+    ctx: CheckContext, roles: TeamRoleService, role_id: int, *,
     other_than: str | None = None, suffix: str = "",
 ) -> Verdict | None:
     """The refusal of the role *role_id* for a team, or None: a role no longer on the server, one
@@ -173,7 +173,7 @@ async def _role_refusal(
         refusal = role_grant_refusal(role)
         if refusal is not None:
             return Verdict.refuse(f"⛔ {refusal}{suffix}")
-    holder = await placement.team_holding_role(role_id, other_than=other_than)
+    holder = await roles.team_holding_role(role_id, other_than=other_than)
     if holder is not None:
         return Verdict.refuse(
             f'⛔ <@&{role_id}> is already the role of "{holder}". A role belongs to one team '
@@ -212,9 +212,9 @@ def _actor(ctx: StepContext) -> None:
 
 
 def team_add_change(
-    *, teams: TeamService, placement: PlacementService, now: Callable[[], datetime]
+    *, teams: TeamService, roles: TeamRoleService, now: Callable[[], datetime]
 ) -> ChangeType:
-    """The `core.team_add` change type, for the builder to register: *teams* and *placement* are
+    """The `core.team_add` change type, for the builder to register: *teams* and *roles* are
     what the check judges the team through and the save writes it through, *now* the queue's clock.
 
     The payload names the team (`shorthand` and `full_name`, as the form's submission trimmed them)
@@ -227,7 +227,7 @@ def team_add_change(
         locked = await list_lock_refusal(ctx.db_path, "add")
         if locked is not None:
             return locked
-        refused = await _role_refusal(ctx, placement, int(payload["role_id"]))
+        refused = await _role_refusal(ctx, roles, int(payload["role_id"]))
         if refused is not None:
             return refused
         try:
@@ -246,7 +246,7 @@ def team_add_change(
         try:
             # Everything is judged before the first write, so a refusal leaves nothing behind.
             await teams.judge_add_on(db, shorthand, full_name=full_name)
-            old_role_id = await placement.set_team_role_config_on(
+            old_role_id = await roles.set_team_role_config_on(
                 db, shorthand, role_id, now=now()
             )
             await teams.add_default_team_on(db, shorthand, full_name=full_name)
@@ -297,9 +297,9 @@ def team_add_change(
 
 
 def team_remove_change(
-    *, teams: TeamService, placement: PlacementService
+    *, teams: TeamService, roles: TeamRoleService
 ) -> ChangeType:
-    """The `core.team_remove` change type, for the builder to register: *teams* and *placement*
+    """The `core.team_remove` change type, for the builder to register: *teams* and *roles*
     are what the check judges the team through and the save removes it through.
 
     The payload names the team by its `shorthand`, and by its `full_name` as the league was told
@@ -327,7 +327,7 @@ def team_remove_change(
         except Refused as refusal:
             return _refused_in_save(ctx, refusal)
         await teams.remove_default_team_on(db, shorthand)
-        role_id = await placement.delete_team_role_config_on(db, shorthand)
+        role_id = await roles.delete_team_role_config_on(db, shorthand)
         audits = [AuditRecord("TEAM_REMOVE", {"shorthand": shorthand, "full_name": full_name}, None)]
         if role_id is not None:
             audits.append(
@@ -435,11 +435,11 @@ def _close_step(command: str, details: Callable[[StepContext], str]) -> Step:
 
 
 def team_modify_change(
-    *, teams: TeamService, placement: PlacementService, now: Callable[[], datetime]
+    *, teams: TeamService, roles: TeamRoleService, now: Callable[[], datetime]
 ) -> ChangeType:
-    """The `core.team_modify` change type, for the builder to register: *teams* and *placement*
+    """The `core.team_modify` change type, for the builder to register: *teams* and *roles*
     are what the check judges the team through and the save writes it through, *now* the queue's
-    clock, and *placement* gives the roles of the drivers seated in the team.
+    clock, and *roles* gives the roles of the drivers seated in the team.
 
     The payload names the team as it stood at the ask (`was_shorthand`, `was_full_name`), its
     names as they are to be (`shorthand`, `full_name`, the form's trimmed) and its new role
@@ -466,7 +466,7 @@ def team_modify_change(
             return Verdict.refuse(_NAMES_FIXED)
         if payload["role_id"] is not None:
             refused = await _role_refusal(
-                ctx, placement, int(payload["role_id"]), other_than=payload["was_shorthand"],
+                ctx, roles, int(payload["role_id"]), other_than=payload["was_shorthand"],
                 suffix=" Nothing was written.",
             )
             if refused is not None:
@@ -499,7 +499,7 @@ def team_modify_change(
             old_role_id = current["role_id"]
             if mapped is not None:
                 try:
-                    old_role_id = await placement.set_team_role_config_on(
+                    old_role_id = await roles.set_team_role_config_on(
                         db, was, mapped, now=now()
                     )
                 except Refused as refusal:
@@ -517,7 +517,7 @@ def team_modify_change(
                 )
             )
         if shorthand != was:
-            held = await placement.rename_team_role_config_on(db, was, shorthand, now=now())
+            held = await roles.rename_team_role_config_on(db, was, shorthand, now=now())
             if mapped is None:
                 mapped = held
         if role_id is not None or (shorthand != was and mapped is not None):
@@ -529,7 +529,7 @@ def team_modify_change(
                 )
             )
         users = (
-            await placement.seated_user_ids_on(db, was)
+            await roles.seated_user_ids_on(db, was)
             if role_id is not None and old_role_id != role_id else []
         )
         return StepResult(
@@ -580,7 +580,7 @@ def team_modify_change(
         steps={
             SAVE: Step(SAVE, StepKind.SAVE, save),
             CLOSE: _close_step("/team modify", details),
-            MOVE_ROLES: role_move_step(placement, reason=MODIFY_REASON),
+            MOVE_ROLES: role_move_step(roles, reason=MODIFY_REASON),
         },
         check=check,
         key=lambda payload: f"{TEAM_MODIFY}|{json.dumps(payload, sort_keys=True)}",
@@ -591,9 +591,9 @@ def team_modify_change(
 
 
 def team_reserve_role_change(
-    *, placement: PlacementService, now: Callable[[], datetime]
+    *, roles: TeamRoleService, now: Callable[[], datetime]
 ) -> ChangeType:
-    """The `core.team_reserve_role` change type, for the builder to register: *placement* is what
+    """The `core.team_reserve_role` change type, for the builder to register: *roles* is what
     the check judges the role through and the save maps it through, and gives the roles of the
     drivers seated in the Reserve team, *now* the queue's clock.
 
@@ -610,7 +610,7 @@ def team_reserve_role_change(
         if role_id is None:
             return Verdict.go()
         return await _role_refusal(
-            ctx, placement, int(role_id), other_than=RESERVE_NAME
+            ctx, roles, int(role_id), other_than=RESERVE_NAME
         ) or Verdict.go()
 
     async def save(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
@@ -620,9 +620,9 @@ def team_reserve_role_change(
         mapped = None if role_id is None else int(role_id)
         try:
             if mapped is None:
-                old_role_id = await placement.delete_team_role_config_on(db, RESERVE_NAME)
+                old_role_id = await roles.delete_team_role_config_on(db, RESERVE_NAME)
             else:
-                old_role_id = await placement.set_team_role_config_on(
+                old_role_id = await roles.set_team_role_config_on(
                     db, RESERVE_NAME, mapped, now=now()
                 )
         except Refused as refusal:
@@ -637,7 +637,7 @@ def team_reserve_role_change(
                 ),
             )
         users = (
-            await placement.seated_user_ids_on(db, RESERVE_NAME) if old_role_id != role_id else []
+            await roles.seated_user_ids_on(db, RESERVE_NAME) if old_role_id != role_id else []
         )
         return StepResult(
             result={"saved": True}, audits=audits, then=_moves(users, old_role_id, role_id)
@@ -671,7 +671,7 @@ def team_reserve_role_change(
         steps={
             SAVE: Step(SAVE, StepKind.SAVE, save),
             CLOSE: _close_step("/team reserve-role", details),
-            MOVE_ROLES: role_move_step(placement, reason=RESERVE_REASON),
+            MOVE_ROLES: role_move_step(roles, reason=RESERVE_REASON),
         },
         check=check,
         key=lambda payload: f"{TEAM_RESERVE_ROLE}|{json.dumps(payload, sort_keys=True)}",

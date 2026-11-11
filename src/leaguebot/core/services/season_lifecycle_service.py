@@ -51,7 +51,7 @@ from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.team_role_service import TeamRoleService
 
 log = logging.getLogger(__name__)
 
@@ -351,7 +351,7 @@ async def take_driver_role(
     guild: discord.Guild,
     driver: Mapping[str, Any],
     *,
-    placement: PlacementService,
+    roles: TeamRoleService,
     driver_role_id: int,
     reason: str,
 ) -> dict:
@@ -360,7 +360,7 @@ async def take_driver_role(
     A member who left the server, or a role gone from it, is passed over; Discord refusing
     raises, for the queue to stop on.
     """
-    revoked = await placement.revoke_roles(
+    revoked = await roles.revoke_roles(
         guild, int(driver["user_id"]), driver_role_id, reason=reason
     )
     return {"revoked": revoked}
@@ -415,7 +415,7 @@ NO_CHANNEL_LEFT = "{who} had no signup channel left to tell"
 
 
 def close_signup_steps(
-    placement: PlacementService,
+    roles: TeamRoleService,
     *,
     season_end_steps: Hook,
     line_prefix: str | None = None,
@@ -429,7 +429,7 @@ def close_signup_steps(
     async def take_role(ctx: StepContext) -> StepResult:
         guild = await require_guild(ctx.bot)
         result = await take_driver_role(
-            guild, ctx.step_payload, placement=placement,
+            guild, ctx.step_payload, roles=roles,
             driver_role_id=int(ctx.step_payload["role_id"]),
             reason=str(ctx.step_payload["reason"]),
         )
@@ -490,7 +490,7 @@ async def wind_down_not_due_on(db: aiosqlite.Connection) -> str | None:
 
 def wind_down_change(
     *,
-    placement: PlacementService,
+    roles: TeamRoleService,
     season_end_closes: Hook,
     drivers_returned: AwaitedHook,
     driver_turned_down: AwaitedHook,
@@ -514,7 +514,7 @@ def wind_down_change(
     3. Then, for each driver turned down, `signup_notice` and `close_signup` for a signup in review,
        or `take_driver_role` for an approved driver.
 
-    *placement* and the hooks the modules sign up to (*season_end_closes*, *drivers_returned*,
+    *roles* and the hooks the modules sign up to (*season_end_closes*, *drivers_returned*,
     *driver_turned_down*, *driver_returned_jobs*, *season_end_steps*) are what the jobs reach
     Discord and the other modules through, handed by the builder, which hands *now* too: the
     queue's clock, which stamps the turn-down's audit entry.
@@ -546,7 +546,7 @@ def wind_down_change(
     )
     steps.update(
         close_signup_steps(
-            placement, season_end_steps=season_end_steps,
+            roles, season_end_steps=season_end_steps,
             line_prefix="System | Every division is done",
         )
     )

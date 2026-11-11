@@ -41,10 +41,6 @@ DRIVER_ROLE = 555
 DIVISION_MENTION = 600
 
 
-#: Why the tests standing in for the role helpers fail until those are a service of their
-#: own (#283).
-_NOT_YET_A_ROLE_SERVICE = "#283: the role helpers are not yet a TeamRoleService of their own"
-
 
 async def _make_db(tmp_path, *, name="revoke_roles", driver_role=DRIVER_ROLE, drivers=None):
     """*drivers* are ``(profile_id, discord_user_id, is_test, season_id)``."""
@@ -120,7 +116,6 @@ async def test_the_driver_role_is_taken_back_too(tmp_path):
     assert all(DRIVER_ROLE in roles for roles in targets.values())
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_driver_without_the_driver_role_is_not_asked_to_lose_it(tmp_path):
     """Driver 101 holds the division's role but not the driver role: the job takes the
     division's alone, and asks Discord nothing of the driver role."""
@@ -153,7 +148,6 @@ async def test_a_test_driver_is_skipped(tmp_path):
     assert sorted(await _targets(db_path)) == [101]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_member_missing_from_the_cache_is_fetched(tmp_path):
     """Driver 101 is not in the bot's member cache: the job fetches them from Discord and takes
     their roles all the same."""
@@ -170,7 +164,6 @@ async def test_a_member_missing_from_the_cache_is_fetched(tmp_path):
     assert _taken(member) == {_DIVISION_ROLE, DRIVER_ROLE}
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_driver_who_has_left_the_server_is_stepped_over(tmp_path):
     """The roles went with them, and one departed member must not stop the rest: Discord
     answers the fetch of driver 101 "unknown member", and the job is done, raising nothing."""
@@ -231,7 +224,6 @@ def _taken(member) -> set[int]:
     return {role.id for call in member.remove_roles.await_args_list for role in call.args}
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_member_that_cannot_be_fetched_raises(tmp_path):
     """Discord answers the fetch of driver 101 with a server error, not "unknown member": the
     job stops, raised from the fault, and nothing is taken."""
@@ -250,7 +242,6 @@ async def test_a_member_that_cannot_be_fetched_raises(tmp_path):
     member.remove_roles.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_revocation_discord_refuses_raises_from_its_fault(tmp_path):
     """Driver 101 is fetched, but Discord refuses to take their roles (403): the job stops,
     raised from the refusal."""
@@ -269,7 +260,6 @@ async def test_a_revocation_discord_refuses_raises_from_its_fault(tmp_path):
     assert raised.value.__cause__ is refusal
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_role_no_longer_on_the_server_is_passed_over(tmp_path):
     """The team's role (811) was deleted from the server: driver 101 still loses the division's
     role and the driver role, nothing raises, and the job is done."""

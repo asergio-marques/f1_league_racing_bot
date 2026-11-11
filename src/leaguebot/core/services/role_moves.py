@@ -29,7 +29,7 @@ from leaguebot.core.utils.interaction_errors import describe_fault
 from leaguebot.core.utils.league_server import league_guild
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.team_role_service import TeamRoleService
 
 #: The name of the step, as the change types and their outcomes know it.
 MOVE_ROLES = "move_roles"
@@ -86,7 +86,7 @@ def problem_of(
 
 
 def role_move_step(
-    placement: "PlacementService",
+    roles: "TeamRoleService",
     name: str = MOVE_ROLES,
     *,
     reason: str = PLACEMENT_REASON,
@@ -98,7 +98,7 @@ def role_move_step(
     A role no longer on the server stops the giving of all of them, unless *give_what_remains*: the
     roles still on the server are given, and the job ends with a problem naming those that are not.
 
-    It raises where Discord will not (`PlacementService.revoke_roles`, `grant_roles`), and
+    It raises where Discord will not (`TeamRoleService.revoke_roles`, `grant_roles`), and
     `on_fault` ends the job on it with the problem named, so the queue goes on.
     """
 
@@ -112,7 +112,7 @@ def role_move_step(
         grant = [int(role) for role in each.get("grant", ())]
         if revoke:
             try:
-                found = await placement.revoke_roles(guild, user_id, *revoke, reason=reason)
+                found = await roles.revoke_roles(guild, user_id, *revoke, reason=reason)
             except Exception as error:
                 raise _RoleMoveFault(taken=False) from error
             if not found:
@@ -123,7 +123,7 @@ def role_move_step(
             grant = [role for role in grant if role not in missing]
         if grant:
             try:
-                found = await placement.grant_roles(guild, user_id, *grant, reason=reason)
+                found = await roles.grant_roles(guild, user_id, *grant, reason=reason)
             except Exception as error:
                 raise _RoleMoveFault(taken=True) from error
             if not found:

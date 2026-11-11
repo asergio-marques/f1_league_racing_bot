@@ -1,10 +1,10 @@
 """Attendance's share of a round's review, as the hook the builder hands results' change types
 (#439, slice 2, plan 2.6; the protocol is `results/services/attendance_hook.py`).
 
-Built once by the entry point, handed the placement service and attached as
-`bot.attendance_after_review`. It uses the bot for Discord alone (the league's server, the log
-channel, posting) and never looks another service up on it: the placement service is the one it
-was handed, and attendance's switch is read from the database, on the connection a writer is
+Built once by the entry point, handed the placement service and the team-role service and attached
+as `bot.attendance_after_review`. It uses the bot for Discord alone (the league's server, the log
+channel, posting) and never looks another service up on it: the services are the ones it was
+handed, and attendance's switch is read from the database, on the connection a writer is
 handed.
 
 **Each method does nothing while attendance is off**, save three: `enabled` reports the switch,
@@ -41,6 +41,7 @@ from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord
 from leaguebot.core.models.refusal import Refused
 from leaguebot.core.services import lineup_posting
 from leaguebot.core.services.placement_service import PlacementService
+from leaguebot.core.services.team_role_service import TeamRoleService
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
 
@@ -48,11 +49,21 @@ _Pardon = TypeVar("_Pardon")
 
 
 class AttendanceAfterReview:
-    """See the module docstring. Constructed as ``AttendanceAfterReview(bot, placement)``."""
+    """See the module docstring. Constructed as ``AttendanceAfterReview(bot, placement,
+    roles=roles)``: *roles* is the team-role service that gives and takes a sanction's roles. It is
+    optional so that a hook which is never asked to change a sanction's roles is built without
+    one, and asking it then raises."""
 
-    def __init__(self, bot: LeagueBot, placement: PlacementService) -> None:
+    def __init__(
+        self,
+        bot: LeagueBot,
+        placement: PlacementService,
+        *,
+        roles: TeamRoleService | None = None,
+    ) -> None:
         self._bot = bot
         self._placement = placement
+        self._roles = roles
 
     @property
     def _db_path(self) -> str:
@@ -170,16 +181,19 @@ class AttendanceAfterReview:
         # reads: a sanction already saved is owed its roles even once attendance is turned off
         # (the attendance specification's "Sanctions that do not apply").
         guild = await self._guild()
+        roles = self._roles
+        if roles is None:
+            raise TypeError("the hook was built without a team-role service to change roles with")
         entitled = await self._placement.driver_role_ids(profile_id)
         to_revoke = [role_id for role_id in revoke if role_id not in entitled]
         to_grant = [role_id for role_id in grant if role_id in entitled]
         present = True
         if to_revoke:
-            present = await self._placement.revoke_roles(
+            present = await roles.revoke_roles(
                 guild, user_id, *to_revoke, reason="Attendance sanction"
             )
         if present and to_grant:
-            present = await self._placement.grant_roles(guild, user_id, *to_grant)
+            present = await roles.grant_roles(guild, user_id, *to_grant)
         if not present:
             return {"absent": True}
         return {"revoked": to_revoke, "granted": to_grant}

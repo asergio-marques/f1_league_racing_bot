@@ -20,10 +20,6 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
 
-#: Why the driver role's taking fails until `take_driver_role` is handed the team-role service
-#: (#283).
-_NOT_YET_A_ROLE_SERVICE = "#283: take_driver_role is not yet handed a TeamRoleService as roles="
-
 NOW = datetime(2031, 3, 4, 5, 6, 7, tzinfo=timezone.utc)
 
 
@@ -216,7 +212,6 @@ async def test_a_signup_in_review_has_its_channel_closed():
     scheduler_service.disarm.assert_called_once_with(INACTIVITY_TIMER, "1004")
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_the_driver_role_is_revoked_from_a_real_driver(db_path):
     """Max (1002) was Assigned when the season ended, and holds the league's driver role 555:
     his `take_driver_role` job takes it back."""
@@ -235,7 +230,6 @@ async def test_the_driver_role_is_revoked_from_a_real_driver(db_path):
     assert role in member.remove_roles.await_args.args
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_the_driver_role_survives_disabling_signup_and_is_still_revoked(db_path):
     """The driver role is the league's (issue #276). It lived in the signup module's
     configuration row, which disabling the module deletes, so the season's end then found no
@@ -554,7 +548,6 @@ async def test_a_signup_channel_that_cannot_be_held_raises():
     scheduler_service.disarm.assert_not_called()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_driver_role_discord_will_not_take_back_raises(tmp_path):
     """Max (1002) was Assigned when the season ended, and the league's driver role is 555.
     Discord refuses to take it back (403): the `take_driver_role` job raises, from the refusal,

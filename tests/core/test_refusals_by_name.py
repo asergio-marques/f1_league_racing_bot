@@ -290,9 +290,6 @@ _NOT_YET_HANDED_CAPACITY = (
 )
 
 
-#: Why the team changes' cases fail until their factories are handed the team-role service (#283).
-_NOT_YET_HANDED_ROLES = "#283: the team changes are not yet handed a TeamRoleService as roles="
-
 #: Why the driver changes that move roles fail until they are handed the team-role service (#283).
 _NOT_YET_HANDED_DRIVER_ROLES = (
     "#283: the driver changes that move roles are not yet handed a TeamRoleService as roles="
@@ -316,26 +313,17 @@ CATCHES = [
                  marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_CAPACITY)),
     pytest.param(_test_roster_imported, id="test roster imported",
                  marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_CAPACITY)),
-    pytest.param(_team_check("team_add_change", _TEAM_ADDED), id="team add check",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_ROLES)),
-    pytest.param(_team_save("team_add_change", _TEAM_ADDED), id="team add save",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_ROLES)),
-    pytest.param(_team_check("team_remove_change", _TEAM_REMOVED), id="team remove check",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_ROLES)),
-    pytest.param(_team_save("team_remove_change", _TEAM_REMOVED), id="team remove save",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_ROLES)),
-    pytest.param(_team_check("team_modify_change", _TEAM_RENAMED), id="team modify check",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_ROLES)),
+    pytest.param(_team_check("team_add_change", _TEAM_ADDED), id="team add check"),
+    pytest.param(_team_save("team_add_change", _TEAM_ADDED), id="team add save"),
+    pytest.param(_team_check("team_remove_change", _TEAM_REMOVED), id="team remove check"),
+    pytest.param(_team_save("team_remove_change", _TEAM_REMOVED), id="team remove save"),
+    pytest.param(_team_check("team_modify_change", _TEAM_RENAMED), id="team modify check"),
     pytest.param(_team_save("team_modify_change", _TEAM_ROLE_GARBLED),
-                 id="team modify save, a role id no number",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_ROLES)),
+                 id="team modify save, a role id no number"),
     pytest.param(_team_save("team_reserve_role_change", _RESERVE_ROLE_GARBLED),
-                 id="team reserve-role save, a role id no number",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_ROLES)),
-    pytest.param(_reassign_checked, id="driver reassign check",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_DRIVER_ROLES)),
-    pytest.param(_reassign_merge_hook_faulted, id="driver reassign save, a merge hook's fault",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_DRIVER_ROLES)),
+                 id="team reserve-role save, a role id no number"),
+    pytest.param(_reassign_checked, id="driver reassign check"),
+    pytest.param(_reassign_merge_hook_faulted, id="driver reassign save, a merge hook's fault"),
     pytest.param(_tiers_checked, id="season approval's tier check"),
 ]
 

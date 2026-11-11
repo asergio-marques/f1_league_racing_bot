@@ -26,10 +26,6 @@ TEAM_ROLE = 811
 DIVISION_ID = 11
 
 
-#: Why the tests standing in for the role helpers fail until those are a service of their
-#: own (#283).
-_NOT_YET_A_ROLE_SERVICE = "#283: the role helpers are not yet a TeamRoleService of their own"
-
 
 def _roles(db_path: str):
     """The team-role service on *db_path*, as the builder hands it to placement."""
@@ -62,7 +58,6 @@ def _granted(member) -> set[int]:
     return {role.id for call in member.add_roles.await_args_list for role in call.args}
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_both_roles_are_granted(tmp_path):
     """Lewis (101) is fetched and given Pro's role (801) and Ferrari's (811)."""
     guild, member, _ = _guild()
@@ -76,7 +71,6 @@ async def test_both_roles_are_granted(tmp_path):
     assert _granted(member) == {DIVISION_ROLE, TEAM_ROLE}
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_role_not_on_the_server_raises(tmp_path):
     """Ferrari's role (811) has been deleted from the server: the grant raises for the queue to
     stop on, rather than giving Lewis Pro's role alone and saying nothing."""
@@ -88,7 +82,6 @@ async def test_a_role_not_on_the_server_raises(tmp_path):
         )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_role_discord_refuses_raises(tmp_path):
     """Discord refuses to give Lewis a role (the bot's own role sits below it): the grant raises."""
     guild, member, _ = _guild()
@@ -102,7 +95,6 @@ async def test_a_role_discord_refuses_raises(tmp_path):
         )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_member_discord_reports_absent_is_passed_over(tmp_path):
     """Lewis has left the server, Discord answering Not Found: the grant returns False, gives
     nothing and raises nothing, so the job is done."""

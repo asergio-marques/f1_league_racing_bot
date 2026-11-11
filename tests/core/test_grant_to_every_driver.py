@@ -26,10 +26,6 @@ PROFILES = [
 ]
 
 
-#: Why the tests standing in for the role helpers fail until those are a service of their
-#: own (#283).
-_NOT_YET_A_ROLE_SERVICE = "#283: the role helpers are not yet a TeamRoleService of their own"
-
 
 def _roles(db_path: str):
     """The team-role service on *db_path*, as the builder hands it to placement."""
@@ -69,7 +65,6 @@ def _guild(*, members: dict | None = None, role_present: bool = True):
     return guild
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_every_driver_the_driver_role_belongs_to_is_given_it(db_path):
     """Nobody else is given it: not a signup still in review, not a former driver, and not a
     test driver, who holds no role at all."""
@@ -85,7 +80,6 @@ async def test_every_driver_the_driver_role_belongs_to_is_given_it(db_path):
     assert asked == [1001, 1002]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_driver_discord_refuses_is_named_and_the_rest_still_get_it(db_path):
     refused = MagicMock(add_roles=AsyncMock(side_effect=discord.Forbidden(MagicMock(status=403), "no")))
     granted = MagicMock(add_roles=AsyncMock())
@@ -98,7 +92,6 @@ async def test_a_driver_discord_refuses_is_named_and_the_rest_still_get_it(db_pa
     granted.add_roles.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_driver_not_cached_is_fetched(db_path):
     fetched = MagicMock(add_roles=AsyncMock())
     guild = _guild(members={1002: MagicMock(add_roles=AsyncMock())})
@@ -110,7 +103,6 @@ async def test_a_driver_not_cached_is_fetched(db_path):
     fetched.add_roles.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_driver_who_has_left_is_passed_over(db_path):
     guild = _guild(members={1002: MagicMock(add_roles=AsyncMock())})
 
@@ -120,7 +112,6 @@ async def test_a_driver_who_has_left_is_passed_over(db_path):
     assert outcome.not_granted == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_role_not_on_the_server_is_granted_to_nobody_and_says_so(db_path):
     """The command checks the role first; this only keeps a race from reading as success."""
     guild = _guild(role_present=False)

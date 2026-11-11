@@ -94,6 +94,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.module_service import ModuleService
     from leaguebot.core.services.placement_service import PlacementService
     from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.core.services.team_role_service import TeamRoleService
 
 log = logging.getLogger(__name__)
 
@@ -231,12 +232,12 @@ async def approval_in_hand(
     )
 
 
-def driver_roles_step(placement: Any, name: str = GRANT_ROLES) -> Step:
+def driver_roles_step(roles: "TeamRoleService", name: str = GRANT_ROLES) -> Step:
     """The one job that gives a driver the roles of their division and their team.
 
     The season's approval and the mid-season confirmation both plan it, one per driver, with the
     payload ``{user_id, division_id, division_name, team_name}``. It raises where Discord will not
-    (:meth:`PlacementService.grant_roles`), so the queue stops, and passes over a member Discord
+    (:meth:`TeamRoleService.grant_roles`), so the queue stops, and passes over a member Discord
     reports absent. A driver seated with no team, or whose team has no role set, is given their
     division's role alone, and one with no role to give is given nothing: Discord is not reached for
     it.
@@ -256,12 +257,12 @@ def driver_roles_step(placement: Any, name: str = GRANT_ROLES) -> Step:
             else []
         )
         if each.get("team_name") is not None:
-            team = await placement.get_team_role_config(str(each["team_name"]))
+            team = await roles.get_team_role_config(str(each["team_name"]))
             if team is not None:
                 role_ids.append(team.role_id)
         if not role_ids:
             return StepResult(result={"granted": False})
-        granted = await placement.grant_roles(guild, int(each["user_id"]), *role_ids)
+        granted = await roles.grant_roles(guild, int(each["user_id"]), *role_ids)
         return StepResult(result={"granted": granted})
 
     async def describe_grant(ctx: StepContext) -> str:
@@ -279,6 +280,7 @@ def season_approval_change(
     seasons: SeasonService,
     scheduler: "SchedulerService",
     placement: "PlacementService",
+    roles: "TeamRoleService",
     drawing: "ImageDrawing",
     round_windows_read: AwaitedHook,
     placements_confirmed: AwaitedHook,
@@ -293,7 +295,8 @@ def season_approval_change(
 
     The builder hands in *modules* and *config* (which modules are on, and test mode), the
     *seasons* service (the divisions and rounds the check, the arming and the calendar read), the
-    *scheduler* and the *placement* service, the image module's own drawing (*drawing*),
+    *scheduler*, the *placement* service (which posts the lineups) and the team-role service
+    *roles* (which gives the drivers their roles), the image module's own drawing (*drawing*),
     *round_windows_read* (the hook the enabled modules' windows are read through),
     *placements_confirmed* (the hook each module's opening post is planned through, called
     inside the save for each division in turn, on the save's connection) and
@@ -729,7 +732,7 @@ def season_approval_change(
         ARM: Step(
             ARM, StepKind.ACT, arm, describe=describe_arm, undiscardable=never_runs
         ),
-        GRANT_ROLES: driver_roles_step(placement),
+        GRANT_ROLES: driver_roles_step(roles),
         POST_BATCH_NOTICE: Step(
             POST_BATCH_NOTICE, StepKind.ACT, post_batch_notice, describe=describe_notice_post
         ),

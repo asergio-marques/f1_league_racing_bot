@@ -630,8 +630,6 @@ async def test_a_driver_who_could_not_be_given_it_is_named(tmp_path, column, cha
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the driver role is not yet given out by a "
-                   "TeamRoleService of its own")
 @pytest.mark.parametrize("column,change_type", _BOTH)
 async def test_a_fault_giving_the_replacement_leaves_the_role_saved(
     tmp_path, monkeypatch, column, change_type

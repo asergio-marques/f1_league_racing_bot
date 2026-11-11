@@ -599,13 +599,22 @@ def register_change_types(bot: LeagueBot) -> None:
         lineup_post_change(bot.placement_service, now=lambda: bot.change_queue.now())
     )
     bot.change_queue.register(
-        driver_move_change(placement=bot.placement_service, now=lambda: bot.change_queue.now())
+        driver_move_change(
+            placement=bot.placement_service, roles=bot.team_role_service,
+            now=lambda: bot.change_queue.now(),
+        )
     )
     bot.change_queue.register(
-        driver_sack_change(placement=bot.placement_service, now=lambda: bot.change_queue.now())
+        driver_sack_change(
+            placement=bot.placement_service, roles=bot.team_role_service,
+            now=lambda: bot.change_queue.now(),
+        )
     )
     bot.change_queue.register(
-        driver_release_change(placement=bot.placement_service, now=lambda: bot.change_queue.now())
+        driver_release_change(
+            placement=bot.placement_service, roles=bot.team_role_service,
+            now=lambda: bot.change_queue.now(),
+        )
     )
     bot.change_queue.register(
         driver_assign_change(placement=bot.placement_service, now=lambda: bot.change_queue.now())
@@ -615,7 +624,8 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(
         driver_reject_change(
-            placement=bot.placement_service, driver_turned_down=bot.driver_turned_down,
+            placement=bot.placement_service, roles=bot.team_role_service,
+            driver_turned_down=bot.driver_turned_down,
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -623,6 +633,7 @@ def register_change_types(bot: LeagueBot) -> None:
         driver_reassign_change(
             driver=bot.driver_service,
             placement=bot.placement_service,
+            roles=bot.team_role_service,
             profiles_merged=bot.profiles_merged,
             divisions_raced_read=bot.divisions_raced_read,
             driver_account_changed=bot.driver_account_changed,
@@ -633,27 +644,27 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(
         team_add_change(
-            teams=bot.team_service, placement=bot.placement_service,
+            teams=bot.team_service, roles=bot.team_role_service,
             now=lambda: bot.change_queue.now(),
         )
     )
     bot.change_queue.register(
-        team_remove_change(teams=bot.team_service, placement=bot.placement_service)
+        team_remove_change(teams=bot.team_service, roles=bot.team_role_service)
     )
     bot.change_queue.register(
         team_modify_change(
-            teams=bot.team_service, placement=bot.placement_service,
+            teams=bot.team_service, roles=bot.team_role_service,
             now=lambda: bot.change_queue.now(),
         )
     )
     bot.change_queue.register(
         team_reserve_role_change(
-            placement=bot.placement_service, now=lambda: bot.change_queue.now()
+            roles=bot.team_role_service, now=lambda: bot.change_queue.now()
         )
     )
     bot.change_queue.register(
         wind_down_change(
-            placement=bot.placement_service,
+            roles=bot.team_role_service,
             season_end_closes=bot.season_end_closes,
             drivers_returned=bot.drivers_returned,
             driver_turned_down=bot.driver_turned_down,
@@ -666,7 +677,7 @@ def register_change_types(bot: LeagueBot) -> None:
         season_complete_change(
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
-            placement=bot.placement_service,
+            roles=bot.team_role_service,
             final_round_read=bot.final_round_read,
             season_standing_read=bot.season_standing_read,
             season_completed=bot.season_completed,
@@ -687,7 +698,7 @@ def register_change_types(bot: LeagueBot) -> None:
         season_cancel_change(
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
-            placement=bot.placement_service,
+            roles=bot.team_role_service,
             drawing=bot.image_drawing,
             cancellation_refused=bot.cancellation_refused,
             rounds_called_off=bot.rounds_called_off,
@@ -710,7 +721,7 @@ def register_change_types(bot: LeagueBot) -> None:
         season_abort_change(
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
-            placement=bot.placement_service,
+            roles=bot.team_role_service,
             season_end_closes=bot.season_end_closes,
             drivers_returned=bot.drivers_returned,
             driver_returned_jobs=bot.driver_returned_jobs,
@@ -735,6 +746,7 @@ def register_change_types(bot: LeagueBot) -> None:
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
             placement=bot.placement_service,
+            roles=bot.team_role_service,
             drawing=bot.image_drawing,
             round_windows_read=bot.round_windows_read,
             placements_confirmed=bot.placements_confirmed,
@@ -753,6 +765,7 @@ def register_change_types(bot: LeagueBot) -> None:
         mid_season_confirm_change(
             modules=bot.module_service,
             placement=bot.placement_service,
+            roles=bot.team_role_service,
             drawing=bot.image_drawing,
             rasteriser_fault=bot.image_drawing.rasteriser_fault,
             driver_names_read=bot.driver_names_read,
@@ -846,8 +859,8 @@ def register_change_types(bot: LeagueBot) -> None:
         interaction_channel_setting(config=bot.config_service),
         interaction_role_setting(config=bot.config_service),
         admin_role_setting(config=bot.config_service),
-        base_role_setting(config=bot.config_service, placement=bot.placement_service),
-        driver_role_setting(config=bot.config_service, placement=bot.placement_service),
+        base_role_setting(config=bot.config_service, roles=bot.team_role_service),
+        driver_role_setting(config=bot.config_service, roles=bot.team_role_service),
         hub_channel_setting(config=bot.config_service),
         *division_channel_settings(seasons=bot.season_service),
         test_mode_nationality_setting(config=bot.config_service),
@@ -1037,10 +1050,14 @@ async def build(settings: Settings) -> LeagueBot:
     )
 
     from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.team_role_service import TeamRoleService
     # The drawing is handed so the capacity guards and the lineup refresh can ask image's
     # answer without a bot of their own: PlacementService posts through the guild it is
     # given, and reaches the image module only through this drawing.
-    bot.placement_service = PlacementService(settings.db_path, drawing=bot.image_drawing)
+    bot.team_role_service = TeamRoleService(settings.db_path)
+    bot.placement_service = PlacementService(
+        settings.db_path, drawing=bot.image_drawing, roles=bot.team_role_service
+    )
 
     from leaguebot.signup.services.signup_module_service import SignupModuleService
     from leaguebot.signup.services.wizard_service import WizardService
@@ -1060,7 +1077,9 @@ async def build(settings: Settings) -> LeagueBot:
 
     # Attendance's share of a round's review, handed the placement service it moves seats
     # through; results' change types reach attendance through it alone.
-    bot.attendance_after_review = AttendanceAfterReview(bot, bot.placement_service)
+    bot.attendance_after_review = AttendanceAfterReview(
+        bot, bot.placement_service, roles=bot.team_role_service
+    )
     _make_hooks(bot)
     _sign_up_to_round_windows(bot)
     _sign_up_to_review_sections(bot)

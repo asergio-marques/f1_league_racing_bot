@@ -87,7 +87,7 @@ from leaguebot.core.services.setting_change import After, RENAMED_OUTCOME, Saved
 
 if TYPE_CHECKING:
     from leaguebot.core.services.config_service import ConfigService
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.team_role_service import TeamRoleService
 
 _UNCONFIGURED = "⛔ This server is not configured yet — run `/bot init` first."
 
@@ -336,7 +336,7 @@ async def _season_fixed_on(db: aiosqlite.Connection) -> int | None:
 
 
 def _league_role_setting(
-    column: str, *, config: "ConfigService", placement: "PlacementService"
+    column: str, *, config: "ConfigService", roles: "TeamRoleService"
 ) -> Setting:
     """`/bot base-role` or `/bot driver-role` on *column*: a league manager's own command,
     neither one of the four that let a league back into the bot nor a channel setting, so it
@@ -445,7 +445,7 @@ def _league_role_setting(
     if is_base_role:
         after[BASE_ROLE_CHANGED] = _move_signup_overwrite()
         after[REAPPLY_HUB] = _reapply_hub(command, config)
-    after[GRANT_TO_DRIVERS] = _grant_to_drivers(placement, is_base_role=is_base_role)
+    after[GRANT_TO_DRIVERS] = _grant_to_drivers(roles, is_base_role=is_base_role)
 
     return Setting(
         kind=f"core.setting.{column}",
@@ -477,7 +477,7 @@ def _move_signup_overwrite() -> After:
     return After(step=Step(BASE_ROLE_CHANGED, StepKind.ACT, run), fault_reply=lambda _p, r: r)
 
 
-def _grant_to_drivers(placement: "PlacementService", *, is_base_role: bool) -> After:
+def _grant_to_drivers(roles: "TeamRoleService", *, is_base_role: bool) -> After:
     """The `After` step a role replaced because it is gone from the server plans: grant the new
     role to every driver who lost the old one with it.
 
@@ -491,7 +491,7 @@ def _grant_to_drivers(placement: "PlacementService", *, is_base_role: bool) -> A
         guild, role = _guild_and_role(ctx)
         if role.is_default():
             return StepResult(result={"given": "everyone"}, lines=(_GIVEN_TO_EVERYONE,))
-        outcome = await placement.grant_to_every_driver(guild, role.id)
+        outcome = await roles.grant_to_every_driver(guild, role.id)
         return StepResult(
             result={"granted": outcome.granted, "not_granted": outcome.not_granted},
             lines=(
@@ -534,14 +534,14 @@ def _given_reply(result: Mapping[str, Any], *, is_base_role: bool) -> str:
     return f"\n{told}"
 
 
-def base_role_setting(*, config: "ConfigService", placement: "PlacementService") -> Setting:
+def base_role_setting(*, config: "ConfigService", roles: "TeamRoleService") -> Setting:
     """`/bot base-role`: the role every member of the league holds."""
-    return _league_role_setting("base_role_id", config=config, placement=placement)
+    return _league_role_setting("base_role_id", config=config, roles=roles)
 
 
-def driver_role_setting(*, config: "ConfigService", placement: "PlacementService") -> Setting:
+def driver_role_setting(*, config: "ConfigService", roles: "TeamRoleService") -> Setting:
     """`/bot driver-role`: the role granted when a signup is approved."""
-    return _league_role_setting("driver_role_id", config=config, placement=placement)
+    return _league_role_setting("driver_role_id", config=config, roles=roles)
 
 
 # ----------------------------------------------------------------------------

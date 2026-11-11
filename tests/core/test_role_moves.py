@@ -18,9 +18,6 @@ from tests.support.season_league import (
 
 _REFUSED = "Discord refused or failed a request from the bot"
 
-#: Why the role step's tests fail until the bot declares a team-role service to hand it (#283).
-_NOT_YET_A_ROLE_SERVICE = "#283: the bot declares no TeamRoleService to hand the role step"
-
 #: (what Discord does, the roles taken, the roles given, the problem the ended job reports or
 #: None where the step completes, what Lewis has taken from him, what he is given).
 _CASES = [
@@ -53,7 +50,6 @@ _CASES = [
 ]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 @pytest.mark.parametrize("discord_does, take, give, problem, taken, given", _CASES)
 async def test_the_role_step_takes_then_gives_and_a_refusal_ends_the_job(
     tmp_path, discord_does, take, give, problem, taken, given
@@ -119,7 +115,6 @@ _GONE, _ALSO_GONE = 999_998, 999_999
         "no longer on the server", id="two roles gone",
     ),
 ])
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_the_role_step_gives_what_remains_and_names_the_roles_gone(tmp_path, gone, problem):
     """The core specification's change of a driver's account gives the new account the roles the
     driver holds. The season is ongoing; Lewis holds Ferrari's role. A role step built to give what
@@ -150,7 +145,6 @@ async def test_the_role_step_gives_what_remains_and_names_the_roles_gone(tmp_pat
     assert league.grant_reasons[LEWIS] == ["Because"]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_the_role_step_gives_nothing_where_a_role_is_gone_unless_built_to_give_what_remains(
     tmp_path,
 ):

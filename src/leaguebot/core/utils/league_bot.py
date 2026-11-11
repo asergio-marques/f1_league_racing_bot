@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     from leaguebot.image.services.image_validity_service import ImageValidityService
     from leaguebot.core.services.module_service import ModuleService
     from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.team_role_service import TeamRoleService
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.core.services.hub_service import HubOptions
     from leaguebot.core.services.start_up import StartUpStep
@@ -74,6 +75,9 @@ class LeagueBot(commands.Bot):
     driver_service: DriverService
     team_service: TeamService
     placement_service: PlacementService
+    #: The team roles and the helpers that give and take them, handed to `placement_service` and
+    #: to every change and hook that moves a role.
+    team_role_service: TeamRoleService
     module_service: ModuleService
     signup_module_service: SignupModuleService
     wizard_service: WizardService

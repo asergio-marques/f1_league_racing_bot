@@ -96,6 +96,7 @@ from leaguebot.core.services.driver_service import DriverService, write_transiti
 from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.core.services.role_moves import MOVE_ROLES, PLACEMENT_REASON, role_move_step
 from leaguebot.core.services.season_approval_change import unposted_lineup_line
+from leaguebot.core.services.team_role_service import TeamRoleService
 from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
@@ -319,10 +320,14 @@ async def _division_names(db: aiosqlite.Connection, division_ids: Sequence[int])
 
 
 def _change(
-    kind: _Kind, placement: PlacementService, now: Callable[[], datetime]
+    kind: _Kind,
+    placement: PlacementService,
+    now: Callable[[], datetime],
+    roles: TeamRoleService | None = None,
 ) -> ChangeType:
     """The change type *kind* describes, its jobs as the module says, the lineup's audit stamped by
-    *now*, the queue's clock."""
+    *now*, the queue's clock. A change with jobs after its save (`kind.afterwards`) is handed
+    *roles*, the team-role service that gives and takes the roles it planned."""
 
     async def save(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """The one save; see the module."""
@@ -380,7 +385,9 @@ def _change(
         CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
     }
     if kind.afterwards:
-        steps[MOVE_ROLES] = role_move_step(placement, reason=kind.role_reason)
+        if roles is None:
+            raise TypeError(f"{kind.kind} gives roles and is handed no team-role service")
+        steps[MOVE_ROLES] = role_move_step(roles, reason=kind.role_reason)
         steps[POST_LINEUP] = lineup_posting.lineup_step(placement, now=now)
         steps[standing_posts.DELETE_REPLACED] = standing_posts.delete_replaced_step()
     return ChangeType(
@@ -399,7 +406,7 @@ def _change(
 
 
 def driver_move_change(
-    *, placement: PlacementService, now: Callable[[], datetime]
+    *, placement: PlacementService, roles: TeamRoleService, now: Callable[[], datetime]
 ) -> ChangeType:
     """The `core.driver_move` change type, for the builder to register: *placement* is what the
     check judges the move through, the save moves the driver through, and the jobs after it give
@@ -486,7 +493,7 @@ def driver_move_change(
             kind=DRIVER_MOVE, command=MOVE_COMMAND, doing=doing, nothing_done=NOTHING_MOVED,
             done=done, details=details, check=check, apply=apply,
         ),
-        placement, now,
+        placement, now, roles,
     )
 
 
@@ -494,7 +501,7 @@ def driver_move_change(
 
 
 def driver_sack_change(
-    *, placement: PlacementService, now: Callable[[], datetime]
+    *, placement: PlacementService, roles: TeamRoleService, now: Callable[[], datetime]
 ) -> ChangeType:
     """The `core.driver_sack` change type, for the builder to register: *placement* is what the
     check judges the sack through, the save sacks the driver through, and the jobs after it take
@@ -552,7 +559,7 @@ def driver_sack_change(
             kind=DRIVER_SACK, command=SACK_COMMAND, doing=doing, nothing_done=NOBODY_SACKED,
             done=done, details=details, check=check, apply=apply,
         ),
-        placement, now,
+        placement, now, roles,
     )
 
 
@@ -560,7 +567,7 @@ def driver_sack_change(
 
 
 def driver_release_change(
-    *, placement: PlacementService, now: Callable[[], datetime]
+    *, placement: PlacementService, roles: TeamRoleService, now: Callable[[], datetime]
 ) -> ChangeType:
     """The `core.driver_release` change type, for the builder to register: *placement* is what
     the check judges the release through, the save releases the driver through, and the jobs
@@ -628,7 +635,7 @@ def driver_release_change(
             kind=DRIVER_RELEASE, command=RELEASE_COMMAND, doing=doing,
             nothing_done=NOTHING_RELEASED, done=done, details=details, check=check, apply=apply,
         ),
-        placement, now,
+        placement, now, roles,
     )
 
 
@@ -827,7 +834,7 @@ async def _account_gone_refusal(ctx: CheckContext) -> Verdict | None:
 
 
 def driver_reject_change(
-    *, placement: PlacementService, driver_turned_down: AwaitedHook,
+    *, placement: PlacementService, roles: TeamRoleService, driver_turned_down: AwaitedHook,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The `core.driver_reject` change type, for the builder to register: *placement* is what the
@@ -902,7 +909,7 @@ def driver_reject_change(
             nothing_done=NOBODY_TURNED_DOWN, done=done, details=details, check=check, apply=apply,
             role_reason="Driver rejected",
         ),
-        placement, now,
+        placement, now, roles,
     )
 
 
@@ -940,6 +947,7 @@ def driver_reassign_change(
     *,
     driver: DriverService,
     placement: PlacementService,
+    roles: TeamRoleService,
     profiles_merged: AwaitedHook,
     divisions_raced_read: AwaitedHook,
     driver_account_changed: AwaitedHook,
@@ -1074,7 +1082,7 @@ def driver_reassign_change(
     steps = {
         SAVE: Step(SAVE, StepKind.SAVE, save),
         CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
-        MOVE_ROLES: role_move_step(placement, reason=REASSIGN_REASON, give_what_remains=True),
+        MOVE_ROLES: role_move_step(roles, reason=REASSIGN_REASON, give_what_remains=True),
         DISCARD_PORTRAIT: Step(
             DISCARD_PORTRAIT, StepKind.ACT, discard_portrait, describe=describe_discard
         ),

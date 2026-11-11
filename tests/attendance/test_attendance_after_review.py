@@ -518,7 +518,6 @@ async def test_apply_sanction_on_moves_to_reserve_and_names_the_roles_to_swap(tm
     guild.member.remove_roles.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED)
 async def test_change_sanction_roles_raises_where_discord_refuses(tmp_path):
     """Lewis's autosack is saved and he still holds the roles of Pro and Alpha. Discord refuses
     to take them (Missing Permissions): the role change raises `StepFailedOnDiscord`, for the
@@ -536,7 +535,6 @@ async def test_change_sanction_roles_raises_where_discord_refuses(tmp_path):
         await hook.change_sanction_roles(LEWIS, LEWIS, revoke=[PRO_ROLE, ALPHA_ROLE], grant=[])
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED)
 async def test_change_sanction_roles_passes_over_a_member_who_left(tmp_path):
     """Lewis's autosack is saved and he has since left the server (Discord answers Unknown
     Member): his roles went with him, so the change raises nothing, asks Discord for nothing,
@@ -557,7 +555,6 @@ async def test_change_sanction_roles_passes_over_a_member_who_left(tmp_path):
     guild.member.remove_roles.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED)
 async def test_change_sanction_roles_stops_where_the_member_cannot_be_fetched(tmp_path):
     """Lewis's autosack is saved, and Discord fails to fetch him for a reason other than his
     absence (a server error): the change raises `StepFailedOnDiscord`, rather than passing his
@@ -574,7 +571,6 @@ async def test_change_sanction_roles_stops_where_the_member_cannot_be_fetched(tm
         await hook.change_sanction_roles(LEWIS, LEWIS, revoke=[PRO_ROLE, ALPHA_ROLE], grant=[])
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED)
 async def test_change_sanction_roles_stops_where_a_role_to_grant_is_gone(tmp_path):
     """Max's autoreserve is saved, his seat now the Reserve team's, but the Reserve team's role
     has been deleted from the server: the change raises `StepFailedOnDiscord`, and Max is given
@@ -593,7 +589,6 @@ async def test_change_sanction_roles_stops_where_a_role_to_grant_is_gone(tmp_pat
     guild.member.add_roles.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED)
 async def test_change_sanction_roles_leaves_a_role_the_driver_is_entitled_to_again(tmp_path):
     """Lewis's autosack named the roles of Pro and Alpha to take back, but before its role
     change ran a manager placed him in Alpha again. A retried role change takes neither: he is
@@ -613,7 +608,6 @@ async def test_change_sanction_roles_leaves_a_role_the_driver_is_entitled_to_aga
         assert RESERVE_ROLE not in _role_ids(call)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED)
 async def test_a_sanction_s_roles_are_changed_even_once_attendance_is_off(tmp_path):
     """Owner, check 1: "Change the roles anyway". Lewis's autosack was saved and attendance was
     then turned off before its role change ran. The hook still takes back his roles of Pro and

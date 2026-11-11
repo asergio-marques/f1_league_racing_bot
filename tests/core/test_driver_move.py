@@ -104,10 +104,6 @@ async def _where(db_path, profile_id=PROFILE_ID):
         return [(r["division_id"], r["name"]) for r in await cursor.fetchall()]
 
 
-#: Why the tests standing in for the role helpers fail until those are a service of their own
-#: (#283).
-_NOT_YET_A_ROLE_SERVICE = "#283: the role helpers are not yet a TeamRoleService of their own"
-
 
 def _roles(db_path: str):
     """The team-role service on *db_path*, as the builder hands it to placement."""
@@ -140,7 +136,6 @@ async def _move(service, to_division, team, from_division=PRO):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_full_time_driver_is_moved_to_reserve_in_one_step(db_path):
     await _seat(db_path, PRO, "Alpha")
     service = _service(db_path)
@@ -155,7 +150,6 @@ async def test_a_full_time_driver_is_moved_to_reserve_in_one_step(db_path):
     assert result["lineups"] == [PRO]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_driver_is_promoted_to_another_division(db_path):
     await _seat(db_path, AM, "Bravo")
     service = _service(db_path)
@@ -169,7 +163,6 @@ async def test_a_driver_is_promoted_to_another_division(db_path):
     assert result["lineups"] == [AM, PRO]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_the_seat_left_is_freed(db_path):
     await _seat(db_path, PRO, "Alpha")
 
@@ -183,7 +176,6 @@ async def test_the_seat_left_is_freed(db_path):
         assert (await cursor.fetchone())["n"] == 0
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_an_uncommitted_placement_is_refused(db_path):
     from leaguebot.core.models.refusal import Refused
     await _seat(db_path, PRO, "Alpha", committed=0)
@@ -194,7 +186,6 @@ async def test_an_uncommitted_placement_is_refused(db_path):
     assert await _where(db_path) == [(PRO, "Alpha")]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_move_into_a_division_already_held_is_refused(db_path):
     from leaguebot.core.models.refusal import Refused
     await _seat(db_path, PRO, "Alpha")
@@ -204,7 +195,6 @@ async def test_a_move_into_a_division_already_held_is_refused(db_path):
         await _move(_service(db_path), AM, "Bravo")
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_move_into_the_team_already_sat_in_is_refused(db_path):
     from leaguebot.core.models.refusal import Refused
     await _seat(db_path, PRO, "Alpha")
@@ -213,7 +203,6 @@ async def test_a_move_into_the_team_already_sat_in_is_refused(db_path):
         await _move(_service(db_path), PRO, "Alpha")
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_move_into_a_full_team_is_refused_and_changes_nothing(db_path):
     from leaguebot.core.models.refusal import Refused
     await _seat(db_path, PRO, "Alpha")
@@ -258,7 +247,6 @@ async def test_the_command_is_refused_outside_the_ongoing_stages(stage_name):
     assert cog.bot.change_queue.method_calls == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_move_for_a_profile_that_does_not_exist_is_refused(db_path):
     from leaguebot.core.models.refusal import Refused
     service = _service(db_path)
@@ -272,7 +260,6 @@ async def test_a_move_for_a_profile_that_does_not_exist_is_refused(db_path):
         )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_move_from_a_division_the_driver_does_not_sit_in_is_refused(db_path):
     from leaguebot.core.models.refusal import Refused
     await _seat(db_path, AM, "Alpha")
@@ -281,7 +268,6 @@ async def test_a_move_from_a_division_the_driver_does_not_sit_in_is_refused(db_p
         await _move(_service(db_path), PRO, "Reserve", from_division=PRO)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_member_not_cached_is_fetched_to_swap_their_roles(db_path):
     await _seat(db_path, PRO, "Alpha")
     service = _service(db_path)
@@ -300,7 +286,6 @@ async def test_a_member_not_cached_is_fetched_to_swap_their_roles(db_path):
     assert service._roles._grant_roles.await_args.args[0] is member
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_member_who_left_the_server_is_moved_without_roles(db_path):
     """The move is the league's record; a member Discord cannot find has no roles to swap."""
     import discord
@@ -328,7 +313,6 @@ async def test_a_member_who_left_the_server_is_moved_without_roles(db_path):
 # ── A refused role change: the committing form attendance's sync moves through ──────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_role_discord_refuses_is_logged_and_the_move_still_saved(db_path, caplog):
     """`move_driver`, the committing form `/attendance sync` moves a driver to Reserve through
     until attendance's own pass (#285), `/driver move` being a change on the queue (#283): the

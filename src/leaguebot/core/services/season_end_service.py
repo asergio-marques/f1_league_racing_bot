@@ -26,7 +26,7 @@ from leaguebot.core.services.season_lifecycle_service import (
 if TYPE_CHECKING:
     import aiosqlite
     from leaguebot.core.utils.hooks import AwaitedHook, Hook
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.team_role_service import TeamRoleService
     from leaguebot.core.services.scheduler_service import SchedulerService
 
 log = logging.getLogger(__name__)
@@ -173,7 +173,7 @@ async def season_role_targets_on(db: aiosqlite.Connection, season_id: int) -> li
     role and the team role of each of the driver's placements in the season, and the league's
     driver role where one is set. Test drivers are skipped: no Discord member stands behind
     them. Which of these roles a member holds is Discord's to say, when
-    :meth:`PlacementService.revoke_roles` takes them, so the driver role is named for every
+    :meth:`TeamRoleService.revoke_roles` takes them, so the driver role is named for every
     driver here and left alone for one who never held it.
 
     Read in the save that records the season's end and committing nothing: the roles are
@@ -257,7 +257,7 @@ def discard_backup_step(scheduler: "SchedulerService") -> Step:
 
 
 def shared_steps(
-    placement: "PlacementService",
+    roles: "TeamRoleService",
     scheduler: "SchedulerService",
     *,
     season_end_steps: "Hook",
@@ -284,7 +284,7 @@ def shared_steps(
     async def revoke_roles(ctx: StepContext) -> StepResult:
         guild = await require_guild(ctx.bot)
         each = ctx.step_payload
-        revoked = await placement.revoke_roles(
+        revoked = await roles.revoke_roles(
             guild, int(each["user_id"]), *[int(r) for r in each["role_ids"]],
             reason=str(each.get("reason", "Season ended")),
         )
@@ -312,5 +312,5 @@ def shared_steps(
         DISCARD_BACKUP: discard_backup_step(scheduler),
         # A forecast posted in parts has `delete_forecast` plan a delete for each earlier part.
         standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
-        **close_signup_steps(placement, season_end_steps=season_end_steps),
+        **close_signup_steps(roles, season_end_steps=season_end_steps),
     }

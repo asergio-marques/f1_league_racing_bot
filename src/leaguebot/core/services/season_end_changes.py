@@ -123,8 +123,8 @@ from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.placement_service import PlacementService
     from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.core.services.team_role_service import TeamRoleService
 
 __all__ = [
     "SEASON_ABORT",
@@ -495,7 +495,7 @@ def season_complete_change(
     *,
     seasons: "SeasonService",
     scheduler: "SchedulerService",
-    placement: "PlacementService",
+    roles: "TeamRoleService",
     final_round_read: AwaitedHook,
     season_standing_read: AwaitedHook,
     season_completed: AwaitedHook,
@@ -514,7 +514,7 @@ def season_complete_change(
     """The change that completes the confirmed season; see the module.
 
     The builder hands in the *seasons* service (the season the check reads), the *scheduler* (whose
-    season-end job `settle` removes), the *placement* service (which takes back roles), the hooks
+    season-end job `settle` removes), the the team-role service, *roles* (which takes back roles), the hooks
     the modules sign up to (*final_round_read*, *season_standing_read*, *season_completed*,
     *season_completed_steps*, *season_end_refused*, *season_end_closes*, *drivers_returned*,
     *driver_turned_down*, *driver_returned_jobs*, *season_end_steps*, *test_mode_flushed*,
@@ -793,7 +793,7 @@ def season_complete_change(
         **winding,
         TURN_DOWN_STEP: replace(turn_down, run=turn_down_then_settle),
         **shared_steps(
-            placement, scheduler, season_end_steps=season_end_steps,
+            roles, scheduler, season_end_steps=season_end_steps,
             test_mode_flushed=test_mode_flushed, drivers_deleted=drivers_deleted,
         ),
     }
@@ -812,7 +812,7 @@ def season_abort_change(
     *,
     seasons: "SeasonService",
     scheduler: "SchedulerService",
-    placement: "PlacementService",
+    roles: "TeamRoleService",
     season_end_closes: Hook,
     drivers_returned: AwaitedHook,
     driver_returned_jobs: Hook,
@@ -830,7 +830,7 @@ def season_abort_change(
     The payload is ``{"season_id"}``: a season set up has no number until its placements are
     confirmed. The builder hands in the *seasons* service (the season the check reads), the
     *scheduler* (whose job store holds the saved test-mode state's scheduler half), the
-    *placement* service (which takes back roles), the hooks the modules sign up to
+    the team-role service, *roles* (which takes back roles), the hooks the modules sign up to
     (*season_end_closes*, *drivers_returned*, *driver_returned_jobs*, *season_end_steps*,
     *test_mode_flushed*, *drivers_deleted*), the hooks the season's deletion calls
     (*rounds_deleted*, *divisions_deleted*, *season_deleted*), the hook each driver deleted calls
@@ -961,7 +961,7 @@ def season_abort_change(
             return await test_mode_on(db)
 
     shared = shared_steps(
-        placement, scheduler, season_end_steps=season_end_steps,
+        roles, scheduler, season_end_steps=season_end_steps,
         test_mode_flushed=test_mode_flushed, drivers_deleted=drivers_deleted,
     )
     steps: dict[str, Step] = {
