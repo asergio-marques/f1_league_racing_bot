@@ -30,6 +30,7 @@ from leaguebot.results.services.points_settings import (
     CONFIG_POINTS,
     CONFIG_REMOVE,
     RESERVES,
+    reserves_toggle_request,
 )
 from leaguebot.results.services.points_config_service import ConfigNotFoundError
 from leaguebot.results.services.channel_settings import (
@@ -40,7 +41,6 @@ from leaguebot.results.services.channel_settings import (
     VERDICTS_CHANNEL,
     verdicts_division_not_found,
 )
-from leaguebot.results.services.results_post_service import reserves_in_standings
 from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL, division_not_found
 from leaguebot.core.utils.channel_guard import (
     league_admin_only,
@@ -1558,12 +1558,9 @@ class ResultsCog(commands.Cog):
             )
             return
 
-        # The flip is resolved here, from the state the member saw: a second press while the first
-        # waits asks the same thing, and is refused as a repeat.
-        shown = not await reserves_in_standings(self.bot.db_path, div.id)
         await self.bot.change_queue.ask(
             RESERVES,
-            {"division_id": div.id, "division": division, "shown": shown},
+            await reserves_toggle_request(self.bot.db_path, div.id, division),
             interaction=interaction,
             what=describe(interaction),
         )

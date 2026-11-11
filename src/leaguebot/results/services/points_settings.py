@@ -552,6 +552,18 @@ def _config_detach(modules: "ModuleService", seasons: "SeasonService") -> Settin
     )
 
 
+async def reserves_toggle_request(db_path: str, division_id: int, division: str) -> dict[str, Any]:
+    """The payload of a `RESERVES` change that flips the division's reserve visibility.
+
+    The flip is resolved here, from the state the member saw when they pressed, so that `shown`
+    names the state asked for and not "the other one": a second press while the first waits asks
+    the same thing, and the queue refuses it as a repeat. *division* is the name as typed, kept
+    for the log and the reply.
+    """
+    shown = not await results_post_service.reserves_in_standings(db_path, division_id)
+    return {"division_id": division_id, "division": division, "shown": shown}
+
+
 def _reserves(modules: "ModuleService", seasons: "SeasonService") -> Setting:
     """`/results reserves toggle`: whether a division of the live season shows its reserves.
 
@@ -627,4 +639,5 @@ def points_settings(*, modules: "ModuleService", seasons: "SeasonService") -> tu
 __all__ = [
     "CONFIG_ADD", "CONFIG_ATTACH", "CONFIG_DETACH", "CONFIG_FASTEST_LAP", "CONFIG_IMPORT",
     "CONFIG_POINTS", "CONFIG_REMOVE", "MODULE_OFF", "RESERVES", "points_settings",
+    "reserves_toggle_request",
 ]
