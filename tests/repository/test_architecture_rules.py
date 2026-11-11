@@ -264,16 +264,35 @@ _CONNECTION_TYPES = frozenset({"aiosqlite.Connection", "Connection"})
 
 
 def _handed_connection(function: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
-    """The name of the connection *function* is handed, or None where it is handed none: its first
-    parameter after `self` or `cls`, where that is named `db` or annotated as a connection."""
-    positional = [*function.args.posonlyargs, *function.args.args]
-    if positional and positional[0].arg in ("self", "cls"):
-        positional = positional[1:]
-    if not positional:
-        return None
-    first = positional[0]
-    annotation = ast.unparse(first.annotation).replace("\"", "").replace("'", "") if first.annotation else ""
-    return first.arg if first.arg == "db" or annotation.removesuffix(" | None") in _CONNECTION_TYPES else None
+    """The name of the connection *function* is handed, or None where it is handed none: any
+    parameter after `self` or `cls`, keyword-only included, that is named `db` or annotated as a
+    connection. A function given the connection as a keyword is held as one given it first, for the
+    scan lets a call that hands the connection on pass on the strength of the callee being held."""
+    parameters = [*function.args.posonlyargs, *function.args.args, *function.args.kwonlyargs]
+    for parameter in parameters:
+        if parameter.arg in ("self", "cls"):
+            continue
+        annotation = (
+            ast.unparse(parameter.annotation).replace("\"", "").replace("'", "")
+            if parameter.annotation else ""
+        )
+        if parameter.arg == "db" or annotation.removesuffix(" | None") in _CONNECTION_TYPES:
+            return parameter.arg
+    return None
+
+
+def _connections_it_opens(function: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
+    """The connections *function* opens itself, by name. A function that takes a connection
+    *optionally* and opens its own where it is handed none is held to the rule on the handed one,
+    and works on its own as any function that opens one does: the scan cannot tell which branch
+    ran, and the one with no save open is the one that opens."""
+    return [
+        item.optional_vars.id
+        for node in ast.walk(function) if isinstance(node, ast.AsyncWith)
+        for item in node.items
+        if isinstance(item.context_expr, ast.Call) and _opens_a_connection(item.context_expr)
+        and isinstance(item.optional_vars, ast.Name)
+    ]
 
 
 def _step_functions(nodes: list[tuple[str, str, ast.AST]]) -> set[tuple[str, str]]:
@@ -333,17 +352,11 @@ def _awaits_inside_a_write(nodes=None) -> Counter[tuple[str, str]]:
         if connection is None:
             continue
         name = node.name if function == "<module>" else f"{function}.{node.name}"
+        own = _connections_it_opens(node)
         for awaited in _awaits_in_order(node.body):
-            if not _on_the_connection(awaited.value, connection) and not _pure_wait(awaited.value):
+            if not any(_on_the_connection(awaited.value, each) for each in (connection, *own)):
                 found[(path, name)] += 1
     return found
-
-
-def _pure_wait(awaited: ast.AST) -> bool:
-    """Whether *awaited* is `asyncio.sleep(...)`, which waits on nothing and holds nothing up."""
-    return (isinstance(awaited, ast.Call) and _call_name(awaited) == "sleep"
-            and isinstance(awaited.func, ast.Attribute)
-            and isinstance(awaited.func.value, ast.Name) and awaited.func.value.id == "asyncio")
 
 
 KNOWN_AWAITS_INSIDE_A_WRITE: dict[tuple[str, str], tuple[int, str]] = {
@@ -366,11 +379,14 @@ def test_nothing_else_is_awaited_while_a_write_is_open():
 
 
 def test_the_await_check_covers_a_function_handed_the_connection_of_a_save():
-    """An await in a function handed a connection, named `db` or annotated as one, or given to a
-    step as its save or its record, is counted unless it is on the connection, on a cursor from
-    it, given it, or `asyncio.sleep`; a pure helper that is given nothing of it is counted, for
-    the scan cannot tell it from a read on a second connection. A list of connections is not a
-    connection, and an await in a function handed none is not counted."""
+    """An await in a function handed a connection, named `db` or annotated as one, as any parameter
+    and a keyword's too, or given to a step as its save or its record, is counted unless it is on
+    the connection, on a cursor from it, given it, or on a connection the function opens itself;
+    `asyncio.sleep` is counted, for a sleep while a save is open holds the write lock as long as it
+    waits, and so is a pure helper that is given nothing of the connection, for the scan cannot
+    tell it from a read on a second connection. A function a call hands the connection on to as a
+    keyword is held as one handed it first. A list of connections is not a connection, and an await
+    in a function handed none is not counted."""
     path = "weather/services/sample.py"
     source = (
         "import asyncio\n"
@@ -381,6 +397,13 @@ def test_the_await_check_covers_a_function_handed_the_connection_of_a_save():
         "    await helper(row, db=db)\n"
         "    await asyncio.sleep(0)\n"
         "    await config.get_server_config()\n"
+        "async def keyworded(d, *, db=None):\n"
+        "    await drawing.ask(d)\n"
+        "async def optional(p, *, db=None):\n"
+        "    if db is not None:\n"
+        "        return await helper(db)\n"
+        "    async with get_connection(p) as own:\n"
+        "        return await helper(own)\n"
         "async def method(self, _db: 'aiosqlite.Connection'):\n"
         "    await self.channel.send('x')\n"
         "async def not_handed(connections: list[aiosqlite.Connection]):\n"
@@ -400,7 +423,8 @@ def test_the_await_check_covers_a_function_handed_the_connection_of_a_save():
     )
 
     assert _awaits_inside_a_write(_sample(source, path)) == Counter({
-        (path, "handed"): 1, (path, "method"): 1, (path, "factory.save"): 1, (path, "factory.record"): 1,
+        (path, "handed"): 2, (path, "keyworded"): 1, (path, "method"): 1,
+        (path, "factory.save"): 1, (path, "factory.record"): 1,
     })
 
 

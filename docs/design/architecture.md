@@ -755,8 +755,9 @@ of a save holds up every other save in the bot for as long as Discord takes to a
 connection that tried to write would be kept waiting by the first until it gave up and failed.
 The rule holds as much for a save run on a connection it was handed as for one a function opens
 itself. A function given a save's connection, or run as a change type's save step or as a step's
-record, awaits only that connection, a cursor from it, or a call it hands the connection on to. A
-read it needs is given a form that takes the connection.
+record, awaits only that connection, a cursor from it, or a call it hands the connection on to; one
+that takes a connection optionally may open its own where it is handed none. A read it needs is given
+a form that takes the connection.
 Save first, then post, then record what was posted in a save of its own.
 
 **Each table is read and written by its owner alone.** Every statement that reads or changes a table
