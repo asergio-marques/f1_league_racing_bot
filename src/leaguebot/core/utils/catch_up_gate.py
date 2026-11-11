@@ -2,7 +2,8 @@
 
 A command that goes through the queue waits inside `ChangeQueue.ask`. One answered off it (`/bot
 pack`, `/bot factory-reset`, the `/test-mode backup` commands that change something, the
-`/attendance config` commands and the `/signup` commands that set something) never asks, so it
+`/attendance config` commands that set something, `/attendance sync`, whose recalculation is written
+off the queue, and the `/signup` commands that set something) never asks, so it
 would act on a league the start-up sweep has not finished catching up. `after_the_catch_up`, worn
 directly above the `def` and below the tier guard, makes it wait first (core specification, "When
 the bot stops"). A helper never reads the queue off the bot, so each cog hands the decorator the
