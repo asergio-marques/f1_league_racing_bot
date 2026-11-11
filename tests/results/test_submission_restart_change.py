@@ -1,7 +1,7 @@
 """A results submission a restart cut short, cleared and reopened on the change queue (#439,
 slice 6b, C50).
 
-When the bot starts, `_recover_orphaned_submission_channels` finds each round whose submission
+When the bot starts, `recover_orphaned_submission_channels` finds each round whose submission
 channel stands open and is in no review: a first paste the restart cut short. It no longer clears
 it itself. Before the queue starts it asks, as the bot, for `results.submission.restart` of the
 round, on the league lane (a start-up step's work runs whole there, R2(a)): `clear` saves the

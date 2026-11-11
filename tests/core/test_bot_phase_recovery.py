@@ -1,4 +1,4 @@
-"""`_recover_missed_phases` — re-firing weather phases a restart went through.
+"""`recover_missed_phases` — re-firing weather phases a restart went through.
 
 Issue #208. A phase is a scheduled job, and a job does not survive the process. On restart the
 bot therefore asks which horizons have passed without their phase having run, and fires those.

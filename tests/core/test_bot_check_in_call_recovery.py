@@ -14,7 +14,7 @@ Since #439 (slice 6b) the restart posts nothing itself: it asks the change queue
 owed, before the queue starts, and the call's change posts it, or gives it up where its deadline
 has passed as well. Each test here runs the restart's step, then the queue.
 
-`_recover_missed_check_in_calls` takes *now*, so every test here pins the moment alongside the
+`recover_missed_check_in_calls` takes *now*, so every test here pins the moment alongside the
 round it seeds.
 """
 from __future__ import annotations

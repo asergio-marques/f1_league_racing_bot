@@ -1,6 +1,6 @@
 """What a restart does to a submission channel that was left open.
 
-Issue #208. `_recover_orphaned_submission_channels` was uncovered. It runs on every start-up
+Issue #208. `recover_orphaned_submission_channels` was uncovered. It runs on every start-up
 and decides the fate of every round whose submission channel is still open — which, after a
 crash, is every round that was mid-submission or mid-review. It is the difference between a
 league carrying on and a division's race being silently abandoned.

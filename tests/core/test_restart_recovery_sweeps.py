@@ -1,10 +1,10 @@
 """The sweep a restart runs over the amendments the previous process left behind.
 
-Issue #208. `_recover_orphaned_amend_channels` was uncovered. It cleans up after a `wait_for` loop
+Issue #208. `recover_orphaned_amend_channels` was uncovered. It cleans up after a `wait_for` loop
 that died with the previous process, and decides what a league finds of an amendment when the bot
 comes back. The other sweeps are pinned beside their own: the season review's take-down
 (`season_review_changes.recover_expired_review_prompts`) in `test_review_prompt_sweep.py`, and
-`_recover_missed_phases` in `test_bot_phase_recovery.py`.
+`recover_missed_phases` in `test_bot_phase_recovery.py`.
 
 **An abandoned amendment's lapse is asked of the change queue** (#439, slice 6b, C64). The sweep
 puts nothing back, deletes nothing and writes nothing itself: it asks `results.amend.lapse` as the

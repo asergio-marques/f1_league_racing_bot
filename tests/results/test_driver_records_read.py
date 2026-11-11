@@ -3,8 +3,8 @@
 Core reads no table of results' (architecture.md, "Each table is read and written by its owner
 alone"). `/driver reassign` asks which divisions a driver's accounts raced in, and the history
 written at a season's end or cancellation asks for a driver's last standing in a division: each
-through a hook core declares, on the connection of the save that asks, which the builder signs
-results up to.
+through a hook core declares, on the connection of the save that asks, which the builder makes
+and results' wiring signs results up to.
 """
 from __future__ import annotations
 
@@ -132,9 +132,9 @@ async def test_results_answers_a_driver_s_last_standing_and_the_winner_s_points(
 @pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_the_builder_signs_results_up_for_a_driver_s_records(tmp_path, monkeypatch):
     """Results answers which divisions a driver raced in and their season standing. The hooks as
-    the builder makes them ask results' own answers, each handed the save's connection and what
-    core asks with (the driver's accounts; the division and the accounts), and hand back what
-    results answers."""
+    the builder makes them, signed up by results' wiring, ask results' own answers, each handed the
+    save's connection and what core asks with (the driver's accounts; the division and the
+    accounts), and hand back what results answers."""
     from tests.support.driver_records_hooks import divisions_raced_read, season_standing_read
 
     asked: list[tuple] = []

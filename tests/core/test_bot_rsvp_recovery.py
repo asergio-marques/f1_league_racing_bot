@@ -1,6 +1,6 @@
 """What a restart does about check-in — re-arming buttons, and catching up a missed deadline.
 
-Issue #208. `_recover_rsvp_views_and_deadlines` runs on every start and does two things a
+Issue #208. `recover_rsvp_views_and_deadlines` runs on every start and does two things a
 restart would otherwise lose: it re-arms the persistent buttons on every check-in call still
 standing, and it asks the change queue for any deadline whose moment passed while the bot was
 down (#439, slice 6b), running none itself; the queue runs it once it starts.

@@ -49,8 +49,8 @@ def sign_up_driver_names_read(bot: Any) -> None:
     """Give *bot* the hook a driver's name is read through (`driver_names_read`), signup's names
     signed up as its wiring signs them: signup's module service over *bot*'s database, then the
     drivers' profile ids. Signup's function is looked up as the hook is called, so a stand-in bot
-    carries the hook whether or not any check asks it yet. It mirrors the builder's
-    `sign_up_to_driver_names_read` in signup's wiring."""
+    carries the hook whether or not any check asks it yet. It mirrors signup's wiring's
+    `sign_up_to_driver_names_read`."""
     from leaguebot.core.utils.hooks import AwaitedHook
 
     async def signup_names(*args: Any, **kwargs: Any) -> Any:

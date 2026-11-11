@@ -2,10 +2,10 @@
 
 Issue #208. `__main__.py` was the worst-covered file in core at 26.7%. Most of it is `main()`, which
 needs a real gateway connection and is out of scope for this suite (`CLAUDE.md`: no test may
-require a live bot). The recovery helpers beneath it are not — they take a bot and a database
-and put the world back the way it should be, and none was executed.
+require a live bot). The recovery helpers it ran are not, now each in its module's wiring — they
+take a bot and a database and put the world back the way it should be, and none was executed.
 
-This file takes `_recover_orphaned_amend_channels` and `_recover_portrait_refresh_job`, which
+This file takes `recover_orphaned_amend_channels` and `recover_portrait_refresh_job`, which
 re-arms the daily portrait refresh.
 
 **An abandoned amendment's lapse is asked of the change queue** (#439, slice 6b, C64). The sweep
