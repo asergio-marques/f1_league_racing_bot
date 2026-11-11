@@ -388,9 +388,7 @@ async def test_each_amended_paste_is_deleted_and_saved_as_a_draft_by_its_turn(
 
 @pytest.mark.parametrize("held", [
         pytest.param(False, id="at any time"),
-        pytest.param(True, id="during the catch-up after a restart", marks=pytest.mark.xfail(
-            strict=True, reason="#440: the change queue has no hold, so a typed turn is saved at once",
-        )),
+        pytest.param(True, id="during the catch-up after a restart"),
     ])
 async def test_an_amended_paste_while_its_turn_waits_is_turned_away(tmp_path, monkeypatch, held):
     """Alex pastes the Feature Race, and before its turn has run pastes it again. The second

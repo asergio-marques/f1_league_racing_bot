@@ -173,9 +173,7 @@ def _names_the_paste(line: str, *, reason: str, content: str,
 
 @pytest.mark.parametrize("held", [
         pytest.param(False, id="at any time"),
-        pytest.param(True, id="during the catch-up after a restart", marks=pytest.mark.xfail(
-            strict=True, reason="#440: the change queue has no hold, so a typed turn is saved at once",
-        )),
+        pytest.param(True, id="during the catch-up after a restart"),
     ])
 async def test_a_paste_while_its_turn_waits_is_turned_away_with_a_note(tmp_path, monkeypatch, held):
     """The admin pastes the qualifying, then the race before the queue has reached the first.

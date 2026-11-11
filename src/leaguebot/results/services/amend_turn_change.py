@@ -150,7 +150,9 @@ async def take_amended_paste(bot: Any, message: discord.Message, *, queue: Chang
         if message.author.id != row["started_by"]:
             return True
         expected = await submissions.expected_amended_session_on(db, int(row["amend_id"]))
-    if await typed_turns.turn_waiting(bot.db_path, queue.types, message.channel.id):
+    if await typed_turns.turn_waiting(
+        bot.db_path, queue.types, message.channel.id, held=queue.held_turn_channels()
+    ):
         await typed_turns.turn_away(message, typed_turns.TURN_AWAY_NOTE)
         waiting = "its session" if expected is None else label_of(expected)
         await bot.output_router.post_log(

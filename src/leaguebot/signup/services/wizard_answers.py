@@ -405,7 +405,9 @@ async def take_typed_answer(
     author = message.author
     owner = _owner(getattr(author, "display_name", None), author.id)
     what = _what(STEP_NAMES[state], owner)
-    if await typed_turns.turn_waiting(bot.db_path, queue.types, message.channel.id):
+    if await typed_turns.turn_waiting(
+        bot.db_path, queue.types, message.channel.id, held=queue.held_turn_channels()
+    ):
         await typed_turns.turn_away(message, typed_turns.TURN_AWAY_NOTE)
         await bot.output_router.post_log(refusal_line(
             member_named(getattr(author, "display_name", None), author.id), what,
