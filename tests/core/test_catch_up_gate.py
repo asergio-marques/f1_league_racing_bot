@@ -33,8 +33,7 @@ async def test_a_command_held_for_the_catch_up_acts_and_answers_by_follow_up(hel
     as some do. Held: the command does not run until the catch-up ends and the queue is released;
     then it runs once, its message goes as a follow-up, its own defer does nothing, and its
     response reads as answered. Not held: it runs at once, through the interaction's own response,
-    with nothing deferred for it. A tier guard worn above the wait still marks the command with its
-    tier, and still reads a mark worn below the wait."""
+    with nothing deferred for it."""
     queue = ChangeQueue("unused.db", MagicMock(), MagicMock(), MagicMock())
     if held:
         queue.hold()
@@ -72,6 +71,13 @@ async def test_a_command_held_for_the_catch_up_acts_and_answers_by_follow_up(hel
         press.response.defer.assert_awaited_once_with(ephemeral=True)
         press.response.send_message.assert_awaited_once_with("Done.", ephemeral=True)
         assert press.followup.send.await_count == 0
+
+
+def test_a_tier_guard_still_reads_through_the_wait_for_the_catch_up():
+    """A tier guard worn above the wait for the catch-up still marks the command with its tier, and
+    still reads a mark worn below the wait, the wrapper keeping the command's name. Nothing is
+    invoked, so whether the queue is held does not matter."""
+    queue = ChangeQueue("unused.db", MagicMock(), MagicMock(), MagicMock())
 
     async def body(self: Any, interaction: Any) -> None:
         return None
