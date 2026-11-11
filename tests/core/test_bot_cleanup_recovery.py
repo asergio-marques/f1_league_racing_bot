@@ -33,8 +33,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import leaguebot.__main__ as bot_module
+from leaguebot.attendance import wiring as attendance_wiring
 from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.weather import wiring as weather_wiring
 
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -110,8 +111,10 @@ def _bot(db_path: str, *, weather_enabled: bool = True) -> MagicMock:
 async def _recover(
     bot, *, forecast_error: Exception | None = None
 ) -> tuple[list[int], list[int]]:
-    """Run the recovery, returning the rounds whose forecast clean-up and whose check-in
-    clean-up it asked the queue for; *forecast_error* makes the forecast clean-up's ask raise."""
+    """Run the two recoveries in the order the start-up runs them, weather's missed forecast
+    clean-ups and then attendance's missed check-in clean-ups, returning the rounds whose forecast
+    clean-up and whose check-in clean-up they asked the queue for; *forecast_error* makes the
+    forecast clean-up's ask raise."""
     forecasts: list[int] = []
     check_ins: list[int] = []
 
@@ -130,7 +133,8 @@ async def _recover(
         "leaguebot.attendance.services.check_in_changes.ask_check_in_clean_up",
         new=AsyncMock(side_effect=_check_in),
     ):
-        await bot_module._recover_missed_cleanups(bot)
+        await weather_wiring.recover_missed_forecast_clean_ups(bot)
+        await attendance_wiring.recover_missed_check_in_clean_ups(bot)
     return forecasts, check_ins
 
 
