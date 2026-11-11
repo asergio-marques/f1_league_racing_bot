@@ -829,7 +829,9 @@ the reply of a discarded save needs is read into the payload at the ask (`fill`)
 save stops the lane. What each kind judges and writes is its docstring's. A roster is measured
 against the template capacities with the bot's own template capacity service, the one carrying the
 image module's drawing, as a real placement is: the drawing is asked in the check, before the
-save opens, and the save counts seats on its own connection and asks nothing of it. One the file
+save opens, and the save judges the rest again on its own connection, measures no capacity
+again and asks nothing of the drawing: the lane runs one change at a time, so what the check was
+told still holds. One the file
 shows wrong on its own is refused by the form before the ask.
 
 **Fake drivers are seeded, not moved through the state machine.** `test_roster_service` inserts a

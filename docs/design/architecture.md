@@ -260,8 +260,8 @@ for it raises `SwitchNotSignedUp`, a `LookupError` of its own type, which no rea
 aside takes for an answer: each lets that type through by name and stands aside from any other
 fault. A link the dependency table allows between two modules is not one of core's hooks: there the
 module depended on may name what it asks of its dependant, as results does of attendance (below).
-Only core calls the subscribers of a hook it declares as a list, the switch read, which a module's
-own work may also call, aside. A moment a module reaches is either the module's own, where any
+Only core calls the subscribers of a hook it declares as a list; of the keyed hooks, a module's own
+work may call the switch read too. A moment a module reaches is either the module's own, where any
 dependant is reached through what the builder hands it, or that of a core function that writes the
 change, which calls its own hooks.
 
@@ -925,9 +925,8 @@ forecast's by `schedule_round` and the check-in's by `schedule_attendance_round`
 round raced, or ended cancelled because every session was entered as not held.
 
 **A standing sweep is an interval job that re-reads its rows each time it runs.** It is the shape
-where an event's handler may refuse while other work is in hand and must be asked again later, as
-results' sweep that undoes an abandoned amendment does while the round has other work in hand.
-It is armed with no lateness limit, and its handler re-reads the rows as any handler does.
+where work is not yet due while other work is in hand and must be looked at again later, as
+results' sweep that undoes an abandoned amendment is. It is armed with no lateness limit.
 
 **A delay is a one-off timer that asks a change.** The queue holds no delay of its own. Where
 something must happen a set time after a job (a season review's, a correction's or an
@@ -1471,8 +1470,10 @@ later on its own.
   two calls that are not posts, under "Every post is made in a job"), a service or helper reaching
   the change queue through the bot, a service looking a service, the router or a hook up on the bot
   (every one `LeagueBot` declares but the change queue and what the bot itself holds; a helper the
-  cogs use may, as a cog does, and so may the helpers a service calls that are named for good with
-  their reasons, `LOOKUPS_ALLOWED`), a table written by a module that does not own it, a table read outside its owner (core's tables too; the scan sees
+  cogs use may, as a cog does, and so may the bot's handler of an event's error, which the builder
+  attaches as a cog's `on_error` is, and the helpers a service calls that are named for good with
+  their reasons, `LOOKUPS_ALLOWED`), a table written by a module that does not own it, a table read
+  outside its owner (core's tables too; the scan sees
   tables, not columns, so a module's read of its own columns on a core table is named for good,
   `READS_OF_OWN_COLUMNS`; a table whose name is spliced into an f-string after `FROM` or `JOIN`
   cannot be told, so each counts unless its function was read by hand and found to name only its own

@@ -408,8 +408,8 @@ class TemplateCapacityService:
         *dry_run* is the judge, run once on a connection of the check's own and handed a
         `RosterCapacity` that records what it counts and refuses nothing. The drawing is then
         asked each question recorded (``_ask_drawing``, under the one catch), and what is handed
-        back refuses as a real placement into the same teams would be refused: the judge is run
-        again with it, and reads the answers. A service handed no drawing asks nothing, so the
+        back refuses as a real placement into the same teams would be refused: the caller runs the
+        judge again with it, and the judge reads the answers. A service handed no drawing asks nothing, so the
         judge is not run for it.
         """
         if self._drawing is None:

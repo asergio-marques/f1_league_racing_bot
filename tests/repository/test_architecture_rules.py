@@ -1555,8 +1555,8 @@ LOOKUPS_ALLOWED: dict[tuple[str, str], str] = {
         "(architecture.md, \"Errors and failures\")"
     ),
     ("core/utils/log_lines.py", "record_refusal"): (
-        "writes the one line of a refusal through the bot's log writer, for `refuse`, which has "
-        "the same reason as `refuse` (architecture.md, \"Errors and failures\")"
+        "called only by `refuse`, whose reason it shares: it writes the one line of a refusal "
+        "through the bot's log writer (architecture.md, \"Errors and failures\")"
     ),
     ("core/utils/log_lines.py", "refuse"): (
         "the one way a command, button or form refuses, which a service's view or a change's "
