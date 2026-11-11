@@ -155,7 +155,7 @@ Answers to `architecture.md`, "How the code is laid out". Core's code sits in `c
 |---|---|---|
 | Configuration | `config_service` (`ConfigService`) | `server_configs`, and the claim on the server |
 | Seasons, divisions, rounds | `season_service` (`SeasonService`), `season_lifecycle_service`, `season_end_service`, `round_moments`, `track_service` | seasons, divisions, rounds, sessions; reads `tracks` |
-| Teams and placements | `team_service` (`TeamService`), `placement_service` (`PlacementService`), `team_role_service` (`TeamRoleService`), `template_capacity_service` (`TemplateCapacityService`), `lineup_posting` (`LineupPoster`) | the list and the divisions' teams; the seats and placements (`PlacementService`, which posts nothing and reads no role); `team_role_configs` and the helpers that give and take a team's Discord role (`TeamRoleService`); nothing for the capacity guards, which ask the image module's drawing whether its templates could draw a seat (`TemplateCapacityService`); nothing for the lineup's posting, the picture or its text (`LineupPoster`) |
+| Teams and placements | `team_service` (`TeamService`), `placement_service` (`PlacementService`), `team_role_service` (`TeamRoleService`), `template_capacity_service` (`TemplateCapacityService`), `lineup_posting` (`LineupPoster`) | the list and the divisions' teams; the seats and placements (`PlacementService`, which posts nothing, reads the role mapping through the team-role service it is handed, and gives and takes roles only through that service's helpers); `team_role_configs` and the helpers that give and take a team's Discord role (`TeamRoleService`); nothing for the capacity guards, which ask the image module's drawing whether its templates could draw a seat (`TemplateCapacityService`); nothing for the lineup's posting, the picture or its text (`LineupPoster`) |
 | Drivers | `driver_service` (`DriverService`) | profiles, accounts, memberships, and the state machine; history is written by `season_end_service.write_driver_history_entries_on` |
 | The change queue | `change_queue` (`ChangeQueue`), `change_types`, `queue_records`, `setting_change`, `queue_stop_view`, `typed_turns` | `queued_changes`, `queued_change_steps` |
 | Timed work | `scheduler_service` (`SchedulerService`), `start_up` | the job store, a file of its own |
@@ -258,9 +258,9 @@ handed, and the decisions that govern them (a post's id saved with its mark, a s
 job that ends on a fault); `core/services/queue_records.py` holds the bookkeeping over the queue's
 tables, what is in hand, what was ever asked, the job numbering and the emptying of a restored
 database, which a check, a recovery, a restore and a factory reset call without a queue. The queue
-file keeps the constants it reads: `RETRY_AFTER`, the bot's own tries; `RETRY_AFTER`, the bot's own tries;
-`CONVERSATION_LANES_AT_ONCE`; `UPDATABLE_FOR`, how long a reply may be updated; and
-`WORKER_PAUSE_AFTER_FAULT`; and `QUEUE_TABLES`. The plain data is in `core/models/change.py`: `StepKind` (`SAVE`,
+file keeps the constants the class reads: `RETRY_AFTER`, the bot's own tries;
+`CONVERSATION_LANES_AT_ONCE`; `UPDATABLE_FOR`, how long a reply may be updated;
+`WORKER_PAUSE_AFTER_FAULT`; and `NOTICE_REPOST_EVERY`; with `_confine` and `QUEUE_TABLES`. The plain data is in `core/models/change.py`: `StepKind` (`SAVE`,
 `ACT`, `DELETE`, `EDIT`), `Verdict`, `StepResult`, `StepFailedOnDiscord`, `GuildUnavailable` and
 the lane names. The queue's module docstring holds the engineering decisions
 that govern the queue, each pinned by a test in `tests/core/test_change_queue.py`, `test_change_queue_lanes.py` or
@@ -779,7 +779,8 @@ again as it starts, and is one save of its rows and their audit entries, the ros
 taking the connection of the save and committing nothing. What the reply of a discarded save needs
 is read into the payload at the ask (`fill`), and a fault in a save stops the lane. What each kind
 judges and writes is its docstring's. A roster is measured against the template capacities with the
-bot's own placement service, the one carrying the image module's drawing, as a real placement is,
+bot's own template capacity service, the one carrying the image module's drawing, as a real
+placement is,
 and one the file shows wrong on its own is refused by the form before the ask.
 
 **Fake drivers are seeded, not moved through the state machine.** `test_roster_service` inserts a
