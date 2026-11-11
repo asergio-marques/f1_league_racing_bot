@@ -81,25 +81,27 @@ offer hooks without importing a module.
 
 **A module's wiring** (`<module>/wiring.py`) is the module's part of the builder: its sign-ups to
 every hook it joins, its switch reader, its change types and settings, its timed jobs' handlers and
-their steps for `/test-mode advance`, its part of the in-memory state cleared, and the sign-up of
-its start-up work, each written in the module's own file. It is a kind of its own, under the entry
-point's rules: it may look services and the queue up on the bot, as the builder does and a service
-may not; it holds no rules and no database code of its own, the work it signs up being its
-services'; it imports its own module and core, and another module only where its module may, what
-it needs of another module being handed it by the builder (results' share of attendance, image's
-drawing); and nothing imports it but the entry point. It offers the builder a function for each
-step of the build the module has a part in, and only those: one for its hooks no other module
-joins (`sign_up`), its switch, its change types, its timed jobs, each of its start-up steps, and
-each hook several modules join that it joins. The builder makes each hook before any module signs
-up on it: a hook one module joins before any module's function runs, a hook several modules join
-in the step that calls their functions. It keeps the order of each hook several modules join by
-naming each module's function itself, so no subscriber's order depends on which module wires first.
+their steps for `/test-mode advance`, its part of the in-memory state cleared, and its start-up
+steps, each written in the module's own file. It is a kind of its own, under the entry point's
+rules: it may look services and the queue up on the bot, as the builder does and a service may not;
+it holds no rules and no database code of its own, the work it signs up being its services'; it
+imports its own module and core, and another module only where its module may, what it needs of
+another module being handed it by the builder (results' share of attendance, handed to its change
+types) or read on the bot as core's (image's drawing, as core's drawing protocol); and nothing
+imports it but the entry point. It offers the builder a function for each step of the build the
+module has a part in, and only those: one for its hooks no other module joins (`sign_up`), its
+switch, its change types, its timed jobs, each of its start-up steps, and each hook several modules
+join that it joins. The builder makes each hook before any module signs up on it: a hook one module
+joins before any module's `sign_up` runs, a hook several modules join in the step that calls their
+functions. It keeps the order of each hook several modules join by naming each module's function
+itself, so no subscriber's order depends on which module wires first.
 
-*Rejected:* a module's wiring as a service, which would make it a service that looks services and
-the queue up on the bot, the very thing the services' rules refuse. *Rejected:* each subscriber
-declaring its own position on a hook, which changes the sign-up-order rule and spreads one hook's
-order over every module's folder. *Rejected:* the sign-ups staying in the entry point, which then
-holds every module's registrations and grows with each module.
+*Rejected:* a module's wiring as a service: looking services and the queue up on the bot, it would
+do what the services' rules refuse, and handed them instead, it would bind them as it is wired,
+where the tests that replace a service on the bot rely on its reading them when it runs. *Rejected:*
+each subscriber declaring its own position on a hook, which changes the sign-up-order rule and
+spreads one hook's order over every module's folder. *Rejected:* the sign-ups written in the entry
+point, which would then hold every module's registrations and grow with each module.
 
 **What each part may do:**
 
@@ -1391,44 +1393,43 @@ later on its own.
 - **`tests/repository/test_architecture_rules.py`** checks the rest: database code outside services,
   awaiting anything but the connection mid-save, cogs handling their own errors, catch-all handlers
   that lose the error details, background tasks nobody keeps, code reaching past the scheduler
-  service, the entry point signing up a hook only one module joins (that module's wiring signs it
-  up), jobs armed with a lateness limit, private names used across modules, a new place naming
-  the log channel (the check lists the six allowed, with their reasons), posting outside the
-  handlers (the four handler files are passed over, `POSTING_ALLOWED`, as is a function named in
-  `POSTS_OFF_THE_QUEUE`), a post made outside a job by a function that is neither decorated nor
-  named off the queue with its reason (`POSTS_OFF_THE_QUEUE`, which fails too on an entry with no
-  reason or no function; the router is exempt, `JOB_CHECK_ALLOWED`, and `NOT_A_POST` names the two
-  calls that are not posts, under "Every post is made in a job"), a service or helper reaching the
-  change queue through the bot, a service looking another service up on the bot (a helper the cogs
-  use may, as a cog does; `league_guild` is the one a service calls), a table written by a module
-  that does not own it, a table read outside its owner (core's tables too; the scan sees tables, not
-  columns, so a module's read of its own columns on a core table is named for good,
+  service, the entry point subscribing a module to a hook only that module joins (that module's
+  wiring signs it up), jobs armed with a lateness limit, private names used across modules, a new
+  place naming the log channel (the check lists the six allowed, with their reasons), posting
+  outside the handlers (the four handler files are passed over, `POSTING_ALLOWED`, as is a function
+  named in `POSTS_OFF_THE_QUEUE`), a post made outside a job by a function that is neither decorated
+  nor named off the queue with its reason (`POSTS_OFF_THE_QUEUE`, which fails too on an entry with
+  no reason or no function; the router is exempt, `JOB_CHECK_ALLOWED`, and `NOT_A_POST` names the
+  two calls that are not posts, under "Every post is made in a job"), a service or helper reaching
+  the change queue through the bot, a service looking another service up on the bot (a helper the
+  cogs use may, as a cog does; `league_guild` is the one a service calls), a table written by a
+  module that does not own it, a table read outside its owner (core's tables too; the scan sees
+  tables, not columns, so a module's read of its own columns on a core table is named for good,
   `READS_OF_OWN_COLUMNS`; a table whose name is spliced into an f-string after `FROM` or `JOIN`
   cannot be told, so each counts unless its function was read by hand and found to name only its own
   module's tables, `SPLICED_READS_READ_BY_HAND`, which holds the count exactly, the tuples of table
   names those functions iterate checked to name their own module's tables alone), a module's own
-  column on a core table named in a file outside that module, the entry point's and another
-  module's wiring included (`KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER`; the check counts the column's
-  name in any string outside a docstring, in SQL or as a row's key, and each attribute named for
-  it, read or set), core reading a
-  module's service on the bot (an attribute `LeagueBot` types from a module's package, read from a
-  file of core), SQLite's clock in a statement, a service reading the wall clock (the change queue's
-  own default clock is the one place allowed, `WALL_CLOCK_ALLOWED`), a catch-all handler outside the
-  five places (one that raises again, calls `report_failure` as a statement directly in its body, or
-  sits directly in the body of a `for` loop, is in a place by its shape; `CATCH_ALLS_ALLOWED` names
-  for good the failure paths of place 1, the stated exceptions, place 3's guards around reporting
-  and writing a log line and the fifth place's handlers), and a save outside a queued change. The
-  job check and the check of cogs handling their own errors are absolute, with no list of breaches
-  left to grow, and the log channel's check holds its six places for good; every other check lists
-  today's breaches, each under the work that removes it. The check of a save outside a queued change
-  counts each function's `.commit()` and `.executescript()` calls, and a function writing on a
-  handed connection commits nothing and is not counted. It allows for good the migrations run at
-  start-up (`run_migrations` and `_enable_wal`, the journal mode set on the database file itself),
-  the queue's own records, the retry queue for log lines, `/bot pack` (above), and
-  `backup_service._write_empty_database`, which writes the scheduler's empty file and not the
-  league's. The connection-state check refuses, outside the database code, a SQL function added with
-  `create_function`, an authoriser, an assignment to `row_factory` or `isolation_level`, and a
-  PRAGMA, ATTACH or temporary table
+  column on a core table named in a file outside that module, the entry point's and another module's
+  wiring included (`KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER`; the check counts the column's name in any
+  string outside a docstring, in SQL or as a row's key, and each attribute named for it, read or
+  set), core reading a module's service on the bot (an attribute `LeagueBot` types from a module's
+  package, read from a file of core), SQLite's clock in a statement, a service reading the wall
+  clock (the change queue's own default clock is the one place allowed, `WALL_CLOCK_ALLOWED`), a
+  catch-all handler outside the five places (one that raises again, calls `report_failure` as a
+  statement directly in its body, or sits directly in the body of a `for` loop, is in a place by its
+  shape; `CATCH_ALLS_ALLOWED` names for good the failure paths of place 1, the stated exceptions,
+  place 3's guards around reporting and writing a log line and the fifth place's handlers), and a
+  save outside a queued change. The job check and the check of cogs handling their own errors are
+  absolute, with no list of breaches left to grow, and the log channel's check holds its six places
+  for good; every other check lists today's breaches, each under the work that removes it. The check
+  of a save outside a queued change counts each function's `.commit()` and `.executescript()` calls,
+  and a function writing on a handed connection commits nothing and is not counted. It allows for
+  good the migrations run at start-up (`run_migrations` and `_enable_wal`, the journal mode set on
+  the database file itself), the queue's own records, the retry queue for log lines, `/bot pack`
+  (above), and `backup_service._write_empty_database`, which writes the scheduler's empty file and
+  not the league's. The connection-state check refuses, outside the database code, a SQL function
+  added with `create_function`, an authoriser, an assignment to `row_factory` or `isolation_level`,
+  and a PRAGMA, ATTACH or temporary table
   (`test_a_lent_connection_carries_only_what_the_database_code_sets`); the few functions that set up
   a connection of their own, opened with `sqlite3.connect` and never lent, are named for good.
 - **`tests/repository/test_one_league_server.py`**, **`tests/core/test_schema_rules.py`** and

@@ -143,8 +143,8 @@ def register_hub_options(hub_options: "HubOptions") -> None:
 
 
 def _make_hooks(bot: LeagueBot) -> None:
-    """Make every hook only one module joins, before any module's wiring runs, so that its wiring
-    signs up on a hook that exists. The hooks several modules join are made by the function that
+    """Make every hook only one module joins, before any module's `sign_up` runs, so that its
+    wiring signs up on a hook that exists. The hooks several modules join are made by the function that
     signs those modules up, in the order the hook calls them."""
     bot.confirmation_refused = AwaitedHook()
     bot.cancellation_refused = AwaitedHook()

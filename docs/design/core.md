@@ -211,10 +211,10 @@ in the order the hook calls its subscribers), and calls each module's wiring (`<
 (`sign_up`), its switch (`register_switch`, through `register_module_switches`), its change types
 (`register_change_types`) and its kinds of timed job (`register_scheduler_callbacks`). It signs up
 core's own About option (`register_hub_options`), loads the cogs, registers the persistent views and
-sets the start-up steps (`_start_up_steps`), all before the bot connects. What the builder keeps is
-what joins modules: every service, every hook and the order of its subscribers, a hand-in from one
-module to another, the cogs and views, and the order of the steps. Core has no wiring of its own.
-`test_build_returns_every_service_complete` and
+sets the start-up steps (`_start_up_steps`), all before the bot connects. Beside core's own part,
+the builder keeps what joins modules: every service, every hook and the order of its subscribers, a
+hand-in from one module to another, the cogs and views, and the order of the steps. Core has no
+wiring of its own. `test_build_returns_every_service_complete` and
 `test_every_kind_is_registered_before_the_scheduler_starts` pin that. `LeagueBot`
 (`core/utils/league_bot.py`) declares every attribute the builder attaches, each hook among them,
 and `test_every_attribute_bot_py_attaches_is_declared` holds the two equal.
@@ -593,8 +593,8 @@ the image module's class of the same name implements it; the builder makes it an
 - **Gates and pictures**: `calendar_wanted`, `draw_calendar`, `lineup_wanted`, `draw_lineup`,
   `draw_lineup_for_command`, `draw_review_lineup`, `discard_picture`. The review's lineup is drawn
   through `draw_review_lineup`, as the builder's drawing of a review's picture asks it, so that
-  core reaches the image module through this protocol alone and a change to the protocol reaches
-  every picture core draws. What a gate that cannot be read answers is `architecture.md`'s
+  every picture core draws is drawn through this protocol and a change to the protocol reaches each
+  of them. What a gate that cannot be read answers is `architecture.md`'s
   ("Errors and failures").
 - **The review's image section and its faults**: `rasteriser_fault`, `review_section`,
   `template_faults`, `colour_shortfall_problems`, `portrait_fault`. The image module words each;
