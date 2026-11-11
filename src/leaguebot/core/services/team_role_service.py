@@ -5,9 +5,10 @@ shorthand mapped to the Discord role the league made for it) and the helpers tha
 Discord roles: the ones that **log and carry on** (`_grant_roles`, `_revoke_roles`, what a
 placement's own write calls once it is committed) and the ones that **raise** where Discord will
 not (`grant_roles`, `revoke_roles`, `grant_to_every_driver`, what a job on the change queue calls,
-the queue stopping where Discord does). It posts nothing and reads no seat: the seats are
-`PlacementService`'s, which is handed this service by the builder, as is every change that gives
-or takes a role. It is handed no bot, since it grants through the guild or member it is given.
+the queue stopping where Discord does). It posts nothing. The seats are `PlacementService`'s, which is handed this service by the
+builder, as is every change that gives or takes a role; it reads them only to name who is seated
+(`seated_user_ids_on`). It is handed no bot, since it grants through the guild or member it is
+given.
 """
 from __future__ import annotations
 

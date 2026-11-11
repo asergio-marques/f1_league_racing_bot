@@ -1,9 +1,9 @@
 """The image module's answers to core's drawing protocol.
 
 `ImageDrawing` implements `leaguebot.core.services.image_drawing.ImageDrawing`: the builder
-makes one, attaches it to the bot as `bot.image_drawing`, and hands it to `PlacementService`, to
-every change that posts a division's calendar, and to the season approval and mid-season
-confirmation; the season fingerprint (`take_fingerprint`) is handed it by its callers, and
+makes one, attaches it to the bot as `bot.image_drawing`, and hands it to
+`TemplateCapacityService` and `LineupPoster`, to every change that posts a division's calendar,
+and to the season approval and mid-season confirmation; the season fingerprint (`take_fingerprint`) is handed it by its callers, and
 `/driver reassign` and `/team lineup` reach it on the bot. So core never imports this module.
 The capacity questions ask whether the aspect is drawn at all, whether the template is valid, and whether it holds that many — answered off the event
 loop, since parsing and measuring a template takes real time. ``calendar_wanted``/

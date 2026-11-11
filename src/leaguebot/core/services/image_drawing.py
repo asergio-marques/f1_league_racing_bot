@@ -1,7 +1,8 @@
 """What core asks of the image module.
 
-`ImageDrawing` is the protocol the builder hands `PlacementService`, the calendar's posting, and
-the season approval and mid-season confirmation, so that core imports nothing of the image module.
+`ImageDrawing` is the protocol the builder hands `TemplateCapacityService`, `LineupPoster`, the
+calendar's posting, and the season approval and mid-season confirmation, so that core imports
+nothing of the image module.
 The season fingerprint (`take_fingerprint`) is handed it by its callers: the cogs hand it
 `bot.image_drawing`, and the approval and the confirmation the drawing the builder gave them. Core
 calls these methods and the image module implements them

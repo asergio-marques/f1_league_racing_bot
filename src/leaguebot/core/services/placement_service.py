@@ -4,8 +4,10 @@ judges of each.
 It is handed what it does not own, by the builder: the template capacity service that tells whether
 the image templates could draw a seat (`TemplateCapacityService`) and the team-role service that
 reads each team's role (`TeamRoleService`). A change that moves a seat names the divisions whose
-lineup is owed and the roles to give or take; it posts no lineup (`LineupPoster`) and the change
-queue's jobs give and take the roles.
+lineup is owed and the roles to give or take; it posts no lineup (`LineupPoster`), and the change
+queue's jobs give and take the roles. A placement made or sacked outside the queue (`move_driver`,
+`sack_driver`, `revoke_all_placement_roles`) gives and takes them itself, through the team-role
+service's logging helpers.
 """
 from __future__ import annotations
 
@@ -164,7 +166,7 @@ class PlacementService:
             )
 
     # ------------------------------------------------------------------
-    # Assign driver
+    # A division's seats
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -251,6 +253,10 @@ class PlacementService:
             (ti_id, next_seat),
         )
         return cursor.lastrowid, is_reserve
+
+    # ------------------------------------------------------------------
+    # Move driver
+    # ------------------------------------------------------------------
 
     async def judge_move_on(
         self,
@@ -535,6 +541,10 @@ class PlacementService:
             key: summary[key]
             for key in ("from_division", "to_division", "from_team", "to_team", "lineups")
         }
+
+    # ------------------------------------------------------------------
+    # Assign driver
+    # ------------------------------------------------------------------
 
     async def guard_assign(
         self, division_id: int, season_id: int, team_name: str, driver_profile_id: int
