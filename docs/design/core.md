@@ -151,7 +151,7 @@ Answers to `architecture.md`, "How the code is laid out". Core's code sits in `c
 
 ### Services, and what each owns
 
-Each service sits in a topic folder of `core/services/` (`queue/`, `posting/`, `modules/`, `seasons/`, `cancellations/`, `rounds/`, `drivers/`, `settings/`, `test_mode/`, `upkeep/`; `architecture.md`, "How the code is laid out"), the scheduler's file alone staying loose at `core/services/`. The table names a service by its file, not its folder.
+Each service sits in a topic folder of `core/services/` (`architecture.md`, "How the code is laid out"). The table names a service by its file, not its folder.
 
 | Area | Services | Owns |
 |---|---|---|
