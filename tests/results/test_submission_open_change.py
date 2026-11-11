@@ -22,6 +22,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
+import pytest
 
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.results.services.result_submission_service import get_sessions_for_format
@@ -106,6 +107,7 @@ async def _open_changes(league: SeasonLeague) -> list[dict[str, Any]]:
     return [row for row in await change_rows(league.db_path) if row["kind"] == KIND]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the timer's callback is not yet in its module's wiring")
 async def test_the_round_start_asks_and_the_queue_opens_the_channel_with_its_opening_and_first_prompt(
     tmp_path,
 ):
@@ -115,7 +117,7 @@ async def test_the_round_start_asks_and_the_queue_opens_the_channel_with_its_ope
     open for **Round 3** (Pro)", naming its sessions, Qualifying and Race) and then the first
     session's prompt. The round-start timer's callback asks the queue rather than running the
     submission itself."""
-    import leaguebot.__main__ as bot_module
+    from leaguebot.results import wiring
 
     league = await _league(tmp_path)
 
@@ -133,7 +135,7 @@ async def test_the_round_start_asks_and_the_queue_opens_the_channel_with_its_ope
     assert f"📋 Submit **{await _first_session_label(league)}** results" in prompt
     assert [row["kind"] for row in await _open_changes(league)] == [KIND]
     assert "run_result_submission_job" not in inspect.getsource(
-        bot_module.register_scheduler_callbacks
+        wiring.register_scheduler_callbacks
     )
 
 

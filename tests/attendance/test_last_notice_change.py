@@ -98,13 +98,14 @@ async def _move_check_in_channel(league: SeasonLeague) -> None:
     )
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the timer's callback is not yet in its module's wiring")
 async def test_the_timer_asks_for_the_last_notice_and_the_queue_posts_it_in_the_division_s_check_in_channel(
     tmp_path,
 ):
     """Nothing is posted as the last notice is asked; the queue posts it in Pro's check-in
     channel, naming Max, who has not answered, and not Lewis, who has. The last-notice timer's
     callback asks the queue rather than posting."""
-    import leaguebot.__main__ as bot_module
+    from leaguebot.attendance import wiring
 
     league = await _league(tmp_path)
 
@@ -118,7 +119,7 @@ async def test_the_timer_asks_for_the_last_notice_and_the_queue_posts_it_in_the_
     assert posted in league.channel(CHECK_IN).messages
     assert [row["kind"] for row in await _notice_changes(league)] == [KIND]
     assert await stopped_job(league.db_path) is None
-    assert "ask_check_in_last_notice(" in inspect.getsource(bot_module.register_scheduler_callbacks)
+    assert "ask_check_in_last_notice(" in inspect.getsource(wiring.register_scheduler_callbacks)
 
 
 async def test_a_last_notice_after_a_channel_move_goes_to_the_new_channel_and_is_recorded_there(

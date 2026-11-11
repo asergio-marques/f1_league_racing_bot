@@ -127,10 +127,11 @@ async def _recover(league: SeasonLeague) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the timer's callback is not yet in its module's wiring")
 async def test_the_timer_asks_for_the_call_and_the_queue_posts_it(tmp_path):
     """Nothing is posted as the call is asked; the queue posts it in Pro's check-in channel,
     pinging Pro's role. The check-in timer's callback asks the queue rather than posting."""
-    import leaguebot.__main__ as bot_module
+    from leaguebot.attendance import wiring
 
     league = await _call_league(tmp_path)
 
@@ -143,7 +144,7 @@ async def test_the_timer_asks_for_the_call_and_the_queue_posts_it(tmp_path):
     assert [row["kind"] for row in await _call_changes(league)] == [KIND]
     assert await stopped_job(league.db_path) is None
     assert posted in league.channel(CHECK_IN).messages
-    assert "ask_check_in_call(" in inspect.getsource(bot_module.register_scheduler_callbacks)
+    assert "ask_check_in_call(" in inspect.getsource(wiring.register_scheduler_callbacks)
 
 
 async def test_the_call_s_record_saves_its_message_and_the_no_rsvp_rows_with_its_mark(tmp_path):

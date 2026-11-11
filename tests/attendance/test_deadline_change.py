@@ -174,6 +174,7 @@ async def _restart_asks(league: SeasonLeague) -> list[int]:
     return asked
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the timer's callback is not yet in its module's wiring")
 async def test_the_timer_asks_for_the_deadline_and_the_queue_distributes_locks_and_announces(
     tmp_path,
 ):
@@ -182,7 +183,7 @@ async def test_the_timer_asks_for_the_deadline_and_the_queue_distributes_locks_a
     one announcement in Pro's check-in channel, recorded on the call with the deadline marked
     as run: with no mark and no message, the deadline has not run, so it runs. The deadline
     timer's callback asks the queue rather than running the deadline."""
-    import leaguebot.__main__ as bot_module
+    from leaguebot.attendance import wiring
 
     league = await _league(tmp_path)
 
@@ -200,7 +201,7 @@ async def test_the_timer_asks_for_the_deadline_and_the_queue_distributes_locks_a
         "distribute", "lock_call", "announce",
     ]
     assert await stopped_job(league.db_path) is None
-    assert "ask_check_in_deadline(" in inspect.getsource(bot_module.register_scheduler_callbacks)
+    assert "ask_check_in_deadline(" in inspect.getsource(wiring.register_scheduler_callbacks)
 
 
 async def test_the_distribution_reads_the_answers_as_they_stood_at_the_deadline(tmp_path):

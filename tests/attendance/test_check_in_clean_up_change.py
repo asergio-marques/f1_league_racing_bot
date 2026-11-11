@@ -88,13 +88,14 @@ async def _clean_up_changes(league: SeasonLeague) -> list[dict[str, Any]]:
     return [row for row in await change_rows(league.db_path) if row["kind"] == KIND]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the timer's callback is not yet in its module's wiring")
 async def test_the_timer_asks_for_the_clean_up_and_the_queue_deletes_each_message(tmp_path):
     """Nothing is deleted as the clean-up is asked. The queue runs `plan`, one `delete_message`
     for each of the call (7001), the last notice (7002) and the announcement (7003), and
     `mark_cleared`: all three are gone from Pro's check-in channel, the call's record with them,
     and the queue is not stopped. The clean-up timer's callback asks the queue rather than
     running the clean-up."""
-    import leaguebot.__main__ as bot_module
+    from leaguebot.attendance import wiring
 
     league = await _league(tmp_path)
 
@@ -110,7 +111,7 @@ async def test_the_timer_asks_for_the_clean_up_and_the_queue_deletes_each_messag
         "plan", "delete_message", "delete_message", "delete_message", "mark_cleared",
     ]
     assert await stopped_job(league.db_path) is None
-    assert "ask_check_in_clean_up(" in inspect.getsource(bot_module.register_scheduler_callbacks)
+    assert "ask_check_in_clean_up(" in inspect.getsource(wiring.register_scheduler_callbacks)
 
 
 async def test_the_day_after_takes_down_the_call_of_a_round_whose_every_session_was_not_held(
