@@ -88,7 +88,6 @@ async def _clean_up_changes(league: SeasonLeague) -> list[dict[str, Any]]:
     return [row for row in await change_rows(league.db_path) if row["kind"] == KIND]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the timer's callback is not yet in its module's wiring")
 async def test_the_timer_asks_for_the_clean_up_and_the_queue_deletes_each_message(tmp_path):
     """Nothing is deleted as the clean-up is asked. The queue runs `plan`, one `delete_message`
     for each of the call (7001), the last notice (7002) and the announcement (7003), and

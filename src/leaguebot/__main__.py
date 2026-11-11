@@ -4,7 +4,6 @@ import asyncio
 import json
 import logging
 import os
-from datetime import datetime
 from pathlib import Path
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
@@ -15,6 +14,7 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
+from leaguebot.attendance import wiring as attendance_wiring
 from leaguebot.core.models.round import read_scheduled_at
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.season_review_changes import recover_expired_review_prompts
@@ -146,7 +146,6 @@ def _cancel_wizard_timers(bot: LeagueBot) -> "Callable[[str], None]":
 def register_module_switches(modules: "ModuleService") -> None:
     """Sign each module up with `ModuleService` for the reader of its own switch, keyed by the
     name `is_<module>_enabled` asks it by."""
-    from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
     from leaguebot.image.services.module_switch_settings import images_enabled_on
     from leaguebot.signup.services.signup_module_service import signup_enabled_on
     from leaguebot.weather.services.draw_guard import weather_enabled_on
@@ -154,7 +153,7 @@ def register_module_switches(modules: "ModuleService") -> None:
     modules.register_switch("weather", weather_enabled_on)
     modules.register_switch("signup", signup_enabled_on)
     results_wiring.register_switch(modules)
-    modules.register_switch("attendance", attendance_enabled_on)
+    attendance_wiring.register_switch(modules)
     modules.register_switch("images", images_enabled_on)
 
 
@@ -178,19 +177,17 @@ def _make_hooks(bot: LeagueBot) -> None:
     bot.season_standing_read = AwaitedHook()
     bot.final_round_read = AwaitedHook()
     bot.season_end_refused = AwaitedHook()
+    bot.round_ended_not_held = AwaitedHook()
 
 
 def _sign_up_to_round_windows(bot: LeagueBot) -> None:
     """Make the hook a round's timing windows read declares, and sign each module up to it, in
     the order core gathers them: attendance's window, then weather's. Each is handed whether the
     round is being amended and checks its own switch."""
-    from leaguebot.attendance.services import attendance_service
     from leaguebot.weather.services import weather_config_service
 
     bot.round_windows_read = AwaitedHook()
-    bot.round_windows_read.subscribe(partial(
-        attendance_service.round_window, bot.attendance_service, bot.module_service
-    ))
+    attendance_wiring.sign_up_to_round_windows(bot)
     bot.round_windows_read.subscribe(partial(
         weather_config_service.round_window, bot.module_service, bot.db_path
     ))
@@ -201,7 +198,6 @@ def _sign_up_to_review_sections(bot: LeagueBot) -> None:
     up to it, in the order the review lays them out: signup's, attendance's, results' then
     weather's. Each is handed which review is gathered, the season and its divisions, and checks
     its own switch."""
-    from leaguebot.attendance.services import attendance_service
     from leaguebot.signup.services import signup_module_service
     from leaguebot.weather.services import weather_config_service
 
@@ -209,9 +205,7 @@ def _sign_up_to_review_sections(bot: LeagueBot) -> None:
     bot.review_sections_read.subscribe(partial(
         signup_module_service.review_section, bot.signup_module_service, bot.module_service
     ))
-    bot.review_sections_read.subscribe(partial(
-        attendance_service.review_section, bot.attendance_service, bot.module_service
-    ))
+    attendance_wiring.sign_up_to_review_sections(bot)
     results_wiring.sign_up_to_review_sections(bot)
     bot.review_sections_read.subscribe(partial(
         weather_config_service.review_section, bot.module_service, bot.db_path
@@ -256,33 +250,25 @@ def _sign_up_to_amendments(bot: LeagueBot) -> None:
     is armed again, the posts each owes, attendance's then weather's, then the clean-ups due a day after the round,
     weather's then attendance's; the steps each defines for the amendment, weather's then
     attendance's; and the words an outcome gives a step left undone, weather's for a forecast."""
-    from leaguebot.attendance.services import check_in_changes
     from leaguebot.weather.services import forecast_changes, phase_withdrawal, round_phases
 
     bot.phases_drawn_read = AwaitedHook()
     bot.phases_drawn_read.subscribe(partial(round_phases.phases_drawn, bot.db_path))
     bot.round_amended = AwaitedHook()
     bot.round_amended.subscribe(phase_withdrawal.round_amended_on)
-    bot.round_amended.subscribe(check_in_changes.round_amended_on)
+    attendance_wiring.sign_up_to_round_amended(bot)
     bot.round_armed = AwaitedHook()
-    bot.round_armed.subscribe(check_in_changes.amendment_posts)
+    attendance_wiring.sign_up_to_round_armed(bot)
     bot.round_armed.subscribe(forecast_changes.amendment_posts)
     bot.round_clean_ups_due = AwaitedHook()
     bot.round_clean_ups_due.subscribe(forecast_changes.amendment_clean_ups)
-    bot.round_clean_ups_due.subscribe(check_in_changes.amendment_clean_ups)
+    attendance_wiring.sign_up_to_round_clean_ups_due(bot)
     bot.amendment_steps = Hook()
     bot.amendment_steps.subscribe(partial(
         forecast_changes.amendment_steps,
         now=lambda: bot.change_queue.now(), seasons=bot.season_service, modules=bot.module_service,
     ))
-    bot.amendment_steps.subscribe(partial(
-        check_in_changes.amendment_steps,
-        bot.attendance_service,
-        now=lambda: bot.change_queue.now(),
-        seasons=bot.season_service,
-        modules=bot.module_service,
-        deletes=check_in_changes.check_in_deletes(bot, bot.attendance_service),
-    ))
+    attendance_wiring.sign_up_to_amendment_steps(bot)
     bot.amendment_step_failure = Hook()
     bot.amendment_step_failure.subscribe(forecast_changes.forecast_failure)
 
@@ -298,36 +284,18 @@ def _sign_up_to_cancellations(bot: LeagueBot) -> None:
     own notice, attendance's, weather's, then results'). Results' not-held round end is handed
     `round_ended_not_held` too, to which attendance signs up the reading of a round's check-in
     record."""
-    from leaguebot.attendance.services import cancellation_notice as attendance_cancellation_notice
-    from leaguebot.attendance.services import check_in_changes, check_in_record
     from leaguebot.weather.services import cancellation_notice as weather_cancellation_notice
 
     bot.rounds_called_off = AwaitedHook()
     results_wiring.sign_up_to_rounds_called_off(bot)
-    bot.rounds_called_off.subscribe(check_in_changes.take_down_called_off_on)
+    attendance_wiring.sign_up_to_rounds_called_off(bot)
     bot.cancellation_notices = AwaitedHook()
-    bot.cancellation_notices.subscribe(attendance_cancellation_notice.notices_on)
+    attendance_wiring.sign_up_to_cancellation_notices(bot)
     bot.cancellation_notices.subscribe(weather_cancellation_notice.notices_on)
     results_wiring.sign_up_to_cancellation_notices(bot)
-    bot.round_ended_not_held = AwaitedHook()
-    bot.round_ended_not_held.subscribe(check_in_record.read_check_in_on)
     bot.cancellation_steps = Hook()
     results_wiring.sign_up_to_cancellation_steps(bot)
-    bot.cancellation_steps.subscribe(partial(
-        check_in_changes.take_down_steps,
-        seasons=bot.season_service,
-        modules=bot.module_service,
-        deletes=check_in_changes.check_in_deletes(bot, bot.attendance_service),
-    ))
-    bot.cancellation_steps.subscribe(partial(
-        check_in_record.read_check_in_steps,
-        modules=bot.module_service,
-    ))
-    bot.cancellation_steps.subscribe(partial(
-        attendance_cancellation_notice.notify_checkin_steps,
-        modules=bot.module_service,
-        seasons=bot.season_service,
-    ))
+    attendance_wiring.sign_up_to_cancellation_steps(bot)
     bot.cancellation_steps.subscribe(partial(
         weather_cancellation_notice.notify_forecast_steps,
         modules=bot.module_service,
@@ -341,7 +309,6 @@ def _sign_up_to_deletes(bot: LeagueBot) -> None:
     declares, and sign each module's part up to them, in the order core calls them: each module
     deleting or re-pointing its own rows, on the delete's connection, inside its save
     (architecture.md, "The database")."""
-    from leaguebot.attendance.services import attendance_service
     from leaguebot.signup.services import signup_module_service
     from leaguebot.weather.services import forecast_cleanup_service
 
@@ -352,10 +319,7 @@ def _sign_up_to_deletes(bot: LeagueBot) -> None:
     bot.profiles_merged = AwaitedHook()
     # Attendance's parts, then results', then signup's and weather's, so that each hook is called
     # in the order it always was.
-    bot.rounds_deleted.subscribe(attendance_service.rounds_deleted_on)
-    bot.divisions_deleted.subscribe(attendance_service.divisions_deleted_on)
-    bot.profiles_deleted.subscribe(attendance_service.profiles_deleted_on)
-    bot.profiles_merged.subscribe(attendance_service.profiles_merged_on)
+    attendance_wiring.sign_up_to_deletes(bot)
     results_wiring.sign_up_to_deletes(bot)
     bot.season_deleted.subscribe(signup_module_service.season_deleted_on)
     bot.rounds_deleted.subscribe(forecast_cleanup_service.rounds_deleted_on)
@@ -365,14 +329,13 @@ def _sign_up_to_pack(bot: LeagueBot) -> None:
     """Make the hook the bot packed declares, for the modules to sign up to: each module clearing
     its own rows tied to the server the bot leaves, on the pack's connection, inside its one
     transaction (architecture.md, "The database"). The builder hands it to `/bot pack`."""
-    from leaguebot.attendance.services import attendance_service
     from leaguebot.signup.services import signup_module_service
     from leaguebot.weather.services import forecast_cleanup_service
 
     bot.bot_packed = AwaitedHook()
     bot.bot_packed.subscribe(signup_module_service.bot_packed_on)
     bot.bot_packed.subscribe(forecast_cleanup_service.bot_packed_on)
-    bot.bot_packed.subscribe(attendance_service.bot_packed_on)
+    attendance_wiring.sign_up_to_pack(bot)
     results_wiring.sign_up_to_pack(bot)
 
 
@@ -409,14 +372,11 @@ def _sign_up_to_division_lines_read(bot: LeagueBot) -> None:
     weather's one, handed the database. Each is handed the season and the divisions the review
     shows (architecture.md, "How modules and
     core fit together")."""
-    from leaguebot.attendance.services import attendance_service
     from leaguebot.weather.services import forecast_channel
 
     bot.division_lines_read = AwaitedHook()
     results_wiring.sign_up_to_division_lines_read(bot)
-    bot.division_lines_read.subscribe(
-        partial(attendance_service.division_lines, bot.attendance_service, bot.module_service)
-    )
+    attendance_wiring.sign_up_to_division_lines_read(bot)
     bot.division_lines_read.subscribe(partial(forecast_channel.division_lines, bot.db_path))
 
 
@@ -426,14 +386,13 @@ def _sign_up_to_channel_uses_read(bot: LeagueBot) -> None:
     settings hold in the live season, in the order a division's channels read (weather, results,
     attendance, then signup's own). The builder hands it to every command that sets a channel
     (architecture.md, "How modules and core fit together")."""
-    from leaguebot.attendance.services import division_channels as attendance_channels
     from leaguebot.signup.services import channel_uses
     from leaguebot.weather.services import forecast_channel
 
     bot.channel_uses_read = AwaitedHook()
     bot.channel_uses_read.subscribe(partial(forecast_channel.channel_uses, bot.db_path))
     results_wiring.sign_up_to_channel_uses_read(bot)
-    bot.channel_uses_read.subscribe(partial(attendance_channels.channel_uses, bot.db_path))
+    attendance_wiring.sign_up_to_channel_uses_read(bot)
     bot.channel_uses_read.subscribe(partial(channel_uses.channel_uses, bot.db_path))
 
 
@@ -442,14 +401,13 @@ def _sign_up_to_setting_channels_read(bot: LeagueBot) -> None:
     holds (those its settings name, those it posted to and those it created), in any season, and
     sign each module up to it, handed the database's path, in the same
     order (architecture.md, "How modules and core fit together")."""
-    from leaguebot.attendance.services import division_channels as attendance_channels
     from leaguebot.signup.services import channel_uses
     from leaguebot.weather.services import forecast_channel
 
     bot.setting_channels_read = AwaitedHook()
     bot.setting_channels_read.subscribe(partial(forecast_channel.setting_channels, bot.db_path))
     results_wiring.sign_up_to_setting_channels_read(bot)
-    bot.setting_channels_read.subscribe(partial(attendance_channels.setting_channels, bot.db_path))
+    attendance_wiring.sign_up_to_setting_channels_read(bot)
     bot.setting_channels_read.subscribe(partial(channel_uses.setting_channels, bot.db_path))
 
 
@@ -460,7 +418,6 @@ def _sign_up_to_division_channel_faults_read(bot: LeagueBot) -> None:
     and the database, attendance its service and the module service, each asking its own switch;
     they sign up in the order a division's lines read. The builder hands it to the placements
     review and the confirmations (architecture.md, "How modules and core fit together")."""
-    from leaguebot.attendance.services import attendance_service
     from leaguebot.weather.services import forecast_channel
 
     bot.division_channel_faults_read = AwaitedHook()
@@ -468,11 +425,7 @@ def _sign_up_to_division_channel_faults_read(bot: LeagueBot) -> None:
         partial(forecast_channel.division_channel_faults, bot.module_service, bot.db_path)
     )
     results_wiring.sign_up_to_division_channel_faults_read(bot)
-    bot.division_channel_faults_read.subscribe(
-        partial(
-            attendance_service.division_channel_faults, bot.attendance_service, bot.module_service
-        )
-    )
+    attendance_wiring.sign_up_to_division_channel_faults_read(bot)
 
 
 def _sign_up_to_fingerprint_areas_read(bot: LeagueBot) -> None:
@@ -481,7 +434,6 @@ def _sign_up_to_fingerprint_areas_read(bot: LeagueBot) -> None:
     and the season's id. They sign up in the order a division's channels read (architecture.md,
     "How modules and core fit together"). The builder hands it to every caller of
     `take_fingerprint`."""
-    from leaguebot.attendance.services import fingerprint_areas as attendance_areas
     from leaguebot.image.services import fingerprint_areas as image_areas
     from leaguebot.signup.services import fingerprint_areas as signup_areas
     from leaguebot.weather.services import fingerprint_areas as weather_areas
@@ -493,9 +445,7 @@ def _sign_up_to_fingerprint_areas_read(bot: LeagueBot) -> None:
         partial(weather_areas.fingerprint_areas, bot.season_service)
     )
     results_wiring.sign_up_to_fingerprint_areas_read(bot)
-    bot.fingerprint_areas_read.subscribe(
-        partial(attendance_areas.fingerprint_areas, bot.season_service)
-    )
+    attendance_wiring.sign_up_to_fingerprint_areas_read(bot)
     for module_areas in (signup_areas, image_areas):
         bot.fingerprint_areas_read.subscribe(module_areas.fingerprint_areas)
 
@@ -507,12 +457,11 @@ def _sign_up_to_pending_steps_read(bot: LeagueBot) -> None:
     moment advance judges at. Weather, attendance and results sign up; core orders what they hand
     back by its own step order (architecture.md, "How modules and core fit together"). The builder
     hands it to the command."""
-    from leaguebot.attendance.services import test_mode_steps as attendance_steps
     from leaguebot.weather.services import test_mode_steps as weather_steps
 
     bot.pending_steps_read = AwaitedHook()
     bot.pending_steps_read.subscribe(weather_steps.pending_steps)
-    bot.pending_steps_read.subscribe(attendance_steps.pending_steps)
+    attendance_wiring.sign_up_to_pending_steps_read(bot)
     results_wiring.sign_up_to_pending_steps_read(bot)
 
 
@@ -523,13 +472,12 @@ def _sign_up_to_review_marks_read(bot: LeagueBot) -> None:
     Weather, results and attendance sign up, in the order the review lays their marks out; core
     lays out the divisions and rounds around them (architecture.md, "How modules and core fit
     together"). The builder hands it to the command."""
-    from leaguebot.attendance.services import test_mode_steps as attendance_steps
     from leaguebot.weather.services import test_mode_steps as weather_steps
 
     bot.review_marks_read = AwaitedHook()
     bot.review_marks_read.subscribe(weather_steps.review_marks)
     results_wiring.sign_up_to_review_marks_read(bot)
-    bot.review_marks_read.subscribe(attendance_steps.review_marks)
+    attendance_wiring.sign_up_to_review_marks_read(bot)
 
 
 def _sign_up_to_driver_turned_down(bot: LeagueBot) -> None:
@@ -571,13 +519,10 @@ def _sign_up_to_placements_confirmed(bot: LeagueBot) -> None:
     together"), and the step it defines for its own job, by name. The builder hands them to
     `season_approval_change`. Results signs up first, so each division's jobs stay lineup,
     calendar, standings, sheet."""
-    from leaguebot.attendance.services import sheet_posting
-
     bot.placements_confirmed = AwaitedHook()
     bot.placements_confirmed_steps = Hook()
     results_wiring.sign_up_to_placements_confirmed(bot)
-    bot.placements_confirmed.subscribe(sheet_posting.placements_confirmed_on)
-    bot.placements_confirmed_steps.subscribe(partial(sheet_posting.opening_steps, bot.module_service))
+    attendance_wiring.sign_up_to_placements_confirmed(bot)
 
 
 def _sign_up_to_season_completed(bot: LeagueBot) -> None:
@@ -585,15 +530,10 @@ def _sign_up_to_season_completed(bot: LeagueBot) -> None:
     each module's final post up to them: results' read of its own `session_results` and its
     final standings, then attendance's final sheet. The builder hands them to
     `season_complete_change`."""
-    from leaguebot.attendance.services import sheet_posting
-
     bot.season_completed = AwaitedHook()
     bot.season_completed_steps = Hook()
     results_wiring.sign_up_to_season_completed(bot)
-    bot.season_completed.subscribe(sheet_posting.season_completed_on)
-    bot.season_completed_steps.subscribe(
-        partial(sheet_posting.final_steps, bot.module_service)
-    )
+    attendance_wiring.sign_up_to_season_completed(bot)
 
 
 def _sign_up_to_season_end(bot: LeagueBot) -> None:
@@ -733,22 +673,6 @@ def register_change_types(bot: LeagueBot) -> None:
     so that core's queue and cogs import none of them. The tests' support module calls this to get
     the real set.
     """
-    from leaguebot.attendance.services.channel_settings import attendance_channel_settings
-    from leaguebot.attendance.services.check_in_answer_changes import check_in_answer_change
-    from leaguebot.attendance.services.check_in_changes import (
-        check_in_call_change,
-        check_in_clean_up_change,
-        check_in_deadline_change,
-        check_in_last_notice_change,
-    )
-    from leaguebot.attendance.services.module_switch_settings import (
-        module_off_attendance,
-        module_on_attendance,
-    )
-    from leaguebot.attendance.services.sanctions_announce_change import (
-        sanctions_announce_change,
-    )
-    from leaguebot.attendance.services.sheet_posting import sheet_post_change
     from leaguebot.core.services.calendar_post_service import calendar_sync_change
     from leaguebot.core.services.cancellation_changes import (
         division_cancel_change,
@@ -1062,24 +986,7 @@ def register_change_types(bot: LeagueBot) -> None:
             placement=bot.placement_service, now=lambda: bot.change_queue.now()
         )
     )
-    bot.change_queue.register(sheet_post_change())
     bot.change_queue.register(forecast_change(now=lambda: bot.change_queue.now()))
-    bot.change_queue.register(
-        check_in_call_change(bot.attendance_service, now=lambda: bot.change_queue.now())
-    )
-    bot.change_queue.register(
-        check_in_last_notice_change(bot.attendance_service, now=lambda: bot.change_queue.now())
-    )
-    bot.change_queue.register(
-        check_in_deadline_change(bot.attendance_service, now=lambda: bot.change_queue.now())
-    )
-    bot.change_queue.register(check_in_clean_up_change())
-    bot.change_queue.register(check_in_answer_change(bot.attendance_service))
-    bot.change_queue.register(
-        sanctions_announce_change(
-            attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
-        )
-    )
     bot.change_queue.register(forecast_clean_up_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(
         wind_down_change(
@@ -1245,16 +1152,6 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(
         setting_change(
-            module_on_attendance(modules=bot.module_service, seasons=bot.season_service)
-        )
-    )
-    bot.change_queue.register(
-        setting_change(
-            module_off_attendance(modules=bot.module_service, attendance=bot.attendance_service)
-        )
-    )
-    bot.change_queue.register(
-        setting_change(
             module_on_signup(modules=bot.module_service, config=bot.config_service)
         )
     )
@@ -1322,10 +1219,6 @@ def register_change_types(bot: LeagueBot) -> None:
         hub_channel_setting(config=bot.config_service),
         *division_channel_settings(seasons=bot.season_service),
         test_mode_nationality_setting(config=bot.config_service),
-        *attendance_channel_settings(
-            modules=bot.module_service, seasons=bot.season_service,
-            channel_of=lambda channel_id: bot.get_channel(channel_id),
-        ),
         *image_settings(
             modules=bot.module_service,
             config=bot.image_config_service,
@@ -1394,6 +1287,7 @@ def register_change_types(bot: LeagueBot) -> None:
             now=lambda: bot.change_queue.now(),
         )
     )
+    attendance_wiring.register_change_types(bot)
     results_wiring.register_change_types(
         bot,
         attendance=bot.attendance_after_review,
@@ -1427,42 +1321,7 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
 
     results_wiring.register_scheduler_callbacks(bot)
 
-    # Register RSVP attendance callbacks
-    from leaguebot.attendance.services.check_in_changes import (
-        advance_steps as check_in_advance_steps,
-        ask_check_in_call,
-        ask_check_in_clean_up,
-        ask_check_in_deadline,
-        ask_check_in_last_notice,
-    )
-    from leaguebot.core.models.change import ChangeOrigin
-
-    async def _rsvp_notice_cb(round_id: int) -> None:
-        await ask_check_in_call(
-            bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
-        )
-
-    async def _rsvp_last_notice_cb(round_id: int) -> None:
-        await ask_check_in_last_notice(
-            bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
-        )
-
-    async def _rsvp_deadline_cb(round_id: int) -> None:
-        await ask_check_in_deadline(
-            bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
-        )
-
-    async def _rsvp_cleanup_cb(round_id: int) -> None:
-        await ask_check_in_clean_up(
-            bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
-        )
-
-    scheduler.register_timer("rsvp_notice", _rsvp_notice_cb)
-    scheduler.register_timer("rsvp_last_notice", _rsvp_last_notice_cb)
-    scheduler.register_timer("rsvp_deadline", _rsvp_deadline_cb)
-    scheduler.register_timer("rsvp_cleanup", _rsvp_cleanup_cb)
-    for kind, advance in check_in_advance_steps(bot.change_queue, bot.db_path).items():
-        bot.advance_steps.register_step(kind, advance)
+    attendance_wiring.register_scheduler_callbacks(bot)
 
     # Register the daily driver-portrait refresh and re-arm it after a restart. Unlike
     # every other job here the trigger is recurring, so recovery re-adds it rather than
@@ -1626,6 +1485,7 @@ async def build(settings: Settings) -> LeagueBot:
     _sign_up_to_season_end(bot)
     _sign_up_to_deletes(bot)
     _sign_up_to_pack(bot)
+    attendance_wiring.sign_up(bot)
     results_wiring.sign_up(bot)
     register_change_types(bot)
     from leaguebot.core.services.test_mode_service import AdvanceSteps
@@ -1791,10 +1651,10 @@ def _start_up_steps(bot: LeagueBot) -> "tuple[StartUpStep, ...]":
         ("missed phases", lambda: _recover_missed_phases(bot)),
         # The check-in calls that fell due while the bot was down, their deadline still ahead,
         # posted late. Before the deadlines below, as a call comes before its deadline.
-        ("missed check-in calls", lambda: _recover_missed_check_in_calls(bot)),
+        ("missed check-in calls", lambda: attendance_wiring.recover_missed_check_in_calls(bot)),
         # Persistent RSVP embed views re-armed for all stored embed messages, and missed RSVP
         # deadline jobs run for rounds whose deadline already passed.
-        ("RSVP views and deadlines", lambda: _recover_rsvp_views_and_deadlines(bot)),
+        ("RSVP views and deadlines", lambda: attendance_wiring.recover_rsvp_views_and_deadlines(bot)),
         # The forecasts and check-in messages due to come down while the bot was stopped.
         # After the deadlines above, so a check-in is distributed before it goes.
         ("missed clean-ups", lambda: _recover_missed_cleanups(bot)),
@@ -1990,267 +1850,28 @@ async def _recover_missed_phases(bot: LeagueBot) -> None:
             await ask_forecast(bot.change_queue, bot.db_path, round_id, 3)
 
 
-async def _recover_missed_check_in_calls(
-    bot: LeagueBot, *, now: datetime | None = None
-) -> None:
-    """Post late the check-in calls that fell due while the bot was down.
+async def _recover_missed_forecast_clean_ups(bot: LeagueBot) -> None:
+    """Take down the forecasts whose clean-up fell due while the bot was down: weather's part of
+    the start-up's missed clean-ups.
 
-    A call's job is one of those the scheduler discards when the bot comes back more than its
-    misfire grace after it, and nothing else posted it: the round asked nobody whether they
-    were racing, opened no attendance rows, and counted nothing against anyone. A call that came
-    due is posted late, provided the round's check-in deadline is still ahead, and the drivers
-    answer in the time left. The deadline boundary is the one `/attendance post-check-in` holds to —
-    with a deadline of zero, the round's own moment.
+    A round's forecast (whichever of Phases 1 to 3 still stands, which the host's log line names)
+    comes down `POST_RACE_CLEANUP_DELAY` after the round's start, by the ``cleanup`` job. A job
+    falling due while the bot is stopped is discarded by the scheduler's misfire grace rather than
+    run late, and nothing else would take those messages down: a forecast whose cleanup was missed
+    would stay for good.
 
-    A round is owed a late call where its season is in one of the three ongoing stages, neither
-    it nor its division is cancelled, the attendance module is enabled, no call for it stands
-    and its check-in is not over (``checkin_cleared``), and the moment its call was due has
-    passed. **Nothing is posted while test mode is on**: `/test-mode advance` posts a test season's
-    calls in their turn.
-
-    The restart asks the change queue for each call owed, before the queue starts, and posts
-    nothing itself: the call's change posts it, telling the log channel that it went out late, or,
-    where the deadline has passed as well, gives it up (`give_up`), closing the round's check-in so
-    that the next start does not ask again. A call already in hand on the queue is not asked for
-    twice. Its last notice and its deadline need no arming: the season's approval armed
-    them with the call, the job store outlives a restart, and both are still ahead of a call posted
-    in time to be answered.
-
-    Runs before `_recover_rsvp_views_and_deadlines` in start-up, the call coming before its
-    deadline. *now* is the wall clock unless a test pins it.
-    """
-    from datetime import timedelta, timezone
-
-    from leaguebot.core.db.database import get_connection
-    from leaguebot.core.models.round import ROUND_CANCELLABLE
-    from leaguebot.core.models.season import ONGOING_STAGES
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_call
-    from leaguebot.core.models.change import ChangeOrigin
-
-    moment = now or datetime.now(timezone.utc)
-    ongoing = [stage.value for stage in ONGOING_STAGES]
-    to_run = sorted(ROUND_CANCELLABLE)
-    try:
-        async with get_connection(bot.db_path) as db:
-            cursor = await db.execute(
-                f"""
-                SELECT r.id AS round_id, r.round_number, r.scheduled_at,
-                       d.id AS division_id, d.name AS division_name,
-                       s.season_number,
-                       ac.rsvp_notice_days, ac.rsvp_deadline_hours
-                  FROM rounds r
-                  JOIN divisions d ON d.id = r.division_id
-                  JOIN seasons s ON s.id = d.season_id
-                  CROSS JOIN attendance_config ac
-                 WHERE ac.module_enabled = 1
-                   AND s.stage IN ({",".join("?" for _ in ongoing)})
-                   AND r.status IN ({",".join("?" for _ in to_run)})
-                   AND d.status != 'CANCELLED'
-                   AND r.checkin_cleared = 0
-                   AND NOT EXISTS (
-                       SELECT 1 FROM rsvp_embed_messages rem WHERE rem.round_id = r.id
-                   )
-                   AND NOT EXISTS (SELECT 1 FROM server_configs WHERE test_mode_active = 1)
-                 ORDER BY r.scheduled_at, r.id
-                """,
-                [*ongoing, *to_run],
-            )
-            rows = await cursor.fetchall()
-    except Exception:
-        log.exception("_recover_missed_check_in_calls: failed to read the rounds owed a call")
-        return
-
-    for row in rows:
-        try:
-            scheduled_at = read_scheduled_at(str(row["scheduled_at"]))
-        except ValueError:
-            continue
-        due_at = scheduled_at - timedelta(days=row["rsvp_notice_days"] or 0)
-        deadline_at = scheduled_at - timedelta(hours=row["rsvp_deadline_hours"] or 0)
-        if moment < due_at:
-            continue
-
-        # The change judges the deadline when it runs: it posts the call while the deadline is
-        # ahead, and gives it up, closing the round's check-in, once it has passed.
-        log.info("_recover_missed_check_in_calls: asking for round %d's call", row["round_id"])
-        try:
-            await ask_check_in_call(
-                bot.change_queue, bot.db_path, row["round_id"], origin=ChangeOrigin.BOT,
-                late=moment < deadline_at,
-            )
-        except Exception:
-            log.exception(
-                "_recover_missed_check_in_calls: could not ask for round %d's call",
-                row["round_id"],
-            )
-
-
-async def _recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
-    """Re-arm RsvpView buttons and run missed RSVP deadline jobs on bot restart.
-
-    Re-arm persistent RsvpView for every row in rsvp_embed_messages so button interactions survive
-    bot restarts (FR-007).
-
-    For any call whose rsvp_deadline fire time has already passed and which carries no
-    mark of its deadline having run, ask the change queue for the deadline (FR-027).
-
-    **The call's own mark decides, never the drivers' placements**. A deadline writes its
-    distribution and marks the call (`deadline_run_at`) in one save, before it posts its
-    announcement or its no-reserve notice; that is how `AttendanceService.get_current_embed_message`
-    tells a deadline that has run as well, and the two must agree. The placements cannot: a
-    deadline with no reserve to place writes none, so it would be run again at every start and
-    its notice posted again, and a call posted again after an amendment carries over the
-    placements of the call it replaced, so its own deadline would never be caught up. The
-    announcement's id cannot either: a discarded announcement leaves none, and the deadline has
-    run all the same.
-
-    For any round whose rsvp_last_notice fire time has already passed, silently skip — do NOT fire
-    retroactively (FR-029 edge case).
-
-    A restart is one of the three paths the core specification names, so none of this runs
-    for a server whose attendance module is switched off. Re-arming the buttons
-    would revive check-in for a league that had turned it off, and the missed-deadline
-    catch-up would distribute its reserves into seats hours after the fact.
-    """
-    from leaguebot.attendance.services.check_in_changes import (
-        CHECK_IN_DEADLINE,
-        ask_check_in_deadline,
-    )
-    from leaguebot.attendance.services.rsvp_service import RsvpView
-    from leaguebot.core.db.database import get_connection as _gc
-    from leaguebot.core.models.change import ChangeOrigin
-    from leaguebot.core.services.change_queue import unfinished
-    from datetime import datetime as _dt, timezone as _tz
-
-    # Re-arm all embed views by message_id so persistent buttons survive restarts
-    try:
-        embed_rows = await bot.attendance_service.get_all_embed_messages()
-    except Exception:
-        log.exception("_recover_rsvp_views_and_deadlines: failed to fetch embed messages")
-        return
-
-    # Re-arm nothing while the attendance module is disabled.
-    try:
-        async with _gc(bot.db_path) as db:
-            cur = await db.execute(
-                """
-                SELECT DISTINCT rem.round_id
-                  FROM rsvp_embed_messages rem
-                  JOIN rounds r ON r.id = rem.round_id
-                 WHERE EXISTS (SELECT 1 FROM attendance_config WHERE module_enabled = 1)
-                """
-            )
-            enabled_round_ids = {r[0] for r in await cur.fetchall()}
-    except Exception:
-        log.exception("_recover_rsvp_views_and_deadlines: failed to resolve enabled rounds")
-        return
-
-    for row in embed_rows:
-        if row.round_id not in enabled_round_ids:
-            log.info(
-                "_recover_rsvp_views_and_deadlines: attendance module disabled for round %s — "
-                "view not re-armed",
-                row.round_id,
-            )
-            continue
-        try:
-            bot.add_view(RsvpView(round_id=row.round_id), message_id=int(row.message_id))
-        except Exception as exc:
-            log.warning(
-                "_recover_rsvp_views_and_deadlines: could not re-arm view for msg %s: %s",
-                row.message_id, exc, exc_info=True,
-            )
-
-    # Check for missed deadline jobs
-    now_utc = _dt.now(_tz.utc)
-    try:
-        async with _gc(bot.db_path) as db:
-            cur = await db.execute(
-                """
-                SELECT DISTINCT rem.round_id, rem.division_id,
-                       r.scheduled_at,
-                       ac.rsvp_deadline_hours
-                  FROM rsvp_embed_messages rem
-                  JOIN rounds r ON r.id = rem.round_id
-                  JOIN divisions d ON d.id = r.division_id
-                  JOIN seasons s ON s.id = d.season_id
-                  CROSS JOIN attendance_config ac
-                 WHERE r.status != 'CANCELLED'
-                   AND s.status = 'ACTIVE'
-                   AND ac.module_enabled = 1
-                   AND rem.deadline_run_at IS NULL
-                """
-            )
-            round_rows = await cur.fetchall()
-    except Exception:
-        log.exception("_recover_rsvp_views_and_deadlines: failed to fetch rounds for deadline check")
-        return
-
-    try:
-        in_hand = {int(each["round_id"]) for each in await unfinished(bot.db_path, [CHECK_IN_DEADLINE])}
-    except Exception:
-        log.exception("_recover_rsvp_views_and_deadlines: failed to read the deadlines in hand")
-        return
-
-    for rrow in round_rows:
-        scheduled_at_raw = rrow["scheduled_at"]
-        try:
-            scheduled_at = read_scheduled_at(scheduled_at_raw)
-        except (ValueError, TypeError):
-            continue
-
-        deadline_hours = rrow["rsvp_deadline_hours"] or 0
-        from datetime import timedelta as _td
-        deadline_at = scheduled_at - _td(hours=deadline_hours)
-
-        if deadline_at <= now_utc:
-            # Deadline has passed and the call records no message from it, so it has not run.
-            round_id = rrow["round_id"]
-            division_id = rrow["division_id"]
-            if round_id in in_hand:
-                continue  # already on the queue: its jobs are in hand
-            log.info(
-                "_recover_rsvp_views_and_deadlines: asking for missed deadline of round %d / division %d",
-                round_id, division_id,
-            )
-            try:
-                await ask_check_in_deadline(
-                    bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
-                )
-            except Exception:
-                log.exception(
-                    "_recover_rsvp_views_and_deadlines: deadline run failed for round %d",
-                    round_id,
-                )
-
-
-async def _recover_missed_cleanups(bot: LeagueBot) -> None:
-    """Take down what a round's cleanups would have, their moment passing while the bot was down.
-
-    A round's forecast (whichever of Phases 1 to 3 still stands, which the host's log line names),
-    and its check-in call with its last notice and its distribution message, come down
-    `POST_RACE_CLEANUP_DELAY` after the round's start, by the ``cleanup`` and ``rsvp_cleanup``
-    jobs. A job falling due while the bot is stopped is discarded by the scheduler's misfire
-    grace rather than run late, and nothing else would take those messages down: a forecast
-    whose cleanup was missed would stay for good.
-
-    A round called off, or of a division called off, is left alone. Its cancellation removed both
-    jobs, and the weather module keeps the forecasts of a round called off. A round that ended
+    A round called off, or of a division called off, is left alone. Its cancellation removed the
+    job, and the weather module keeps the forecasts of a round called off. A round that ended
     cancelled because every session was entered as not held (`rounds.not_held`) is not left alone:
-    its jobs were never removed, and its call and forecasts are owed their clean-up as any round's. The season's status is not
-    asked, since the live jobs fire after a season completes as well. Each module's own gate applies:
-    weather's here, and attendance's inside its clean-up change's check.
-
-    Running a cleanup a second time finds nothing left to take down, so a job the scheduler
-    still runs inside its grace alongside this does no harm.
+    its job was never removed. The season's status is not asked, since the live job fires after a
+    season completes as well. Weather's own gate applies here. Running a cleanup a second time
+    finds nothing left to take down.
     """
     from datetime import datetime, timezone
 
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.models.change import forecasts_named
     from leaguebot.weather.services.forecast_changes import ask_forecast_clean_up
-    from leaguebot.attendance.services.check_in_changes import ask_check_in_clean_up
-    from leaguebot.core.models.change import ChangeOrigin
     from leaguebot.core.services.round_moments import POST_RACE_CLEANUP_DELAY
 
     now = datetime.now(timezone.utc)
@@ -2281,18 +1902,6 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
             for r in await cursor.fetchall():
                 if _due(r["scheduled_at"]):
                     forecasts.setdefault(r["round_id"], []).append(r["phase_number"])
-            cursor = await db.execute(
-                """
-                SELECT DISTINCT rem.round_id, r.scheduled_at
-                  FROM rsvp_embed_messages rem
-                  JOIN rounds r ON r.id = rem.round_id
-                  JOIN divisions d ON d.id = r.division_id
-                 WHERE (r.status != 'CANCELLED' OR r.not_held = 1)
-                   AND d.status != 'CANCELLED'
-                 ORDER BY r.scheduled_at, rem.round_id
-                """
-            )
-            check_ins = [r["round_id"] for r in await cursor.fetchall() if _due(r["scheduled_at"])]
     except Exception:
         log.exception("_recover_missed_cleanups: failed to read the messages still standing")
         return
@@ -2312,16 +1921,14 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
                 "_recover_missed_cleanups: forecast cleanup failed for round %d", round_id
             )
 
-    for round_id in check_ins:
-        log.info("_recover_missed_cleanups: taking down round %d's check-in", round_id)
-        try:
-            await ask_check_in_clean_up(
-                bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
-            )
-        except Exception:
-            log.exception(
-                "_recover_missed_cleanups: check-in cleanup failed for round %d", round_id
-            )
+
+async def _recover_missed_cleanups(bot: LeagueBot) -> None:
+    """Take down what a round's cleanups would have, their moment passing while the bot was down:
+    the step the builder composes from weather's part, the forecasts, and then attendance's, the
+    check-in calls. Each is its module's own and contains its own failures."""
+    await _recover_missed_forecast_clean_ups(bot)
+    await attendance_wiring.recover_missed_check_in_clean_ups(bot)
+
 
 
 async def _recover_portrait_refresh_job(bot: LeagueBot) -> None:

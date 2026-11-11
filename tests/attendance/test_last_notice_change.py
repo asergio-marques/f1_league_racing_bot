@@ -98,7 +98,6 @@ async def _move_check_in_channel(league: SeasonLeague) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the timer's callback is not yet in its module's wiring")
 async def test_the_timer_asks_for_the_last_notice_and_the_queue_posts_it_in_the_division_s_check_in_channel(
     tmp_path,
 ):

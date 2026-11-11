@@ -34,10 +34,6 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services import rsvp_service
 from leaguebot.attendance.services.attendance_service import AttendanceService
 
-#: Why each test reaching a recovery the entry point held fails until it moves to its
-#: module's wiring (#283).
-_NOT_YET_IN_THE_WIRING = "#283: the recovery is not yet in its module's wiring"
-
 SERVER_ID = 7714
 SEASON_ID = 1
 DIVISION_ID = 1
@@ -375,7 +371,6 @@ async def test_the_deadline_distributes_reserves_while_attendance_is_enabled(tmp
 # asyncio.get_running_loop() in View.__init__ where the pinned 2.7.1 defers it.
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_restart_re_arms_no_buttons_while_attendance_is_disabled(tmp_path):
     """Attendance is off and the round's deadline passed while the bot was down: the restart
     re-arms no button and asks nothing of the queue, and once the queue runs no reserve is
@@ -398,7 +393,6 @@ async def test_a_restart_re_arms_no_buttons_while_attendance_is_disabled(tmp_pat
     assert distributed == 0, "a restart ran a missed deadline for a disabled module"
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_restart_re_arms_the_buttons_while_attendance_is_enabled(tmp_path):
     """Attendance is on and the round's deadline passed while the bot was down: the restart
     re-arms the call's buttons and asks the queue for the deadline, placing no reserve itself;

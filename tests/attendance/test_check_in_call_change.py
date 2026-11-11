@@ -50,10 +50,6 @@ from tests.support.season_league import (
     run_attendance_channel_command,
 )
 
-#: Why each test reaching a recovery the entry point held fails until it moves to its
-#: module's wiring (#283).
-_NOT_YET_IN_THE_WIRING = "#283: the recovery is not yet in its module's wiring"
-
 KIND = "attendance.check_in.call"
 CHECK_IN = DIVISIONS[PRO][3].checkin
 ROUND_3 = round_id(PRO, 3)
@@ -127,7 +123,6 @@ async def _recover(league: SeasonLeague) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the timer's callback is not yet in its module's wiring")
 async def test_the_timer_asks_for_the_call_and_the_queue_posts_it(tmp_path):
     """Nothing is posted as the call is asked; the queue posts it in Pro's check-in channel,
     pinging Pro's role. The check-in timer's callback asks the queue rather than posting."""
@@ -414,7 +409,6 @@ async def test_a_hand_posted_call_an_admin_discards_tells_the_manager_it_was_dis
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_the_start_up_asks_for_each_call_due_before_the_queue_starts(tmp_path):
     """Round 4's call fell due while the bot was down. The restart asks the queue for it and
     posts nothing itself; the queue then posts it."""
@@ -430,7 +424,6 @@ async def test_the_start_up_asks_for_each_call_due_before_the_queue_starts(tmp_p
     assert row["message_id"] == str(posted)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_the_start_up_leaves_a_call_in_hand_on_the_queue_alone(tmp_path):
     """Round 4's call was asked of the queue before the bot stopped, and has not run. The restart
     asks nothing more, and one call is posted."""
@@ -444,7 +437,6 @@ async def test_the_start_up_leaves_a_call_in_hand_on_the_queue_alone(tmp_path):
     assert len(_sent(league)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_the_start_up_asks_no_late_call_under_test_mode(tmp_path):
     """Test mode is on: the restart asks for no late call, and posts none (attendance spec :222,
     the #429 rule); `/test-mode advance` posts it in its turn."""
