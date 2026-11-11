@@ -13,7 +13,6 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.placement_service import PlacementService
 
 ROLE_ID = 4040
 
@@ -25,6 +24,18 @@ PROFILES = [
     ("1004", "NOT_SIGNED_UP", 0),
     ("1005", "ASSIGNED", 1),
 ]
+
+
+#: Why the tests standing in for the role helpers fail until those are a service of their
+#: own (#283).
+_NOT_YET_A_ROLE_SERVICE = "#283: the role helpers are not yet a TeamRoleService of their own"
+
+
+def _roles(db_path: str):
+    """The team-role service on *db_path*, as the builder hands it to placement."""
+    from leaguebot.core.services.team_role_service import TeamRoleService
+
+    return TeamRoleService(db_path)
 
 
 @pytest.fixture
@@ -58,12 +69,13 @@ def _guild(*, members: dict | None = None, role_present: bool = True):
     return guild
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_every_driver_the_driver_role_belongs_to_is_given_it(db_path):
     """Nobody else is given it: not a signup still in review, not a former driver, and not a
     test driver, who holds no role at all."""
     guild = _guild()
 
-    outcome = await PlacementService(db_path).grant_to_every_driver(guild, ROLE_ID)
+    outcome = await _roles(db_path).grant_to_every_driver(guild, ROLE_ID)
 
     assert outcome.granted == 2
     assert outcome.not_granted == []
@@ -73,43 +85,47 @@ async def test_every_driver_the_driver_role_belongs_to_is_given_it(db_path):
     assert asked == [1001, 1002]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_driver_discord_refuses_is_named_and_the_rest_still_get_it(db_path):
     refused = MagicMock(add_roles=AsyncMock(side_effect=discord.Forbidden(MagicMock(status=403), "no")))
     granted = MagicMock(add_roles=AsyncMock())
     guild = _guild(members={1001: refused, 1002: granted})
 
-    outcome = await PlacementService(db_path).grant_to_every_driver(guild, ROLE_ID)
+    outcome = await _roles(db_path).grant_to_every_driver(guild, ROLE_ID)
 
     assert outcome.not_granted == ["1001"]
     assert outcome.granted == 1
     granted.add_roles.assert_awaited_once()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_driver_not_cached_is_fetched(db_path):
     fetched = MagicMock(add_roles=AsyncMock())
     guild = _guild(members={1002: MagicMock(add_roles=AsyncMock())})
     guild.fetch_member = AsyncMock(return_value=fetched)
 
-    outcome = await PlacementService(db_path).grant_to_every_driver(guild, ROLE_ID)
+    outcome = await _roles(db_path).grant_to_every_driver(guild, ROLE_ID)
 
     assert outcome.granted == 2
     fetched.add_roles.assert_awaited_once()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_driver_who_has_left_is_passed_over(db_path):
     guild = _guild(members={1002: MagicMock(add_roles=AsyncMock())})
 
-    outcome = await PlacementService(db_path).grant_to_every_driver(guild, ROLE_ID)
+    outcome = await _roles(db_path).grant_to_every_driver(guild, ROLE_ID)
 
     assert outcome.granted == 1
     assert outcome.not_granted == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_role_not_on_the_server_is_granted_to_nobody_and_says_so(db_path):
     """The command checks the role first; this only keeps a race from reading as success."""
     guild = _guild(role_present=False)
 
-    outcome = await PlacementService(db_path).grant_to_every_driver(guild, ROLE_ID)
+    outcome = await _roles(db_path).grant_to_every_driver(guild, ROLE_ID)
 
     assert outcome.granted == 0
     assert outcome.not_granted == ["1001", "1002"]

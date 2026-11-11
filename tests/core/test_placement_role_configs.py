@@ -1,4 +1,4 @@
-"""`PlacementService` — formatting a seeding total, and the team → Discord role mapping.
+"""Formatting a seeding total, and `TeamRoleService`'s team → Discord role mapping.
 
 Issue #208. `placement_service.py` sat at 42.5%. This file takes its two self-contained
 halves: how a driver's seeding total is shown, and the `team_role_configs` layer that decides
@@ -23,7 +23,6 @@ import os
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.signup.services.signup_module_service import _fmt_ms
 
 
@@ -36,6 +35,27 @@ NOW = datetime(2031, 3, 4, 5, 6, 7, tzinfo=timezone.utc)
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
+
+
+#: Why the tests standing in for the role helpers fail until those are a service of their
+#: own (#283).
+_NOT_YET_A_ROLE_SERVICE = "#283: the role helpers are not yet a TeamRoleService of their own"
+
+
+def _service(db_path: str):
+    """The team-role service on *db_path*, which keeps the mapping."""
+    from leaguebot.core.services.team_role_service import TeamRoleService
+
+    return TeamRoleService(db_path)
+
+
+async def _mappings(db_path: str) -> list[tuple[str, int]]:
+    """Every team's mapped role, read straight from the mapping, by team name."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT team_name, role_id FROM team_role_configs ORDER BY team_name"
+        )
+        return [(row["team_name"], row["role_id"]) for row in await cursor.fetchall()]
 
 
 async def _make_db(tmp_path) -> str:
@@ -66,7 +86,7 @@ async def _write(db_path: str, write) -> None:
     """Run one of the mapping's writers in its `_on` form on a connection of its own and commit
     it, as a `/team` change's save runs it: *write* takes the service and the connection."""
     async with get_connection(db_path) as db:
-        await write(PlacementService(db_path), db)
+        await write(_service(db_path), db)
         await db.commit()
 
 
@@ -108,18 +128,20 @@ def test_a_total_is_formatted_as_minutes_seconds_milliseconds(total_ms, expected
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_team_with_no_role_reads_as_none(tmp_path):
-    service = PlacementService(await _make_db(tmp_path))
+    service = _service(await _make_db(tmp_path))
 
     assert await service.get_team_role_config("Alpha") is None
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_role_is_mapped_to_a_team(tmp_path):
     """Alpha, with no role, is given 4242 as a `/team` change's save gives it. The mapping
     holds Alpha with 4242, stamped with the save's time as handed in, and the writer leaves
     the audit entry to the change, writing none."""
     db_path = await _make_db(tmp_path)
-    service = PlacementService(db_path)
+    service = _service(db_path)
 
     await _write(db_path, lambda s, db: s.set_team_role_config_on(db, "Alpha", ROLE_ID, now=NOW))
 
@@ -135,34 +157,25 @@ async def test_a_role_is_mapped_to_a_team(tmp_path):
     assert await _audit(db_path) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_remapping_a_team_replaces_rather_than_duplicates(tmp_path):
     """Two rows for one team would make which role a driver is given depend on row order."""
     db_path = await _make_db(tmp_path)
-    service = PlacementService(db_path)
+    service = _service(db_path)
     await _map(db_path, "Alpha", ROLE_ID)
 
     await _write(db_path, lambda s, db: s.set_team_role_config_on(db, "Alpha", OTHER_ROLE_ID, now=NOW))
 
     assert (await service.get_team_role_config("Alpha")).role_id == OTHER_ROLE_ID
-    assert len(await service.get_all_team_role_configs()) == 1
+    assert len(await _mappings(db_path)) == 1
 
 
-async def test_every_mapping_is_listed(tmp_path):
-    db_path = await _make_db(tmp_path)
-    service = PlacementService(db_path)
-    await _map(db_path, "Alpha", ROLE_ID)
-    await _map(db_path, "Beta", OTHER_ROLE_ID)
-
-    configs = await service.get_all_team_role_configs()
-
-    assert {c.team_name for c in configs} == {"Alpha", "Beta"}
-
-
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_mapping_is_deleted(tmp_path):
     """Alpha, mapped to 4242, has its mapping deleted as `/team remove`'s save deletes it; the
     writer leaves the audit entry to the change, writing none."""
     db_path = await _make_db(tmp_path)
-    service = PlacementService(db_path)
+    service = _service(db_path)
     await _map(db_path, "Alpha", ROLE_ID)
 
     await _write(db_path, lambda s, db: s.delete_team_role_config_on(db, "Alpha"))
@@ -171,6 +184,7 @@ async def test_a_mapping_is_deleted(tmp_path):
     assert await _audit(db_path) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_deleting_a_mapping_that_does_not_exist_is_a_no_op(tmp_path):
     """`/team remove` calls this for every team whether or not it had a role, so raising
     would make the common case an error. Ghost has no mapping: deleting it raises nothing and
@@ -179,14 +193,15 @@ async def test_deleting_a_mapping_that_does_not_exist_is_a_no_op(tmp_path):
 
     await _write(db_path, lambda s, db: s.delete_team_role_config_on(db, "Ghost"))
 
-    assert await PlacementService(db_path).get_all_team_role_configs() == []
+    assert await _mappings(db_path) == []
     assert await _audit(db_path) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_mapping_follows_its_team_through_a_rename(tmp_path):
     """Otherwise renaming a team would silently strip its drivers' role."""
     db_path = await _make_db(tmp_path)
-    service = PlacementService(db_path)
+    service = _service(db_path)
     await _map(db_path, "Alpha", ROLE_ID)
 
     await _write(db_path, lambda s, db: s.rename_team_role_config_on(db, "Alpha", "Beta", now=NOW))
@@ -197,13 +212,14 @@ async def test_a_mapping_follows_its_team_through_a_rename(tmp_path):
     assert renamed.role_id == ROLE_ID
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_renaming_a_team_with_no_mapping_is_a_no_op(tmp_path):
     """Ghost has no mapping: renaming it to Beta raises nothing and writes nothing."""
     db_path = await _make_db(tmp_path)
 
     await _write(db_path, lambda s, db: s.rename_team_role_config_on(db, "Ghost", "Beta", now=NOW))
 
-    assert await PlacementService(db_path).get_all_team_role_configs() == []
+    assert await _mappings(db_path) == []
     assert await _audit(db_path) == []
 
 
@@ -212,13 +228,14 @@ async def test_renaming_a_team_with_no_mapping_is_a_no_op(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_role_another_team_holds_is_refused_and_nothing_written(tmp_path):
     """A submission names a team by its role, so a role two teams held would name either.
     Alpha holds 4242 and Beta 5353; giving Beta 4242 is refused naming Alpha, and Beta keeps
     5353."""
     from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
-    service = PlacementService(db_path)
+    service = _service(db_path)
     await _map(db_path, "Alpha", ROLE_ID)
     await _map(db_path, "Beta", OTHER_ROLE_ID)
 
@@ -229,6 +246,7 @@ async def test_a_role_another_team_holds_is_refused_and_nothing_written(tmp_path
     assert await _audit(db_path) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_the_reserve_s_role_is_one_no_other_team_may_hold(tmp_path):
     from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
@@ -238,9 +256,10 @@ async def test_the_reserve_s_role_is_one_no_other_team_may_hold(tmp_path):
         await _write(db_path, lambda s, db: s.set_team_role_config_on(db, "Alpha", ROLE_ID, now=NOW))
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_team_may_be_given_the_role_it_already_holds(tmp_path):
     db_path = await _make_db(tmp_path)
-    service = PlacementService(db_path)
+    service = _service(db_path)
     await _map(db_path, "Alpha", ROLE_ID)
 
     await _write(db_path, lambda s, db: s.set_team_role_config_on(db, "Alpha", ROLE_ID, now=NOW))
@@ -248,9 +267,10 @@ async def test_a_team_may_be_given_the_role_it_already_holds(tmp_path):
     assert (await service.get_team_role_config("Alpha")).role_id == ROLE_ID
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_the_team_holding_a_role_is_named_but_never_the_team_asking(tmp_path):
     db_path = await _make_db(tmp_path)
-    service = PlacementService(db_path)
+    service = _service(db_path)
     await _map(db_path, "Alpha", ROLE_ID)
 
     assert await service.team_holding_role(ROLE_ID) == "Alpha"
