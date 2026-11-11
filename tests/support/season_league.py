@@ -1153,7 +1153,7 @@ async def season_end_extras(league: SeasonLeague, tmp_path: Any, *, test_mode: b
     _signup_services(league)
     bot.scheduler_service.jobstore_path = os.path.join(str(tmp_path), "jobs.sqlite")
     if test_mode:
-        from leaguebot.core.services.backup_service import backup_path
+        from leaguebot.core.services.upkeep.backup_service import backup_path
 
         await league.set_test_mode(True)
         for live in (league.db_path, bot.scheduler_service.jobstore_path):
@@ -1170,7 +1170,7 @@ async def season_end_extras(league: SeasonLeague, tmp_path: Any, *, test_mode: b
 
 def backup_saved(league: SeasonLeague) -> bool:
     """Whether a saved test-mode backup of the league's database is still present."""
-    from leaguebot.core.services.backup_service import backup_path
+    from leaguebot.core.services.upkeep.backup_service import backup_path
 
     return backup_path(league.db_path).is_file()
 

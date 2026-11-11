@@ -983,7 +983,7 @@ async def test_migrations_run_before_the_bot_connects(tmp_path, monkeypatch):
 
     import leaguebot.__main__ as bot_module
     from leaguebot.core.db import database
-    from leaguebot.core.services import backup_service
+    from leaguebot.core.services.upkeep import backup_service
 
     calls: list[str] = []
     settings = bot_module.Settings(token="not-a-real-token", db_path=str(tmp_path / "bot.db"),
@@ -1049,7 +1049,7 @@ async def test_migrations_run_before_the_bot_connects(tmp_path, monkeypatch):
 
     assert calls == ["restore", "migrations", "build", "connect"]
 
-    from leaguebot.core.services import start_up as start_up_module
+    from leaguebot.core.services.upkeep import start_up as start_up_module
 
     start_up = AsyncMock(side_effect=lambda **kwargs: calls.append("start-up") or True)
     monkeypatch.setattr(start_up_module, "start_up", start_up)

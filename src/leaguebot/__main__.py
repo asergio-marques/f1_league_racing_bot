@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 from leaguebot.attendance import wiring as attendance_wiring
 from leaguebot.core.services.seasons.season_review_changes import recover_expired_review_prompts
-from leaguebot.core.services.start_up import StartUpStep, start_up
+from leaguebot.core.services.upkeep.start_up import StartUpStep, start_up
 from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import (
@@ -564,7 +564,7 @@ def register_change_types(bot: LeagueBot) -> None:
         test_roster_remove_change,
     )
     from leaguebot.core.services.test_mode.test_mode_toggle_change import test_mode_toggle_change
-    from leaguebot.core.services.clean_change import clean_change
+    from leaguebot.core.services.upkeep.clean_change import clean_change
     from leaguebot.core.services.modules.hub_service import hub_refresh_change
     from leaguebot.core.services.drivers.lineup_posting import lineup_post_change
     from leaguebot.core.services.rounds.round_amend_change import (
@@ -1293,7 +1293,7 @@ async def main() -> None:
     # files underneath them is safe. `/test-mode backup restore` stages and does no more,
     # precisely so that the swap can happen at this point on the next start — under a
     # service or from a terminal alike.
-    from leaguebot.core.services.backup_service import apply_staged_restore
+    from leaguebot.core.services.upkeep.backup_service import apply_staged_restore
 
     if apply_staged_restore(settings.db_path, settings.jobstore_path):
         log.info("Started on a restored database.")

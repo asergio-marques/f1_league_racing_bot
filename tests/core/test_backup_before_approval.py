@@ -167,7 +167,7 @@ async def test_the_view_offers_three_answers():
 async def test_saving_takes_a_backup(tmp_path):
     import sqlite3
 
-    from leaguebot.core.services import backup_service
+    from leaguebot.core.services.upkeep import backup_service
 
     live = tmp_path / "bot.db"
     connection = sqlite3.connect(str(live))

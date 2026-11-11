@@ -23,7 +23,7 @@ import pytest
 # Imported under another name: pytest tries to *collect* any class whose name
 # begins with "Test", and warns that it cannot because the cog takes arguments.
 from leaguebot.core.cogs.test_mode_cog import TestModeCog as Cog
-from leaguebot.core.services import backup_service as bs
+from leaguebot.core.services.upkeep import backup_service as bs
 from tests.support.scheduler import PausingScheduler
 from tests.support.undecorate import undecorate
 

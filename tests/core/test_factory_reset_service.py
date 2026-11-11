@@ -11,8 +11,8 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services import backup_service, factory_reset_service
-from leaguebot.core.services.factory_reset_service import take_backup
+from leaguebot.core.services.upkeep import backup_service, factory_reset_service
+from leaguebot.core.services.upkeep.factory_reset_service import take_backup
 from leaguebot.core.utils.hooks import AwaitedHook
 from tests.support.channel_uses import setting_channels_given
 from tests.support.review_prompts import store_review_prompt

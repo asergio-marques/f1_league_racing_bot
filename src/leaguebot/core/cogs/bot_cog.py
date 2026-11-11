@@ -39,7 +39,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.models.change import LEAGUE_LANE
-from leaguebot.core.services import backup_service, factory_reset_service, pack_service
+from leaguebot.core.services.upkeep import backup_service, factory_reset_service, pack_service
 from leaguebot.core.services.settings.bot_init_change import ANOTHER_SERVER as _ANOTHER_SERVER
 from leaguebot.core.services.settings.bot_init_change import KIND as BOT_INIT
 from leaguebot.core.utils.channel_guard import (
@@ -567,7 +567,7 @@ class BotCog(commands.Cog):
         self, interaction: discord.Interaction, confirm: str
     ) -> None:
         """Back up, wipe, and clean Discord — in that order, and never the second without the
-        first. See `leaguebot.core.services.factory_reset_service`.
+        first. See `leaguebot.core.services.upkeep.factory_reset_service`.
 
         Only the server the command is given in is cleaned. A bot that was packed and not
         yet claimed may still hold the ids of another server's channels, and the owner of

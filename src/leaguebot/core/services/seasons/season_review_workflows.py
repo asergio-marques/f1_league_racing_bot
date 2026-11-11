@@ -33,7 +33,7 @@ import discord
 
 from leaguebot.core.models.refusal import Refused
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services import backup_service
+from leaguebot.core.services.upkeep import backup_service
 from leaguebot.core.services.seasons import approval_checks
 from leaguebot.core.services.seasons.approval_checks import SignupModuleSettings
 from leaguebot.core.services.queue.change_queue import ChangeQueue

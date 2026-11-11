@@ -601,7 +601,7 @@ async def test_a_reset_cancels_every_pending_lapse_and_none_fires_after(tmp_path
     are cancelled, no reason is left waiting, and no lapse is recorded or told. The lapses keep
     their five minutes: a lapse of no length would fire while the second press reads the
     database, and leave one pending."""
-    from leaguebot.core.services.in_memory_state import clear_in_memory_state
+    from leaguebot.core.services.upkeep.in_memory_state import clear_in_memory_state
 
     league = await _league(tmp_path)
     league.roles_held[SECOND_MANAGER] = {MANAGER_ROLE_ID}

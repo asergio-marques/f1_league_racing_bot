@@ -18,7 +18,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from leaguebot.core.services import backup_service as bs
+from leaguebot.core.services.upkeep import backup_service as bs
 
 #: The time a lock is handed, as the command hands it the change queue's clock.
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)

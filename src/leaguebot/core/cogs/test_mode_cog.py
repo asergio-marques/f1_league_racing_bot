@@ -50,7 +50,7 @@ from leaguebot.core.services.test_mode.test_mode_service import (
     advance_next_step,
 )
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services import backup_service
+from leaguebot.core.services.upkeep import backup_service
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
 from leaguebot.core.utils.channel_guard import league_admin_only, changes_nothing
 from leaguebot.core.utils.input_validator import parse_user_id

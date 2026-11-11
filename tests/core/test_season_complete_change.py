@@ -318,7 +318,7 @@ def _raising_while(failing: dict[str, bool], reading: Any) -> Any:
 
 def _backup_undeletable(monkeypatch: Any, league: Any, refusing: dict[str, bool]) -> None:
     """The saved test-mode state cannot be deleted while *refusing* says so."""
-    from leaguebot.core.services.backup_service import backup_path
+    from leaguebot.core.services.upkeep.backup_service import backup_path
 
     saved = Path(backup_path(league.db_path))
     unlinking = Path.unlink

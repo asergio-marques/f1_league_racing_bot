@@ -19,7 +19,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from leaguebot.core.db.database import run_migrations
-from leaguebot.core.services.in_memory_state import clear_in_memory_state
+from leaguebot.core.services.upkeep.in_memory_state import clear_in_memory_state
 from tests.support.change_queue import (
     acknowledgement,
     attach_queue,

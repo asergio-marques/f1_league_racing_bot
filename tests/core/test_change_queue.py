@@ -1463,7 +1463,7 @@ async def test_a_job_after_a_restored_state_is_numbered_above_every_job_before_i
     are when the bot stops: the restore is applied at the next start, before any is opened, and
     Windows refuses to replace a file one still holds open."""
     from leaguebot.core.db.database import close_connections
-    from leaguebot.core.services import backup_service
+    from leaguebot.core.services.upkeep import backup_service
 
     _queue(env, _type(steps=[_act("a", [])]))
     jobstore = str(tmp_path / "scheduler.db")
@@ -1486,7 +1486,7 @@ async def test_a_job_after_a_factory_reset_is_numbered_above_every_job_before_it
     for is numbered above #2, so no number in the log channel names two jobs."""
     from unittest.mock import MagicMock
 
-    from leaguebot.core.services import factory_reset_service
+    from leaguebot.core.services.upkeep import factory_reset_service
 
     _queue(env, _type(steps=[_act("a", [])]))
     highest = await _numbered(env, 1, 2)

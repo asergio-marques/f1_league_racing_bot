@@ -774,7 +774,7 @@ LOG_CHANNEL_NAMED_BY = {
     "core/services/settings/config_service.py": "reads and stores the setting",
     "core/cogs/bot_cog.py": "the commands that set it",
     "core/services/settings/channel_registry_service.py": "lists it among the channels in use",
-    "core/services/pack_service.py": "clears it when the bot is packed",
+    "core/services/upkeep/pack_service.py": "clears it when the bot is packed",
     "core/services/settings/bot_settings.py": "the setting that sets it",
     "core/services/settings/bot_init_change.py": "the change that first claims it",
 }
@@ -957,11 +957,11 @@ POSTS_IN_A_JOB = "posts_in_a_job"
 #: A post made off the change queue, and why (#439 slice 6b). Every other function that posts
 #: carries `posts_in_a_job`.
 POSTS_OFF_THE_QUEUE: dict[tuple[str, str], str] = {
-    ("core/services/factory_reset_service.py", "clean_discord"): (
+    ("core/services/upkeep/factory_reset_service.py", "clean_discord"): (
         "the factory reset's clean-up: the database the queue lives in is emptied, and no log "
         "channel or roles remain for Retry and Discard"
     ),
-    ("core/services/factory_reset_service.py", "_delete_own_messages"): (
+    ("core/services/upkeep/factory_reset_service.py", "_delete_own_messages"): (
         "the factory reset's clean-up, which passes over a channel it cannot clean"
     ),
     ("core/cogs/bot_cog.py", "_open_progress"): (
@@ -1071,7 +1071,7 @@ def test_the_job_check_passes_a_decorated_post_and_a_post_off_the_queue_with_its
     """Of three functions that post, the one carrying `posts_in_a_job` (by name or through its
     module) passes, the factory reset's clean-up, named with its reason, passes, and the third,
     which carries neither, is counted."""
-    path = "core/services/factory_reset_service.py"
+    path = "core/services/upkeep/factory_reset_service.py"
     nodes = _sample(
         "@posts_in_a_job\n"
         "async def post_the_sheet(channel):\n"
@@ -1998,9 +1998,9 @@ SAVES_ALLOWED = {
     ("core/services/posting/retry_service.py", "enqueue"): "the retry queue for log lines",
     ("core/services/posting/retry_service.py", "mark_delivered"): "the retry queue for log lines",
     ("core/services/posting/retry_service.py", "mark_failed"): "the retry queue for log lines",
-    ("core/services/backup_service.py", "_write_empty_database"):
+    ("core/services/upkeep/backup_service.py", "_write_empty_database"):
         "writes the scheduler's empty file, not the league's",
-    ("core/services/pack_service.py", "pack"):
+    ("core/services/upkeep/pack_service.py", "pack"):
         "`/bot pack` stays off the queue, refused while any lane holds a job (architecture.md, "
         "\"Every change goes through one queue\")",
 }
@@ -2132,11 +2132,11 @@ _CONNECTION_SQL = re.compile(r"^\s*(PRAGMA|ATTACH|CREATE\s+TEMP(ORARY)?)\b", re.
 #: The functions allowed for good to set a connection up, and why: each works on a connection it
 #: opened itself with `sqlite3.connect` and closes, which `get_connection` never lends.
 CONNECTIONS_OF_THEIR_OWN = {
-    ("core/services/backup_service.py", "is_readable_database"):
+    ("core/services/upkeep/backup_service.py", "is_readable_database"):
         "checks a copy's integrity on a connection of its own",
-    ("core/services/backup_service.py", "_write_empty_database"):
+    ("core/services/upkeep/backup_service.py", "_write_empty_database"):
         "writes the scheduler's empty file on a connection of its own",
-    ("core/services/factory_reset_service.py", "_self_contained"):
+    ("core/services/upkeep/factory_reset_service.py", "_self_contained"):
         "takes a backup copy out of WAL on a connection of its own",
     ("core/services/scheduler_service.py", "prepare_jobstore"):
         "sets the scheduler's job store to WAL on a connection of its own",
@@ -2293,7 +2293,7 @@ def _spliced_reads(node: ast.JoinedStr) -> int:
 SPLICED_READS_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/settings/channel_registry_service.py", "find_channel_use"):
         (2, "core's own settings tables, `SERVER_SOURCES` and `DIVISION_SOURCES`"),
-    ("core/services/factory_reset_service.py", "gather_targets"): (
+    ("core/services/upkeep/factory_reset_service.py", "gather_targets"): (
         1,
         "core's own settings tables, `SERVER_SOURCES` and `DIVISION_SOURCES`, and core's "
         "`season_review_prompts` and `pending_messages`",
@@ -2714,7 +2714,7 @@ def test_the_read_check_counts_a_table_spliced_in_unless_its_function_was_read_b
         {("results/services/sample_service.py", "handler"): 5}
     )
 
-    path, function = "core/services/factory_reset_service.py", "gather_targets"
+    path, function = "core/services/upkeep/factory_reset_service.py", "gather_targets"
     assert (path, function) in SPLICED_READS_READ_BY_HAND
     read_by_hand = source.replace("handler", function)
     assert _reads_outside_the_owner_among(_sample(read_by_hand, path)) == Counter({(path, function): 1})
@@ -2744,7 +2744,7 @@ def test_every_spliced_read_read_by_hand_is_still_what_it_was():
 SPLICED_SOURCES: tuple[tuple[str, str], ...] = (
     ("core/services/settings/channel_registry_service.py", "SERVER_SOURCES"),
     ("core/services/settings/channel_registry_service.py", "DIVISION_SOURCES"),
-    ("core/services/factory_reset_service.py", "_OTHER_SOURCES"),
+    ("core/services/upkeep/factory_reset_service.py", "_OTHER_SOURCES"),
     ("results/services/verdict_records.py", "VERDICT_TABLES"),
 )
 

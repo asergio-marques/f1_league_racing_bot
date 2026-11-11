@@ -17,7 +17,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services.pack_service import KEPT_JOBS, PackRefused, pack
+from leaguebot.core.services.upkeep.pack_service import KEPT_JOBS, PackRefused, pack
 from leaguebot.core.services.scheduler_service import PORTRAIT_REFRESH_JOB_ID
 from tests.support.pack_hook import pack_hook
 from tests.support.review_prompts import store_review_prompt
@@ -148,7 +148,7 @@ async def test_what_stops_a_pack_is_asked_of_the_service_by_the_database_s_path(
     connection of its own (#283): the current season as its number and stage, and the job a
     pack would wait on as its number, whether it is stopped, and its lane. A finished season
     and an empty queue stop nothing."""
-    from leaguebot.core.services.pack_service import what_stops_a_pack
+    from leaguebot.core.services.upkeep.pack_service import what_stops_a_pack
 
     await _seed(db_path, stage=stage)
     if queued:
@@ -305,7 +305,7 @@ async def test_pack_drops_the_league_state_held_in_memory(db_path, monkeypatch):
     await _seed(db_path)
     cleared = []
     monkeypatch.setattr(
-        "leaguebot.core.services.pack_service.clear_in_memory_state",
+        "leaguebot.core.services.upkeep.pack_service.clear_in_memory_state",
         lambda hook, *, queue: cleared.append((hook, queue)),
     )
     hook = object()

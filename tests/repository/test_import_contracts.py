@@ -192,7 +192,6 @@ CORE_LEAGUE_RULE_FOLDERS = frozenset(
 CORE_SERVICES_LOOSE = frozenset({"__init__.py", "scheduler_service.py"})
 
 
-@pytest.mark.xfail(strict=True, reason="#283: core's services are not yet in topic folders")
 def test_core_s_services_sit_in_topic_folders_plumbing_apart_from_league_rules():
     """Core's services are grouped by topic into packages, and no folder holds both plumbing and a
     league rule, so that a later review of what core holds can move a whole folder rather than

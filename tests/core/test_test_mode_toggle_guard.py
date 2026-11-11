@@ -177,7 +177,7 @@ def _success_lines(cog) -> list[str]:
 
 
 def _save_backup(db_path: str, jobstore: str) -> None:
-    from leaguebot.core.services import backup_service
+    from leaguebot.core.services.upkeep import backup_service
 
     Path(jobstore).write_bytes(b"")
     backup_service.backup_path(db_path).write_bytes(b"saved")
@@ -423,7 +423,7 @@ async def test_switching_test_mode_off_hands_the_bots_delete_hook(cog, db_path):
 async def test_toggling_off_deletes_the_saved_backup(cog, db_path):
     """Decided 2026-09-17: the backup commands run in test mode alone, so a state kept past
     it is one nothing could restore. The lock does not protect it."""
-    from leaguebot.core.services import backup_service
+    from leaguebot.core.services.upkeep import backup_service
 
     await _toggle(cog)  # on
     jobstore = cog.bot.scheduler_service.jobstore_path
@@ -460,7 +460,7 @@ async def test_a_backup_that_cannot_be_deleted_stops_the_queue_after_test_mode_i
     end words it; the log channel holds the toggle's one success line, naming Admin, test mode
     disabled and the one fake driver removed, with no backup deleted; the backup stays, test mode
     stays off, and the queue is no longer stopped."""
-    from leaguebot.core.services import backup_service
+    from leaguebot.core.services.upkeep import backup_service
 
     await _in_test_mode(db_path)
     await _add_driver(db_path, FAKE_DRIVER, "UNASSIGNED", test=True)
@@ -616,7 +616,7 @@ async def test_a_toggle_that_finds_test_mode_already_set_says_nothing_changed(
     flag where it was asked and changes nothing: Admin is told test mode is already *state*, the
     log channel takes one Nothing changed line, no audit entry is written, and for *off* no
     forecast is cleared and the backup is still held."""
-    from leaguebot.core.services import backup_service
+    from leaguebot.core.services.upkeep import backup_service
 
     if test_mode:
         await _in_test_mode(db_path)

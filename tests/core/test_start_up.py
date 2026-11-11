@@ -17,7 +17,7 @@ import importlib
 import logging
 from typing import Any
 
-_MODULE = "leaguebot.core.services.start_up"
+_MODULE = "leaguebot.core.services.upkeep.start_up"
 
 
 def _fresh_start_up() -> Any:

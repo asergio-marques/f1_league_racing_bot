@@ -1642,7 +1642,7 @@ async def test_bot_pack_logs_while_the_log_channel_still_exists(tmp_path):
 
 
 async def test_bot_pack_losing_a_race_to_a_new_season_says_so(tmp_path, monkeypatch):
-    from leaguebot.core.services import pack_service
+    from leaguebot.core.services.upkeep import pack_service
 
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
@@ -1672,7 +1672,7 @@ async def test_bot_pack_losing_a_race_to_a_queued_job_names_the_job_not_a_season
     refusal inside its transaction (#439), and the admin is told of the job it would wait on,
     not of a season the league does not have: the reply names the job, on the queue (the league's lane), and says to let it finish,
     and the log channel records the refusal after the line the pack wrote as it began."""
-    from leaguebot.core.services import pack_service
+    from leaguebot.core.services.upkeep import pack_service
 
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
@@ -1810,7 +1810,7 @@ async def test_bot_factory_reset_erases_nothing_without_a_backup(tmp_path, monke
     refusal (owner, 2026-09-29): the standard failure reply stating that nothing was erased, with
     no raw error in Discord, and a failure line in the log channel, whose configuration is still
     there to find it (#482)."""
-    from leaguebot.core.services import backup_service, factory_reset_service
+    from leaguebot.core.services.upkeep import backup_service, factory_reset_service
     from leaguebot.core.utils.interaction_errors import failure_reply
 
     def fail(*_args, **_kwargs):
@@ -1879,7 +1879,7 @@ async def test_bot_factory_reset_reports_to_the_log_where_dms_are_closed(tmp_pat
 
 
 async def test_a_clean_up_that_breaks_says_where_it_stopped(tmp_path, monkeypatch):
-    from leaguebot.core.services import factory_reset_service
+    from leaguebot.core.services.upkeep import factory_reset_service
 
     async def broken(*_args, **_kwargs):
         raise RuntimeError("gateway lost")
@@ -1924,7 +1924,7 @@ def _clean_up_ending(monkeypatch, bot: MagicMock, ending: str) -> dict:
     "finished" cleans everything, "faults" finishes with a channel it could not clear, and
     "stopped" breaks part-way on something it did not expect.
     """
-    from leaguebot.core.services import factory_reset_service
+    from leaguebot.core.services.upkeep import factory_reset_service
 
     seen: dict = {}
 

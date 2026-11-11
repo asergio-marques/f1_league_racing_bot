@@ -30,7 +30,7 @@ import pytest
 from leaguebot.core.cogs import test_mode_cog as cog_module
 from leaguebot.core.cogs.test_mode_cog import TestModeCog as _Cog
 from leaguebot.core.cogs.test_mode_cog import _RosterImportModal
-from leaguebot.core.services import backup_service
+from leaguebot.core.services.upkeep import backup_service
 from leaguebot.core.services.test_mode import test_mode_service
 from leaguebot.core.utils import roster_import
 from leaguebot.results.services import result_submission_service

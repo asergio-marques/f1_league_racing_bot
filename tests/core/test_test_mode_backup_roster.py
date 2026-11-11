@@ -141,7 +141,7 @@ async def test_a_saved_backup_reports_when_it_was_taken_and_how_big():
     interaction = _interaction()
 
     with patch(
-        "leaguebot.core.services.backup_service.state", return_value=_backup_state(size_bytes=8192)
+        "leaguebot.core.services.upkeep.backup_service.state", return_value=_backup_state(size_bytes=8192)
     ):
         await undecorate(_Cog.backup_status)(cog, interaction)
 
@@ -157,7 +157,7 @@ async def test_an_unreadable_backup_is_called_out_emphatically():
     interaction = _interaction()
 
     with patch(
-        "leaguebot.core.services.backup_service.state", return_value=_backup_state(readable=False)
+        "leaguebot.core.services.upkeep.backup_service.state", return_value=_backup_state(readable=False)
     ):
         await undecorate(_Cog.backup_status)(cog, interaction)
 
@@ -168,7 +168,7 @@ async def test_a_readable_backup_says_so_plainly():
     cog = _make_cog()
     interaction = _interaction()
 
-    with patch("leaguebot.core.services.backup_service.state", return_value=_backup_state(readable=True)):
+    with patch("leaguebot.core.services.upkeep.backup_service.state", return_value=_backup_state(readable=True)):
         await undecorate(_Cog.backup_status)(cog, interaction)
 
     assert "Readable: yes" in _replied(interaction)
@@ -180,7 +180,7 @@ async def test_a_locked_backup_names_who_locked_it():
     interaction = _interaction()
 
     with patch(
-        "leaguebot.core.services.backup_service.state",
+        "leaguebot.core.services.upkeep.backup_service.state",
         return_value=_backup_state(locked=True, locked_by="Maintainer"),
     ):
         await undecorate(_Cog.backup_status)(cog, interaction)
@@ -192,7 +192,7 @@ async def test_an_unlocked_backup_reports_no_lock():
     cog = _make_cog()
     interaction = _interaction()
 
-    with patch("leaguebot.core.services.backup_service.state", return_value=_backup_state(locked=False)):
+    with patch("leaguebot.core.services.upkeep.backup_service.state", return_value=_backup_state(locked=False)):
         await undecorate(_Cog.backup_status)(cog, interaction)
 
     assert "Locked: no" in _replied(interaction)

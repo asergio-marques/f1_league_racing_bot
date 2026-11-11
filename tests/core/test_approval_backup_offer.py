@@ -118,7 +118,7 @@ def _answering(answer: str | None):
 async def _offer(cog, interaction, *, minutes_left: float = 5, state=None, answer=None):
     deadline = datetime.now(timezone.utc) + timedelta(minutes=minutes_left)
     with patch(
-        "leaguebot.core.services.backup_service.state", return_value=state or _backup_state()
+        "leaguebot.core.services.upkeep.backup_service.state", return_value=state or _backup_state()
     ), _answering(answer):
         return await run_workflow(
             "offer_backup_before_approving", cog.bot, interaction, deadline=deadline
@@ -205,7 +205,7 @@ async def test_the_question_inherits_what_is_left_of_the_review():
             return None
 
     deadline = datetime.now(timezone.utc) + timedelta(minutes=2)
-    with patch("leaguebot.core.services.backup_service.state", return_value=_backup_state()), patch(
+    with patch("leaguebot.core.services.upkeep.backup_service.state", return_value=_backup_state()), patch(
         _VIEW, new=_View
     ):
         await run_workflow(
@@ -369,7 +369,7 @@ async def test_the_scheduler_is_paused_for_the_copy():
     view = await _view(scheduler=scheduler)
     during: list[list[str]] = []
 
-    with patch("leaguebot.core.services.backup_service.save") as save:
+    with patch("leaguebot.core.services.upkeep.backup_service.save") as save:
         save.side_effect = lambda *a, **k: during.append(list(scheduler.events))
         await _press(view, "save", _button_interaction())
 
@@ -384,9 +384,9 @@ async def test_a_paused_scheduler_is_resumed_even_when_the_copy_fails():
     scheduler = PausingScheduler("/tmp/not-read-jobs.db")
     view = await _view(scheduler=scheduler)
 
-    from leaguebot.core.services import backup_service
+    from leaguebot.core.services.upkeep import backup_service
 
-    with patch("leaguebot.core.services.backup_service.save", side_effect=backup_service.BackupError("nope")):
+    with patch("leaguebot.core.services.upkeep.backup_service.save", side_effect=backup_service.BackupError("nope")):
         await _press(view, "save", _button_interaction())
 
     assert scheduler.events == ["pause", "resume"]
@@ -399,10 +399,10 @@ async def test_a_backup_that_cannot_be_taken_still_approves():
     view = await _view()
     interaction = _button_interaction()
 
-    from leaguebot.core.services import backup_service
+    from leaguebot.core.services.upkeep import backup_service
 
     with patch(
-        "leaguebot.core.services.backup_service.save", side_effect=backup_service.BackupError("no room")
+        "leaguebot.core.services.upkeep.backup_service.save", side_effect=backup_service.BackupError("no room")
     ):
         await _press(view, "save", interaction)
 
@@ -413,7 +413,7 @@ async def test_a_backup_that_cannot_be_taken_still_approves():
 async def test_approving_without_saving_asks_for_no_backup():
     view = await _view()
 
-    with patch("leaguebot.core.services.backup_service.save") as save:
+    with patch("leaguebot.core.services.upkeep.backup_service.save") as save:
         await _press(view, "skip", _button_interaction())
 
     save.assert_not_called()
@@ -438,7 +438,7 @@ async def test_every_button_stops_the_view(name):
     """A view left running holds the approval open past the answer it already has."""
     view = await _view()
 
-    with patch("leaguebot.core.services.backup_service.save"):
+    with patch("leaguebot.core.services.upkeep.backup_service.save"):
         await _press(view, name, _button_interaction())
 
     assert view.is_finished()
@@ -572,7 +572,7 @@ async def test_a_backup_saved_before_approving_writes_its_own_line():
     view = await _view(cog)
     interaction = _alex_pressing(cog)
 
-    with patch("leaguebot.core.services.backup_service.save") as save:
+    with patch("leaguebot.core.services.upkeep.backup_service.save") as save:
         await _press(view, "save", interaction)
 
     save.assert_called_once()
@@ -592,14 +592,14 @@ async def test_a_backup_refused_is_recorded_with_its_reason():
     He gets today's reply word for word and the approval goes on; the log gets one refusal line
     naming Alex and the save button, with the reason.
     """
-    from leaguebot.core.services import backup_service
+    from leaguebot.core.services.upkeep import backup_service
 
     cog = _recording_cog()
     view = await _view(cog)
     interaction = _alex_pressing(cog)
 
     with patch(
-        "leaguebot.core.services.backup_service.save",
+        "leaguebot.core.services.upkeep.backup_service.save",
         side_effect=backup_service.BackupError("the saved backup is locked"),
     ):
         await _press(view, "save", interaction)
@@ -627,7 +627,7 @@ async def test_a_backup_stopped_by_a_fault_is_recorded_and_the_approval_goes_on(
     "Saving a season before its placements are confirmed": "The manager shall be told that it was
     not taken and the confirmation shall continue".
     """
-    from leaguebot.core.services import backup_service
+    from leaguebot.core.services.upkeep import backup_service
 
     error = (
         backup_service.BackupFault("bot.db could not be copied: disk full")
@@ -638,7 +638,7 @@ async def test_a_backup_stopped_by_a_fault_is_recorded_and_the_approval_goes_on(
     view = await _view(cog)
     interaction = _alex_pressing(cog)
 
-    with patch("leaguebot.core.services.backup_service.save", side_effect=error):
+    with patch("leaguebot.core.services.upkeep.backup_service.save", side_effect=error):
         await _press(view, "save", interaction)
 
     assert view.answer == "skip"

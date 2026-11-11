@@ -29,7 +29,7 @@ from pathlib import Path
 import discord
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services import backup_service
+from leaguebot.core.services.upkeep import backup_service
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
 )
@@ -43,7 +43,7 @@ from leaguebot.core.services.settings.channel_registry_service import (
     DiscordTargets,
     channel_ids_in,
 )
-from leaguebot.core.services.in_memory_state import clear_in_memory_state
+from leaguebot.core.services.upkeep.in_memory_state import clear_in_memory_state
 from leaguebot.core.utils.hooks import AwaitedHook, Hook
 
 log = logging.getLogger(__name__)
