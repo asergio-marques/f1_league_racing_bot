@@ -470,3 +470,43 @@ async def test_a_failing_job_keeps_its_traceback(services, caplog, kind, arm, jo
     assert kind in record.getMessage()
     if key is not None:
         assert str(key) in record.getMessage()
+
+
+#: The one runner, as the job store saves it for every job: its module's path and its name.
+RUNNER_REFERENCE = "leaguebot.core.services.scheduler_service:_one_off_timer_job"
+
+
+async def test_every_stored_job_names_the_runner_by_its_pinned_module_path(services):
+    """Every way the scheduler arms a job is used, a one-off timer's included, on a paused
+    scheduler; every job is then read back as the job store's file holds it, and each names the
+    one runner by `leaguebot.core.services.scheduler_service:_one_off_timer_job`.
+
+    **The path is pinned, and `scheduler_service.py` stays where it is.** `SQLAlchemyJobStore`
+    saves a job's callable as text, its module's path and its name, and imports that path again
+    when it loads the job. Moving the file, or renaming the runner, would leave every job a saved
+    job store holds unloadable: the host's own after an update, and the scheduler's database in
+    every saved test-mode state (core_specification.md, "Saving a state and returning to it"). So
+    while core's other services are grouped into topic folders, this one stays at
+    `core/services/scheduler_service.py` (#283), and a move fails here before it lands."""
+    import pickle
+    import sqlite3
+
+    service = services()
+    service.start(paused=True)
+    rnd = _a_round()
+    for arm in dict.fromkeys(param.values[1] for param in EVERY_ARMED_KIND):
+        arm(service, rnd)
+    service.arm_once("review_lock_clear", 77, _now() + timedelta(hours=1))
+
+    connection = sqlite3.connect(service.jobstore_path)
+    try:
+        stored = {
+            job_id: pickle.loads(state)["func"]
+            for job_id, state in connection.execute("SELECT id, job_state FROM apscheduler_jobs")
+        }
+    finally:
+        connection.close()
+
+    expected = {param.values[2] for param in EVERY_ARMED_KIND} | {"once:review_lock_clear:77"}
+    assert expected <= set(stored)
+    assert set(stored.values()) == {RUNNER_REFERENCE}
