@@ -1,7 +1,7 @@
 """Core's capacity refusals, asked of the image module through the protocol core declares (#283).
 
-`PlacementService` holds no template. It counts the seats a placement would fill, asks the drawing
-the builder hands it whether the image module could draw that many, and refuses in its own words
+`TemplateCapacityService` holds no template. It counts the seats a placement would fill, asks the
+drawing the builder hands it whether the image module could draw that many, and refuses in its own words
 where it could not: the problem and its remedy are the image module's, and that the driver was
 **not** assigned is core's. A drawing that cannot answer lets the placement through, with the full
 error in the host's log, and a service handed no drawing asks nothing.
@@ -141,12 +141,32 @@ async def _seed(tmp_path, name: str = "capacity_guards"):
     return db_path, season_id, division_id
 
 
+def _capacity(db_path, drawing=None):
+    """The template capacity service on *db_path*, handed *drawing* (none by default, so it asks
+    nothing), as the builder makes it."""
+    from leaguebot.core.services.template_capacity_service import TemplateCapacityService
+
+    return TemplateCapacityService(db_path, drawing=drawing)
+
+
+def _guarded(db_path, drawing):
+    """The placement service on *db_path*, handed a capacity service that asks *drawing*."""
+    from leaguebot.core.services.placement_service import PlacementService
+
+    return PlacementService(db_path, capacity=_capacity(db_path, drawing))
+
+
+#: Why the capacity guards' tests fail until the guards are a service of their own (#283).
+_NOT_YET_A_SERVICE = "#283: the capacity guards are not yet a TemplateCapacityService of their own"
+
+
 async def _place(service, season_id, division_id, team):
     """Ask *service* whether the unplaced driver 9999 may be assigned to *team*: the guards
     `/driver assign` asks at the ask and again as its change starts."""
     await service.guard_assign(division_id, season_id, team, 9999)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 @pytest.mark.parametrize(
     "guard, team, refusal",
     [
@@ -165,41 +185,40 @@ async def test_placement_capacity_guards_run_with_a_stub_drawing(
     log)."""
     from leaguebot.core.models.refusal import Refused
     from leaguebot.core.services.image_drawing import CapacityProblem
-    from leaguebot.core.services.placement_service import PlacementService
 
     db_path, season_id, division_id = await _seed(tmp_path)
     refusing = _Drawing({guard: CapacityProblem(problem=PROBLEM, remedy=REMEDY)})
 
     with pytest.raises(Refused) as refused:
-        await _place(PlacementService(db_path, drawing=refusing), season_id, division_id, team)
+        await _place(_guarded(db_path, refusing), season_id, division_id, team)
 
     assert str(refused.value) == refusal
     assert guard in [name for name, _count in refusing.asked]
 
     db_path, season_id, division_id = await _seed(tmp_path, "quiet")
     quiet = _Drawing({})
-    await _place(PlacementService(db_path, drawing=quiet), season_id, division_id, team)
+    await _place(_guarded(db_path, quiet), season_id, division_id, team)
 
     assert guard in [name for name, _count in quiet.asked]
 
     db_path, season_id, division_id = await _seed(tmp_path, "raising")
     fault = RuntimeError("the drawing could not answer")
     raising = _Drawing({name: fault for name in GUARDS})
-    with caplog.at_level(logging.ERROR, logger="leaguebot.core.services.placement_service"):
-        await _place(PlacementService(db_path, drawing=raising), season_id, division_id, team)
+    with caplog.at_level(logging.ERROR, logger="leaguebot.core.services.template_capacity_service"):
+        await _place(_guarded(db_path, raising), season_id, division_id, team)
 
     assert guard in [name for name, _count in raising.asked]
     assert any(record.exc_info and record.exc_info[1] is fault for record in caplog.records)
 
 
 def _failing_reads(monkeypatch, fragment: str, fault: Exception) -> None:
-    """Every read `placement_service` makes whose SQL holds *fragment* raises *fault*; every
-    other read and write runs on the real connection."""
+    """Every read `template_capacity_service` makes whose SQL holds *fragment* raises *fault*;
+    every other read and write runs on the real connection."""
     from contextlib import asynccontextmanager
 
-    from leaguebot.core.services import placement_service
+    from leaguebot.core.services import template_capacity_service
 
-    real = placement_service.get_connection
+    real = template_capacity_service.get_connection
 
     class _Connection:
         def __init__(self, db):
@@ -218,9 +237,10 @@ def _failing_reads(monkeypatch, fragment: str, fault: Exception) -> None:
         async with real(*args, **kwargs) as db:
             yield _Connection(db)
 
-    monkeypatch.setattr(placement_service, "get_connection", connection)
+    monkeypatch.setattr(template_capacity_service, "get_connection", connection)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 @pytest.mark.parametrize(
     "team, read",
     [
@@ -237,19 +257,19 @@ async def test_a_capacity_guard_s_own_read_fault_lets_the_placement_through(
     """A guard's own count of the seats, read before the drawing is asked, sits inside the one
     catch with the asking: where the count raises, the guards let the assignment through and the
     error is kept whole in the host's log, as where the drawing raises."""
-    from leaguebot.core.services.placement_service import PlacementService
 
     db_path, season_id, division_id = await _seed(tmp_path)
     fault = RuntimeError("the seats could not be counted")
     _failing_reads(monkeypatch, read, fault)
-    with caplog.at_level(logging.ERROR, logger="leaguebot.core.services.placement_service"):
+    with caplog.at_level(logging.ERROR, logger="leaguebot.core.services.template_capacity_service"):
         await _place(
-            PlacementService(db_path, drawing=_Drawing({})), season_id, division_id, team
+            _guarded(db_path, _Drawing({})), season_id, division_id, team
         )
 
     assert any(record.exc_info and record.exc_info[1] is fault for record in caplog.records)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 @pytest.mark.parametrize(
     "team, asked",
     [
@@ -278,32 +298,32 @@ async def test_a_placement_asks_each_guard_its_own_count(tmp_path, team, asked):
     declared capacity every driver of the season's division. A reserve joins no classification,
     so a reserve placement never asks the standings; only a reserve fills the reserve block, so
     an ordinary placement never asks it (#140)."""
-    from leaguebot.core.services.placement_service import PlacementService
 
     db_path, season_id, division_id = await _seed(tmp_path)
     drawing = _Drawing({})
 
-    await _place(PlacementService(db_path, drawing=drawing), season_id, division_id, team)
+    await _place(_guarded(db_path, drawing), season_id, division_id, team)
 
     assert drawing.asked == asked
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 async def test_an_unknown_team_asks_neither_the_reserve_block_nor_the_standings(tmp_path):
     """Whether a team is the reserve cannot be known of a team the division does not hold, so
     the two guards that ask it are left out and the guards raise nothing: the assignment's own
     check refuses the team in its own words (`test_placement_assign.py`)."""
-    from leaguebot.core.services.placement_service import PlacementService
 
     db_path, season_id, division_id = await _seed(tmp_path)
     drawing = _Drawing({})
 
-    await _place(PlacementService(db_path, drawing=drawing), season_id, division_id, "No Such Team")
+    await _place(_guarded(db_path, drawing), season_id, division_id, "No Such Team")
 
     asked = [name for name, _count in drawing.asked]
     assert "reserve_capacity_problem" not in asked
     assert "standings_capacity_problem" not in asked
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 @pytest.mark.parametrize(
     "added, asked",
     [
@@ -331,38 +351,37 @@ async def test_a_roster_asks_each_guard_once_summed_across_its_teams(tmp_path, a
     drivers already seated and every driver the roster adds across its teams; a team the
     division does not hold adds nothing, the roster refusing it in its own words; and the
     declared capacity is never asked, since every catalogue declares none."""
-    from leaguebot.core.services.placement_service import PlacementService
 
     db_path, _season_id, division_id = await _seed(tmp_path)
     drawing = _Drawing({})
 
-    await PlacementService(db_path, drawing=drawing).guard_roster_capacity(division_id, added)
+    await _capacity(db_path, drawing).guard_roster_capacity(division_id, added)
 
     assert drawing.asked == asked
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 async def test_no_drawing_handed_means_no_guard(tmp_path):
     """A service built alone, as a test that exercises placement builds it, refuses no test
     roster however large: the four `test_no_bot_means_no_guard` tests, merged. That such a service
     places a driver is `test_placement_assign.py`'s."""
-    from leaguebot.core.services.placement_service import PlacementService
 
     db_path, _season_id, division_id = await _seed(tmp_path)
 
-    await PlacementService(db_path).guard_roster_capacity(
+    await _capacity(db_path).guard_roster_capacity(
         division_id, {RESERVE: 99, ORDINARY: 99}
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 async def test_a_guard_whose_switch_nobody_signed_up_for_raises(tmp_path):
     """The images module's switch reader was never signed up (`SwitchNotSignedUp`): that is a fault
     in the bot's assembly, not a guard that cannot run, so the placement raises it rather than
     letting the driver through unchecked."""
     from leaguebot.core.services.module_service import SwitchNotSignedUp
-    from leaguebot.core.services.placement_service import PlacementService
 
     db_path, season_id, division_id = await _seed(tmp_path)
     drawing = _Drawing({name: SwitchNotSignedUp("images") for name in GUARDS})
 
     with pytest.raises(SwitchNotSignedUp, match="images"):
-        await _place(PlacementService(db_path, drawing=drawing), season_id, division_id, RESERVE)
+        await _place(_guarded(db_path, drawing), season_id, division_id, RESERVE)
