@@ -20,6 +20,10 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
 
+#: Why the driver role's taking fails until `take_driver_role` is handed the team-role service
+#: (#283).
+_NOT_YET_A_ROLE_SERVICE = "#283: take_driver_role is not yet handed a TeamRoleService as roles="
+
 NOW = datetime(2031, 3, 4, 5, 6, 7, tzinfo=timezone.utc)
 
 
@@ -212,17 +216,18 @@ async def test_a_signup_in_review_has_its_channel_closed():
     scheduler_service.disarm.assert_called_once_with(INACTIVITY_TIMER, "1004")
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_the_driver_role_is_revoked_from_a_real_driver(db_path):
     """Max (1002) was Assigned when the season ended, and holds the league's driver role 555:
     his `take_driver_role` job takes it back."""
-    from leaguebot.core.services.placement_service import PlacementService
     from leaguebot.core.services.season_lifecycle_service import take_driver_role
+    from leaguebot.core.services.team_role_service import TeamRoleService
 
     guild, member, role = _member_holding(555, 1002)
     driver = {"user_id": "1002", "state": "ASSIGNED", "is_test_driver": 0}
 
     await take_driver_role(
-        guild, driver, placement=PlacementService(db_path), driver_role_id=555,
+        guild, driver, roles=TeamRoleService(db_path), driver_role_id=555,
         reason="Season ended",
     )
 
@@ -230,14 +235,15 @@ async def test_the_driver_role_is_revoked_from_a_real_driver(db_path):
     assert role in member.remove_roles.await_args.args
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_the_driver_role_survives_disabling_signup_and_is_still_revoked(db_path):
     """The driver role is the league's (issue #276). It lived in the signup module's
     configuration row, which disabling the module deletes, so the season's end then found no
     role to revoke and every driver carried it into the next season. Here there is no signup
     configuration at all, as after `/module disable signup`, and the league's role 555 is still
     taken from Max (1002) by his `take_driver_role` job."""
-    from leaguebot.core.services.placement_service import PlacementService
     from leaguebot.core.services.season_lifecycle_service import take_driver_role
+    from leaguebot.core.services.team_role_service import TeamRoleService
 
     async with get_connection(db_path) as db:
         await db.execute("UPDATE server_configs SET driver_role_id = 555")
@@ -250,7 +256,7 @@ async def test_the_driver_role_survives_disabling_signup_and_is_still_revoked(db
     driver = {"user_id": "1002", "state": "ASSIGNED", "is_test_driver": 0}
 
     await take_driver_role(
-        guild, driver, placement=PlacementService(db_path), driver_role_id=driver_role_id,
+        guild, driver, roles=TeamRoleService(db_path), driver_role_id=driver_role_id,
         reason="Season ended",
     )
 
@@ -548,6 +554,7 @@ async def test_a_signup_channel_that_cannot_be_held_raises():
     scheduler_service.disarm.assert_not_called()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_driver_role_discord_will_not_take_back_raises(tmp_path):
     """Max (1002) was Assigned when the season ended, and the league's driver role is 555.
     Discord refuses to take it back (403): the `take_driver_role` job raises, from the refusal,
@@ -556,8 +563,8 @@ async def test_a_driver_role_discord_will_not_take_back_raises(tmp_path):
     import discord
 
     from leaguebot.core.models.change import StepFailedOnDiscord
-    from leaguebot.core.services.placement_service import PlacementService
     from leaguebot.core.services.season_lifecycle_service import take_driver_role
+    from leaguebot.core.services.team_role_service import TeamRoleService
 
     role = MagicMock(id=555)
     member = MagicMock(id=1002)
@@ -572,7 +579,7 @@ async def test_a_driver_role_discord_will_not_take_back_raises(tmp_path):
 
     with pytest.raises(StepFailedOnDiscord) as raised:
         await take_driver_role(
-            guild, driver, placement=PlacementService(str(tmp_path / "db.sqlite")),
+            guild, driver, roles=TeamRoleService(str(tmp_path / "db.sqlite")),
             driver_role_id=555, reason="Season ended",
         )
 
