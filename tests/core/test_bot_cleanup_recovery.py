@@ -37,6 +37,11 @@ from leaguebot.attendance import wiring as attendance_wiring
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.weather import wiring as weather_wiring
 
+#: Why the tests of the catch-up's log lines fail until #440 is built.
+_PREFIX_NOT_YET = ("#440: the forecast clean-up catch-up's host-log lines still begin "
+                   "'_recover_missed_cleanups:', the entry point's function the change deletes, "
+                   "rather than the wiring recovery's own name")
+
 SEASON_ID = 1
 DIVISION_ID = 11
 ROUND_ID = 21
@@ -220,6 +225,7 @@ async def test_a_round_a_day_past_with_an_earlier_phase_standing_has_its_forecas
     assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
 
 
+@pytest.mark.xfail(strict=True, reason=_PREFIX_NOT_YET)
 async def test_a_superseded_forecast_whose_deletion_was_discarded_is_caught_up_with_the_round(
     tmp_path, caplog
 ):
@@ -227,17 +233,18 @@ async def test_a_superseded_forecast_whose_deletion_was_discarded_is_caught_up_w
     league admin discarded that job, so both forecasts are still recorded. The bot starts a day
     after the race: the catch-up asks the round's forecast clean-up, naming Phase 2 among what it
     deletes, so the discarded deletion is carried out with the round's clean-up (#439, slice 8,
-    W4)."""
+    W4). The host's log line begins with the name of weather's recovery that writes it."""
     db_path = await _make_db(tmp_path, phases=(2, 3))
 
     with caplog.at_level("INFO", logger="leaguebot"):
         assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
 
     lines = [record.getMessage() for record in caplog.records]
-    assert (f"_recover_missed_cleanups: deleting the Phase 2 and 3 forecasts of "
+    assert (f"recover_missed_forecast_clean_ups: deleting the Phase 2 and 3 forecasts of "
             f"round_id={ROUND_ID}") in lines, lines
 
 
+@pytest.mark.xfail(strict=True, reason=_PREFIX_NOT_YET)
 @pytest.mark.parametrize(
     "phases, named",
     [((3,), "the Phase 3 forecast"), ((2,), "the Phase 2 forecast"),
@@ -248,14 +255,16 @@ async def test_the_catch_up_s_log_line_names_the_forecast_it_deletes(
     tmp_path, caplog, phases, named
 ):
     """The host's log line for a forecast clean-up the catch-up asks names the forecast still
-    standing, "deleting the Phase 2 forecast of round_id=21", never a phase that is not."""
+    standing, "deleting the Phase 2 forecast of round_id=21", never a phase that is not, and
+    begins with the name of weather's recovery that writes it."""
     db_path = await _make_db(tmp_path, phases=phases)
 
     with caplog.at_level("INFO", logger="leaguebot"):
         await _recover(_bot(db_path))
 
     lines = [record.getMessage() for record in caplog.records]
-    assert f"_recover_missed_cleanups: deleting {named} of round_id={ROUND_ID}" in lines, lines
+    assert (f"recover_missed_forecast_clean_ups: deleting {named} of round_id={ROUND_ID}"
+            in lines), lines
 
 
 async def test_a_mystery_round_s_notice_asks_no_forecast_cleanup(tmp_path):
