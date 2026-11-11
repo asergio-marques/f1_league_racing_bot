@@ -1279,8 +1279,10 @@ def test_the_queue_check_lists_the_view_callbacks_in_results_services_under_its_
 
 # ── 10c. No service looks another service up on the bot ─────────────────────────────────────
 
-#: How the name of a service the bot holds ends (`core/utils/league_bot.py`).
+#: How the name of a service the bot holds ends (`core/utils/league_bot.py`), and the services
+#: named otherwise.
 _SERVICE_SUFFIX = "_service"
+_SERVICES_NAMED_OTHERWISE = frozenset({"lineup_poster"})
 
 
 def _visible(bound: dict[tuple[str, str], set[str]], path: str, function: str) -> set[str]:
@@ -1415,7 +1417,8 @@ def _service_lookups_among(nodes) -> Counter[tuple[str, str]]:
                 and bot_local(path, function, node.args[0])
                 and isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str)):
             name = node.args[1].value
-        if name is not None and name.endswith(_SERVICE_SUFFIX):
+        if name is not None and (
+                name.endswith(_SERVICE_SUFFIX) or name in _SERVICES_NAMED_OTHERWISE):
             found[(path, function)] += 1
     return found
 
