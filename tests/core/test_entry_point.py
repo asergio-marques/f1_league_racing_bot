@@ -852,6 +852,16 @@ _RECOVERIES_OF_THE_STEPS = {
 }
 
 
+#: The two start-up steps a module's wiring offers that reach further than a recovery handed the
+#: bot: the step's name, then where its function lives and under which name (decision 344).
+_STEPS_OFFERED_BY_A_WIRING = {
+    "amendment sweep": ("leaguebot.results.wiring", "arm_amendment_sweep"),
+    "wizards": ("leaguebot.signup.wiring", "recover_wizards"),
+}
+
+
+@pytest.mark.xfail(strict=True, reason="#283: the amendment sweep's arming and the wizards' "
+                   "recovery are still written by the builder, not offered by their module's wiring")
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     """`build` on paths under `tmp_path` gives the start-up's steps by name, in today's order
     (architecture.md, "Start-up runs once, in one function"), so the order is read from the list
@@ -878,6 +888,10 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     recovered by the bot's wizard service; and each other step hands its recovery the bot, the
     recovery stubbed where it lives, in its module's wiring or the entry point, and under its name in
     the entry point too, so the stub stands whichever way the entry point reaches it.
+
+    The amendment sweep and the wizards are then run once more, with the step results' wiring and
+    signup's wiring offer for each stubbed there: each step runs its module's function, handed the
+    bot, so the builder writes neither itself (architecture.md, "A module's wiring").
     """
     import importlib
 
@@ -942,6 +956,13 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
         ran.clear()
         await run()
         assert ran == [expected[step]], step
+
+    steps = dict(bot.start_up_steps)
+    for step, (home, function) in _STEPS_OFFERED_BY_A_WIRING.items():
+        monkeypatch.setattr(importlib.import_module(home), function, recovery(function))
+        ran.clear()
+        await steps[step]()
+        assert ran == [(function, (bot,), {})], step
 
 
 async def test_migrations_run_before_the_bot_connects(tmp_path, monkeypatch):
