@@ -205,11 +205,10 @@ CREATE TABLE session_results (
     submitted_at       TEXT,
     results_message_id INTEGER, fl_driver_override INTEGER,
     -- results_message_ids: JSON array of *every* message the posting occupies, the
-    -- anchor first. A table past 2000 characters is split across consecutive messages
-    -- and only the anchor was ever recorded, leaving deletion to guess the rest by
-    -- walking forward over bot-authored messages -- which mistakes an unrelated posting
-    -- below it for a continuation of this one. NULL on a row written before this
-    -- column existed; such a row falls back to the walk.
+    -- anchor first. A table past 2000 characters is split across consecutive messages,
+    -- and deletion takes down exactly the messages named here. NULL where no list was
+    -- recorded; the posting is then deleted by results_message_id alone, and nothing
+    -- guesses at the messages after it.
     results_message_ids TEXT,
     UNIQUE (round_id, session_type)
 );
@@ -378,8 +377,8 @@ CREATE TABLE "penalty_records" (
     announcement_channel_id TEXT,
     -- announcement_message_id: the verdict announcement itself, so an amendment can
     -- replace it rather than leaving a decision that contradicts the classification it
-    -- was applied to. NULL for a verdict announced before this column existed;
-    -- those cannot be replaced and are re-announced fresh, which the log says.
+    -- was applied to. NULL where no announcement id was recorded; such a verdict
+    -- cannot be replaced and is announced afresh, which the log says.
     announcement_message_id TEXT,
     -- The chunk list of that announcement, as elsewhere.
     announcement_message_ids TEXT
@@ -400,8 +399,8 @@ CREATE TABLE "appeal_records" (
     announcement_channel_id TEXT,
     -- announcement_message_id: the verdict announcement itself, so an amendment can
     -- replace it rather than leaving a decision that contradicts the classification it
-    -- was applied to. NULL for a verdict announced before this column existed;
-    -- those cannot be replaced and are re-announced fresh, which the log says.
+    -- was applied to. NULL where no announcement id was recorded; such a verdict
+    -- cannot be replaced and is announced afresh, which the log says.
     announcement_message_id TEXT,
     -- The chunk list of that announcement, as elsewhere.
     announcement_message_ids TEXT
