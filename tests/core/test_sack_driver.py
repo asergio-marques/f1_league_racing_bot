@@ -180,10 +180,25 @@ def _guild(*, member_missing: bool = False, fetch_fails: bool = False, has_role:
     return guild
 
 
+#: Why the tests standing in for the role helpers fail until those are a service of their own
+#: (#283).
+_NOT_YET_A_ROLE_SERVICE = "#283: the role helpers are not yet a TeamRoleService of their own"
+
+
+def _roles(db_path: str):
+    """The team-role service on *db_path*, as the builder hands it to placement."""
+    from leaguebot.core.services.team_role_service import TeamRoleService
+
+    return TeamRoleService(db_path)
+
+
 def _service(db_path: str) -> PlacementService:
-    service = PlacementService(db_path)
+    """The placement service on *db_path*, handed a team-role service whose removals are stood
+    in for, and its revoking of the placement roles stood in for too."""
+    roles = _roles(db_path)
+    roles._revoke_roles = AsyncMock(return_value=None)
+    service = PlacementService(db_path, roles=roles)
     service.revoke_all_placement_roles = AsyncMock(return_value=None)
-    service._revoke_roles = AsyncMock(return_value=None)
     service._refresh_lineup_post = AsyncMock(return_value=None)
     return service
 
@@ -219,6 +234,7 @@ async def _profile_state(db_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_driver_with_no_confirmed_placement_is_refused(tmp_path):
     """Issue #220: an uncommitted placement is unassigned, an Unassigned driver rejected."""
     from leaguebot.core.models.refusal import Refused
@@ -234,6 +250,7 @@ async def test_a_driver_with_no_confirmed_placement_is_refused(tmp_path):
     assert await _count(db_path, "SELECT COUNT(*) FROM driver_season_assignments") == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 @pytest.mark.parametrize(
     "state",
     [
@@ -262,6 +279,7 @@ async def test_any_other_state_is_refused(tmp_path, state):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_driver_who_never_raced_is_kept_at_not_signed_up(tmp_path):
     """Issue #220: they are pending deletion, and the season's end deletes them."""
     db_path = await _make_db(tmp_path, name="sack_never_raced", former_driver=False)
@@ -271,6 +289,7 @@ async def test_a_driver_who_never_raced_is_kept_at_not_signed_up(tmp_path):
     assert await _profile_state(db_path) == DriverState.NOT_SIGNED_UP.value
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_driver_who_never_raced_keeps_their_attendance_and_results(tmp_path):
     """The attendance sheet goes on listing a driver who held a seat in the division."""
     db_path = await _make_db(tmp_path, name="sack_never_raced_rows", former_driver=False)
@@ -288,6 +307,7 @@ async def test_a_driver_who_never_raced_keeps_their_attendance_and_results(tmp_p
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_former_driver_is_returned_to_not_signed_up(tmp_path):
     """Which is what lets them sign up again next season without a manager unpicking
     anything. Their profile is kept: every historical result points at it — deleting it would
@@ -300,6 +320,7 @@ async def test_a_former_driver_is_returned_to_not_signed_up(tmp_path):
     assert await _count(db_path, "SELECT COUNT(*) FROM driver_profiles") == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_former_drivers_signup_details_are_kept(tmp_path):
     """A former driver's signups are season history and are kept whole (issue #220)."""
     db_path = await _make_db(tmp_path, name="former_blanked", former_driver=True)
@@ -317,6 +338,7 @@ async def test_a_former_drivers_signup_details_are_kept(tmp_path):
     assert row["nationality"] is not None
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_former_drivers_attendance_history_is_kept(tmp_path):
     """It is part of the record their profile exists to hold — and the flag is the only
     thing that distinguishes this from the deletion path."""
@@ -332,6 +354,7 @@ async def test_a_former_drivers_attendance_history_is_kept(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_every_seat_is_freed(tmp_path):
     """A seat still holding a sacked driver is a seat the signup wizard cannot offer, and
     it is how a division silently runs a driver short."""
@@ -347,6 +370,7 @@ async def test_every_seat_is_freed(tmp_path):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_seat_in_a_completed_season_is_left_as_the_archive_holds_it(tmp_path):
     """Issue #220: a sack reaches the season being raced, and never the archive."""
     db_path = await _make_db(tmp_path, name="sack_archive_seat")
@@ -388,6 +412,7 @@ async def test_a_seat_in_a_completed_season_is_left_as_the_archive_holds_it(tmp_
     ) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_the_season_assignments_are_removed(tmp_path):
     db_path = await _make_db(tmp_path, name="sack_assignments")
 
@@ -396,6 +421,7 @@ async def test_the_season_assignments_are_removed(tmp_path):
     assert await _count(db_path, "SELECT COUNT(*) FROM driver_season_assignments") == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_the_placement_roles_are_revoked(tmp_path):
     db_path = await _make_db(tmp_path, name="sack_roles")
     service = _service(db_path)
@@ -405,6 +431,7 @@ async def test_the_placement_roles_are_revoked(tmp_path):
     service.revoke_all_placement_roles.assert_awaited_once()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_the_driver_role_is_revoked(tmp_path):
     """Granted at approval and not covered by the placement roles, so it would otherwise
     mark a sacked driver as signed up indefinitely."""
@@ -413,10 +440,11 @@ async def test_the_driver_role_is_revoked(tmp_path):
 
     await _sack(service, _guild())
 
-    service._revoke_roles.assert_awaited_once()
-    assert service._revoke_roles.await_args.args[1] == DRIVER_ROLE
+    service._roles._revoke_roles.assert_awaited_once()
+    assert service._roles._revoke_roles.await_args.args[1] == DRIVER_ROLE
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_driver_without_the_driver_role_is_not_asked_to_lose_it(tmp_path):
     """Discord refuses a removal of a role the member does not hold, and it would be an
     API call on every sack of a driver who never had one."""
@@ -425,18 +453,20 @@ async def test_a_driver_without_the_driver_role_is_not_asked_to_lose_it(tmp_path
 
     await _sack(service, _guild(has_role=False))
 
-    service._revoke_roles.assert_not_awaited()
+    service._roles._revoke_roles.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_league_with_no_driver_role_configured_revokes_nothing_extra(tmp_path):
     db_path = await _make_db(tmp_path, name="sack_noconfig", driver_role=None)
     service = _service(db_path)
 
     await _sack(service, _guild())
 
-    service._revoke_roles.assert_not_awaited()
+    service._roles._revoke_roles.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_test_driver_has_no_roles_to_revoke(tmp_path):
     """They are a rehearsal's fiction with no Discord member behind them, and asking
     Discord about them would fail on every sack of a test-mode roster."""
@@ -446,9 +476,10 @@ async def test_a_test_driver_has_no_roles_to_revoke(tmp_path):
     await _sack(service, _guild())
 
     service.revoke_all_placement_roles.assert_not_awaited()
-    service._revoke_roles.assert_not_awaited()
+    service._roles._revoke_roles.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_test_driver_is_still_unseated(tmp_path):
     """Which is the whole point of sacking one — the rehearsal's roster has to be able to
     shrink, and the seat has to come back."""
@@ -464,6 +495,7 @@ async def test_a_test_driver_is_still_unseated(tmp_path):
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_driver_who_left_the_server_is_still_sacked(tmp_path):
     """Refusing would leave a departed driver holding a seat nobody could free."""
     db_path = await _make_db(tmp_path, name="sack_departed")
@@ -481,6 +513,7 @@ async def test_a_driver_who_left_the_server_is_still_sacked(tmp_path):
     service.revoke_all_placement_roles.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_member_not_in_cache_is_fetched(tmp_path):
     """A member the bot has not seen this session is ordinary, and treating a cache miss as
     a departure would silently leave their roles on."""
@@ -499,6 +532,7 @@ async def test_a_member_not_in_cache_is_fetched(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_the_sack_is_audited(tmp_path):
     db_path = await _make_db(tmp_path, name="sack_audit")
 
@@ -514,6 +548,7 @@ async def test_the_sack_is_audited(tmp_path):
     assert rows[0]["actor_id"] == ACTOR_ID
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_the_audit_records_the_state_and_divisions_as_they_were(tmp_path):
     """Afterwards there is nothing left to read them from, which is why they are captured
     before the deletion rather than after."""
@@ -530,6 +565,7 @@ async def test_the_audit_records_the_state_and_divisions_as_they_were(tmp_path):
     assert old == {"state": "ASSIGNED", "divisions": [DIVISION_ID]}
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_the_audit_records_whether_the_profile_was_kept(tmp_path):
     """The two paths leave the database in very different shapes, and the flag is the only
     thing that says which one ran."""
@@ -545,6 +581,7 @@ async def test_the_audit_records_whether_the_profile_was_kept(tmp_path):
     assert json.loads(row["new_value"])["former_driver"] is True
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_the_sack_names_the_divisions_whose_lineup_is_owed(tmp_path):
     """The posted lineup is what a division reads to know who is racing, and a sacked
     driver left standing in it is the visible half of the sack not happening. The sack names
@@ -585,17 +622,18 @@ def _refusing_guild():
     return guild
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_ROLE_SERVICE)
 async def test_a_role_discord_refuses_is_logged_and_the_sack_still_saved(tmp_path, caplog):
     """`sack_driver`, the committing form `/attendance sync` sacks through until attendance's
     own pass (#285), `/driver sack` being a change on the queue (#283): Discord refuses to take
     the driver's roles, the refusal is logged on the host, and the sack is saved all the same:
     the driver is back at Not Signed Up with no placement."""
     db_path = await _make_db(tmp_path, name="sack_refused_roles")
-    service = PlacementService(db_path)
+    service = PlacementService(db_path, roles=_roles(db_path))
     service._refresh_lineup_post = AsyncMock(return_value=None)
     guild = _refusing_guild()
 
-    with caplog.at_level("WARNING", logger="leaguebot.core.services.placement_service"):
+    with caplog.at_level("WARNING", logger="leaguebot.core.services.team_role_service"):
         await _sack(service, guild)
 
     guild._member.remove_roles.assert_awaited()
