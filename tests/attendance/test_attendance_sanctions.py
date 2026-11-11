@@ -197,7 +197,7 @@ def _make_bot(db_path: str) -> MagicMock:
     placement = MagicMock()
     placement.sack_driver = AsyncMock(return_value=[DIVISION_ID])
     placement.move_driver = AsyncMock(return_value=None)
-    placement._refresh_lineup_post = AsyncMock(return_value=None)
+    bot.lineup_poster._refresh_lineup_post = AsyncMock(return_value=None)
     bot.placement_service = placement
 
     bot.output_router.post_log = AsyncMock(return_value=None)
@@ -429,7 +429,7 @@ async def test_an_autosack_of_drivers_who_never_raced_sacks_every_one_of_them(
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 20, second_profile: 25})
     bot = _make_bot(db_path)
     placement = PlacementService(db_path)
-    placement._refresh_lineup_post = AsyncMock(return_value=None)
+    bot.lineup_poster._refresh_lineup_post = AsyncMock(return_value=None)
     bot.placement_service = placement
 
     await _run(bot, db_path)
@@ -706,7 +706,7 @@ async def test_the_sheet_is_reposted_only_when_somebody_was_sanctioned(tmp_path,
         await _run(bot, db_path)
 
     assert asked == [(DIVISION_ID, ROUND_ID, {FULL_TIME_PROFILE})]
-    bot.placement_service._refresh_lineup_post.assert_not_awaited()
+    bot.lineup_poster._refresh_lineup_post.assert_not_awaited()
     assert _lineups_asked(bot) == [DIVISION_ID]
 
 
@@ -748,13 +748,13 @@ async def test_a_sync_s_autosack_asks_once_for_each_lineup_it_reached(
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
     bot = _make_bot(db_path)
     placement = PlacementService(db_path)
-    placement._refresh_lineup_post = AsyncMock(return_value=None)
+    bot.lineup_poster._refresh_lineup_post = AsyncMock(return_value=None)
     bot.placement_service = placement
 
     await _run(bot, db_path)
 
     assert sorted(_lineups_asked(bot)) == [DIVISION_ID, 2]
-    placement._refresh_lineup_post.assert_not_awaited()
+    bot.lineup_poster._refresh_lineup_post.assert_not_awaited()
 
 
 #: The change the run asks for the verdicts and banner its sanctions owe (#439, slice 6b, C37).

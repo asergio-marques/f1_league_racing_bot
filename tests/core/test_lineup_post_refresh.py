@@ -1,11 +1,12 @@
 """Reposting a division's lineup, and resolving a division a manager named.
 
-Issue #208. `PlacementService._refresh_lineup_post` and `resolve_division` were uncovered.
+Issue #208. `LineupPoster._refresh_lineup_post` and `PlacementService.resolve_division` were
+uncovered.
 The lineup is what a division reads to know who is racing, and it is reposted after every
 placement change — a seat filled, a driver sacked, a team rearranged.
 
 **The picture is asked of the drawing in front of an untouched body.** Where the drawing the
-builder hands `PlacementService` (core's drawing protocol, #283) answers that the league draws its
+builder hands `LineupPoster` (core's drawing protocol, #283) answers that the league draws its
 lineup, it draws the division's picture, and core posts it through the standing-post handler and
 releases its file. Where the league does not draw it — and only then — the text embed below runs.
 Either way the lineup is posted before the message it replaces is deleted, and that deletion is a
@@ -156,11 +157,16 @@ def _guild(*, channel=None, cache_miss: bool = False, fetch_fails: bool = False)
     return guild
 
 
+#: Why the lineup's tests fail until its posting is out of the placement service (#283).
+_NOT_YET_A_POSTER = "#283: the lineup posting is not yet a LineupPoster of its own"
+
 async def _refresh(db_path, guild, *, drawing=None):
-    """Pro's lineup posted, the placement handed *drawing* (none by default, so the text): gives
-    what `_refresh_lineup_post` returns."""
+    """Pro's lineup posted, the lineup poster handed *drawing* (none by default, so the text):
+    gives what `_refresh_lineup_post` returns."""
+    from leaguebot.core.services.lineup_posting import LineupPoster
+
     with in_a_job():
-        return await PlacementService(db_path, drawing=drawing)._refresh_lineup_post(
+        return await LineupPoster(db_path, drawing=drawing)._refresh_lineup_post(
             guild, DIVISION_ID
         )
 
@@ -168,8 +174,10 @@ async def _refresh(db_path, guild, *, drawing=None):
 async def _post(db_path, guild):
     """The text lineup posted with no drawing handed, so no picture asked for: gives what
     `_refresh_lineup_post` returns."""
+    from leaguebot.core.services.lineup_posting import LineupPoster
+
     with in_a_job():
-        return await PlacementService(db_path)._refresh_lineup_post(guild, DIVISION_ID)
+        return await LineupPoster(db_path)._refresh_lineup_post(guild, DIVISION_ID)
 
 
 def _embed(channel):
@@ -201,6 +209,7 @@ ONE_DRIVER = (("Red", False, 4242, False, None),)
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_a_configured_graphic_replaces_the_text_lineup(tmp_path):
     """Pro's lineup, one driver at Red, its old lineup message 8800; the drawing answers that the
     league draws its lineup, and draws Pro's as a PNG. Core posts the picture, and no embed, in
@@ -231,6 +240,7 @@ async def test_a_configured_graphic_replaces_the_text_lineup(tmp_path):
     assert await _stored_message_id(db_path) == OLD_MESSAGE_ID
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_an_inapplicable_graphic_falls_through_to_the_text(tmp_path):
     """The drawing answers that the league does not draw its lineup (the module off, the aspect
     off, or no template): nothing is drawn, the embed runs exactly as it did before the image
@@ -253,6 +263,7 @@ async def test_an_inapplicable_graphic_falls_through_to_the_text(tmp_path):
     pytest.param({"problem": "the template has no rows"}, id="a problem"),
     pytest.param({"fault": RuntimeError("the template has no rows")}, id="a fault"),
 ])
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_a_failing_graphic_falls_through_to_the_text(tmp_path, answer):
     """A placement must never be blocked by a graphic that would not render: the seat is
     already assigned by the time this runs, and no lineup at all is worse than a text one. Pro's
@@ -286,6 +297,7 @@ def _refusing_pictures(*, text_too: bool = False):
     return channel
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_a_refused_lineup_picture_is_posted_as_text_in_the_same_try(tmp_path):
     """Pro's lineup, one driver at Red, its old lineup message 8800; the drawing draws Pro's
     lineup as a PNG, and Discord refuses the send that carries it but takes the text. The text
@@ -311,6 +323,7 @@ async def test_a_refused_lineup_picture_is_posted_as_text_in_the_same_try(tmp_pa
     assert drawing.discarded == [png]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_a_refused_lineup_picture_and_text_stop_the_lane(tmp_path):
     """As above, but Discord refuses the text as well: the post raises for the change queue to
     stop on, saying "the lineup could not be posted: …", Pro still records 8800, and the PNG is
@@ -334,6 +347,7 @@ async def test_a_refused_lineup_picture_and_text_stop_the_lane(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_the_lineup_lists_each_team_and_its_drivers(tmp_path):
     db_path = await _make_db(
         tmp_path,
@@ -353,6 +367,7 @@ async def test_the_lineup_lists_each_team_and_its_drivers(tmp_path):
     assert "**Blue**: <@201>" in description
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_the_lineup_embed_notifies_nobody(tmp_path):
     """Pro's lineup, one driver at Red, is posted as the embed. It names the driver, and
     notifies nobody."""
@@ -365,6 +380,7 @@ async def test_the_lineup_embed_notifies_nobody(tmp_path):
     assert notified(channel.send.await_args.kwargs.get("allowed_mentions")) == NOBODY
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_the_lineup_is_titled_with_the_divisions_name(tmp_path):
     """A league with four divisions posts four of these, and they are told apart by nothing
     else."""
@@ -376,6 +392,7 @@ async def test_the_lineup_is_titled_with_the_divisions_name(tmp_path):
     assert "Pro" in _embed(channel).title
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_reserves_are_listed_after_a_separator(tmp_path):
     """A reserve is in the division and not in a team in the ordinary sense; a lineup that
     reads them as a fifth constructor misrepresents what a league is looking at."""
@@ -396,6 +413,7 @@ async def test_reserves_are_listed_after_a_separator(tmp_path):
     assert description.index("---") < description.index("**Reserves**")
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_a_division_of_reserves_alone_needs_no_separator(tmp_path):
     """A leading "---" would read as a section with nothing above it."""
     db_path = await _make_db(
@@ -410,6 +428,7 @@ async def test_a_division_of_reserves_alone_needs_no_separator(tmp_path):
     assert not _embed(channel).description.startswith("---")
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_a_test_driver_is_labelled_with_their_rehearsal_name(tmp_path):
     """A mention of a user id nobody holds renders as a raw id; the name beside it is what
     makes a rehearsal's lineup readable at all."""
@@ -425,6 +444,7 @@ async def test_a_test_driver_is_labelled_with_their_rehearsal_name(tmp_path):
     assert "(Mock Hamilton)" in _embed(channel).description
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_a_test_driver_with_no_name_is_mentioned_plainly(tmp_path):
     """An empty bracket after a mention is worse than no bracket."""
     db_path = await _make_db(
@@ -439,6 +459,7 @@ async def test_a_test_driver_with_no_name_is_mentioned_plainly(tmp_path):
     assert "()" not in _embed(channel).description
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_an_empty_division_posts_an_empty_lineup(tmp_path):
     """A division with no drivers yet is normal during signups, and the post is what tells
     a league the lineup exists and is empty — silence reads as the bot not working."""
@@ -455,6 +476,7 @@ async def test_an_empty_division_posts_an_empty_lineup(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_the_new_message_id_is_returned(tmp_path):
     """The post job's own save records it, and its next job deletes the lineup it replaces by
     the id read here; the poster itself writes nothing."""
@@ -473,6 +495,7 @@ async def test_the_new_message_id_is_returned(tmp_path):
     channel.fetch_message.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_a_failed_post_stores_no_message_id(tmp_path):
     """A refused send raises for the change queue to stop on and try again; nothing is stored,
     so the old lineup stays the one the division records."""
@@ -490,6 +513,7 @@ async def test_a_failed_post_stores_no_message_id(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_a_division_with_no_lineup_channel_posts_nothing(tmp_path):
     """Configuring one is optional, and a placement must not fail for want of it."""
     db_path = await _make_db(
@@ -502,6 +526,7 @@ async def test_a_division_with_no_lineup_channel_posts_nothing(tmp_path):
     channel.send.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_a_division_that_does_not_exist_posts_nothing(tmp_path):
     """Called from a cascade that may be removing the division itself."""
     db_path = await _make_db(tmp_path, name="lineup_nodiv", drivers=())
@@ -515,6 +540,7 @@ async def test_a_division_that_does_not_exist_posts_nothing(tmp_path):
     channel.send.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_a_channel_missing_from_the_cache_is_fetched(tmp_path):
     """A channel the bot has not seen this session is ordinary, and treating a cache miss
     as a deleted channel would silently stop posting a division's lineup."""
@@ -528,6 +554,7 @@ async def test_a_channel_missing_from_the_cache_is_fetched(tmp_path):
     channel.send.assert_awaited_once()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_a_channel_that_cannot_be_fetched_raises(tmp_path):
     """Genuinely deleted. The placement has already happened and is not undone for it; the
     post raises for the change queue to stop on, and posts nothing."""
@@ -540,6 +567,7 @@ async def test_a_channel_that_cannot_be_fetched_raises(tmp_path):
     channel.send.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_a_lineup_channel_that_is_not_a_text_channel_raises(tmp_path):
     """A voice or forum channel configured by mistake; `send` on one would raise or behave
     differently. The post raises for the change queue to stop on, and sends nothing."""

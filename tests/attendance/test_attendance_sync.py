@@ -147,7 +147,7 @@ async def test_a_second_sync_applies_nothing_twice(tmp_path):
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
     bot = _make_bot(db_path)
     placement = PlacementService(db_path)
-    placement._refresh_lineup_post = AsyncMock(return_value=None)
+    bot.lineup_poster._refresh_lineup_post = AsyncMock(return_value=None)
     bot.placement_service = placement
 
     with patch.object(
@@ -208,7 +208,7 @@ async def test_sync_still_applies_a_sanction_whose_role_change_discord_refuses(t
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
     bot = _make_bot(db_path)
     placement = PlacementService(db_path)
-    placement._refresh_lineup_post = AsyncMock(return_value=None)
+    bot.lineup_poster._refresh_lineup_post = AsyncMock(return_value=None)
     bot.placement_service = placement
     guild = MagicMock()
     guild.get_role = MagicMock(side_effect=lambda role_id: MagicMock(id=role_id))

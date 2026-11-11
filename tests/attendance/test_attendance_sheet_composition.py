@@ -155,7 +155,7 @@ async def _enforce(db_path, *, sack=None):
     bot.output_router.post_log = AsyncMock()
     # The sack of driver 2 names the lineups it owes (#439): both divisions they sat in.
     bot.placement_service.sack_driver = sack or AsyncMock(return_value=[PRO, AM])
-    bot.placement_service._refresh_lineup_post = AsyncMock()
+    bot.lineup_poster._refresh_lineup_post = AsyncMock()
     bot.change_queue.ask = AsyncMock()
 
     with patch("leaguebot.attendance.services.attendance_service.post_attendance_sheet",
