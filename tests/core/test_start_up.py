@@ -265,23 +265,36 @@ def _failing_queue(record: _Recorder, starting: Any, error: BaseException) -> No
 
 
 @pytest.mark.xfail(strict=True, reason=_NOT_YET)
-@pytest.mark.parametrize("arrange, named, ran, queue_started", [
+@pytest.mark.parametrize("arrange, named, posted, ran, queue_started", [
     pytest.param(_failing_core_step, "expired review prompts",
+                 "❌ The bot's start-up step `expired review prompts` failed — _Fault. "
+                 "The details are in the host's log.",
                  ["expired review prompts", "hub", "amendment sweep", "missed phases"], True,
                  id="a core step"),
     pytest.param(_failing_module_step, "RSVP views and deadlines",
+                 "❌ The bot's start-up step `RSVP views and deadlines` failed — _Fault. "
+                 "The details are in the host's log.",
                  ["hub", "missed check-in calls", "RSVP views and deadlines",
                   "missed check-in clean-ups", "missed phases"], True,
                  id="a module's step"),
-    pytest.param(_failing_switch, "results", ["hub", "missed phases"], True,
+    pytest.param(_failing_switch, "results",
+                 "❌ The bot's start-up step `results' switch` failed — SwitchNotSignedUp. "
+                 "The details are in the host's log.",
+                 ["hub", "missed phases"], True,
                  id="a module's switch read"),
-    pytest.param(_failing_list, "results", ["hub", "missed phases"], True,
+    pytest.param(_failing_list, "results",
+                 "❌ The bot's start-up step `results' start-up steps` failed — _Fault. "
+                 "The details are in the host's log.",
+                 ["hub", "missed phases"], True,
                  id="a module's list of steps"),
-    pytest.param(_failing_queue, "queue", ["hub", "missed phases"], False,
+    pytest.param(_failing_queue, "queue",
+                 "❌ The bot's start-up step `change queue start` failed — _Fault. "
+                 "The details are in the host's log.",
+                 ["hub", "missed phases"], False,
                  id="the queue's start"),
 ])
 async def test_a_failing_sweep_step_is_reported_to_the_log_channel_and_the_rest_carry_on(
-    caplog, arrange, named, ran, queue_started
+    caplog, arrange, named, posted, ran, queue_started
 ):
     """One part of the sweep raises: core's expired review prompts step (the hub and two modules'
     steps after it); attendance's RSVP views and deadlines, between its check-in calls and its
@@ -290,7 +303,8 @@ async def test_a_failing_sweep_step_is_reported_to_the_log_channel_and_the_rest_
     part that failed and the kind of fault and saying the detail is in the host's log; the host's log
     has the error with its traceback; every other step runs, a module whose switch or list cannot be
     read passed over; the queue starts unless its start was what failed, and the scheduler is
-    resumed, last."""
+    resumed, last. The line is pinned word for word, its ❌ mark included: the shape of a Discord
+    event's failure line, naming the step that failed."""
     from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
 
     module = _fresh_start_up()
@@ -304,8 +318,7 @@ async def test_a_failing_sweep_step_is_reported_to_the_log_channel_and_the_rest_
         await record.start_up(module, starting)
 
     assert record.ran() == ran
-    [line] = record.lines
-    assert named in line and type(error).__name__ in line and "host's log" in line, line
+    assert record.lines == [posted]
     errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
     [error_record] = errors
     assert named in error_record.getMessage()

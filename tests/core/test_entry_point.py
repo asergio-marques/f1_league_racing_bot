@@ -1146,7 +1146,8 @@ async def test_a_refused_command_sync_is_reported_to_the_log_channel(tmp_path, m
     """The bot reports itself ready, its start-up runs, and Discord refuses the slash command sync
     (`discord.HTTPException`). The host's log has the error, as before, and one line goes to the log
     channel naming the slash command sync and the kind of fault and saying the detail is in the
-    host's log (core specification, "When a command fails", the bot connecting)."""
+    host's log (core specification, "When a command fails", the bot connecting), pinned word for
+    word, its ❌ mark included, in the shape of a failing start-up step's line."""
     from types import SimpleNamespace
 
     import discord
@@ -1159,9 +1160,9 @@ async def test_a_refused_command_sync_is_reported_to_the_log_channel(tmp_path, m
         bot, _ = await _run_main(tmp_path, monkeypatch, calls, _Tree(calls, refusal))
 
     assert calls[-2:] == ["start-up", "commands synced"]
-    [line] = bot.lines
-    assert ("slash command sync" in line and "HTTPException" in line
-            and "host's log" in line), line
+    assert bot.lines == [
+        "❌ The bot's start-up step `slash command sync` failed — HTTPException. "
+        "The details are in the host's log."]
     assert [r for r in caplog.records
             if r.name == "leaguebot.__main__" and r.levelno >= logging.ERROR
             and "commands refused" in r.getMessage()], "the host's log has no line for the refusal"
