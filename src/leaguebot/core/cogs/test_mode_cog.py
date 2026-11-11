@@ -32,8 +32,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.services.test_mode_settings import NOT_IN_TEST_MODE
-from leaguebot.core.services.test_roster_changes import (
+from leaguebot.core.services.test_mode.test_mode_settings import NOT_IN_TEST_MODE
+from leaguebot.core.services.test_mode.test_roster_changes import (
     NOT_PLACING,
     TEST_ROSTER_ADD,
     TEST_ROSTER_ADD_BULK,
@@ -41,9 +41,9 @@ from leaguebot.core.services.test_roster_changes import (
     TEST_ROSTER_REMOVE,
     bulk_payload,
 )
-from leaguebot.core.services.test_mode_former_driver_change import TEST_MODE_FORMER_DRIVER
-from leaguebot.core.services.test_mode_toggle_change import TEST_MODE_TOGGLE
-from leaguebot.core.services.test_mode_service import (
+from leaguebot.core.services.test_mode.test_mode_former_driver_change import TEST_MODE_FORMER_DRIVER
+from leaguebot.core.services.test_mode.test_mode_toggle_change import TEST_MODE_TOGGLE
+from leaguebot.core.services.test_mode.test_mode_service import (
     PhaseEntry,
     build_review_summary,
     AdvanceStatus,
@@ -695,7 +695,7 @@ class TestModeCog(commands.Cog):
             )
             return
 
-        from leaguebot.core.services.test_roster_service import list_test_drivers
+        from leaguebot.core.services.test_mode.test_roster_service import list_test_drivers
 
         result = await list_test_drivers(
             division_name=division,

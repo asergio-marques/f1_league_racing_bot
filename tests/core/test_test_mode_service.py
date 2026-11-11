@@ -13,7 +13,7 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import read_scheduled_at
 from leaguebot.core.services.scheduler_service import SchedulerService
 from leaguebot.core.services.seasons.season_service import SeasonService
-from leaguebot.core.services.test_mode_service import (
+from leaguebot.core.services.test_mode.test_mode_service import (
     count_live_real_drivers,
     get_next_pending_phase,
     build_review_summary,
@@ -1389,7 +1389,7 @@ async def test_the_steps_passed_over_are_a_raced_round_s_undone_weather_steps(tm
     ahead. Advance passes over the weather steps of a raced round (owner, 2026-10-12, "Advance
     names what it skipped"), so the steps it names as passed over are round 1's Phases 1, 2 and
     3 and round 2's notice, in that order, and nothing of rounds 3 or 4."""
-    from leaguebot.core.services.test_mode_service import get_passed_over_steps
+    from leaguebot.core.services.test_mode.test_mode_service import get_passed_over_steps
 
     now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
     raced = "2026-10-12T11:00:00+00:00"
@@ -1416,7 +1416,7 @@ async def test_the_steps_passed_over_follow_the_order_the_rounds_raced(tmp_path)
     and round 2 (Monza), added after it, two hours ago, neither with a phase done and both
     moments stored in UTC with their offset. The steps named as passed over are round 2's Phases
     1, 2 and 3, then round 1's: in the order the rounds raced, not the order they were added."""
-    from leaguebot.core.services.test_mode_service import get_passed_over_steps
+    from leaguebot.core.services.test_mode.test_mode_service import get_passed_over_steps
 
     now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
     db_path = str(tmp_path / "passed_over_order.db")
@@ -1436,7 +1436,7 @@ async def test_the_steps_passed_over_follow_the_order_the_rounds_raced(tmp_path)
 async def test_no_step_is_passed_over_while_the_weather_module_is_off(tmp_path) -> None:
     """Weather is off, so nothing of it was armed and advance offers none of it: a raced round's
     undone phases are not named as passed over."""
-    from leaguebot.core.services.test_mode_service import get_passed_over_steps
+    from leaguebot.core.services.test_mode.test_mode_service import get_passed_over_steps
 
     now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
     db_path = str(tmp_path / "passed_over_off.db")
@@ -1478,7 +1478,7 @@ async def test_a_raced_step_advance_would_not_offer_anyway_is_not_named_as_passe
     offers nothing of a round that has ended (final, or its appeals being judged), of a cancelled
     round or division, nor a step already in hand on the change queue: so none of those is named
     either, and with Phase 1 in hand only Phases 2 and 3 are."""
-    from leaguebot.core.services.test_mode_service import get_passed_over_steps
+    from leaguebot.core.services.test_mode.test_mode_service import get_passed_over_steps
 
     now = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
     db_path = str(tmp_path / "passed_over_limits.db")
@@ -1518,7 +1518,7 @@ def _steps_hook(*modules, handed_to: list | None = None):
     """A `pending_steps_read` hook with one subscriber per *modules* entry, each a (pending,
     passed over) pair of (round, phase, kind) lists it hands back; each records the rounds and the
     moment it was handed in *handed_to*, where given."""
-    from leaguebot.core.services.test_mode_service import ModuleSteps, PendingStep
+    from leaguebot.core.services.test_mode.test_mode_service import ModuleSteps, PendingStep
     from leaguebot.core.utils.hooks import AwaitedHook
 
     hook = AwaitedHook()
@@ -1580,7 +1580,7 @@ async def test_core_offers_the_first_of_the_steps_the_modules_hand_back(
     earliest round first, a division breaking a tie, then within a round the notice or Phase 1,
     the check-in call, Phase 2, the last notice, Phase 3, the deadline and result submission;
     the clean-ups come after every other step of every round, in the order the rounds race."""
-    from leaguebot.core.services.test_mode_service import get_next_pending_phase
+    from leaguebot.core.services.test_mode.test_mode_service import get_next_pending_phase
 
     db_path = str(tmp_path / "ordered.db")
     await _three_rounds(db_path)
@@ -1629,7 +1629,7 @@ async def test_a_queued_job_is_offered_as_its_module_s_step(
     fire, does not jump an earlier round's step: round 2's Phase 1 job held though weather owes
     round 2 nothing, round 1's Phase 1 misfired and its Phase 2 job held, and round 1's Phase 1 is
     offered."""
-    from leaguebot.core.services.test_mode_service import get_next_pending_phase
+    from leaguebot.core.services.test_mode.test_mode_service import get_next_pending_phase
 
     db_path = str(tmp_path / "jobs.db")
     await _three_rounds(db_path)
@@ -1660,7 +1660,7 @@ async def test_a_round_that_has_ended_is_offered_its_clean_ups_alone(
     every session was entered as not held. Weather hands back its Phase 1 and its forecast
     clean-up, and results its submission: advance offers the clean-up alone, as a round that has
     ended offers nothing else."""
-    from leaguebot.core.services.test_mode_service import get_next_pending_phase
+    from leaguebot.core.services.test_mode.test_mode_service import get_next_pending_phase
 
     db_path = str(tmp_path / "ended.db")
     await _three_rounds(db_path)
@@ -1694,7 +1694,7 @@ async def test_the_steps_passed_over_are_the_modules_in_the_order_the_rounds_rac
     cancelled because every session was entered as not held. Advance names round 1's Phases 2
     and 3, then round 3's Phase 1: by the order the rounds race, the division, then the phase,
     and nothing of a round that has ended."""
-    from leaguebot.core.services.test_mode_service import get_passed_over_steps
+    from leaguebot.core.services.test_mode.test_mode_service import get_passed_over_steps
 
     db_path = str(tmp_path / "passed_over_gathered.db")
     await _three_rounds(db_path)
@@ -1724,7 +1724,7 @@ async def test_each_module_is_handed_the_active_season_s_rounds_as_core_reads_th
     was entered as not held, and round 3 (Imola) was called off. Each of two modules is handed
     rounds 1 and 2, in the order they race, as core reads them, and the moment advance judges
     at: round 2 for its clean-ups alone, round 3 not at all."""
-    from leaguebot.core.services.test_mode_service import get_next_pending_phase
+    from leaguebot.core.services.test_mode.test_mode_service import get_next_pending_phase
 
     db_path = str(tmp_path / "handed.db")
     await _three_rounds(db_path)
@@ -1758,7 +1758,7 @@ async def test_the_builder_signs_weather_attendance_and_results_up_for_their_ste
     """Weather hands back round 1's Phase 1, attendance its check-in call and results its result
     submission. The hook as the builder makes it asks all three, each handed the database, the
     rounds and the moment advance judges at, and gathers the step each hands back."""
-    from leaguebot.core.services.test_mode_service import ModuleSteps, PendingStep
+    from leaguebot.core.services.test_mode.test_mode_service import ModuleSteps, PendingStep
     from tests.support.pending_steps_hook import pending_steps_read
 
     asked: dict[str, tuple] = {}

@@ -31,7 +31,7 @@ from leaguebot.core.cogs import test_mode_cog as cog_module
 from leaguebot.core.cogs.test_mode_cog import TestModeCog as _Cog
 from leaguebot.core.cogs.test_mode_cog import _RosterImportModal
 from leaguebot.core.services import backup_service
-from leaguebot.core.services import test_mode_service
+from leaguebot.core.services.test_mode import test_mode_service
 from leaguebot.core.utils import roster_import
 from leaguebot.results.services import result_submission_service
 from tests.support.undecorate import undecorate
@@ -144,7 +144,7 @@ def _submission_open(status: str):
         monkeypatch.setattr(
             test_mode_service, "round_result_status", AsyncMock(return_value=status)
         )
-        from leaguebot.core.services.test_mode_service import AdvanceOutcome, AdvanceSteps
+        from leaguebot.core.services.test_mode.test_mode_service import AdvanceOutcome, AdvanceSteps
 
         where = "**Pro** — **Round 2**"
         reply = (

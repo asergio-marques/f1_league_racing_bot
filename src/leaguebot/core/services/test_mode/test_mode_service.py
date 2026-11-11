@@ -288,7 +288,7 @@ async def switch_test_mode_off_on(
 
     Returns the count of fake drivers removed.
     """
-    from leaguebot.core.services.test_roster_service import clear_all_test_drivers_on
+    from leaguebot.core.services.test_mode.test_roster_service import clear_all_test_drivers_on
 
     cursor = await db.execute("SELECT test_mode_active FROM server_configs")
     row = await cursor.fetchone()

@@ -74,7 +74,7 @@ def _row(offset, name, team="Alpine", div="Elite", nat="British"):
 async def _bulk(path, drivers):
     """Seat *drivers* through the roster's writer, on a connection of the test's own, committed
     as a change's save commits it."""
-    from leaguebot.core.services.test_roster_service import add_test_drivers_in_bulk_on
+    from leaguebot.core.services.test_mode.test_roster_service import add_test_drivers_in_bulk_on
 
     async with get_connection(path) as db:
         result = await add_test_drivers_in_bulk_on(db, drivers)

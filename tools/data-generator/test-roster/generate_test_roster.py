@@ -17,7 +17,7 @@ roster across them, then writes:
     because a team whose seats both went empty has no row in the CSV to be found by
 
 Nothing here touches the database or needs a running bot. The synthetic IDs simply
-mirror the convention in src/leaguebot/core/services/test_roster_service.py, so the CSV lines up with
+mirror the convention in src/leaguebot/core/services/test_mode/test_roster_service.py, so the CSV lines up with
 what the bot creates when these commands are pasted into a clean test-mode season.
 
 Usage:

@@ -553,17 +553,17 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     from leaguebot.core.services.posting.channel_tell_change import channel_tell_change
     from leaguebot.core.services.settings.division_settings import division_channel_settings
-    from leaguebot.core.services.test_mode_settings import test_mode_nationality_setting
-    from leaguebot.core.services.test_mode_former_driver_change import (
+    from leaguebot.core.services.test_mode.test_mode_settings import test_mode_nationality_setting
+    from leaguebot.core.services.test_mode.test_mode_former_driver_change import (
         test_mode_former_driver_change,
     )
-    from leaguebot.core.services.test_roster_changes import (
+    from leaguebot.core.services.test_mode.test_roster_changes import (
         test_roster_add_bulk_change,
         test_roster_add_change,
         test_roster_clear_change,
         test_roster_remove_change,
     )
-    from leaguebot.core.services.test_mode_toggle_change import test_mode_toggle_change
+    from leaguebot.core.services.test_mode.test_mode_toggle_change import test_mode_toggle_change
     from leaguebot.core.services.clean_change import clean_change
     from leaguebot.core.services.modules.hub_service import hub_refresh_change
     from leaguebot.core.services.drivers.lineup_posting import lineup_post_change
@@ -1113,7 +1113,7 @@ async def build(settings: Settings) -> LeagueBot:
     weather_wiring.sign_up(bot)
     image_wiring.sign_up(bot)
     register_change_types(bot)
-    from leaguebot.core.services.test_mode_service import AdvanceSteps
+    from leaguebot.core.services.test_mode.test_mode_service import AdvanceSteps
 
     bot.advance_steps = AdvanceSteps()
     register_scheduler_callbacks(bot)

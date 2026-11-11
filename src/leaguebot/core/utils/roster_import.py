@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from leaguebot.core.utils.input_validator import NAME, parse_user_id
 
 #: The floor for a synthetic driver ID, mirroring `_SYNTHETIC_ID_BASE` in
-#: `core/services/test_roster_service.py`. An ID below it is a real Discord snowflake — or a
+#: `core/services/test_mode/test_roster_service.py`. An ID below it is a real Discord snowflake — or a
 #: mistyped one — and seating a real user's id as a mock driver is the one mistake this
 #: import must not make quietly.
 SYNTHETIC_ID_BASE = 9_000_000_000_000_000_000

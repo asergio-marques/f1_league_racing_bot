@@ -151,7 +151,7 @@ def cog(db_path):
 async def _add(cog, *, name="Mock Alpha", nationality=None, team="Redline"):
     """Mock driver *name* seated at *team* in Division 1 by the roster's writer: the listing's
     tests need fake drivers seated, not the command that seats them."""
-    from leaguebot.core.services.test_roster_service import add_test_driver_on
+    from leaguebot.core.services.test_mode.test_roster_service import add_test_driver_on
 
     async with get_connection(cog.bot.db_path) as db:
         result = await add_test_driver_on(

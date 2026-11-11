@@ -49,7 +49,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.core.services.modules.hub_service import HubOptions
     from leaguebot.core.services.start_up import StartUpStep
-    from leaguebot.core.services.test_mode_service import AdvanceSteps
+    from leaguebot.core.services.test_mode.test_mode_service import AdvanceSteps
     from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
     from leaguebot.core.services.drivers.team_service import TeamService

@@ -76,7 +76,7 @@ def _placement_check(factory: str, **handed: Any) -> Callable[..., Awaitable[Non
 async def _test_driver_added(tmp_path, monkeypatch) -> None:
     """`/test-mode driver add` of a driver to Team 1 in Alpha, the capacity guard raising."""
     from leaguebot.core.db.database import get_connection
-    from leaguebot.core.services.test_roster_service import add_test_driver_on
+    from leaguebot.core.services.test_mode.test_roster_service import add_test_driver_on
     from tests.core.test_test_roster_capacity_guards import TEAMS, _seed
 
     path, _divisions = await _seed(tmp_path)
@@ -90,7 +90,7 @@ async def _test_driver_added(tmp_path, monkeypatch) -> None:
 async def _test_roster_imported(tmp_path, monkeypatch) -> None:
     """A test roster of one driver for Team 1 in Alpha imported, the capacity guard raising."""
     from leaguebot.core.db.database import get_connection
-    from leaguebot.core.services.test_roster_service import add_test_drivers_in_bulk_on
+    from leaguebot.core.services.test_mode.test_roster_service import add_test_drivers_in_bulk_on
     from tests.core.test_test_roster_capacity_guards import TEAMS, _roster, _seed
 
     path, _divisions = await _seed(tmp_path)

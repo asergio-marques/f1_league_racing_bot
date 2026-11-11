@@ -68,7 +68,7 @@ from leaguebot.core.services.queue.change_types import (
 from leaguebot.core.services.posting.notice_handler import send_notice
 from leaguebot.core.services.rounds.round_moments import clean_up_moment, phases_due
 from leaguebot.core.services.rounds.round_steps import judged_windows, named_now, round_number_now
-from leaguebot.core.services.test_mode_service import (
+from leaguebot.core.services.test_mode.test_mode_service import (
     AdvanceOutcome,
     AdvanceStep,
     AdvanceStepFailed,

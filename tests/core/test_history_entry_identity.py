@@ -50,7 +50,7 @@ async def test_an_entry_outlives_the_profile_it_belonged_to(db_path):
 
 
 async def test_a_test_driver_created_again_holds_the_history_of_its_identifier(db_path):
-    from leaguebot.core.services.test_roster_service import _reattach_history
+    from leaguebot.core.services.test_mode.test_roster_service import _reattach_history
 
     async with get_connection(db_path) as db:
         await db.execute("DELETE FROM driver_profiles WHERE id = 1")
@@ -65,7 +65,7 @@ async def test_a_test_driver_created_again_holds_the_history_of_its_identifier(d
 
 
 async def test_history_held_by_a_living_profile_is_not_taken(db_path):
-    from leaguebot.core.services.test_roster_service import _reattach_history
+    from leaguebot.core.services.test_mode.test_roster_service import _reattach_history
 
     async with get_connection(db_path) as db:
         await _reattach_history(db, "9000000000000000001", 99)

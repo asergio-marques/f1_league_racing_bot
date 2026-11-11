@@ -67,7 +67,7 @@ async def _seed(
 def _round(status: str):
     """Round 1 as core reads it and hands it to each module."""
     from leaguebot.core.models.round import read_scheduled_at
-    from leaguebot.core.services.test_mode_service import ActiveRound
+    from leaguebot.core.services.test_mode.test_mode_service import ActiveRound
 
     return ActiveRound(
         round_id=1, round_number=1, division_id=1, division_name="Division A", format="NORMAL",

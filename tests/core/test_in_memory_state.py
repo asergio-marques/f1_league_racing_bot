@@ -109,7 +109,7 @@ ARRIVING_EXEMPT = {
     # Each round job kind's `/test-mode advance` step, held by the advance steps the builder makes
     # and signs up beside each kind's timer handler: the bot's wiring, not the league's data
     # (#283 S21f2).
-    ("core/services/test_mode_service.py", "_steps"): "#283 S21f2",
+    ("core/services/test_mode/test_mode_service.py", "_steps"): "#283 S21f2",
     # The hub's options, held by the hub options the builder makes and signs each module's up on:
     # the bot's wiring, not the league's data. A pack keeps the modules, so it keeps what they
     # offer (#283 S22a).

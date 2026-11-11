@@ -58,8 +58,8 @@ from leaguebot.core.services.queue.change_types import (
 from leaguebot.core.services.rounds.round_add_changes import saved_result
 from leaguebot.core.services.seasons.season_lifecycle_service import live_season_stage_on
 from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService
-from leaguebot.core.services.test_mode_settings import NOT_IN_TEST_MODE
-from leaguebot.core.services.test_roster_service import (
+from leaguebot.core.services.test_mode.test_mode_settings import NOT_IN_TEST_MODE
+from leaguebot.core.services.test_mode.test_roster_service import (
     AddPlan,
     BulkPlan,
     FakeDriver,

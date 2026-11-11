@@ -119,7 +119,7 @@ from leaguebot.core.services.seasons.season_service import (
     completion_refusal_on,
     refresh_division_status_on,
 )
-from leaguebot.core.services.test_mode_service import switch_test_mode_off_on
+from leaguebot.core.services.test_mode.test_mode_service import switch_test_mode_off_on
 from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 

@@ -114,7 +114,7 @@ from leaguebot.core.services.settings.channel_registry_service import as_text_ch
 from leaguebot.core.services.posting.notice_handler import delete_notice
 from leaguebot.core.services.rounds.round_moments import clean_up_moment, round_event_moments
 from leaguebot.core.services.rounds.round_steps import judged_windows, named_now
-from leaguebot.core.services.test_mode_service import (
+from leaguebot.core.services.test_mode.test_mode_service import (
     AdvanceOutcome,
     AdvanceStep,
     AdvanceStepFailed,

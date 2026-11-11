@@ -100,7 +100,7 @@ from leaguebot.results.services.review_posting import (
     posting_steps,
     withdraw_round_standings_on,
 )
-from leaguebot.core.services.test_mode_service import (
+from leaguebot.core.services.test_mode.test_mode_service import (
     AdvanceOutcome,
     AdvanceStep,
     AdvanceStepFailed,

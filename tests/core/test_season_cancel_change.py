@@ -330,8 +330,8 @@ def _modules() -> list[Any]:
                  "leaguebot.core.services.seasons.season_lifecycle_service",
                  "leaguebot.core.services.seasons.season_end_changes",
                  "leaguebot.core.services.cancellations.cancellation_changes",
-                 "leaguebot.core.services.test_mode_service",
-                 "leaguebot.core.services.test_roster_service",
+                 "leaguebot.core.services.test_mode.test_mode_service",
+                 "leaguebot.core.services.test_mode.test_roster_service",
                  "leaguebot.weather.services.forecast_cleanup_service"):
         try:
             found.append(importlib.import_module(name))

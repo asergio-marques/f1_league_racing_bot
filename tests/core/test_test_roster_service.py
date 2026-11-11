@@ -16,7 +16,7 @@ import aiosqlite
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.test_roster_service import list_test_drivers
+from leaguebot.core.services.test_mode.test_roster_service import list_test_drivers
 from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
 
 
@@ -71,7 +71,7 @@ async def _seed_season(db_path):
 async def _add(db_path, name="Mock Alpha", team="Redline", **kwargs):
     """Seat *name* at *team* in Division 1 through the roster's writer, on a connection of the
     test's own, committed as a change's save commits it."""
-    from leaguebot.core.services.test_roster_service import add_test_driver_on
+    from leaguebot.core.services.test_mode.test_roster_service import add_test_driver_on
 
     async with get_connection(db_path) as db:
         result = await add_test_driver_on(db, name, team, DIVISION, **kwargs)
@@ -82,7 +82,7 @@ async def _add(db_path, name="Mock Alpha", team="Redline", **kwargs):
 async def _remove(db_path, discord_user_id: int):
     """Remove the fake driver *discord_user_id* through the roster's writer, on a connection of
     the test's own, committed as a change's save commits it."""
-    from leaguebot.core.services.test_roster_service import remove_test_driver_on
+    from leaguebot.core.services.test_mode.test_roster_service import remove_test_driver_on
 
     async with get_connection(db_path) as db:
         result = await remove_test_driver_on(

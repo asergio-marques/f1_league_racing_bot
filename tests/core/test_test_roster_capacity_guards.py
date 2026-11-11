@@ -189,7 +189,7 @@ async def _seated(path: str) -> int:
 async def _add(path, service, team, division="Alpha", name="Mock"):
     """Seat *name* at *team* in *division* through the roster's writer, held to *service*'s
     capacities, on a connection of the test's own, committed as a change's save commits it."""
-    from leaguebot.core.services.test_roster_service import add_test_driver_on
+    from leaguebot.core.services.test_mode.test_roster_service import add_test_driver_on
 
     async with get_connection(path) as db:
         result = await add_test_driver_on(
@@ -320,7 +320,7 @@ def _roster(*rows: tuple[str, str], nationality: str | None = "British"):
 async def _bulk(path, service, drivers):
     """Seat *drivers* through the roster's writer, held to *service*'s capacities, on a
     connection of the test's own, committed as a change's save commits it."""
-    from leaguebot.core.services.test_roster_service import add_test_drivers_in_bulk_on
+    from leaguebot.core.services.test_mode.test_roster_service import add_test_drivers_in_bulk_on
 
     async with get_connection(path) as db:
         result = await add_test_drivers_in_bulk_on(db, drivers, capacity=service)

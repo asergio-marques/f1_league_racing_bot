@@ -107,7 +107,7 @@ async def test_their_history_is_kept_by_identifier(db_path):
 
 async def _switch_off(db_path):
     """Switch test mode off on one save and commit it, as a season's end save does."""
-    from leaguebot.core.services.test_mode_service import switch_test_mode_off_on
+    from leaguebot.core.services.test_mode.test_mode_service import switch_test_mode_off_on
 
     async with get_connection(db_path) as db:
         deleted = await switch_test_mode_off_on(db, **delete_hooks(*DRIVER_HOOKS))
@@ -137,7 +137,7 @@ async def test_a_server_not_in_test_mode_is_left_alone(db_path, setup):
 
 
 async def test_clearing_one_division_deletes_its_fake_drivers_and_keeps_their_history(db_path):
-    from leaguebot.core.services.test_roster_service import clear_test_drivers_in_division_on
+    from leaguebot.core.services.test_mode.test_roster_service import clear_test_drivers_in_division_on
 
     async with get_connection(db_path) as db:
         cleared = await clear_test_drivers_in_division_on(db, 1, **delete_hooks(*DRIVER_HOOKS))
@@ -175,7 +175,7 @@ async def test_switching_off_on_the_save_handed_commits_nothing(db_path):
     """The two test drivers go and the flag is cleared on the save; rolled back, both drivers and
     the flag are as they were. It takes the save alone, with no bot to flush forecasts through,
     their clearing being a change on the queue of its own (#439)."""
-    from leaguebot.core.services.test_mode_service import switch_test_mode_off_on
+    from leaguebot.core.services.test_mode.test_mode_service import switch_test_mode_off_on
 
     async with get_connection(db_path) as db:
         assert await switch_test_mode_off_on(db, **delete_hooks(*DRIVER_HOOKS)) == 2
@@ -189,7 +189,7 @@ async def test_switching_off_on_the_save_handed_commits_nothing(db_path):
 async def test_clearing_the_test_drivers_on_the_save_handed_commits_nothing(db_path):
     """The two test drivers go on the save, their history kept by identifier; rolled back, they
     are back."""
-    from leaguebot.core.services.test_roster_service import clear_all_test_drivers_on
+    from leaguebot.core.services.test_mode.test_roster_service import clear_all_test_drivers_on
 
     async with get_connection(db_path) as db:
         assert await clear_all_test_drivers_on(db, **delete_hooks(*DRIVER_HOOKS)) == 2

@@ -81,7 +81,7 @@ from leaguebot.core.services.seasons.season_lifecycle_service import (
     live_season_stage_on,
     steps_of_the_modules,
 )
-from leaguebot.core.services.test_mode_service import (
+from leaguebot.core.services.test_mode.test_mode_service import (
     count_live_real_drivers,
     switch_test_mode_off_on,
 )

@@ -26,7 +26,7 @@ import aiosqlite
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services import test_roster_service
+from leaguebot.core.services.test_mode import test_roster_service
 from leaguebot.image.services.image_config_service import ImageConfigService
 from leaguebot.image.services.image_preview_service import resolve_context
 from leaguebot.core.services.seasons.season_service import SeasonService

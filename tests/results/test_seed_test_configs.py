@@ -207,7 +207,7 @@ async def test_leaving_test_mode_keeps_the_seeded_configs(db_path, season_id):
     and removable like any other, and deleting them would be discarding a league
     manager's own configuration. `/results config remove` is the way to be rid of them.
     """
-    from leaguebot.core.services.test_mode_service import switch_test_mode_off_on
+    from leaguebot.core.services.test_mode.test_mode_service import switch_test_mode_off_on
 
     await _seed(db_path, season_id)
     async with get_connection(db_path) as db:

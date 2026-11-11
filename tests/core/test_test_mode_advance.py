@@ -140,7 +140,7 @@ def _make_cog(db_path: str, *, test_mode: bool = True) -> _Cog:
     bot.change_queue.ask = AsyncMock(return_value=1)
     # The bot's own advance steps, made as the builder makes them, for `_advancing` to sign each
     # kind's step up on.
-    from leaguebot.core.services import test_mode_service
+    from leaguebot.core.services.test_mode import test_mode_service
 
     bot.advance_steps = test_mode_service.AdvanceSteps()
 
@@ -239,7 +239,7 @@ def _advancing(bot, entry, *, passed=None, sign_up: bool = True):
     builder signs them up (`register_scheduler_callbacks`), each module's step then answering."""
     from leaguebot.__main__ import register_scheduler_callbacks
     from leaguebot.core.cogs import test_mode_cog
-    from leaguebot.core.services import test_mode_service
+    from leaguebot.core.services.test_mode import test_mode_service
 
     reads = {
         "get_next_pending_phase": AsyncMock(return_value=entry),
@@ -345,7 +345,7 @@ async def test_advance_runs_the_kinds_own_step(tmp_path, monkeypatch, phase_numb
     maintainer and writes the step's fields to the log channel under the success line, and asks
     nothing of the change queue itself. A notice found from database state whose job is still
     queued is taken down so, and cannot post a second time (#426)."""
-    from leaguebot.core.services.test_mode_service import AdvanceOutcome, AdvanceSteps
+    from leaguebot.core.services.test_mode.test_mode_service import AdvanceOutcome, AdvanceSteps
 
     kind = KIND_OF_PHASE[phase_number]
     cog = _make_cog(await _make_db(tmp_path))
@@ -386,7 +386,7 @@ async def test_advance_reports_a_kind_with_no_step_signed_up(tmp_path, monkeypat
     Advance raises nothing: the maintainer gets the standard failure reply and the log channel
     one failure line, each naming the kind, the division and the round, and nothing is asked of
     the change queue."""
-    from leaguebot.core.services.test_mode_service import AdvanceSteps
+    from leaguebot.core.services.test_mode.test_mode_service import AdvanceSteps
 
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
@@ -732,7 +732,7 @@ async def test_a_deadline_whose_announcement_was_refused_is_not_offered_again(tm
     none is recorded (`distribution_msg_id` NULL). The scheduler holds nothing more. The next
     advance moves on to the round's results phase (4), not the deadline (7) again, which would
     do nothing and hold every later step behind it (#439)."""
-    from leaguebot.core.services.test_mode_service import get_next_pending_phase
+    from leaguebot.core.services.test_mode.test_mode_service import get_next_pending_phase
     from tests.support.pending_steps_hook import pending_steps_read
 
     db_path = await _make_db(tmp_path)
@@ -1453,7 +1453,7 @@ async def test_advance_offers_only_the_clean_ups_of_a_round_whose_every_session_
     once the forecast is down, the check-in clean-up (9); once the call is down, nothing. Never
     the deadline (7) nor the round's results submission (4): the round has ended (core :472,
     :475)."""
-    from leaguebot.core.services.test_mode_service import get_next_pending_phase
+    from leaguebot.core.services.test_mode.test_mode_service import get_next_pending_phase
     from tests.support.pending_steps_hook import pending_steps_read
 
     db_path = await _make_db(tmp_path)

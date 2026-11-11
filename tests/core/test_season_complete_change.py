@@ -266,8 +266,8 @@ def _modules() -> list[Any]:
                  "leaguebot.core.services.seasons.season_end_service",
                  "leaguebot.core.services.seasons.season_lifecycle_service",
                  "leaguebot.core.services.seasons.season_end_changes",
-                 "leaguebot.core.services.test_mode_service",
-                 "leaguebot.core.services.test_roster_service",
+                 "leaguebot.core.services.test_mode.test_mode_service",
+                 "leaguebot.core.services.test_mode.test_roster_service",
                  "leaguebot.weather.services.forecast_cleanup_service",
                  "leaguebot.image.services.driver_portrait_service"):
         try:
