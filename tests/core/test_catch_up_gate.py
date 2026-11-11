@@ -12,9 +12,11 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
+import discord
 import pytest
 
 from leaguebot.core.services.queue.change_queue import ChangeQueue
+from leaguebot.core.utils import catch_up_gate
 from leaguebot.core.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import (
     CHANGES_NOTHING_ATTRIBUTE,
@@ -86,3 +88,15 @@ def test_a_tier_guard_still_reads_through_the_wait_for_the_catch_up():
     assert getattr(guarded, TIER_ATTRIBUTE) == LEAGUE_MANAGER
     assert getattr(guarded, CHANGES_NOTHING_ATTRIBUTE, False) is True
     assert guarded.__name__ == "body"
+
+
+def test_the_response_slot_the_gate_swaps_is_the_one_discord_py_keeps():
+    """The wait for the catch-up answers a held command by follow-up by putting a stand-in in the
+    slot where discord.py caches an interaction's response, a private name of discord.py's. The
+    suite's interaction double declares that slot itself, so it cannot tell if discord.py renames
+    it; this reads the real `discord.Interaction`, so an upgrade that moves the slot fails here
+    rather than failing every held command during a catch-up."""
+    response = discord.Interaction.__dict__["response"]
+    assert isinstance(response, discord.utils.CachedSlotProperty)
+    assert response.name == catch_up_gate._RESPONSE_SLOT
+    assert catch_up_gate._RESPONSE_SLOT in discord.Interaction.__slots__
