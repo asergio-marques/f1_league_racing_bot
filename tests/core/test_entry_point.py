@@ -1121,7 +1121,6 @@ async def _run_main(tmp_path, monkeypatch, calls: list[str], tree: _Tree):
     return bot, start_up
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_migrations_run_before_the_bot_connects(tmp_path, monkeypatch):
     """`main` swaps in a staged restore, then applies the migrations, then builds the bot, then
     holds its change queue, so that an interaction arriving before the start-up's catch-up has

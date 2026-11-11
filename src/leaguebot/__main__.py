@@ -1290,6 +1290,11 @@ async def main() -> None:
 
     bot = await build(settings)
 
+    # Held from here, before the bot connects: whatever a member or Discord asks of the queue
+    # before the start-up's sweep has asked its own waits, so that it cannot land ahead of a
+    # recovery asked a moment later. `start_up` releases the hold (`ChangeQueue.hold`).
+    bot.change_queue.hold()
+
     @bot.event
     async def on_ready() -> None:
         # `on_ready` fires once the bot has logged in, which is when it has a user.
