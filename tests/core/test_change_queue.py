@@ -3269,25 +3269,40 @@ async def _yield_to_the_loop(times: int = 20) -> None:
 
 
 @pytest.mark.xfail(strict=True, reason=_NO_HOLD)
-@pytest.mark.parametrize("by_member", [True, False], ids=["a member's request", "a Discord event"])
-async def test_a_request_during_the_sweep_waits_until_the_sweep_has_asked_its_own(env, by_member):
+@pytest.mark.parametrize(
+    "asked_by", ["member", "event", "member, another ahead"],
+    ids=["a member's request", "a Discord event", "a member's request with another ahead of it"],
+)
+async def test_a_request_during_the_sweep_waits_until_the_sweep_has_asked_its_own(env, asked_by):
     """The bot has restarted and holds its queue. The catch-up asks a first change, then, while it
     is mid-way, a member presses a button (or Discord reports a member leaving, the bot's own
-    change) from outside the catch-up; the catch-up then asks a second change. Nothing of the
-    member's (or the event's) is saved while the catch-up runs; once it ends, it is saved after
-    both the catch-up's changes on the lane, and its call returns its id."""
+    change, or a league admin approves a season's placements, which asks the review's take-down
+    ahead of the approval in one save) from outside the catch-up; the catch-up then asks a second
+    change. Nothing of the member's (or the event's) is saved while the catch-up runs, the
+    take-down included; once it ends, it is saved after both the catch-up's changes on the lane,
+    and its call returns its id."""
     import contextvars
 
-    queue = _queue(env, _type(steps=[_act("a", [])]))
+    from leaguebot.core.services.queue.change_types import Ahead
+
+    queue = _queue(
+        env, _type(steps=[_act("a", [])]), _type("dummy.ahead", steps=[_act("b", [])]),
+    )
     queue.hold()
     outside = contextvars.copy_context()
 
     async with queue.sweeping():
         first = await _ask(env, payload={"asked": "catch-up 1"}, origin=_api().ChangeOrigin.BOT)
-        if by_member:
+        if asked_by == "member":
             pressed = _ask(env, payload={"asked": "press"})
-        else:
+        elif asked_by == "event":
             pressed = _ask(env, payload={"asked": "press"}, origin=_api().ChangeOrigin.BOT)
+        else:
+            pressed = queue.ask_after(
+                Ahead("dummy.ahead", {"asked": "take-down"}, "the take-down"),
+                "dummy", {"asked": "press"},
+                interaction=member_interaction(env.bot), what=WHAT, refusal_what=WHAT,
+            )
         waiting = asyncio.create_task(pressed, context=outside)
         await _yield_to_the_loop()
         assert not waiting.done()
@@ -3299,9 +3314,12 @@ async def test_a_request_during_the_sweep_waits_until_the_sweep_has_asked_its_ow
     asked = await asyncio.wait_for(waiting, timeout=5)
 
     rows = await change_rows(env.db_path)
-    assert [row["id"] for row in rows] == [first, second, asked]
-    assert [json.loads(row["payload"])["asked"] for row in rows] == [
-        "catch-up 1", "catch-up 2", "press"]
+    assert rows[-1]["id"] == asked
+    expected = ["catch-up 1", "catch-up 2", "press"]
+    if asked_by == "member, another ahead":
+        expected.insert(2, "take-down")
+    assert [json.loads(row["payload"])["asked"] for row in rows] == expected
+    assert [row["id"] for row in rows][:2] == [first, second]
 
 
 @pytest.mark.xfail(strict=True, reason=_NO_HOLD)
