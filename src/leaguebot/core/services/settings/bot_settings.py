@@ -86,6 +86,7 @@ from leaguebot.core.services.modules.hub_service import HUB_REFRESH, apply_hub_p
 from leaguebot.core.services.queue.setting_change import After, RENAMED_OUTCOME, Saved, Setting
 
 if TYPE_CHECKING:
+    from leaguebot.core.utils.hooks import AwaitedHook
     from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
@@ -124,16 +125,22 @@ def _mention(column: str, value: int) -> str:
     return f"<#{value}>" if column.endswith("channel_id") else f"<@&{value}>"
 
 
-def _bot_setting(column: str, config: "ConfigService") -> Setting:
-    """One of the four `/bot` repair settings on *column*, *config* reading and writing it."""
+def _bot_setting(
+    column: str, config: "ConfigService", channel_uses_read: "AwaitedHook | None" = None
+) -> Setting:
+    """One of the four `/bot` repair settings on *column*, *config* reading and writing it.
+
+    A channel setting is handed *channel_uses_read*, the hook the builder makes, which its check
+    asks which module holds the channel already; a role setting is handed none."""
     kind_name, command, label, change_type, channel_setting = _SETTINGS[column]
     is_role = channel_setting is None
 
     async def check(ctx: CheckContext) -> Verdict:
         value = int(ctx.payload["value"])
         if channel_setting is not None:
+            assert channel_uses_read is not None  # a channel setting is built with the hook
             use = await find_channel_use(
-                ctx.db_path, value, channel_uses_read=ctx.bot.channel_uses_read
+                ctx.db_path, value, channel_uses_read=channel_uses_read
             )
             if use is not None:
                 return Verdict.refuse(
@@ -216,14 +223,16 @@ def _reapply_hub(command: str, config: "ConfigService") -> After:
     return After(step=Step(REAPPLY_HUB, StepKind.ACT, run), fault_reply=fault_reply)
 
 
-def log_channel_setting(*, config: "ConfigService") -> Setting:
+def log_channel_setting(*, config: "ConfigService", channel_uses_read: "AwaitedHook") -> Setting:
     """`/bot log-channel`: the log channel the bot writes its calculation log to."""
-    return _bot_setting("log_channel_id", config)
+    return _bot_setting("log_channel_id", config, channel_uses_read)
 
 
-def interaction_channel_setting(*, config: "ConfigService") -> Setting:
+def interaction_channel_setting(
+    *, config: "ConfigService", channel_uses_read: "AwaitedHook"
+) -> Setting:
     """`/bot interaction-channel`: the channel the bot accepts commands in."""
-    return _bot_setting("interaction_channel_id", config)
+    return _bot_setting("interaction_channel_id", config, channel_uses_read)
 
 
 def interaction_role_setting(*, config: "ConfigService") -> Setting:
@@ -336,7 +345,8 @@ async def _season_fixed_on(db: aiosqlite.Connection) -> int | None:
 
 
 def _league_role_setting(
-    column: str, *, config: "ConfigService", roles: "TeamRoleService"
+    column: str, *, config: "ConfigService", roles: "TeamRoleService",
+    base_role_changed: "AwaitedHook | None" = None,
 ) -> Setting:
     """`/bot base-role` or `/bot driver-role` on *column*: a league manager's own command,
     neither one of the four that let a league back into the bot nor a channel setting, so it
@@ -366,7 +376,8 @@ def _league_role_setting(
     season's stage, is a change on the same lane, so it cannot land between the two.
 
     **The base role's save plans two follow-ons the driver role never needs:** calling the "base
-    role changed" hook (`BASE_ROLE_CHANGED`), which moves the signup channel's overwrite without
+    role changed" hook (`BASE_ROLE_CHANGED`, the hook the builder hands the base role's setting
+    as *base_role_changed*, and the driver role's none), which moves the signup channel's overwrite without
     core naming signup, and setting the hub's permissions again (`REAPPLY_HUB`, shared with the
     four repair settings' role columns above) — the hub is seen by the base role too. **Either
     role, replaced because the old one is gone from the server, plans a third:** granting the new
@@ -442,8 +453,9 @@ def _league_role_setting(
         return text
 
     after: dict[str, After] = {}
+    if base_role_changed is not None:
+        after[BASE_ROLE_CHANGED] = _move_signup_overwrite(base_role_changed)
     if is_base_role:
-        after[BASE_ROLE_CHANGED] = _move_signup_overwrite()
         after[REAPPLY_HUB] = _reapply_hub(command, config)
     after[GRANT_TO_DRIVERS] = _grant_to_drivers(roles, is_base_role=is_base_role)
 
@@ -459,9 +471,9 @@ def _league_role_setting(
     )
 
 
-def _move_signup_overwrite() -> After:
-    """The `After` step the base role's save plans: call the "base role changed" hook the
-    builder makes, with the server, the role the save actually replaced (`_replaced_role_id`,
+def _move_signup_overwrite(base_role_changed: "AwaitedHook") -> After:
+    """The `After` step the base role's save plans: call *base_role_changed*, the hook the
+    builder makes and hands the setting, with the server, the role the save actually replaced (`_replaced_role_id`,
     never the role the ask saw) and the role now set, handing no connection
     (signup's subscriber opens its own). Core never reaches `bot.signup_module_service`
     itself. The hook's subscribers never raise, each logging its own faults; the step itself
@@ -471,7 +483,7 @@ def _move_signup_overwrite() -> After:
 
     async def run(ctx: StepContext) -> StepResult:
         guild, role = _guild_and_role(ctx)
-        await ctx.bot.base_role_changed.call(guild, _replaced_role_id(ctx), role)
+        await base_role_changed.call(guild, _replaced_role_id(ctx), role)
         return StepResult()
 
     return After(step=Step(BASE_ROLE_CHANGED, StepKind.ACT, run), fault_reply=lambda _p, r: r)
@@ -534,9 +546,13 @@ def _given_reply(result: Mapping[str, Any], *, is_base_role: bool) -> str:
     return f"\n{told}"
 
 
-def base_role_setting(*, config: "ConfigService", roles: "TeamRoleService") -> Setting:
+def base_role_setting(
+    *, config: "ConfigService", roles: "TeamRoleService", base_role_changed: "AwaitedHook"
+) -> Setting:
     """`/bot base-role`: the role every member of the league holds."""
-    return _league_role_setting("base_role_id", config=config, roles=roles)
+    return _league_role_setting(
+        "base_role_id", config=config, roles=roles, base_role_changed=base_role_changed
+    )
 
 
 def driver_role_setting(*, config: "ConfigService", roles: "TeamRoleService") -> Setting:
@@ -637,14 +653,14 @@ def _ask_hub_refresh(command: str) -> After:
     return After(step=Step(REFRESH_HUB_PANEL, StepKind.ACT, run), fault_reply=fault_reply)
 
 
-def hub_channel_setting(*, config: "ConfigService") -> Setting:
+def hub_channel_setting(*, config: "ConfigService", channel_uses_read: "AwaitedHook") -> Setting:
     """`/bot hub-channel`: the channel every member of the league uses the bot from."""
     command = "/bot hub-channel"
 
     async def check(ctx: CheckContext) -> Verdict:
         value = int(ctx.payload["value"])
         use = await find_channel_use(
-            ctx.db_path, value, channel_uses_read=ctx.bot.channel_uses_read
+            ctx.db_path, value, channel_uses_read=channel_uses_read
         )
         if use is not None:
             return Verdict.refuse(

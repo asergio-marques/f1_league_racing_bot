@@ -774,7 +774,7 @@ async def test_a_queued_log_line_is_delivered_once_with_the_retry_loop_beside_th
             pending = await get_all_pending(env.db_path)
             beside["found"] = len(pending)
             beside["loop"] = asyncio.ensure_future(
-                asyncio.gather(*(attempt_delivery(entry, env.bot, now=env.clock()) for entry in pending))
+                asyncio.gather(*(attempt_delivery(entry, env.bot, router=env.bot.output_router, now=env.clock()) for entry in pending))
             )
             for _ in range(5):
                 await asyncio.sleep(0)

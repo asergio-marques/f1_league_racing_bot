@@ -179,7 +179,7 @@ class TestAttemptDeliverySuccess:
         bot = _make_bot(db_path, channel=mock_channel)
 
         with patch("leaguebot.core.services.posting.retry_service._safe_post_log"):
-            result = await attempt_delivery(entry, bot, now=NOW)
+            result = await attempt_delivery(entry, bot, router=bot.output_router, now=NOW)
         assert result is True
 
     @pytest.mark.asyncio
@@ -193,7 +193,7 @@ class TestAttemptDeliverySuccess:
         bot = _make_bot(db_path, channel=mock_channel)
 
         with patch("leaguebot.core.services.posting.retry_service._safe_post_log"):
-            await attempt_delivery(entry, bot, now=NOW)
+            await attempt_delivery(entry, bot, router=bot.output_router, now=NOW)
         assert await _row_count(db_path) == 0
 
     @pytest.mark.asyncio
@@ -207,7 +207,7 @@ class TestAttemptDeliverySuccess:
         bot = _make_bot(db_path, channel=mock_channel)
 
         with patch("leaguebot.core.services.posting.retry_service._safe_post_log"):
-            await attempt_delivery(entry, bot, now=NOW)
+            await attempt_delivery(entry, bot, router=bot.output_router, now=NOW)
         # The content alone: how it is sent, mentioning nobody, is test_retry_service's to pin.
         (call,) = mock_channel.send.call_args_list
         assert (call.args[0] if call.args else call.kwargs["content"]) == "hello world"
@@ -231,7 +231,7 @@ class TestAttemptDeliveryFailure:
         )
         bot = _make_bot(db_path, channel=mock_channel)
 
-        result = await attempt_delivery(entry, bot, now=NOW)
+        result = await attempt_delivery(entry, bot, router=bot.output_router, now=NOW)
         assert result is False
 
     @pytest.mark.asyncio
@@ -246,7 +246,7 @@ class TestAttemptDeliveryFailure:
         )
         bot = _make_bot(db_path, channel=mock_channel)
 
-        await attempt_delivery(entry, bot, now=NOW + timedelta(minutes=5))
+        await attempt_delivery(entry, bot, router=bot.output_router, now=NOW + timedelta(minutes=5))
 
         async with get_connection(db_path) as db:
             cursor = await db.execute(
@@ -269,7 +269,7 @@ class TestAttemptDeliveryFailure:
         )
         bot = _make_bot(db_path, channel=mock_channel)
 
-        await attempt_delivery(entry, bot, now=NOW)
+        await attempt_delivery(entry, bot, router=bot.output_router, now=NOW)
         assert await _row_count(db_path) == 1
 
     @pytest.mark.asyncio
@@ -284,7 +284,7 @@ class TestAttemptDeliveryFailure:
             side_effect=discord.NotFound(MagicMock(status=404), "Unknown Channel")
         )
 
-        result = await attempt_delivery(entry, bot, now=NOW)
+        result = await attempt_delivery(entry, bot, router=bot.output_router, now=NOW)
         assert result is False
         async with get_connection(db_path) as db:
             cursor = await db.execute(
@@ -320,10 +320,10 @@ class TestRetryWarningThreshold:
         bot = _make_bot(db_path, channel=mock_channel)
 
         with patch("leaguebot.core.services.posting.retry_service._safe_post_log") as mock_safe_log:
-            await attempt_delivery(entry_at_threshold, bot, now=NOW)
+            await attempt_delivery(entry_at_threshold, bot, router=bot.output_router, now=NOW)
 
         assert mock_safe_log.call_count >= 1
-        # First call is the warning; args are (bot, message)
+        # First call is the warning; args are (router, message)
         warn_message = mock_safe_log.call_args_list[0][0][1]
         assert "Stuck retry" in warn_message
 
@@ -342,7 +342,7 @@ class TestRetryWarningThreshold:
         bot = _make_bot(db_path, channel=mock_channel)
 
         with patch("leaguebot.core.services.posting.retry_service._safe_post_log") as mock_safe_log:
-            await attempt_delivery(entry, bot, now=NOW)
+            await attempt_delivery(entry, bot, router=bot.output_router, now=NOW)
 
         mock_safe_log.assert_not_called()
 
@@ -380,7 +380,7 @@ class TestTheRetryWorkersOwnLinesAreNotQueued:
         channel = _make_text_channel_mock()
         bot = _worker_bot(db_path, channel)
 
-        await _post_own_line(bot, "✅ Retry delivery succeeded for channel <#99>")
+        await _post_own_line(bot.output_router, "✅ Retry delivery succeeded for channel <#99>")
 
         [call] = channel.send.await_args_list
         assert "Retry delivery succeeded" in call.args[0]
@@ -414,7 +414,7 @@ class TestTheRetryWorkersOwnLinesAreNotQueued:
         )
 
         with caplog.at_level("WARNING"):
-            await _post_own_line(bot, "⚠️ Stuck retry entry id=7")
+            await _post_own_line(bot.output_router, "⚠️ Stuck retry entry id=7")
 
         assert await _row_count(db_path) == 0
         assert "Stuck retry entry id=7" in caplog.text
@@ -453,7 +453,7 @@ class TestTheRetryWorkersOwnLinesAreNotQueued:
         monkeypatch.setattr(asyncio, "ensure_future", keep)
 
         with caplog.at_level("WARNING"):
-            assert await deliver(entry, bot, now=NOW) is False
+            assert await deliver(entry, bot, router=bot.output_router, now=NOW) is False
             await asyncio.gather(*scheduled)
 
         assert scheduled, "the stuck warning was meant to be tried"
@@ -489,7 +489,7 @@ class TestAWaitingLineGoesToTheLogChannelAsItIsNow:
             side_effect=discord.NotFound(MagicMock(status=404), "Unknown Channel")
         )
 
-        assert await attempt_delivery(entry, bot, now=NOW) is True
+        assert await attempt_delivery(entry, bot, router=bot.output_router, now=NOW) is True
 
         assert new.send.await_args_list[0].args[0] == "Admin | /module enable weather | Success"
         assert await _row_count(db_path) == 0
@@ -529,7 +529,7 @@ class TestAWaitingLineGoesToTheLogChannelAsItIsNow:
             side_effect=sqlite3.OperationalError("database is locked")
         )
 
-        assert await attempt_delivery(entry, bot, now=NOW) is False
+        assert await attempt_delivery(entry, bot, router=bot.output_router, now=NOW) is False
 
         [after] = await get_all_pending(db_path)
         assert after.retry_count == 1

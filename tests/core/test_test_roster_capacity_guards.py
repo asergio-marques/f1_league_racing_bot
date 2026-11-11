@@ -7,7 +7,7 @@ driver standings — so a roster those templates could not hold was accepted, an
 surfaced only as a fallback at the first posting. A rehearsal that passes a configuration a
 real season would refuse is worse than no rehearsal.
 
-``TemplateCapacityService.guard_roster_capacity`` asks the three guards over a whole change at once,
+``TemplateCapacityService.guard_roster_capacity_on`` asks the three guards over a whole change at once,
 summed per division, and both roster paths call it before they write anything. What it counts
 and asks is ``tests/core/test_placement_capacity_guards.py``'s, through a stub; here the image
 module's own implementation of core's protocol is handed in (#283), so that each roster path

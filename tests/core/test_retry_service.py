@@ -258,7 +258,7 @@ async def test_a_line_never_tried_is_delivered_by_the_retry_loop_without_a_retry
     [entry] = await get_all_pending(db_path)
     bot, channel = _delivering_bot(db_path)
 
-    assert await attempt_delivery(entry, bot, now=NOW) is True
+    assert await attempt_delivery(entry, bot, router=bot.output_router, now=NOW) is True
     await _settle()
 
     assert channel.send.await_count == 1
@@ -276,7 +276,7 @@ async def test_a_retried_line_is_sent_notifying_nobody(tmp_path):
     [entry] = await get_all_pending(db_path)
     bot, channel = _delivering_bot(db_path)
 
-    await attempt_delivery(entry, bot, now=NOW)
+    await attempt_delivery(entry, bot, router=bot.output_router, now=NOW)
     await _settle()
 
     sent = channel.send.await_args.kwargs.get("allowed_mentions")
@@ -300,7 +300,7 @@ async def test_attempt_delivery_sends_through_the_log_writer(tmp_path, monkeypat
     writer = AsyncMock()
     monkeypatch.setattr(output_router, "send_log_text", writer, raising=False)
 
-    assert await attempt_delivery(entry, bot, now=NOW) is True
+    assert await attempt_delivery(entry, bot, router=bot.output_router, now=NOW) is True
     await _settle()
 
     writer.assert_awaited_once_with(
@@ -323,7 +323,7 @@ async def test_a_late_log_line_delivered_on_retry_reports_its_delivery_as_today(
     bot, _channel = _delivering_bot(db_path)
 
     delivered = NOW + timedelta(minutes=5)
-    assert await attempt_delivery(entry, bot, now=delivered) is True
+    assert await attempt_delivery(entry, bot, router=bot.output_router, now=delivered) is True
     await _settle()
 
     [call] = bot.output_router.post_log.await_args_list
@@ -350,7 +350,7 @@ async def test_a_stuck_late_log_line_warns_before_its_retry_as_today(tmp_path):
     bot, _channel = _delivering_bot(db_path)
 
     delivered = NOW + timedelta(hours=1)
-    assert await attempt_delivery(entry, bot, now=delivered) is True
+    assert await attempt_delivery(entry, bot, router=bot.output_router, now=delivered) is True
     await _settle()
 
     warning, success = (call.args[0] for call in bot.output_router.post_log.await_args_list)
@@ -364,3 +364,29 @@ async def test_a_stuck_late_log_line_warns_before_its_retry_as_today(tmp_path):
         f"Original failure: 503. Retries taken: {RETRY_WARN_THRESHOLD}. "
         f"Delivered at: {discord_ts(delivered)}."
     )
+
+
+async def test_the_worker_writes_through_the_router_it_is_handed_never_the_bot_s(tmp_path):
+    """The retry loop's cog hands the worker the router. A late line is delivered to the log
+    channel that router names, 99, and its success line is posted through that router, while the
+    router the bot carries is not asked anything."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from leaguebot.core.services.posting.retry_service import attempt_delivery
+
+    db_path = await _make_db(str(tmp_path))
+    await enqueue(db_path, 555, "Admin (`<@4242>`) | /module disable results | Success", "503", now=NOW)
+    [entry] = await get_all_pending(db_path)
+    bot, channel = _delivering_bot(db_path)
+    handed = MagicMock()
+    handed.log_destination = AsyncMock(return_value=99)
+    handed.post_log = AsyncMock()
+
+    assert await attempt_delivery(
+        entry, bot, router=handed, now=NOW + timedelta(minutes=5)
+    ) is True
+    await _settle()
+
+    handed.log_destination.assert_awaited()
+    handed.post_log.assert_awaited_once()
+    assert bot.output_router.mock_calls == []

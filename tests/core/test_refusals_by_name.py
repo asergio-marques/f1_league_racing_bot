@@ -37,7 +37,7 @@ def _faulty_placement() -> MagicMock:
     """A placement service whose every guard and judge raises a bug's `ValueError`."""
     placement = MagicMock()
     for name in (
-        "guard_move", "guard_assign", "guard_roster_capacity", "judge_move_on", "judge_sack_on",
+        "guard_move", "guard_assign", "guard_roster_capacity_on", "judge_move_on", "judge_sack_on",
         "judge_release_on", "judge_assign_on", "judge_unassign_on",
     ):
         setattr(placement, name, AsyncMock(side_effect=ValueError(BUG)))

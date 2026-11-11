@@ -52,7 +52,7 @@ async def test_every_queued_message_is_retried():
     ) as attempt:
         await cog.retry_loop()
 
-    assert attempt.await_args_list == [call(entry, cog._bot, now=NOW) for entry in entries]
+    assert attempt.await_args_list == [call(entry, cog._bot, router=cog._bot.output_router, now=NOW) for entry in entries]
 
 
 async def test_an_empty_queue_does_nothing():

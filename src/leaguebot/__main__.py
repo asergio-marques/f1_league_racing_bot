@@ -856,14 +856,21 @@ def register_change_types(bot: LeagueBot) -> None:
         test_roster_clear_change(profiles_deleted=bot.profiles_deleted)
     )
     for setting in (
-        log_channel_setting(config=bot.config_service),
-        interaction_channel_setting(config=bot.config_service),
+        log_channel_setting(config=bot.config_service, channel_uses_read=bot.channel_uses_read),
+        interaction_channel_setting(
+            config=bot.config_service, channel_uses_read=bot.channel_uses_read
+        ),
         interaction_role_setting(config=bot.config_service),
         admin_role_setting(config=bot.config_service),
-        base_role_setting(config=bot.config_service, roles=bot.team_role_service),
+        base_role_setting(
+            config=bot.config_service, roles=bot.team_role_service,
+            base_role_changed=bot.base_role_changed,
+        ),
         driver_role_setting(config=bot.config_service, roles=bot.team_role_service),
-        hub_channel_setting(config=bot.config_service),
-        *division_channel_settings(seasons=bot.season_service),
+        hub_channel_setting(config=bot.config_service, channel_uses_read=bot.channel_uses_read),
+        *division_channel_settings(
+            seasons=bot.season_service, channel_uses_read=bot.channel_uses_read
+        ),
         test_mode_nationality_setting(config=bot.config_service),
     ):
         bot.change_queue.register(setting_change(setting))
