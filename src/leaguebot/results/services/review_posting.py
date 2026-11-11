@@ -27,9 +27,10 @@ refused midway, which the bot could not take down itself, travel on the failure;
 removes them first, so a retry leaves no second copy.
 
 **A retry posts as text** (Constitution XIV, rule 8): the picture is attempted on the first try
-alone. A results table's picture is posted through image's own function, which saves and deletes
-nothing, so a drawn table is recorded and its old messages deleted as a text table's are; a
-standings picture still deletes the message it replaces as it posts.
+alone. Image's posting functions, for a results table's picture and for a standings picture alike,
+save no id and delete no message: they hand back what they posted with the messages it replaces,
+so a drawn table is recorded and its old messages deleted by this module's jobs as a text table's
+are.
 
 **A standings job covers a round's both championships**, since the text flow posts one message
 carrying both and only the graphics are posted one each.

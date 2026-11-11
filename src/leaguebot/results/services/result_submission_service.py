@@ -381,8 +381,9 @@ async def _build_penalty_review_state(
 ) -> "PenaltyReviewState":
     """Reconstruct a :class:`~leaguebot.results.services.penalty_wizard.PenaltyReviewState` from the DB.
 
-    Used by the bot restart-recovery path to re-post the appeals review prompt
-    after a crash during the appeals phase (``status = 'AWAITING_APPEAL_VERDICTS'``).
+    Used by the changes that put a review's prompt up: the review-open and verdict changes
+    (`review_open_change`, `review_verdicts`), which a restart also asks to put a review back,
+    the appeals phase's included (``status = 'AWAITING_APPEAL_VERDICTS'``).
     """
     from leaguebot.results.services.penalty_wizard import PenaltyReviewState
 

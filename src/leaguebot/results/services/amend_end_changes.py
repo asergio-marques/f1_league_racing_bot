@@ -24,7 +24,7 @@ amendment of the round find it so, and the channel's deletion does not forget it
 the league's lane, asked by `ask_lapse` for one of three causes: the five minutes a paste or a
 choice of configuration has from when its prompt appeared (`TIMER`, whose callback is
 `amend_lapse_timer`), the half-hour the stages have (`SWEEP`, `sweep_expired_amendments`) and a
-restart that found the amendment open (`RESTART`, `_recover_orphaned_amend_channels`). Its jobs are
+restart that found the amendment open (`RESTART`, `recover_orphaned_amend_channels`). Its jobs are
 the cancel's, ending with `record_lapse`, which names who started the amendment in the line the lapse
 leaves in the log channel; the cancel's save and the lapse's differ in the wording of that line (a
 restart that found nothing to put back says it ended the amendment, not that it lapsed, for the row

@@ -524,7 +524,8 @@ def start_up_steps(bot: "LeagueBot") -> "tuple[StartUpStep, ...]":
         # those standings are built from the round as it raced, wherever the revert succeeds.
         ("orphaned amend channels", lambda: recover_orphaned_amend_channels(bot)),
         # Submission channels left open by a previous run. The paste they were waiting for died
-        # with the process, so they are reset so /test-mode advance can re-trigger submission.
+        # with the process, so each is asked of the queue as a review put back or a submission
+        # restarted, which asks `results.submission.open` afresh as a follow-on.
         ("orphaned submission channels", lambda: recover_orphaned_submission_channels(bot)),
     )
 

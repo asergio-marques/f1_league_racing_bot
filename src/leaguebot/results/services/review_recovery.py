@@ -1,8 +1,8 @@
 """What a restart does to a round whose submission channel was left open (#439, slice 2).
 
-Restart recovery decides here, per round, and the entry point only reads the rows and calls it, so
-the entry point gains no rule. A review is put back by asking the change queue, as the bot, for
-the change that does it (``results.review.open``, ``results.appeals.open``,
+Restart recovery decides here, per round, and the results wiring only reads the rows
+(`recover_orphaned_submission_channels`) and calls it, so the wiring gains no rule. A review is
+put back by asking the change queue, as the bot, for the change that does it (``results.review.open``, ``results.appeals.open``,
 ``results.review.close_stale``): recovery posts nothing and deletes nothing of a review itself.
 
 **A round whose review, or whose submission, a change is carrying out is left alone**, a stopped
@@ -32,7 +32,7 @@ no change in hand is put back by the stage it was left at:
   paste cut short, whose results recovery deletes.
 
 Anything else is a first paste cut short and is not a review: :func:`recover_review` says so by
-returning ``False`` and the entry point deals with it, outside the queue (A5 of the plan).
+returning ``False``, and the wiring asks the queue for it as `results.submission.restart`.
 
 A resubmission a restart cut short is ended by the review's opening itself. Its collection lived
 in memory; recovery asks ``results.review.open`` returning from a restart, whose own jobs clear the

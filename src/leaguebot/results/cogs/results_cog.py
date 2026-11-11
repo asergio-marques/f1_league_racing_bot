@@ -1718,20 +1718,20 @@ class ResultsCog(commands.Cog):
         """Amend the results of a round that has reached FINAL.
 
         **A league admin's**, unlike `/results rounds sync` beside it, and unlike what a
-        reading of the name suggests. Amending does not supersede: `amend_session_results`
-        updates the header in place and deletes the round's driver rows before re-inserting
-        them, so the classification the league actually raced is gone and no command puts it
-        back. It sits with the other commands that destroy what a league is built from.
+        reading of the name suggests. Approving an amendment supersedes what the league raced:
+        `amend_round_results_on` snapshots the chosen sessions, then writes their corrected
+        classifications over them, re-points their verdicts and rescores the standings. It sits
+        with the other commands that rewrite what a league is built from.
 
         Adding, amending and importing rounds stay a league manager's; cancelling and
         deleting one are a league admin's for the same reason this is.
 
-        **A fault before stage one lets the division go** (#345). From the moment its record is
-        in, an amendment holds its division — no other amendment, paste, approval or sync — and
-        until stage one writes, it carries no deadline for the sweep to act on. A send failing
-        part-way through the pastes, say to a channel deleted under it, would otherwise leave
-        the record standing and the division held until a restart. Nothing has been written by
-        then, so the record and the channel simply go.
+        **An amendment that ends before stage one lets the division go** (#345). From the moment
+        its record is in, an amendment holds its division — no other amendment, paste, approval
+        or sync — and until stage one writes, it carries no deadline for the sweep to act on.
+        Nothing has been written by then, so a refused paste, or the league cancelling or
+        lapsing it, ends the amendment (`end_amendment`) and asks `results.amend.close`: the
+        record stays, closed, and the channel is deleted.
         """
         from leaguebot.core.models.change import VerdictKind
         from leaguebot.core.utils.season_gate import LIVE_STAGES, season_for_command

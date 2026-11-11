@@ -4,8 +4,8 @@ Uses SQLAlchemyJobStore backed by **its own** SQLite file, separate from the lea
 database, so jobs survive restarts. A job whose moment passed while the bot was stopped runs
 on start only if that moment is less than five minutes gone (`_GRACE_SECONDS`, the misfire grace
 a job has unless it is armed with none). Later than that, APScheduler skips it with a warning in
-the host's log, and whatever should be caught up after a longer stop is caught up by the start-up
-recovery in `__main__.py`. A one-off timer and an overdue results submission are armed with no
+the host's log, and whatever should be caught up after a longer stop is caught up by each module's start-up
+steps, signed up by its wiring. A one-off timer and an overdue results submission are armed with no
 lateness limit, and fire at once on start whatever the stop. What becomes of a job missed in a
 longer stop is its kind's handler's to decide (`docs/design/architecture.md`, "Timed work and
 restarts").

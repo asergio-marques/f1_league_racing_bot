@@ -4,8 +4,8 @@ Activated by the change `results.review.open` (*review_open_change.py*) once all
 sessions for a round have been submitted or cancelled.  The submission channel
 stays open and a :class:`PenaltyReviewView` prompt is posted there.
 
-Access: league managers only (users whose guild roles include the
-``interaction_role_id`` from :class:`ServerConfig`).
+Access: league managers and the league admin (`core.utils.channel_guard.is_league_manager`:
+the interaction role, or the league admin role, which carries it).
 """
 from __future__ import annotations
 
@@ -728,7 +728,7 @@ async def _delete_review_message(state: PenaltyReviewState, message_id: int | No
         message = await ch.fetch_message(message_id)
         await message.delete()
     except (discord.NotFound, discord.HTTPException):
-        pass  # Already gone; nothing depends on it
+        pass  # Passes over any refusal, not only a message already gone; nothing depends on it
 
 
 async def _take_down_approval(state: PenaltyReviewState) -> None:
