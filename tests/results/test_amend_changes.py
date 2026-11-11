@@ -75,10 +75,6 @@ from tests.support.review_league import (
 )
 from tests.support.undecorate import undecorate
 
-#: Why each test reaching a recovery the entry point held fails until it moves to its
-#: module's wiring (#283).
-_NOT_YET_IN_THE_WIRING = "#283: the recovery is not yet in its module's wiring"
-
 OPEN = "results.amend.open"
 TURN = "results.amend.turn"
 CONFIG = "results.amend.config"
@@ -455,7 +451,6 @@ async def test_a_refused_deletion_after_a_refused_paste_stops_only_the_amendment
     assert not _deleted(league)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_restart_leaves_a_refused_deletion_to_the_amendment_s_own_lane(
     tmp_path, monkeypatch,
 ):
@@ -1159,7 +1154,6 @@ async def test_the_half_hour_lapse_is_held_while_the_stage_two_prompt_is_in_hand
     assert row["closed_at"] is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_restart_asks_the_lapse_of_each_abandoned_amendment_before_the_queue_starts(
     tmp_path, monkeypatch,
 ):

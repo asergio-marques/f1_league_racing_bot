@@ -28,6 +28,7 @@ from leaguebot.core.utils.league_server import (
     warn_if_serving_several,
 )
 from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
+from leaguebot.results import wiring as results_wiring
 
 if TYPE_CHECKING:
     from leaguebot.core.services.calendar_post_service import CalendarCommandOutcome
@@ -147,13 +148,12 @@ def register_module_switches(modules: "ModuleService") -> None:
     name `is_<module>_enabled` asks it by."""
     from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
     from leaguebot.image.services.module_switch_settings import images_enabled_on
-    from leaguebot.results.services.module_switch_settings import results_enabled_on
     from leaguebot.signup.services.signup_module_service import signup_enabled_on
     from leaguebot.weather.services.draw_guard import weather_enabled_on
 
     modules.register_switch("weather", weather_enabled_on)
     modules.register_switch("signup", signup_enabled_on)
-    modules.register_switch("results", results_enabled_on)
+    results_wiring.register_switch(modules)
     modules.register_switch("attendance", attendance_enabled_on)
     modules.register_switch("images", images_enabled_on)
 
@@ -164,6 +164,20 @@ def register_hub_options(hub_options: "HubOptions") -> None:
     from leaguebot.core.services.about_service import ABOUT_OPTION
 
     hub_options.register_option(ABOUT_OPTION)
+
+
+def _make_hooks(bot: LeagueBot) -> None:
+    """Make every hook only one module joins, before any module's wiring runs, so that its wiring
+    signs up on a hook that exists. The hooks several modules join are made by the function that
+    signs those modules up, in the order the hook calls them."""
+    bot.confirmation_refused = AwaitedHook()
+    bot.cancellation_refused = AwaitedHook()
+    bot.rounds_made_final = AwaitedHook()
+    bot.test_mode_turned_on = AwaitedHook()
+    bot.divisions_raced_read = AwaitedHook()
+    bot.season_standing_read = AwaitedHook()
+    bot.final_round_read = AwaitedHook()
+    bot.season_end_refused = AwaitedHook()
 
 
 def _sign_up_to_round_windows(bot: LeagueBot) -> None:
@@ -188,7 +202,6 @@ def _sign_up_to_review_sections(bot: LeagueBot) -> None:
     weather's. Each is handed which review is gathered, the season and its divisions, and checks
     its own switch."""
     from leaguebot.attendance.services import attendance_service
-    from leaguebot.results.services import season_points_service
     from leaguebot.signup.services import signup_module_service
     from leaguebot.weather.services import weather_config_service
 
@@ -199,23 +212,9 @@ def _sign_up_to_review_sections(bot: LeagueBot) -> None:
     bot.review_sections_read.subscribe(partial(
         attendance_service.review_section, bot.attendance_service, bot.module_service
     ))
-    bot.review_sections_read.subscribe(partial(
-        season_points_service.review_section, bot.module_service, bot.db_path
-    ))
+    results_wiring.sign_up_to_review_sections(bot)
     bot.review_sections_read.subscribe(partial(
         weather_config_service.review_section, bot.module_service, bot.db_path
-    ))
-
-
-def _sign_up_to_confirmation_refused(bot: LeagueBot) -> None:
-    """Make the hook a season's confirmation is refused through, and sign results' refusals up to
-    it: handed the league's modules and the database, then the season and which confirmation is
-    judged. Results checks its own switch."""
-    from leaguebot.results.services import season_points_service
-
-    bot.confirmation_refused = AwaitedHook()
-    bot.confirmation_refused.subscribe(partial(
-        season_points_service.confirmation_refusals, bot.module_service, bot.db_path
     ))
 
 
@@ -301,23 +300,19 @@ def _sign_up_to_cancellations(bot: LeagueBot) -> None:
     record."""
     from leaguebot.attendance.services import cancellation_notice as attendance_cancellation_notice
     from leaguebot.attendance.services import check_in_changes, check_in_record
-    from leaguebot.results.services import cancellation_notice as results_cancellation_notice
-    from leaguebot.results.services import result_submission_service, review_posting
     from leaguebot.weather.services import cancellation_notice as weather_cancellation_notice
 
-    bot.cancellation_refused = AwaitedHook()
-    bot.cancellation_refused.subscribe(result_submission_service.cancellation_refusal)
     bot.rounds_called_off = AwaitedHook()
-    bot.rounds_called_off.subscribe(result_submission_service.close_called_off_on)
+    results_wiring.sign_up_to_rounds_called_off(bot)
     bot.rounds_called_off.subscribe(check_in_changes.take_down_called_off_on)
     bot.cancellation_notices = AwaitedHook()
     bot.cancellation_notices.subscribe(attendance_cancellation_notice.notices_on)
     bot.cancellation_notices.subscribe(weather_cancellation_notice.notices_on)
-    bot.cancellation_notices.subscribe(results_cancellation_notice.notices_on)
+    results_wiring.sign_up_to_cancellation_notices(bot)
     bot.round_ended_not_held = AwaitedHook()
     bot.round_ended_not_held.subscribe(check_in_record.read_check_in_on)
     bot.cancellation_steps = Hook()
-    bot.cancellation_steps.subscribe(review_posting.cancellation_steps)
+    results_wiring.sign_up_to_cancellation_steps(bot)
     bot.cancellation_steps.subscribe(partial(
         check_in_changes.take_down_steps,
         seasons=bot.season_service,
@@ -338,11 +333,7 @@ def _sign_up_to_cancellations(bot: LeagueBot) -> None:
         modules=bot.module_service,
         seasons=bot.season_service,
     ))
-    bot.cancellation_steps.subscribe(partial(
-        results_cancellation_notice.notify_results_steps,
-        modules=bot.module_service,
-        seasons=bot.season_service,
-    ))
+    results_wiring.sign_up_to_cancellation_notice_steps(bot)
 
 
 def _sign_up_to_deletes(bot: LeagueBot) -> None:
@@ -351,26 +342,23 @@ def _sign_up_to_deletes(bot: LeagueBot) -> None:
     deleting or re-pointing its own rows, on the delete's connection, inside its save
     (architecture.md, "The database")."""
     from leaguebot.attendance.services import attendance_service
-    from leaguebot.results.services import results_purge_service
     from leaguebot.signup.services import signup_module_service
     from leaguebot.weather.services import forecast_cleanup_service
 
     bot.rounds_deleted = AwaitedHook()
-    bot.rounds_deleted.subscribe(attendance_service.rounds_deleted_on)
-    bot.rounds_deleted.subscribe(results_purge_service.rounds_deleted_on)
-    bot.rounds_deleted.subscribe(forecast_cleanup_service.rounds_deleted_on)
     bot.divisions_deleted = AwaitedHook()
-    bot.divisions_deleted.subscribe(attendance_service.divisions_deleted_on)
-    bot.divisions_deleted.subscribe(results_purge_service.divisions_deleted_on)
     bot.season_deleted = AwaitedHook()
-    bot.season_deleted.subscribe(results_purge_service.season_deleted_on)
-    bot.season_deleted.subscribe(signup_module_service.season_deleted_on)
     bot.profiles_deleted = AwaitedHook()
-    bot.profiles_deleted.subscribe(attendance_service.profiles_deleted_on)
-    bot.profiles_deleted.subscribe(results_purge_service.profiles_deleted_on)
     bot.profiles_merged = AwaitedHook()
+    # Attendance's parts, then results', then signup's and weather's, so that each hook is called
+    # in the order it always was.
+    bot.rounds_deleted.subscribe(attendance_service.rounds_deleted_on)
+    bot.divisions_deleted.subscribe(attendance_service.divisions_deleted_on)
+    bot.profiles_deleted.subscribe(attendance_service.profiles_deleted_on)
     bot.profiles_merged.subscribe(attendance_service.profiles_merged_on)
-    bot.profiles_merged.subscribe(results_purge_service.profiles_merged_on)
+    results_wiring.sign_up_to_deletes(bot)
+    bot.season_deleted.subscribe(signup_module_service.season_deleted_on)
+    bot.rounds_deleted.subscribe(forecast_cleanup_service.rounds_deleted_on)
 
 
 def _sign_up_to_pack(bot: LeagueBot) -> None:
@@ -378,7 +366,6 @@ def _sign_up_to_pack(bot: LeagueBot) -> None:
     its own rows tied to the server the bot leaves, on the pack's connection, inside its one
     transaction (architecture.md, "The database"). The builder hands it to `/bot pack`."""
     from leaguebot.attendance.services import attendance_service
-    from leaguebot.results.services import results_purge_service
     from leaguebot.signup.services import signup_module_service
     from leaguebot.weather.services import forecast_cleanup_service
 
@@ -386,32 +373,7 @@ def _sign_up_to_pack(bot: LeagueBot) -> None:
     bot.bot_packed.subscribe(signup_module_service.bot_packed_on)
     bot.bot_packed.subscribe(forecast_cleanup_service.bot_packed_on)
     bot.bot_packed.subscribe(attendance_service.bot_packed_on)
-    bot.bot_packed.subscribe(results_purge_service.bot_packed_on)
-
-
-def _sign_up_to_rounds_made_final(bot: LeagueBot) -> None:
-    """Make the hook a round's results made final declares, and sign each module's part up to it:
-    results marking the drivers who raced each round as former drivers, on the closing's
-    connection, inside its save (architecture.md, "How modules and core fit together"). The
-    builder hands it to the two closers that make a round FINAL: results turned off, and a
-    season cancelled."""
-    from leaguebot.results.services import result_submission_service
-
-    bot.rounds_made_final = AwaitedHook()
-    bot.rounds_made_final.subscribe(result_submission_service.rounds_made_final_on)
-
-
-def _sign_up_to_test_mode_turned_on(bot: LeagueBot) -> None:
-    """Make the hook test mode turned on declares, and sign each module's part up to it: what a
-    module seeds for a season under test, on the connection of the save that turns test mode on,
-    given the season's id (architecture.md, "How modules and core fit together"). The builder
-    hands it to the toggle's change (`test_mode_toggle_change`). Results' seeding runs whether or
-    not the results module is on, as the core specification's test mode section says without a
-    condition."""
-    from leaguebot.results.services import points_config_service
-
-    bot.test_mode_turned_on = AwaitedHook()
-    bot.test_mode_turned_on.subscribe(points_config_service.seed_test_configs_on)
+    results_wiring.sign_up_to_pack(bot)
 
 
 def _sign_up_to_configuration_confirmed(bot: LeagueBot) -> None:
@@ -448,11 +410,10 @@ def _sign_up_to_division_lines_read(bot: LeagueBot) -> None:
     shows (architecture.md, "How modules and
     core fit together")."""
     from leaguebot.attendance.services import attendance_service
-    from leaguebot.results.services import division_channels
     from leaguebot.weather.services import forecast_channel
 
     bot.division_lines_read = AwaitedHook()
-    bot.division_lines_read.subscribe(partial(division_channels.division_lines, bot.db_path))
+    results_wiring.sign_up_to_division_lines_read(bot)
     bot.division_lines_read.subscribe(
         partial(attendance_service.division_lines, bot.attendance_service, bot.module_service)
     )
@@ -466,13 +427,12 @@ def _sign_up_to_channel_uses_read(bot: LeagueBot) -> None:
     attendance, then signup's own). The builder hands it to every command that sets a channel
     (architecture.md, "How modules and core fit together")."""
     from leaguebot.attendance.services import division_channels as attendance_channels
-    from leaguebot.results.services import division_channels as results_channels
     from leaguebot.signup.services import channel_uses
     from leaguebot.weather.services import forecast_channel
 
     bot.channel_uses_read = AwaitedHook()
     bot.channel_uses_read.subscribe(partial(forecast_channel.channel_uses, bot.db_path))
-    bot.channel_uses_read.subscribe(partial(results_channels.channel_uses, bot.db_path))
+    results_wiring.sign_up_to_channel_uses_read(bot)
     bot.channel_uses_read.subscribe(partial(attendance_channels.channel_uses, bot.db_path))
     bot.channel_uses_read.subscribe(partial(channel_uses.channel_uses, bot.db_path))
 
@@ -483,13 +443,12 @@ def _sign_up_to_setting_channels_read(bot: LeagueBot) -> None:
     sign each module up to it, handed the database's path, in the same
     order (architecture.md, "How modules and core fit together")."""
     from leaguebot.attendance.services import division_channels as attendance_channels
-    from leaguebot.results.services import division_channels as results_channels
     from leaguebot.signup.services import channel_uses
     from leaguebot.weather.services import forecast_channel
 
     bot.setting_channels_read = AwaitedHook()
     bot.setting_channels_read.subscribe(partial(forecast_channel.setting_channels, bot.db_path))
-    bot.setting_channels_read.subscribe(partial(results_channels.setting_channels, bot.db_path))
+    results_wiring.sign_up_to_setting_channels_read(bot)
     bot.setting_channels_read.subscribe(partial(attendance_channels.setting_channels, bot.db_path))
     bot.setting_channels_read.subscribe(partial(channel_uses.setting_channels, bot.db_path))
 
@@ -502,16 +461,13 @@ def _sign_up_to_division_channel_faults_read(bot: LeagueBot) -> None:
     they sign up in the order a division's lines read. The builder hands it to the placements
     review and the confirmations (architecture.md, "How modules and core fit together")."""
     from leaguebot.attendance.services import attendance_service
-    from leaguebot.results.services import division_channels
     from leaguebot.weather.services import forecast_channel
 
     bot.division_channel_faults_read = AwaitedHook()
     bot.division_channel_faults_read.subscribe(
         partial(forecast_channel.division_channel_faults, bot.module_service, bot.db_path)
     )
-    bot.division_channel_faults_read.subscribe(
-        partial(division_channels.division_channel_faults, bot.module_service, bot.db_path)
-    )
+    results_wiring.sign_up_to_division_channel_faults_read(bot)
     bot.division_channel_faults_read.subscribe(
         partial(
             attendance_service.division_channel_faults, bot.attendance_service, bot.module_service
@@ -527,17 +483,19 @@ def _sign_up_to_fingerprint_areas_read(bot: LeagueBot) -> None:
     `take_fingerprint`."""
     from leaguebot.attendance.services import fingerprint_areas as attendance_areas
     from leaguebot.image.services import fingerprint_areas as image_areas
-    from leaguebot.results.services import fingerprint_areas as results_areas
     from leaguebot.signup.services import fingerprint_areas as signup_areas
     from leaguebot.weather.services import fingerprint_areas as weather_areas
 
     bot.fingerprint_areas_read = AwaitedHook()
     # Weather, results and attendance read their channels by division, as the season service
     # reads the divisions of the season; signup and image read the server's configuration.
-    for module_areas in (weather_areas, results_areas, attendance_areas):
-        bot.fingerprint_areas_read.subscribe(
-            partial(module_areas.fingerprint_areas, bot.season_service)
-        )
+    bot.fingerprint_areas_read.subscribe(
+        partial(weather_areas.fingerprint_areas, bot.season_service)
+    )
+    results_wiring.sign_up_to_fingerprint_areas_read(bot)
+    bot.fingerprint_areas_read.subscribe(
+        partial(attendance_areas.fingerprint_areas, bot.season_service)
+    )
     for module_areas in (signup_areas, image_areas):
         bot.fingerprint_areas_read.subscribe(module_areas.fingerprint_areas)
 
@@ -550,12 +508,12 @@ def _sign_up_to_pending_steps_read(bot: LeagueBot) -> None:
     back by its own step order (architecture.md, "How modules and core fit together"). The builder
     hands it to the command."""
     from leaguebot.attendance.services import test_mode_steps as attendance_steps
-    from leaguebot.results.services import test_mode_steps as results_steps
     from leaguebot.weather.services import test_mode_steps as weather_steps
 
     bot.pending_steps_read = AwaitedHook()
-    for module_steps in (weather_steps, attendance_steps, results_steps):
-        bot.pending_steps_read.subscribe(module_steps.pending_steps)
+    bot.pending_steps_read.subscribe(weather_steps.pending_steps)
+    bot.pending_steps_read.subscribe(attendance_steps.pending_steps)
+    results_wiring.sign_up_to_pending_steps_read(bot)
 
 
 def _sign_up_to_review_marks_read(bot: LeagueBot) -> None:
@@ -566,12 +524,12 @@ def _sign_up_to_review_marks_read(bot: LeagueBot) -> None:
     lays out the divisions and rounds around them (architecture.md, "How modules and core fit
     together"). The builder hands it to the command."""
     from leaguebot.attendance.services import test_mode_steps as attendance_steps
-    from leaguebot.results.services import test_mode_steps as results_steps
     from leaguebot.weather.services import test_mode_steps as weather_steps
 
     bot.review_marks_read = AwaitedHook()
-    for module_steps in (weather_steps, results_steps, attendance_steps):
-        bot.review_marks_read.subscribe(module_steps.review_marks)
+    bot.review_marks_read.subscribe(weather_steps.review_marks)
+    results_wiring.sign_up_to_review_marks_read(bot)
+    bot.review_marks_read.subscribe(attendance_steps.review_marks)
 
 
 def _sign_up_to_driver_turned_down(bot: LeagueBot) -> None:
@@ -614,37 +572,12 @@ def _sign_up_to_placements_confirmed(bot: LeagueBot) -> None:
     `season_approval_change`. Results signs up first, so each division's jobs stay lineup,
     calendar, standings, sheet."""
     from leaguebot.attendance.services import sheet_posting
-    from leaguebot.results.services import season_standings_posts
 
     bot.placements_confirmed = AwaitedHook()
-    bot.placements_confirmed.subscribe(season_standings_posts.placements_confirmed_on)
-    bot.placements_confirmed.subscribe(sheet_posting.placements_confirmed_on)
     bot.placements_confirmed_steps = Hook()
-    bot.placements_confirmed_steps.subscribe(
-        partial(season_standings_posts.opening_steps, bot.module_service)
-    )
+    results_wiring.sign_up_to_placements_confirmed(bot)
+    bot.placements_confirmed.subscribe(sheet_posting.placements_confirmed_on)
     bot.placements_confirmed_steps.subscribe(partial(sheet_posting.opening_steps, bot.module_service))
-
-
-def _sign_up_to_divisions_raced_read(bot: LeagueBot) -> None:
-    """Make the hook `/driver reassign` asks which divisions a driver's accounts raced in through,
-    and sign results' read of its own records up to it, handed the connection of the check or the
-    save that asks and the accounts. The builder hands it to the change."""
-    from leaguebot.results.services import results_purge_service
-
-    bot.divisions_raced_read = AwaitedHook()
-    bot.divisions_raced_read.subscribe(results_purge_service.divisions_raced_on)
-
-
-def _sign_up_to_season_standing_read(bot: LeagueBot) -> None:
-    """Make the hook a season's history is written through, asking each driver's standing in a
-    division, and sign results' read of its own standings up to it, handed the connection of the
-    save that writes the history, the division and the driver's accounts. The builder hands it to
-    the completion and to the cancellation."""
-    from leaguebot.results.services import season_standings_posts
-
-    bot.season_standing_read = AwaitedHook()
-    bot.season_standing_read.subscribe(season_standings_posts.season_standing_on)
 
 
 def _sign_up_to_season_completed(bot: LeagueBot) -> None:
@@ -653,17 +586,11 @@ def _sign_up_to_season_completed(bot: LeagueBot) -> None:
     final standings, then attendance's final sheet. The builder hands them to
     `season_complete_change`."""
     from leaguebot.attendance.services import sheet_posting
-    from leaguebot.results.services import season_standings_posts
 
-    bot.final_round_read = AwaitedHook()
-    bot.final_round_read.subscribe(season_standings_posts.final_round_on)
     bot.season_completed = AwaitedHook()
-    bot.season_completed.subscribe(season_standings_posts.season_completed_on)
-    bot.season_completed.subscribe(sheet_posting.season_completed_on)
     bot.season_completed_steps = Hook()
-    bot.season_completed_steps.subscribe(
-        partial(season_standings_posts.final_steps, bot.module_service)
-    )
+    results_wiring.sign_up_to_season_completed(bot)
+    bot.season_completed.subscribe(sheet_posting.season_completed_on)
     bot.season_completed_steps.subscribe(
         partial(sheet_posting.final_steps, bot.module_service)
     )
@@ -680,13 +607,10 @@ def _sign_up_to_season_end(bot: LeagueBot) -> None:
     clear what test mode posted (weather's); and the drivers deleted (image's discard of their
     portraits)."""
     from leaguebot.image.services import driver_portrait_service
-    from leaguebot.results.services import result_submission_service
     from leaguebot.signup.services import closing_steps, window_changes
     from leaguebot.signup.services.window_close import RETURNED_BY_CLOSE
     from leaguebot.weather.services import forecast_changes, forecast_cleanup_service
 
-    bot.season_end_refused = AwaitedHook()
-    bot.season_end_refused.subscribe(result_submission_service.season_end_refusal)
     bot.season_end_closes = Hook()
     bot.season_end_closes.subscribe(closing_steps.season_end_closes)
     bot.drivers_returned = AwaitedHook()
@@ -911,10 +835,6 @@ def register_change_types(bot: LeagueBot) -> None:
         module_off_images,
         module_on_images,
     )
-    from leaguebot.results.services.amendment_settings import amendment_settings
-    from leaguebot.results.services.channel_settings import results_channel_settings
-    from leaguebot.results.services.module_switch_settings import module_on_results
-    from leaguebot.results.services.points_settings import points_settings
     from leaguebot.weather.services.weather_settings import (
         deadline_setting,
         forecast_channel_setting,
@@ -927,25 +847,6 @@ def register_change_types(bot: LeagueBot) -> None:
         forecast_change,
         forecast_clean_up_change,
     )
-    from leaguebot.results.services.amendment_stage_changes import amendment_stage_changes
-    from leaguebot.results.services.appeals_approval_change import appeals_approval_change
-    from leaguebot.results.services.points_amendment_change import points_amendment_change
-    from leaguebot.results.services.results_off_change import results_off_change
-    from leaguebot.results.services.report_approval_change import report_approval_change
-    from leaguebot.results.services.amend_changes import amend_open_change
-    from leaguebot.results.services.amend_changes import TIMER as AMEND_TIMER
-    from leaguebot.results.services.amend_end_changes import (
-        amend_cancel_change,
-        amend_lapse_change,
-        amend_lapse_timer,
-    )
-    from leaguebot.results.services.amend_turn_change import (
-        amend_close_change,
-        amend_config_change,
-        amend_stage_one_change,
-        amend_turn_change,
-    )
-    from leaguebot.results.services.rounds_sync_change import rounds_sync_change
     from leaguebot.signup.services.closing_steps import closing_change, reason_delete_change
     from leaguebot.signup.services.window_close import RETURNED_BY_CLOSE
     from leaguebot.signup.services.module_switch_settings import module_on_signup
@@ -976,118 +877,8 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     from leaguebot.signup.services.signup_off_change import KIND as OFF_KIND
     from leaguebot.signup.services.window_changes import CLOSE as CLOSE_KIND
-    from leaguebot.results.services.standings_sync_change import standings_sync_change
-    from leaguebot.results.services.resubmission_changes import (
-        resubmission_start_change,
-        resubmission_swap_change,
-    )
-    from leaguebot.results.services.submission_changes import (
-        submission_all_cancelled_change,
-        submission_close_change,
-        submission_open_change,
-        submission_restart_change,
-    )
-    from leaguebot.results.services.submission_turn_change import (
-        submission_config_change,
-        submission_turn_change,
-    )
-    from leaguebot.results.services.review_open_change import (
-        appeals_open_change,
-        close_stale_change,
-        review_open_change,
-        review_prompt_change,
-    )
-    from leaguebot.results.services.review_confirm_change import review_confirm_change
-    from leaguebot.results.services.review_lock_change import (
-        TIMER,
-        lock_change,
-        lock_clear_change,
-        lock_clear_timer,
-    )
-    from leaguebot.results.services.review_stage_change import review_stage_change
 
-    bot.change_queue.register(
-        results_off_change(
-            attendance_off_on=bot.attendance_service.switch_off_on,
-            attendance_enabled=bot.module_service.is_attendance_enabled,
-            rounds_made_final=bot.rounds_made_final,
-        )
-    )
-    bot.change_queue.register(submission_open_change(now=lambda: bot.change_queue.now()))
-    bot.change_queue.register(submission_restart_change())
-    bot.change_queue.register(
-        submission_all_cancelled_change(
-            seasons=bot.season_service,
-            drawing=bot.image_drawing,
-            round_ended_not_held=bot.round_ended_not_held,
-            cancellation_notices=bot.cancellation_notices,
-            cancellation_steps=steps_of_the_modules(bot.cancellation_steps),
-            now=lambda: bot.change_queue.now(),
-        )
-    )
-    bot.change_queue.register(submission_close_change())
-    bot.change_queue.register(resubmission_start_change(queue=bot.change_queue))
-    bot.change_queue.register(resubmission_swap_change())
-    bot.change_queue.register(
-        submission_turn_change(
-            queue=bot.change_queue, server_config=bot.config_service.get_server_config,
-            resubmission=True,
-        )
-    )
-    bot.change_queue.register(
-        submission_config_change(
-            queue=bot.change_queue, server_config=bot.config_service.get_server_config,
-            resubmission=True,
-        )
-    )
-    bot.change_queue.register(
-        submission_turn_change(
-            queue=bot.change_queue, server_config=bot.config_service.get_server_config
-        )
-    )
-    bot.change_queue.register(
-        submission_config_change(
-            queue=bot.change_queue, server_config=bot.config_service.get_server_config
-        )
-    )
-    # A change type or timer helper whose parameter is a getter of the queue (`queue_of`, `queue`
-    # given a lambda) is handed `lambda: bot.change_queue`, as its signature asks: it reads the
-    # bot's queue when it runs. The bot keeps the one queue `build` made, and the tests'
-    # `restart_queue` sets a new one on it and registers again, which a getter and a queue handed
-    # over would both follow; the getter is kept for the signature's sake.
-    bot.change_queue.register(
-        amend_open_change(
-            modules=bot.module_service, server_config=bot.config_service.get_server_config,
-            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
-            queue_of=lambda: bot.change_queue,
-        )
-    )
-    bot.change_queue.register(amend_cancel_change(now=lambda: bot.change_queue.now()))
-    bot.change_queue.register(amend_lapse_change(now=lambda: bot.change_queue.now()))
 
-    # The timer asks the queue when it fires, by the helper's getter, as above.
-    bot.scheduler_service.register_timer(
-        AMEND_TIMER, amend_lapse_timer(bot.db_path, lambda: bot.change_queue)
-    )
-    bot.change_queue.register(
-        amend_turn_change(
-            server_config=bot.config_service.get_server_config,
-            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
-        )
-    )
-    bot.change_queue.register(
-        amend_config_change(
-            server_config=bot.config_service.get_server_config,
-            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
-        )
-    )
-    bot.change_queue.register(
-        amend_stage_one_change(
-            server_config=bot.config_service.get_server_config,
-            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
-        )
-    )
-    bot.change_queue.register(amend_close_change())
     bot.change_queue.register(reason_delete_change())
     bot.change_queue.register(
         closing_change(now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once)
@@ -1211,45 +1002,6 @@ def register_change_types(bot: LeagueBot) -> None:
         DELETE_TIMER,
         lambda key: ask_channel_delete(bot.change_queue, bot.db_path, str(key)),
     )
-    bot.change_queue.register(review_open_change())
-    bot.change_queue.register(review_prompt_change())
-    bot.change_queue.register(review_stage_change())
-    bot.change_queue.register(review_confirm_change())
-    bot.change_queue.register(
-        lock_change(
-            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once
-        )
-    )
-    bot.change_queue.register(lock_clear_change())
-    # The lock-clearing timer asks the queue when it fires, by the helper's getter.
-    bot.scheduler_service.register_timer(
-        TIMER, lock_clear_timer(bot.db_path, lambda: bot.change_queue)
-    )
-    bot.change_queue.register(appeals_open_change())
-    bot.change_queue.register(close_stale_change())
-    # The review's change types stamp what they write with the queue's own clock, read when they
-    # run, as the getters above are, and reach attendance through the hook alone.
-    bot.change_queue.register(
-        report_approval_change(
-            attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
-        )
-    )
-    bot.change_queue.register(
-        appeals_approval_change(
-            attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
-        )
-    )
-    for stage in amendment_stage_changes(
-        attendance=bot.attendance_after_review, now=lambda: bot.change_queue.now()
-    ):
-        bot.change_queue.register(stage)
-    bot.change_queue.register(
-        points_amendment_change(
-            attendance=bot.attendance_after_review,
-            now=lambda: bot.change_queue.now(),
-            module_service=bot.module_service,
-        )
-    )
     bot.change_queue.register(hub_refresh_change(
         bot.change_queue, bot.config_service, hub_options=bot.hub_options
     ))
@@ -1311,8 +1063,6 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     bot.change_queue.register(sheet_post_change())
-    bot.change_queue.register(rounds_sync_change(bot.season_service, bot.module_service))
-    bot.change_queue.register(standings_sync_change(bot.season_service, bot.module_service))
     bot.change_queue.register(forecast_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(
         check_in_call_change(bot.attendance_service, now=lambda: bot.change_queue.now())
@@ -1505,11 +1255,6 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(
         setting_change(
-            module_on_results(modules=bot.module_service, seasons=bot.season_service)
-        )
-    )
-    bot.change_queue.register(
-        setting_change(
             module_on_signup(modules=bot.module_service, config=bot.config_service)
         )
     )
@@ -1577,12 +1322,6 @@ def register_change_types(bot: LeagueBot) -> None:
         hub_channel_setting(config=bot.config_service),
         *division_channel_settings(seasons=bot.season_service),
         test_mode_nationality_setting(config=bot.config_service),
-        *points_settings(modules=bot.module_service, seasons=bot.season_service),
-        *amendment_settings(modules=bot.module_service, seasons=bot.season_service),
-        *results_channel_settings(
-            modules=bot.module_service, seasons=bot.season_service,
-            channel_of=lambda channel_id: bot.get_channel(channel_id),
-        ),
         *attendance_channel_settings(
             modules=bot.module_service, seasons=bot.season_service,
             channel_of=lambda channel_id: bot.get_channel(channel_id),
@@ -1655,6 +1394,11 @@ def register_change_types(bot: LeagueBot) -> None:
             now=lambda: bot.change_queue.now(),
         )
     )
+    results_wiring.register_change_types(
+        bot,
+        attendance=bot.attendance_after_review,
+        attendance_off_on=bot.attendance_service.switch_off_on,
+    )
 
 
 def register_scheduler_callbacks(bot: LeagueBot) -> None:
@@ -1681,14 +1425,7 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
     for kind, advance in advance_steps(bot.change_queue, bot.db_path).items():
         bot.advance_steps.register_step(kind, advance)
 
-    # Register result submission callback
-    from leaguebot.results.services.submission_changes import advance_step, ask_submission_open
-
-    async def _result_submission_cb(round_id: int) -> None:
-        await ask_submission_open(bot.change_queue, bot.db_path, round_id)
-
-    scheduler.register_timer("results", _result_submission_cb)
-    bot.advance_steps.register_step("results", advance_step(bot.change_queue, bot.db_path))
+    results_wiring.register_scheduler_callbacks(bot)
 
     # Register RSVP attendance callbacks
     from leaguebot.attendance.services.check_in_changes import (
@@ -1736,13 +1473,6 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
         await run_daily_refresh(bot)
 
     scheduler.register_timer("portrait_refresh", _portrait_refresh_cb)
-
-    # The standing sweep that undoes an amendment nobody carried through; start-up arms it.
-    async def _amendment_sweep_cb() -> None:
-        from leaguebot.results.services.result_submission_service import sweep_expired_amendments
-        await sweep_expired_amendments(bot, queue=bot.change_queue)
-
-    scheduler.register_timer("amendment_sweep", _amendment_sweep_cb)
 
     async def _signup_close_cb() -> None:
         from leaguebot.signup.services.window_close import close_signups_unattended
@@ -1872,16 +1602,14 @@ async def build(settings: Settings) -> LeagueBot:
     # Attendance's share of a round's review, handed the placement service it moves seats
     # through; results' change types reach attendance through it alone.
     bot.attendance_after_review = AttendanceAfterReview(bot, bot.placement_service)
+    _make_hooks(bot)
     _sign_up_to_round_windows(bot)
     _sign_up_to_review_sections(bot)
-    _sign_up_to_confirmation_refused(bot)
     bot.configuration_faults = _make_configuration_faults(bot)
     _sign_up_to_base_role_changed(bot)
     _sign_up_to_amendments(bot)
 
     _sign_up_to_cancellations(bot)
-    _sign_up_to_rounds_made_final(bot)
-    _sign_up_to_test_mode_turned_on(bot)
     _sign_up_to_configuration_confirmed(bot)
     _sign_up_to_driver_turned_down(bot)
     _sign_up_to_driver_names_read(bot)
@@ -1894,12 +1622,11 @@ async def build(settings: Settings) -> LeagueBot:
     _sign_up_to_review_marks_read(bot)
     _sign_up_to_driver_account_changed(bot)
     _sign_up_to_placements_confirmed(bot)
-    _sign_up_to_divisions_raced_read(bot)
-    _sign_up_to_season_standing_read(bot)
     _sign_up_to_season_completed(bot)
     _sign_up_to_season_end(bot)
     _sign_up_to_deletes(bot)
     _sign_up_to_pack(bot)
+    results_wiring.sign_up(bot)
     register_change_types(bot)
     from leaguebot.core.services.test_mode_service import AdvanceSteps
 
@@ -1947,11 +1674,10 @@ async def build(settings: Settings) -> LeagueBot:
 
     # The bot's in-memory state cleared (`/bot pack`, `/bot factory-reset`): each module signs up
     # what it holds, in the order the clear drops them.
-    from leaguebot.results.services.penalty_wizard import clear_held_reviews
     from leaguebot.signup.services.signup_views import clear_pending_reasons
 
     bot.in_memory_state_cleared = Hook()
-    bot.in_memory_state_cleared.subscribe(clear_held_reviews)
+    results_wiring.sign_up_to_in_memory_state_cleared(bot)
     bot.in_memory_state_cleared.subscribe(clear_pending_reasons)
 
     # Register ALL persistent views so button interactions survive bot restarts.
@@ -2054,10 +1780,10 @@ def _start_up_steps(bot: LeagueBot) -> "tuple[StartUpStep, ...]":
         # database, unapproved; recovering a submission channel whose results were saved but never
         # posted posts its standings from that database. Reverting the amendments first means
         # those standings are built from the round as it raced, wherever the revert succeeds.
-        ("orphaned amend channels", lambda: _recover_orphaned_amend_channels(bot)),
+        ("orphaned amend channels", lambda: results_wiring.recover_orphaned_amend_channels(bot)),
         # Submission channels left open by a previous run. The paste they were waiting for died
         # with the process, so they are reset so /test-mode advance can re-trigger submission.
-        ("orphaned submission channels", lambda: _recover_orphaned_submission_channels(bot)),
+        ("orphaned submission channels", lambda: results_wiring.recover_orphaned_submission_channels(bot)),
         # Any season-review approve button left standing by a previous run.
         ("expired review prompts",
          lambda: recover_expired_review_prompts(
@@ -2598,69 +2324,6 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
             )
 
 
-async def _recover_orphaned_submission_channels(bot: LeagueBot) -> None:
-    """Clear any submission channels left open by a previous bot process, through the queue.
-
-    When the bot restarts, the paste a submission was waiting for is lost: the row remains
-    closed=0 and the Discord channel still stands, but nothing is listening.
-
-    A mid-submission orphan (in_penalty_review=0) is asked of the queue as
-    `results.submission.restart`: it clears the round's sessions (so the round is not mistaken
-    for complete by get_next_pending_phase) and the submission row, deletes the channel, tells the
-    log channel to re-submit and opens the submission afresh. A paste whose turn is in hand on the
-    queue is left to it. This runs before the queue starts.
-
-    Reviews are not decided here: `review_recovery.recover_review` leaves a round whose review a
-    change on the queue is carrying out to it, and otherwise asks the queue to put the review
-    back. A resubmission a restart cut short is ended by the review's opening, its collection
-    being lost though the round's results are not.
-    """
-    from leaguebot.core.db.database import get_connection
-
-    async with get_connection(bot.db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT rsc.round_id, rsc.channel_id, rsc.in_penalty_review,
-                   rsc.results_posted, rsc.prompt_message_id, rsc.appeals_prompt_message_id,
-                   rsc.resubmitting, rsc.resubmit_prompt_message_id, rsc.resubmit_started_by,
-                   r.division_id, r.status, r.round_number, d.name AS division_name
-            FROM round_submission_channels rsc
-            JOIN rounds r    ON r.id  = rsc.round_id
-            JOIN divisions d ON d.id  = r.division_id
-            JOIN seasons s   ON s.id  = d.season_id
-            WHERE rsc.closed = 0
-            """
-        )
-        orphans = await cursor.fetchall()
-
-    from leaguebot.results.services.review_recovery import recover_review
-
-    for row in orphans:
-        round_id: int = row["round_id"]
-
-        guild = await league_guild(bot)
-
-        # A round that is a review is put back, or left to the change carrying it out, by the
-        # results service. What is left is a first paste cut short, which is no review.
-        if await recover_review(
-            bot, row, guild, queue=bot.change_queue,
-        ):
-            continue
-
-        # A first paste cut short is cleared, its channel deleted and its submission opened
-        # afresh by the change queue's `results.submission.restart`, before the queue starts. A
-        # round with a change of its submission in hand is left to it above.
-        from leaguebot.results.services.submission_changes import ask_submission_restart
-
-        log.info("Recovery: asking the queue to clear and reopen round %s's submission", round_id)
-        try:
-            await ask_submission_restart(
-                bot.change_queue, bot.db_path, round_id, int(row["channel_id"]),
-            )
-        except Exception:
-            log.exception("Recovery: could not ask for round %s's submission restart", round_id)
-
-
 async def _recover_portrait_refresh_job(bot: LeagueBot) -> None:
     """Re-arm the daily driver-portrait refresh, where the league has it switched on."""
     from leaguebot.core.db.database import get_connection
@@ -2678,46 +2341,6 @@ async def _recover_portrait_refresh_job(bot: LeagueBot) -> None:
             )
         except Exception:
             log.warning("Failed to re-arm the daily portrait refresh", exc_info=True)
-
-
-async def _recover_orphaned_amend_channels(bot: LeagueBot) -> None:
-    """Ask the change queue to end every amendment left open by a previous bot process.
-
-    An amendment's pastes are turns on the queue, so an amendment open at a restart has, at
-    most, its waiting turns and its timer; but it was abandoned all the same, and a league manager
-    whose amendment vanished needs to know to run the command again. Each amendment row is asked for
-    as a ``results.amend.lapse`` of the restart's kind, as the bot, **before the queue starts**
-    (core specification, "What survives a restart"): its jobs put the round back where stage one had
-    written, delete the channel and close the row, and write the line, each amendment's own.
-    Nothing is put back, deleted or written here.
-
-    What the line says depends on what the restart found, and the row cannot always say:
-
-    - Where the round was **put back**, the amendment lapsed unconfirmed, and the record is the
-      lapse of `/results rounds amend`, naming who started it, with the sessions being amended
-      and the wording of what happened and what to run beneath it.
-    - Where there was **nothing to put back**, the corrections were either never entered or had
-      already been approved and were being rebuilt when the bot stopped, and the row cannot say
-      which. That is not a lapse, so the line is a neutral one — who started it, that a restart
-      ended it — with the explanation of both cases and what to run in each beneath it.
-
-    An amendment whose stage is in hand on the queue, stopped included, is finished by the queue
-    ("Leave it while stuck"), and one whose lapse is already in hand from an earlier restart is
-    asked for once: the lapse's check and the queue's repeat rule leave both alone. A failure to
-    ask for one amendment is logged and does not stop the rest.
-    """
-    from leaguebot.core.db.database import get_connection
-    from leaguebot.results.services.amend_end_changes import RESTART, ask_lapse
-
-    async with get_connection(bot.db_path) as db:
-        cursor = await db.execute("SELECT id FROM round_amend_channels ORDER BY id")
-        orphans = [int(row["id"]) for row in await cursor.fetchall()]
-
-    for amend_id in orphans:
-        try:
-            await ask_lapse(bot.change_queue, bot.db_path, amend_id, cause=RESTART)
-        except Exception:
-            log.exception("Recovery: could not ask the lapse of amendment %s", amend_id)
 
 
 if __name__ == "__main__":

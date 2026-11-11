@@ -25,10 +25,6 @@ from tests.core.test_driver_move import (
 )
 from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
 
-#: Why each test signing results up through its wiring fails until the sign-ups move there
-#: (#283).
-_NOT_YET_IN_THE_WIRING = "#283: results' sign-ups are not yet in its wiring"
-
 
 async def _memberships(db_path) -> list[tuple[int, int]]:
     async with get_connection(db_path) as db:
@@ -80,7 +76,6 @@ async def test_confirming_a_placement_makes_the_driver_part_of_its_division(db_p
     assert await _memberships(db_path) == [(PRO, PROFILE_ID)]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_driver_moved_to_another_division_has_history_in_both(db_path):
     await _seat(db_path, PRO, "Alpha")
 
@@ -90,7 +85,6 @@ async def test_a_driver_moved_to_another_division_has_history_in_both(db_path):
     assert await _history(db_path) == ["Am", "Pro"]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_driver_released_from_a_division_keeps_its_history(tmp_path):
     """`ongoing_league`'s season: Lewis sits, confirmed, at Ferrari in Pro and at McLaren in Am.
     The league admin runs `/driver release` of Lewis from Am and the queue runs: he sits at
@@ -109,7 +103,6 @@ async def test_a_driver_released_from_a_division_keeps_its_history(tmp_path):
     assert await _history(league.db_path, LEAGUE_SEASON_ID, profile_id=41) == ["Am", "Pro"]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_sacked_driver_keeps_the_history_of_the_divisions_they_raced_in(db_path):
     await _seat(db_path, PRO, "Alpha")
     service = _service(db_path)
@@ -137,7 +130,6 @@ async def test_a_driver_deleted_takes_their_memberships_with_them(db_path):
     assert await _memberships(db_path) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_driver_who_changed_account_after_the_last_round_keeps_their_standing(db_path):
     """E40 (issue #243): the final round's standing stands under the account the driver left.
 
@@ -182,7 +174,6 @@ async def _entries_on(db) -> list[str]:
     return [row[0] for row in await cursor.fetchall()]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_the_history_on_the_save_handed_commits_nothing(db_path):
     """A driver placed in Pro and moved to Am. A season's end writes their history inside the
     save that records its end: written on the connection it is handed, an entry for each

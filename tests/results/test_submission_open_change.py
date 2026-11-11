@@ -107,7 +107,6 @@ async def _open_changes(league: SeasonLeague) -> list[dict[str, Any]]:
     return [row for row in await change_rows(league.db_path) if row["kind"] == KIND]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the timer's callback is not yet in its module's wiring")
 async def test_the_round_start_asks_and_the_queue_opens_the_channel_with_its_opening_and_first_prompt(
     tmp_path,
 ):

@@ -37,7 +37,6 @@ _NOT_YET_IN_THE_WIRING = "#283: the recovery is not yet in its module's wiring"
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_each_orphan_is_reported_separately(tmp_path):
     """Two abandoned amendments are two commands to re-run, and a single summary would leave a
     manager guessing which. Rounds 3 and 4 of Pro were each being amended when the bot stopped:
@@ -123,7 +122,6 @@ async def test_a_refresh_that_cannot_be_armed_does_not_stop_the_start(tmp_path):
     await recover_portrait_refresh_job(bot)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_an_amendment_whose_stage_is_queued_is_not_reverted_on_restart(tmp_path):
     """**A restart with an approval in hand finishes it** (#439). An amendment whose report stage
     was asked for and not yet carried out when the bot stopped is left by recovery: its row and
