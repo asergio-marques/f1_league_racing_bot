@@ -253,18 +253,20 @@ audit and the held reply are one state machine around one lock order (`_working[
 file and leave one state machine whose lock order no single class states; and collaborator objects,
 which would reach into the queue's private state or be handed all of it (`ChangeQueue`'s docstring).
 What reads none of that state is out of the file. `core/services/change_types.py` holds the types a
-change is made of, `Step` and `ChangeType` with the contexts a check, a step and an outcome are
-handed, and the decisions that govern them (a post's id saved with its mark, a step's four kinds, a
-job that ends on a fault); `core/services/queue_records.py` holds the bookkeeping over the queue's
-tables, what is in hand, what was ever asked, the job numbering and the emptying of a restored
-database, which a check, a recovery, a restore and a factory reset call without a queue. The queue
-file keeps the constants the class reads: `RETRY_AFTER`, the bot's own tries;
-`CONVERSATION_LANES_AT_ONCE`; `UPDATABLE_FOR`, how long a reply may be updated;
-`WORKER_PAUSE_AFTER_FAULT`; and `NOTICE_REPOST_EVERY`; with `_confine` and `QUEUE_TABLES`. The plain data is in `core/models/change.py`: `StepKind` (`SAVE`,
-`ACT`, `DELETE`, `EDIT`), `Verdict`, `StepResult`, `StepFailedOnDiscord`, `GuildUnavailable` and
-the lane names. The queue's module docstring holds the engineering decisions
-that govern the queue, each pinned by a test in `tests/core/test_change_queue.py`, `test_change_queue_lanes.py` or
-`test_change_queue_controls.py`. Among them:
+change is made of, `Step` and `ChangeType` with the contexts a check, a step, an outcome and the
+refusal and discard hooks are handed, and the decisions that govern them (a post's id saved with its
+mark, a step's four kinds, a job that ends on a fault); `core/services/queue_records.py` holds the
+bookkeeping over the queue's tables, what is in hand, what was ever asked, the job numbering and the
+emptying of a restored database, which a check, a recovery, a restore and a factory reset call
+without a queue. The queue file keeps the constants the class reads: `RETRY_AFTER`, the bot's own
+tries; `CONVERSATION_LANES_AT_ONCE`; `UPDATABLE_FOR`, how long a reply may be updated;
+`WORKER_PAUSE_AFTER_FAULT`; and `NOTICE_REPOST_EVERY`; with `_confine` and `QUEUE_TABLES`. The plain
+data is in `core/models/change.py`: `StepKind` (`SAVE`, `ACT`, `DELETE`, `EDIT`), `Verdict`,
+`StepResult`, `StepFailedOnDiscord`, `GuildUnavailable` and the lane names. The engineering
+decisions that govern the queue are in its module docstring, and those that govern a step's kinds,
+its record and a fault's ending in `change_types`', each pinned by a test in
+`tests/core/test_change_queue.py`, `test_change_queue_lanes.py` or `test_change_queue_controls.py`.
+Among them:
 
 - **One save at a time across lanes**, under an in-process lock (`ChangeQueue._writing`) held for
   the save alone, with a fixed lock order. *Rejected:* one worker for every lane, which holds a
@@ -425,12 +427,11 @@ Each is pinned by a test in `tests/core/test_start_up.py`; `ChangeQueue.start`'s
 what the queue's start does.
 
 The steps are a fixed tuple the builder makes (`_start_up_steps`), in an order its comments give
-where the order matters (`test_the_builder_orders_the_start_up_steps`). Each module's recovery is
-a function of its wiring, which the builder names in the step; core's own, the review prompts and
-the hub, are the builder's. Results' amendment sweep is armed by
-`results.wiring.arm_amendment_sweep` and signup's wizards recovered by `signup.wiring.recover_wizards`,
-each a function of its module's wiring like the recoveries. The missed clean-ups are one step the
-builder composes of weather's part and attendance's:
+where the order matters (`test_the_builder_orders_the_start_up_steps`). Each module's start-up step
+is a function of its wiring, which the builder names in the step: its recoveries, results' arming of
+its amendment sweep (`results.wiring.arm_amendment_sweep`) and signup's wizard recovery
+(`signup.wiring.recover_wizards`); core's own, the review prompts and the hub, are the builder's.
+The missed clean-ups are one step the builder composes of weather's part and attendance's:
 
 | # | Step | What it does |
 |---|---|---|
@@ -601,13 +602,13 @@ the image module's class of the same name implements it; the builder makes it an
 `bot.image_drawing`. Its methods fall in five groups:
 
 - **Capacity questions**, each answering what the template cannot hold, or nothing: the four
-  placement guards (`TemplateCapacityService`), a round's (`round_add_changes`), and the season review's.
+  placement guards (`TemplateCapacityService`), a round's (`round_add_changes`), and the season
+  review's.
 - **Gates and pictures**: `calendar_wanted`, `draw_calendar`, `lineup_wanted`, `draw_lineup`,
   `draw_lineup_for_command`, `draw_review_lineup`, `discard_picture`. The review's lineup is drawn
   through `draw_review_lineup`, as the builder's drawing of a review's picture asks it, so that
   every picture core draws is drawn through this protocol and a change to the protocol reaches each
-  of them. What a gate that cannot be read answers is `architecture.md`'s
-  ("Errors and failures").
+  of them. What a gate that cannot be read answers is `architecture.md`'s ("Errors and failures").
 - **The review's image section and its faults**: `rasteriser_fault`, `review_section`,
   `template_faults`, `colour_shortfall_problems`, `portrait_fault`. The image module words each;
   core decides which refuse. The module docstring says which faults each lets out.
@@ -615,7 +616,8 @@ the image module's class of the same name implements it; the builder makes it an
 - **Portraits**: `discard_portraits`, for a reassign. A season's driver pass discards through the
   `drivers_deleted` hook instead.
 
-`TemplateCapacityService` and `LineupPoster` are handed the drawing by the builder; the cogs read it off the bot.
+`TemplateCapacityService` and `LineupPoster` are handed the drawing by the builder; the cogs read it
+off the bot.
 
 ---
 
@@ -771,17 +773,17 @@ mode and delete the saved backup. A season's end switches it off in its own `end
 real driver stands in the way is counted by `count_live_real_drivers`. `/test-mode nationality` is a
 `Setting`.
 
-**Five more test-mode commands are each a change of their own, in one shape:**
-`/test-mode set-former-driver` (`core.test_mode_former_driver`) and the four roster commands of
-`test_roster_changes` (`core.test_roster_add`, `core.test_roster_add_bulk`, `core.test_roster_remove`,
-`core.test_roster_clear`). Each carries what the command was given, is judged without a write at the ask and
-again as it starts, and is one save of its rows and their audit entries, the roster's writers
-taking the connection of the save and committing nothing. What the reply of a discarded save needs
-is read into the payload at the ask (`fill`), and a fault in a save stops the lane. What each kind
-judges and writes is its docstring's. A roster is measured against the template capacities with the
-bot's own template capacity service, the one carrying the image module's drawing, as a real
-placement is,
-and one the file shows wrong on its own is refused by the form before the ask.
+**Five more test-mode commands are each a change of their own, in one shape:** `/test-mode
+set-former-driver` (`core.test_mode_former_driver`) and the four roster commands of
+`test_roster_changes` (`core.test_roster_add`, `core.test_roster_add_bulk`,
+`core.test_roster_remove`, `core.test_roster_clear`). Each carries what the command was given, is
+judged without a write at the ask and again as it starts, and is one save of its rows and their
+audit entries, the roster's writers taking the connection of the save and committing nothing. What
+the reply of a discarded save needs is read into the payload at the ask (`fill`), and a fault in a
+save stops the lane. What each kind judges and writes is its docstring's. A roster is measured
+against the template capacities with the bot's own template capacity service, the one carrying the
+image module's drawing, as a real placement is, and one the file shows wrong on its own is refused
+by the form before the ask.
 
 **Fake drivers are seeded, not moved through the state machine.** `test_roster_service` inserts a
 fake driver at Assigned, flagged as a test driver, with a synthetic id above any real Discord id;

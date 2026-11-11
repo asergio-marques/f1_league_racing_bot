@@ -16,8 +16,8 @@ saves the new id and the audit with its mark, and plans the deletion after it. T
 same post through the attendance hook.
 
 **`LineupPoster` is the posting itself** (`refresh_lineup`): the picture where the image module's
-drawing, handed by the builder, draws it, else the embed. It was the placement service's, which
-keeps the seats and posts nothing; a change that moves a seat names the divisions whose lineup is
+drawing, handed by the builder, draws it, else the embed. The placement service keeps the seats
+and posts nothing; a change that moves a seat names the divisions whose lineup is
 owed, and the post job calls the poster.
 """
 
@@ -92,7 +92,7 @@ class LineupPosted:
 class LineupPoster:
     """Posts a division's lineup: the picture where the image module draws it, else the embed.
 
-    Taken out of the placement service, which keeps the seats. It posts through the guild it is
+    The seats are the placement service's. It posts through the guild it is
     given and reads the division, its channel and its committed seats from the database; it draws
     nothing itself, asking the image module's drawing the builder hands it (core's drawing
     protocol, `image_drawing.ImageDrawing`), and is handed no bot. Built by the builder over the

@@ -1,8 +1,7 @@
 """TemplateCapacityService — whether the image templates could draw a placement's driver (036 /
 Constitution XIV.12).
 
-The four capacity guards a placement is held to, and the test roster's, taken out of the
-placement service: the reserve block, the attendance sheet's rows, the driver standings' rows and
+The four capacity guards a placement is held to, and the test roster's: the reserve block, the attendance sheet's rows, the driver standings' rows and
 whatever an image type declares in code. Each counts the seats the change would fill, reads that
 count from the database on a connection of its own, and asks the image module's drawing, handed by
 the builder (`image_drawing.ImageDrawing`), whether it could draw that many. It holds no template,

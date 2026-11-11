@@ -1238,9 +1238,9 @@ the error in the host's log and completes the job with no names, so the revert g
 full tie ordered by user id, because a tie so ordered is the lesser fault than a round not put back
 (its docstring says so); the helper through which a placement's capacity guards count the seats and
 ask the image module (`TemplateCapacityService._ask_drawing`) is a stated exception too: its
-catch-all (a switch nobody signed up for aside) puts the error in the host's log in full, and the guard lets the
-placement through as if no problem were found, because a capacity check that cannot run must not
-block a placement (its docstring says so); the image module's calendar gate
+catch-all (a switch nobody signed up for aside) puts the error in the host's log in full, and the
+guard lets the placement through as if no problem were found, because a capacity check that cannot
+run must not block a placement (its docstring says so); the image module's calendar gate
 (`ImageDrawing.calendar_wanted`) is a stated exception likewise: its catch-all (a switch nobody
 signed up for aside) puts the error in the host's log alone, with no line to the log channel, and
 answers that the league does not draw its calendar, so the text calendar goes out, because a gate
@@ -1253,50 +1253,48 @@ which the season's own capacity checks count and ask the image module
 (`approval_checks.ask_drawing`) — the review's and the approval's (`lineup_problems`, and the
 review's calendar and attendance warnings) — is a stated exception beside
 `TemplateCapacityService._ask_drawing`'s: its catch-all (a switch nobody signed up for aside) puts
-the error in the host's log in full and lets the season through as if no problem were found, because a
-capacity check that cannot run must not block a season (its docstring says so); the round guard that
-`/round add` and the round imports share (`calendar_round_refusal`, in
+the error in the host's log in full and lets the season through as if no problem were found, because
+a capacity check that cannot run must not block a season (its docstring says so); the round guard
+that `/round add` and the round imports share (`calendar_round_refusal`, in
 `core/services/round_add_changes.py`) is a stated exception beside it: the change types' checks call
 it when the change is asked for and again as it starts, and its catch-all (a switch nobody signed up
 for aside) puts the error in the host's log in full and lets the round through as if no problem were
-found, because a capacity check that cannot run must not block a round (its docstring says so);
-the season's reading of the image module's configuration faults
+found, because a capacity check that cannot run must not block a round (its docstring says so); the
+season's reading of the image module's configuration faults
 (`approval_checks.image_configuration_faults`) is a stated exception too: each of its catch-alls
 puts the error in the host's log; a fault reading the templates is stated as a fault of its own,
 which refuses the season, because a check that never ran is not a pass, while a fault reading the
 per-tier colours or the portrait settings (a switch nobody signed up for aside) stands aside and
 lets the season through, because a reader that cannot answer must not be the thing that refuses a
-season (its docstring says so); the season's
-team-name check (`approval_checks.team_name_problems`) is a stated exception too: its catch-all puts
-the error in the host's log alone and finds nothing wrong, so each review and confirmation that
-checks the names carries on with them unchecked, because the check only keeps a team name from
-becoming a bad artwork filename (its docstring says so); the season cog's own image review section
-(`SeasonCog._build_image_review_section`) is a stated exception beside
-`approval_checks.image_configuration_faults`: its catch-all (a switch nobody signed up for aside)
-puts the error in the host's log and states the section as unreadable in the review, because a
-review must never fail for this (its docstring says so); the image module's artwork signature
-(`ImageDrawing.artwork_signature`) is a
-stated exception too: its catch-all signs a configured directory it cannot resolve as
-`[column, value, "unresolvable"]`, with a warning to the host's log alone, and signs the rest all
-the same, because a fault that escaped it would empty the whole fingerprint and the review would
-read as changed in every area (its docstring says so); the queue's own telling, of a change's
-outcome, of its stop or of a press on a stop notice (`ChangeQueue._acknowledge`,
-`_acknowledge_saved`, `_name_job`, `_post_notice`, `_tell`, `_tell_origin`, `_update_reply` and
-`_finish`, and `OutputRouter.strip_view` beside them), is a stated exception as well: each catch-all
-puts the error in the host's log and what the queue was doing stands, the change, its stop or the
-press alike, a stop notice not posted being posted again, because telling what happened must never
-undo it (their docstrings say so); the readers that stand aside (`amendment_service.approval_faults`
-and `approval_checks.channel_on_server`) are stated exceptions too: each puts the error in the
-host's log and reads an attendance switch as off (a switch nobody signed up for aside) or a channel
-as present, because a reader that cannot answer must not refuse an amendment or a season (their
-docstrings say so); a season's fingerprint that cannot be taken
-(`season_fingerprint_service.take_fingerprint`, a module's fault in handing over its areas included,
-a switch nobody signed up for aside) is a stated exception: it is signed as an empty one, which
-differs from every fingerprint, another empty one included, and so refuses an approval whose review
-was read, because a fingerprint that could not be read must not wave one through (its docstring says
-so); the factory reset's Discord clean-up (`bot_cog._clean_up`) is a stated exception: it says in
-the reset's last report and closing line that its clean-up stopped, because a reset must not end in
-silence (its docstring says so); and the scheduler's removal of one job
+season (its docstring says so); the season's team-name check (`approval_checks.team_name_problems`)
+is a stated exception too: its catch-all puts the error in the host's log alone and finds nothing
+wrong, so each review and confirmation that checks the names carries on with them unchecked, because
+the check only keeps a team name from becoming a bad artwork filename (its docstring says so); the
+season cog's own image review section (`SeasonCog._build_image_review_section`) is a stated
+exception beside `approval_checks.image_configuration_faults`: its catch-all (a switch nobody signed
+up for aside) puts the error in the host's log and states the section as unreadable in the review,
+because a review must never fail for this (its docstring says so); the image module's artwork
+signature (`ImageDrawing.artwork_signature`) is a stated exception too: its catch-all signs a
+configured directory it cannot resolve as `[column, value, "unresolvable"]`, with a warning to the
+host's log alone, and signs the rest all the same, because a fault that escaped it would empty the
+whole fingerprint and the review would read as changed in every area (its docstring says so); the
+queue's own telling, of a change's outcome, of its stop or of a press on a stop notice
+(`ChangeQueue._acknowledge`, `_acknowledge_saved`, `_name_job`, `_post_notice`, `_tell`,
+`_tell_origin`, `_update_reply` and `_finish`, and `OutputRouter.strip_view` beside them), is a
+stated exception as well: each catch-all puts the error in the host's log and what the queue was
+doing stands, the change, its stop or the press alike, a stop notice not posted being posted again,
+because telling what happened must never undo it (their docstrings say so); the readers that stand
+aside (`amendment_service.approval_faults` and `approval_checks.channel_on_server`) are stated
+exceptions too: each puts the error in the host's log and reads an attendance switch as off (a
+switch nobody signed up for aside) or a channel as present, because a reader that cannot answer must
+not refuse an amendment or a season (their docstrings say so); a season's fingerprint that cannot be
+taken (`season_fingerprint_service.take_fingerprint`, a module's fault in handing over its areas
+included, a switch nobody signed up for aside) is a stated exception: it is signed as an empty one,
+which differs from every fingerprint, another empty one included, and so refuses an approval whose
+review was read, because a fingerprint that could not be read must not wave one through (its
+docstring says so); the factory reset's Discord clean-up (`bot_cog._clean_up`) is a stated
+exception: it says in the reset's last report and closing line that its clean-up stopped, because a
+reset must not end in silence (its docstring says so); and the scheduler's removal of one job
 (`SchedulerService._remove_job`) is a stated exception: every cancel is a clean-up, so a job that
 will not go is logged on the host and left, a teardown list going on past it (`SchedulerService`
 says so).
