@@ -3,20 +3,28 @@ Constitution XIV.12).
 
 The four capacity guards a placement is held to, and the test roster's: the reserve block, the attendance sheet's rows, the driver standings' rows and
 whatever an image type declares in code. Each counts the seats the change would fill, reads that
-count from the database on a connection of its own, and asks the image module's drawing, handed by
+count from the database, and asks the image module's drawing, handed by
 the builder (`image_drawing.ImageDrawing`), whether it could draw that many. It holds no template,
 posts nothing, and is handed no bot: core reaches the image module through the drawing alone.
+
+**Which connection it reads on.** A guard run in a change's check reads on a connection of its
+own. The test roster's guard runs inside the roster change's save, so it is handed that save's
+connection (`guard_roster_capacity_on`) and reads on it, as everything a save does: a second
+connection opened while the save is open would see the database without what the save has written.
 
 **The guards' one catch.** Reading the seats and asking the drawing are one guard, not two
 (`_ask_drawing`). **The guards that run by caller:** the placement service asks `guard_image_capacity`
 of an assignment and a move (`guard_assign`, `guard_move`), the test roster's writers ask
-`guard_roster_capacity`, and the server's test-mode flag, a precondition of an assignment alone,
+`guard_roster_capacity_on`, and the server's test-mode flag, a precondition of an assignment alone,
 stays the placement service's.
 """
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from contextlib import asynccontextmanager
+
+import aiosqlite
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.refusal import Refused
@@ -37,19 +45,30 @@ class TemplateCapacityService:
         #: no guard asks anything, and a test roster of any size is accepted.
         self._drawing = drawing
 
-    async def _is_reserve_team(self, division_id: int, team_name: str) -> bool | None:
+    @asynccontextmanager
+    async def _reading(self, db: aiosqlite.Connection | None) -> AsyncIterator[aiosqlite.Connection]:
+        """The connection a guard reads on: the handed one (a save's own), or a new one."""
+        if db is not None:
+            yield db
+        else:
+            async with get_connection(self._db_path) as own:
+                yield own
+
+    async def _is_reserve_team(
+        self, division_id: int, team_name: str, db: aiosqlite.Connection | None = None
+    ) -> bool | None:
         """Whether *team_name* is the division's reserve team, or None where there is no such team.
 
         The capacity guards below measure two different populations — the reserve block and
         the classification — and a driver joins exactly one of them. Neither guard can tell
         which without this, and both run in a change's check (`guard_assign`, `guard_move`),
         before its save opens a transaction, where the same flag is read again from the row it
-        needs in hand anyway. `guard_roster_capacity` also runs inside the roster changes' save,
-        which judges once more on its own connection.
+        needs in hand anyway. `guard_roster_capacity_on` also runs inside the roster changes' save,
+        and is handed that save's connection to read on.
         """
-        async with get_connection(self._db_path) as db:
+        async with self._reading(db) as conn:
             row = await (
-                await db.execute(
+                await conn.execute(
                     "SELECT is_reserve FROM team_instances "
                     "WHERE division_id = ? AND name = ?",
                     (division_id, team_name),
@@ -88,7 +107,8 @@ class TemplateCapacityService:
             return None
 
     async def _guard_reserve_capacity(
-        self, division_id: int, team_name: str, *, adding: int = 1
+        self, division_id: int, team_name: str, *, adding: int = 1,
+        db: aiosqlite.Connection | None = None,
     ) -> None:
         """Refuse a reserve placement that would outgrow the lineup template (FR/R8).
 
@@ -105,7 +125,7 @@ class TemplateCapacityService:
         placement that was never part of it.
 
         *adding* is how many reserves the change seats — one for a placement, more for a test
-        roster seated whole (``guard_roster_capacity``).
+        roster seated whole (``guard_roster_capacity_on``).
 
         Reads its own count and asks the image module's handed drawing (``_ask_drawing``)
         under the one catch: never raises for its own reasons, only a genuine over-capacity
@@ -115,11 +135,11 @@ class TemplateCapacityService:
         async def _reserves_seated() -> int | None:
             # Not a reserve placement, or no such team — `judge_assign_on` reports a team
             # that does not exist in its own words, and this guard stays quiet.
-            if not await self._is_reserve_team(division_id, team_name):
+            if not await self._is_reserve_team(division_id, team_name, db):
                 return None
-            async with get_connection(self._db_path) as db:
+            async with self._reading(db) as conn:
                 row = await (
-                    await db.execute(
+                    await conn.execute(
                         "SELECT COUNT(*) AS seated FROM driver_season_assignments dsa "
                         "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
                         "JOIN team_instances ti ON ti.id = ts.team_instance_id "
@@ -138,7 +158,9 @@ class TemplateCapacityService:
                 f"{problem.problem}. The driver was **not** assigned. {problem.remedy}"
             )
 
-    async def _guard_sheet_capacity(self, division_id: int, *, adding: int = 1) -> None:
+    async def _guard_sheet_capacity(
+        self, division_id: int, *, adding: int = 1, db: aiosqlite.Connection | None = None
+    ) -> None:
         """Refuse a placement that would outgrow the attendance sheet template (FR-042).
 
         The sheet draws every driver of the division, and its rows are counted from the file
@@ -159,7 +181,7 @@ class TemplateCapacityService:
         ``test_placement_sheet_capacity_guard.py``.
 
         *adding* is how many drivers the change seats, of either kind — one for a placement,
-        more for a test roster seated whole (``guard_roster_capacity``).
+        more for a test roster seated whole (``guard_roster_capacity_on``).
 
         Reads its own count and asks the image module's handed drawing (``_ask_drawing``)
         under the one catch: never raises for its own reasons, only a genuine over-capacity
@@ -167,9 +189,9 @@ class TemplateCapacityService:
         """
 
         async def _drivers_seated() -> int | None:
-            async with get_connection(self._db_path) as db:
+            async with self._reading(db) as conn:
                 row = await (
-                    await db.execute(
+                    await conn.execute(
                         "SELECT COUNT(*) AS seated FROM driver_season_assignments "
                         "WHERE division_id = ?",
                         (division_id,),
@@ -187,7 +209,8 @@ class TemplateCapacityService:
             )
 
     async def _guard_standings_capacity(
-        self, division_id: int, team_name: str, *, adding: int = 1
+        self, division_id: int, team_name: str, *, adding: int = 1,
+        db: aiosqlite.Connection | None = None,
     ) -> None:
         """Refuse a placement that would outgrow the driver standings template (FR-044).
 
@@ -209,7 +232,7 @@ class TemplateCapacityService:
         division's team count is settled.
 
         *adding* is how many classified drivers the change seats — one for a placement, more
-        for a test roster seated whole (``guard_roster_capacity``).
+        for a test roster seated whole (``guard_roster_capacity_on``).
 
         Reads its own count and asks the image module's handed drawing (``_ask_drawing``)
         under the one catch: never raises for its own reasons, only a genuine over-capacity
@@ -219,11 +242,11 @@ class TemplateCapacityService:
         async def _classified_seated() -> int | None:
             # A reserve placement adds no entry to the classification, and no such team —
             # `judge_assign_on` reports a team that does not exist in its own words.
-            if await self._is_reserve_team(division_id, team_name) is not False:
+            if await self._is_reserve_team(division_id, team_name, db) is not False:
                 return None
-            async with get_connection(self._db_path) as db:
+            async with self._reading(db) as conn:
                 row = await (
-                    await db.execute(
+                    await conn.execute(
                         "SELECT COUNT(*) AS seated FROM driver_season_assignments dsa "
                         "JOIN team_seats ts ON ts.id = dsa.team_seat_id "
                         "JOIN team_instances ti ON ti.id = ts.team_instance_id "
@@ -288,8 +311,8 @@ class TemplateCapacityService:
         if problem is not None:
             raise Refused(f"{problem.problem}. {problem.remedy}")
 
-    async def guard_roster_capacity(
-        self, division_id: int, added: Mapping[str, int]
+    async def guard_roster_capacity_on(
+        self, db: aiosqlite.Connection, division_id: int, added: Mapping[str, int]
     ) -> None:
         """Refuse a test roster that a real placement into the same teams would be refused for.
 
@@ -307,13 +330,15 @@ class TemplateCapacityService:
         The declared-capacity branch of ``guard_image_capacity`` is not run: every catalogue
         declares ``capacity=None`` today, so it bounds no placement, real or test.
 
+        Reads on *db*, the roster change's save's own connection, and commits nothing.
+
         Raises Refused naming the template, as a real placement's refusal does.
         """
         reserve_team: str | None = None
         classified_team: str | None = None
         reserves = classified = 0
         for team_name, count in added.items():
-            is_reserve = await self._is_reserve_team(division_id, team_name)
+            is_reserve = await self._is_reserve_team(division_id, team_name, db)
             if is_reserve is None or count <= 0:
                 continue
             if is_reserve:
@@ -322,10 +347,14 @@ class TemplateCapacityService:
                 classified_team, classified = team_name, classified + count
 
         if reserve_team is not None:
-            await self._guard_reserve_capacity(division_id, reserve_team, adding=reserves)
+            await self._guard_reserve_capacity(
+                division_id, reserve_team, adding=reserves, db=db
+            )
         if reserves + classified:
-            await self._guard_sheet_capacity(division_id, adding=reserves + classified)
+            await self._guard_sheet_capacity(
+                division_id, adding=reserves + classified, db=db
+            )
         if classified_team is not None:
             await self._guard_standings_capacity(
-                division_id, classified_team, adding=classified
+                division_id, classified_team, adding=classified, db=db
             )

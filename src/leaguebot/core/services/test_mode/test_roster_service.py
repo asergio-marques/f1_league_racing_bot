@@ -235,8 +235,8 @@ async def judge_add_on(
 
     if capacity is not None:
         try:
-            await capacity.guard_roster_capacity(
-                located.division_id, {team_row["name"]: 1}
+            await capacity.guard_roster_capacity_on(
+                db, located.division_id, {team_row["name"]: 1}
             )
         except Refused as exc:
             return str(exc)
@@ -514,7 +514,7 @@ async def judge_bulk_on(
             if division_id not in added:
                 continue
             try:
-                await capacity.guard_roster_capacity(division_id, added[division_id])
+                await capacity.guard_roster_capacity_on(db, division_id, added[division_id])
             except Refused as exc:
                 errors.append(f"Division '{name}': {exc}")
 

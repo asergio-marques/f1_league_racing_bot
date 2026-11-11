@@ -67,10 +67,15 @@ class ConfigService:
         this before every command.
         """
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT server_id FROM server_configs WHERE server_id IS NOT NULL LIMIT 1"
-            )
-            row = await cursor.fetchone()
+            return await self.get_league_server_id_on(db)
+
+    async def get_league_server_id_on(self, db: aiosqlite.Connection) -> int | None:
+        """`get_league_server_id` on *db*, for a save that must see its own writes: `/bot init`'s
+        save asks it, after its claim is refused, who holds the league."""
+        cursor = await db.execute(
+            "SELECT server_id FROM server_configs WHERE server_id IS NOT NULL LIMIT 1"
+        )
+        row = await cursor.fetchone()
         return None if row is None else int(row["server_id"])
 
     async def claim_on(self, db: aiosqlite.Connection, cfg: ServerConfig) -> bool:

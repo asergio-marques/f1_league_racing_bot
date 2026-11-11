@@ -346,9 +346,39 @@ async def test_a_roster_asks_each_guard_once_summed_across_its_teams(tmp_path, a
     db_path, _season_id, division_id = await _seed(tmp_path)
     drawing = _Drawing({})
 
-    await _capacity(db_path, drawing).guard_roster_capacity(division_id, added)
+    async with get_connection(db_path) as db:
+        await _capacity(db_path, drawing).guard_roster_capacity_on(db, division_id, added)
 
     assert drawing.asked == asked
+
+
+async def test_a_roster_counts_the_seats_on_the_connection_of_the_save(tmp_path):
+    """The roster's guard runs inside the roster change's save and reads on that save's own
+    connection: a driver the save has seated, not yet committed, is counted, where a connection of
+    its own would count the database without it."""
+
+    db_path, season_id, division_id = await _seed(tmp_path)
+    drawing = _Drawing({})
+
+    async with get_connection(db_path) as db:
+        seat = (await (await db.execute(
+            "SELECT ts.id FROM team_seats ts JOIN team_instances ti ON ti.id = ts.team_instance_id "
+            "WHERE ti.division_id = ? AND ti.name = ? AND ts.driver_profile_id IS NULL",
+            (division_id, ORDINARY),
+        )).fetchone())["id"]
+        profile = (await db.execute(
+            "INSERT INTO driver_profiles (discord_user_id, current_state) VALUES ('2000', 'ASSIGNED')"
+        )).lastrowid
+        await db.execute(
+            "INSERT INTO driver_season_assignments (driver_profile_id, season_id, division_id, "
+            "team_seat_id) VALUES (?, ?, ?, ?)",
+            (profile, season_id, division_id, seat),
+        )
+
+        await _capacity(db_path, drawing).guard_roster_capacity_on(db, division_id, {ORDINARY: 1})
+        await db.rollback()
+
+    assert drawing.asked == [("sheet_capacity_problem", 5), ("standings_capacity_problem", 4)]
 
 
 async def test_no_drawing_handed_means_no_guard(tmp_path):
@@ -358,9 +388,10 @@ async def test_no_drawing_handed_means_no_guard(tmp_path):
 
     db_path, _season_id, division_id = await _seed(tmp_path)
 
-    await _capacity(db_path).guard_roster_capacity(
-        division_id, {RESERVE: 99, ORDINARY: 99}
-    )
+    async with get_connection(db_path) as db:
+        await _capacity(db_path).guard_roster_capacity_on(
+            db, division_id, {RESERVE: 99, ORDINARY: 99}
+        )
 
 
 async def test_a_guard_whose_switch_nobody_signed_up_for_raises(tmp_path):
