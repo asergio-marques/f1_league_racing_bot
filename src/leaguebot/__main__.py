@@ -1336,13 +1336,5 @@ async def main() -> None:
         await close_connections()
 
 
-async def _recover_missed_cleanups(bot: LeagueBot) -> None:
-    """Take down what a round's cleanups would have, their moment passing while the bot was down:
-    the step the builder composes from weather's part, the forecasts, and then attendance's, the
-    check-in calls. Each is its module's own and contains its own failures."""
-    await weather_wiring.recover_missed_forecast_clean_ups(bot)
-    await attendance_wiring.recover_missed_check_in_clean_ups(bot)
-
-
 if __name__ == "__main__":
     asyncio.run(main())
