@@ -52,10 +52,10 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.team_role_service import TeamRoleService
-from leaguebot.core.services.role_moves import MOVE_ROLES, role_move_step
+from leaguebot.core.services.drivers.team_role_service import TeamRoleService
+from leaguebot.core.services.drivers.role_moves import MOVE_ROLES, role_move_step
 from leaguebot.core.services.seasons.season_service import live_season
-from leaguebot.core.services.team_service import RESERVE_NAME, TeamService, resolve_team_reference
+from leaguebot.core.services.drivers.team_service import RESERVE_NAME, TeamService, resolve_team_reference
 from leaguebot.core.utils.asset_slug import normalise
 from leaguebot.core.utils.channel_guard import role_grant_refusal
 from leaguebot.core.utils.league_server import league_guild

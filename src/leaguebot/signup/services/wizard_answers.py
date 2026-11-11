@@ -88,7 +88,7 @@ from leaguebot.signup.services.wizard_service import (
 
 if TYPE_CHECKING:
     from leaguebot.core.services.queue.change_queue import ChangeQueue
-    from leaguebot.core.services.driver_service import DriverService
+    from leaguebot.core.services.drivers.driver_service import DriverService
     from leaguebot.core.utils.league_bot import LeagueBot
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 

@@ -18,7 +18,7 @@ from leaguebot.core.models.change import StepKind, StepResult
 from leaguebot.core.services import backup_service
 from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.queue.change_types import Step, StepContext
-from leaguebot.core.services.driver_service import accounts_of_profile
+from leaguebot.core.services.drivers.driver_service import accounts_of_profile
 from leaguebot.core.services.seasons.season_lifecycle_service import (
     close_signup_steps,
     require_guild,
@@ -27,7 +27,7 @@ from leaguebot.core.services.seasons.season_lifecycle_service import (
 if TYPE_CHECKING:
     import aiosqlite
     from leaguebot.core.utils.hooks import AwaitedHook, Hook
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
     from leaguebot.core.services.scheduler_service import SchedulerService
 
 log = logging.getLogger(__name__)

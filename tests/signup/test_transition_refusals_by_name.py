@@ -71,7 +71,7 @@ def _with_garbled_state(
     service's read of it raises a bug's `ValueError` inside the transition."""
 
     async def run(tmp_path, monkeypatch) -> None:
-        from leaguebot.core.services.driver_service import DriverService
+        from leaguebot.core.services.drivers.driver_service import DriverService
 
         db_path = await _league(tmp_path, GARBLED_STATE)
         drivers = DriverService(db_path)
@@ -176,7 +176,7 @@ async def _choice_after_moving_on(tmp_path, monkeypatch) -> None:
     """A manager chose the nationality for 4242 to correct, but the five minutes had lapsed and 4242
     was back at Pending Admin Approval: the request ends, with nothing changed."""
     from leaguebot.core.models.driver_profile import DriverState
-    from leaguebot.core.services.driver_service import DriverService
+    from leaguebot.core.services.drivers.driver_service import DriverService
     from leaguebot.signup.services.review_changes import CHOOSE, CHOOSE_JOB, choose_change
 
     db_path = await _league(tmp_path, DriverState.PENDING_ADMIN_APPROVAL.value)
@@ -199,7 +199,7 @@ async def _lapse_after_moving_on(tmp_path, monkeypatch) -> None:
     """4242's five minutes for a correction choice lapsed, but 4242 had already withdrawn to Not
     Signed Up: the lapse ends, with nothing changed."""
     from leaguebot.core.models.driver_profile import DriverState
-    from leaguebot.core.services.driver_service import DriverService
+    from leaguebot.core.services.drivers.driver_service import DriverService
     from leaguebot.signup.services.review_changes import LAPSE, LAPSE_JOB, lapse_change
 
     db_path = await _league(tmp_path, DriverState.NOT_SIGNED_UP.value)
@@ -221,7 +221,7 @@ async def _leaving_after_moving_on(tmp_path, monkeypatch) -> None:
     """4242 left the server, already at Not Signed Up: the leaving is cleaned up all the same, their
     wizard deleted and the departure logged."""
     from leaguebot.core.models.driver_profile import DriverState
-    from leaguebot.core.services.driver_service import DriverService
+    from leaguebot.core.services.drivers.driver_service import DriverService
     from leaguebot.signup.services.wizard_changes import (
         LEAVE_JOB, MEMBER_LEFT, member_left_change,
     )

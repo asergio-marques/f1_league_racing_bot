@@ -15,7 +15,7 @@ import pytest
 
 from leaguebot.core.cogs.team_cog import TeamCog
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services.team_service import TeamReference
+from leaguebot.core.services.drivers.team_service import TeamReference
 from tests.support.undecorate import undecorate
 
 MANAGER_ID = 4242

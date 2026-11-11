@@ -13,7 +13,7 @@ import discord
 from leaguebot.core.db.database import get_connection, inserted_id
 from leaguebot.core.models.change import PlannedStep
 from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.core.services.driver_service import accounts_of_profile, drivers_in_states
+from leaguebot.core.services.drivers.driver_service import accounts_of_profile, drivers_in_states
 from leaguebot.core.services.pack_service import CLEARED_SIGNUP_CHANNEL_ID, CLEARED_WIZARDS
 from leaguebot.core.services.modules.review_sections import Review, ReviewSection
 from leaguebot.core.services.seasons.season_lifecycle_service import UNSETTLED_STATES

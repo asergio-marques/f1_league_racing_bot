@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from leaguebot.core.services.team_service import validate_full_name, validate_team_name
+from leaguebot.core.services.drivers.team_service import validate_full_name, validate_team_name
 
 
 # ── Rule 1: non-empty, trimmed and normalised ─────────────────────────────
@@ -152,7 +152,7 @@ def test_the_key_and_the_asset_filename_come_from_one_rule():
 import logging  # noqa: E402
 
 from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
-from leaguebot.core.services.team_service import TeamService  # noqa: E402
+from leaguebot.core.services.drivers.team_service import TeamService  # noqa: E402
 
 
 async def _seed(path, server_teams, division_teams):

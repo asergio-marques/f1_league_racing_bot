@@ -34,7 +34,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection, inserted_id, sole_row
 from leaguebot.core.models.refusal import Refused
-from leaguebot.core.services.team_service import (
+from leaguebot.core.services.drivers.team_service import (
     division_team_references,
     resolve_team_reference,
 )

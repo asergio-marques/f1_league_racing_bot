@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.placement_service import PlacementService
+from leaguebot.core.services.drivers.placement_service import PlacementService
 
 
 SERVER_ID = 22090
@@ -107,7 +107,7 @@ async def _where(db_path, profile_id=PROFILE_ID):
 
 def _roles(db_path: str):
     """The team-role service on *db_path*, as the builder hands it to placement."""
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
     return TeamRoleService(db_path)
 
@@ -339,7 +339,7 @@ async def test_a_role_discord_refuses_is_logged_and_the_move_still_saved(db_path
     guild.get_member = MagicMock(return_value=member)
     guild.fetch_member = AsyncMock(return_value=member)
 
-    with caplog.at_level("WARNING", logger="leaguebot.core.services.team_role_service"):
+    with caplog.at_level("WARNING", logger="leaguebot.core.services.drivers.team_role_service"):
         await service.move_driver(
             driver_profile_id=PROFILE_ID, season_id=SEASON_ID, from_division_id=PRO,
             to_division_id=PRO, team_name="Reserve", acting_user_id=1,

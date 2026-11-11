@@ -29,7 +29,7 @@ PROFILES = [
 
 def _roles(db_path: str):
     """The team-role service on *db_path*, as the builder hands it to placement."""
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
     return TeamRoleService(db_path)
 

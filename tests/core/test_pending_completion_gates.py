@@ -116,7 +116,7 @@ async def _bot(db_path: str, stage: SeasonStage | None):
         ]
     )
     # A team is named by its shorthand (#381); the resolver has tests of its own.
-    from leaguebot.core.services.team_service import TeamReference
+    from leaguebot.core.services.drivers.team_service import TeamReference
 
     bot.team_service.resolve_server_team = AsyncMock(
         return_value=TeamReference(

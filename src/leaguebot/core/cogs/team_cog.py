@@ -10,7 +10,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services.team_changes import (
+from leaguebot.core.services.drivers.team_changes import (
     TEAM_ADD,
     TEAM_MODIFY,
     TEAM_REMOVE,
@@ -19,7 +19,7 @@ from leaguebot.core.services.team_changes import (
     list_lock_reply,
     season_done_reply,
 )
-from leaguebot.core.services.team_service import FULL_NAME_MAX, SHORTHAND_MAX
+from leaguebot.core.services.drivers.team_service import FULL_NAME_MAX, SHORTHAND_MAX
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only, changes_nothing
 from leaguebot.core.utils.interaction_errors import describe, describe_form
@@ -132,7 +132,7 @@ class TeamCog(commands.Cog):
     ) -> None:
         """Ask for the team the form describes to be added, or say why not.
 
-        The team's addition is a change on the queue (`core/services/team_changes.py`), which
+        The team's addition is a change on the queue (`core/services/drivers/team_changes.py`), which
         refuses at once, and again as the change starts, whatever the list, the role or the
         team's names do not allow. *what* names what a refusal is recorded against: the form the
         team was submitted on, which the form passes; a call without one names the command.
@@ -204,7 +204,7 @@ class TeamCog(commands.Cog):
 
         *was* is the team as the form opened on it. Only a field whose value **changed**
         counts, so a form submitted untouched changes nothing and says so. The change is one on
-        the queue (`core/services/team_changes.py`), which holds each changed field to its own
+        the queue (`core/services/drivers/team_changes.py`), which holds each changed field to its own
         window at the ask, because the season may have moved on while the form stood open, and
         again as the change starts: a change that no longer stands refuses the submission as a
         whole, naming the field, and nothing at all is written. *what* names what a refusal is
@@ -504,7 +504,7 @@ class TeamCog(commands.Cog):
         """Ask for the Reserve team's role to be set or cleared, on the same terms `/team modify`
         sets a team's.
 
-        The change is one on the queue (`core/services/team_changes.py`), which refuses at once,
+        The change is one on the queue (`core/services/drivers/team_changes.py`), which refuses at once,
         and again as the change starts, once the season is pending completion, and a role the bot
         cannot grant or another team holds, as every team command does.
         """

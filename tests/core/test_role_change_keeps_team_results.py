@@ -35,7 +35,7 @@ from leaguebot.results.services.standings_service import (
     compute_team_standings,
     previous_standing_positions,
 )
-from leaguebot.core.services.team_service import TeamService
+from leaguebot.core.services.drivers.team_service import TeamService
 from tests.support.session_writes import save_session_result
 from tests.support.change_queue import in_a_job
 

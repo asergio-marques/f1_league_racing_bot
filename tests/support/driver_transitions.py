@@ -16,7 +16,7 @@ from typing import Any
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.driver_profile import DriverProfile, DriverState
-from leaguebot.core.services.driver_service import DriverService, ReassignOutcome
+from leaguebot.core.services.drivers.driver_service import DriverService, ReassignOutcome
 from tests.support.delete_hooks import MERGE_HOOKS, delete_hooks
 from tests.support.driver_records_hooks import divisions_raced_read
 

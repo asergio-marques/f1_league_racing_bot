@@ -43,7 +43,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.driver_service import current_account_of
+from leaguebot.core.services.drivers.driver_service import current_account_of
 from leaguebot.core.services.rounds.round_add_changes import saved_result
 from leaguebot.core.services.test_mode_settings import NOT_IN_TEST_MODE
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason

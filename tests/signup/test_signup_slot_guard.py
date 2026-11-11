@@ -73,7 +73,7 @@ async def _seed(
 
 
 def _cog(db_path):
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.drivers.placement_service import PlacementService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     bot = MagicMock()

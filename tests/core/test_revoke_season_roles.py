@@ -119,7 +119,7 @@ async def test_the_driver_role_is_taken_back_too(tmp_path):
 async def test_a_driver_without_the_driver_role_is_not_asked_to_lose_it(tmp_path):
     """Driver 101 holds the division's role but not the driver role: the job takes the
     division's alone, and asks Discord nothing of the driver role."""
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
     guild, member = _revocation_guild()
     member.roles = [role for role in member.roles if role.id != DRIVER_ROLE]
@@ -151,7 +151,7 @@ async def test_a_test_driver_is_skipped(tmp_path):
 async def test_a_member_missing_from_the_cache_is_fetched(tmp_path):
     """Driver 101 is not in the bot's member cache: the job fetches them from Discord and takes
     their roles all the same."""
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
     guild, member = _revocation_guild()
     guild.get_member = MagicMock(return_value=None)
@@ -167,7 +167,7 @@ async def test_a_member_missing_from_the_cache_is_fetched(tmp_path):
 async def test_a_driver_who_has_left_the_server_is_stepped_over(tmp_path):
     """The roles went with them, and one departed member must not stop the rest: Discord
     answers the fetch of driver 101 "unknown member", and the job is done, raising nothing."""
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
     gone = discord.NotFound(MagicMock(status=404, reason="Not Found"), "unknown member")
     guild, member = _revocation_guild(fetch_error=gone)
@@ -228,7 +228,7 @@ async def test_a_member_that_cannot_be_fetched_raises(tmp_path):
     """Discord answers the fetch of driver 101 with a server error, not "unknown member": the
     job stops, raised from the fault, and nothing is taken."""
     from leaguebot.core.models.change import StepFailedOnDiscord
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
     fault = discord.HTTPException(MagicMock(status=503, reason="Unavailable"), "try later")
     guild, member = _revocation_guild(fetch_error=fault)
@@ -246,7 +246,7 @@ async def test_a_revocation_discord_refuses_raises_from_its_fault(tmp_path):
     """Driver 101 is fetched, but Discord refuses to take their roles (403): the job stops,
     raised from the refusal."""
     from leaguebot.core.models.change import StepFailedOnDiscord
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
     guild, member = _revocation_guild()
     refusal = discord.Forbidden(MagicMock(status=403, reason="Forbidden"), "Missing Permissions")
@@ -263,7 +263,7 @@ async def test_a_revocation_discord_refuses_raises_from_its_fault(tmp_path):
 async def test_a_role_no_longer_on_the_server_is_passed_over(tmp_path):
     """The team's role (811) was deleted from the server: driver 101 still loses the division's
     role and the driver role, nothing raises, and the job is done."""
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
     guild, member = _revocation_guild(roles=(_DIVISION_ROLE, DRIVER_ROLE))
 

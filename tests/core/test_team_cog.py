@@ -45,7 +45,7 @@ def _make_bot(
     season_team_names: set | None = None,
     teams_with_roles: list | None = None,
 ) -> MagicMock:
-    from leaguebot.core.services.team_service import TeamService
+    from leaguebot.core.services.drivers.team_service import TeamService
 
     bot = MagicMock()
     # Held to the service's real methods, so a stub cannot outlive the method it stands for.

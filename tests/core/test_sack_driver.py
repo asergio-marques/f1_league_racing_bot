@@ -34,7 +34,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.core.services.placement_service import PlacementService
+from leaguebot.core.services.drivers.placement_service import PlacementService
 from tests.core.test_driver_move import _end_the_races, _unconfirm_lewis
 from tests.support.teams import seed_team_instances
 
@@ -183,7 +183,7 @@ def _guild(*, member_missing: bool = False, fetch_fails: bool = False, has_role:
 
 def _roles(db_path: str):
     """The team-role service on *db_path*, as the builder hands it to placement."""
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
     return TeamRoleService(db_path)
 
@@ -603,7 +603,7 @@ async def test_a_role_discord_refuses_is_logged_and_the_sack_still_saved(tmp_pat
     service = PlacementService(db_path, roles=_roles(db_path))
     guild = _refusing_guild()
 
-    with caplog.at_level("WARNING", logger="leaguebot.core.services.team_role_service"):
+    with caplog.at_level("WARNING", logger="leaguebot.core.services.drivers.team_role_service"):
         await _sack(service, guild)
 
     guild._member.remove_roles.assert_awaited()

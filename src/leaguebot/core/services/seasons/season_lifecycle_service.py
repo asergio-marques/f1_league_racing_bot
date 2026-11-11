@@ -51,7 +51,7 @@ from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
 log = logging.getLogger(__name__)
 
@@ -248,7 +248,7 @@ async def _turn_down_on(
     for them; a driver whose signup is still in review is not, there being no approval to
     withdraw.
     """
-    from leaguebot.core.services.driver_service import write_transition
+    from leaguebot.core.services.drivers.driver_service import write_transition
 
     await db.execute(
         "UPDATE team_seats SET driver_profile_id = NULL WHERE id IN ("
@@ -847,7 +847,7 @@ async def run_driver_pass_on(
     cfg_row = await cursor.fetchone()
     driver_role_id = cfg_row["driver_role_id"] if cfg_row else None
 
-    from leaguebot.core.services.driver_service import write_transition
+    from leaguebot.core.services.drivers.driver_service import write_transition
 
     # Through the transition table, as every change of a driver's state is.
     for driver in to_reset:

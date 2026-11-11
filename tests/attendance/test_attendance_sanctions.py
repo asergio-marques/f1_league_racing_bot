@@ -399,7 +399,7 @@ async def test_an_autosack_of_drivers_who_never_raced_sacks_every_one_of_them(
     unsanctioned with nothing reported. Two such drivers are past the threshold here, so a
     failure on the first leaves the second unsacked whichever is read first.
     """
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.drivers.placement_service import PlacementService
 
     second_profile = 103
     db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
@@ -716,7 +716,7 @@ async def test_a_sync_s_autosack_asks_once_for_each_lineup_it_reached(
     """The full-timer, past the autosack threshold, also sits in Division 2: the sack takes
     them out of both, and the run asks the change queue once for each division's lineup,
     posting none itself."""
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.drivers.placement_service import PlacementService
 
     db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
     async with get_connection(db_path) as db:

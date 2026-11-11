@@ -580,7 +580,7 @@ async def test_a_reason_whose_press_is_discarded_at_its_check_is_taken_down(
     change starts, so the queue
     stops at it. A league admin discards the job before any of it began, and the reason is
     deleted from Kimi's channel, the change that would have taken it down having never run."""
-    from leaguebot.core.services.driver_service import DriverService
+    from leaguebot.core.services.drivers.driver_service import DriverService
 
     league = await _league(tmp_path)
     original = DriverService.get_profile

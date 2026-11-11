@@ -168,8 +168,8 @@ def _report(path):
 
 async def _assign(db_path, season_id, division_id, team, drawing):
     """Ask the guards `/driver assign` asks whether the unplaced driver 9999 may join *team*."""
-    from leaguebot.core.services.placement_service import PlacementService
-    from leaguebot.core.services.template_capacity_service import TemplateCapacityService
+    from leaguebot.core.services.drivers.placement_service import PlacementService
+    from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService
 
     await PlacementService(
         db_path, capacity=TemplateCapacityService(db_path, drawing=drawing)

@@ -52,7 +52,7 @@ async def _said(league: Any) -> str:
 
 
 async def _ask(league: Any, *divisions: int) -> None:
-    from leaguebot.core.services.lineup_posting import ask_lineup_posts
+    from leaguebot.core.services.drivers.lineup_posting import ask_lineup_posts
 
     await ask_lineup_posts(league.bot.change_queue, league.db_path, list(divisions))
 
@@ -381,10 +381,10 @@ async def _review_approved(tmp_path: Any, monkeypatch: Any, drawing: Any) -> tup
     the league and Alex's interaction."""
     from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
     from leaguebot.core.db.database import get_connection
-    from leaguebot.core.services.lineup_posting import LineupPoster
-    from leaguebot.core.services.placement_service import PlacementService
-    from leaguebot.core.services.team_role_service import TeamRoleService
-    from leaguebot.core.services.template_capacity_service import TemplateCapacityService
+    from leaguebot.core.services.drivers.lineup_posting import LineupPoster
+    from leaguebot.core.services.drivers.placement_service import PlacementService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService
     from tests.results.test_report_approval_change import _approve, _lewis_owed_an_autoreserve
     from tests.support.change_queue import set_user
     from tests.support.review_league import DIVISION_ID, LEWIS, channel, penalty, review_league
@@ -595,7 +595,7 @@ async def test_a_lineup_step_with_no_channel_raises(tmp_path):
     from types import SimpleNamespace
 
     from leaguebot.core.models.change import StepFailedOnDiscord
-    from leaguebot.core.services.lineup_posting import lineup_step
+    from leaguebot.core.services.drivers.lineup_posting import lineup_step
     from tests.support.change_queue import in_a_job
 
     league = await ongoing_league(tmp_path)
@@ -620,7 +620,7 @@ async def test_a_lineup_step_whose_images_switch_nobody_signed_up_for_raises(tmp
     could not be drawn and posting the lineup as text."""
     from types import SimpleNamespace
 
-    from leaguebot.core.services.lineup_posting import lineup_step
+    from leaguebot.core.services.drivers.lineup_posting import lineup_step
     from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
     from tests.support.change_queue import in_a_job
 

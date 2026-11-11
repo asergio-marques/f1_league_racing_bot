@@ -51,7 +51,7 @@ TEAMS_PATH = DATA_DIR / "teams.txt"
 FIRST_DRIVER_ID = 9_000_000_000_000_000_001
 
 #: The reserve team is appended to every division and is never taken from user input —
-#: the name is protected by TeamService (see src/leaguebot/core/services/team_service.py).
+#: the name is protected by TeamService (see src/leaguebot/core/services/drivers/team_service.py).
 RESERVE_TEAM = "Reserve"
 
 MAX_DRIVERS_PER_TEAM = 2

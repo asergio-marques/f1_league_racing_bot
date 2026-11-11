@@ -124,7 +124,7 @@ def _drawing(db_path: str, templates: dict[str, str]):
 
 
 def _service(db_path: str, templates: dict[str, str]):
-    from leaguebot.core.services.template_capacity_service import TemplateCapacityService
+    from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService
 
     return TemplateCapacityService(db_path, drawing=_drawing(db_path, templates))
 

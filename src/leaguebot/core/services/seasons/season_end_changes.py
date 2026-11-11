@@ -125,7 +125,7 @@ from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
     from leaguebot.core.services.scheduler_service import SchedulerService
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
 __all__ = [
     "SEASON_ABORT",

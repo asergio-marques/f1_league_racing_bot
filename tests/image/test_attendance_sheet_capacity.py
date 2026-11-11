@@ -180,8 +180,8 @@ async def test_a_reserve_placement_past_the_rows_is_refused_through_guard_assign
     """Deliberate, and unlike the standings: a seated reserve takes a row, and so would the
     reserve being placed."""
     from leaguebot.core.models.refusal import Refused
-    from leaguebot.core.services.placement_service import PlacementService
-    from leaguebot.core.services.template_capacity_service import TemplateCapacityService
+    from leaguebot.core.services.drivers.placement_service import PlacementService
+    from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService
 
     db_path, season_id, division_id = await _seed(tmp_path, drivers=1, reserves=1)
     template = _template_file(tmp_path, rows=2)

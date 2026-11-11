@@ -134,7 +134,7 @@ async def test_a_second_sync_applies_nothing_twice(tmp_path):
     """The recovery is to run it again, so running it again must be harmless: the driver
     sacked by the first run is not attempted by the second. The first asks the change queue,
     once, for the sack's announcement, and the second asks for none."""
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.drivers.placement_service import PlacementService
 
     db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
     await _add_rounds(db_path, {})
@@ -188,8 +188,8 @@ async def test_sync_still_applies_a_sanction_whose_role_change_discord_refuses(t
 
     import discord
 
-    from leaguebot.core.services.placement_service import PlacementService
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.placement_service import PlacementService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
     db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
     await _add_rounds(db_path, {})

@@ -724,7 +724,7 @@ def test_the_private_names_check_sees_a_private_method_on_an_annotated_parameter
     results calling core's lineup poster's private method through one is counted, and so is a
     local bound from it."""
     sample = (
-        "from leaguebot.core.services.lineup_posting import LineupPoster\n"
+        "from leaguebot.core.services.drivers.lineup_posting import LineupPoster\n"
         "async def handler(placement: LineupPoster):\n"
         "    await placement._refresh_lineup_post()\n"
         "    other: 'LineupPoster | None' = None\n"
@@ -735,7 +735,7 @@ def test_the_private_names_check_sees_a_private_method_on_an_annotated_parameter
 
     assert _private_names_in(sample, "results/services/sample_service.py") == Counter({
         ("results/services/sample_service.py",
-         "leaguebot.core.services.lineup_posting.LineupPoster._refresh_lineup_post"): 3,
+         "leaguebot.core.services.drivers.lineup_posting.LineupPoster._refresh_lineup_post"): 3,
     })
 
 
@@ -2031,8 +2031,8 @@ KNOWN_SAVES_OUTSIDE_A_CHANGE: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_service.py", "AttendanceService.set_setting"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "_recalculate_forward"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "distribute_attendance_points"): (1, PASS["attendance"]),
-    ("core/services/placement_service.py", "PlacementService.move_driver"): (1, PASS["attendance"]),
-    ("core/services/placement_service.py", "PlacementService.sack_driver"): (1, PASS["attendance"]),
+    ("core/services/drivers/placement_service.py", "PlacementService.move_driver"): (1, PASS["attendance"]),
+    ("core/services/drivers/placement_service.py", "PlacementService.sack_driver"): (1, PASS["attendance"]),
     # Signup's pass
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (1, PASS["signup"]),
@@ -3014,8 +3014,8 @@ KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_service.py", "AttendanceService.insert_embed_message_on"):
         (1, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "write_distribution_on"): (1, PASS["attendance"]),
-    ("core/services/placement_service.py", "PlacementService.move_on"): (1, PASS["attendance"]),
-    ("core/services/placement_service.py", "PlacementService.sack_on"): (1, PASS["attendance"]),
+    ("core/services/drivers/placement_service.py", "PlacementService.move_on"): (1, PASS["attendance"]),
+    ("core/services/drivers/placement_service.py", "PlacementService.sack_on"): (1, PASS["attendance"]),
     ("image/services/driver_portrait_service.py", "refresh_portraits"): (1, PASS["image"]),
     ("results/services/result_submission_service.py", "_save_session_result_in_tx"):
         (1, PASS["results"]),
@@ -3211,7 +3211,7 @@ CATCH_ALLS_ALLOWED = {
         "report and its closing line",
     ("core/services/seasons/season_review_changes.py", "season_review_post_change.draw_and_post"):
         "place 5, a picture that cannot be drawn is withheld and its fault is a line of the job",
-    ("core/services/template_capacity_service.py", "TemplateCapacityService._ask_drawing"):
+    ("core/services/drivers/template_capacity_service.py", "TemplateCapacityService._ask_drawing"):
         "a stated exception: a capacity guard that cannot run lets the placement through",
     ("core/services/seasons/approval_checks.py", "ask_drawing"):
         "a stated exception: a capacity check that cannot run lets the season through",
@@ -3233,7 +3233,7 @@ CATCH_ALLS_ALLOWED = {
         "place 5, a commanded calendar that cannot be drawn is refused, its fault the review's line",
     ("image/services/image_drawing.py", "ImageDrawing.calendar_wanted"):
         "a stated exception: a calendar gate that cannot be read answers text, so none is lost",
-    ("core/services/lineup_posting.py", "LineupPoster._refresh_lineup_post"):
+    ("core/services/drivers/lineup_posting.py", "LineupPoster._refresh_lineup_post"):
         "place 5, a lineup that cannot be drawn is posted as text and its fault is the job's line",
     ("image/services/image_drawing.py", "ImageDrawing.lineup_wanted"):
         "a stated exception: a lineup gate that cannot be read answers text, so none is lost",

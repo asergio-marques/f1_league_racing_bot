@@ -53,7 +53,7 @@ from leaguebot.core.models.change import (
     Verdict,
     VerdictKind,
 )
-from leaguebot.core.services import lineup_posting
+from leaguebot.core.services.drivers import lineup_posting
 from leaguebot.core.services.seasons import approval_checks
 from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.queue.queue_records import (
@@ -79,15 +79,15 @@ from leaguebot.core.services.seasons.season_approval_change import (
 )
 from leaguebot.core.services.seasons.season_fingerprint_service import SeasonFingerprint, take_fingerprint
 from leaguebot.core.services.seasons.season_lifecycle_service import confirm_placements_on
-from leaguebot.core.services.placement_service import uncommitted_placements_on
+from leaguebot.core.services.drivers.placement_service import uncommitted_placements_on
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.image_drawing import ImageDrawing
-    from leaguebot.core.services.lineup_posting import LineupPoster
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.lineup_posting import LineupPoster
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
 __all__ = [
     "ALREADY_BEING_CONFIRMED",

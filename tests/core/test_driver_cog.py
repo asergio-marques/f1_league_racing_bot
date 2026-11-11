@@ -288,7 +288,7 @@ async def test_a_driver_is_assigned_to_the_named_team_and_division(tmp_path):
 async def test_assign_seats_the_driver_in_the_team_its_shorthand_names(tmp_path):
     """A team is typed by its shorthand (#381), resolved in the division before anything is
     asked; the assignment is asked of the queue under the shorthand as the team holds it."""
-    from leaguebot.core.services.team_service import TeamReference
+    from leaguebot.core.services.drivers.team_service import TeamReference
 
     cog = _make_cog(season=_season())
     cog.bot.team_service.resolve_division_team = AsyncMock(
@@ -303,7 +303,7 @@ async def test_assign_seats_the_driver_in_the_team_its_shorthand_names(tmp_path)
 
 
 async def test_assign_refuses_a_team_the_division_does_not_have(tmp_path):
-    from leaguebot.core.services.team_service import TeamReference
+    from leaguebot.core.services.drivers.team_service import TeamReference
 
     cog = _make_cog(season=_season())
     cog.bot.team_service.resolve_division_team = AsyncMock(

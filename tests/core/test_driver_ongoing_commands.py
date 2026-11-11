@@ -143,7 +143,7 @@ async def test_a_move_names_the_team_in_the_division_moved_into():
     """The team is resolved by its shorthand in the division the driver goes to (#381): Racer is
     moved from Pro into `alp` of Academy, which resolves to its team ALP; the move asked of the
     queue names ALP."""
-    from leaguebot.core.services.team_service import TeamReference
+    from leaguebot.core.services.drivers.team_service import TeamReference
 
     cog = _cog()
     cog.bot.team_service.resolve_division_team = AsyncMock(
@@ -158,7 +158,7 @@ async def test_a_move_names_the_team_in_the_division_moved_into():
 
 
 async def test_a_move_into_a_team_the_division_does_not_have_is_refused():
-    from leaguebot.core.services.team_service import TeamReference
+    from leaguebot.core.services.drivers.team_service import TeamReference
 
     cog = _cog()
     cog.bot.team_service.resolve_division_team = AsyncMock(

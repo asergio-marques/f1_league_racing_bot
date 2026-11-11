@@ -39,10 +39,10 @@ from leaguebot.attendance.services.module_switch_settings import attendance_enab
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord
 from leaguebot.core.models.refusal import Refused
-from leaguebot.core.services import lineup_posting
-from leaguebot.core.services.lineup_posting import LineupPoster
-from leaguebot.core.services.placement_service import PlacementService
-from leaguebot.core.services.team_role_service import TeamRoleService
+from leaguebot.core.services.drivers import lineup_posting
+from leaguebot.core.services.drivers.lineup_posting import LineupPoster
+from leaguebot.core.services.drivers.placement_service import PlacementService
+from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
 

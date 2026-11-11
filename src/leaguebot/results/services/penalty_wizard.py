@@ -22,7 +22,7 @@ from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.channel_registry_service import as_text_channel
-from leaguebot.core.services.driver_service import accounts_of_in_division, current_account_map_for_division
+from leaguebot.core.services.drivers.driver_service import accounts_of_in_division, current_account_map_for_division
 from leaguebot.results.services.penalty_service import StagedPenalty, validate_penalty_input
 from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.input_validator import STEWARD_TEXT, parse_user, parse_user_id
@@ -1167,7 +1167,7 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
             return
 
         from leaguebot.core.db.database import get_connection
-        from leaguebot.core.services.driver_service import current_account_of, resolve_driver_profile_id
+        from leaguebot.core.services.drivers.driver_service import current_account_of, resolve_driver_profile_id
 
         async with get_connection(self.state.db_path) as db:
             # --- Resolve driver profile ID ---

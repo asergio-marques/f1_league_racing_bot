@@ -83,7 +83,7 @@ from leaguebot.core.models.change import (
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.models.refusal import Refused
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
-from leaguebot.core.services import lineup_posting
+from leaguebot.core.services.drivers import lineup_posting
 from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.queue.change_types import (
     ChangeType,
@@ -93,12 +93,12 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
     StepView,
 )
-from leaguebot.core.services.driver_service import DriverService, write_transition
-from leaguebot.core.services.lineup_posting import LineupPoster
-from leaguebot.core.services.placement_service import PlacementService
-from leaguebot.core.services.role_moves import MOVE_ROLES, PLACEMENT_REASON, role_move_step
+from leaguebot.core.services.drivers.driver_service import DriverService, write_transition
+from leaguebot.core.services.drivers.lineup_posting import LineupPoster
+from leaguebot.core.services.drivers.placement_service import PlacementService
+from leaguebot.core.services.drivers.role_moves import MOVE_ROLES, PLACEMENT_REASON, role_move_step
 from leaguebot.core.services.seasons.season_approval_change import unposted_lineup_line
-from leaguebot.core.services.team_role_service import TeamRoleService
+from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason

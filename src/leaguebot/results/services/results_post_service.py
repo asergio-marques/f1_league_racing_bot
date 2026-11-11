@@ -13,7 +13,7 @@ import discord
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.channel_registry_service import as_text_channel
-from leaguebot.core.services.driver_service import current_account_map_for_division
+from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.core.models.change import AuditRecord
@@ -33,7 +33,7 @@ from leaguebot.core.services.channel_registry_service import (
     missing_channel_fault,
     unpostable_channel_fault,
 )
-from leaguebot.core.services.team_service import team_names_for_instances
+from leaguebot.core.services.drivers.team_service import team_names_for_instances
 from leaguebot.results.utils import results_formatter
 from leaguebot.core.utils.league_bot import LeagueBot
 

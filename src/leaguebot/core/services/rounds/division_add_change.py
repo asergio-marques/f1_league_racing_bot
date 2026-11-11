@@ -49,7 +49,7 @@ from leaguebot.core.utils.formatting import format_division_list
 
 if TYPE_CHECKING:
     from leaguebot.core.services.seasons.season_service import SeasonService
-    from leaguebot.core.services.team_service import TeamService
+    from leaguebot.core.services.drivers.team_service import TeamService
 
 KIND = "core.division_add"
 

@@ -221,14 +221,14 @@ def _lineups() -> Any:
 
 def _real_placement(db_path: str) -> Any:
     """The placement service the entry point builds, on the test's database."""
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.drivers.placement_service import PlacementService
 
     return PlacementService(db_path)
 
 
 def _real_roles(db_path: str) -> Any:
     """The team-role service the entry point builds, on the test's database."""
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
     return TeamRoleService(db_path)
 

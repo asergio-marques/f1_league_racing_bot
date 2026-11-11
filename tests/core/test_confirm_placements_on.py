@@ -94,7 +94,7 @@ async def test_confirming_on_never_moves_the_season_on_to_pending_completion(db_
 async def test_the_uncommitted_placements_are_read_on_the_connection_handed(db_path):
     """Driver 1003, seated at Alpha with no placement, is placed on the open connection and not
     yet saved: the read on that connection sees them beside 1002."""
-    from leaguebot.core.services.placement_service import uncommitted_placements_on
+    from leaguebot.core.services.drivers.placement_service import uncommitted_placements_on
 
     async with get_connection(db_path) as db:
         await db.execute(

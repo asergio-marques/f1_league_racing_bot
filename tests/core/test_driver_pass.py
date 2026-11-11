@@ -216,7 +216,7 @@ async def test_the_driver_role_is_revoked_from_a_real_driver(db_path):
     """Max (1002) was Assigned when the season ended, and holds the league's driver role 555:
     his `take_driver_role` job takes it back."""
     from leaguebot.core.services.seasons.season_lifecycle_service import take_driver_role
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
     guild, member, role = _member_holding(555, 1002)
     driver = {"user_id": "1002", "state": "ASSIGNED", "is_test_driver": 0}
@@ -237,7 +237,7 @@ async def test_the_driver_role_survives_disabling_signup_and_is_still_revoked(db
     configuration at all, as after `/module disable signup`, and the league's role 555 is still
     taken from Max (1002) by his `take_driver_role` job."""
     from leaguebot.core.services.seasons.season_lifecycle_service import take_driver_role
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
     async with get_connection(db_path) as db:
         await db.execute("UPDATE server_configs SET driver_role_id = 555")
@@ -282,7 +282,7 @@ async def test_an_inactivity_timer_already_gone_does_not_stop_the_pass():
 
 async def test_every_reset_goes_through_the_transition_table(db_path, monkeypatch):
     """Constitution VIII: no code path sets a driver's state directly."""
-    import leaguebot.core.services.driver_service as driver_service
+    import leaguebot.core.services.drivers.driver_service as driver_service
 
     seen = []
     real = driver_service.write_transition
@@ -557,7 +557,7 @@ async def test_a_driver_role_discord_will_not_take_back_raises(tmp_path):
 
     from leaguebot.core.models.change import StepFailedOnDiscord
     from leaguebot.core.services.seasons.season_lifecycle_service import take_driver_role
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
     role = MagicMock(id=555)
     member = MagicMock(id=1002)

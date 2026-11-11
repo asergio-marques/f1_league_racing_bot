@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
-from leaguebot.core.services import driver_service, team_service
+from leaguebot.core.services.drivers import driver_service, team_service
 from leaguebot.core.services.seasons import season_service
 from leaguebot.core.services.cancellations.cancellation_notice_service import round_label
 from leaguebot.core.services.queue.change_types import Step, StepContext, StepView

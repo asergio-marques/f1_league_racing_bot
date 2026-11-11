@@ -60,7 +60,7 @@ from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.services.rounds.round_moments import read_round_windows
 from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.services.seasons import approval_checks
-from leaguebot.core.services import lineup_posting
+from leaguebot.core.services.drivers import lineup_posting
 from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.rounds.calendar_post_service import POST_CALENDAR, calendar_steps
 from leaguebot.core.services.queue.queue_records import (
@@ -93,9 +93,9 @@ if TYPE_CHECKING:
     from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.services.modules.image_drawing import ImageDrawing
     from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.services.lineup_posting import LineupPoster
+    from leaguebot.core.services.drivers.lineup_posting import LineupPoster
     from leaguebot.core.services.scheduler_service import SchedulerService
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
 log = logging.getLogger(__name__)
 

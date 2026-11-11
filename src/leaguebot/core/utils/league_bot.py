@@ -37,22 +37,22 @@ from discord.ext import commands
 if TYPE_CHECKING:
     from leaguebot.attendance.services.attendance_service import AttendanceService
     from leaguebot.core.services.config_service import ConfigService
-    from leaguebot.core.services.driver_service import DriverService
+    from leaguebot.core.services.drivers.driver_service import DriverService
     from leaguebot.image.services.image_config_service import ImageConfigService
     from leaguebot.image.services.image_render_service import ImageRenderService
     from leaguebot.image.services.image_validity_service import ImageValidityService
     from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.services.placement_service import PlacementService
-    from leaguebot.core.services.lineup_posting import LineupPoster
-    from leaguebot.core.services.team_role_service import TeamRoleService
-    from leaguebot.core.services.template_capacity_service import TemplateCapacityService
+    from leaguebot.core.services.drivers.placement_service import PlacementService
+    from leaguebot.core.services.drivers.lineup_posting import LineupPoster
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.core.services.modules.hub_service import HubOptions
     from leaguebot.core.services.start_up import StartUpStep
     from leaguebot.core.services.test_mode_service import AdvanceSteps
     from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
-    from leaguebot.core.services.team_service import TeamService
+    from leaguebot.core.services.drivers.team_service import TeamService
     from leaguebot.signup.services.wizard_service import WizardService
     from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.modules.image_drawing import ImageDrawing

@@ -53,7 +53,7 @@ def _placement_check(factory: str, **handed: Any) -> Callable[..., Awaitable[Non
     async def run(tmp_path, monkeypatch) -> None:
         from leaguebot.core.models.change import ChangeOrigin
         from leaguebot.core.services.queue.change_types import CheckContext
-        from leaguebot.core.services import driver_changes
+        from leaguebot.core.services.drivers import driver_changes
 
         for refusal in ("ongoing_refusal", "placing_refusal", "division_refusal",
                         "profile_refusal"):
@@ -134,7 +134,7 @@ def _team_bot() -> MagicMock:
 
 def _team_change(factory: str):
     """`team_changes.<factory>`'s change, made with the doubles above and the queue's clock."""
-    from leaguebot.core.services import team_changes
+    from leaguebot.core.services.drivers import team_changes
 
     made = getattr(team_changes, factory)
     kwargs = {"roles": _team_roles()}
@@ -170,7 +170,7 @@ def _team_save(factory: str, payload: dict) -> Callable[..., Awaitable[None]]:
     async def run(tmp_path, monkeypatch) -> None:
         from leaguebot.core.db.database import get_connection
         from leaguebot.core.services.queue.change_types import StepContext
-        from leaguebot.core.services.team_changes import SAVE
+        from leaguebot.core.services.drivers.team_changes import SAVE
 
         db_path = str(tmp_path / "save.db")
         await run_migrations(db_path)
@@ -206,7 +206,7 @@ def _reassign_change(driver, profiles_merged=None):
     """`driver_changes.driver_reassign_change`'s change, judged and saved through *driver*, a
     merge calling *profiles_merged*, no module answering which divisions a side raced in, and
     every Discord job a double, the team-role service among them."""
-    from leaguebot.core.services.driver_changes import driver_reassign_change
+    from leaguebot.core.services.drivers.driver_changes import driver_reassign_change
     from leaguebot.core.utils.hooks import AwaitedHook
 
     return driver_reassign_change(
@@ -238,8 +238,8 @@ async def _reassign_merge_hook_faulted(tmp_path, monkeypatch) -> None:
     through `profiles_merged`, raises."""
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.services.queue.change_types import StepContext
-    from leaguebot.core.services.driver_changes import SAVE
-    from leaguebot.core.services.driver_service import DriverService
+    from leaguebot.core.services.drivers.driver_changes import SAVE
+    from leaguebot.core.services.drivers.driver_service import DriverService
     from leaguebot.core.utils.hooks import AwaitedHook
     from tests.core.test_driver_merge import A, B, _make_db, _profile
 

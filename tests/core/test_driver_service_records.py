@@ -33,7 +33,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.core.services.driver_service import DriverService
+from leaguebot.core.services.drivers.driver_service import DriverService
 from tests.support.teams import seed_team_instances
 from tests.support.driver_transitions import reassigned, transitioned
 
@@ -384,7 +384,7 @@ async def test_the_flag_decides_whether_a_departure_destroys_the_profile(tmp_pat
     transition does to the same driver. The flag is set through `set_former_drivers_on`, the
     one writer of it a change's save calls; `/test-mode set-former-driver`, which sets it by
     hand on the change queue, is pinned in `test_test_mode_former_driver.py`."""
-    from leaguebot.core.services.driver_service import set_former_drivers_on
+    from leaguebot.core.services.drivers.driver_service import set_former_drivers_on
 
     db_path = await _make_db(tmp_path)
     profile_id = await _seed_profile(db_path, state="UNASSIGNED", former=False)
@@ -474,7 +474,7 @@ async def test_drivers_are_listed_by_state_oldest_profile_first(tmp_path):
     """Four drivers, two Unassigned, one Pending Signup Completion and one Assigned: asked for the
     first two states, the three in them come back oldest profile first, each with its account and
     state; asked for no state, none come back."""
-    from leaguebot.core.services.driver_service import drivers_in_states
+    from leaguebot.core.services.drivers.driver_service import drivers_in_states
 
     path = str(tmp_path / "states.db")
     await run_migrations(path)

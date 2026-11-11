@@ -641,7 +641,7 @@ async def test_core_s_flag_writer_sets_and_clears_on_the_save_handed_committing_
     not, and only the two rows whose value differs are written. The writer commits nothing: rolled
     back, every flag is as it was.
     """
-    from leaguebot.core.services.driver_service import set_former_drivers_on
+    from leaguebot.core.services.drivers.driver_service import set_former_drivers_on
 
     db_path = await _make_db(tmp_path, name="flag_writer")
     await _set_former(db_path, 32, 1)

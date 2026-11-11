@@ -156,7 +156,7 @@ async def test_a_state_written_within_a_transaction_obeys_the_table(tmp_path):
     from leaguebot.core.db.database import get_connection, run_migrations
     from leaguebot.core.models.driver_profile import DriverState
     from leaguebot.core.models.driver_profile import InvalidDriverTransition
-    from leaguebot.core.services.driver_service import write_transition
+    from leaguebot.core.services.drivers.driver_service import write_transition
 
     path = str(tmp_path / "write_transition.db")
     await run_migrations(path)

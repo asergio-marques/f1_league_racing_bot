@@ -1269,7 +1269,7 @@ def _signup_services(league: SeasonLeague) -> None:
     deletes it, and `set_window_closed_on`, the form on a handed connection that `post_closed`'s
     record calls from C66 on. Each is wrapped only where it exists, so a league builds on either
     side of those commits, and a close refused this way stops the job that records it."""
-    from leaguebot.core.services.driver_service import DriverService
+    from leaguebot.core.services.drivers.driver_service import DriverService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     service = SignupModuleService(league.db_path)

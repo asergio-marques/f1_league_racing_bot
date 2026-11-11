@@ -87,7 +87,7 @@ from leaguebot.core.services.queue.setting_change import After, RENAMED_OUTCOME,
 
 if TYPE_CHECKING:
     from leaguebot.core.services.config_service import ConfigService
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
 _UNCONFIGURED = "⛔ This server is not configured yet — run `/bot init` first."
 

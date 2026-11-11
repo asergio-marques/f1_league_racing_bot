@@ -70,7 +70,7 @@ async def test_the_role_step_takes_then_gives_and_a_refusal_ends_the_job(
     step is never undiscardable, the queue refusing a step that is both."""
     import discord
 
-    from leaguebot.core.services.role_moves import role_move_step
+    from leaguebot.core.services.drivers.role_moves import role_move_step
     from tests.support.change_queue import http_error, in_a_job
 
     league = await ongoing_league(tmp_path)
@@ -122,7 +122,7 @@ async def test_the_role_step_gives_what_remains_and_names_the_roles_gone(tmp_pat
     league's server has deleted. Ferrari's role is taken and Am's given, each with the step's
     reason in Discord's audit log, and the step completes with a problem naming the roles gone, in
     the singular or the plural."""
-    from leaguebot.core.services.role_moves import role_move_step
+    from leaguebot.core.services.drivers.role_moves import role_move_step
     from tests.support.change_queue import in_a_job
 
     league = await ongoing_league(tmp_path)
@@ -150,7 +150,7 @@ async def test_the_role_step_gives_nothing_where_a_role_is_gone_unless_built_to_
 ):
     """A role step built without giving what remains, as a placement's: one of the roles to give
     has been deleted from the league's server, and the step ends on a fault with nothing given."""
-    from leaguebot.core.services.role_moves import role_move_step
+    from leaguebot.core.services.drivers.role_moves import role_move_step
     from tests.support.change_queue import in_a_job
 
     league = await ongoing_league(tmp_path)

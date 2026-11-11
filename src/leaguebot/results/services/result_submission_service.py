@@ -26,8 +26,8 @@ from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.core.models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat
 from leaguebot.results.models.session_result import DriverSessionResult, OutcomeModifier  # DriverSessionResult kept as DTO for compute_points_for_session
-from leaguebot.core.services.driver_service import set_former_drivers_on
-from leaguebot.core.services.team_service import resolve_team_reference
+from leaguebot.core.services.drivers.driver_service import set_former_drivers_on
+from leaguebot.core.services.drivers.team_service import resolve_team_reference
 from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.input_validator import (
     USER_MENTION,
@@ -761,7 +761,7 @@ async def _snapshot_staged_drivers_on(
     dsr_rows = await cursor.fetchall()
     # The standings are keyed by the account a driver uses now; a staged penalty by the
     # one its result stands under (issue #243).
-    from leaguebot.core.services.driver_service import current_account_map_for_division
+    from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
 
     current_of = await current_account_map_for_division(db, division_id)
 
@@ -800,7 +800,7 @@ async def _save_session_result_in_tx(
     of the results they replace.
     """
     from leaguebot.core.services.seasons.season_service import SeasonImmutableError
-    from leaguebot.core.services.driver_service import resolve_driver_profile_id
+    from leaguebot.core.services.drivers.driver_service import resolve_driver_profile_id
 
     submitted_at = datetime.now(timezone.utc).isoformat()
     cursor = await db.execute(
@@ -964,7 +964,7 @@ async def _repoint_verdicts(
     """
     if not verdicts:
         return
-    from leaguebot.core.services.driver_service import current_account_map_for_division
+    from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
 
     current_of = await current_account_map_for_division(db, division_id)
 
@@ -1808,7 +1808,7 @@ async def _write_amended_session_in_tx(
     league manager's (issue #116): amending a FINAL round overwrites what the league raced, and
     only the amendment's own snapshot, held until it completes, puts it back.
     """
-    from leaguebot.core.services.driver_service import resolve_driver_profile_id
+    from leaguebot.core.services.drivers.driver_service import resolve_driver_profile_id
 
     def _get(obj, key, default=None):
         if hasattr(obj, key):
@@ -2823,7 +2823,7 @@ async def other_active_team_assignments(
 
         # A session recorded before the driver changed account stands under the old one;
         # the check compares drivers, so both are read as the account in use (issue #243).
-        from leaguebot.core.services.driver_service import current_account_map
+        from leaguebot.core.services.drivers.driver_service import current_account_map
 
         cursor = await db.execute(
             "SELECT 1 FROM rounds r JOIN divisions d ON d.id = r.division_id "
@@ -2844,7 +2844,7 @@ async def other_active_team_assignments(
 
 async def current_accounts(db_path: str) -> dict[int, int]:
     """`driver_service.current_account_map` on a connection of its own, for the paste paths."""
-    from leaguebot.core.services.driver_service import current_account_map
+    from leaguebot.core.services.drivers.driver_service import current_account_map
 
     async with get_connection(db_path) as db:
         return await current_account_map(db)

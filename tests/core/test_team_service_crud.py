@@ -35,7 +35,7 @@ import os
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.team_service import TeamService
+from leaguebot.core.services.drivers.team_service import TeamService
 
 
 SERVER_ID = 8708

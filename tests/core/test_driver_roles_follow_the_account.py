@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.placement_service import PlacementService
+from leaguebot.core.services.drivers.placement_service import PlacementService
 
 SERVER_ID = 2438
 DRIVER_ROLE, DIVISION_ROLE, TEAM_ROLE = 7001, 7002, 7003

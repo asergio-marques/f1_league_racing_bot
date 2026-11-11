@@ -18,7 +18,7 @@ import pytest
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services.placement_service import PlacementService
+from leaguebot.core.services.drivers.placement_service import PlacementService
 from tests.support.change_queue import acknowledgement
 from tests.support.review_workflows import (
     record_review_views,
@@ -671,7 +671,7 @@ async def test_a_lineup_discord_refuses_after_a_confirmation_stops_the_queue_and
     again. With the channel posting again, Retry posts Am's lineup once and the queue runs on."""
     import discord
 
-    from leaguebot.core.services.lineup_posting import LINEUP_POST
+    from leaguebot.core.services.drivers.lineup_posting import LINEUP_POST
     from tests.support.change_queue import change_rows, http_error, retry_job, run_queue, \
         stopped_job
     from tests.support.season_league import AM, CHARLES, DIVISIONS, profile_id

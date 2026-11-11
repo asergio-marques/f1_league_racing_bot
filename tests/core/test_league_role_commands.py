@@ -640,7 +640,7 @@ async def test_a_fault_giving_the_replacement_leaves_the_role_saved(
     then that it could not be given to the drivers, for the league to give it by hand, a base role
     still reminding the league that its other members need it too; the log channel gets the
     queue's failure line, and no success line, the grants carrying it."""
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
     from tests.support.change_queue import stopped_job
 
     db_path = await _make_db(tmp_path, stage="ONGOING", drivers=_TWO_DRIVERS)

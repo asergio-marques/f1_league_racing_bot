@@ -2306,7 +2306,7 @@ async def enforce_attendance_sanctions(
     if not autoreserve_threshold and not autosack_threshold:
         return outcome  # both disabled — nothing to do (FR-027)
 
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.drivers.placement_service import PlacementService
     placement: PlacementService = bot.placement_service
 
     # Track which profiles were actually sanctioned for the attendance sheet re-post.
@@ -2355,7 +2355,7 @@ async def enforce_attendance_sanctions(
     # sanctioned drivers annotated. The queue posts them (#439).
     if sanctioned_profile_ids:
         from leaguebot.attendance.services import sanctions_announce_change, sheet_posting
-        from leaguebot.core.services.lineup_posting import ask_lineup_posts
+        from leaguebot.core.services.drivers.lineup_posting import ask_lineup_posts
 
         reached = [
             other_division_id for other_division_id, profile_ids in other_divisions.items()

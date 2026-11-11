@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
 
-from leaguebot.core.services.team_service import FULL_NAME_MAX, SHORTHAND_MAX
+from leaguebot.core.services.drivers.team_service import FULL_NAME_MAX, SHORTHAND_MAX
 
 
 def _role(role_id: int = 111) -> MagicMock:
@@ -94,7 +94,7 @@ TEAM = {"name": "RBR", "full_name": "Oracle Red Bull Racing", "is_reserve": Fals
 
 def _modify_cog(*, team=None, list_open=True, season=None):
     from leaguebot.core.cogs.team_cog import TeamCog
-    from leaguebot.core.services.team_service import TeamReference
+    from leaguebot.core.services.drivers.team_service import TeamReference
 
     cog = _cog()
     cog.bot.season_service.get_setup_or_active_season = AsyncMock(return_value=season)

@@ -17,7 +17,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.change import StepFailedOnDiscord
-from leaguebot.core.services.placement_service import PlacementService
+from leaguebot.core.services.drivers.placement_service import PlacementService
 from tests.support.change_queue import in_a_job
 
 USER_ID = 101
@@ -29,7 +29,7 @@ DIVISION_ID = 11
 
 def _roles(db_path: str):
     """The team-role service on *db_path*, as the builder hands it to placement."""
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
     return TeamRoleService(db_path)
 
@@ -135,7 +135,7 @@ async def _lineup_db(tmp_path) -> str:
 async def test_a_lineup_refreshed_as_text_draws_nothing(tmp_path):
     """Pro's lineup tried again after a failure, the lineup poster handed a drawing that would
     draw it: the drawing is not asked at all, and the textual lineup is posted in channel 600."""
-    from leaguebot.core.services.lineup_posting import LineupPoster
+    from leaguebot.core.services.drivers.lineup_posting import LineupPoster
     from tests.support.lineup_drawing import LineupDrawingStub
 
     drawing = LineupDrawingStub(picture=tmp_path / "lineup_template.png")

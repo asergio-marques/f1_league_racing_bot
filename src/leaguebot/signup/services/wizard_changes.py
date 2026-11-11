@@ -74,7 +74,7 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.rounds import track_service
-from leaguebot.core.services.driver_service import ALLOWED_TRANSITIONS
+from leaguebot.core.services.drivers.driver_service import ALLOWED_TRANSITIONS
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import abandoned_line, name_of_member
@@ -108,9 +108,9 @@ from leaguebot.signup.services.wizard_service import WizardService, build_step_v
 if TYPE_CHECKING:
     from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.config_service import ConfigService
-    from leaguebot.core.services.driver_service import DriverService
+    from leaguebot.core.services.drivers.driver_service import DriverService
     from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.services.team_service import TeamService
+    from leaguebot.core.services.drivers.team_service import TeamService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 log = logging.getLogger(__name__)

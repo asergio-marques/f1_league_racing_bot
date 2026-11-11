@@ -703,9 +703,9 @@ async def test_a_review_s_lineup_with_no_channel_stops_the_queue_naming_the_comm
     to the Reserve team, and the queue stops at the lineup the sanction owes, its stop line
     naming the command that sets the channel, rather than the lineup completing having posted
     nothing."""
-    from leaguebot.core.services.lineup_posting import LineupPoster
-    from leaguebot.core.services.placement_service import PlacementService
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.lineup_posting import LineupPoster
+    from leaguebot.core.services.drivers.placement_service import PlacementService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
     def _hook(bot: Any, db_path: str) -> Any:
         roles = TeamRoleService(db_path)
@@ -774,9 +774,9 @@ async def test_a_review_s_sanction_whose_role_change_discord_refuses_stops_the_q
     Permissions). Alex approves round 3's reports: Lewis is moved to the Reserve team, and the
     queue stops at the job changing his roles, its notice naming it, rather than the approval
     going on as though his roles had been changed."""
-    from leaguebot.core.services.lineup_posting import LineupPoster
-    from leaguebot.core.services.placement_service import PlacementService
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.lineup_posting import LineupPoster
+    from leaguebot.core.services.drivers.placement_service import PlacementService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
     def _hook(bot: Any, db_path: str) -> Any:
         roles = TeamRoleService(db_path)

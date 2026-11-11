@@ -36,7 +36,7 @@ async def _seed(tmp_path, *, test_mode: bool, drivers: dict[int, bool] | None = 
 
 
 def _service(db_path):
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.drivers.placement_service import PlacementService
 
     return PlacementService(db_path)  # handed no drawing, it asks no capacity guard
 

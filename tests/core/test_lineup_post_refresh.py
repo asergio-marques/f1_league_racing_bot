@@ -46,7 +46,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.change import StepFailedOnDiscord
-from leaguebot.core.services.placement_service import PlacementService
+from leaguebot.core.services.drivers.placement_service import PlacementService
 from tests.support.change_queue import in_a_job
 from tests.support.lineup_drawing import LineupDrawingStub
 from tests.support.mentions import NOBODY, notified
@@ -160,7 +160,7 @@ def _guild(*, channel=None, cache_miss: bool = False, fetch_fails: bool = False)
 async def _refresh(db_path, guild, *, drawing=None):
     """Pro's lineup posted, the lineup poster handed *drawing* (none by default, so the text):
     gives what `_refresh_lineup_post` returns."""
-    from leaguebot.core.services.lineup_posting import LineupPoster
+    from leaguebot.core.services.drivers.lineup_posting import LineupPoster
 
     with in_a_job():
         return await LineupPoster(db_path, drawing=drawing)._refresh_lineup_post(
@@ -171,7 +171,7 @@ async def _refresh(db_path, guild, *, drawing=None):
 async def _post(db_path, guild):
     """The text lineup posted with no drawing handed, so no picture asked for: gives what
     `_refresh_lineup_post` returns."""
-    from leaguebot.core.services.lineup_posting import LineupPoster
+    from leaguebot.core.services.drivers.lineup_posting import LineupPoster
 
     with in_a_job():
         return await LineupPoster(db_path)._refresh_lineup_post(guild, DIVISION_ID)

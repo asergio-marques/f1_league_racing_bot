@@ -30,7 +30,7 @@ from leaguebot.core.services.modules.confirmation_refusals import Confirmation, 
 from leaguebot.core.services.modules.image_drawing import DivisionTeams, ImageDrawing, TeamSeats
 from leaguebot.core.services.modules.module_service import ModuleService, SwitchNotSignedUp
 from leaguebot.core.services.seasons.season_service import SeasonService
-from leaguebot.core.services.team_service import TeamService, validate_team_name
+from leaguebot.core.services.drivers.team_service import TeamService, validate_team_name
 from leaguebot.core.utils.asset_slug import normalise
 from leaguebot.core.utils.channel_guard import league_role_faults
 from leaguebot.core.utils.formatting import discord_ts

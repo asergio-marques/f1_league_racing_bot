@@ -144,14 +144,14 @@ async def _seed(tmp_path, name: str = "capacity_guards"):
 def _capacity(db_path, drawing=None):
     """The template capacity service on *db_path*, handed *drawing* (none by default, so it asks
     nothing), as the builder makes it."""
-    from leaguebot.core.services.template_capacity_service import TemplateCapacityService
+    from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService
 
     return TemplateCapacityService(db_path, drawing=drawing)
 
 
 def _guarded(db_path, drawing):
     """The placement service on *db_path*, handed a capacity service that asks *drawing*."""
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.drivers.placement_service import PlacementService
 
     return PlacementService(db_path, capacity=_capacity(db_path, drawing))
 
@@ -199,7 +199,7 @@ async def test_placement_capacity_guards_run_with_a_stub_drawing(
     db_path, season_id, division_id = await _seed(tmp_path, "raising")
     fault = RuntimeError("the drawing could not answer")
     raising = _Drawing({name: fault for name in GUARDS})
-    with caplog.at_level(logging.ERROR, logger="leaguebot.core.services.template_capacity_service"):
+    with caplog.at_level(logging.ERROR, logger="leaguebot.core.services.drivers.template_capacity_service"):
         await _place(_guarded(db_path, raising), season_id, division_id, team)
 
     assert guard in [name for name, _count in raising.asked]
@@ -211,7 +211,7 @@ def _failing_reads(monkeypatch, fragment: str, fault: Exception) -> None:
     every other read and write runs on the real connection."""
     from contextlib import asynccontextmanager
 
-    from leaguebot.core.services import template_capacity_service
+    from leaguebot.core.services.drivers import template_capacity_service
 
     real = template_capacity_service.get_connection
 
@@ -255,7 +255,7 @@ async def test_a_capacity_guard_s_own_read_fault_lets_the_placement_through(
     db_path, season_id, division_id = await _seed(tmp_path)
     fault = RuntimeError("the seats could not be counted")
     _failing_reads(monkeypatch, read, fault)
-    with caplog.at_level(logging.ERROR, logger="leaguebot.core.services.template_capacity_service"):
+    with caplog.at_level(logging.ERROR, logger="leaguebot.core.services.drivers.template_capacity_service"):
         await _place(
             _guarded(db_path, _Drawing({})), season_id, division_id, team
         )

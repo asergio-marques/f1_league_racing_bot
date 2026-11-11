@@ -8,7 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
-from leaguebot.core.services.driver_changes import (
+from leaguebot.core.services.drivers.driver_changes import (
     DRIVER_ASSIGN,
     DRIVER_MOVE,
     DRIVER_REASSIGN,
@@ -153,7 +153,7 @@ class DriverCog(commands.Cog):
 
         # The reassignment, its roles, the held signup channel and the portrait are a change on
         # the queue, which refuses again as it starts what the service refuses
-        # (`core/services/driver_changes.py`).
+        # (`core/services/drivers/driver_changes.py`).
         await self.bot.change_queue.ask(
             DRIVER_REASSIGN,
             {
@@ -245,7 +245,7 @@ class DriverCog(commands.Cog):
             return
 
         # The assignment is a change on the queue, which refuses again as it starts what is
-        # refused here (`core/services/driver_changes.py`).
+        # refused here (`core/services/drivers/driver_changes.py`).
         await self.bot.change_queue.ask(
             DRIVER_ASSIGN,
             {
@@ -329,7 +329,7 @@ class DriverCog(commands.Cog):
             return
 
         # The removal is a change on the queue, which refuses again as it starts what is
-        # refused here (`core/services/driver_changes.py`).
+        # refused here (`core/services/drivers/driver_changes.py`).
         await self.bot.change_queue.ask(
             DRIVER_UNASSIGN,
             {
@@ -430,7 +430,7 @@ class DriverCog(commands.Cog):
             return
 
         # The move, its roles and its lineups are a change on the queue, which refuses again
-        # as it starts what is refused here (`core/services/driver_changes.py`).
+        # as it starts what is refused here (`core/services/drivers/driver_changes.py`).
         await self.bot.change_queue.ask(
             DRIVER_MOVE,
             {
@@ -504,7 +504,7 @@ class DriverCog(commands.Cog):
             return
 
         # The release, its roles and its lineup are a change on the queue, which refuses again as
-        # it starts what is refused here (`core/services/driver_changes.py`).
+        # it starts what is refused here (`core/services/drivers/driver_changes.py`).
         await self.bot.change_queue.ask(
             DRIVER_RELEASE,
             {
@@ -563,7 +563,7 @@ class DriverCog(commands.Cog):
 
         # The turn-down, its approval's withdrawal, its audit entry and the driver role are a
         # change on the queue, which refuses again as it starts what is refused here
-        # (`core/services/driver_changes.py`).
+        # (`core/services/drivers/driver_changes.py`).
         await self.bot.change_queue.ask(
             DRIVER_REJECT,
             {
@@ -622,7 +622,7 @@ class DriverCog(commands.Cog):
             return
 
         # The sack, its roles and its lineups are a change on the queue, which refuses again as
-        # it starts what is refused here (`core/services/driver_changes.py`).
+        # it starts what is refused here (`core/services/drivers/driver_changes.py`).
         await self.bot.change_queue.ask(
             DRIVER_SACK,
             {

@@ -40,7 +40,7 @@ NOW = datetime(2031, 3, 4, 5, 6, 7, tzinfo=timezone.utc)
 
 def _service(db_path: str):
     """The team-role service on *db_path*, which keeps the mapping."""
-    from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
     return TeamRoleService(db_path)
 

@@ -274,7 +274,7 @@ async def test_the_roster_is_held_to_the_template_capacities(league, monkeypatch
     queue runs the change. The change is queued as `core.test_roster_add_bulk`, every time the
     capacities are asked it is of Am with two drivers for McLaren and by the bot's own template
     capacity service, the one carrying the image module's drawing, and both are seated."""
-    from leaguebot.core.services.template_capacity_service import TemplateCapacityService
+    from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService
 
     asked: list[tuple[int, dict[str, int]]] = []
     measurers: list[TemplateCapacityService] = []

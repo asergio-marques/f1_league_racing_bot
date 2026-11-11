@@ -523,13 +523,13 @@ def register_change_types(bot: LeagueBot) -> None:
         division_amend_change,
         division_rename_change,
     )
-    from leaguebot.core.services.team_changes import (
+    from leaguebot.core.services.drivers.team_changes import (
         team_add_change,
         team_modify_change,
         team_remove_change,
         team_reserve_role_change,
     )
-    from leaguebot.core.services.driver_changes import (
+    from leaguebot.core.services.drivers.driver_changes import (
         driver_assign_change,
         driver_move_change,
         driver_reassign_change,
@@ -566,7 +566,7 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.core.services.test_mode_toggle_change import test_mode_toggle_change
     from leaguebot.core.services.clean_change import clean_change
     from leaguebot.core.services.modules.hub_service import hub_refresh_change
-    from leaguebot.core.services.lineup_posting import lineup_post_change
+    from leaguebot.core.services.drivers.lineup_posting import lineup_post_change
     from leaguebot.core.services.rounds.round_amend_change import (
         amendment_in_hand,
         round_amend_change,
@@ -993,8 +993,8 @@ async def build(settings: Settings) -> LeagueBot:
     )
 
     # Services are attached to bot for cog access
-    from leaguebot.core.services.driver_service import DriverService
-    from leaguebot.core.services.team_service import TeamService
+    from leaguebot.core.services.drivers.driver_service import DriverService
+    from leaguebot.core.services.drivers.team_service import TeamService
 
     bot.config_service = ConfigService(settings.db_path)
     bot.season_service = SeasonService(settings.db_path)
@@ -1049,10 +1049,10 @@ async def build(settings: Settings) -> LeagueBot:
         db_path=settings.db_path, bot=bot,
     )
 
-    from leaguebot.core.services.lineup_posting import LineupPoster
-    from leaguebot.core.services.placement_service import PlacementService
-    from leaguebot.core.services.team_role_service import TeamRoleService
-    from leaguebot.core.services.template_capacity_service import TemplateCapacityService
+    from leaguebot.core.services.drivers.lineup_posting import LineupPoster
+    from leaguebot.core.services.drivers.placement_service import PlacementService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService
     # The drawing is handed so the capacity guards and the lineup poster can ask image's answer
     # without a bot of their own: neither posts but through the guild it is given, and each
     # reaches the image module only through this drawing. The placement service keeps the seats
