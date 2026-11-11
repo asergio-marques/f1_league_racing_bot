@@ -22,6 +22,7 @@ from leaguebot.core.models.round import read_scheduled_at
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.core.utils.hooks import StartUpStep
     from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
@@ -349,6 +350,25 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
 
 
 
+def start_up_steps(bot: "LeagueBot") -> "tuple[StartUpStep, ...]":
+    """Attendance's start-up steps, named and in the order they run in attendance's turn of the
+    start-up sweep (the entry point signs them up to `bot.starting` under attendance's switch key).
+    Each recovery is looked up when its step runs, so a step stands for that function and no
+    other."""
+    return (
+        # The check-in calls that fell due while the bot was down, their deadline still ahead,
+        # posted late. Before the deadlines below, as a call comes before its deadline.
+        ("missed check-in calls", lambda: recover_missed_check_in_calls(bot)),
+        # Persistent RSVP embed views re-armed for all stored embed messages, and missed RSVP
+        # deadline jobs run for rounds whose deadline already passed.
+        ("RSVP views and deadlines", lambda: recover_rsvp_views_and_deadlines(bot)),
+        # The check-in messages due to come down while the bot was stopped. After the deadlines
+        # above, so a check-in is distributed before it goes.
+        ("missed check-in clean-ups", lambda: recover_missed_check_in_clean_ups(bot)),
+    )
+
+
+
 async def recover_missed_check_in_calls(
     bot: LeagueBot, *, now: datetime | None = None
 ) -> None:
@@ -629,16 +649,16 @@ async def recover_missed_check_in_clean_ups(bot: "LeagueBot") -> None:
             )
             check_ins = [r["round_id"] for r in await cursor.fetchall() if _due(r["scheduled_at"])]
     except Exception:
-        log.exception("_recover_missed_cleanups: failed to read the messages still standing")
+        log.exception("recover_missed_check_in_clean_ups: failed to read the messages still standing")
         return
 
     for round_id in check_ins:
-        log.info("_recover_missed_cleanups: taking down round %d's check-in", round_id)
+        log.info("recover_missed_check_in_clean_ups: taking down round %d's check-in", round_id)
         try:
             await ask_check_in_clean_up(
                 bot.change_queue, bot.db_path, round_id, origin=ChangeOrigin.BOT
             )
         except Exception:
             log.exception(
-                "_recover_missed_cleanups: check-in cleanup failed for round %d", round_id
+                "recover_missed_check_in_clean_ups: check-in cleanup failed for round %d", round_id
             )
