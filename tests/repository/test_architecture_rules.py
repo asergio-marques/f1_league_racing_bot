@@ -172,8 +172,8 @@ def _database_code_outside_services() -> Counter[tuple[str, str]]:
 KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/wiring.py", "recover_missed_check_in_calls"): (2, PASS["attendance"]),
     ("attendance/wiring.py", "recover_missed_check_in_clean_ups"): (2, PASS["attendance"]),
-    ("__main__.py", "_recover_missed_forecast_clean_ups"): (2, PASS["weather"]),
-    ("__main__.py", "_recover_missed_phases"): (2, PASS["weather"]),
+    ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (2, PASS["weather"]),
+    ("weather/wiring.py", "recover_missed_phases"): (2, PASS["weather"]),
     ("results/wiring.py", "recover_orphaned_amend_channels"): (2, PASS["results"]),
     ("results/wiring.py", "recover_orphaned_submission_channels"): (2, PASS["results"]),
     ("__main__.py", "_recover_portrait_refresh_job"): (2, PASS["image"]),
@@ -2335,8 +2335,8 @@ def _reads_outside_the_owner() -> Counter[tuple[str, str]]:
 KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/wiring.py", "recover_missed_check_in_calls"): (4, PASS["attendance"]),
     ("attendance/wiring.py", "recover_missed_check_in_clean_ups"): (2, PASS["attendance"]),
-    ("__main__.py", "_recover_missed_forecast_clean_ups"): (3, PASS["weather"]),
-    ("__main__.py", "_recover_missed_phases"): (3, PASS["weather"]),
+    ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (2, PASS["weather"]),
+    ("weather/wiring.py", "recover_missed_phases"): (3, PASS["weather"]),
     ("results/wiring.py", "recover_orphaned_submission_channels"): (3, PASS["results"]),
     ("__main__.py", "_recover_portrait_refresh_job"): (1, PASS["image"]),
     ("attendance/wiring.py", "recover_rsvp_views_and_deadlines"): (4, PASS["attendance"]),
@@ -2605,7 +2605,6 @@ def _own_columns_outside_the_owner_among(nodes) -> Counter[tuple[str, str]]:
 #: Today's mentions of a module's own column outside it, under the design pass that removes each:
 #: core's under its own, the entry point's under the module whose recovery it carries.
 KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
-    ("__main__.py", "_recover_missed_phases"): (3, PASS["weather"]),
     ("image/services/image_weather_post.py", "build_drawing_for_round"): (5, PASS["image"]),
 }
 
@@ -3262,7 +3261,7 @@ def _catch_alls_outside_the_places_among(nodes) -> Counter[tuple[str, str]]:
 KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/wiring.py", "recover_missed_check_in_calls"): (1, PASS["attendance"]),
     ("attendance/wiring.py", "recover_missed_check_in_clean_ups"): (1, PASS["attendance"]),
-    ("__main__.py", "_recover_missed_forecast_clean_ups"): (1, PASS["weather"]),
+    ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (1, PASS["weather"]),
     ("__main__.py", "_recover_portrait_refresh_job"): (1, PASS["image"]),
     ("attendance/wiring.py", "recover_rsvp_views_and_deadlines"): (5, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "_record_failed"): (1, PASS["attendance"]),
