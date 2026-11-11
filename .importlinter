@@ -191,3 +191,21 @@ source_modules =
     leaguebot.image
 forbidden_modules =
     leaguebot.__main__
+
+# A module's wiring (`<module>/wiring.py`) is its part of the builder, under the entry point's rules:
+# nothing imports it but the entry point (architecture.md, "How the code is laid out"). A module's
+# kind folders and another's wiring are named as sources, as import-linter passes over an import
+# between a module and what lies within it.
+[importlinter:contract:nothing-imports-a-module-s-wiring-but-the-entry-point]
+name = Nothing imports a module's wiring but the entry point
+type = forbidden
+source_modules =
+    leaguebot.*.cogs
+    leaguebot.*.services
+    leaguebot.*.utils
+    leaguebot.*.models
+    leaguebot.*.wiring
+    leaguebot.core.db
+forbidden_modules =
+    leaguebot.*.wiring
+allow_indirect_imports = True

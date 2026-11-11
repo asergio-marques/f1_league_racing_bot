@@ -42,6 +42,9 @@ leaguebot/
     __main__.py   the entry point: builds everything and starts the bot
 ```
 
+A module's folder holds one file beside its kind folders: its **wiring** (`<module>/wiring.py`),
+below. Core has none, its part of the builder being the builder's own.
+
 Each folder holds that part's **cogs** (its commands, and the buttons and forms they post), its
 **services** (its rules and its database code) and its **models** (plain data). Which module owns
 a file is then plain from where it sits. The tests follow the same folders, one for core and one
@@ -70,10 +73,32 @@ the handlers for each kind of post: the log writer, the notice handler, the stan
 and the bot-owned channel handler, each a service of its own in `core/services/`.
 
 **The entry point** (`__main__.py`) sits above core and the modules, and is the one place that
-imports every module at run time. It holds the builder, which makes every service, loads every
-module's cogs, signs each module up to core's hooks and registers each kind of timed job with the
-scheduler service, all before the bot connects. It then starts the bot. That is how core can offer
-hooks without importing a module.
+imports every module at run time. It holds the builder, which makes every service and every hook,
+loads every module's cogs and persistent views, signs up the hooks that several modules join, each
+module's function in the order its subscribers are called, calls each module's wiring, and orders
+the steps of the start-up, all before the bot connects. It then starts the bot. That is how core can
+offer hooks without importing a module.
+
+**A module's wiring** (`<module>/wiring.py`) is the module's part of the builder: the sign-ups to
+the hooks that only that module joins, its switch reader, its change types and settings, its timed
+jobs' handlers and their steps for `/test-mode advance`, the clearing of its in-memory state, and its
+start-up recoveries, each written in the module's own file. It is a kind of its own, under the entry
+point's rules: it may read the bot as the builder does, which a service may not, it holds no rules
+and no database code of its own, it imports its own module, core and what the builder hands it
+(another module's hand-in, or the drawing of image's, where the dependency table allows it), and
+nothing imports it but the entry point. The builder calls one function of it for each phase of the
+build the module has a part in, and a module offers only the phases it has. A function of the
+wiring reads the bot, or its attribute, when it runs where a test replaces it after the sign-up,
+as the builder's did. The builder makes every hook before any module's wiring runs, so that a
+module's function signs up on a hook that exists, and keeps the order of each hook several modules
+join, by naming each module's function itself; no subscriber order depends on which module wires
+first.
+
+*Rejected:* a module's wiring as a service, which would make it a service that looks services and
+the queue up on the bot, the very thing the services' rules refuse. *Rejected:* the wiring beside
+the code it signs up, in each service, which leaves the sign-up of a hook spread over every file of
+the module, and no one place to read what a module joins. *Rejected:* the sign-ups staying in the
+entry point, which holds then the registrations of every module and grows with each.
 
 **What each part may do:**
 
@@ -116,7 +141,7 @@ hooks without importing a module.
   migrations, and imports nothing else of the bot's.
 - **The entry point** builds the services, wires them together and starts the bot, and calls core's
   database code to close the connections as the bot stops. It holds no rules and no database code
-  of its own.
+  of its own, nor does a module's wiring, which is under the same rules.
 
 **Services stay attached to the bot, and are built in one place.** The bot object keeps a typed
 attribute for each service object. Most services are plain functions and need none. The builder
@@ -162,7 +187,8 @@ test-mode review's marks read, a season's confirmation judged, a division's fina
 season ending, a season, division, round or driver deleted, a driver merged into another or turned
 down, a driver's account changed, a base role changed, the bot packed, test mode turned on, the
 bot's in-memory state cleared, the hub's panel gathering its options, a module's switch read), core
-declares a hook. The builder signs each module up to it before the bot connects. Core calls whoever
+declares a hook. The builder, or the module's wiring it calls, signs each module up to it before the
+bot connects. Core calls whoever
 signed up, and never imports a module, the bot's type aside (see "How the code is laid out"). A
 module turned on or off is not a hook but a change of the module's own, which core asks for by its
 kind (see "Each module turns itself on and off").
@@ -180,7 +206,7 @@ and no module's operation, so a module's part of the moment is the module's own 
 added later signs up without core changing, the switch read aside (below). A hook keyed by a kind
 takes one function for each key instead, as a kind of timed job takes its one handler (see "Timed
 work and restarts") and a kind of a round's job its one `/test-mode advance` step; each is an object
-the builder makes and signs each module's own up on, never a registry kept at module level for the
+the builder makes and each module's wiring signs its own up on, never a registry kept at module level for the
 life of the process, as nothing is wired in after the bot starts (see "Services stay attached to the
 bot"). **A module's switch read is a keyed hook:** one reader for each module, keyed by the module's
 name, which the module's own work may also call; core asks for it by that name
@@ -848,7 +874,7 @@ amendment's five minutes running out, a signup left unanswered for a day, a held
 after the one whose record saved the row the timer is keyed to, arms a one-off timer through the
 scheduler service (`SchedulerService.arm_once`, named from its kind and its row, so that arming it
 again replaces it). It is armed with no lateness limit, so one missed while the bot was down fires
-when it starts. The builder registers each kind's callback before the scheduler starts
+when it starts. The module's wiring registers each kind's callback before the scheduler starts
 (`register_timer`). When the timer fires, its callback reads the row again and asks its
 change of the queue, as the bot's, or asks nothing where the work is no longer due; a callback that
 raises goes to the failure path of scheduled jobs, the job runner (see "Errors and failures").
@@ -894,8 +920,8 @@ that makes a change puts it on the queue, like any other. A module's start-up wo
 event (a review posted again, an interrupted submission reopened, the hub's panel posted again, as
 the core specification's "When the bot stops" lists) is a step of the sweep too, reached through the
 hook for the bot starting. Each step of the sweep is kept separate, so one failing is reported and
-does not stop the rest. A step holds no module's rule: the entry point's step for putting a round's
-review back calls the results service that decides it (core specification, "When the bot stops"),
+does not stop the rest. A step holds no module's rule: the step for putting a round's
+review back, which results' wiring offers, calls the results service that decides it (core specification, "When the bot stops"),
 and that decision is asked of the queue as a change like any other.
 
 **The sweep only delegates.** It is core's: it asks each kind of job, through what its module signed
@@ -905,11 +931,12 @@ next is called, and none runs beside another. Before any of them, it calls whoev
 bot starting, one at a time as well, so a module's start step's change is queued, and carried out,
 ahead of any change its missed events ask for. A handler asks for its change on the queue; what an
 earlier event changed is seen by a later one's change when the queue runs it, not by the later one's
-handler. The sweep holds no module's logic. The builder signs each handler up with its kind of job,
+handler. The sweep holds no module's logic. The module's wiring signs each handler up with its kind of job,
 together with the kind's own way of telling which of its events came due, as it registers the kind
 with the scheduler service; that is the hook core offers for a timed event falling due. The handler
 holds its module's logic, what becomes of a missed event included; core holds none of it. Each
-module writes the handler for every kind of timed job it has, and the entry point holds none of it.
+module writes the handler for every kind of timed job it has, and neither the entry point nor the
+wiring holds the module's rules in it.
 
 **A change cut off by a stop is the queue's to finish,** not the sweep's (see "How a change is
 carried out"). Approving a season, for example, is one change: its lineups, calendars and sheets
@@ -1358,7 +1385,8 @@ later on its own.
 
 - **`.importlinter`**, run by `tests/repository/test_import_contracts.py`, checks which code may
   import which: the rules for each kind of code, that core uses no module, that a module uses
-  another only where the dependency table allows, and that nothing imports the entry point.
+  another only where the dependency table allows, that nothing imports the entry point, and that
+  nothing but the entry point imports a module's wiring.
 - **`tests/repository/test_architecture_rules.py`** checks the rest: database code outside services,
   awaiting anything but the connection mid-save, cogs handling their own errors, catch-all handlers
   that lose the error details, background tasks nobody keeps, code reaching past the scheduler
@@ -1377,8 +1405,8 @@ later on its own.
   cannot be told, so each counts unless its function was read by hand and found to name only its own
   module's tables, `SPLICED_READS_READ_BY_HAND`, which holds the count exactly, the tuples of table
   names those functions iterate checked to name their own module's tables alone), a module's own
-  column on a core table named in a file outside that module, the entry point's included
-  (`KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER`; the check counts the column's name in any string outside a
+  column on a core table named in a file outside that module, the entry point's and a module's
+  wiring's included (`KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER`; the check counts the column's name in any string outside a
   docstring, in SQL or as a row's key, and each attribute named for it, read or set), core reading a
   module's service on the bot (an attribute `LeagueBot` types from a module's package, read from a
   file of core), SQLite's clock in a statement, a service reading the wall clock (the change queue's

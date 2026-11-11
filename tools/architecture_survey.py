@@ -118,10 +118,10 @@ class FileShape:
 
 def layer_of(rel: str) -> str:
     """The layer a path under `src/` belongs to, `src/leaguebot/<module>/<layer>/...`; the entry
-    point is its own."""
-    if rel == ENTRY:
-        return "entry"
+    point is its own, and a module's wiring (`src/leaguebot/<module>/wiring.py`) is under its rules."""
     parts = rel.split("/")
+    if rel == ENTRY or (len(parts) == 4 and parts[3] == "wiring.py"):
+        return "entry"
     return parts[3] if len(parts) > 4 and parts[3] in LAYERS else "other"
 
 
