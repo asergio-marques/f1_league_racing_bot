@@ -83,8 +83,8 @@ grouped; a module's own, if it needs grouping, is its own pass's to decide.
 but the scheduler's.
 
 *Rejected:* keeping the services flat, which leaves the line between plumbing and league rules to
-a list nobody can read at a glance. *Rejected:* moving the scheduler's file with the rest and
-repointing the saved jobs, which would leave a job store written before the move unloadable.
+a list nobody can read at a glance. *Rejected:* moving the scheduler's file with the rest, which
+would leave every job a saved job store holds, and every saved test-mode state, unable to load.
 
 Beside its kind folders, a module's folder holds one file: its **wiring** (`<module>/wiring.py`),
 the module's part of the builder (below). Core has none: its part is the builder's own.
