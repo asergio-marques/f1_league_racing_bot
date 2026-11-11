@@ -3356,3 +3356,57 @@ async def test_a_held_member_s_interaction_is_deferred_while_it_waits(env):
     assert sorted(_acknowledges(reply) for reply in replies) == [False, True]
     assert refusal in replies
     assert len(await change_rows(env.db_path)) == 1
+
+
+@pytest.mark.parametrize(
+    ("state", "waits", "defers"),
+    [
+        ("held", True, True),
+        ("held, answered", True, False),
+        ("never held", False, False),
+        ("released", False, False),
+        ("inside the sweep", False, False),
+    ],
+    ids=[
+        "held, not yet answered", "held, already answered", "never held", "released already",
+        "asked inside the sweep",
+    ],
+)
+async def test_a_command_answered_off_the_queue_waits_out_the_hold(env, state, waits, defers):
+    """A command answered off the queue (`/bot pack`, say) asks the queue whether to wait. While
+    the bot holds its queue for the catch-up after a restart, the call does not return until the
+    catch-up ends, then says it waited; an interaction not yet answered is deferred first, privately
+    and thinking, and one already answered is left as it is. On a queue never held, one released
+    already, or a call made by the catch-up itself, it says at once that it did not wait, and
+    defers nothing."""
+    queue = _queue(env)
+    press = member_interaction(env.bot)
+    if state == "held, answered":
+        await press.response.send_message("a form")
+        press.response.send_message.reset_mock()
+    if state != "never held":
+        queue.hold()
+    if state == "released":
+        queue.release()
+
+    if state == "inside the sweep":
+        async with queue.sweeping():
+            waited = await asyncio.wait_for(queue.wait_out_the_hold(press), timeout=5)
+    else:
+        waiting = asyncio.create_task(queue.wait_out_the_hold(press))
+        await _yield_to_the_loop()
+        assert waiting.done() is not waits
+        if waits:
+            async with queue.sweeping():
+                pass
+        waited = await asyncio.wait_for(waiting, timeout=5)
+
+    assert waited is waits
+    if defers:
+        [deferred] = press.response.defer.await_args_list
+        assert deferred.kwargs.get("ephemeral") is True
+        assert deferred.kwargs.get("thinking") is True
+    else:
+        assert press.response.defer.await_count == 0
+    assert press.response.send_message.await_count == 0
+    assert press.followup.send.await_count == 0
