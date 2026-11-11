@@ -96,9 +96,9 @@ order of each hook several modules join, by naming each module's function itself
 order depends on which module wires first.
 
 *Rejected:* a module's wiring as a service, which would make it a service that looks services and
-the queue up on the bot, the very thing the services' rules refuse. *Rejected:* the wiring beside
-the code it signs up, in each service, which leaves the sign-up of a hook spread over every file of
-the module, and no one place to read what a module joins. *Rejected:* the sign-ups staying in the
+the queue up on the bot, the very thing the services' rules refuse. *Rejected:* each subscriber
+declaring its own position on a hook, which changes the sign-up-order rule and spreads one hook's
+order over every module's folder. *Rejected:* the sign-ups staying in the
 entry point, which holds then the registrations of every module and grows with each.
 
 **What each part may do:**

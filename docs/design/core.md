@@ -592,9 +592,9 @@ the image module's class of the same name implements it; the builder makes it an
   placement guards (`PlacementService`), a round's (`round_add_changes`), and the season review's.
 - **Gates and pictures**: `calendar_wanted`, `draw_calendar`, `lineup_wanted`, `draw_lineup`,
   `draw_lineup_for_command`, `draw_review_lineup`, `discard_picture`. The review's lineup is drawn
-  through `draw_review_lineup`, as the builder's drawing of a review's picture asks it, and not
-  through a render core reaches into the module for. What a gate that cannot be read answers is
-  `architecture.md`'s ("Errors and failures").
+  through `draw_review_lineup`, as the builder's drawing of a review's picture asks it, and not by
+  the builder calling the image module's renderer itself. What a gate that cannot be read answers
+  is `architecture.md`'s ("Errors and failures").
 - **The review's image section and its faults**: `rasteriser_fault`, `review_section`,
   `template_faults`, `colour_shortfall_problems`, `portrait_fault`. The image module words each;
   core decides which refuse. The module docstring says which faults each lets out.
