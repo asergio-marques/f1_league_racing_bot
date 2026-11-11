@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.core.utils.hooks import StartUpStep
     from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
@@ -386,6 +387,18 @@ def cancel_wizard_timers(bot: "LeagueBot") -> "Callable[[str], None]":
         bot.scheduler_service.disarm(CORRECTION_TIMER, user_id)
 
     return cancel
+
+
+def start_up_steps(bot: "LeagueBot") -> "tuple[StartUpStep, ...]":
+    """Signup's start-up steps, named and in the order they run in signup's turn of the start-up
+    sweep (the entry point signs them up to `bot.starting` under signup's switch key). Each
+    recovery is looked up when its step runs, so a step stands for that function and no other."""
+    return (
+        # A signup close timer lost on restart; its callback is registered by `build`.
+        ("signup close timer", lambda: recover_signup_close_timers(bot)),
+        ("wizards", lambda: recover_wizards(bot)),
+    )
+
 
 
 async def recover_signup_close_timers(bot: "LeagueBot") -> None:
