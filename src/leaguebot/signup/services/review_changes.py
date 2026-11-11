@@ -96,7 +96,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
-from leaguebot.core.services import track_service
+from leaguebot.core.services.rounds import track_service
 from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.queue.queue_records import (

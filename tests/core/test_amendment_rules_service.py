@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from leaguebot.core.models.round import Round, RoundFormat, RoundStatus
-from leaguebot.core.services.amendment_rules_service import judge_amendment
+from leaguebot.core.services.rounds.amendment_rules_service import judge_amendment
 from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
 
 NOW = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)
@@ -495,7 +495,7 @@ def _asked_moment(text: str) -> datetime:
     ],
 )
 def test_a_round_amendment_to_the_values_that_stand_changes_nothing(changes):
-    from leaguebot.core.services.amendment_rules_service import amendment_changes_nothing
+    from leaguebot.core.services.rounds.amendment_rules_service import amendment_changes_nothing
 
     assert amendment_changes_nothing(_STANDING, changes)
 
@@ -516,6 +516,6 @@ def test_a_round_amendment_to_the_values_that_stand_changes_nothing(changes):
     ],
 )
 def test_a_round_amendment_with_any_value_changed_changes_something(changes):
-    from leaguebot.core.services.amendment_rules_service import amendment_changes_nothing
+    from leaguebot.core.services.rounds.amendment_rules_service import amendment_changes_nothing
 
     assert not amendment_changes_nothing(_STANDING, changes)

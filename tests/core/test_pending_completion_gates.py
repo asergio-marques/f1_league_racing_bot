@@ -189,9 +189,9 @@ async def _calendar_sync(bot, interaction):
     is recorded rather than run."""
     cog = _cog(DivisionCog, bot)
     bot.change_queue.ask = AsyncMock(return_value=1)
-    with patch("leaguebot.core.services.calendar_post_service.tracks_by_name", new=AsyncMock(return_value={})), \
+    with patch("leaguebot.core.services.rounds.calendar_post_service.tracks_by_name", new=AsyncMock(return_value={})), \
             patch(
-                "leaguebot.core.services.calendar_post_service.post_division_calendar",
+                "leaguebot.core.services.rounds.calendar_post_service.post_division_calendar",
                 new=AsyncMock(return_value=SimpleNamespace(
                     problem=None, notices=[], posted_as_image=False
                 )),

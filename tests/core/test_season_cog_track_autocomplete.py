@@ -93,7 +93,7 @@ async def test_an_autocomplete_that_hangs_offers_nothing(cog, monkeypatch):
     deadline is waited for, so its connection closes within the test. Left hanging, it held a
     database thread open past the test's call, and the suite's teardown waited out its whole
     grace period for it (`tests/support/change_queue.py`, `THREAD_GRACE_SECONDS`)."""
-    import leaguebot.core.services.track_service as track_service
+    import leaguebot.core.services.rounds.track_service as track_service
 
     released = asyncio.Event()
 
@@ -121,7 +121,7 @@ async def test_it_asks_the_service_with_a_lock_wait_short_enough_to_answer_in_ti
     """The tracks are asked of the service by the database's path, with the autocomplete's
     shorter lock wait: waiting the ordinary five seconds on a contended database would
     overshoot Discord's three-second budget and answer into an expired token."""
-    import leaguebot.core.services.track_service as track_service
+    import leaguebot.core.services.rounds.track_service as track_service
 
     seen = {}
 

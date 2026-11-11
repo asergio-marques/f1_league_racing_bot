@@ -59,7 +59,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.core.services import track_service
+from leaguebot.core.services.rounds import track_service
 from leaguebot.core.services.queue import typed_turns
 from leaguebot.core.services.queue.change_types import (
     ChangeType,

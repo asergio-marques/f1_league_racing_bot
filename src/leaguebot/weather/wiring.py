@@ -386,7 +386,7 @@ async def recover_missed_forecast_clean_ups(bot: "LeagueBot") -> None:
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.models.change import forecasts_named
     from leaguebot.weather.services.forecast_changes import ask_forecast_clean_up
-    from leaguebot.core.services.round_moments import POST_RACE_CLEANUP_DELAY
+    from leaguebot.core.services.rounds.round_moments import POST_RACE_CLEANUP_DELAY
 
     now = datetime.now(timezone.utc)
 

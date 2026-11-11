@@ -93,7 +93,7 @@ async def _retried_posts(league: Any) -> list[dict[str, Any]]:
 
 
 def _calendar_texts(league: Any) -> list[str]:
-    from leaguebot.core.services.calendar_post_service import calendar_heading
+    from leaguebot.core.services.rounds.calendar_post_service import calendar_heading
 
     return [text for text in league.texts(PRO_CALENDAR) if calendar_heading("Pro") in text]
 

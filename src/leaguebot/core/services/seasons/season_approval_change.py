@@ -57,12 +57,12 @@ from leaguebot.core.models.change import (
     VerdictKind,
 )
 from leaguebot.core.models.round import RoundFormat
-from leaguebot.core.services.round_moments import read_round_windows
+from leaguebot.core.services.rounds.round_moments import read_round_windows
 from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.services.seasons import approval_checks
 from leaguebot.core.services import lineup_posting
 from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.services.calendar_post_service import POST_CALENDAR, calendar_steps
+from leaguebot.core.services.rounds.calendar_post_service import POST_CALENDAR, calendar_steps
 from leaguebot.core.services.queue.queue_records import (
     unfinished,
 )

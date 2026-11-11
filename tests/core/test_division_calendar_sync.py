@@ -39,7 +39,7 @@ import pytest
 from leaguebot.core.cogs.division_cog import DivisionCog
 from leaguebot.core.db.database import run_migrations
 from leaguebot.core.models.season import Season, SeasonStage, SeasonStatus
-from leaguebot.core.services.calendar_post_service import CalendarPosting
+from leaguebot.core.services.rounds.calendar_post_service import CalendarPosting
 from tests.support.change_queue import (
     league_bot,
     league_queue,
@@ -147,9 +147,9 @@ async def _sync(cog, interaction, *, name="Pro", posting=None):
     """Run the command, then the queue, with the calendar's posting stubbed."""
     await _queue_for(cog.bot)
     with patch(
-        "leaguebot.core.services.calendar_post_service.tracks_by_name", new=AsyncMock(return_value={})
+        "leaguebot.core.services.rounds.calendar_post_service.tracks_by_name", new=AsyncMock(return_value={})
     ), patch(
-        "leaguebot.core.services.calendar_post_service.post_division_calendar",
+        "leaguebot.core.services.rounds.calendar_post_service.post_division_calendar",
         new=AsyncMock(return_value=posting or _posting()),
     ) as post:
         await undecorate(DivisionCog.division_calendar_sync)(cog, interaction, name)

@@ -366,7 +366,7 @@ async def test_a_track_gone_by_the_save_ends_the_amendment_in_its_refusal(tmp_pa
     have: the manager's reply is the refusal word for word, the log channel records the refusal
     alone, Pro's rounds are as they were, no audit entry is written, and the league's lane is not
     stopped."""
-    from leaguebot.core.services import track_service
+    from leaguebot.core.services.rounds import track_service
     from tests.support.change_queue import run_queue, stopped_job
     from tests.support.settings_league import audit_rows, last_said, log_lines
 

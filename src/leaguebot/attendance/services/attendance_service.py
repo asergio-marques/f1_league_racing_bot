@@ -1758,7 +1758,7 @@ async def _round_grid(db_path: str, division_id: int, profile_ids: list[int]):
     A missing cell and a stored zero are the same picture and the same meaning: the round
     counted nothing against that driver. Nothing here distinguishes the six ways that happens.
     """
-    from leaguebot.core.services.calendar_post_service import tracks_by_name
+    from leaguebot.core.services.rounds.calendar_post_service import tracks_by_name
     from leaguebot.image.services.image_attendance_service import RoundHeading
     from leaguebot.image.services.image_calendar_service import MYSTERY_DATUM
 

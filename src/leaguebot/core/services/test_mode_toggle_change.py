@@ -60,7 +60,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.round_add_changes import saved_result
+from leaguebot.core.services.rounds.round_add_changes import saved_result
 from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.seasons.season_end_changes import (
     BACKUP_KEPT,

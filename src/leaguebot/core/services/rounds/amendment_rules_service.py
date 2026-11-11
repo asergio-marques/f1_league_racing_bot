@@ -56,7 +56,7 @@ from leaguebot.core.models.round import (
     WeatherWindows,
     read_scheduled_at,
 )
-from leaguebot.core.services.round_moments import as_utc, round_event_moments
+from leaguebot.core.services.rounds.round_moments import as_utc, round_event_moments
 
 #: The fields of a round a league may amend.
 AMENDABLE_FIELDS = frozenset({"track_name", "format", "scheduled_at"})

@@ -179,7 +179,7 @@ async def test_the_review_s_calendar_picture_is_drawn_through_the_image_module_s
     from unittest.mock import AsyncMock
 
     from leaguebot.__main__ import _draw_review_picture
-    from leaguebot.core.services import calendar_post_service
+    from leaguebot.core.services.rounds import calendar_post_service
     from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
 
     bot = await built_bot(tmp_path, now=_NOW)
@@ -791,7 +791,7 @@ async def test_the_windows_hook_hands_each_caller_today_s_pair(
     still posted."""
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
-    from leaguebot.core.services.round_moments import read_round_windows
+    from leaguebot.core.services.rounds.round_moments import read_round_windows
     from tests.support.change_queue import seed_server
 
     bot = await built_bot(tmp_path, now=_NOW)

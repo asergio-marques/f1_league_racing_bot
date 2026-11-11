@@ -1378,7 +1378,7 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        from leaguebot.core.services.amendment_service import approval_faults
+        from leaguebot.core.services.rounds.amendment_service import approval_faults
         from leaguebot.results.services.amendment_mode_service import (
             get_amendment_state,
             get_modification_store_diff,

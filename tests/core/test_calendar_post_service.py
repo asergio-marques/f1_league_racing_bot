@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-import leaguebot.core.services.calendar_post_service as cps
+import leaguebot.core.services.rounds.calendar_post_service as cps
 from tests.support.calendar_drawing import CalendarDrawingStub
 from tests.support.change_queue import in_a_job
 from tests.support.mentions import NOBODY, notified

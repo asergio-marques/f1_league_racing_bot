@@ -603,7 +603,7 @@ async def recover_missed_check_in_clean_ups(bot: "LeagueBot") -> None:
     from leaguebot.core.db.database import get_connection
     from leaguebot.attendance.services.check_in_changes import ask_check_in_clean_up
     from leaguebot.core.models.change import ChangeOrigin
-    from leaguebot.core.services.round_moments import POST_RACE_CLEANUP_DELAY
+    from leaguebot.core.services.rounds.round_moments import POST_RACE_CLEANUP_DELAY
 
     now = datetime.now(timezone.utc)
 

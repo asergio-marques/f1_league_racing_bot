@@ -3200,7 +3200,7 @@ CATCH_ALLS_ALLOWED = {
     ("core/services/scheduler_service.py", "SchedulerService._remove_job"):
         "a stated exception: every cancel is a clean-up, so a job that will not go is logged and "
         "left",
-    ("core/services/amendment_service.py", "approval_faults"):
+    ("core/services/rounds/amendment_service.py", "approval_faults"):
         "a stated exception: an attendance switch that cannot be read never refuses an amendment",
     ("core/services/seasons/approval_checks.py", "channel_on_server"):
         "a stated exception: a channel check that cannot tell must not refuse a season",
@@ -3218,7 +3218,7 @@ CATCH_ALLS_ALLOWED = {
     ("core/services/seasons/approval_checks.py", "team_name_problems"):
         "a stated exception: a team-name check that cannot read the teams finds nothing wrong, and "
         "the review and the approval carry on with the names unchecked",
-    ("core/services/round_add_changes.py", "calendar_round_refusal"):
+    ("core/services/rounds/round_add_changes.py", "calendar_round_refusal"):
         "a stated exception: a round guard that cannot run lets the round through, at the ask "
         "and as the change starts",
     ("core/services/seasons/approval_checks.py", "image_configuration_faults"):
@@ -3227,9 +3227,9 @@ CATCH_ALLS_ALLOWED = {
     ("core/cogs/season_cog.py", "SeasonCog._build_image_review_section"):
         "a stated exception: an image section that cannot be read is stated as such, and the "
         "review goes on",
-    ("core/services/calendar_post_service.py", "post_division_calendar"):
+    ("core/services/rounds/calendar_post_service.py", "post_division_calendar"):
         "place 5, a calendar that cannot be drawn is posted as text and its fault is the job's line",
-    ("core/services/calendar_post_service.py", "render_for_command"):
+    ("core/services/rounds/calendar_post_service.py", "render_for_command"):
         "place 5, a commanded calendar that cannot be drawn is refused, its fault the review's line",
     ("image/services/image_drawing.py", "ImageDrawing.calendar_wanted"):
         "a stated exception: a calendar gate that cannot be read answers text, so none is lost",

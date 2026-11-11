@@ -25,22 +25,22 @@ from leaguebot.core.services.cancellations.cancellation_changes import (
     ROUND_CANCEL,
     cancellation_holding_amendment,
 )
-from leaguebot.core.services.round_amend_change import ROUND_AMEND, payload_changes
-from leaguebot.core.services.round_moments import read_phases_drawn, read_round_windows
-from leaguebot.core.services.round_add_changes import (
+from leaguebot.core.services.rounds.round_amend_change import ROUND_AMEND, payload_changes
+from leaguebot.core.services.rounds.round_moments import read_phases_drawn, read_round_windows
+from leaguebot.core.services.rounds.round_add_changes import (
     ADD as ROUND_ADD,
     IMPORT as ROUND_IMPORT,
     add_payload,
     import_payload,
 )
-from leaguebot.core.services.round_delete_change import ROUND_DELETE
-from leaguebot.core.services.setup_round_amend_change import (
+from leaguebot.core.services.rounds.round_delete_change import ROUND_DELETE
+from leaguebot.core.services.rounds.setup_round_amend_change import (
     ROUND_AMEND_SETUP,
     amend_payload as amend_setup_payload,
 )
 from leaguebot.core.services.seasons.season_end_changes import season_end_in_hand, season_end_refusal
-from leaguebot.core.services.amendment_rules_service import amendment_changes_nothing
-import leaguebot.core.services.track_service as track_service
+from leaguebot.core.services.rounds.amendment_rules_service import amendment_changes_nothing
+import leaguebot.core.services.rounds.track_service as track_service
 from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 from leaguebot.core.utils.autocomplete import bounded_autocomplete
 from leaguebot.core.utils.input_validator import parse_datetime
@@ -164,7 +164,7 @@ async def _run_round_import(
 
     The interaction is already deferred. The queue refuses what the import has always been refused
     for, at the ask and again as the change starts, and adds every round across its divisions in
-    one save (`core/services/round_add_changes.py`). *what* names the form as the log channel
+    one save (`core/services/rounds/round_add_changes.py`). *what* names the form as the log channel
     should read a refusal of it, which the form passes in (`describe_form`), this function holding
     no form.
     """
@@ -205,7 +205,7 @@ class RoundCog(commands.Cog):
     ) -> None:
         """Add a round: ask the change queue for it, which refuses what the command has always
         refused at the ask and again as the change starts, and adds the round, renumbers its
-        division and records it in one save (`core/services/round_add_changes.py`).
+        division and records it in one save (`core/services/rounds/round_add_changes.py`).
 
         Deferred before anything else: the check loads and parses the calendar template, which
         can outlast Discord's three-second window, and the queue's acknowledgement then lands on
@@ -337,7 +337,7 @@ class RoundCog(commands.Cog):
             return
 
         # A season being set up: the change queue judges and amends its round, at the ask and
-        # again as the change starts (`core/services/setup_round_amend_change.py`).
+        # again as the change starts (`core/services/rounds/setup_round_amend_change.py`).
         if await self.bot.season_service.get_setup_season() is not None:
             await self.bot.change_queue.ask(
                 ROUND_AMEND_SETUP,
@@ -503,7 +503,7 @@ class RoundCog(commands.Cog):
         """Delete a round: ask the change queue for it, which refuses what the command has
         always refused at the ask and again as the change starts, and deletes the round, renumbers
         its division and writes its audit entry in one save
-        (`core/services/round_delete_change.py`)."""
+        (`core/services/rounds/round_delete_change.py`)."""
         await self.bot.change_queue.ask(
             ROUND_DELETE, {"division_name": division_name, "round_number": round_number},
             interaction=interaction, what=describe(interaction),
@@ -628,7 +628,7 @@ async def _judge_round_amendment(
     A module that is switched off passes no windows and so has nothing refused on its account —
     a league without attendance has no check-in to lose.
     """
-    from leaguebot.core.services.amendment_rules_service import judge_amendment
+    from leaguebot.core.services.rounds.amendment_rules_service import judge_amendment
 
     # The windows are read through the bot's hook (`LeagueBot.round_windows_read`), as the change
     # on the queue reads them; weather's are read whatever the module's state, as a forecast

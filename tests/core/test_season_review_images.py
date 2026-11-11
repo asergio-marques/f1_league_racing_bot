@@ -66,7 +66,7 @@ def _approve_view_file() -> Path:
 def test_calendar_render_for_command_is_not_the_calendar_of_record():
     """It must post to no channel and write no message id — that is why it exists."""
     source = _function_source(
-        SRC / "leaguebot" / "core" / "services" / "calendar_post_service.py", "render_for_command", code_only=True
+        SRC / "leaguebot" / "core" / "services" / "rounds" / "calendar_post_service.py", "render_for_command", code_only=True
     )
     assert "calendar_message_id" not in source
     assert "replace_calendar_message" not in source

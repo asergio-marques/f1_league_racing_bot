@@ -121,7 +121,7 @@ async def test_round_add_defers_before_touching_the_database(monkeypatch):
     interaction.response.defer = AsyncMock(side_effect=lambda **_: order.append("defer"))
     cog.bot.change_queue.ask = AsyncMock(side_effect=lambda *_a, **_k: order.append("ask"))
     monkeypatch.setattr(
-        "leaguebot.core.services.track_service.resolve_track_name",
+        "leaguebot.core.services.rounds.track_service.resolve_track_name",
         AsyncMock(return_value="Hungaroring"),
     )
 

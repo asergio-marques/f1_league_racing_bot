@@ -313,7 +313,7 @@ def _everywhere(name: str, new: Any) -> ExitStack:
     """Patch season_service's *name* with *new*, and the change type's own reference to it."""
     stack = ExitStack()
     for module_name in ("leaguebot.core.services.seasons.season_service",
-                        "leaguebot.core.services.round_amend_change"):
+                        "leaguebot.core.services.rounds.round_amend_change"):
         try:
             module = importlib.import_module(module_name)
         except ImportError:

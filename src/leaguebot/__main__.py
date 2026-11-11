@@ -438,7 +438,7 @@ async def _draw_review_picture(bot: LeagueBot, picture: Mapping[str, Any]) -> "P
         if lineup.path is None:
             raise RuntimeError(lineup.problem or "the lineup could not be drawn")
         return lineup.path
-    from leaguebot.core.services import calendar_post_service
+    from leaguebot.core.services.rounds import calendar_post_service
 
     division = await bot.season_service.get_division(division_id)
     outcome = await calendar_post_service.render_for_command(
@@ -509,17 +509,17 @@ def register_change_types(bot: LeagueBot) -> None:
     so that core's queue and cogs import none of them. The tests' support module calls this to get
     the real set.
     """
-    from leaguebot.core.services.calendar_post_service import calendar_sync_change
+    from leaguebot.core.services.rounds.calendar_post_service import calendar_sync_change
     from leaguebot.core.services.cancellations.cancellation_changes import (
         division_cancel_change,
         round_cancel_change,
         season_cancel_change,
     )
     from leaguebot.core.services.bot_init_change import bot_init_change
-    from leaguebot.core.services.division_add_change import division_add_change
-    from leaguebot.core.services.division_delete_change import division_delete_change
-    from leaguebot.core.services.division_duplicate_change import division_duplicate_change
-    from leaguebot.core.services.division_edit_changes import (
+    from leaguebot.core.services.rounds.division_add_change import division_add_change
+    from leaguebot.core.services.rounds.division_delete_change import division_delete_change
+    from leaguebot.core.services.rounds.division_duplicate_change import division_duplicate_change
+    from leaguebot.core.services.rounds.division_edit_changes import (
         division_amend_change,
         division_rename_change,
     )
@@ -538,10 +538,10 @@ def register_change_types(bot: LeagueBot) -> None:
         driver_sack_change,
         driver_unassign_change,
     )
-    from leaguebot.core.services.round_add_changes import round_add_change, round_import_change
-    from leaguebot.core.services.round_delete_change import round_delete_change
+    from leaguebot.core.services.rounds.round_add_changes import round_add_change, round_import_change
+    from leaguebot.core.services.rounds.round_delete_change import round_delete_change
     from leaguebot.core.services.seasons.season_setup_change import season_setup_change
-    from leaguebot.core.services.setup_round_amend_change import setup_round_amend_change
+    from leaguebot.core.services.rounds.setup_round_amend_change import setup_round_amend_change
     from leaguebot.core.services.bot_settings import (
         admin_role_setting,
         base_role_setting,
@@ -567,7 +567,7 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.core.services.clean_change import clean_change
     from leaguebot.core.services.modules.hub_service import hub_refresh_change
     from leaguebot.core.services.lineup_posting import lineup_post_change
-    from leaguebot.core.services.round_amend_change import (
+    from leaguebot.core.services.rounds.round_amend_change import (
         amendment_in_hand,
         round_amend_change,
         round_rearm_change,

@@ -51,7 +51,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.round_add_changes import saved_result
+from leaguebot.core.services.rounds.round_add_changes import saved_result
 from leaguebot.core.services.seasons.season_service import (
     division_amendment_changes_nothing,
     validate_division_name,

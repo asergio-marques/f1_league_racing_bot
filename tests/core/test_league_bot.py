@@ -108,7 +108,7 @@ def test_the_round_amendment_is_registered():
     """The builder registers the amendment of a round, once, as "season.round.amend" (#439,
     slice 4b, amendment A)."""
     from leaguebot.__main__ import register_change_types
-    from leaguebot.core.services.round_amend_change import ROUND_AMEND
+    from leaguebot.core.services.rounds.round_amend_change import ROUND_AMEND
 
     bot = MagicMock()
     register_change_types(bot)
@@ -126,7 +126,7 @@ def test_a_setup_round_change_may_write_the_rounds_alone():
     season, a division's settings, its channels, its points configurations, its seats or a
     driver's placement."""
     from leaguebot.__main__ import register_change_types
-    from leaguebot.core.services.round_add_changes import ADD, IMPORT
+    from leaguebot.core.services.rounds.round_add_changes import ADD, IMPORT
 
     bot = MagicMock()
     register_change_types(bot)

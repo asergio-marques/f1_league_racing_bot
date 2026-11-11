@@ -51,7 +51,7 @@ from leaguebot.core.services.seasons.mid_season_confirm_change import (
 )
 from leaguebot.core.services.modules.module_service import ModuleService
 from leaguebot.core.services.posting.output_router import OutputRouter
-from leaguebot.core.services.round_moments import read_round_windows
+from leaguebot.core.services.rounds.round_moments import read_round_windows
 from leaguebot.core.services.scheduler_service import SchedulerService
 from leaguebot.core.services.seasons.season_approval_change import (
     ALREADY_BEING_APPROVED,

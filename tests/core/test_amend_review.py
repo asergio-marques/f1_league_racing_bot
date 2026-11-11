@@ -245,7 +245,7 @@ async def _review(
             "leaguebot.results.services.amendment_mode_service.validate_modification_ordering",
             new=AsyncMock(return_value=panel_errors or []),
         ) as validate, patch(
-            "leaguebot.core.services.amendment_service.approval_faults",
+            "leaguebot.core.services.rounds.amendment_service.approval_faults",
             new=AsyncMock(return_value=panel_faults or []),
         ) as faults, patch(
             "leaguebot.results.services.result_submission_service.open_amendment_in_season",

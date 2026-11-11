@@ -76,7 +76,7 @@ async def tracks_by_name(db_path: str) -> dict:
     """
     from types import SimpleNamespace
 
-    from leaguebot.core.services.track_service import get_all_tracks
+    from leaguebot.core.services.rounds.track_service import get_all_tracks
 
     async with get_connection(db_path) as db:
         rows = await get_all_tracks(db)

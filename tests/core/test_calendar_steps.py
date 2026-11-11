@@ -413,7 +413,7 @@ async def test_a_calendar_the_league_does_not_draw_is_posted_as_text_with_no_lin
     not draw its calendar; Pro's round 3 is cancelled. The calendar job draws nothing and posts
     Pro's textual calendar, and neither the reply nor the log channel says a calendar was posted
     as text: the text is what the league asked for, not a fallback."""
-    from leaguebot.core.services.calendar_post_service import calendar_heading
+    from leaguebot.core.services.rounds.calendar_post_service import calendar_heading
 
     league = await ongoing_league(tmp_path, images=True)
     drawing = draw_calendars_with(league.bot, monkeypatch, CalendarDrawingStub(wanted=False))

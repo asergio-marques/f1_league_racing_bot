@@ -43,8 +43,8 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.round import Round, RoundFormat, stored_scheduled_at
-from leaguebot.core.services import track_service
-from leaguebot.core.services.amendment_rules_service import amendment_changes_nothing
+from leaguebot.core.services.rounds import track_service
+from leaguebot.core.services.rounds.amendment_rules_service import amendment_changes_nothing
 from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
@@ -52,13 +52,13 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.round_add_changes import (
+from leaguebot.core.services.rounds.round_add_changes import (
     NO_SETUP,
     held_rounds,
     round_models,
     saved_result,
 )
-from leaguebot.core.services.round_amend_change import NOTHING_AMENDED
+from leaguebot.core.services.rounds.round_amend_change import NOTHING_AMENDED
 from leaguebot.core.services.seasons.season_service import SeasonService, renumber_rounds_on
 from leaguebot.core.utils.formatting import discord_ts, format_round_list
 from leaguebot.core.utils.input_validator import parse_datetime

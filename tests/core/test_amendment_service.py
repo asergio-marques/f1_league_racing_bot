@@ -1269,7 +1269,7 @@ async def test_approval_faults_names_a_cancelled_division_s_deleted_attendance_c
     the check is handed, not of one it looks up on the bot."""
     from unittest.mock import AsyncMock, MagicMock
 
-    from leaguebot.core.services.amendment_service import approval_faults
+    from leaguebot.core.services.rounds.amendment_service import approval_faults
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
@@ -1353,7 +1353,7 @@ async def test_an_attendance_switch_nobody_signed_up_for_is_raised_not_read_as_o
     than standing aside and reading the module as off. The switch is the handed module service's."""
     from unittest.mock import AsyncMock, MagicMock
 
-    from leaguebot.core.services.amendment_service import approval_faults
+    from leaguebot.core.services.rounds.amendment_service import approval_faults
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)

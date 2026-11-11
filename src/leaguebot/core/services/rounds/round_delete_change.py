@@ -43,10 +43,10 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.division_edit_changes import held_division, placed_division
-from leaguebot.core.services.round_add_changes import held_rounds, round_models, saved_result
+from leaguebot.core.services.rounds.division_edit_changes import held_division, placed_division
+from leaguebot.core.services.rounds.round_add_changes import held_rounds, round_models, saved_result
 from leaguebot.core.services.seasons.season_service import SeasonService
-from leaguebot.core.services.setup_round_amend_change import round_fill, round_values
+from leaguebot.core.services.rounds.setup_round_amend_change import round_fill, round_values
 from leaguebot.core.utils.formatting import format_round_list
 from leaguebot.core.utils.hooks import AwaitedHook
 

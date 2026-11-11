@@ -429,7 +429,7 @@ def _attach_amendment_service(bot: Any, db_path: str) -> None:
     applied is what the cancellations read; nothing once `/round amend` is on the change queue and
     the class is gone."""
     try:
-        from leaguebot.core.services.amendment_service import AmendmentService
+        from leaguebot.core.services.rounds.amendment_service import AmendmentService
     except ImportError:
         return
     bot.amendment_service = AmendmentService(db_path)

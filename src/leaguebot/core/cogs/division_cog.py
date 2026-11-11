@@ -20,10 +20,10 @@ from discord.ext import commands
 
 from leaguebot.core.services.cancellations.cancellation_changes import DIVISION_CANCEL
 from leaguebot.core.services.division_settings import NO_SEASON_REFUSAL, division_not_found
-from leaguebot.core.services.division_add_change import KIND as DIVISION_ADD
-from leaguebot.core.services.division_duplicate_change import KIND as DIVISION_DUPLICATE
-from leaguebot.core.services.division_delete_change import DIVISION_DELETE
-from leaguebot.core.services.division_edit_changes import DIVISION_AMEND, DIVISION_RENAME
+from leaguebot.core.services.rounds.division_add_change import KIND as DIVISION_ADD
+from leaguebot.core.services.rounds.division_duplicate_change import KIND as DIVISION_DUPLICATE
+from leaguebot.core.services.rounds.division_delete_change import DIVISION_DELETE
+from leaguebot.core.services.rounds.division_edit_changes import DIVISION_AMEND, DIVISION_RENAME
 from leaguebot.core.services.seasons.season_end_changes import season_end_in_hand, season_end_refusal
 from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
@@ -62,7 +62,7 @@ class DivisionCog(commands.Cog):
     ) -> None:
         """Add a division: ask the change queue for it, which refuses what the command has always
         refused at the ask and again as the change starts, and adds the division with its teams
-        in one save (`core/services/division_add_change.py`)."""
+        in one save (`core/services/rounds/division_add_change.py`)."""
         await self.bot.change_queue.ask(
             DIVISION_ADD, {"name": name, "role_id": role.id, "tier": tier},
             interaction=interaction, what=describe(interaction),
@@ -93,7 +93,7 @@ class DivisionCog(commands.Cog):
     ) -> None:
         """Copy a division: ask the change queue for it, which refuses what the command has always
         refused at the ask and again as the change starts, and saves the copy with its rounds, its
-        teams and its audit entry in one save (`core/services/division_duplicate_change.py`)."""
+        teams and its audit entry in one save (`core/services/rounds/division_duplicate_change.py`)."""
         await self.bot.change_queue.ask(
             DIVISION_DUPLICATE,
             {
@@ -117,7 +117,7 @@ class DivisionCog(commands.Cog):
         """Delete a division: ask the change queue for it, which refuses what the command has
         always refused at the ask and again as the change starts, and deletes the division, its
         rounds and every module's rows of them with its audit entry in one save
-        (`core/services/division_delete_change.py`)."""
+        (`core/services/rounds/division_delete_change.py`)."""
         await self.bot.change_queue.ask(
             DIVISION_DELETE, {"name": name},
             interaction=interaction, what=describe(interaction),
@@ -140,7 +140,7 @@ class DivisionCog(commands.Cog):
     ) -> None:
         """Rename a division: ask the change queue for it, which refuses what the command has
         always refused at the ask and again as the change starts, and renames the division with
-        its audit entry in one save (`core/services/division_edit_changes.py`)."""
+        its audit entry in one save (`core/services/rounds/division_edit_changes.py`)."""
         await self.bot.change_queue.ask(
             DIVISION_RENAME, {"current_name": current_name, "new_name": new_name},
             interaction=interaction, what=describe(interaction),
@@ -168,7 +168,7 @@ class DivisionCog(commands.Cog):
         """Amend a division: ask the change queue for it, which refuses what the command has
         always refused at the ask and again as the change starts, and changes what was given of
         the division with its audit entry in one save
-        (`core/services/division_edit_changes.py`)."""
+        (`core/services/rounds/division_edit_changes.py`)."""
         await self.bot.change_queue.ask(
             DIVISION_AMEND,
             {
@@ -364,7 +364,7 @@ class DivisionCog(commands.Cog):
         gets reported, so the value goes through untouched and the job logs the fault beside
         it. Pinned by `test_a_season_with_no_number_still_draws_and_is_logged`.
         """
-        from leaguebot.core.services import calendar_post_service as _calendar
+        from leaguebot.core.services.rounds import calendar_post_service as _calendar
         from leaguebot.core.utils.season_gate import season_for_command
 
         await interaction.response.defer(ephemeral=True)

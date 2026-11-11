@@ -73,7 +73,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.services import track_service
+from leaguebot.core.services.rounds import track_service
 from leaguebot.core.services.driver_service import ALLOWED_TRANSITIONS
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_server import league_guild

@@ -42,7 +42,7 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.calendar_post_service import (
+from leaguebot.core.services.rounds.calendar_post_service import (
     post_division_calendar,
     replace_calendar_message,
 )

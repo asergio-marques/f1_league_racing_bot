@@ -50,7 +50,7 @@ from leaguebot.core.models.round import (
     WeatherWindows,
 )
 from leaguebot.core.models.round import WEATHER_JOB_KINDS as _WEATHER_JOB_PREFIXES
-from leaguebot.core.services.round_moments import clean_up_moment, round_event_moments
+from leaguebot.core.services.rounds.round_moments import clean_up_moment, round_event_moments
 
 if TYPE_CHECKING:
     pass

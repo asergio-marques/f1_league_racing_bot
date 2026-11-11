@@ -8,7 +8,7 @@ drivers and the most race teams, with the most sessions any round is run over. T
 answers its own words: the lineup's problems as sentences, and every other answer as a
 `CapacityProblem`. The rounds a division would hold, for `/round add` and the round imports, are
 counted by their change type, which asks the drawing through
-`leaguebot.core.services.round_add_changes.calendar_round_refusal`, at the ask and again as the
+`leaguebot.core.services.rounds.round_add_changes.calendar_round_refusal`, at the ask and again as the
 change starts (#283). Core keeps its own words around them: the round's refusal opens with ❌ and
 says that the round was **not** added before the remedy, and each warning is a ⚠️ line, the
 warnings of one check followed by a blank line. A check that cannot run, whether its counts or
@@ -171,7 +171,7 @@ def _round_refusal(cog, would_hold):
     """The round guard, asking the drawing on *cog*'s bot of *would_hold* rounds: the
     change type's own, which `/round add` and the round imports judge at the ask and again as the
     change starts."""
-    from leaguebot.core.services.round_add_changes import calendar_round_refusal
+    from leaguebot.core.services.rounds.round_add_changes import calendar_round_refusal
 
     return calendar_round_refusal(cog.bot.image_drawing, would_hold)
 

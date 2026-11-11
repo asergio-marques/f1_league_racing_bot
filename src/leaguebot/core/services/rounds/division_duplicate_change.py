@@ -53,13 +53,13 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.division_edit_changes import (
+from leaguebot.core.services.rounds.division_edit_changes import (
     division_by_name,
     held_division,
     listed,
     listing,
 )
-from leaguebot.core.services.round_add_changes import saved_result
+from leaguebot.core.services.rounds.round_add_changes import saved_result
 from leaguebot.core.services.seasons.season_service import validate_division_name, validate_division_tier
 from leaguebot.core.utils.formatting import discord_ts, format_round_list
 

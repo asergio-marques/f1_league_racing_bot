@@ -44,7 +44,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.division_edit_changes import (
+from leaguebot.core.services.rounds.division_edit_changes import (
     division_by_name,
     division_values,
     held_division,
@@ -52,7 +52,7 @@ from leaguebot.core.services.division_edit_changes import (
     listing,
     placed_division,
 )
-from leaguebot.core.services.round_add_changes import saved_result
+from leaguebot.core.services.rounds.round_add_changes import saved_result
 from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.core.utils.hooks import AwaitedHook
 
