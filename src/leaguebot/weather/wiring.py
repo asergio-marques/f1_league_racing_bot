@@ -20,6 +20,7 @@ from leaguebot.core.models.round import read_scheduled_at
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.core.utils.hooks import StartUpStep
     from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
@@ -282,6 +283,18 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
         bot.advance_steps.register_step(kind, advance)
 
 
+def start_up_steps(bot: "LeagueBot") -> "tuple[StartUpStep, ...]":
+    """Weather's start-up steps, named and in the order they run in weather's turn of the start-up
+    sweep (the entry point signs them up to `bot.starting` under weather's switch key). Each
+    recovery is looked up when its step runs, so a step stands for that function and no other."""
+    return (
+        ("missed phases", lambda: recover_missed_phases(bot)),
+        # The forecasts due to come down while the bot was stopped.
+        ("missed forecast clean-ups", lambda: recover_missed_forecast_clean_ups(bot)),
+    )
+
+
+
 async def recover_missed_phases(bot: "LeagueBot") -> None:
     """Ask the change queue for any weather phases whose horizon has passed but were not executed.
 
@@ -417,7 +430,7 @@ async def recover_missed_forecast_clean_ups(bot: "LeagueBot") -> None:
                 if _due(r["scheduled_at"]):
                     forecasts.setdefault(r["round_id"], []).append(r["phase_number"])
     except Exception:
-        log.exception("_recover_missed_cleanups: failed to read the messages still standing")
+        log.exception("recover_missed_forecast_clean_ups: failed to read the messages still standing")
         return
 
     if forecasts and not await bot.module_service.is_weather_enabled():
@@ -425,12 +438,12 @@ async def recover_missed_forecast_clean_ups(bot: "LeagueBot") -> None:
 
     for round_id, phases in forecasts.items():
         log.info(
-            "_recover_missed_cleanups: deleting %s of round_id=%d", forecasts_named(phases),
+            "recover_missed_forecast_clean_ups: deleting %s of round_id=%d", forecasts_named(phases),
             round_id,
         )
         try:
             await ask_forecast_clean_up(bot.change_queue, bot.db_path, round_id)
         except Exception:
             log.exception(
-                "_recover_missed_cleanups: forecast cleanup failed for round %d", round_id
+                "recover_missed_forecast_clean_ups: forecast cleanup failed for round %d", round_id
             )

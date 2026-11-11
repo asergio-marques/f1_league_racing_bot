@@ -37,11 +37,6 @@ from leaguebot.attendance import wiring as attendance_wiring
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.weather import wiring as weather_wiring
 
-#: Why the tests of the catch-up's log lines fail until #440 is built.
-_PREFIX_NOT_YET = ("#440: the forecast clean-up catch-up's host-log lines still begin "
-                   "'_recover_missed_cleanups:', the entry point's function the change deletes, "
-                   "rather than the wiring recovery's own name")
-
 SEASON_ID = 1
 DIVISION_ID = 11
 ROUND_ID = 21
@@ -225,7 +220,6 @@ async def test_a_round_a_day_past_with_an_earlier_phase_standing_has_its_forecas
     assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
 
 
-@pytest.mark.xfail(strict=True, reason=_PREFIX_NOT_YET)
 async def test_a_superseded_forecast_whose_deletion_was_discarded_is_caught_up_with_the_round(
     tmp_path, caplog
 ):
@@ -244,7 +238,6 @@ async def test_a_superseded_forecast_whose_deletion_was_discarded_is_caught_up_w
             f"round_id={ROUND_ID}") in lines, lines
 
 
-@pytest.mark.xfail(strict=True, reason=_PREFIX_NOT_YET)
 @pytest.mark.parametrize(
     "phases, named",
     [((3,), "the Phase 3 forecast"), ((2,), "the Phase 2 forecast"),
