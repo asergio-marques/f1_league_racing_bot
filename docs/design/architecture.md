@@ -93,7 +93,7 @@ Core holds what every module shares: the database connection and the migrations,
 for the command tree, buttons and forms, the failure paths (`report_failure`, the job runner, the
 bot's error handler for events, `bounded_autocomplete`, the helper that starts background work), and
 the handlers for each kind of post: the log writer, the notice handler, the standing-post handler
-and the bot-owned channel handler, each a service of its own in `core/services/`.
+and the bot-owned channel handler, each a service of its own in `core/services/posting/`.
 
 **The entry point** (`__main__.py`) sits above core and the modules, and is the one place that
 imports every module at run time. It holds the builder, which makes every service and every hook,
@@ -519,7 +519,7 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   in place of a refusal's, and the reply it returns. What the member is told and what the log
   channel records of either is the core specification's "How a change is carried out"; the full
   detail goes to the host's log. A step that is `undiscardable` may not carry `on_fault`, since it
-  is a step a stop must hold. `core/services/setting_change.py` builds both callbacks for every
+  is a step a stop must hold. `core/services/queue/setting_change.py` builds both callbacks for every
   settings command once. *Rejected:* a step that catches its own fault, which would leave its
   partial writes on the save's connection and could not catch what fails after it returns, the
   queue's own audit and line writes and the commit; stopping the lane for a setting, which would
@@ -530,7 +530,7 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   than stopping the lane, both in its one SAVE step (`Step.on_fault`) and in a check that raises as
   a member's `/bot init` starts (`ChangeType.on_check_fault`): no league admin role is set while no
   server holds the league, before a first `/bot init` or after a pack, so nobody could clear a stop
-  on it if it held the lane (`core/services/bot_init_change.py`). A fault in its save writes no
+  on it if it held the lane (`core/services/settings/bot_init_change.py`). A fault in its save writes no
   line, its claim rolled back with it; a fault in its check writes the failure line where a server
   holds the league. While none does, there is no log channel, and the host's log holds either
   alone. *Rejected:* stopping the lane on a fault in `/bot init`, as any other job does, which
@@ -691,7 +691,7 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   bespoke change type for each command, which forms the line, the audit and the fault answer a
   score of ways. `/bot init` alone is a change type of its own rather than a `Setting`: it claims
   the server, where a setting writes one column of a server already claimed
-  (`core/services/bot_init_change.py`).
+  (`core/services/settings/bot_init_change.py`).
 
 ---
 
@@ -766,7 +766,7 @@ ownership.
 A change type of a conversation's lane declares the tables its kind writes (`ChangeType.writes`):
 its conversation's own rows, never the league's. A change type that declares `writes`, on whichever
 lane it runs, has the connection of every save made for it, a saving step's or a record's, given an
-SQLite authoriser (`_confine` in `core/services/change_queue.py`) that refuses an insert, update or
+SQLite authoriser (`_confine` in `core/services/queue/change_queue.py`) that refuses an insert, update or
 delete on any table but those. The queue's own tables are always allowed (`QUEUE_TABLES`: the job's
 mark, its audit records, its log lines and the changes it asks for), so the mark, the lines and a
 follow-on pass, and an empty `writes` allows those alone. A write the authoriser refuses raises in
@@ -1026,10 +1026,10 @@ log lines. Each handler is a service in core, in a file of its own:
 
 | Handler | File | Its functions |
 |---|---|---|
-| Log writer | `core/services/output_router.py` | the router, and `send_log_text`, which divides a line and sends it mentioning nobody, for the retry of a late one |
-| Notice handler | `core/services/notice_handler.py` | `send_notice`, `edit_notice` and `delete_notice` |
-| Standing-post handler | `core/services/standing_post_handler.py` | `post_standing`, `edit_standing` and `delete_standing` |
-| Bot-owned channel handler | `core/services/owned_channel_handler.py` | `post_in_owned_channel` and `delete_owned_channel` |
+| Log writer | `core/services/posting/output_router.py` | the router, and `send_log_text`, which divides a line and sends it mentioning nobody, for the retry of a late one |
+| Notice handler | `core/services/posting/notice_handler.py` | `send_notice`, `edit_notice` and `delete_notice` |
+| Standing-post handler | `core/services/posting/standing_post_handler.py` | `post_standing`, `edit_standing` and `delete_standing` |
+| Bot-owned channel handler | `core/services/posting/owned_channel_handler.py` | `post_in_owned_channel` and `delete_owned_channel` |
 
 Every function of the notice, standing-post and bot-owned channel handlers carries
 `posts_in_a_job`: they run in the jobs of a change, and a post off the queue cannot go through one.
@@ -1055,7 +1055,7 @@ rule has two halves:
   each posting function, which a caller outside a job could invent.
 - **The check.** A test fails on any function that posts without the decorator, unless it is named
   off the queue with its reason (see "How the rules are checked"). The router
-  (`core/services/output_router.py`) alone is exempt from it whole (`JOB_CHECK_ALLOWED`): it writes
+  (`core/services/posting/output_router.py`) alone is exempt from it whole (`JOB_CHECK_ALLOWED`): it writes
   log lines, the stop notice and the turn-away, and nothing else, and what it posts off the queue
   are the exceptions below. The other handlers are held to it. The check of posting outside the
   handlers passes over the four handler files (`POSTING_ALLOWED`) and over a function named off the
@@ -1090,7 +1090,7 @@ The exceptions, each with its reason:
   lost, never tried again, and the note stays. Queued, the note would come after the very turn it
   explains, and could stop a lane for a courtesy. Beside it, the ⏳ mark a typed message is given
   at once while its turn waits is a reaction made off the queue for the same reason, a refusal
-  logged and the turn going ahead (`core/services/typed_turns.py`); taking it off is a job, the
+  logged and the turn going ahead (`core/services/queue/typed_turns.py`); taking it off is a job, the
   turn's last, so a mark that cannot be taken off stops the lane and is tried again.
 
 **Every post keeps three things,** whichever handler sends it:
@@ -1244,7 +1244,7 @@ stated exceptions below them:
 5. around work a specification gives a fallback for, as a picture that cannot be drawn is posted or
    shown as text (Constitution XIV): the handler returns the fault as a line of its job, or of the
    posting it hands back, so that the fallback is recorded where the job's lines go, as the season
-   review's `draw_and_post` (`core/services/season_review_changes.py`) does.
+   review's `draw_and_post` (`core/services/seasons/season_review_changes.py`) does.
 
 Beyond the five places, a stated exception has a catch-all of its own, each with its reason. The
 callback a change type may give for a Discard of a change before it started
@@ -1279,7 +1279,7 @@ review's calendar and attendance warnings) — is a stated exception beside
 the error in the host's log in full and lets the season through as if no problem were found, because
 a capacity check that cannot run must not block a season (its docstring says so); the round guard
 that `/round add` and the round imports share (`calendar_round_refusal`, in
-`core/services/round_add_changes.py`) is a stated exception beside it: the change types' checks call
+`core/services/rounds/round_add_changes.py`) is a stated exception beside it: the change types' checks call
 it when the change is asked for and again as it starts, and its catch-all (a switch nobody signed up
 for aside) puts the error in the host's log in full and lets the round through as if no problem were
 found, because a capacity check that cannot run must not block a round (its docstring says so); the

@@ -151,6 +151,8 @@ Answers to `architecture.md`, "How the code is laid out". Core's code sits in `c
 
 ### Services, and what each owns
 
+Each service sits in a topic folder of `core/services/` (`queue/`, `posting/`, `modules/`, `seasons/`, `cancellations/`, `rounds/`, `drivers/`, `settings/`, `test_mode/`, `upkeep/`; `architecture.md`, "How the code is laid out"), the scheduler's file alone staying loose at `core/services/`. The table names a service by its file, not its folder.
+
 | Area | Services | Owns |
 |---|---|---|
 | Configuration | `config_service` (`ConfigService`) | `server_configs`, and the claim on the server |
@@ -246,16 +248,16 @@ specification's section of the same name holds what a league is told.
 
 ### The queue's code
 
-The queue is `ChangeQueue` (`core/services/change_queue.py`), and it is one class: asking, the
+The queue is `ChangeQueue` (`core/services/queue/change_queue.py`), and it is one class: asking, the
 dispatcher, a change's start and end, a step's run, the stop and its notice, Retry and Discard, the
 audit and the held reply are one state machine around one lock order (`_working[lane]`, then
 `_asking`, then `_writing`) and the attributes they share. *Rejected:* mixins, which would split the
 file and leave one state machine whose lock order no single class states; and collaborator objects,
 which would reach into the queue's private state or be handed all of it (`ChangeQueue`'s docstring).
-What reads none of that state is out of the file. `core/services/change_types.py` holds the types a
+What reads none of that state is out of the file. `core/services/queue/change_types.py` holds the types a
 change is made of, `Step` and `ChangeType` with the contexts a check, a step, an outcome and the
 refusal and discard hooks are handed, and the decisions that govern them (a post's id saved with its
-mark, a step's four kinds, a job that ends on a fault); `core/services/queue_records.py` holds the
+mark, a step's four kinds, a job that ends on a fault); `core/services/queue/queue_records.py` holds the
 bookkeeping over the queue's tables, what is in hand, what was ever asked, the job numbering and the
 emptying of a restored database, which a check, a recovery, a restore and a factory reset call
 without a queue. The queue file keeps the constants the class reads: `RETRY_AFTER`, the bot's own
@@ -405,7 +407,7 @@ until start-up ends.
 **A round's timed work is armed by three changes**: the season's approval (its `ARM` job), and the
 amendment and re-arming of a round (`round_amend_change`), through the scheduler service's arming
 functions. Each reads when a round's events fall from `round_event_moments`
-(`core/services/round_moments.py`), which is pure: no database, no clock, no scheduler. A
+(`core/services/rounds/round_moments.py`), which is pure: no database, no clock, no scheduler. A
 cancellation removes a round's work (`cancel_round`, `cancel_rounds`) before its save. The handlers
 for a round's kinds are the modules'.
 
@@ -413,7 +415,7 @@ for a round's kinds are the modules'.
 
 `main()` reads the settings, swaps in a staged restore, applies the migrations, builds the bot and
 connects it, in that order (`test_migrations_run_before_the_bot_connects`). When Discord first
-reports the bot ready, `start_up` (`core/services/start_up.py`) runs once per process:
+reports the bot ready, `start_up` (`core/services/upkeep/start_up.py`) runs once per process:
 
 - **It starts the scheduler paused**, so the job store can be read while no job runs, and resumes
   it last, in a `finally`, so a queue that fails to start does not hold the jobs paused.
@@ -597,7 +599,7 @@ switch-off attendance's, for the cascade.
 
 ### The image protocol
 
-`ImageDrawing` (`core/services/image_drawing.py`) declares what core asks of the image module, and
+`ImageDrawing` (`core/services/modules/image_drawing.py`) declares what core asks of the image module, and
 the image module's class of the same name implements it; the builder makes it and attaches it as
 `bot.image_drawing`. Its methods fall in five groups:
 
@@ -652,10 +654,10 @@ being a query rather than a line posted (its docstring).
 | Type | Where | What it is |
 |---|---|---|
 | `Refused` | `core/models/refusal.py` | a refusal whose text the member reads; subclasses `ValueError` |
-| `PackRefused` | `core/services/pack_service.py` | `/bot pack`'s refusals, worded by the cog from its fields |
+| `PackRefused` | `core/services/upkeep/pack_service.py` | `/bot pack`'s refusals, worded by the cog from its fields |
 | `InvalidDriverTransition` | `core/models/driver_profile.py` | a fault: a move past the transition table, caught by a caller that expects the race |
 | `InvalidStageTransition` | `core/models/season.py` | a season asked to move to a stage its lifecycle does not allow from where it is |
-| `SwitchNotSignedUp` | `core/services/module_service.py` | a fault in the bot's assembly (`architecture.md`, "How modules and core fit together") |
+| `SwitchNotSignedUp` | `core/services/modules/module_service.py` | a fault in the bot's assembly (`architecture.md`, "How modules and core fit together") |
 | `StepFailedOnDiscord` | `core/models/change.py` | a step's failure on Discord, carrying what the job keeps and a clause for the stop notice |
 | `GuildUnavailable` | `core/models/change.py` | the league's server missing from the cache: a failure on Discord's side |
 
@@ -676,11 +678,11 @@ Each is stated where it lives and pinned by the test named.
 | A reassign judges every refusal on its save's connection before it writes | `DriverService.reassign_judged_on`, `driver_changes`' docstring | `test_a_failed_driver_reassign_changes_nothing`, `test_a_refusal_found_inside_the_save_ends_the_reassign_and_the_lane_goes_on` |
 | `write_transition` is the one writer of a driver's state | `write_transition` | `test_every_reset_goes_through_the_transition_table` |
 | The driver has no ban states | `DriverState` | `test_the_driver_has_seven_states_and_no_ban_among_them` |
-| The scheduler starts paused and is resumed last, so a restart's take-down of a review comes before its timer | `core/services/start_up.py` | `test_no_job_runs_until_start_up_has_ended` |
+| The scheduler starts paused and is resumed last, so a restart's take-down of a review comes before its timer | `core/services/upkeep/start_up.py` | `test_no_job_runs_until_start_up_has_ended` |
 | A fingerprint that cannot be taken is empty, and differs from every fingerprint | `season_fingerprint_service.take_fingerprint` | `test_a_fingerprint_that_could_not_be_taken_differs_from_everything` |
 | A review's expiry asked twice posts one notice | `season_review_changes.claim_take_down` | `test_a_review_expired_twice_at_once_posts_one_notice` |
 | A season starts on the UTC date of the queue's clock | `season_setup_change`'s docstring | `test_the_start_date_is_the_utc_date` |
-| Every store of league state in memory is cleared by pack and factory reset, or named as holding none | `core/services/in_memory_state.py` | `tests/core/test_in_memory_state.py` |
+| Every store of league state in memory is cleared by pack and factory reset, or named as holding none | `core/services/upkeep/in_memory_state.py` | `tests/core/test_in_memory_state.py` |
 
 ---
 
@@ -730,7 +732,7 @@ driver pass and final mark (and, but for an abort, the history) are saved last, 
 What a driver is, their states and their accounts, are the core specification's ("Drivers", "The
 states of a driver", "A driver's accounts").
 
-**One writer of a driver's state.** `ALLOWED_TRANSITIONS` (`core/services/driver_service.py`) is the
+**One writer of a driver's state.** `ALLOWED_TRANSITIONS` (`core/services/drivers/driver_service.py`) is the
 table, and `write_transition` is the one statement that writes `current_state`: it raises
 `InvalidDriverTransition` for a move the table does not allow, having written nothing, and commits
 nothing. Every caller changing a state inside a larger write calls it rather than the update
