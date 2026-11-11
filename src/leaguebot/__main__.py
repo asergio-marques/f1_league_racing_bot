@@ -843,10 +843,10 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(test_mode_former_driver_change())
     bot.change_queue.register(
-        test_roster_add_change(placement=lambda: bot.placement_service)
+        test_roster_add_change(capacity=lambda: bot.template_capacity_service)
     )
     bot.change_queue.register(
-        test_roster_add_bulk_change(placement=lambda: bot.placement_service)
+        test_roster_add_bulk_change(capacity=lambda: bot.template_capacity_service)
     )
     bot.change_queue.register(
         test_roster_remove_change(profiles_deleted=bot.profiles_deleted)
@@ -1051,12 +1051,17 @@ async def build(settings: Settings) -> LeagueBot:
 
     from leaguebot.core.services.placement_service import PlacementService
     from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.template_capacity_service import TemplateCapacityService
     # The drawing is handed so the capacity guards and the lineup refresh can ask image's
-    # answer without a bot of their own: PlacementService posts through the guild it is
-    # given, and reaches the image module only through this drawing.
+    # answer without a bot of their own: neither posts but through the guild it is given, and
+    # each reaches the image module only through this drawing.
     bot.team_role_service = TeamRoleService(settings.db_path)
+    bot.template_capacity_service = TemplateCapacityService(
+        settings.db_path, drawing=bot.image_drawing
+    )
     bot.placement_service = PlacementService(
-        settings.db_path, drawing=bot.image_drawing, roles=bot.team_role_service
+        settings.db_path, drawing=bot.image_drawing, capacity=bot.template_capacity_service,
+        roles=bot.team_role_service,
     )
 
     from leaguebot.signup.services.signup_module_service import SignupModuleService

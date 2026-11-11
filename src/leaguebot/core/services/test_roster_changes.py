@@ -55,9 +55,9 @@ from leaguebot.core.services.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.core.services.round_add_changes import saved_result
 from leaguebot.core.services.season_lifecycle_service import live_season_stage_on
+from leaguebot.core.services.template_capacity_service import TemplateCapacityService
 from leaguebot.core.services.test_mode_settings import NOT_IN_TEST_MODE
 from leaguebot.core.services.test_roster_service import (
     AddPlan,
@@ -167,10 +167,10 @@ def _add_arguments(payload: dict[str, Any]) -> tuple[str, str, str, str | None]:
     )
 
 
-def test_roster_add_change(*, placement: Callable[[], PlacementService]) -> ChangeType:
-    """The `core.test_roster_add` change type, for the builder to register: *placement* gives the
-    placement service the driver is held to the template capacities through, asked for each time it
-    is needed."""
+def test_roster_add_change(*, capacity: Callable[[], TemplateCapacityService]) -> ChangeType:
+    """The `core.test_roster_add` change type, for the builder to register: *capacity* gives the
+    template capacity service the driver is held to the template capacities through, asked for
+    each time it is needed."""
 
     async def judge(db: aiosqlite.Connection, payload: dict[str, Any]) -> AddPlan | str:
         """The plan to seat the driver, or the reply refusing it."""
@@ -179,7 +179,7 @@ def test_roster_add_change(*, placement: Callable[[], PlacementService]) -> Chan
             return refusal
         driver_name, team_name, division, nationality = _add_arguments(payload)
         judged = await judge_add_on(
-            db, driver_name, team_name, division, nationality, placement()
+            db, driver_name, team_name, division, nationality, capacity()
         )
         return f"⛔ {judged}" if isinstance(judged, str) else judged
 
@@ -291,10 +291,10 @@ def _drivers_of(payload: dict[str, Any]) -> list[ParsedDriver]:
     return [ParsedDriver(**driver) for driver in payload["drivers"]]
 
 
-def test_roster_add_bulk_change(*, placement: Callable[[], PlacementService]) -> ChangeType:
-    """The `core.test_roster_add_bulk` change type, for the builder to register: *placement* gives
-    the placement service each division is held to the template capacities through, asked for
-    each time it is needed.
+def test_roster_add_bulk_change(*, capacity: Callable[[], TemplateCapacityService]) -> ChangeType:
+    """The `core.test_roster_add_bulk` change type, for the builder to register: *capacity* gives
+    the template capacity service each division is held to the template capacities through, asked
+    for each time it is needed.
 
     **The refusals are the check's**, judged at the ask and again as the change starts: test mode
     not on, the season not in Placements, and every fault the database shows in the roster
@@ -310,7 +310,7 @@ def test_roster_add_bulk_change(*, placement: Callable[[], PlacementService]) ->
         refusal = await standing_refusal_on(db)
         if refusal is not None:
             return refusal
-        judged = await judge_bulk_on(db, _drivers_of(payload), placement())
+        judged = await judge_bulk_on(db, _drivers_of(payload), capacity())
         return format_roster_errors(judged) if isinstance(judged, list) else judged
 
     async def check(ctx: CheckContext) -> Verdict:

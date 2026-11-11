@@ -194,7 +194,7 @@ async def judge_add_on(
     team_name: str,
     division_name: str,
     nationality: str | None = None,
-    placement_service=None,
+    capacity=None,
 ) -> AddPlan | str:
     """Judge a fake driver's seating in *team_name* in *division_name* on *db*, writing nothing:
     the plan to write it, or the refusal the member can act on, in its words.
@@ -203,7 +203,7 @@ async def judge_add_on(
     nationality adjective, a country name, or "other" — and stored canonically. A mock
     driver created without one records none, and is drawn without a flag.
 
-    *placement_service* holds the driver to the template capacities a real placement into
+    *capacity* holds the driver to the template capacities a real placement into
     the same team is held to, and the driver is refused where one would be. The change always
     passes it; left None, as tests of the seating alone do, the check is skipped.
 
@@ -233,9 +233,9 @@ async def judge_add_on(
     )
     team_row = await sole_row(cursor)
 
-    if placement_service is not None:
+    if capacity is not None:
         try:
-            await placement_service.guard_roster_capacity(
+            await capacity.guard_roster_capacity(
                 located.division_id, {team_row["name"]: 1}
             )
         except Refused as exc:
@@ -316,12 +316,12 @@ async def add_test_driver_on(
     team_name: str,
     division_name: str,
     nationality: str | None = None,
-    placement_service=None,
+    capacity=None,
 ) -> TestDriverInfo | str:
     """Judge a fake driver (`judge_add_on`) and seat them (`seat_on`) on *db*: the driver, or the
     refusal, in which case nothing was written. Commits nothing."""
     plan = await judge_add_on(
-        db, driver_name, team_name, division_name, nationality, placement_service
+        db, driver_name, team_name, division_name, nationality, capacity
     )
     if isinstance(plan, str):
         return plan
@@ -355,7 +355,7 @@ class BulkPlan:
 async def judge_bulk_on(
     db: aiosqlite.Connection,
     drivers: list,
-    placement_service=None,
+    capacity=None,
 ) -> BulkPlan | list[str]:
     """Judge a whole roster on *db*, writing nothing: the plan to seat it, or every fault met.
 
@@ -379,7 +379,7 @@ async def judge_bulk_on(
     would put a division's seats somewhere the file does not describe, with the file still
     looking like the record of what happened.
 
-    *placement_service* holds each division the roster seats to the template capacities a
+    *capacity* holds each division the roster seats to the template capacities a
     real placement is held to, counting every driver the roster gives the division at once.
     The change always passes it; left None, as tests of the seating alone do, the check is
     skipped.
@@ -509,12 +509,12 @@ async def judge_bulk_on(
     # The template capacities are measured over the whole of a division's roster, since
     # it is seated at once. They run even where something else failed, so every fault is
     # named together.
-    if placement_service is not None:
+    if capacity is not None:
         for name, division_id in division_ids.items():
             if division_id not in added:
                 continue
             try:
-                await placement_service.guard_roster_capacity(division_id, added[division_id])
+                await capacity.guard_roster_capacity(division_id, added[division_id])
             except Refused as exc:
                 errors.append(f"Division '{name}': {exc}")
 
@@ -591,12 +591,12 @@ async def seat_bulk_on(db: aiosqlite.Connection, plan: BulkPlan) -> int:
 async def add_test_drivers_in_bulk_on(
     db: aiosqlite.Connection,
     drivers: list,
-    placement_service=None,
+    capacity=None,
 ) -> tuple[int, list[str]]:
     """Judge a whole roster (`judge_bulk_on`) and seat it (`seat_bulk_on`) on *db*: the number
     seated and the faults met, **the two exclusive**, a fault in which case seating nobody.
     Commits nothing."""
-    plan = await judge_bulk_on(db, drivers, placement_service)
+    plan = await judge_bulk_on(db, drivers, capacity)
     if isinstance(plan, list):
         return 0, plan
     return await seat_bulk_on(db, plan), []

@@ -15,11 +15,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 
-#: Why the tests asking the capacity guards fail until the guards are a service of their own
-#: (#283).
-_NOT_YET_A_SERVICE = "#283: the capacity guards are not yet a TemplateCapacityService of their own"
-
-
 ORDINARY = "Team 1"
 RACE = "results_race_template"
 DRIVERS = "standings_drivers_template"
@@ -180,7 +175,6 @@ async def _seed(tmp_path):
     return db_path, season_id, division_id
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 async def test_a_placement_past_the_declared_rows_is_refused_through_guard_assign(
     tmp_path, declare
 ):

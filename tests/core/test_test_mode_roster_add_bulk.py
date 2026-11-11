@@ -266,8 +266,6 @@ async def test_a_roster_it_cannot_seat_is_refused_at_the_ask(league, text, refus
     assert _lines(league) == [_refused(refusal)]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the capacity guards are not yet a "
-                   "TemplateCapacityService of their own")
 async def test_the_roster_is_held_to_the_template_capacities(league, monkeypatch):
     """The bot's template capacity service holds the roster to the template capacities a real
     placement is held to, counting every driver the roster gives a division at once. The season is

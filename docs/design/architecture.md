@@ -1236,8 +1236,8 @@ its cancel share (`amend_end_changes._names_step`) is a stated exception as well
 the error in the host's log and completes the job with no names, so the revert goes ahead with a
 full tie ordered by user id, because a tie so ordered is the lesser fault than a round not put back
 (its docstring says so); the helper through which a placement's capacity guards count the seats and
-ask the image module (`PlacementService._ask_drawing`) is a stated exception too: its catch-all (a
-switch nobody signed up for aside) puts the error in the host's log in full, and the guard lets the
+ask the image module (`TemplateCapacityService._ask_drawing`) is a stated exception too: its
+catch-all (a switch nobody signed up for aside) puts the error in the host's log in full, and the guard lets the
 placement through as if no problem were found, because a capacity check that cannot run must not
 block a placement (its docstring says so); the image module's calendar gate
 (`ImageDrawing.calendar_wanted`) is a stated exception likewise: its catch-all (a switch nobody
@@ -1251,8 +1251,8 @@ that cannot be read must not lose a league its lineup (its docstring says so); t
 which the season's own capacity checks count and ask the image module
 (`approval_checks.ask_drawing`) — the review's and the approval's (`lineup_problems`, and the
 review's calendar and attendance warnings) — is a stated exception beside
-`PlacementService._ask_drawing`'s: its catch-all (a switch nobody signed up for aside) puts the
-error in the host's log in full and lets the season through as if no problem were found, because a
+`TemplateCapacityService._ask_drawing`'s: its catch-all (a switch nobody signed up for aside) puts
+the error in the host's log in full and lets the season through as if no problem were found, because a
 capacity check that cannot run must not block a season (its docstring says so); the round guard that
 `/round add` and the round imports share (`calendar_round_refusal`, in
 `core/services/round_add_changes.py`) is a stated exception beside it: the change types' checks call
@@ -1306,8 +1306,8 @@ refusal the member can act on, or to hand them to `report_failure` itself with c
 outcome, as `/test-mode backup save` does with a backup fault, saying that the previous backup is unchanged.
 
 *Rejected:* narrowing the capacity guards' catch to the errors they expect by name, in the
-placement guard or the season's own capacity checks alike: a fault of any other kind would then
-block a placement, a round or a season, when a check that cannot run must not.
+capacity service's guards or the season's own capacity checks alike: a fault of any other kind
+would then block a placement, a round or a season, when a check that cannot run must not.
 
 *Rejected:* treating a calendar gate that cannot be read as a picture that could not be drawn: it
 would add a line to the log channel and refuse `/division calendar-sync` for a fault in reading a

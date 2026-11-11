@@ -44,6 +44,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.module_service import ModuleService
     from leaguebot.core.services.placement_service import PlacementService
     from leaguebot.core.services.team_role_service import TeamRoleService
+    from leaguebot.core.services.template_capacity_service import TemplateCapacityService
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.core.services.hub_service import HubOptions
     from leaguebot.core.services.start_up import StartUpStep
@@ -78,6 +79,9 @@ class LeagueBot(commands.Bot):
     #: The team roles and the helpers that give and take them, handed to `placement_service` and
     #: to every change and hook that moves a role.
     team_role_service: TeamRoleService
+    #: Whether the image templates could draw a placement's driver, handed the image module's
+    #: drawing and given to `placement_service` and the test roster's changes.
+    template_capacity_service: TemplateCapacityService
     module_service: ModuleService
     signup_module_service: SignupModuleService
     wizard_service: WizardService
@@ -85,7 +89,7 @@ class LeagueBot(commands.Bot):
     #: Attendance's share of a round's review, handed to results' change types.
     attendance_after_review: AttendanceAfterReview
     #: Core's drawing protocol, the image module's own implementation, handed to
-    #: `placement_service`.
+    #: `template_capacity_service` and `placement_service`.
     image_drawing: ImageDrawing
     image_config_service: ImageConfigService
     image_validity_service: ImageValidityService

@@ -356,8 +356,8 @@ async def ask_drawing(
     capacity check that cannot run must not block an approval or a season, only a genuine
     over-capacity may, so the fault goes to the host's log in full and the check that asked
     answers as if told nothing was wrong (architecture.md, "A catch-all error handler", a
-    stated exception beside `PlacementService._ask_drawing`'s). The round guard of `/round add`
-    and the round imports is the change type's own (`calendar_round_refusal`).
+    stated exception beside `TemplateCapacityService._ask_drawing`'s). The round guard of
+    `/round add` and the round imports is the change type's own (`calendar_round_refusal`).
     """
     try:
         counted = await count()

@@ -284,12 +284,6 @@ async def _tiers_checked(tmp_path, monkeypatch) -> None:
     await _run(cog, _interaction())
 
 
-#: Why the test roster's cases fail until its writers are handed the capacity service (#283).
-_NOT_YET_HANDED_CAPACITY = (
-    "#283: the test roster's writers are not yet handed a TemplateCapacityService as capacity="
-)
-
-
 #: Why the driver changes that move roles fail until they are handed the team-role service (#283).
 _NOT_YET_HANDED_DRIVER_ROLES = (
     "#283: the driver changes that move roles are not yet handed a TeamRoleService as roles="
@@ -309,10 +303,8 @@ CATCHES = [
                  marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_DRIVER_ROLES)),
     pytest.param(_placement_check("driver_assign_change"), id="driver assign check"),
     pytest.param(_placement_check("driver_unassign_change"), id="driver unassign check"),
-    pytest.param(_test_driver_added, id="test driver added",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_CAPACITY)),
-    pytest.param(_test_roster_imported, id="test roster imported",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_CAPACITY)),
+    pytest.param(_test_driver_added, id="test driver added"),
+    pytest.param(_test_roster_imported, id="test roster imported"),
     pytest.param(_team_check("team_add_change", _TEAM_ADDED), id="team add check"),
     pytest.param(_team_save("team_add_change", _TEAM_ADDED), id="team add save"),
     pytest.param(_team_check("team_remove_change", _TEAM_REMOVED), id="team remove check"),

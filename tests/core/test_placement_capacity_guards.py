@@ -156,17 +156,12 @@ def _guarded(db_path, drawing):
     return PlacementService(db_path, capacity=_capacity(db_path, drawing))
 
 
-#: Why the capacity guards' tests fail until the guards are a service of their own (#283).
-_NOT_YET_A_SERVICE = "#283: the capacity guards are not yet a TemplateCapacityService of their own"
-
-
 async def _place(service, season_id, division_id, team):
     """Ask *service* whether the unplaced driver 9999 may be assigned to *team*: the guards
     `/driver assign` asks at the ask and again as its change starts."""
     await service.guard_assign(division_id, season_id, team, 9999)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 @pytest.mark.parametrize(
     "guard, team, refusal",
     [
@@ -240,7 +235,6 @@ def _failing_reads(monkeypatch, fragment: str, fault: Exception) -> None:
     monkeypatch.setattr(template_capacity_service, "get_connection", connection)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 @pytest.mark.parametrize(
     "team, read",
     [
@@ -269,7 +263,6 @@ async def test_a_capacity_guard_s_own_read_fault_lets_the_placement_through(
     assert any(record.exc_info and record.exc_info[1] is fault for record in caplog.records)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 @pytest.mark.parametrize(
     "team, asked",
     [
@@ -307,7 +300,6 @@ async def test_a_placement_asks_each_guard_its_own_count(tmp_path, team, asked):
     assert drawing.asked == asked
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 async def test_an_unknown_team_asks_neither_the_reserve_block_nor_the_standings(tmp_path):
     """Whether a team is the reserve cannot be known of a team the division does not hold, so
     the two guards that ask it are left out and the guards raise nothing: the assignment's own
@@ -323,7 +315,6 @@ async def test_an_unknown_team_asks_neither_the_reserve_block_nor_the_standings(
     assert "standings_capacity_problem" not in asked
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 @pytest.mark.parametrize(
     "added, asked",
     [
@@ -360,7 +351,6 @@ async def test_a_roster_asks_each_guard_once_summed_across_its_teams(tmp_path, a
     assert drawing.asked == asked
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 async def test_no_drawing_handed_means_no_guard(tmp_path):
     """A service built alone, as a test that exercises placement builds it, refuses no test
     roster however large: the four `test_no_bot_means_no_guard` tests, merged. That such a service
@@ -373,7 +363,6 @@ async def test_no_drawing_handed_means_no_guard(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 async def test_a_guard_whose_switch_nobody_signed_up_for_raises(tmp_path):
     """The images module's switch reader was never signed up (`SwitchNotSignedUp`): that is a fault
     in the bot's assembly, not a guard that cannot run, so the placement raises it rather than

@@ -19,11 +19,6 @@ import pytest
 from lxml import etree
 
 
-#: Why the tests asking the capacity guards fail until the guards are a service of their own
-#: (#283).
-_NOT_YET_A_SERVICE = "#283: the capacity guards are not yet a TemplateCapacityService of their own"
-
-
 SVG_NS = "http://www.w3.org/2000/svg"
 DRIVERS = "standings_drivers_template"
 RESERVE = "Reserve"
@@ -203,7 +198,6 @@ async def test_no_standings_drawn_means_no_problem(tmp_path, toggle, images):
 # ── As a league meets it, through the choke point ─────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 async def test_a_race_placement_past_the_rows_is_refused_through_guard_assign(tmp_path):
     """The two seated reserves are not among the drivers counted: they hold no row."""
     from leaguebot.core.models.refusal import Refused
@@ -221,7 +215,6 @@ async def test_a_race_placement_past_the_rows_is_refused_through_guard_assign(tm
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 async def test_a_reserve_placement_survives_full_standings_through_guard_assign(tmp_path):
     """Seating a reserve grows no classification, so a full template cannot refuse it."""
     db_path, season_id, division_id = await _seed(tmp_path, drivers=2)
