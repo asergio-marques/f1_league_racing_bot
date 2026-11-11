@@ -45,6 +45,9 @@ from tests.support.season_league import (
 KIND = "lineup.post"
 LINEUP = {PRO: DIVISIONS[PRO][3].lineup, AM: DIVISIONS[AM][3].lineup}
 
+#: Why the lineup step's own tests fail until the bot declares a lineup poster to hand it (#283).
+_NOT_YET_A_POSTER = "#283: the bot declares no LineupPoster to hand the lineup step"
+
 
 async def _said(league: Any) -> str:
     """Every log line, sent or still waiting on the old retry queue."""
@@ -590,9 +593,10 @@ async def test_a_stop_between_the_lineup_post_and_its_delete_deletes_the_old_one
         "delete_replaced") == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_a_lineup_step_with_no_channel_raises(tmp_path):
     """Pro's lineup channel was never set. The lineup job a review or an approval runs for Pro
-    (`lineup_step`, through the real placement service) raises, naming the command that sets the
+    (`lineup_step`, through the real lineup poster) raises, naming the command that sets the
     channel, for the queue to stop on; nothing is posted."""
     from types import SimpleNamespace
 
@@ -603,7 +607,7 @@ async def test_a_lineup_step_with_no_channel_raises(tmp_path):
     league = await ongoing_league(tmp_path)
     await league.write("UPDATE divisions SET lineup_channel_id = NULL WHERE id = ?", PRO)
     before = len(league.texts(LINEUP[PRO]))
-    step = lineup_step(league.bot.placement_service, now=lambda: league.clock.now)
+    step = lineup_step(league.bot.lineup_poster, now=lambda: league.clock.now)
     ctx = SimpleNamespace(
         bot=league.bot, kept=[], step_payload={"division_id": PRO, "division_name": "Pro"},
         payload={}, tries=0,
@@ -615,10 +619,11 @@ async def test_a_lineup_step_with_no_channel_raises(tmp_path):
     assert len(league.texts(LINEUP[PRO])) == before
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_a_lineup_step_whose_images_switch_nobody_signed_up_for_raises(tmp_path):
     """The images module's switch reader was never signed up, so asking whether the lineup is drawn
-    raises `SwitchNotSignedUp`. The lineup job for Pro (`lineup_step`, through the real placement
-    service) raises it as a fault in the bot's assembly, rather than taking it for a picture that
+    raises `SwitchNotSignedUp`. The lineup job for Pro (`lineup_step`, through the real lineup
+    poster) raises it as a fault in the bot's assembly, rather than taking it for a picture that
     could not be drawn and posting the lineup as text."""
     from types import SimpleNamespace
 
@@ -628,11 +633,11 @@ async def test_a_lineup_step_whose_images_switch_nobody_signed_up_for_raises(tmp
 
     league = await ongoing_league(tmp_path)
     before = len(league.texts(LINEUP[PRO]))
-    placement = league.bot.placement_service
-    placement._drawing = SimpleNamespace(
+    poster = league.bot.lineup_poster
+    poster._drawing = SimpleNamespace(
         lineup_wanted=AsyncMock(side_effect=SwitchNotSignedUp("images")),
     )
-    step = lineup_step(placement, now=lambda: league.clock.now)
+    step = lineup_step(poster, now=lambda: league.clock.now)
     ctx = SimpleNamespace(
         bot=league.bot, kept=[], step_payload={"division_id": PRO, "division_name": "Pro"},
         payload={}, tries=0,
