@@ -226,7 +226,7 @@ async def test_a_superseded_forecast_whose_deletion_was_discarded_is_caught_up_w
     W4)."""
     db_path = await _make_db(tmp_path, phases=(2, 3))
 
-    with caplog.at_level("INFO", logger=bot_module.__name__):
+    with caplog.at_level("INFO", logger="leaguebot"):
         assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
 
     lines = [record.getMessage() for record in caplog.records]
@@ -247,7 +247,7 @@ async def test_the_catch_up_s_log_line_names_the_forecast_it_deletes(
     standing, "deleting the Phase 2 forecast of round_id=21", never a phase that is not."""
     db_path = await _make_db(tmp_path, phases=phases)
 
-    with caplog.at_level("INFO", logger=bot_module.__name__):
+    with caplog.at_level("INFO", logger="leaguebot"):
         await _recover(_bot(db_path))
 
     lines = [record.getMessage() for record in caplog.records]
