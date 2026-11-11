@@ -59,6 +59,10 @@ from tests.support.season_league import (
 )
 from tests.support.mentions import NOBODY, notified
 
+#: Why each test reaching a recovery the entry point held fails until it moves to its
+#: module's wiring (#283).
+_NOT_YET_IN_THE_WIRING = "#283: the recovery is not yet in its module's wiring"
+
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 R3, R4 = round_id(PRO, 3), round_id(PRO, 4)
@@ -1878,6 +1882,7 @@ async def _call_to_post_at_once(league: Any) -> None:
     assert "post_call" in [job["name"] for job in await _jobs(league)]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 @pytest.mark.parametrize("path", ["first post", "after the take-down"])
 async def test_a_call_posted_late_at_a_restart_before_the_amendment_posts_it_is_posted_once(
     tmp_path, reposts, path,
@@ -1887,7 +1892,7 @@ async def test_a_call_posted_late_at_a_restart_before_the_amendment_posts_it_is_
     the new one to post. The bot restarts before the amendment's job posts the call, and the
     start-up recovery posts it late. When the job runs, the call stands: it is neither taken down
     nor posted again, and the division is called once."""
-    from leaguebot.__main__ import _recover_missed_check_in_calls
+    from leaguebot.attendance.wiring import recover_missed_check_in_calls
 
     league = await ongoing_league(tmp_path, attendance=True)
     if path == "first post":
@@ -1896,7 +1901,7 @@ async def test_a_call_posted_late_at_a_restart_before_the_amendment_posts_it_is_
         await _amended(league, scheduled_at=_at(league, days=3))
         await _run_through(league, "take_down_call")
 
-    await _recover_missed_check_in_calls(league.bot, now=league.clock.now)
+    await recover_missed_check_in_calls(league.bot, now=league.clock.now)
     assert reposts.posted == []
     await run_queue(league.bot)
 

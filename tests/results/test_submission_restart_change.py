@@ -51,6 +51,10 @@ from tests.support.season_league import (
     round_id,
 )
 
+#: Why each test reaching a recovery the entry point held fails until it moves to its
+#: module's wiring (#283).
+_NOT_YET_IN_THE_WIRING = "#283: the recovery is not yet in its module's wiring"
+
 KIND = "results.submission.restart"
 OPEN_KIND = "results.submission.open"
 TURN_KIND = "results.submission.turn"
@@ -97,8 +101,9 @@ async def _restart(league: SeasonLeague, *, run: bool = True) -> None:
     off the queue does not run behind the test. Where the queue is not to run, its worker is
     stopped before it ever runs: left running, it would carry out what the test means to find
     still in hand, as soon as the recovery waits on the database, on a slow host."""
-    import leaguebot.__main__ as bot_module
+    from leaguebot.results.wiring import recover_orphaned_submission_channels
 
+    
     queue = await restart_queue(league.bot)
     if not run:
         await queue.stop()
@@ -108,7 +113,7 @@ async def _restart(league: SeasonLeague, *, run: bool = True) -> None:
         real = result_submission_service.run_result_submission_job
         result_submission_service.run_result_submission_job = stub
     try:
-        await bot_module._recover_orphaned_submission_channels(league.bot)
+        await recover_orphaned_submission_channels(league.bot)
     finally:
         if had:
             result_submission_service.run_result_submission_job = real
@@ -138,6 +143,7 @@ async def _kinds(league: SeasonLeague) -> list[str]:
             if row["kind"] in (KIND, OPEN_KIND, TURN_KIND)]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_first_paste_cut_short_is_cleared_and_reopened_as_jobs(tmp_path):
     """Round 3's submission was open in channel 690, one session accepted, when the bot stopped.
     At the restart the recovery asks the queue for the round's restart and does nothing itself:
@@ -166,6 +172,7 @@ async def test_a_first_paste_cut_short_is_cleared_and_reopened_as_jobs(tmp_path)
     assert "re-submit" in league.log() and "R3" in league.log()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_submission_whose_turn_is_in_hand_is_left_alone_at_a_restart(tmp_path):
     """The admin typed a paste in channel 690 and its turn was asked, but had not run, when the
     bot stopped. At the restart the recovery leaves round 3 alone: it asks no restart of it, and
@@ -188,6 +195,7 @@ async def test_a_submission_whose_turn_is_in_hand_is_left_alone_at_a_restart(tmp
     assert not _deleted(league)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_round_whose_closing_is_stopped_is_not_taken_for_a_first_paste_at_a_restart(
     tmp_path,
 ):
@@ -219,6 +227,7 @@ async def test_a_round_whose_closing_is_stopped_is_not_taken_for_a_first_paste_a
     assert not _deleted(league)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_round_whose_opening_is_stopped_is_not_taken_for_a_first_paste_at_a_restart(
     tmp_path,
 ):
@@ -255,6 +264,7 @@ async def test_a_round_whose_opening_is_stopped_is_not_taken_for_a_first_paste_a
     assert await _sessions(league) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_resubmission_whose_swap_is_in_hand_is_not_ended_at_a_restart(tmp_path):
     """Round 3 is being resubmitted, its review open, when the last resubmitted paste hands the
     league the swap and the league lane stops before it runs. At the restart the recovery leaves
@@ -285,6 +295,7 @@ async def test_a_resubmission_whose_swap_is_in_hand_is_not_ended_at_a_restart(tm
     assert not _deleted(league)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_refused_channel_deletion_at_a_restart_stops_the_queue(tmp_path):
     """Discord refuses to delete channel 690 (Missing Permissions). The queue stops at the
     restart's deletion, on the league lane, with round 3's sessions already cleared and no new
@@ -311,6 +322,7 @@ async def test_a_refused_channel_deletion_at_a_restart_stops_the_queue(tmp_path)
     assert await _submission(league) == [{"channel_id": made, "closed": 0}]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_restart_s_reopening_of_a_submission_cannot_be_discarded(tmp_path):
     """Discord refuses to create round 3's new channel after the restart cleared the old one, so
     the queue stops at the reopening's channel creation. A league admin presses Discard: it is
@@ -337,6 +349,7 @@ async def test_a_restart_s_reopening_of_a_submission_cannot_be_discarded(tmp_pat
     assert await _submission(league) == [{"channel_id": made, "closed": 0}]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_restart_s_clearing_ends_the_old_conversation_and_its_refused_deletion_stops_the_league(
     tmp_path,
 ):
@@ -371,6 +384,7 @@ CANNOT_DISCARD_CLEAR = (
 )
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_the_restart_s_clearing_cannot_be_discarded(tmp_path):
     """At the restart the save clearing round 3's cut-short submission fails (the database refuses
     to delete its sessions), stopping the queue at `clear`. A league admin presses Discard: it is
@@ -412,6 +426,7 @@ CUT_SHORT_LEFT = (
 )
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_discarded_deletion_at_a_restart_names_the_channel_to_delete_by_hand(tmp_path):
     """Discord refuses to delete channel 690 at the restart, after round 3's cut-short submission
     was cleared, so the queue stops at the deletion. A league admin discards it. The log channel
@@ -456,6 +471,7 @@ async def _kinds_asked(league: SeasonLeague) -> list[str]:
     return [row["kind"] for row in await change_rows(league.db_path)]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 @pytest.mark.parametrize(
     "in_review", [False, True], ids=["review flag clear", "review flag stands"],
 )
@@ -491,6 +507,7 @@ async def test_a_restart_closes_the_channel_of_a_round_that_ended_cancelled_and_
     assert row["status"] == "CANCELLED"
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_restart_closes_the_channel_of_a_round_that_ended_cancelled_whose_channel_is_gone(
     tmp_path,
 ):

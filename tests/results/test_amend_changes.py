@@ -75,6 +75,10 @@ from tests.support.review_league import (
 )
 from tests.support.undecorate import undecorate
 
+#: Why each test reaching a recovery the entry point held fails until it moves to its
+#: module's wiring (#283).
+_NOT_YET_IN_THE_WIRING = "#283: the recovery is not yet in its module's wiring"
+
 OPEN = "results.amend.open"
 TURN = "results.amend.turn"
 CONFIG = "results.amend.config"
@@ -451,6 +455,7 @@ async def test_a_refused_deletion_after_a_refused_paste_stops_only_the_amendment
     assert not _deleted(league)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_restart_leaves_a_refused_deletion_to_the_amendment_s_own_lane(
     tmp_path, monkeypatch,
 ):
@@ -458,8 +463,9 @@ async def test_a_restart_leaves_a_refused_deletion_to_the_amendment_s_own_lane(
     amendment's lane is stopped. The bot restarts: the recovery asks the lapse of the closed
     amendment, but its channel's deletion is in hand on the amendment's lane, so the lapse is not
     due and the league lane is not stopped by a second try at the same refusal."""
-    import leaguebot.__main__ as bot_module
+    from leaguebot.results.wiring import recover_orphaned_amend_channels
 
+    
     league = await _league(tmp_path, monkeypatch)
     await _ask_open(league)
     league.channel(AMEND_CHANNEL).delete_fails = http_error(
@@ -468,7 +474,7 @@ async def test_a_restart_leaves_a_refused_deletion_to_the_amendment_s_own_lane(
     await _type(league, "1, <@103>, FER, 1:30:00.000, 1:20.000, N/A")
     assert await stopped_job(league.db_path, LANE) is not None
 
-    await bot_module._recover_orphaned_amend_channels(league.bot)
+    await recover_orphaned_amend_channels(league.bot)
     await run_queue(league.bot)
 
     assert await stopped_job(league.db_path, "league") is None
@@ -1153,14 +1159,16 @@ async def test_the_half_hour_lapse_is_held_while_the_stage_two_prompt_is_in_hand
     assert row["closed_at"] is None
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_restart_asks_the_lapse_of_each_abandoned_amendment_before_the_queue_starts(
     tmp_path, monkeypatch,
 ):
     """The bot stops with Alex's amendment of round 3 open and nothing pasted. At the restart the
     recovery asks the queue for its lapse, as the bot, and deletes nothing itself; when the queue
     runs, the channel is deleted and the row closed."""
-    import leaguebot.__main__ as bot_module
+    from leaguebot.results.wiring import recover_orphaned_amend_channels
 
+    
     league = await _league(tmp_path, monkeypatch)
     async with get_connection(league.db_path) as db:
         await db.execute(
@@ -1171,7 +1179,7 @@ async def test_a_restart_asks_the_lapse_of_each_abandoned_amendment_before_the_q
         )
         await db.commit()
 
-    await bot_module._recover_orphaned_amend_channels(league.bot)
+    await recover_orphaned_amend_channels(league.bot)
 
     [lapse] = await _changes(league, LAPSE)
     assert lapse["origin"] == "BOT"

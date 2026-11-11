@@ -36,6 +36,10 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 
+#: Why each test reaching a recovery the entry point held fails until it moves to its
+#: module's wiring (#283).
+_NOT_YET_IN_THE_WIRING = "#283: the recovery is not yet in its module's wiring"
+
 SERVER_ID = 5511
 SEASON_ID = 1
 DIVISION_ID = 1
@@ -130,12 +134,12 @@ class _Phases:
 
 async def _recover(bot: MagicMock) -> _Phases:
     """Run the restart recovery with weather's `ask_forecast` recorded."""
-    from leaguebot.__main__ import _recover_missed_phases
+    from leaguebot.weather.wiring import recover_missed_phases
 
     phases = _Phases()
     with patch("leaguebot.weather.services.forecast_changes.ask_forecast",
                AsyncMock(side_effect=phases.ask)):
-        await _recover_missed_phases(bot)
+        await recover_missed_phases(bot)
     return phases
 
 
@@ -144,6 +148,7 @@ async def _recover(bot: MagicMock) -> _Phases:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_restart_fires_a_phase_overdue_by_the_leagues_longer_deadline(tmp_path):
     """Phase 1 at seven days, the bot back up six days out: the forecast is overdue."""
     db_path = await _make_db(tmp_path)
@@ -160,6 +165,7 @@ async def test_a_restart_fires_a_phase_overdue_by_the_leagues_longer_deadline(tm
     phases.three.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_restart_holds_a_phase_not_yet_due_by_the_leagues_shorter_deadline(tmp_path):
     """Phase 1 at three days, the bot back up four days out: the forecast is not due yet."""
     db_path = await _make_db(tmp_path)
@@ -173,6 +179,7 @@ async def test_a_restart_holds_a_phase_not_yet_due_by_the_leagues_shorter_deadli
     phases.three.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_restart_fires_every_phase_the_leagues_horizons_have_passed(tmp_path):
     """All three configured horizons behind us, so all three phases are recovered."""
     db_path = await _make_db(tmp_path)
@@ -186,6 +193,7 @@ async def test_a_restart_fires_every_phase_the_leagues_horizons_have_passed(tmp_
     assert phases.rounds(phases.three) == [ROUND_ID]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_restart_still_uses_the_packaged_horizons_where_the_league_set_none(tmp_path):
     """A league that never ran `/weather config` keeps the packaged 5 / 2 / 2."""
     db_path = await _make_db(tmp_path)
@@ -204,6 +212,7 @@ async def test_a_restart_still_uses_the_packaged_horizons_where_the_league_set_n
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_restart_recovers_nothing_for_a_server_with_weather_disabled(tmp_path):
     """The module gate stands: a switched-off module produces nothing, however overdue."""
     db_path = await _make_db(tmp_path)
@@ -217,12 +226,13 @@ async def test_a_restart_recovers_nothing_for_a_server_with_weather_disabled(tmp
     phases.three.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_restart_recovers_no_phase_for_a_mystery_round(tmp_path):
     """A mystery round past every horizon of the league's: its notice is put on the change
     queue, as weather's real `ask_forecast` asks it, and no phase is."""
     import json
 
-    from leaguebot.__main__ import _recover_missed_phases
+    from leaguebot.weather.wiring import recover_missed_phases
     from tests.support.change_queue import change_rows, league_bot, league_queue
 
     db_path = await _make_db(tmp_path)
@@ -233,13 +243,14 @@ async def test_a_restart_recovers_no_phase_for_a_mystery_round(tmp_path):
     bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
     league_queue(bot, db_path, now=datetime.now(timezone.utc))
 
-    await _recover_missed_phases(bot)
+    await recover_missed_phases(bot)
 
     asked = [(row["kind"], json.loads(row["payload"])["phase"])
              for row in await change_rows(db_path)]
     assert asked == [("weather.forecast", 0)]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_restart_recovers_no_phase_for_a_season_that_is_not_active(tmp_path):
     """Recovery reaches the rounds of active seasons only."""
     db_path = await _make_db(tmp_path)

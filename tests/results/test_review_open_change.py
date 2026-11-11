@@ -75,6 +75,10 @@ from tests.support.review_league import (
 )
 from tests.support.teams import seed_team_instances
 
+#: Why each test reaching a recovery the entry point held fails until it moves to its
+#: module's wiring (#283).
+_NOT_YET_IN_THE_WIRING = "#283: the recovery is not yet in its module's wiring"
+
 KIND = "results.review.open"
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -288,10 +292,11 @@ async def _round_status(db_path) -> str:
 
 async def _recover(league: ReviewLeague) -> None:
     """Restart: a fresh queue on the same database, then restart recovery, then the queue run."""
-    import leaguebot.__main__ as bot_module
+    from leaguebot.results.wiring import recover_orphaned_submission_channels
 
+    
     await restart_queue(league.bot)
-    await bot_module._recover_orphaned_submission_channels(league.bot)
+    await recover_orphaned_submission_channels(league.bot)
     await run_queue(league.bot)
 
 
@@ -652,8 +657,10 @@ async def test_the_state_carries_the_round_and_division_it_describes(tmp_path):
     [
         "reports-approve",
         "reports-approve-bare",
-        "recovery",
-        "appeals-recovery",
+        pytest.param("recovery",
+                     marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)),
+        pytest.param("appeals-recovery",
+                     marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)),
     ],
 )
 async def test_the_change_names_its_round_and_division(tmp_path, caplog, route):
@@ -1143,21 +1150,23 @@ async def _ask_report_approval(league: ReviewLeague) -> None:
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_recovery_leaves_alone_a_round_whose_review_is_in_hand(tmp_path):
+    from leaguebot.results.wiring import recover_orphaned_submission_channels
     league = await _league(tmp_path, name="recover_in_hand", in_review=True,
                            results_posted=True, prompt=PROMPT,
                            round_status=RoundStatus.AWAITING_REPORT_VERDICTS.value)
     await _ask_report_approval(league)
 
-    import leaguebot.__main__ as bot_module
-
+    
     await restart_queue(league.bot)
-    await bot_module._recover_orphaned_submission_channels(league.bot)
+    await recover_orphaned_submission_channels(league.bot)
 
     assert await changes_of(league.db_path, KIND) == []
     assert PROMPT in league.channel(SUBMISSION_CHANNEL).messages
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_recovery_leaves_alone_a_round_whose_approval_is_stopped(tmp_path):
     """The session is scored by a points configuration, so the approval's recalculation is
     reached and its failure stops the approval at `apply` (a session with none is skipped)."""
@@ -1179,6 +1188,7 @@ async def test_recovery_leaves_alone_a_round_whose_approval_is_stopped(tmp_path)
     assert _prompts(league) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_recovery_leaves_alone_a_round_whose_paste_is_queued_or_stopped(tmp_path):
     """The last paste of round 3 has asked for its review, every session's results in and the
     review flag still down, and the open waits behind an earlier job the queue is stopped at. A
@@ -1216,6 +1226,7 @@ async def test_recovery_leaves_alone_a_round_whose_paste_is_queued_or_stopped(tm
     assert len(await changes_of(league.db_path, KIND)) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_recovery_reopens_a_report_stage_through_the_queue_replacing_the_old_prompt(
     tmp_path,
 ):
@@ -1247,6 +1258,7 @@ async def test_recovery_reopens_a_report_stage_through_the_queue_replacing_the_o
     assert league.sent_to(RESULTS_CHANNEL) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_recovery_reopens_a_review_whose_open_was_discarded(tmp_path):
     """The paste asked for the review, its `open` save failed and was discarded, and the review
     `close` asked for again was discarded at its check (the channel was gone then): nothing is in
@@ -1279,6 +1291,7 @@ async def test_recovery_reopens_a_review_whose_open_was_discarded(tmp_path):
         assert (await cursor.fetchone())[0] == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_recovery_reposts_the_appeals_prompt_replacing_the_old_one(tmp_path):
     """The appeals prompt is posted again as a change, its id saved for the next restart and its
     view registered so its buttons keep working across the next restart too."""
@@ -1314,25 +1327,28 @@ async def _ask_appeals_approval(league: ReviewLeague) -> None:
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_recovery_leaves_alone_a_round_whose_appeals_approval_is_in_hand(tmp_path):
     """Round 3 awaits its appeal verdicts, its appeals prompt standing, and Approve on it waits
     on the queue when the bot restarts. Restart recovery asks no reopening of the appeals review,
     and the old prompt stands for the approval to take down."""
+    from leaguebot.results.wiring import recover_orphaned_submission_channels
+
     league = await _league(tmp_path, name="recover_appeals_in_hand", in_review=True,
                            results_posted=True, appeals_prompt=OLD_APPEALS_PROMPT,
                            round_status=RoundStatus.AWAITING_APPEAL_VERDICTS.value)
     league.channel(SUBMISSION_CHANNEL).seed(OLD_APPEALS_PROMPT, "appeals review")
     await _ask_appeals_approval(league)
 
-    import leaguebot.__main__ as bot_module
-
+    
     await restart_queue(league.bot)
-    await bot_module._recover_orphaned_submission_channels(league.bot)
+    await recover_orphaned_submission_channels(league.bot)
 
     assert await changes_of(league.db_path, APPEALS_OPEN) == []
     assert OLD_APPEALS_PROMPT in league.channel(SUBMISSION_CHANNEL).messages
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_recovery_leaves_alone_a_round_whose_appeals_approval_is_stopped(tmp_path):
     """Round 3's appeals approval stopped at its save, the points failing to recalculate (the
     session scored by a points configuration, so the recalculation is reached). Restart recovery
@@ -1360,6 +1376,7 @@ async def test_recovery_leaves_alone_a_round_whose_appeals_approval_is_stopped(t
 APPEALS_OPEN = "results.appeals.open"
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 @pytest.mark.parametrize("job", [
     pytest.param("open", id="open"),
     pytest.param("close", id="close"),
@@ -1402,6 +1419,7 @@ async def test_the_appeals_reopening_s_jobs_cannot_be_discarded(tmp_path, job):
     assert change["state"] == "DONE"
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_an_appeals_reopening_whose_round_moved_on_is_dropped_on_retry(tmp_path):
     """Round 3 was awaiting its appeal verdicts, its appeals prompt 8950 standing, when the bot
     stopped. At the restart the prompt is asked for again, and the save of the reopening's first
@@ -1434,6 +1452,7 @@ async def test_an_appeals_reopening_whose_round_moved_on_is_dropped_on_retry(tmp
     assert change["state"] == "DONE"
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_recovery_closes_a_final_round_left_with_an_open_channel(tmp_path):
     """Only a run from before #439 can leave a final round with its channel open. It is closed,
     with a line, rather than its dead review posted again at every restart."""
@@ -1451,6 +1470,7 @@ async def test_recovery_closes_a_final_round_left_with_an_open_channel(tmp_path)
     assert "round 3" in league.log().lower()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_recovery_no_longer_warns_of_penalties_already_applied(tmp_path):
     """The queue carries what was staged, so "already applied" can no longer happen: the
     warning is gone, and the column it read with it."""

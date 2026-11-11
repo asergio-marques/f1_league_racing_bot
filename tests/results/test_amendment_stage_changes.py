@@ -81,6 +81,10 @@ from tests.support.review_league import (
     verdict_headings,
 )
 
+#: Why each test reaching a recovery the entry point held fails until it moves to its
+#: module's wiring (#283).
+_NOT_YET_IN_THE_WIRING = "#283: the recovery is not yet in its module's wiring"
+
 REPORTS = "results.amendment.reports.approve"
 APPEALS = "results.amendment.appeals.approve"
 
@@ -511,14 +515,15 @@ async def test_a_discarded_stage_past_its_deadline_names_the_undoing_and_one_bef
         assert "undone" not in reply.lower()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_recovery_leaves_alone_an_amendment_whose_stage_is_in_hand(tmp_path):
-    from leaguebot.__main__ import _recover_orphaned_amend_channels
+    from leaguebot.results.wiring import recover_orphaned_amend_channels
 
     league = await _amend_league(tmp_path)
     await block_queue(league)
     await _approve_reports(league)
 
-    await _recover_orphaned_amend_channels(league.bot)
+    await recover_orphaned_amend_channels(league.bot)
 
     row = await _amend_row(league)
     assert row is not None and row["pre_amendment_state"] is not None

@@ -26,7 +26,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.__main__ import _recover_missed_check_in_calls
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     change_rows,
@@ -36,6 +35,10 @@ from tests.support.change_queue import (
     stopped_job,
     text_channel,
 )
+
+#: Why each test reaching a recovery the entry point held fails until it moves to its
+#: module's wiring (#283).
+_NOT_YET_IN_THE_WIRING = "#283: the recovery is not yet in its module's wiring"
 
 NOW = datetime(2026, 9, 24, 12, 0, tzinfo=timezone.utc)
 SEASON_ID = 1
@@ -150,7 +153,9 @@ async def _make_bot(db_path: str, *, attendance_enabled: bool = True) -> Any:
 
 async def _restart(bot: Any, *, now: datetime = NOW) -> None:
     """The restart's step, then the queue run, as the bot starts it after its start-up steps."""
-    await _recover_missed_check_in_calls(bot, now=now)
+    from leaguebot.attendance.wiring import recover_missed_check_in_calls
+
+    await recover_missed_check_in_calls(bot, now=now)
     await run_queue(bot)
 
 
@@ -161,8 +166,10 @@ async def _asked(db_path: str) -> int:
 
 async def _late_calls(db_path: str, **kwargs: Any) -> int:
     """Run the restart's step alone on a fresh bot, returning how many calls it asked for."""
+    from leaguebot.attendance.wiring import recover_missed_check_in_calls
+
     bot = await _make_bot(db_path, **kwargs)
-    await _recover_missed_check_in_calls(bot, now=NOW)
+    await recover_missed_check_in_calls(bot, now=NOW)
     assert bot.check_in_channel.sent == [], "the restart posted the call itself"
     return await _asked(db_path)
 
@@ -185,14 +192,17 @@ def _logged(bot: Any) -> str:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_call_that_came_due_while_the_bot_was_down_is_posted_late(tmp_path):
     """Its moment went by while the bot was stopped, and the deadline has not: the restart asks
     the queue for the call and posts nothing itself; the queue posts it, and the division is
     asked now and answers in the time left."""
+    from leaguebot.attendance.wiring import recover_missed_check_in_calls
+
     db_path = await _make_db(tmp_path)
     bot = await _make_bot(db_path)
 
-    await _recover_missed_check_in_calls(bot, now=NOW)
+    await recover_missed_check_in_calls(bot, now=NOW)
     assert bot.check_in_channel.sent == []
     assert await _asked(db_path) == 1
 
@@ -202,6 +212,7 @@ async def test_a_call_that_came_due_while_the_bot_was_down_is_posted_late(tmp_pa
     assert await _call_stands(db_path)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_call_posted_late_is_written_to_the_log(tmp_path):
     """Staff learn the call went out late, and until when it can be answered: once the queue has
     posted it, the log channel says it was not posted when it fell due, with its deadline."""
@@ -216,6 +227,7 @@ async def test_a_call_posted_late_is_written_to_the_log(tmp_path):
     assert f"<t:{int(deadline.timestamp())}:F>" in _logged(bot)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_zero_deadline_lets_a_call_post_late_until_the_round(tmp_path):
     """A deadline of zero closes the check-in at the round's own moment, as
     `/attendance post-check-in` reads it, so an hour before the round is still in time: the
@@ -230,6 +242,7 @@ async def test_a_zero_deadline_lets_a_call_post_late_until_the_round(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 @pytest.mark.parametrize("seed", [
     # Its job is still to come, and posting early would override the league's lead time.
     pytest.param({"until_round": timedelta(days=6)}, id="the call not yet due"),
@@ -255,11 +268,14 @@ async def test_no_late_call_for_a_round_left_alone(tmp_path, seed):
     assert await _late_calls(db_path, attendance_enabled=attendance_enabled) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_the_calls_owed_are_asked_in_the_order_their_rounds_race(tmp_path):
     """Division 1 owes two calls: round 429, two days out, and round 430, added after it but
     racing a day out, both moments stored in UTC with their offset. The restart asks for round
     430's call first and round 429's second: the rounds are taken in the order they race, not
     the order they were added."""
+    from leaguebot.attendance.wiring import recover_missed_check_in_calls
+
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
         await db.execute(
@@ -277,7 +293,7 @@ async def test_the_calls_owed_are_asked_in_the_order_their_rounds_race(tmp_path)
 
     with patch("leaguebot.attendance.services.check_in_changes.ask_check_in_call",
                new=AsyncMock(side_effect=_record)):
-        await _recover_missed_check_in_calls(bot, now=NOW)
+        await recover_missed_check_in_calls(bot, now=NOW)
 
     assert asked == [ROUND_ID + 1, ROUND_ID]
 
@@ -298,6 +314,7 @@ async def _checkin_cleared(db_path: str) -> bool:
         return bool((await cursor.fetchone())["checkin_cleared"])
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_call_whose_deadline_has_passed_is_not_posted_and_is_reported(tmp_path):
     """Decided 2026-09-24. A call nobody could answer would record every driver as not having
     answered, so none is posted: the restart asks for the call, and the call's change gives it
@@ -314,6 +331,7 @@ async def test_a_call_whose_deadline_has_passed_is_not_posted_and_is_reported(tm
     assert await _checkin_cleared(db_path), "a call given up is still owed"
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_call_given_up_is_reported_once_across_restarts(tmp_path):
     """The round's check-in is over once given up, so the next start asks for nothing and has
     nothing to say."""
@@ -328,6 +346,7 @@ async def test_a_call_given_up_is_reported_once_across_restarts(tmp_path):
     assert _logged(bot).count(_COUNTS_NOTHING) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_call_whose_give_up_cannot_be_saved_does_not_stop_the_start(tmp_path):
     """The database refuses to close the round's check-in. The start goes on, having asked for
     the call; the queue stops at the give-up, the round's check-in still open, so that a Retry
@@ -349,6 +368,7 @@ async def test_a_call_whose_give_up_cannot_be_saved_does_not_stop_the_start(tmp_
     assert not await _checkin_cleared(db_path)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_call_given_up_clears_the_answers_left_for_its_round(tmp_path):
     """No call stands for the round and its deadline has passed, but answers are left for it, as
     a call taken down by an amendment that the bot restarted before posting again leaves them:
@@ -378,6 +398,7 @@ async def test_a_call_given_up_clears_the_answers_left_for_its_round(tmp_path):
     assert await _checkin_cleared(db_path)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_round_whose_results_are_in_is_not_given_up_and_keeps_its_attendance(tmp_path):
     """A round whose results are in and judged (FINAL), its check-in never marked over and no
     call record standing, its deadline long past: its driver's attendance was charged (points

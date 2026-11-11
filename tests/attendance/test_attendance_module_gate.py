@@ -23,6 +23,7 @@ beside each, so the gate cannot be over-applied and quietly switch check-in off 
 """
 from __future__ import annotations
 
+import pytest
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -31,6 +32,10 @@ from unittest.mock import AsyncMock, MagicMock
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services import rsvp_service
 from leaguebot.attendance.services.attendance_service import AttendanceService
+
+#: Why each test reaching a recovery the entry point held fails until it moves to its
+#: module's wiring (#283).
+_NOT_YET_IN_THE_WIRING = "#283: the recovery is not yet in its module's wiring"
 
 SERVER_ID = 7714
 SEASON_ID = 1
@@ -369,11 +374,12 @@ async def test_the_deadline_distributes_reserves_while_attendance_is_enabled(tmp
 # asyncio.get_running_loop() in View.__init__ where the pinned 2.7.1 defers it.
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_restart_re_arms_no_buttons_while_attendance_is_disabled(tmp_path):
     """Attendance is off and the round's deadline passed while the bot was down: the restart
     re-arms no button and asks nothing of the queue, and once the queue runs no reserve is
     placed."""
-    from leaguebot.__main__ import _recover_rsvp_views_and_deadlines
+    from leaguebot.attendance.wiring import recover_rsvp_views_and_deadlines
     from tests.support.change_queue import change_rows, run_queue
 
     # A deadline already in the past, so the catch-up would fire were it not gated.
@@ -382,7 +388,7 @@ async def test_a_restart_re_arms_no_buttons_while_attendance_is_disabled(tmp_pat
     await _seed_embed_message(db_path)
     bot = await _queue_bot(db_path, attendance_enabled=False)
 
-    await _recover_rsvp_views_and_deadlines(bot)
+    await recover_rsvp_views_and_deadlines(bot)
     assert await change_rows(db_path) == [], "a restart asked the queue for a disabled module"
     await run_queue(bot)
 
@@ -391,11 +397,12 @@ async def test_a_restart_re_arms_no_buttons_while_attendance_is_disabled(tmp_pat
     assert distributed == 0, "a restart ran a missed deadline for a disabled module"
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_restart_re_arms_the_buttons_while_attendance_is_enabled(tmp_path):
     """Attendance is on and the round's deadline passed while the bot was down: the restart
     re-arms the call's buttons and asks the queue for the deadline, placing no reserve itself;
     once the queue runs, the reserve who accepted is placed."""
-    from leaguebot.__main__ import _recover_rsvp_views_and_deadlines
+    from leaguebot.attendance.wiring import recover_rsvp_views_and_deadlines
     from tests.support.change_queue import run_queue
 
     db_path = await _make_db(tmp_path, attendance_enabled=True, scheduled_at=_an_hour_off())
@@ -403,7 +410,7 @@ async def test_a_restart_re_arms_the_buttons_while_attendance_is_enabled(tmp_pat
     await _seed_embed_message(db_path)
     bot = await _queue_bot(db_path, attendance_enabled=True)
 
-    await _recover_rsvp_views_and_deadlines(bot)
+    await recover_rsvp_views_and_deadlines(bot)
 
     bot.add_view.assert_called()
     _, _, distributed = await _counts(db_path)

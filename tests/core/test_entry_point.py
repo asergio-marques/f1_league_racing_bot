@@ -744,19 +744,24 @@ _START_UP_STEPS = [
 ]
 
 
-#: The steps whose recovery is a function of the entry point, each with that function, which the
-#: step hands the bot alone.
-_RECOVERIES_IN_THE_ENTRY_POINT = {
-    "portrait refresh job": "_recover_portrait_refresh_job",
-    "orphaned amend channels": "_recover_orphaned_amend_channels",
-    "orphaned submission channels": "_recover_orphaned_submission_channels",
-    "missed phases": "_recover_missed_phases",
-    "missed check-in calls": "_recover_missed_check_in_calls",
-    "RSVP views and deadlines": "_recover_rsvp_views_and_deadlines",
-    "missed clean-ups": "_recover_missed_cleanups",
+#: The steps whose recovery is a function of its module's wiring, or for the missed clean-ups the
+#: entry point's composing weather's part and attendance's, each with where that function lives and
+#: its name: the step hands it the bot alone.
+_RECOVERIES_OF_THE_STEPS = {
+    "portrait refresh job": ("leaguebot.image.wiring", "recover_portrait_refresh_job"),
+    "orphaned amend channels": ("leaguebot.results.wiring", "recover_orphaned_amend_channels"),
+    "orphaned submission channels": ("leaguebot.results.wiring",
+                                     "recover_orphaned_submission_channels"),
+    "missed phases": ("leaguebot.weather.wiring", "recover_missed_phases"),
+    "missed check-in calls": ("leaguebot.attendance.wiring", "recover_missed_check_in_calls"),
+    "RSVP views and deadlines": ("leaguebot.attendance.wiring",
+                                 "recover_rsvp_views_and_deadlines"),
+    "missed clean-ups": ("leaguebot.__main__", "_recover_missed_cleanups"),
 }
 
 
+@pytest.mark.xfail(strict=True,
+                   reason="#283: the recoveries are not yet in their modules' wiring")
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     """`build` on paths under `tmp_path` gives the start-up's steps by name, in today's order
     (architecture.md, "Start-up runs once, in one function"), so the order is read from the list
@@ -780,9 +785,12 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     reads the host's clock and takes no `now`, so the close is set a day after that clock); the
     expired review prompts, a review left standing, ask the bot's queue for its take-down ending
     `restart`; the hub hands its recovery the bot, its queue and its hub options; the wizards are
-    recovered by the bot's wizard service; and each other step hands its recovery in the entry
-    point the bot.
+    recovered by the bot's wizard service; and each other step hands its recovery the bot, the
+    recovery stubbed where it lives, in its module's wiring or the entry point, and under its name in
+    the entry point too, so the stub stands whichever way the entry point reaches it.
     """
+    import importlib
+
     import leaguebot.__main__ as bot_module
 
     from leaguebot.core.db.database import get_connection
@@ -803,8 +811,9 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
             ran.append((name, args, kwargs))
         return schedule
 
-    for function in _RECOVERIES_IN_THE_ENTRY_POINT.values():
-        monkeypatch.setattr(bot_module, function, recovery(function))
+    for home, function in _RECOVERIES_OF_THE_STEPS.values():
+        monkeypatch.setattr(importlib.import_module(home), function, recovery(function))
+        monkeypatch.setattr(bot_module, function, recovery(function), raising=False)
     monkeypatch.setattr(hub_service, "recover_hub", recovery("recover_hub"))
     monkeypatch.setattr(bot_module, "recover_hub", recovery("recover_hub"), raising=False)
     monkeypatch.setattr(season_review_changes, "take_review_down", recovery("take_review_down"))
@@ -836,7 +845,7 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
                                         "hub_options": bot.hub_options}),
         "wizards": ("recover_wizards", (bot.wizard_service,), {}),
     } | {
-        step: (function, (bot,), {}) for step, function in _RECOVERIES_IN_THE_ENTRY_POINT.items()
+        step: (function, (bot,), {}) for step, (_, function) in _RECOVERIES_OF_THE_STEPS.items()
     }
     assert sorted(expected) == sorted(_START_UP_STEPS)
     for step, run in bot.start_up_steps:

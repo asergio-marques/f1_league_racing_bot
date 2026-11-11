@@ -48,10 +48,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.__main__ import _recover_missed_phases
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import change_rows
 from tests.support.season_league import PRO, ongoing_league, round_id
+
+#: Why each test reaching a recovery the entry point held fails until it moves to its
+#: module's wiring (#283).
+_NOT_YET_IN_THE_WIRING = "#283: the recovery is not yet in its module's wiring"
 
 SERVER_ID = 12008
 SEASON_ID = 1
@@ -148,6 +151,8 @@ def _config(*, phase_1_days: int = 5, phase_2_days: int = 2, phase_3_hours: int 
 async def _recover(bot, *, config=None, reads: list | None = None):
     """Run the recovery, recording which phases it asked the queue for (as ``(phase, round)``)
     and which configs were read."""
+    from leaguebot.weather.wiring import recover_missed_phases
+
     fired: list[tuple[int, int]] = []
 
     async def _ask(_queue, _db_path, round_id, phase):
@@ -164,7 +169,7 @@ async def _recover(bot, *, config=None, reads: list | None = None):
         "leaguebot.weather.services.weather_config_service.get_weather_pipeline_config",
         new=AsyncMock(side_effect=_get_config),
     ):
-        await _recover_missed_phases(bot)
+        await recover_missed_phases(bot)
     return fired
 
 
@@ -173,6 +178,7 @@ async def _recover(bot, *, config=None, reads: list | None = None):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_round_past_every_horizon_fires_all_three(tmp_path):
     """A restart after a round's phase 3 horizon, and before its race, has to catch up on
     everything."""
@@ -183,6 +189,7 @@ async def test_a_round_past_every_horizon_fires_all_three(tmp_path):
     assert sorted(p for p, _ in fired) == [1, 2, 3]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_round_before_every_horizon_fires_nothing(tmp_path):
     """Its jobs are re-armed by the scheduler; firing now would publish a forecast days
     early."""
@@ -191,6 +198,7 @@ async def test_a_round_before_every_horizon_fires_nothing(tmp_path):
     assert await _recover(_bot(db_path)) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_only_the_horizons_that_have_passed_fire(tmp_path):
     """Four days out, with a five-day phase 1 and a two-day phase 2: the first is overdue
     and the second is not."""
@@ -201,6 +209,7 @@ async def test_only_the_horizons_that_have_passed_fire(tmp_path):
     assert [p for p, _ in fired] == [1]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 @pytest.mark.parametrize("done, expected", [
     pytest.param((True, False, False), [2, 3], id="phase 1 done"),
     pytest.param((False, True, False), [1, 3], id="phase 2 done"),
@@ -217,6 +226,7 @@ async def test_a_phase_already_done_is_not_fired_again(tmp_path, done, expected)
     assert sorted(p for p, _ in fired) == expected
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_every_overdue_round_is_recovered(tmp_path):
     """A restart after a weekend away can leave several behind."""
     db_path = await _make_db(
@@ -237,6 +247,7 @@ async def test_every_overdue_round_is_recovered(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_the_league_s_own_horizons_are_used_not_the_packaged_ones(tmp_path):
     """The regression. A league with a ten-day phase 1 has a round eight days out already
     past it; judged by the packaged five days it would not be, and the forecast would
@@ -248,6 +259,7 @@ async def test_the_league_s_own_horizons_are_used_not_the_packaged_ones(tmp_path
     assert [p for p, _ in fired] == [1]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_shorter_horizon_holds_a_phase_back(tmp_path):
     """The other direction of the same fault: judged by the packaged five days, a league
     running a two-day phase 1 would have its forecast published three days early."""
@@ -258,6 +270,7 @@ async def test_a_shorter_horizon_holds_a_phase_back(tmp_path):
     assert fired == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_the_configuration_is_read_once(tmp_path):
     """The league has one, and a league with seventy-two rounds would otherwise read it
     seventy-two times on every start. Held against the obvious "simplification" of moving
@@ -282,6 +295,7 @@ async def test_the_configuration_is_read_once(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_server_with_weather_off_is_never_asked_for_its_configuration(tmp_path):
     """The module gate runs first, so a server that does not use the config is not queried
     for it — the module-output rule applied to reads — and nothing is recovered."""
@@ -294,6 +308,7 @@ async def test_a_server_with_weather_off_is_never_asked_for_its_configuration(tm
     assert fired == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_mystery_round_is_asked_like_any_other(tmp_path):
     """A mystery round past every horizon has each of its overdue phases asked by number: the
     recovery names no format, and weather turns phase 1 into the round's notice and asks nothing
@@ -305,6 +320,7 @@ async def test_a_mystery_round_is_asked_like_any_other(tmp_path):
     assert sorted(fired) == [(1, 1), (2, 1), (3, 1)]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_round_already_raced_recovers_nothing(tmp_path):
     """Every horizon has passed and no phase was performed, but so has the race: a
     forecast now would tell the division nothing, and its record would read as though it
@@ -315,6 +331,7 @@ async def test_a_round_already_raced_recovers_nothing(tmp_path):
     assert await _recover(_bot(db_path)) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_only_the_raced_round_of_two_is_passed_over(tmp_path):
     """The skip is per round: a raced round does not end the sweep for the one still to
     be run."""
@@ -331,6 +348,7 @@ async def test_only_the_raced_round_of_two_is_passed_over(tmp_path):
     assert sorted(fired) == [(1, 2), (2, 2), (3, 2)]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 @pytest.mark.parametrize("status", [
     # A season in setup has not started, and a completed one is over — neither has a forecast
     # owing.
@@ -379,6 +397,7 @@ async def _forecasts_asked(league) -> list[tuple[int, int]]:
                             if row["kind"] == "weather.forecast")]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 @pytest.mark.parametrize(
     "hours_until_race, notice_posted, expected",
     [
@@ -397,9 +416,11 @@ async def test_a_missed_mystery_notice_is_asked_for_when_the_bot_starts(
     3; with the notice posted already, or the race run, none (folded defect 5; weather spec :158
     as amended). Thirty days out, its Phase 1 horizon not yet reached, none either: its notice is
     left to its own timer."""
+    from leaguebot.weather.wiring import recover_missed_phases
+
     league = await _mystery_league(tmp_path, hours_until_race=hours_until_race,
                                    notice_posted=notice_posted)
 
-    await _recover_missed_phases(league.bot)
+    await recover_missed_phases(league.bot)
 
     assert await _forecasts_asked(league) == expected

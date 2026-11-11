@@ -36,7 +36,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.__main__ import _recover_rsvp_views_and_deadlines
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     change_rows,
@@ -45,6 +44,10 @@ from tests.support.change_queue import (
     run_queue,
     text_channel,
 )
+
+#: Why each test reaching a recovery the entry point held fails until it moves to its
+#: module's wiring (#283).
+_NOT_YET_IN_THE_WIRING = "#283: the recovery is not yet in its module's wiring"
 
 SERVER_ID = 12908
 SEASON_ID = 1
@@ -183,7 +186,9 @@ async def _deadlines(db_path: str) -> int:
 async def _recover(bot) -> int:
     """Run the recovery, returning how many check-in deadlines it asked of the queue. The queue
     is not run."""
-    await _recover_rsvp_views_and_deadlines(bot)
+    from leaguebot.attendance.wiring import recover_rsvp_views_and_deadlines
+
+    await recover_rsvp_views_and_deadlines(bot)
     return await _deadlines(bot.db_path)
 
 
@@ -192,6 +197,7 @@ async def _recover(bot) -> int:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_standing_call_s_buttons_are_re_armed(tmp_path):
     """The view is persistent but the process that registered it has gone; without this
     every button on every standing call stops responding after a restart."""
@@ -204,6 +210,7 @@ async def test_a_standing_call_s_buttons_are_re_armed(tmp_path):
     assert bot.add_view.call_args.kwargs["message_id"] == MESSAGE_ID
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_switched_off_module_s_buttons_are_not_re_armed(tmp_path):
     """Issue #114. Re-arming would revive check-in for a league that turned it off — the
     module-output rule, reached by the restart path."""
@@ -215,6 +222,7 @@ async def test_a_switched_off_module_s_buttons_are_not_re_armed(tmp_path):
     bot.add_view.assert_not_called()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_failure_fetching_the_embeds_stops_the_recovery_quietly(tmp_path, caplog):
     """It runs during startup, so raising would take the bot down over a check-in call. The
     recovery stops there: no button is re-armed and no deadline asked of the queue."""
@@ -229,6 +237,7 @@ async def test_a_failure_fetching_the_embeds_stops_the_recovery_quietly(tmp_path
     assert "failed to fetch embed messages" in caplog.text
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_view_that_cannot_be_re_armed_does_not_stop_the_rest(tmp_path, caplog):
     """One malformed message id must not cost every other division its buttons."""
     db_path = await _make_db(tmp_path, hours_until_round=48)
@@ -246,6 +255,7 @@ async def test_a_view_that_cannot_be_re_armed_does_not_stop_the_rest(tmp_path, c
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_deadline_that_passed_while_the_bot_was_down_is_run(tmp_path):
     """The deadline is what moves reserve drivers into seats; missing it leaves a division
     a driver short on race day. The restart asks the queue for it, once, and runs nothing
@@ -256,6 +266,7 @@ async def test_a_deadline_that_passed_while_the_bot_was_down_is_run(tmp_path):
     assert await _recover(bot) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_deadline_still_ahead_is_not_run_early(tmp_path):
     """Its job is re-armed by the scheduler; asking it now would close check-in before
     the division had finished answering."""
@@ -265,6 +276,7 @@ async def test_a_deadline_still_ahead_is_not_run_early(tmp_path):
     assert await _recover(bot) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_deadline_exactly_now_is_run(tmp_path):
     """The comparison is `<=`, so a deadline reached at the moment of the restart counts
     as missed rather than as pending: it is asked of the queue."""
@@ -274,6 +286,7 @@ async def test_a_deadline_exactly_now_is_run(tmp_path):
     assert await _recover(bot) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_switched_off_module_s_deadline_is_not_caught_up(tmp_path):
     """Issue #114's other half: the catch-up would distribute reserves into seats hours
     after the fact, for a league that had switched check-in off."""
@@ -285,6 +298,7 @@ async def test_a_switched_off_module_s_deadline_is_not_caught_up(tmp_path):
     assert await _recover(bot) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 @pytest.mark.parametrize("placed", [
     pytest.param(True, id="reserves placed"),
     pytest.param(False, id="no reserves placed"),
@@ -306,6 +320,7 @@ async def test_a_deadline_marked_as_run_is_not_run_again(tmp_path, placed):
     assert await _recover(bot) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_call_whose_deadline_recorded_no_message_is_run_whatever_the_placements_say(
     tmp_path,
 ):
@@ -336,12 +351,15 @@ async def _check_in_bot(db_path: str) -> tuple:
     return bot, check_in
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_restart_after_a_deadline_that_placed_nobody_posts_no_second_notice(tmp_path):
     """Issue #429, end to end. Division 1's round is an hour off, its six-hour deadline passed
     while the bot was down, and no reserve is there to place. The first start asks the queue
     for the deadline and the queue runs it for real: nobody is placed, the no-reserves notice
     goes out in the check-in channel, and the call is marked as run. The second start must find
     it done and ask nothing."""
+    from leaguebot.attendance.wiring import recover_rsvp_views_and_deadlines
+
     db_path = await _make_db(tmp_path, hours_until_round=1)
     async with get_connection(db_path) as db:
         await db.execute(
@@ -352,15 +370,16 @@ async def test_a_restart_after_a_deadline_that_placed_nobody_posts_no_second_not
         await db.commit()
     bot, check_in = await _check_in_bot(db_path)
 
-    await _recover_rsvp_views_and_deadlines(bot)
+    await recover_rsvp_views_and_deadlines(bot)
     await run_queue(bot)
-    await _recover_rsvp_views_and_deadlines(bot)
+    await recover_rsvp_views_and_deadlines(bot)
     await run_queue(bot)
 
     assert await _deadlines(db_path) == 1, "the restart did not ask, or asked again"
     assert len(check_in.sent) == 1, "a restart posted the deadline's notice again"
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 @pytest.mark.parametrize("status", [
     # Nobody is racing it, so there is nothing to distribute into.
     pytest.param({"round_status": "CANCELLED"}, id="a cancelled round"),
@@ -376,6 +395,7 @@ async def test_a_round_not_to_be_run_has_no_deadline_to_catch_up(tmp_path, statu
     assert await _recover(bot) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_deadline_of_zero_hours_falls_at_the_round(tmp_path):
     """Zero is not "no deadline" — it means check-in closes when the round starts."""
     db_path = await _make_db(tmp_path, hours_until_round=1, deadline_hours=0)
@@ -384,10 +404,13 @@ async def test_a_deadline_of_zero_hours_falls_at_the_round(tmp_path):
     assert await _recover(bot) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_failing_deadline_run_does_not_stop_the_startup(tmp_path, caplog):
     """The recovery runs before the bot is ready; an exception here would leave the league
     with no bot at all rather than one missing a distribution. Asking the queue for the
     deadline raises: the restart logs an error naming the round, and goes on."""
+    from leaguebot.attendance.wiring import recover_rsvp_views_and_deadlines
+
     db_path = await _make_db(tmp_path, hours_until_round=-1)
     bot = await _bot(db_path)
 
@@ -395,7 +418,7 @@ async def test_a_failing_deadline_run_does_not_stop_the_startup(tmp_path, caplog
         "leaguebot.attendance.services.check_in_changes.ask_check_in_deadline",
         new=AsyncMock(side_effect=RuntimeError("database is locked")),
     ):
-        await _recover_rsvp_views_and_deadlines(bot)
+        await recover_rsvp_views_and_deadlines(bot)
 
     assert any(
         record.levelname == "ERROR" and str(ROUND_ID) in record.getMessage()
@@ -403,6 +426,7 @@ async def test_a_failing_deadline_run_does_not_stop_the_startup(tmp_path, caplog
     )
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_round_whose_timestamp_will_not_parse_is_skipped(tmp_path):
     """One malformed row must not cost every other division its catch-up."""
     db_path = await _make_db(tmp_path, hours_until_round=-1)
@@ -416,6 +440,7 @@ async def test_a_round_whose_timestamp_will_not_parse_is_skipped(tmp_path):
     assert await _recover(bot) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_server_with_no_standing_calls_recovers_nothing(tmp_path):
     """The ordinary case on most restarts."""
     db_path = await _make_db(tmp_path, with_embed=False)
@@ -432,6 +457,8 @@ async def test_a_server_with_no_standing_calls_recovers_nothing(tmp_path):
 
 async def _asked(bot) -> list[int]:
     """Run the recovery, returning the rounds whose deadline it asked of the queue."""
+    from leaguebot.attendance.wiring import recover_rsvp_views_and_deadlines
+
     asked: list[int] = []
 
     async def _ask(_queue, _db_path, round_id, **_kwargs):
@@ -439,10 +466,11 @@ async def _asked(bot) -> list[int]:
 
     with patch("leaguebot.attendance.services.check_in_changes.ask_check_in_deadline",
                new=AsyncMock(side_effect=_ask)):
-        await _recover_rsvp_views_and_deadlines(bot)
+        await recover_rsvp_views_and_deadlines(bot)
     return asked
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 @pytest.mark.parametrize(("marked", "asked"), [(True, []), (False, [ROUND_ID])],
                          ids=["marked-run", "not-marked"])
 async def test_a_restart_reads_the_deadline_s_own_mark(tmp_path, marked, asked):
