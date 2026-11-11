@@ -1988,6 +1988,10 @@ SAVES_ALLOWED = {
     ("core/db/database.py", "run_migrations"): "the migrations, which build the schema",
     ("core/db/database.py", "_enable_wal"): "the journal mode, set on the database file itself",
     ("core/services/change_queue.py", "*"): "the queue's own records of the changes it carries out",
+    ("core/services/queue_records.py", "empty_queue_in"):
+        "the queue's own records, emptied in a restored database before it is put in place",
+    ("core/services/queue_records.py", "carry_job_numbering"):
+        "the queue's own records, numbering a database put in place after the jobs already named",
     ("core/services/retry_service.py", "enqueue"): "the retry queue for log lines",
     ("core/services/retry_service.py", "mark_delivered"): "the retry queue for log lines",
     ("core/services/retry_service.py", "mark_failed"): "the retry queue for log lines",
