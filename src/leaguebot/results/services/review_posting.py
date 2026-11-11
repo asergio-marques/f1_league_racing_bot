@@ -82,13 +82,13 @@ from leaguebot.results.services import standings_service
 from leaguebot.results.services.results_post_service import (
     _delete_posting,
     _label_from_status,
-    _load_driver_rows,
     _parse_ids,
     _sr_from_row,
     _STANDINGS_ID_COLUMNS,
     _STANDINGS_IDS_COLUMNS,
     delete_round_channel,
     driver_standings_for_display,
+    load_driver_rows,
     produce_cancelled_session_line,
     produce_session_results,
     produce_standings,
@@ -693,7 +693,7 @@ async def _post_session_results(ctx: StepContext) -> StepResult:
             result={"new": line.new, "old": line.old, "drawn": False, "channel_id": channel_id},
             then=_deletes(channel_id, line.old, what),
         )
-    driver_rows = await _load_driver_rows(ctx.db_path, row["id"], session_type)
+    driver_rows = await load_driver_rows(ctx.db_path, row["id"], session_type)
     points_map = {
         r.driver_user_id: r.points_awarded + getattr(r, "fastest_lap_bonus", 0)
         for r in driver_rows

@@ -1213,12 +1213,16 @@ async def _get_reserve_user_ids(db_path: str, division_id: int) -> set[int]:
 # Driver-row loading helpers
 # ---------------------------------------------------------------------------
 
-async def _load_driver_rows(
+async def load_driver_rows(
     db_path: str,
     session_result_id: int,
     session_type: SessionType,
 ) -> list:
     """Load driver rows for a session from new tables.
+
+    **The one reader of a posted session's rows**, public because the image module draws from
+    it and the review posting reads it: every module that draws or posts a session's results
+    reads them here, so that all name a driver the same way.
 
     Returns list[QualifyingSessionResult] for qualifying, list[RaceSessionResult]
     for race.
@@ -1321,7 +1325,7 @@ _REPOST_PERMISSIONS: tuple[tuple[str, str], ...] = (
 _ATTACHMENT_PERMISSION: tuple[str, str] = ("attach_files", "Attach Files")
 
 
-def _bot_member(guild: "discord.Guild", bot: LeagueBot | None):
+def bot_member(guild: "discord.Guild", bot: LeagueBot | None):
     """The bot's own member object in *guild*, or ``None`` where it cannot be resolved.
 
     **``guild.me`` is deliberately not used here** (#187). It is a property reading
@@ -1332,7 +1336,9 @@ def _bot_member(guild: "discord.Guild", bot: LeagueBot | None):
     arithmetic (``src/leaguebot/signup/cogs/signup_cog.py:870``), and it is the form this check follows.
 
     Resolving it is not optional: without a member there is no permission arithmetic to do,
-    and both callers treat ``None`` as a fault rather than as leave to assume.
+    and every caller (results' own gates and attendance's channel gate) treats ``None`` as a
+    fault rather than as leave to assume. It promises ``None``, never an exception, for a
+    client with no user yet.
     """
     bot_user = getattr(bot, "user", None) if bot is not None else None
     if bot_user is None:
@@ -1340,7 +1346,7 @@ def _bot_member(guild: "discord.Guild", bot: LeagueBot | None):
     return guild.get_member(bot_user.id)
 
 
-def _channel_fault(
+def channel_fault(
     guild: discord.Guild,
     bot_member,
     division_name: str,
@@ -1354,6 +1360,11 @@ def _channel_fault(
     Reads the gateway cache rather than calling Discord, which is what makes it usable as a
     gate: it is the same reading ``/results channel verdicts`` already takes before it
     accepts a channel.
+
+    Public because attendance gates its own channels (attendance and verdicts) by it, so that
+    a channel refused for a missing permission is refused in the same words by every module.
+    It takes the bot's member from :func:`bot_member`, and promises a line for a league to read
+    or ``None``, never an exception.
     """
     channel = guild.get_channel(channel_id)
     if channel is None:
@@ -1444,14 +1455,14 @@ def _repost_gate(guild: "discord.Guild | None", bot: LeagueBot | None):
             "Check that it is still a member and try again."
         ]
 
-    bot_member = _bot_member(guild, bot)
-    if bot_member is None:
+    member = bot_member(guild, bot)
+    if member is None:
         return None, [
             "The bot cannot read its own permissions in this server, so it cannot tell "
             "whether the reposting would succeed. Try again in a moment."
         ]
 
-    return bot_member, []
+    return member, []
 
 
 async def _channel_faults_for_rows(
@@ -1476,7 +1487,7 @@ async def _channel_faults_for_rows(
         ):
             if not channel_id:
                 continue
-            fault = _channel_fault(
+            fault = channel_fault(
                 guild,
                 bot_member,
                 division_name,

@@ -2576,14 +2576,14 @@ async def recalculation_faults(
     part of its question, and the results specification's "every division's" holds.
     """
     from leaguebot.image.services.image_validity_service import aspect_attaches_files
-    from leaguebot.results.services.results_post_service import _bot_member, _channel_fault
+    from leaguebot.results.services import results_post_service
 
     if guild is None:
         # The results half already reports an absent guild; saying it twice would have a
         # manager repairing one thing from two lines.
         return []
 
-    bot_member = _bot_member(guild, bot)
+    bot_member = results_post_service.bot_member(guild, bot)
     if bot_member is None:
         # The results half already refuses on an unresolvable bot member; saying it twice
         # would have a manager repairing one thing from two lines.
@@ -2623,7 +2623,7 @@ async def recalculation_faults(
     for row in division_rows:
         division_name = row["name"] or f"division {row['id']}"
         if row["attendance_channel_id"]:
-            fault = _channel_fault(
+            fault = results_post_service.channel_fault(
                 guild, bot_member, division_name, "attendance",
                 int(row["attendance_channel_id"]),
                 needs_attachment=attendance_graphics,
@@ -2631,7 +2631,7 @@ async def recalculation_faults(
             if fault is not None:
                 faults.append(fault)
         if sanctions_possible and row["penalty_channel_id"]:
-            fault = _channel_fault(
+            fault = results_post_service.channel_fault(
                 guild, bot_member, division_name, "verdicts",
                 int(row["penalty_channel_id"]),
                 needs_attachment=False,

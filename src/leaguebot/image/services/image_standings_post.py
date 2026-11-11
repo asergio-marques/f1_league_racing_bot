@@ -229,7 +229,7 @@ async def _round_session_results(bot: LeagueBot, ordinal_of_round: dict[int, int
     grid tells "not yet run, or cancelled" from "run, and this driver took no part".
     """
     from leaguebot.results.models.session_result import SessionType
-    from leaguebot.results.services.results_post_service import _load_driver_rows
+    from leaguebot.results.services.results_post_service import load_driver_rows
 
     if not ordinal_of_round:
         return {}
@@ -256,7 +256,7 @@ async def _round_session_results(bot: LeagueBot, ordinal_of_round: dict[int, int
                 row["session_type"],
             )
             continue
-        driver_rows = await _load_driver_rows(bot.db_path, row["id"], session_type)
+        driver_rows = await load_driver_rows(bot.db_path, row["id"], session_type)
         results.setdefault(ordinal, {})[session_type.value] = driver_rows
 
     return results
