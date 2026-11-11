@@ -204,11 +204,16 @@ again, `close_connections`, `run_migrations`, and the helpers `sole_row` and `in
 
 ### The entry point
 
-`__main__.py` builds the bot. `build` makes the services, signs the modules up to every hook
-(the `_sign_up_to_*` functions, `register_module_switches`, `register_hub_options`), registers
-every change type (`register_change_types`) and every kind of timed job
-(`register_scheduler_callbacks`), loads the cogs, registers the persistent views and sets the
-start-up steps (`_start_up_steps`), all before the bot connects.
+`__main__.py` builds the bot. `build` makes the services and the hooks, signs the modules up to
+every hook several of them join (the `_sign_up_to_*` functions, each naming the modules' functions
+in the order the hook calls its subscribers), and calls each module's wiring (`<module>/wiring.py`,
+`architecture.md`, "How the code is laid out") for the rest of that module's part: its own hooks
+(`sign_up`), its switch (`register_switch`, through `register_module_switches`), its change types
+(`register_change_types`) and its kinds of timed job (`register_scheduler_callbacks`). It signs up
+core's own About option (`register_hub_options`), loads the cogs, registers the persistent views and
+sets the start-up steps (`_start_up_steps`), all before the bot connects. What the builder keeps is
+what joins modules: every service, every hook and the order of its subscribers, a hand-in from one
+module to another, the cogs and views, and the order of the steps. Core has no wiring of its own.
 `test_build_returns_every_service_complete` and
 `test_every_kind_is_registered_before_the_scheduler_starts` pin that. `LeagueBot`
 (`core/utils/league_bot.py`) declares every attribute the builder attaches, each hook among them,
@@ -409,7 +414,10 @@ Each is pinned by a test in `tests/core/test_start_up.py`; `ChangeQueue.start`'s
 what the queue's start does.
 
 The steps are a fixed tuple the builder makes (`_start_up_steps`), in an order its comments give
-where the order matters (`test_the_builder_orders_the_start_up_steps`):
+where the order matters (`test_the_builder_orders_the_start_up_steps`). Each module's recovery is
+a function of its wiring, which the builder names in the step; core's own, the amendment sweep, the
+review prompts, the hub and the wizards, are the builder's, and the missed clean-ups are one step
+the builder composes of weather's part and attendance's:
 
 | # | Step | What it does |
 |---|---|---|
@@ -582,7 +590,9 @@ the image module's class of the same name implements it; the builder makes it an
 - **Capacity questions**, each answering what the template cannot hold, or nothing: the four
   placement guards (`PlacementService`), a round's (`round_add_changes`), and the season review's.
 - **Gates and pictures**: `calendar_wanted`, `draw_calendar`, `lineup_wanted`, `draw_lineup`,
-  `draw_lineup_for_command`, `discard_picture`. What a gate that cannot be read answers is
+  `draw_lineup_for_command`, `draw_review_lineup`, `discard_picture`. The review's lineup is drawn
+  through `draw_review_lineup`, as the builder's drawing of a review's picture asks it, and not
+  through a render core reaches into the module for. What a gate that cannot be read answers is
   `architecture.md`'s ("Errors and failures").
 - **The review's image section and its faults**: `rasteriser_fault`, `review_section`,
   `template_faults`, `colour_shortfall_problems`, `portrait_fault`. The image module words each;
