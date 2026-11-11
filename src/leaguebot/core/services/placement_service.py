@@ -3,11 +3,12 @@ judges of each.
 
 It is handed what it does not own, by the builder: the template capacity service that tells whether
 the image templates could draw a seat (`TemplateCapacityService`) and the team-role service that
-reads each team's role (`TeamRoleService`). A change that moves a seat names the divisions whose
-lineup is owed and the roles to give or take; it posts no lineup (`LineupPoster`), and the change
-queue's jobs give and take the roles. A placement made or sacked outside the queue (`move_driver`,
-`sack_driver`, `revoke_all_placement_roles`) gives and takes them itself, through the team-role
-service's logging helpers.
+reads a team's role (`TeamRoleService`); its own queries join `team_role_configs` for the roles a
+driver's placements carry, and read the driver role from the settings row. A change that moves a
+seat names the divisions whose lineup is owed and the roles to give or take; it posts no lineup
+(`LineupPoster`), and the change queue's jobs give and take the roles. A placement made or sacked
+outside the queue (`move_driver`, `sack_driver`, `revoke_all_placement_roles`) gives and takes them
+itself, through the team-role service's logging helpers.
 """
 from __future__ import annotations
 
