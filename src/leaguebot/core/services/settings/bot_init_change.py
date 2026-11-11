@@ -74,7 +74,7 @@ from leaguebot.core.utils.interaction_errors import failure_reply
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.config_service import ConfigService
+    from leaguebot.core.services.settings.config_service import ConfigService
 
 log = logging.getLogger(__name__)
 

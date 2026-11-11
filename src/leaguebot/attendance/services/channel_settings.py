@@ -37,13 +37,13 @@ from leaguebot.attendance.services.division_channels import (
 )
 from leaguebot.core.models.change import AuditRecord, Verdict
 from leaguebot.core.services.queue.change_types import CheckContext
-from leaguebot.core.services.channel_registry_service import (
+from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
     as_text_channel,
     find_channel_use,
     refusal,
 )
-from leaguebot.core.services.division_settings import NO_SEASON_REFUSAL
+from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL
 from leaguebot.core.services.queue.setting_change import Saved, Setting
 
 if TYPE_CHECKING:

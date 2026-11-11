@@ -515,7 +515,7 @@ def register_change_types(bot: LeagueBot) -> None:
         round_cancel_change,
         season_cancel_change,
     )
-    from leaguebot.core.services.bot_init_change import bot_init_change
+    from leaguebot.core.services.settings.bot_init_change import bot_init_change
     from leaguebot.core.services.rounds.division_add_change import division_add_change
     from leaguebot.core.services.rounds.division_delete_change import division_delete_change
     from leaguebot.core.services.rounds.division_duplicate_change import division_duplicate_change
@@ -542,7 +542,7 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.core.services.rounds.round_delete_change import round_delete_change
     from leaguebot.core.services.seasons.season_setup_change import season_setup_change
     from leaguebot.core.services.rounds.setup_round_amend_change import setup_round_amend_change
-    from leaguebot.core.services.bot_settings import (
+    from leaguebot.core.services.settings.bot_settings import (
         admin_role_setting,
         base_role_setting,
         driver_role_setting,
@@ -552,7 +552,7 @@ def register_change_types(bot: LeagueBot) -> None:
         log_channel_setting,
     )
     from leaguebot.core.services.posting.channel_tell_change import channel_tell_change
-    from leaguebot.core.services.division_settings import division_channel_settings
+    from leaguebot.core.services.settings.division_settings import division_channel_settings
     from leaguebot.core.services.test_mode_settings import test_mode_nationality_setting
     from leaguebot.core.services.test_mode_former_driver_change import (
         test_mode_former_driver_change,
@@ -969,7 +969,7 @@ async def build(settings: Settings) -> LeagueBot:
     while start-up is still recovering finds all of it in place. Reads no environment: the
     settings are handed in (:func:`read_settings`).
     """
-    from leaguebot.core.services.config_service import ConfigService
+    from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.core.services.posting.output_router import OutputRouter

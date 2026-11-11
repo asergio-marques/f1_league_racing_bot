@@ -41,7 +41,7 @@ from leaguebot.results.services.channel_settings import (
     verdicts_division_not_found,
 )
 from leaguebot.results.services.results_post_service import reserves_in_standings
-from leaguebot.core.services.division_settings import NO_SEASON_REFUSAL, division_not_found
+from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL, division_not_found
 from leaguebot.core.utils.channel_guard import (
     league_admin_only,
     league_manager_only,

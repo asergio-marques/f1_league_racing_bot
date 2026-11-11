@@ -12,7 +12,7 @@ import discord
 
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
@@ -28,7 +28,7 @@ from leaguebot.results.models.session_result import (
 )
 from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
 from leaguebot.results.services import standings_service
-from leaguebot.core.services.channel_registry_service import (
+from leaguebot.core.services.settings.channel_registry_service import (
     SETTING_LABELS,
     missing_channel_fault,
     unpostable_channel_fault,

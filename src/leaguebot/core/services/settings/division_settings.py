@@ -35,7 +35,7 @@ import aiosqlite
 from leaguebot.core.db.database import sole_row
 from leaguebot.core.models.change import AuditRecord, Verdict
 from leaguebot.core.services.queue.change_types import CheckContext
-from leaguebot.core.services.channel_registry_service import (
+from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
     find_channel_use,
     refusal,

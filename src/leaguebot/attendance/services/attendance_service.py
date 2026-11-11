@@ -15,7 +15,7 @@ import discord
 
 from leaguebot.core.services.queue import audit_service
 from leaguebot.core.services.seasons.approval_checks import channel_fault
-from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
 from leaguebot.attendance.models.attendance import (
     AttendanceConfig,

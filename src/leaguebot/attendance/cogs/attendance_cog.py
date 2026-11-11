@@ -32,7 +32,7 @@ from leaguebot.attendance.services.attendance_service import (
     sync_attendance,
     validate_timing_invariant,
 )
-from leaguebot.core.services.division_settings import NO_SEASON_REFUSAL
+from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only, changes_nothing
 from leaguebot.core.utils.input_validator import parse_user_id
 from leaguebot.core.utils.interaction_errors import describe, describe_form

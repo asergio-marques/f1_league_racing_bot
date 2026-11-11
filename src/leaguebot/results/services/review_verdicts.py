@@ -82,7 +82,7 @@ from leaguebot.core.models.change import (
 from leaguebot.core.services.drivers import lineup_posting
 from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.queue.change_types import OutcomeContext, Step, StepContext
-from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.image.services import image_verdict_banner_post
 from leaguebot.results.services import verdict_announcement_service as vas
 from leaguebot.results.services.attendance_hook import AttendanceAfterReview

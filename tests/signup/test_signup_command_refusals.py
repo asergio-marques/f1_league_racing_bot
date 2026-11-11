@@ -142,7 +142,7 @@ async def test_the_configuration_view_still_answers_while_the_module_is_off(tmp_
     """Signups disabled, a manager runs `/signup config view`: it is left outside the module
     gate, as it always was, so the manager sees the configuration rather than a refusal, and
     a view writes no line."""
-    from leaguebot.core.services.config_service import ConfigService
+    from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     db_path = await _seed(tmp_path, signups_open=False, close_at=None, stage="CONFIGURATION")

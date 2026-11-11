@@ -49,7 +49,7 @@ import discord
 
 from leaguebot.core.db.database import sole_row
 from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord
-from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
 

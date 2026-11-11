@@ -227,7 +227,7 @@ def test_every_channel_setting_overtakes_a_stopped_job():
     back in, and no other change. A channel added to the registry fails here until its setting is
     named and overtakes."""
     from leaguebot.__main__ import register_change_types
-    from leaguebot.core.services.channel_registry_service import SETTING_LABELS
+    from leaguebot.core.services.settings.channel_registry_service import SETTING_LABELS
 
     bot = MagicMock()
     register_change_types(bot)

@@ -25,7 +25,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.modules import hub_service
-from leaguebot.core.services.config_service import ConfigService
+from leaguebot.core.services.settings.config_service import ConfigService
 from leaguebot.core.services.modules.hub_service import (
     CUSTOM_ID_PREFIX,
     HubOption,

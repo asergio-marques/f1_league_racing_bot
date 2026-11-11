@@ -26,7 +26,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.seasons.approval_checks import channel_fault
-from leaguebot.core.services.channel_registry_service import (
+from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
     DiscordTargets,
     channel_ids_in,

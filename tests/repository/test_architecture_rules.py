@@ -771,12 +771,12 @@ def test_the_private_names_check_leaves_a_module_s_own_private_name_alone():
 LOG_CHANNEL_NAMED_BY = {
     "core/services/posting/output_router.py": "the one writer of the log channel",
     "core/models/server_config.py": "the setting itself",
-    "core/services/config_service.py": "reads and stores the setting",
+    "core/services/settings/config_service.py": "reads and stores the setting",
     "core/cogs/bot_cog.py": "the commands that set it",
-    "core/services/channel_registry_service.py": "lists it among the channels in use",
+    "core/services/settings/channel_registry_service.py": "lists it among the channels in use",
     "core/services/pack_service.py": "clears it when the bot is packed",
-    "core/services/bot_settings.py": "the setting that sets it",
-    "core/services/bot_init_change.py": "the change that first claims it",
+    "core/services/settings/bot_settings.py": "the setting that sets it",
+    "core/services/settings/bot_init_change.py": "the change that first claims it",
 }
 
 def _files_naming_the_log_channel() -> set[str]:
@@ -1788,7 +1788,7 @@ def _tables_written(sql: str, module: str) -> list[str]:
 #: read by hand and found to set none of a module's: how many such statements, and where their
 #: columns come from. The count is held exactly, so a statement added later is read by hand too.
 COLUMNS_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/services/config_service.py", "ConfigService.set_core_setting_on"):
+    ("core/services/settings/config_service.py", "ConfigService.set_core_setting_on"):
         (1, "sets only a column named in `_SETTABLE_COLUMNS`, none of them a module's"),
 }
 
@@ -2291,7 +2291,7 @@ def _spliced_reads(node: ast.JoinedStr) -> int:
 #: listed function iterates, which `SPLICED_SOURCES` pins
 #: (`test_every_table_a_listed_spliced_read_iterates_is_its_own_module_s`).
 SPLICED_READS_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
-    ("core/services/channel_registry_service.py", "find_channel_use"):
+    ("core/services/settings/channel_registry_service.py", "find_channel_use"):
         (2, "core's own settings tables, `SERVER_SOURCES` and `DIVISION_SOURCES`"),
     ("core/services/factory_reset_service.py", "gather_targets"): (
         1,
@@ -2742,8 +2742,8 @@ def test_every_spliced_read_read_by_hand_is_still_what_it_was():
 #: The tuples of table names a function in `SPLICED_READS_READ_BY_HAND` feeds its spliced
 #: statements, by (file, name): every table each names must be the file's own module's.
 SPLICED_SOURCES: tuple[tuple[str, str], ...] = (
-    ("core/services/channel_registry_service.py", "SERVER_SOURCES"),
-    ("core/services/channel_registry_service.py", "DIVISION_SOURCES"),
+    ("core/services/settings/channel_registry_service.py", "SERVER_SOURCES"),
+    ("core/services/settings/channel_registry_service.py", "DIVISION_SOURCES"),
     ("core/services/factory_reset_service.py", "_OTHER_SOURCES"),
     ("results/services/verdict_records.py", "VERDICT_TABLES"),
 )

@@ -76,7 +76,7 @@ class ConfigService:
     async def claim_on(self, db: aiosqlite.Connection, cfg: ServerConfig) -> bool:
         """Claim the league's server for *cfg* on *db*, committing nothing. Returns whether it did.
 
-        `/bot init`'s save (`core/services/bot_init_change.py`) calls this on the connection its
+        `/bot init`'s save (`core/services/settings/bot_init_change.py`) calls this on the connection its
         change writes the four settings and the audit entry with, so the claim, the settings and
         the audit entry are one save: a fault in any of them leaves the claim untaken.
 

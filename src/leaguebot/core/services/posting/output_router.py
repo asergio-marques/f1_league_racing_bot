@@ -7,7 +7,7 @@ message with buttons that does is the change queue's stop notice, sent to the lo
 (`post_notice`). The turn-away of a message typed
 while an earlier turn waits is also sent from here (`turn_away`), at once and off the queue.
 Which channels exist, and what each may carry, is Constitution Principle VII and
-`core/services/channel_registry_service.py`.
+`core/services/settings/channel_registry_service.py`.
 
 The router is one of four output handlers (`docs/design/architecture.md`, "Posting to Discord"):
 the log writer. The others are the notice handler (`notice_handler.py`), the standing-post
@@ -47,7 +47,7 @@ _MENTION_RE = re.compile(rf"((?:{USER_MENTION})|(?:{ROLE_MENTION}))")
 
 if TYPE_CHECKING:
     from leaguebot.core.models.server_config import ServerConfig
-    from leaguebot.core.services.config_service import ConfigService
+    from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)

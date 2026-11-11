@@ -467,7 +467,7 @@ class SignupCog(commands.Cog):
         # A channel does one job (decided 2026-09-06). This stood as a guard against the
         # bot interaction channel alone; every configurable channel of the server is
         # checked now, the interaction channel among them.
-        from leaguebot.core.services.channel_registry_service import (
+        from leaguebot.core.services.settings.channel_registry_service import (
             ChannelUse,
             find_channel_use,
             refusal,

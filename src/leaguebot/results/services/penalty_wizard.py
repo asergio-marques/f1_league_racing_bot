@@ -21,7 +21,7 @@ from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.services.drivers.driver_service import accounts_of_in_division, current_account_map_for_division
 from leaguebot.results.services.penalty_service import StagedPenalty, validate_penalty_input
 from leaguebot.core.utils.channel_guard import is_league_manager

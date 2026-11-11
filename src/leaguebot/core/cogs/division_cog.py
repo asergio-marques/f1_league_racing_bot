@@ -19,7 +19,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.services.cancellations.cancellation_changes import DIVISION_CANCEL
-from leaguebot.core.services.division_settings import NO_SEASON_REFUSAL, division_not_found
+from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL, division_not_found
 from leaguebot.core.services.rounds.division_add_change import KIND as DIVISION_ADD
 from leaguebot.core.services.rounds.division_duplicate_change import KIND as DIVISION_DUPLICATE
 from leaguebot.core.services.rounds.division_delete_change import DIVISION_DELETE

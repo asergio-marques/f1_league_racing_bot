@@ -49,7 +49,7 @@ import pytest
 
 from leaguebot.core.cogs.bot_cog import BotCog
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.config_service import ConfigService
+from leaguebot.core.services.settings.config_service import ConfigService
 from tests.support.channel_uses import sign_up_channel_uses_read, sign_up_setting_channels_read
 from tests.support.undecorate import undecorate
 
@@ -551,7 +551,7 @@ async def test_a_second_bot_init_queued_behind_the_first_is_refused_as_it_starts
     import dataclasses
 
     from leaguebot.core.models.change import Verdict
-    from leaguebot.core.services.bot_init_change import KIND
+    from leaguebot.core.services.settings.bot_init_change import KIND
     from tests.support.change_queue import run_queue, stopped_job
 
     db_path = await _make_db(tmp_path)
@@ -598,7 +598,7 @@ async def test_bot_init_ends_on_a_fault_without_stopping_the_queue(
     import sqlite3
 
     from leaguebot.core.services.queue import change_queue
-    from leaguebot.core.services.config_service import RELEASE_CLAIM_SQL
+    from leaguebot.core.services.settings.config_service import RELEASE_CLAIM_SQL
     from tests.support.change_queue import queued_log_lines, run_queue, stopped_job
 
     caplog.set_level(logging.INFO, logger="leaguebot")
@@ -1124,7 +1124,7 @@ async def test_a_setting_command_refuses_an_unconfigured_server(
     claim and the four settings cleared; an administrator runs the command. It is refused at the
     ask in today's words, pointing them at `/bot init`, and once the queue has run nothing is
     saved or audited, and no log channel is written or kept a line for."""
-    from leaguebot.core.services.config_service import RELEASE_CLAIM_SQL
+    from leaguebot.core.services.settings.config_service import RELEASE_CLAIM_SQL
     from tests.support.change_queue import queued_log_lines, run_queue
 
     db_path = await _make_db(tmp_path)

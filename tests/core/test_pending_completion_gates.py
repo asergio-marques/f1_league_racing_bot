@@ -486,7 +486,7 @@ async def test_a_division_channel_is_still_repaired_in_pending_completion(tmp_pa
     bot.get_channel = MagicMock(side_effect=lambda cid: channel if cid == 808 else found(cid))
 
     with patch(
-        "leaguebot.core.services.channel_registry_service.find_channel_use", new=AsyncMock(return_value=None)
+        "leaguebot.core.services.settings.channel_registry_service.find_channel_use", new=AsyncMock(return_value=None)
     ):
         await undecorate(getattr(cog_class, command))(cog, interaction, "Pro", channel)
         await run_queue(bot)

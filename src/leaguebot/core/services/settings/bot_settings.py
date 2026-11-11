@@ -77,7 +77,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.services.queue.change_types import CheckContext, Step, StepContext
-from leaguebot.core.services.channel_registry_service import (
+from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
     find_channel_use,
     refusal,
@@ -86,7 +86,7 @@ from leaguebot.core.services.modules.hub_service import HUB_REFRESH, apply_hub_p
 from leaguebot.core.services.queue.setting_change import After, RENAMED_OUTCOME, Saved, Setting
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.config_service import ConfigService
+    from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
 _UNCONFIGURED = "⛔ This server is not configured yet — run `/bot init` first."

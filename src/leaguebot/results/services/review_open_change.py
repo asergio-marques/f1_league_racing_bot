@@ -113,7 +113,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.services.seasons import season_service
 from leaguebot.core.services.seasons.season_service import set_round_status_on
 from leaguebot.core.services.queue import typed_turns

@@ -48,7 +48,7 @@ from leaguebot.core.services.queue.setting_change import Saved, Setting
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.config_service import ConfigService
+    from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.modules.module_service import ModuleService
 
 _ENABLE_COMMAND = "/module enable signup"

@@ -9,7 +9,7 @@ import aiosqlite
 import discord
 
 from leaguebot.attendance.models.attendance import RsvpEmbedMessage
-from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.round import RoundFormat, read_scheduled_at
 from leaguebot.core.utils.league_bot import LeagueBot

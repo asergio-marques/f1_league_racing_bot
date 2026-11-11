@@ -31,12 +31,12 @@ from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.models.change import AuditRecord, Verdict
 from leaguebot.core.services.queue.change_types import CheckContext
-from leaguebot.core.services.channel_registry_service import (
+from leaguebot.core.services.settings.channel_registry_service import (
     ChannelUse,
     find_channel_use,
     refusal,
 )
-from leaguebot.core.services.division_settings import NO_SEASON_REFUSAL, division_not_found
+from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL, division_not_found
 from leaguebot.core.services.queue.setting_change import Saved, Setting
 from leaguebot.weather.services.forecast_channel import set_division_forecast_channel
 from leaguebot.weather.services.weather_config_service import (

@@ -221,7 +221,7 @@ from leaguebot.core.utils.member_names import interaction_member, member_named
 from leaguebot.core.utils.messages import chunk_message
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.config_service import ConfigService
+    from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.posting.output_router import OutputRouter
     from leaguebot.core.utils.league_bot import LeagueBot
 

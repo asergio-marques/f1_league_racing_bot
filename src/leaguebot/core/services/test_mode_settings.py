@@ -37,7 +37,7 @@ from leaguebot.core.services.queue.change_types import CheckContext
 from leaguebot.core.services.queue.setting_change import Saved, Setting
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.config_service import ConfigService
+    from leaguebot.core.services.settings.config_service import ConfigService
 
 #: What the command tells a member outside test mode, and a server with no configuration.
 NOT_IN_TEST_MODE = "⛔ This command is only available when test mode is enabled."

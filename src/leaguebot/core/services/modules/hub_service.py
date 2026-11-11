@@ -73,7 +73,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.config_service import ConfigService
+from leaguebot.core.services.settings.config_service import ConfigService
 from leaguebot.core.services.queue.setting_change import After
 from leaguebot.core.services.posting.standing_post_handler import edit_standing, post_standing
 from leaguebot.core.services.posting.standing_posts import delete_replaced_step, remove_kept

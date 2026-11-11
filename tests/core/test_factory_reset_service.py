@@ -343,7 +343,7 @@ async def test_the_wipe_leaves_exactly_a_fresh_install(db_path, tmp_path):
 async def test_the_wipe_frees_the_claim(db_path):
     from unittest.mock import MagicMock
 
-    from leaguebot.core.services.config_service import ConfigService
+    from leaguebot.core.services.settings.config_service import ConfigService
 
     await factory_reset_service.wipe(db_path, MagicMock())
 

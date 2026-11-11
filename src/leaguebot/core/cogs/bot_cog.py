@@ -40,8 +40,8 @@ from discord.ext import commands
 
 from leaguebot.core.models.change import LEAGUE_LANE
 from leaguebot.core.services import backup_service, factory_reset_service, pack_service
-from leaguebot.core.services.bot_init_change import ANOTHER_SERVER as _ANOTHER_SERVER
-from leaguebot.core.services.bot_init_change import KIND as BOT_INIT
+from leaguebot.core.services.settings.bot_init_change import ANOTHER_SERVER as _ANOTHER_SERVER
+from leaguebot.core.services.settings.bot_init_change import KIND as BOT_INIT
 from leaguebot.core.utils.channel_guard import (
     DRIVER_ROLE_STANDS_FOR,
     bot_setup_only,
@@ -174,7 +174,7 @@ class BotCog(commands.Cog):
     async def _ask_setting(
         self, interaction: discord.Interaction, kind: str, value: int
     ) -> None:
-        """Ask the queue for one of the four `/bot` repair settings (`core/services/bot_settings.py`).
+        """Ask the queue for one of the four `/bot` repair settings (`core/services/settings/bot_settings.py`).
 
         An unconfigured server is refused here, to the host's log alone, before the change is
         even asked for: there is no log channel of the league's to record a refusal in, and
@@ -281,7 +281,7 @@ class BotCog(commands.Cog):
         refusal; the setting judges it again as the change starts, and reads the role it
         replaces as it saves, so the payload carries no judgement of the ask's.
         """
-        from leaguebot.core.services.bot_settings import season_fixed_refusal
+        from leaguebot.core.services.settings.bot_settings import season_fixed_refusal
         from leaguebot.core.services.seasons.season_lifecycle_service import configuration_fixed
 
         season_number = await configuration_fixed(self.bot.db_path)
@@ -405,7 +405,7 @@ class BotCog(commands.Cog):
         change queued ahead of this one might have claimed the channel for something else since
         it was asked; what follows the save is `setting_change`'s and `bot_settings`'s.
         """
-        from leaguebot.core.services.channel_registry_service import ChannelUse, find_channel_use, refusal
+        from leaguebot.core.services.settings.channel_registry_service import ChannelUse, find_channel_use, refusal
 
         use = await find_channel_use(
             self.bot.db_path, channel.id, channel_uses_read=self.bot.channel_uses_read

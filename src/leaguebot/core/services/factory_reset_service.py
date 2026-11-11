@@ -37,7 +37,7 @@ from leaguebot.core.services.queue.queue_records import (
     carry_job_numbering,
     highest_job_number,
 )
-from leaguebot.core.services.channel_registry_service import (
+from leaguebot.core.services.settings.channel_registry_service import (
     DIVISION_SOURCES,
     SERVER_SOURCES,
     DiscordTargets,

@@ -76,7 +76,7 @@ def _guild():
 
 
 def _cog(db_path):
-    from leaguebot.core.services.config_service import ConfigService
+    from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     bot = MagicMock()

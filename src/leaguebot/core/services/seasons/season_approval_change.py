@@ -76,7 +76,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
     StepView,
 )
-from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.services.seasons.season_fingerprint_service import SeasonFingerprint, take_fingerprint
 from leaguebot.core.services.seasons.season_service import (
     SeasonService,
@@ -90,7 +90,7 @@ from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.config_service import ConfigService
+    from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.core.services.modules.image_drawing import ImageDrawing
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.drivers.lineup_posting import LineupPoster
