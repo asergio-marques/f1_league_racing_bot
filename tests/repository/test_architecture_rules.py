@@ -178,7 +178,7 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("results/wiring.py", "recover_orphaned_submission_channels"): (2, PASS["results"]),
     ("__main__.py", "_recover_portrait_refresh_job"): (2, PASS["image"]),
     ("attendance/wiring.py", "recover_rsvp_views_and_deadlines"): (2, PASS["attendance"]),
-    ("__main__.py", "_recover_signup_close_timers"): (1, PASS["signup"]),
+    ("signup/wiring.py", "recover_signup_close_timers"): (1, PASS["signup"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.sync"): (2, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.test_rsvp"): (1, PASS["attendance"]),
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (2, PASS["signup"]),
@@ -2340,7 +2340,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/wiring.py", "recover_orphaned_submission_channels"): (3, PASS["results"]),
     ("__main__.py", "_recover_portrait_refresh_job"): (1, PASS["image"]),
     ("attendance/wiring.py", "recover_rsvp_views_and_deadlines"): (4, PASS["attendance"]),
-    ("__main__.py", "_recover_signup_close_timers"): (1, PASS["signup"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.sync"): (1, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.test_rsvp"): (2, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "AttendanceService.driver_profile_id_for_account"):

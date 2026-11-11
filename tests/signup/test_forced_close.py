@@ -21,9 +21,6 @@ SIGNUP_CHANNEL = 700
 BUTTON_MESSAGE = 8800
 CLOSED_MESSAGE = 9900
 
-_NOT_YET_IN_THE_WIRING = "#283: the close timer and its sweep are not yet in signup's wiring"
-
-
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
@@ -205,14 +202,8 @@ def _restart_sweep():
 @pytest.mark.parametrize(
     "find, cause",
     [
-        pytest.param(
-            _close_timer_callback, "timer", id="close timer",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING),
-        ),
-        pytest.param(
-            _restart_sweep, "restart", id="restart sweep",
-            marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING),
-        ),
+        pytest.param(_close_timer_callback, "timer", id="close timer"),
+        pytest.param(_restart_sweep, "restart", id="restart sweep"),
     ],
 )
 def test_the_close_timer_and_the_restart_sweep_call_the_close_nobody_ran(find, cause):

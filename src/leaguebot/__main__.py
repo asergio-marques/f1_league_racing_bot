@@ -29,6 +29,7 @@ from leaguebot.core.utils.league_server import (
 )
 from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
 from leaguebot.results import wiring as results_wiring
+from leaguebot.signup import wiring as signup_wiring
 
 if TYPE_CHECKING:
     from leaguebot.core.services.calendar_post_service import CalendarCommandOutcome
@@ -125,33 +126,14 @@ def create_bot() -> LeagueBot:
     return bot
 
 
-def _cancel_wizard_timers(bot: LeagueBot) -> "Callable[[str], None]":
-    """Removes one driver's signup inactivity and channel-deletion timers, for the close that
-    returns them to Not Signed Up (`signup.close`, and a season's end's close of the window) and
-    for the signup module's switch-off."""
-    from leaguebot.signup.services.closing_steps import DELETE_TIMER, INACTIVITY_TIMER
-    from leaguebot.signup.services.review_changes import CORRECTION_TIMER
-    from leaguebot.signup.services.wizard_service import channel_delete_job_id, inactivity_job_id
-
-    def cancel(user_id: str) -> None:
-        bot.scheduler_service.cancel_job(inactivity_job_id(user_id))
-        bot.scheduler_service.cancel_job(channel_delete_job_id(user_id))
-        bot.scheduler_service.disarm(INACTIVITY_TIMER, user_id)
-        bot.scheduler_service.disarm(DELETE_TIMER, user_id)
-        bot.scheduler_service.disarm(CORRECTION_TIMER, user_id)
-
-    return cancel
-
-
 def register_module_switches(modules: "ModuleService") -> None:
     """Sign each module up with `ModuleService` for the reader of its own switch, keyed by the
     name `is_<module>_enabled` asks it by."""
     from leaguebot.image.services.module_switch_settings import images_enabled_on
-    from leaguebot.signup.services.signup_module_service import signup_enabled_on
     from leaguebot.weather.services.draw_guard import weather_enabled_on
 
     modules.register_switch("weather", weather_enabled_on)
-    modules.register_switch("signup", signup_enabled_on)
+    signup_wiring.register_switch(modules)
     results_wiring.register_switch(modules)
     attendance_wiring.register_switch(modules)
     modules.register_switch("images", images_enabled_on)
@@ -178,6 +160,15 @@ def _make_hooks(bot: LeagueBot) -> None:
     bot.final_round_read = AwaitedHook()
     bot.season_end_refused = AwaitedHook()
     bot.round_ended_not_held = AwaitedHook()
+    bot.base_role_changed = AwaitedHook()
+    bot.configuration_confirmed = AwaitedHook()
+    bot.driver_names_read = AwaitedHook()
+    bot.driver_turned_down = AwaitedHook()
+    bot.driver_account_changed = AwaitedHook()
+    bot.driver_account_changed_steps = Hook()
+    bot.season_end_closes = Hook()
+    bot.drivers_returned = AwaitedHook()
+    bot.driver_returned_jobs = Hook()
 
 
 def _sign_up_to_round_windows(bot: LeagueBot) -> None:
@@ -198,13 +189,10 @@ def _sign_up_to_review_sections(bot: LeagueBot) -> None:
     up to it, in the order the review lays them out: signup's, attendance's, results' then
     weather's. Each is handed which review is gathered, the season and its divisions, and checks
     its own switch."""
-    from leaguebot.signup.services import signup_module_service
     from leaguebot.weather.services import weather_config_service
 
     bot.review_sections_read = AwaitedHook()
-    bot.review_sections_read.subscribe(partial(
-        signup_module_service.review_section, bot.signup_module_service, bot.module_service
-    ))
+    signup_wiring.sign_up_to_review_sections(bot)
     attendance_wiring.sign_up_to_review_sections(bot)
     results_wiring.sign_up_to_review_sections(bot)
     bot.review_sections_read.subscribe(partial(
@@ -233,13 +221,6 @@ def _make_configuration_faults(
         )
 
     return configuration_faults
-
-
-def _sign_up_to_base_role_changed(bot: LeagueBot) -> None:
-    """Make the hook the base role changed declares, and sign signup's move of the signup
-    channel's overwrite up to it, so core never reaches into the signup module itself."""
-    bot.base_role_changed = AwaitedHook()
-    bot.base_role_changed.subscribe(bot.signup_module_service.move_base_role_overwrite)
 
 
 def _sign_up_to_amendments(bot: LeagueBot) -> None:
@@ -309,7 +290,6 @@ def _sign_up_to_deletes(bot: LeagueBot) -> None:
     declares, and sign each module's part up to them, in the order core calls them: each module
     deleting or re-pointing its own rows, on the delete's connection, inside its save
     (architecture.md, "The database")."""
-    from leaguebot.signup.services import signup_module_service
     from leaguebot.weather.services import forecast_cleanup_service
 
     bot.rounds_deleted = AwaitedHook()
@@ -321,7 +301,7 @@ def _sign_up_to_deletes(bot: LeagueBot) -> None:
     # in the order it always was.
     attendance_wiring.sign_up_to_deletes(bot)
     results_wiring.sign_up_to_deletes(bot)
-    bot.season_deleted.subscribe(signup_module_service.season_deleted_on)
+    signup_wiring.sign_up_to_season_deleted(bot)
     bot.rounds_deleted.subscribe(forecast_cleanup_service.rounds_deleted_on)
 
 
@@ -329,40 +309,13 @@ def _sign_up_to_pack(bot: LeagueBot) -> None:
     """Make the hook the bot packed declares, for the modules to sign up to: each module clearing
     its own rows tied to the server the bot leaves, on the pack's connection, inside its one
     transaction (architecture.md, "The database"). The builder hands it to `/bot pack`."""
-    from leaguebot.signup.services import signup_module_service
     from leaguebot.weather.services import forecast_cleanup_service
 
     bot.bot_packed = AwaitedHook()
-    bot.bot_packed.subscribe(signup_module_service.bot_packed_on)
+    signup_wiring.sign_up_to_pack(bot)
     bot.bot_packed.subscribe(forecast_cleanup_service.bot_packed_on)
     attendance_wiring.sign_up_to_pack(bot)
     results_wiring.sign_up_to_pack(bot)
-
-
-def _sign_up_to_configuration_confirmed(bot: LeagueBot) -> None:
-    """Make the hook a season's configuration confirmed declares, and sign each module's part up
-    to it: what a module keeps for the season from that moment, on the connection of the
-    confirmation's save, given the season's id and the queue's clock (architecture.md, "How
-    modules and core fit together"). Signup keeps its settings and slots. The builder hands it to
-    the confirmation."""
-    from leaguebot.signup.services import signup_module_service
-
-    bot.configuration_confirmed = AwaitedHook()
-    bot.configuration_confirmed.subscribe(signup_module_service.configuration_confirmed_on)
-
-
-def _sign_up_to_driver_names_read(bot: LeagueBot) -> None:
-    """Make the hook a driver's name is read through, and sign each module's part up to it: the
-    name a module holds for each driver of the profile ids core hands it. Signup names a driver by
-    their signup, across every account they have held, through its module service. The builder
-    hands it to the placements review and its confirmation (architecture.md, "How modules and core
-    fit together")."""
-    from leaguebot.signup.services import signup_module_service
-
-    bot.driver_names_read = AwaitedHook()
-    bot.driver_names_read.subscribe(
-        partial(signup_module_service.driver_names, bot.signup_module_service)
-    )
 
 
 def _sign_up_to_division_lines_read(bot: LeagueBot) -> None:
@@ -386,14 +339,13 @@ def _sign_up_to_channel_uses_read(bot: LeagueBot) -> None:
     settings hold in the live season, in the order a division's channels read (weather, results,
     attendance, then signup's own). The builder hands it to every command that sets a channel
     (architecture.md, "How modules and core fit together")."""
-    from leaguebot.signup.services import channel_uses
     from leaguebot.weather.services import forecast_channel
 
     bot.channel_uses_read = AwaitedHook()
     bot.channel_uses_read.subscribe(partial(forecast_channel.channel_uses, bot.db_path))
     results_wiring.sign_up_to_channel_uses_read(bot)
     attendance_wiring.sign_up_to_channel_uses_read(bot)
-    bot.channel_uses_read.subscribe(partial(channel_uses.channel_uses, bot.db_path))
+    signup_wiring.sign_up_to_channel_uses_read(bot)
 
 
 def _sign_up_to_setting_channels_read(bot: LeagueBot) -> None:
@@ -401,14 +353,13 @@ def _sign_up_to_setting_channels_read(bot: LeagueBot) -> None:
     holds (those its settings name, those it posted to and those it created), in any season, and
     sign each module up to it, handed the database's path, in the same
     order (architecture.md, "How modules and core fit together")."""
-    from leaguebot.signup.services import channel_uses
     from leaguebot.weather.services import forecast_channel
 
     bot.setting_channels_read = AwaitedHook()
     bot.setting_channels_read.subscribe(partial(forecast_channel.setting_channels, bot.db_path))
     results_wiring.sign_up_to_setting_channels_read(bot)
     attendance_wiring.sign_up_to_setting_channels_read(bot)
-    bot.setting_channels_read.subscribe(partial(channel_uses.setting_channels, bot.db_path))
+    signup_wiring.sign_up_to_setting_channels_read(bot)
 
 
 def _sign_up_to_division_channel_faults_read(bot: LeagueBot) -> None:
@@ -435,7 +386,6 @@ def _sign_up_to_fingerprint_areas_read(bot: LeagueBot) -> None:
     "How modules and core fit together"). The builder hands it to every caller of
     `take_fingerprint`."""
     from leaguebot.image.services import fingerprint_areas as image_areas
-    from leaguebot.signup.services import fingerprint_areas as signup_areas
     from leaguebot.weather.services import fingerprint_areas as weather_areas
 
     bot.fingerprint_areas_read = AwaitedHook()
@@ -446,8 +396,8 @@ def _sign_up_to_fingerprint_areas_read(bot: LeagueBot) -> None:
     )
     results_wiring.sign_up_to_fingerprint_areas_read(bot)
     attendance_wiring.sign_up_to_fingerprint_areas_read(bot)
-    for module_areas in (signup_areas, image_areas):
-        bot.fingerprint_areas_read.subscribe(module_areas.fingerprint_areas)
+    signup_wiring.sign_up_to_fingerprint_areas_read(bot)
+    bot.fingerprint_areas_read.subscribe(image_areas.fingerprint_areas)
 
 
 def _sign_up_to_pending_steps_read(bot: LeagueBot) -> None:
@@ -478,38 +428,6 @@ def _sign_up_to_review_marks_read(bot: LeagueBot) -> None:
     bot.review_marks_read.subscribe(weather_steps.review_marks)
     results_wiring.sign_up_to_review_marks_read(bot)
     attendance_wiring.sign_up_to_review_marks_read(bot)
-
-
-def _sign_up_to_driver_turned_down(bot: LeagueBot) -> None:
-    """Make the hook a driver turned down declares, and sign each module's part up to it: what a
-    module lets go of from the driver, on the connection of the save that turns them down, given
-    their profile id (architecture.md, "How modules and core fit together"). Signup withdraws the
-    approval of their signup. The builder hands it to `/driver reject`'s change and to the
-    season's wind-down."""
-    from leaguebot.signup.services import signup_module_service
-
-    bot.driver_turned_down = AwaitedHook()
-    bot.driver_turned_down.subscribe(signup_module_service.driver_turned_down_on)
-
-
-def _sign_up_to_driver_account_changed(bot: LeagueBot) -> None:
-    """Make the hooks a driver's account changed declares, and sign each module's part up to
-    them: what a module moves from the account replaced to the new one on the connection of the
-    save that changes it, handing back the jobs it plans after the save, and the steps it defines
-    for them, by name (architecture.md, "How modules and core fit together"). Signup moves the
-    held signup channel. The builder hands them to `/driver reassign`'s change."""
-    from leaguebot.signup.services import signup_module_service
-    from leaguebot.signup.services.held_channel_moves import held_channel_steps
-
-    bot.driver_account_changed = AwaitedHook()
-    bot.driver_account_changed.subscribe(signup_module_service.driver_account_changed_on)
-    bot.driver_account_changed_steps = Hook()
-    bot.driver_account_changed_steps.subscribe(partial(
-        held_channel_steps,
-        scheduler_service=lambda: bot.scheduler_service,
-        signup=lambda: bot.signup_module_service,
-        now=lambda: bot.change_queue.now(),
-    ))
 
 
 def _sign_up_to_placements_confirmed(bot: LeagueBot) -> None:
@@ -547,31 +465,10 @@ def _sign_up_to_season_end(bot: LeagueBot) -> None:
     clear what test mode posted (weather's); and the drivers deleted (image's discard of their
     portraits)."""
     from leaguebot.image.services import driver_portrait_service
-    from leaguebot.signup.services import closing_steps, window_changes
-    from leaguebot.signup.services.window_close import RETURNED_BY_CLOSE
     from leaguebot.weather.services import forecast_changes, forecast_cleanup_service
 
-    bot.season_end_closes = Hook()
-    bot.season_end_closes.subscribe(closing_steps.season_end_closes)
-    bot.drivers_returned = AwaitedHook()
-    bot.drivers_returned.subscribe(
-        partial(closing_steps.drivers_returned_on, lambda: bot.signup_module_service)
-    )
-    bot.driver_returned_jobs = Hook()
-    bot.driver_returned_jobs.subscribe(closing_steps.driver_returned_jobs)
     bot.season_end_steps = Hook()
-    bot.season_end_steps.subscribe(partial(
-        window_changes.season_end_steps,
-        wizard_service=lambda: bot.wizard_service,
-        scheduler_service=lambda: bot.scheduler_service,
-        modules=lambda: bot.module_service,
-        signup_module_service=lambda: bot.signup_module_service,
-        returned_by_close=RETURNED_BY_CLOSE,
-        cancel_timers=_cancel_wizard_timers(bot),
-        # Read when it runs: a test replaces the scheduler's method after registering.
-        cancel_close_timer=lambda: bot.scheduler_service.cancel_signup_close_timer(),
-        now=lambda: bot.change_queue.now(),
-    ))
+    signup_wiring.sign_up_to_season_end_steps(bot)
     bot.season_end_steps.subscribe(partial(
         forecast_changes.season_end_steps, now=lambda: bot.change_queue.now()
     ))
@@ -771,161 +668,8 @@ def register_change_types(bot: LeagueBot) -> None:
         forecast_change,
         forecast_clean_up_change,
     )
-    from leaguebot.signup.services.closing_steps import closing_change, reason_delete_change
-    from leaguebot.signup.services.window_close import RETURNED_BY_CLOSE
-    from leaguebot.signup.services.module_switch_settings import module_on_signup
-    from leaguebot.signup.services.signup_off_change import signup_off_change
-    from leaguebot.signup.services.window_changes import window_close_change, window_open_change
-    from leaguebot.signup.services.review_changes import (
-        CORRECTION_TIMER,
-        approve_change,
-        ask_lapse,
-        choices_change,
-        choose_change,
-        lapse_change,
-        recollect_change,
-        request_changes_change,
-    )
-    from leaguebot.signup.services.wizard_answers import answer_change, panel_change, submit_change
-    from leaguebot.signup.services.wizard_changes import (
-        channel_delete_change,
-        end_change,
-        member_left_change,
-        start_change,
-    )
-    from leaguebot.signup.services.closing_steps import (
-        DELETE_TIMER,
-        INACTIVITY_TIMER,
-        ask_channel_delete,
-        ask_expiry,
-    )
-    from leaguebot.signup.services.signup_off_change import KIND as OFF_KIND
-    from leaguebot.signup.services.window_changes import CLOSE as CLOSE_KIND
 
 
-    bot.change_queue.register(reason_delete_change())
-    bot.change_queue.register(
-        closing_change(now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once)
-    )
-    # The queue is a getter here as well, read when the change runs.
-    bot.change_queue.register(
-        window_open_change(
-            modules=bot.module_service, signup=bot.signup_module_service,
-            config=bot.config_service,
-            schedule_close=bot.scheduler_service.schedule_signup_close_timer,
-            queue=lambda: bot.change_queue,
-        )
-    )
-    # The signup, driver and team services are read when a change runs and not handed over in the
-    # changes that follow: a test swaps each on the bot after registering.
-    bot.change_queue.register(
-        window_close_change(
-            signup_module_service=lambda: bot.signup_module_service, returned_by_close=RETURNED_BY_CLOSE,
-            cancel_timers=_cancel_wizard_timers(bot),
-            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
-        )
-    )
-    bot.change_queue.register(
-        signup_off_change(
-            modules=bot.module_service, signup_module_service=lambda: bot.signup_module_service,
-            returned_by_close=RETURNED_BY_CLOSE, cancel_timers=_cancel_wizard_timers(bot),
-            # Read when it runs: a test replaces the scheduler's or the configuration's method
-            # after registering.
-            cancel_close_timer=lambda: bot.scheduler_service.cancel_signup_close_timer(),
-            server_config=lambda: bot.config_service.get_server_config(),
-            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
-        )
-    )
-    bot.change_queue.register(
-        start_change(
-            modules=bot.module_service, config=bot.config_service,
-            signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
-            teams=lambda: bot.team_service,
-            queue_of=lambda: bot.change_queue, closing_kinds=(CLOSE_KIND, OFF_KIND),
-            cancel_timers=_cancel_wizard_timers(bot),
-            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
-        )
-    )
-    bot.change_queue.register(
-        end_change(
-            signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
-            cancel_timers=_cancel_wizard_timers(bot),
-            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
-        )
-    )
-    bot.change_queue.register(
-        answer_change(
-            signup=lambda: bot.signup_module_service, queue_of=lambda: bot.change_queue,
-            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
-        )
-    )
-    bot.change_queue.register(
-        submit_change(
-            signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
-            cancel_timers=_cancel_wizard_timers(bot),
-        )
-    )
-    bot.change_queue.register(
-        panel_change(signup=lambda: bot.signup_module_service, queue_of=lambda: bot.change_queue)
-    )
-    bot.change_queue.register(
-        approve_change(
-            signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
-            config=bot.config_service, cancel_timers=_cancel_wizard_timers(bot),
-        )
-    )
-    bot.change_queue.register(
-        request_changes_change(
-            signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
-        )
-    )
-    bot.change_queue.register(
-        choices_change(
-            signup=lambda: bot.signup_module_service, queue_of=lambda: bot.change_queue,
-            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
-        )
-    )
-    bot.change_queue.register(
-        choose_change(
-            signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
-            now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
-            disarm=bot.scheduler_service.disarm,
-        )
-    )
-    bot.change_queue.register(
-        recollect_change(
-            signup=lambda: bot.signup_module_service, queue_of=lambda: bot.change_queue,
-        )
-    )
-    bot.change_queue.register(
-        lapse_change(
-            modules=bot.module_service, signup=lambda: bot.signup_module_service,
-            drivers=lambda: bot.driver_service, queue_of=lambda: bot.change_queue,
-        )
-    )
-    # The timers below read the bot's queue when they fire, as the getters above do. A correction
-    # nobody chose within five minutes is lapsed by the change its timer asks of the queue, as the
-    # bot.
-    bot.scheduler_service.register_timer(
-        CORRECTION_TIMER, lambda key: ask_lapse(bot.change_queue, str(key))
-    )
-    # A signup left unanswered for a day is ended by the expiry its timer asks of the queue, as
-    # the bot.
-    bot.scheduler_service.register_timer(
-        INACTIVITY_TIMER, lambda key: ask_expiry(bot.change_queue, bot.db_path, str(key))
-    )
-    # A held signup channel's 24 hours ending asks its deletion, on the driver's own lane.
-    bot.change_queue.register(channel_delete_change(signup=lambda: bot.signup_module_service))
-    bot.change_queue.register(
-        member_left_change(
-            signup=lambda: bot.signup_module_service, drivers=lambda: bot.driver_service,
-            cancel_timers=_cancel_wizard_timers(bot),
-        )
-    )
-    bot.scheduler_service.register_timer(
-        DELETE_TIMER,
-        lambda key: ask_channel_delete(bot.change_queue, bot.db_path, str(key)),
-    )
     bot.change_queue.register(hub_refresh_change(
         bot.change_queue, bot.config_service, hub_options=bot.hub_options
     ))
@@ -1150,11 +894,6 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         setting_change(module_off_images(modules=bot.module_service))
     )
-    bot.change_queue.register(
-        setting_change(
-            module_on_signup(modules=bot.module_service, config=bot.config_service)
-        )
-    )
     bot.change_queue.register(bot_init_change(config=bot.config_service))
     bot.change_queue.register(
         season_setup_change(seasons=bot.season_service, now=lambda: bot.change_queue.now())
@@ -1288,6 +1027,7 @@ def register_change_types(bot: LeagueBot) -> None:
         )
     )
     attendance_wiring.register_change_types(bot)
+    signup_wiring.register_change_types(bot)
     results_wiring.register_change_types(
         bot,
         attendance=bot.attendance_after_review,
@@ -1333,16 +1073,7 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
 
     scheduler.register_timer("portrait_refresh", _portrait_refresh_cb)
 
-    async def _signup_close_cb() -> None:
-        from leaguebot.signup.services.window_close import close_signups_unattended
-        await close_signups_unattended(
-            change_queue=bot.change_queue,
-            module_service=bot.module_service,
-            signup_module_service=bot.signup_module_service,
-            cause="timer",
-        )
-
-    scheduler.register_timer("signup_close", _signup_close_cb)
+    signup_wiring.register_scheduler_callbacks(bot)
 
 
 async def build(settings: Settings) -> LeagueBot:
@@ -1465,13 +1196,9 @@ async def build(settings: Settings) -> LeagueBot:
     _sign_up_to_round_windows(bot)
     _sign_up_to_review_sections(bot)
     bot.configuration_faults = _make_configuration_faults(bot)
-    _sign_up_to_base_role_changed(bot)
     _sign_up_to_amendments(bot)
 
     _sign_up_to_cancellations(bot)
-    _sign_up_to_configuration_confirmed(bot)
-    _sign_up_to_driver_turned_down(bot)
-    _sign_up_to_driver_names_read(bot)
     _sign_up_to_division_channel_faults_read(bot)
     _sign_up_to_division_lines_read(bot)
     _sign_up_to_channel_uses_read(bot)
@@ -1479,7 +1206,6 @@ async def build(settings: Settings) -> LeagueBot:
     _sign_up_to_fingerprint_areas_read(bot)
     _sign_up_to_pending_steps_read(bot)
     _sign_up_to_review_marks_read(bot)
-    _sign_up_to_driver_account_changed(bot)
     _sign_up_to_placements_confirmed(bot)
     _sign_up_to_season_completed(bot)
     _sign_up_to_season_end(bot)
@@ -1487,6 +1213,7 @@ async def build(settings: Settings) -> LeagueBot:
     _sign_up_to_pack(bot)
     attendance_wiring.sign_up(bot)
     results_wiring.sign_up(bot)
+    signup_wiring.sign_up(bot)
     register_change_types(bot)
     from leaguebot.core.services.test_mode_service import AdvanceSteps
 
@@ -1534,11 +1261,9 @@ async def build(settings: Settings) -> LeagueBot:
 
     # The bot's in-memory state cleared (`/bot pack`, `/bot factory-reset`): each module signs up
     # what it holds, in the order the clear drops them.
-    from leaguebot.signup.services.signup_views import clear_pending_reasons
-
     bot.in_memory_state_cleared = Hook()
     results_wiring.sign_up_to_in_memory_state_cleared(bot)
-    bot.in_memory_state_cleared.subscribe(clear_pending_reasons)
+    signup_wiring.sign_up_to_in_memory_state_cleared(bot)
 
     # Register ALL persistent views so button interactions survive bot restarts.
     # Views with optional __init__ params resolve driver context from channel at
@@ -1634,7 +1359,7 @@ def _start_up_steps(bot: LeagueBot) -> "tuple[StartUpStep, ...]":
         ("amendment sweep", arm_the_amendment_sweep),
         ("portrait refresh job", lambda: _recover_portrait_refresh_job(bot)),
         # A signup close timer lost on restart; its callback is registered by `build`.
-        ("signup close timer", lambda: _recover_signup_close_timers(bot)),
+        ("signup close timer", lambda: signup_wiring.recover_signup_close_timers(bot)),
         # Results-amend channels left open by a previous run. **Before the submission channels,
         # not after**. An amendment open at the restart has its corrections in the
         # database, unapproved; recovering a submission channel whose results were saved but never
@@ -1661,44 +1386,6 @@ def _start_up_steps(bot: LeagueBot) -> "tuple[StartUpStep, ...]":
         ("hub", recover_the_hub),
         ("wizards", recover_the_wizards),
     )
-
-
-async def _recover_signup_close_timers(bot: LeagueBot) -> None:
-    """Close a signup window whose close time passed while the bot was down, or re-arm its timer."""
-    from datetime import datetime as _dt, timezone as _tz
-
-    from leaguebot.core.db.database import get_connection as _get_conn
-
-    async with _get_conn(bot.db_path) as _db:
-        _cur = await _db.execute(
-            "SELECT close_at FROM signup_module_config WHERE close_at IS NOT NULL"
-        )
-        _row = await _cur.fetchone()
-    if _row is None:
-        return
-    now_utc = _dt.now(_tz.utc)
-    _close_at_iso = _row["close_at"]
-    try:
-        _close_dt = _dt.fromisoformat(_close_at_iso)
-        if _close_dt.tzinfo is None:
-            _close_dt = _close_dt.replace(tzinfo=_tz.utc)
-    except ValueError:
-        log.warning("start-up: invalid signup close_at value: %r", _close_at_iso)
-        return
-    if _close_dt <= now_utc:
-        log.info("start-up: signup close_at is past — running forced close")
-        from leaguebot.signup.services.window_close import close_signups_unattended
-        await close_signups_unattended(
-            change_queue=bot.change_queue,
-            module_service=bot.module_service,
-            signup_module_service=bot.signup_module_service,
-            cause="restart",
-        )
-    else:
-        from leaguebot.core.services.scheduler_service import SIGNUP_CLOSE_JOB_ID
-        if not bot.scheduler_service.has_job(SIGNUP_CLOSE_JOB_ID):
-            log.info("start-up: re-arming the signup close timer at %s", _close_at_iso)
-            bot.scheduler_service.schedule_signup_close_timer(_close_at_iso)
 
 
 async def main() -> None:

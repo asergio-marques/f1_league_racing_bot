@@ -151,7 +151,6 @@ async def test_each_division_s_module_channels_follow_its_own_in_the_modules_ord
     ]
 
 
-@pytest.mark.xfail(strict=True, reason="#283: signup's sign-ups are not yet in its wiring")
 async def test_the_unsettled_signups_are_read_by_the_service(db_path):
     """Alice is not yet placed, Bob awaits approval, driver 3 is correcting their signup, and
     two others are placed or signed out. The service names the three unsettled, as the review
