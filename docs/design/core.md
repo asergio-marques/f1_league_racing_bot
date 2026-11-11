@@ -151,8 +151,8 @@ Answers to `architecture.md`, "How the code is laid out". Core's code sits in `c
 
 ### Services, and what each owns
 
-Each service but the scheduler's sits in a topic folder of `core/services/` (`architecture.md`, "How the code is laid out").
-The table names a service by its file, not its folder.
+Each service but the scheduler's sits in a topic folder of `core/services/` (`architecture.md`, "How
+the code is laid out"). The table names a service by its file, not its folder.
 
 | Area | Services | Owns |
 |---|---|---|
@@ -255,19 +255,19 @@ audit and the held reply are one state machine around one lock order (`_working[
 `_asking`, then `_writing`) and the attributes they share. *Rejected:* mixins, which would split the
 file and leave one state machine whose lock order no single class states; and collaborator objects,
 which would reach into the queue's private state or be handed all of it (`ChangeQueue`'s docstring).
-What reads none of that state is out of the file. `core/services/queue/change_types.py` holds the types a
-change is made of, `Step` and `ChangeType` with the contexts a check, a step, an outcome and the
-refusal and discard hooks are handed, and the decisions that govern them (a post's id saved with its
-mark, a step's four kinds, a job that ends on a fault); `core/services/queue/queue_records.py` holds the
-bookkeeping over the queue's tables, what is in hand, what was ever asked, the job numbering and the
-emptying of a restored database, which a check, a recovery, a restore and a factory reset call
-without a queue. The queue file keeps the constants the class reads: `RETRY_AFTER`, the bot's own
-tries; `CONVERSATION_LANES_AT_ONCE`; `UPDATABLE_FOR`, how long a reply may be updated;
-`WORKER_PAUSE_AFTER_FAULT`; and `NOTICE_REPOST_EVERY`; with `_confine` and `QUEUE_TABLES`. The plain
-data is in `core/models/change.py`: `StepKind` (`SAVE`, `ACT`, `DELETE`, `EDIT`), `Verdict`,
-`StepResult`, `StepFailedOnDiscord`, `GuildUnavailable` and the lane names. The engineering
-decisions that govern the queue are in its module docstring, and those that govern a step's kinds,
-its record and a fault's ending in `change_types`', each pinned by a test in
+What reads none of that state is out of the file. `core/services/queue/change_types.py` holds the
+types a change is made of, `Step` and `ChangeType` with the contexts a check, a step, an outcome and
+the refusal and discard hooks are handed, and the decisions that govern them (a post's id saved with
+its mark, a step's four kinds, a job that ends on a fault); `core/services/queue/queue_records.py`
+holds the bookkeeping over the queue's tables, what is in hand, what was ever asked, the job
+numbering and the emptying of a restored database, which a check, a recovery, a restore and a
+factory reset call without a queue. The queue file keeps the constants the class reads:
+`RETRY_AFTER`, the bot's own tries; `CONVERSATION_LANES_AT_ONCE`; `UPDATABLE_FOR`, how long a reply
+may be updated; `WORKER_PAUSE_AFTER_FAULT`; and `NOTICE_REPOST_EVERY`; with `_confine` and
+`QUEUE_TABLES`. The plain data is in `core/models/change.py`: `StepKind` (`SAVE`, `ACT`, `DELETE`,
+`EDIT`), `Verdict`, `StepResult`, `StepFailedOnDiscord`, `GuildUnavailable` and the lane names. The
+engineering decisions that govern the queue are in its module docstring, and those that govern a
+step's kinds, its record and a fault's ending in `change_types`', each pinned by a test in
 `tests/core/test_change_queue.py`, `test_change_queue_lanes.py` or `test_change_queue_controls.py`.
 Among them:
 
@@ -600,9 +600,9 @@ switch-off attendance's, for the cascade.
 
 ### The image protocol
 
-`ImageDrawing` (`core/services/modules/image_drawing.py`) declares what core asks of the image module, and
-the image module's class of the same name implements it; the builder makes it and attaches it as
-`bot.image_drawing`. Its methods fall in five groups:
+`ImageDrawing` (`core/services/modules/image_drawing.py`) declares what core asks of the image
+module, and the image module's class of the same name implements it; the builder makes it and
+attaches it as `bot.image_drawing`. Its methods fall in five groups:
 
 - **Capacity questions**, each answering what the template cannot hold, or nothing: the four
   placement guards (`TemplateCapacityService`), a round's (`round_add_changes`), and the season
@@ -733,12 +733,13 @@ driver pass and final mark (and, but for an abort, the history) are saved last, 
 What a driver is, their states and their accounts, are the core specification's ("Drivers", "The
 states of a driver", "A driver's accounts").
 
-**One writer of a driver's state.** `ALLOWED_TRANSITIONS` (`core/services/drivers/driver_service.py`) is the
-table, and `write_transition` is the one statement that writes `current_state`: it raises
-`InvalidDriverTransition` for a move the table does not allow, having written nothing, and commits
-nothing. Every caller changing a state inside a larger write calls it rather than the update
-(its docstring). `DriverService.transition_on` creates a profile where none exists and the table
-allows the move from Not Signed Up; no transition deletes one.
+**One writer of a driver's state.** `ALLOWED_TRANSITIONS`
+(`core/services/drivers/driver_service.py`) is the table, and `write_transition` is the one
+statement that writes `current_state`: it raises `InvalidDriverTransition` for a move the table does
+not allow, having written nothing, and commits nothing. Every caller changing a state inside a
+larger write calls it rather than the update (its docstring). `DriverService.transition_on` creates
+a profile where none exists and the table allows the move from Not Signed Up; no transition deletes
+one.
 
 **The accounts are a table the database keeps.** `driver_profiles.discord_user_id` names the
 current account; `driver_accounts` lists every account the driver has held, written by two

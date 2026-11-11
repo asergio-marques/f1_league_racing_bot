@@ -49,10 +49,10 @@ for each module under `tests/`, beside `tests/repository/` for the checks on the
 (these rules, its configuration and its tools) and `tests/support/` for the helpers the tests
 share.
 
-*Rejected:* grouping by layer first (`services/results/`, `cogs/results/` and so on), which
-spreads one module over four folders. *Rejected:* grouping only the services. *Rejected:* staying
-flat with a list of which file belongs where, which is the arrangement that misfiled core's
-driver and team code under signup. *Rejected:* leaving the tests in one flat folder.
+*Rejected:* grouping by layer first (`services/results/`, `cogs/results/` and so on), which spreads
+one module over four folders. *Rejected:* grouping only the services by module. *Rejected:* staying
+flat with a list of which file belongs where, which is the arrangement that misfiled core's driver
+and team code under signup. *Rejected:* leaving the tests in one flat folder.
 
 Inside each folder, each kind of code has a folder of its own: `cogs/`, `services/`, `models/`,
 and `utils/` for the part's helpers, with `db/` in core for the database code. What kind of code a
@@ -66,25 +66,29 @@ its name, and several files are named for neither.
 on), because core holds so many that a flat folder cannot be read, and the grouping puts the
 plumbing every module uses apart from core's own league rules. The plumbing is `queue/` (the change
 queue, its types and records, the stop view, the typed turns, the setting change, the audit
-writers), `posting/` (the four handlers for a kind of post, the log writer, the retry queue, the
-standing posts, the channel notice) and `modules/` (the module service, the drawing protocol, the
-hooks' readers, the hub). The league rules are `seasons/`, `cancellations/`, `rounds/` (divisions,
-rounds, tracks and the calendar post), `drivers/` (drivers, teams, placements, the lineup and the
-changes to them), `settings/`, `test_mode/` and `upkeep/` (backup, pack, factory reset, clean-up and
-start-up). No plumbing folder holds a league rule, so that a later decision on what core should hold
-can move a whole folder rather than sort its files again; a file that serves both sits in the
-league-rule folder it serves, as `start_up.py` does in `upkeep/`, and is moved with it. One file
-stays loose in `core/services/`: `scheduler_service.py`, because the job store saves its path (`leaguebot.core.services.scheduler_service`)
-for every timed job, and a move would leave a saved job store, or the state test mode keeps,
-unloadable. A folder is not a kind: every check reads a file's kind from the first folder below its
-part, so `core/services/seasons/season_service.py` is a service of core. Only core's services are
-grouped; a module's own, if it needs grouping, is its own pass's to decide.
-`tests/repository/test_import_contracts.py` holds it: no core service sits outside a topic folder
-but the scheduler's.
+writers), `posting/` (the four handlers for each kind of post, the log writer among them, the retry
+queue, the standing posts, the channel notice) and `modules/` (the module service, the drawing
+protocol, the hooks' readers, the hub). The league rules are `seasons/`, `cancellations/`, `rounds/`
+(divisions, rounds and their amendments, tracks and the calendar post), `drivers/` (drivers, teams,
+placements, the lineup and the changes to them), `settings/`, `test_mode/` and `upkeep/` (backup,
+pack, factory reset, the in-memory state, clean-up and start-up). No plumbing folder holds a league
+rule, so that a later decision on what core should hold can move a whole folder rather than sort its
+files again; a file that serves both sits in the league-rule folder it serves, as `start_up.py` does
+in `upkeep/`, and is moved with it. One file stays loose in `core/services/`:
+`scheduler_service.py`, because the job store saves its path
+(`leaguebot.core.services.scheduler_service`) for every timed job, and a move would leave a saved
+job store, or the state test mode keeps, unloadable. A folder is not a kind: every check reads a
+file's kind from the first folder below its part, so `core/services/seasons/season_service.py` is a
+service of core. Only core's services are grouped: a module's own services stay in its `services/`
+folder unless its design file groups them. `tests/repository/test_import_contracts.py` holds it: no
+core service sits outside a topic folder but the scheduler's.
 
-*Rejected:* keeping the services flat, which leaves the line between plumbing and league rules to
-a list nobody can read at a glance. *Rejected:* moving the scheduler's file with the rest, which
-would leave every job a saved job store holds, and every saved test-mode state, unable to load.
+*Rejected:* keeping the services flat, where the plumbing and core's league rules lie side by side
+in one folder too long to read. *Rejected:* folders by topic alone, mixing the plumbing with league
+rules (the setting change beside the league's settings, the scheduler beside backup), which a later
+decision on what core should hold would have to sort file by file and move a second time.
+*Rejected:* moving the scheduler's file with the rest, which would leave every job a saved job store
+holds, and every saved test-mode state, unable to load.
 
 Beside its kind folders, a module's folder holds one file: its **wiring** (`<module>/wiring.py`),
 the module's part of the builder (below). Core has none: its part is the builder's own.
@@ -499,43 +503,42 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   for meanwhile is acknowledged as usual, joins the back of its lane and says that the lane is
   stopped; one that overtakes a stop says it runs past it, the stop standing (`held_behind_text`).
 
-  **Four exceptions: a league's settings, `/bot init`, roles moved after a driver's or team's
-  change, and the settings a league repairs itself with.** A change to one of a league's
-  settings is one atomic save of its value and its audit record (its line with them, or in the
-  save of the step after it that carries the line — the arming of the daily portrait job, a
-  role's grant to every driver where it replaces one gone from the server while the season's
-  configuration is fixed, or the old hub stood down and the new one's permissions set once its
-  channel is moved; see "The record is the queue's"), and the work after it that the setting does
-  not need (checking it against the templates, arming or removing a timed job, granting a role to
-  every driver, asking the hub's panel to be posted again as the bot's own change) is work nothing
-  later depends on. A fault in either leaves nothing half-done and nothing behind it on the lane
-  waits on it. A fault in the save is rolled back whole, so nothing is saved and the member can
-  simply ask again; a fault in a step after the save leaves the setting saved, so asking again
-  with the same value saves nothing and repeats no step, and the reply says what was not done, or
-  what to do by hand, where the step has anything to say. So such a step carries `Step.on_fault`:
-  where it raises, the queue does not stop the lane but marks the job done with what `on_fault`
-  returns, in a save of its own with its lines, and the change carries on to its next step or
-  finishes. A change type may likewise give `ChangeType.on_check_fault` for a check that raises as
-  a **member's** change starts: the change is ended as REFUSED in one save, with the failure line
-  in place of a refusal's, and the reply it returns. What the member is told and what the log
-  channel records of either is the core specification's "How a change is carried out"; the full
-  detail goes to the host's log. A step that is `undiscardable` may not carry `on_fault`, since it
-  is a step a stop must hold. `core/services/queue/setting_change.py` builds both callbacks for every
-  settings command once. *Rejected:* a step that catches its own fault, which would leave its
-  partial writes on the save's connection and could not catch what fails after it returns, the
-  queue's own audit and line writes and the commit; stopping the lane for a setting, which would
-  hold every other change for a fault that either the member cures by asking again (a save rolled
-  back) or that nothing later on the lane depends on (a step after it).
+**Four exceptions: a league's settings, `/bot init`, roles moved after a driver's or team's change,
+and the settings a league repairs itself with.** A change to one of a league's settings is one
+atomic save of its value and its audit record (its line with them, or in the save of the step after
+it that carries the line — the arming of the daily portrait job, a role's grant to every driver
+where it replaces one gone from the server while the season's configuration is fixed, or the old hub
+stood down and the new one's permissions set once its channel is moved; see "The record is the
+queue's"), and the work after it that the setting does not need (checking it against the templates,
+arming or removing a timed job, granting a role to every driver, asking the hub's panel to be posted
+again as the bot's own change) is work nothing later depends on. A fault in either leaves nothing
+half-done and nothing behind it on the lane waits on it. A fault in the save is rolled back whole,
+so nothing is saved and the member can simply ask again; a fault in a step after the save leaves the
+setting saved, so asking again with the same value saves nothing and repeats no step, and the reply
+says what was not done, or what to do by hand, where the step has anything to say. So such a step
+carries `Step.on_fault`: where it raises, the queue does not stop the lane but marks the job done
+with what `on_fault` returns, in a save of its own with its lines, and the change carries on to its
+next step or finishes. A change type may likewise give `ChangeType.on_check_fault` for a check that
+raises as a **member's** change starts: the change is ended as REFUSED in one save, with the failure
+line in place of a refusal's, and the reply it returns. What the member is told and what the log
+channel records of either is the core specification's "How a change is carried out"; the full detail
+goes to the host's log. A step that is `undiscardable` may not carry `on_fault`, since it is a step
+a stop must hold. `core/services/queue/setting_change.py` builds both callbacks for every settings
+command once. *Rejected:* a step that catches its own fault, which would leave its partial writes on
+the save's connection and could not catch what fails after it returns, the queue's own audit and
+line writes and the commit; stopping the lane for a setting, which would hold every other change for
+a fault that either the member cures by asking again (a save rolled back) or that nothing later on
+the lane depends on (a step after it).
 
-  `/bot init` (a change type of its own; see "The record is the queue's") ends on a fault rather
-  than stopping the lane, both in its one SAVE step (`Step.on_fault`) and in a check that raises as
-  a member's `/bot init` starts (`ChangeType.on_check_fault`): no league admin role is set while no
-  server holds the league, before a first `/bot init` or after a pack, so nobody could clear a stop
-  on it if it held the lane (`core/services/settings/bot_init_change.py`). A fault in its save writes no
-  line, its claim rolled back with it; a fault in its check writes the failure line where a server
-  holds the league. While none does, there is no log channel, and the host's log holds either
-  alone. *Rejected:* stopping the lane on a fault in `/bot init`, as any other job does, which
-  would leave a stop nobody yet holds the role to clear.
+`/bot init` (a change type of its own; see "The record is the queue's") ends on a fault rather than
+stopping the lane, both in its one SAVE step (`Step.on_fault`) and in a check that raises as a
+member's `/bot init` starts (`ChangeType.on_check_fault`): no league admin role is set while no
+server holds the league, before a first `/bot init` or after a pack, so nobody could clear a stop on
+it if it held the lane (`core/services/settings/bot_init_change.py`). A fault in its save writes no
+line, its claim rolled back with it; a fault in its check writes the failure line where a server
+holds the league. While none does, there is no log channel, and the host's log holds either alone.
+*Rejected:* stopping the lane on a fault in `/bot init`, as any other job does, which would leave a
+stop nobody yet holds the role to clear.
 
   The same holds for a member's roles moved after their driver's or their team's change. A `/driver`
   or `/team` change saves the driver's or the team's rows and their audit record in one step, and
@@ -763,21 +766,21 @@ core table reaching readers in every module. *Rejected:* moving each module's co
 tables now, which touches every reader of those columns before go-live for a cleaner line of
 ownership.
 
-**A conversation's lane writes only its own conversation's tables, and that is held at run time.**
-A change type of a conversation's lane declares the tables its kind writes (`ChangeType.writes`):
-its conversation's own rows, never the league's. A change type that declares `writes`, on whichever
-lane it runs, has the connection of every save made for it, a saving step's or a record's, given an
-SQLite authoriser (`_confine` in `core/services/queue/change_queue.py`) that refuses an insert, update or
-delete on any table but those. The queue's own tables are always allowed (`QUEUE_TABLES`: the job's
-mark, its audit records, its log lines and the changes it asks for), so the mark, the lines and a
-follow-on pass, and an empty `writes` allows those alone. A write the authoriser refuses raises in
-the step, rolls its save back whole and stops the lane at that job, so it never lands; in a
-league's setting, `/bot init`'s save or a role move, whose steps end on a fault (see "A job that
+**A conversation's lane writes only its own conversation's tables, and that is held at run time.** A
+change type of a conversation's lane declares the tables its kind writes (`ChangeType.writes`): its
+conversation's own rows, never the league's. A change type that declares `writes`, on whichever lane
+it runs, has the connection of every save made for it, a saving step's or a record's, given an
+SQLite authoriser (`_confine` in `core/services/queue/change_queue.py`) that refuses an insert,
+update or delete on any table but those. The queue's own tables are always allowed (`QUEUE_TABLES`:
+the job's mark, its audit records, its log lines and the changes it asks for), so the mark, the
+lines and a follow-on pass, and an empty `writes` allows those alone. A write the authoriser refuses
+raises in the step, rolls its save back whole and stops the lane at that job, so it never lands; in
+a league's setting, `/bot init`'s save or a role move, whose steps end on a fault (see "A job that
 fails stops its lane"), it ends the job instead and the lane goes on. A change type whose `writes`
-is `None`, the default, is not restricted; most league change types leave it so, and a league
-change type may declare the tables it writes and be confined to them likewise, as replacing a
-round's results with its resubmission drafts does. What a conversation hands the league, it asks
-of the league lane (see "How a change is carried out").
+is `None`, the default, is not restricted; most league change types leave it so, and a league change
+type may declare the tables it writes and be confined to them likewise, as replacing a round's
+results with its resubmission drafts does. What a conversation hands the league, it asks of the
+league lane (see "How a change is carried out").
 
 *Rejected:* trusting each step to keep to its tables, which a lane's own tests would never catch
 once the flows are many; and a separate connection for each lane, which SQLite would not make a
@@ -1056,12 +1059,12 @@ rule has two halves:
   each posting function, which a caller outside a job could invent.
 - **The check.** A test fails on any function that posts without the decorator, unless it is named
   off the queue with its reason (see "How the rules are checked"). The router
-  (`core/services/posting/output_router.py`) alone is exempt from it whole (`JOB_CHECK_ALLOWED`): it writes
-  log lines, the stop notice and the turn-away, and nothing else, and what it posts off the queue
-  are the exceptions below. The other handlers are held to it. The check of posting outside the
-  handlers passes over the four handler files (`POSTING_ALLOWED`) and over a function named off the
-  queue, which runs outside a job and so cannot go through a handler. Two functions whose sends look
-  like posts and are not are named in `NOT_A_POST` with their reasons. One is the owner's own
+  (`core/services/posting/output_router.py`) alone is exempt from it whole (`JOB_CHECK_ALLOWED`): it
+  writes log lines, the stop notice and the turn-away, and nothing else, and what it posts off the
+  queue are the exceptions below. The other handlers are held to it. The check of posting outside
+  the handlers passes over the four handler files (`POSTING_ALLOWED`) and over a function named off
+  the queue, which runs outside a job and so cannot go through a handler. Two functions whose sends
+  look like posts and are not are named in `NOT_A_POST` with their reasons. One is the owner's own
   `!sync` command (`guild_sync` in the entry point): it deletes the owner's message and posts a note
   that deletes itself, which is a prefix command's reply. The other is the queue's edit of a
   member's own acknowledgement (`ChangeQueue._update_reply`), which answers the member and posts in
@@ -1085,13 +1088,13 @@ The exceptions, each with its reason:
 - **The factory reset's clean-up and its progress.** The reset empties the database the queue
   lives in and leaves no log channel or roles for Retry and Discard, and its progress is the reply
   to the owner's own command.
-- **The turn-away.** A message typed into a conversation's channel while an earlier turn there
-  waits is answered at once with a note mentioning its author alone, and deleted
+- **The turn-away.** A message typed into a conversation's channel while an earlier turn there waits
+  is answered at once with a note mentioning its author alone, and deleted
   (`OutputRouter.turn_away`). Each is tried once; a refusal of either is logged on the host and
   lost, never tried again, and the note stays. Queued, the note would come after the very turn it
-  explains, and could stop a lane for a courtesy. Beside it, the ⏳ mark a typed message is given
-  at once while its turn waits is a reaction made off the queue for the same reason, a refusal
-  logged and the turn going ahead (`core/services/queue/typed_turns.py`); taking it off is a job, the
+  explains, and could stop a lane for a courtesy. Beside it, the ⏳ mark a typed message is given at
+  once while its turn waits is a reaction made off the queue for the same reason, a refusal logged
+  and the turn going ahead (`core/services/queue/typed_turns.py`); taking it off is a job, the
   turn's last, so a mark that cannot be taken off stops the lane and is tried again.
 
 **Every post keeps three things,** whichever handler sends it:
@@ -1280,11 +1283,11 @@ review's calendar and attendance warnings) — is a stated exception beside
 the error in the host's log in full and lets the season through as if no problem were found, because
 a capacity check that cannot run must not block a season (its docstring says so); the round guard
 that `/round add` and the round imports share (`calendar_round_refusal`, in
-`core/services/rounds/round_add_changes.py`) is a stated exception beside it: the change types' checks call
-it when the change is asked for and again as it starts, and its catch-all (a switch nobody signed up
-for aside) puts the error in the host's log in full and lets the round through as if no problem were
-found, because a capacity check that cannot run must not block a round (its docstring says so); the
-season's reading of the image module's configuration faults
+`core/services/rounds/round_add_changes.py`) is a stated exception beside it: the change types'
+checks call it when the change is asked for and again as it starts, and its catch-all (a switch
+nobody signed up for aside) puts the error in the host's log in full and lets the round through as
+if no problem were found, because a capacity check that cannot run must not block a round (its
+docstring says so); the season's reading of the image module's configuration faults
 (`approval_checks.image_configuration_faults`) is a stated exception too: each of its catch-alls
 puts the error in the host's log; a fault reading the templates is stated as a fault of its own,
 which refuses the season, because a check that never ran is not a pass, while a fault reading the
@@ -1413,8 +1416,8 @@ later on its own.
   import which: the rules for each kind of code, that core uses no module, that a module uses
   another only where the dependency table allows, that nothing imports the entry point, and that
   nothing but the entry point imports a module's wiring. The same test checks that core's services
-  sit in their topic folders, plumbing apart from league rules, with the scheduler's file alone
-  loose.
+  sit only in the named topic folders, each named as plumbing or as league rules, with the
+  scheduler's file alone loose.
 - **`tests/repository/test_architecture_rules.py`** checks the rest: database code outside services,
   awaiting anything but the connection mid-save, cogs handling their own errors, catch-all handlers
   that lose the error details, background tasks nobody keeps, code reaching past the scheduler
