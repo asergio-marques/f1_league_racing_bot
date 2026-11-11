@@ -157,7 +157,8 @@ is harmless). The sweep's own asks are made inside `sweeping()`, which marks the
 variable, so they pass the hold; a task started from outside it does not inherit the mark. A held ask
 that has an interaction not yet answered defers it, privately, before it waits, so that Discord's
 three seconds do not lapse, and its acknowledgement or refusal is then a follow-up, as for any
-deferred interaction. A queue never held (every test's, bar those of the hold) asks at once. *Rejected:* refusing a request made during the
+deferred interaction. A command answered off the queue waits the same way through `wait_out_the_hold`
+(`leaguebot.core.utils.catch_up_gate`). A queue never held (every test's, bar those of the hold) asks at once. *Rejected:* refusing a request made during the
 catch-up, which would turn away what a league manager asked for a moment after a restart, and
 queueing it unchecked, which would decide it against a league the catch-up has not finished
 changing. Pinned by `test_a_request_during_the_sweep_waits_until_the_sweep_has_asked_its_own`.
@@ -472,6 +473,27 @@ class ChangeQueue:
             _in_the_sweep.reset(token)
             self.release()
 
+    def _holding(self) -> asyncio.Event | None:
+        """The hold, where a request made now has to wait for it: the queue is held, not yet
+        released, and the request is not the sweep's own."""
+        hold = self._hold
+        if hold is None or hold.is_set() or _in_the_sweep.get():
+            return None
+        return hold
+
+    async def wait_out_the_hold(self, interaction: discord.Interaction) -> bool:
+        """For a command answered off the queue: wait, where the queue is held, until it is
+        released, and say whether it had to. An interaction not yet answered is deferred first,
+        as an ask's is (`_out_the_hold`), so that Discord shows "thinking…" and its three seconds
+        do not lapse; the command then answers by a follow-up."""
+        hold = self._holding()
+        if hold is None:
+            return False
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True, thinking=True)
+        await hold.wait()
+        return True
+
     @asynccontextmanager
     async def _out_the_hold(
         self, kind: str, payload: dict[str, Any], interaction: discord.Interaction | None
@@ -482,8 +504,8 @@ class ChangeQueue:
         button or a form as for a command, and its three seconds do not lapse; a form opened from a
         slash command takes only that kind of deferral. While it waits, and until the ask is through, the channel of a kind that declares a
         `turn_channel` is a held turn channel (`held_turn_channels`)."""
-        hold = self._hold
-        if hold is None or hold.is_set() or _in_the_sweep.get():
+        hold = self._holding()
+        if hold is None:
             yield
             return
         if interaction is not None and not interaction.response.is_done():
