@@ -348,3 +348,96 @@ async def test_open_signups_are_reported_as_open(tmp_path):
     await undecorate(SignupCog.config_view)(cog, interaction)
 
     assert _fields(interaction)["Signups Open"] == "Yes"
+
+
+#: The commands answered off the change queue that wait for the catch-up after a restart (#440):
+#: the `/signup` commands that set something, the `/attendance config` setters, `/bot pack`,
+#: `/bot factory-reset` and the `/test-mode backup` commands that change something.
+_HELD_FOR_THE_CATCH_UP = {
+    "signup channel", "signup nationality", "signup time-type", "signup time-image",
+    "signup time-slot add", "signup time-slot remove", "signup close-time add",
+    "signup close-time cancel", "signup close-time modify",
+    "attendance config rsvp-notice", "attendance config rsvp-last-notice",
+    "attendance config rsvp-deadline", "attendance config no-rsvp-penalty",
+    "attendance config absent-penalty", "attendance config no-show-penalty",
+    "attendance config autosack", "attendance config autoreserve",
+    "bot pack", "bot factory-reset",
+    "test-mode backup save", "test-mode backup lock", "test-mode backup restore",
+}
+
+
+def _the_wait_of(callback):
+    """The wait for the catch-up *callback* wears beneath its guard, or None where it wears none."""
+    from leaguebot.core.utils.catch_up_gate import after_the_catch_up
+
+    async def body(self, interaction):
+        return None
+
+    waits = after_the_catch_up(lambda cog: None)(body).__code__
+    while callback is not None:
+        if getattr(callback, "__code__", None) is waits:
+            return callback
+        callback = getattr(callback, "__wrapped__", None)
+    return None
+
+
+async def test_the_off_queue_commands_wait_for_the_catch_up(monkeypatch):
+    """The bot has restarted and holds its change queue for the catch-up. Of every command the
+    signup, attendance, bot and test-mode cogs carry, exactly the twenty-two that change the league
+    without asking the queue wear the wait; `/attendance sync`, `/attendance config show` and
+    `/test-mode backup status` do not, and answer at once. A league manager then invokes one held
+    command of each cog (`/signup nationality`, `/attendance config no-rsvp-penalty`, `/bot pack`,
+    `/test-mode backup lock`): none acts while the queue is held, and once the catch-up ends and the
+    queue is released each acts, once."""
+    import asyncio
+
+    from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
+    from leaguebot.core.cogs import bot_cog
+    from leaguebot.core.cogs.test_mode_cog import TestModeCog
+    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from tests.support.change_queue import member_interaction, response_in_its_slot
+
+    bot = MagicMock()
+    bot.change_queue = ChangeQueue("unused.db", MagicMock(), MagicMock(), MagicMock())
+    attendance, bot_commands, test_mode, signup = cogs = [
+        AttendanceCog(bot), bot_cog.BotCog(bot), TestModeCog(bot), SignupCog(bot)
+    ]
+    commands = {command.qualified_name: (cog, command) for cog in cogs
+                for command in cog.walk_app_commands() if hasattr(command, "callback")}
+
+    held = {name for name, (_, command) in commands.items() if _the_wait_of(command.callback)}
+    assert held == _HELD_FOR_THE_CATCH_UP
+    assert not held & {"attendance sync", "attendance config show", "test-mode backup status"}
+
+    acted: list[str] = []
+
+    def acts(name, result=None):
+        async def run(*args, **kwargs):
+            acted.append(name)
+            return result
+
+        return run
+
+    signup._module_gate = acts("signup nationality", False)
+    attendance._set_penalty = acts("attendance config no-rsvp-penalty")
+    test_mode._refuse_outside_test_mode = acts("test-mode backup lock", True)
+    monkeypatch.setattr(bot_cog, "refuse", acts("bot pack"))
+    invoked = {"signup nationality": (), "attendance config no-rsvp-penalty": (3,),
+               "bot pack": ("not the word",), "test-mode backup lock": ()}
+
+    bot.change_queue.hold()
+    waiting = []
+    for name, args in invoked.items():
+        cog, command = commands[name]
+        press = response_in_its_slot(member_interaction(bot))
+        waiting.append(asyncio.create_task(_the_wait_of(command.callback)(cog, press, *args)))
+    for _ in range(20):
+        await asyncio.sleep(0)
+
+    assert acted == []
+    assert not any(task.done() for task in waiting)
+
+    bot.change_queue.release()
+    await asyncio.wait_for(asyncio.gather(*waiting), timeout=5)
+
+    assert sorted(acted) == sorted(invoked)
