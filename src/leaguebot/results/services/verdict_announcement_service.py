@@ -51,32 +51,6 @@ def _for_message(value: str) -> str:
 _VERDICT_MENTIONS = discord.AllowedMentions(everyone=False, roles=False, users=True)
 
 
-#: What a manager can do about a verdict that never reached the channel (#237).
-#:
-#: **A decided verdict cannot be announced again by the bot**, and the hint must say so. No
-#: command re-announces one, and #189 records the reason one could not be built: the message
-#: id of an announcement is never stored, so the bot holds nothing by which to find, edit or
-#: replace one. The manager repairs the channel and posts the decision themselves.
-#:
-#: **Attendance sanctions are not an exception to this**, though it is tempting to write that
-#: they are because `/attendance sync` does re-run the sanctions. It will not re-announce one
-#: that already applied: `sack_driver` deletes the driver's `driver_season_assignments` row
-#: and `move_driver` puts them in the Reserve team, so on a second run they are no longer a
-#: candidate and are passed over without a word. ``attendance_service._failure_reason`` says
-#: this in as many words, and ``sync_attendance``'s docstring repeats it. A hint promising
-#: the sync would announce it would hand the manager the very false confidence this issue
-#: exists to prevent — they would run it, read `Success`, and believe the driver was told.
-_VERDICT_NO_RETRY = (
-    "Repair the cause, then post the decision in the verdicts channel yourself — the bot "
-    "cannot announce a verdict a second time."
-)
-
-
-def verdict_repair_hint() -> str:
-    """The line telling a manager how to finish a verdict that was not announced (#237)."""
-    return _VERDICT_NO_RETRY
-
-
 def _round_label(state) -> str:
     """The round as a league knows it, not as the database numbers it.
 
