@@ -151,6 +151,7 @@ def _bot(db_path: str) -> MagicMock:
     # reads the database directly rather than through a service.
     bot.db_path = db_path
     bot.config_service = ConfigService(db_path)
+    bot.change_queue.wait_out_the_hold = AsyncMock(return_value=False)
     bot.output_router.post_log = AsyncMock()
     return bot
 

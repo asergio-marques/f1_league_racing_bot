@@ -44,6 +44,7 @@ async def _league(db_path: str) -> AttendanceCog:
         await db.commit()
     bot = league_double(db_path, now=lambda: NOW)
     bot.attendance_service = AttendanceService(db_path)
+    bot.change_queue.wait_out_the_hold = AsyncMock(return_value=False)
     bot.module_service = MagicMock()
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.season_service = MagicMock()
