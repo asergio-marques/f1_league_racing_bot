@@ -828,8 +828,9 @@ audit entries, the roster's writers taking the connection of the save and commit
 the reply of a discarded save needs is read into the payload at the ask (`fill`), and a fault in a
 save stops the lane. What each kind judges and writes is its docstring's. A roster is measured
 against the template capacities with the bot's own template capacity service, the one carrying the
-image module's drawing, as a real placement is, and one the file shows wrong on its own is refused
-by the form before the ask.
+image module's drawing, as a real placement is: the drawing is asked in the check, before the
+save opens, and the save counts seats on its own connection and asks nothing of it. One the file
+shows wrong on its own is refused by the form before the ask.
 
 **Fake drivers are seeded, not moved through the state machine.** `test_roster_service` inserts a
 fake driver at Assigned, flagged as a test driver, with a synthetic id above any real Discord id;
