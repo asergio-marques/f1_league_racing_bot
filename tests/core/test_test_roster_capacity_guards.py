@@ -7,7 +7,7 @@ driver standings — so a roster those templates could not hold was accepted, an
 surfaced only as a fallback at the first posting. A rehearsal that passes a configuration a
 real season would refuse is worse than no rehearsal.
 
-``PlacementService.guard_roster_capacity`` asks the three guards over a whole change at once,
+``TemplateCapacityService.guard_roster_capacity`` asks the three guards over a whole change at once,
 summed per division, and both roster paths call it before they write anything. What it counts
 and asks is ``tests/core/test_placement_capacity_guards.py``'s, through a stub; here the image
 module's own implementation of core's protocol is handed in (#283), so that each roster path
@@ -23,6 +23,11 @@ import pytest
 from lxml import etree
 
 from leaguebot.core.db.database import get_connection, run_migrations
+
+
+#: Why the tests asking the capacity guards fail until the guards are a service of their own
+#: (#283).
+_NOT_YET_A_SERVICE = "#283: the capacity guards are not yet a TemplateCapacityService of their own"
 
 
 SVG_NS = "http://www.w3.org/2000/svg"
@@ -124,9 +129,9 @@ def _drawing(db_path: str, templates: dict[str, str]):
 
 
 def _service(db_path: str, templates: dict[str, str]):
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.template_capacity_service import TemplateCapacityService
 
-    return PlacementService(db_path, drawing=_drawing(db_path, templates))
+    return TemplateCapacityService(db_path, drawing=_drawing(db_path, templates))
 
 
 # ── The season ────────────────────────────────────────────────────────────
@@ -197,12 +202,13 @@ async def _add(path, service, team, division="Alpha", name="Mock"):
             driver_name=name,
             team_name=team,
             division_name=division,
-            placement_service=service,
+            capacity=service,
         )
         await db.commit()
     return result
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 async def test_a_reserve_past_the_lineup_s_reserve_slots_is_refused(tmp_path):
     path, _divisions = await _seed(tmp_path)
     service = _service(path, {LINEUP: _lineup(tmp_path, reserve_slots=1)})
@@ -216,6 +222,7 @@ async def test_a_reserve_past_the_lineup_s_reserve_slots_is_refused(tmp_path):
     assert await _seated(path) == 1, "the refused driver was written anyway"
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 async def test_a_driver_past_the_sheet_rows_is_refused(tmp_path):
     path, _divisions = await _seed(tmp_path)
     service = _service(path, {SHEET: _sheet(tmp_path, rows=2)})
@@ -228,6 +235,7 @@ async def test_a_driver_past_the_sheet_rows_is_refused(tmp_path):
     assert await _seated(path) == 2
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 async def test_a_driver_past_the_standings_rows_is_refused_but_a_reserve_is_not(tmp_path):
     path, _divisions = await _seed(tmp_path)
     service = _service(path, {DRIVERS: _standings(tmp_path, rows=2)})
@@ -241,6 +249,7 @@ async def test_a_driver_past_the_standings_rows_is_refused_but_a_reserve_is_not(
     assert isinstance(reserve, dict), "a reserve adds no entry to the classification"
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 async def test_the_command_refuses_it_in_placements(tmp_path, monkeypatch):
     """Through the cog, on the bot the builder makes, in the one stage the roster may change in.
 
@@ -248,8 +257,8 @@ async def test_the_command_refuses_it_in_placements(tmp_path, monkeypatch):
     its first seat and its second seat free, and the driver standings template holds one row, so
     Am's standings could not draw a second driver. Admin (77) runs `/test-mode roster add` of Mock
     to McLaren in Am. Nothing about the stage is stubbed: the roster change is allowed there, and
-    it is the template that refuses it, measured by the bot's own placement service, here one
-    whose image drawing holds that template, so a service made apart from the bot would let the
+    it is the template that refuses it, measured by the bot's own template capacity service, here
+    one whose image drawing holds that template, so a service made apart from the bot would let the
     driver through. Admin is refused at once, seen by them alone, the reply saying
     the driver was **not** assigned; nothing is queued, no fake driver is created, nothing is
     audited, and the log channel takes the refusal as its only line, naming the command and Admin.
@@ -267,7 +276,7 @@ async def test_the_command_refuses_it_in_placements(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(
         league.bot,
-        "placement_service",
+        "template_capacity_service",
         _service(league.db_path, {DRIVERS: _standings(tmp_path, rows=1)}),
     )
     cog = test_mode_cog.TestModeCog.__new__(test_mode_cog.TestModeCog)
@@ -323,11 +332,12 @@ async def _bulk(path, service, drivers):
     from leaguebot.core.services.test_roster_service import add_test_drivers_in_bulk_on
 
     async with get_connection(path) as db:
-        result = await add_test_drivers_in_bulk_on(db, drivers, placement_service=service)
+        result = await add_test_drivers_in_bulk_on(db, drivers, capacity=service)
         await db.commit()
     return result
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 async def test_a_roster_outgrowing_the_standings_across_its_teams_seats_nobody(tmp_path):
     """No team overflows on its own. The division does, and the import is refused whole."""
     path, _divisions = await _seed(tmp_path)
@@ -345,6 +355,7 @@ async def test_a_roster_outgrowing_the_standings_across_its_teams_seats_nobody(t
     assert await _seated(path) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 async def test_each_division_is_measured_on_its_own(tmp_path):
     """Three rows each: two divisions of three drivers fit, though six drivers would not."""
     path, _divisions = await _seed(tmp_path)
@@ -360,6 +371,7 @@ async def test_each_division_is_measured_on_its_own(tmp_path):
     assert seated == 6
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 async def test_the_reserves_of_a_roster_are_measured_against_the_reserve_block(tmp_path):
     path, _divisions = await _seed(tmp_path)
     service = _service(path, {LINEUP: _lineup(tmp_path, reserve_slots=1)})
@@ -371,6 +383,7 @@ async def test_the_reserves_of_a_roster_are_measured_against_the_reserve_block(t
     assert any("2 reserve drivers" in error for error in errors)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_SERVICE)
 async def test_a_capacity_fault_is_named_beside_every_other(tmp_path):
     """Every fault is named at once, so a manager fixes the file in one pass."""
     path, _divisions = await _seed(tmp_path)

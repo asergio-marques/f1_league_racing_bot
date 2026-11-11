@@ -79,7 +79,7 @@ async def _test_driver_added(tmp_path, monkeypatch) -> None:
     async with get_connection(path) as db:
         await add_test_driver_on(
             db, driver_name="Mock", team_name=TEAMS[0], division_name="Alpha",
-            placement_service=_faulty_placement(),
+            capacity=_faulty_placement(),
         )
 
 
@@ -92,7 +92,7 @@ async def _test_roster_imported(tmp_path, monkeypatch) -> None:
     path, _divisions = await _seed(tmp_path)
     async with get_connection(path) as db:
         await add_test_drivers_in_bulk_on(
-            db, _roster((TEAMS[0], "Alpha")), placement_service=_faulty_placement(),
+            db, _roster((TEAMS[0], "Alpha")), capacity=_faulty_placement(),
         )
 
 
@@ -280,6 +280,12 @@ async def _tiers_checked(tmp_path, monkeypatch) -> None:
     await _run(cog, _interaction())
 
 
+#: Why the test roster's cases fail until its writers are handed the capacity service (#283).
+_NOT_YET_HANDED_CAPACITY = (
+    "#283: the test roster's writers are not yet handed a TemplateCapacityService as capacity="
+)
+
+
 #: One case per catch: what it guards, and how to raise a bug's `ValueError` inside it.
 CATCHES = [
     pytest.param(_placement_check("driver_move_change"), id="driver move check"),
@@ -287,8 +293,10 @@ CATCHES = [
     pytest.param(_placement_check("driver_release_change"), id="driver release check"),
     pytest.param(_placement_check("driver_assign_change"), id="driver assign check"),
     pytest.param(_placement_check("driver_unassign_change"), id="driver unassign check"),
-    pytest.param(_test_driver_added, id="test driver added"),
-    pytest.param(_test_roster_imported, id="test roster imported"),
+    pytest.param(_test_driver_added, id="test driver added",
+                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_CAPACITY)),
+    pytest.param(_test_roster_imported, id="test roster imported",
+                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_CAPACITY)),
     pytest.param(_team_check("team_add_change", _TEAM_ADDED), id="team add check"),
     pytest.param(_team_save("team_add_change", _TEAM_ADDED), id="team add save"),
     pytest.param(_team_check("team_remove_change", _TEAM_REMOVED), id="team remove check"),

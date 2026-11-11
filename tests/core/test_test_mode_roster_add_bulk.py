@@ -22,7 +22,6 @@ import pytest
 
 # Imported as a module: pytest tries to collect a bare `TestModeCog` name as a test class.
 from leaguebot.core.cogs import test_mode_cog
-from leaguebot.core.services.placement_service import PlacementService
 from tests.support.change_queue import change_rows, member, run_queue, step_rows, stopped_job
 from tests.support.season_league import AM, FERRARI, MCLAREN, PRO, SEASON_ID, season_league
 from tests.support.settings_league import audit_rows, last_said, said, unruled
@@ -267,24 +266,28 @@ async def test_a_roster_it_cannot_seat_is_refused_at_the_ask(league, text, refus
     assert _lines(league) == [_refused(refusal)]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the capacity guards are not yet a "
+                   "TemplateCapacityService of their own")
 async def test_the_roster_is_held_to_the_template_capacities(league, monkeypatch):
-    """The bot's placement service holds the roster to the template capacities a real placement
+    """The bot's template capacity service holds the roster to the template capacities a real placement
     is held to, counting every driver the roster gives a division at once. The season is in
     Placements under test mode, Am empty and McLaren's three seats free. Admin (77) submits
     `/test-mode roster add-bulk`'s form naming Mock Alpha and Mock Beta at McLaren in Am, and the
     queue runs the change. The change is queued as `core.test_roster_add_bulk`, every time the
-    capacities are asked it is of Am with two drivers for McLaren and by the bot's own placement
-    service, the one carrying the image module's drawing, and both are seated."""
+    capacities are asked it is of Am with two drivers for McLaren and by the bot's own template
+    capacity service, the one carrying the image module's drawing, and both are seated."""
+    from leaguebot.core.services.template_capacity_service import TemplateCapacityService
+
     asked: list[tuple[int, dict[str, int]]] = []
-    measurers: list[PlacementService] = []
-    measure = PlacementService.guard_roster_capacity
+    measurers: list[TemplateCapacityService] = []
+    measure = TemplateCapacityService.guard_roster_capacity
 
     async def _measured(service, division_id, added):
         asked.append((division_id, dict(added)))
         measurers.append(service)
         await measure(service, division_id, added)
 
-    monkeypatch.setattr(PlacementService, "guard_roster_capacity", _measured)
+    monkeypatch.setattr(TemplateCapacityService, "guard_roster_capacity", _measured)
 
     await _submit(league, _asks(league))
     assert [row["kind"] for row in await change_rows(league.db_path)] == [
@@ -293,7 +296,7 @@ async def test_the_roster_is_held_to_the_template_capacities(league, monkeypatch
     await run_queue(league.bot)
 
     assert asked and set(map(repr, asked)) == {repr((AM, {"McLaren": 2}))}
-    assert all(service is league.bot.placement_service for service in measurers)
+    assert all(service is league.bot.template_capacity_service for service in measurers)
     assert [row["discord_user_id"] for row in await _fake_drivers(league)] == [ALPHA, BETA]
 
 
