@@ -74,20 +74,33 @@ async def test_build_returns_every_service_complete(tmp_path):
     assert not hasattr(bot.wizard_service, "set_bot")
 
 
-async def test_the_builder_hands_placement_the_image_module_s_drawing(tmp_path):
+@pytest.mark.xfail(strict=True, reason="#283: placement's capacity guards, team roles and "
+                   "lineup posting are not yet services of their own")
+async def test_the_builder_hands_the_capacity_guards_and_the_lineups_the_image_module_s_drawing(
+    tmp_path,
+):
     """`build` makes the image module's answer to core's drawing protocol once, declares it on the
-    bot, and hands that same answer to `PlacementService`: without it, every capacity guard would
-    let every placement through, and no lineup would be drawn. The drawing is handed the bot's
-    database, which is all a lineup's drawing reads beyond the image module's own services, and
-    `PlacementService` is handed no bot, since it posts through the guild it is given."""
+    bot, and hands that same answer to the template capacity service and the lineup poster:
+    without it, every capacity guard would let every placement through, and no lineup would be
+    drawn. `PlacementService` is handed the capacity service and the team-role service the bot
+    declares, the same objects, so its seats are guarded and its roles granted by what every other
+    caller uses. The drawing is handed the bot's database, which is all a lineup's drawing reads
+    beyond the image module's own services, and none of the four services is handed the bot,
+    since each posts or grants through the guild or member it is given."""
     from leaguebot.image.services.image_drawing import ImageDrawing
 
     bot = await built_bot(tmp_path, now=_NOW)
 
     assert isinstance(bot.image_drawing, ImageDrawing)
-    assert bot.placement_service._drawing is bot.image_drawing
+    assert bot.template_capacity_service._drawing is bot.image_drawing
+    assert bot.lineup_poster._drawing is bot.image_drawing
+    assert bot.placement_service._capacity is bot.template_capacity_service
+    assert bot.placement_service._roles is bot.team_role_service
+    assert not hasattr(bot.placement_service, "_drawing")
     assert bot.image_drawing._db_path == bot.db_path
-    assert not hasattr(bot.placement_service, "_bot")
+    for service in (bot.placement_service, bot.template_capacity_service, bot.lineup_poster,
+                    bot.team_role_service):
+        assert not hasattr(service, "_bot")
 
 
 async def test_the_builder_hands_every_change_that_posts_a_calendar_the_image_module_s_drawing(
