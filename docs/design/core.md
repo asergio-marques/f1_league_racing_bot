@@ -151,7 +151,8 @@ Answers to `architecture.md`, "How the code is laid out". Core's code sits in `c
 
 ### Services, and what each owns
 
-Each service sits in a topic folder of `core/services/` (`architecture.md`, "How the code is laid out"). The table names a service by its file, not its folder.
+Each service but the scheduler's sits in a topic folder of `core/services/` (`architecture.md`, "How the code is laid out").
+The table names a service by its file, not its folder.
 
 | Area | Services | Owns |
 |---|---|---|
