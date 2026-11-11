@@ -281,11 +281,27 @@ def _handed_connection(function: ast.FunctionDef | ast.AsyncFunctionDef) -> str 
     return None
 
 
+def _takes_it_optionally(function: ast.FunctionDef | ast.AsyncFunctionDef, name: str) -> bool:
+    """Whether the parameter *name* of *function* may be left out: its default is `None`,
+    positional or keyword-only, or its annotation says `| None`."""
+    positional = [*function.args.posonlyargs, *function.args.args]
+    defaults = [None] * (len(positional) - len(function.args.defaults)) + list(function.args.defaults)
+    pairs = [*zip(positional, defaults), *zip(function.args.kwonlyargs, function.args.kw_defaults)]
+    for parameter, default in pairs:
+        if parameter.arg != name:
+            continue
+        if isinstance(default, ast.Constant) and default.value is None:
+            return True
+        return parameter.annotation is not None and ast.unparse(parameter.annotation).endswith("| None")
+    return False
+
+
 def _connections_it_opens(function: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
-    """The connections *function* opens itself, by name. A function that takes a connection
-    *optionally* and opens its own where it is handed none is held to the rule on the handed one,
-    and works on its own as any function that opens one does: the scan cannot tell which branch
-    ran, and the one with no save open is the one that opens."""
+    """The connections *function* opens itself, by name. Only a function that takes a connection
+    *optionally* (`_takes_it_optionally`) may open its own where it is handed none: it is held to
+    the rule on the handed one, and works on its own as any function that opens one does, the scan
+    being unable to tell which branch ran, and the one with no save open being the one that opens.
+    A function that must be given the connection opens none, and one it opens is counted."""
     return [
         item.optional_vars.id
         for node in ast.walk(function) if isinstance(node, ast.AsyncWith)
@@ -352,7 +368,7 @@ def _awaits_inside_a_write(nodes=None) -> Counter[tuple[str, str]]:
         if connection is None:
             continue
         name = node.name if function == "<module>" else f"{function}.{node.name}"
-        own = _connections_it_opens(node)
+        own = _connections_it_opens(node) if _takes_it_optionally(node, connection) else []
         for awaited in _awaits_in_order(node.body):
             if not any(_on_the_connection(awaited.value, each) for each in (connection, *own)):
                 found[(path, name)] += 1
@@ -381,7 +397,9 @@ def test_nothing_else_is_awaited_while_a_write_is_open():
 def test_the_await_check_covers_a_function_handed_the_connection_of_a_save():
     """An await in a function handed a connection, named `db` or annotated as one, as any parameter
     and a keyword's too, or given to a step as its save or its record, is counted unless it is on
-    the connection, on a cursor from it, given it, or on a connection the function opens itself;
+    the connection, on a cursor from it, or given it, or, in a function that takes the connection
+    optionally, on a connection it opens itself; a function that must be given the connection and
+    opens a second one has its awaits on that counted;
     `asyncio.sleep` is counted, for a sleep while a save is open holds the write lock as long as it
     waits, and so is a pure helper that is given nothing of the connection, for the scan cannot
     tell it from a read on a second connection. A function a call hands the connection on to as a
@@ -404,6 +422,10 @@ def test_the_await_check_covers_a_function_handed_the_connection_of_a_save():
         "        return await helper(db)\n"
         "    async with get_connection(p) as own:\n"
         "        return await helper(own)\n"
+        "async def required(db, p):\n"
+        "    await db.execute('UPDATE t SET a = 1')\n"
+        "    async with get_connection(p) as other:\n"
+        "        await other.execute('SELECT 1')\n"
         "async def method(self, _db: 'aiosqlite.Connection'):\n"
         "    await self.channel.send('x')\n"
         "async def not_handed(connections: list[aiosqlite.Connection]):\n"
@@ -423,7 +445,7 @@ def test_the_await_check_covers_a_function_handed_the_connection_of_a_save():
     )
 
     assert _awaits_inside_a_write(_sample(source, path)) == Counter({
-        (path, "handed"): 2, (path, "keyworded"): 1, (path, "method"): 1,
+        (path, "handed"): 2, (path, "keyworded"): 1, (path, "required"): 1, (path, "method"): 1,
         (path, "factory.save"): 1, (path, "factory.record"): 1,
     })
 
