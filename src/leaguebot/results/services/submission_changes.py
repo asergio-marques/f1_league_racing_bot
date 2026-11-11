@@ -82,8 +82,8 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.services.seasons import season_service
 from leaguebot.core.services.calendar_post_service import POST_CALENDAR, calendar_steps
-from leaguebot.core.services.cancellation_changes import not_notified
-from leaguebot.core.services.cancellation_notice_service import failure_log_lines
+from leaguebot.core.services.cancellations.cancellation_changes import not_notified
+from leaguebot.core.services.cancellations.cancellation_notice_service import failure_log_lines
 from leaguebot.core.services.seasons.season_lifecycle_service import WIND_DOWN, kept_line
 from leaguebot.core.services.seasons.season_service import set_round_status_on
 from leaguebot.core.utils.hooks import AwaitedHook

@@ -510,7 +510,7 @@ def register_change_types(bot: LeagueBot) -> None:
     the real set.
     """
     from leaguebot.core.services.calendar_post_service import calendar_sync_change
-    from leaguebot.core.services.cancellation_changes import (
+    from leaguebot.core.services.cancellations.cancellation_changes import (
         division_cancel_change,
         round_cancel_change,
         season_cancel_change,

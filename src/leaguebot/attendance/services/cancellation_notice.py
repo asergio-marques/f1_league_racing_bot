@@ -24,7 +24,7 @@ import discord
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.cancellation import SCOPE_DIVISION, SCOPE_ROUND, CancellationNotices
 from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
-from leaguebot.core.services.cancellation_notice_service import (
+from leaguebot.core.services.cancellations.cancellation_notice_service import (
     post_cancellation_notice,
     require_division,
     round_label,

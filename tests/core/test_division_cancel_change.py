@@ -209,7 +209,7 @@ def _everywhere(name: str, new: Any) -> ExitStack:
     stack = ExitStack()
     for module_name in ("leaguebot.core.services.seasons.season_service",
                         "leaguebot.core.services.seasons.season_lifecycle_service",
-                        "leaguebot.core.services.cancellation_changes"):
+                        "leaguebot.core.services.cancellations.cancellation_changes"):
         try:
             module = importlib.import_module(module_name)
         except ImportError:

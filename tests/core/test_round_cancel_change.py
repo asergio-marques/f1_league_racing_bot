@@ -215,7 +215,7 @@ def _everywhere(name: str, new: Any) -> ExitStack:
     """Patch season_service's *name* with *new*, and the change type's own reference to it."""
     stack = ExitStack()
     for module_name in ("leaguebot.core.services.seasons.season_service",
-                        "leaguebot.core.services.cancellation_changes"):
+                        "leaguebot.core.services.cancellations.cancellation_changes"):
         try:
             module = importlib.import_module(module_name)
         except ImportError:
@@ -826,7 +826,7 @@ async def test_a_cancel_waiting_behind_its_division_s_cancellation_is_refused_as
     league = await ongoing_league(tmp_path, attendance=True)
     await _stopped_blocker(league)
     await cancel_division(league, "Pro")
-    from leaguebot.core.services import cancellation_changes as module
+    from leaguebot.core.services.cancellations import cancellation_changes as module
 
     # Asked as though the in-hand refusal had not seen the division's cancellation.
     with monkeypatch.context() as patched:
@@ -978,7 +978,7 @@ async def test_a_round_number_that_cannot_be_read_stops_the_job_before_its_timed
     stops the job with the timed work still in place, and a league admin who discards the job is
     told truly that the round stands as it was. Read after the removal, the same failure would
     leave the round without its timed work and the reply saying it stands."""
-    from leaguebot.core.services import cancellation_changes as module
+    from leaguebot.core.services.cancellations import cancellation_changes as module
 
     league = await ongoing_league(tmp_path, attendance=True)
     interaction = await _asked(league)

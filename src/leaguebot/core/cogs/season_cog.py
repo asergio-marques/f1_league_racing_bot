@@ -22,7 +22,7 @@ from discord.ext import commands
 from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.seasons import approval_checks
-from leaguebot.core.services.cancellation_changes import SEASON_CANCEL
+from leaguebot.core.services.cancellations.cancellation_changes import SEASON_CANCEL
 from leaguebot.core.services.modules.image_drawing import Held
 from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
 from leaguebot.core.services.round_moments import read_phases_drawn, read_round_windows

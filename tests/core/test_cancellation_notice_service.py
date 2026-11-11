@@ -7,7 +7,7 @@ Core keeps its own: the failures a cancellation names in its reply and its log l
 """
 from __future__ import annotations
 
-from leaguebot.core.services import cancellation_notice_service as cns
+from leaguebot.core.services.cancellations import cancellation_notice_service as cns
 
 # ── What could not be notified is named ────────────────────────────────────
 

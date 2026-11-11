@@ -93,7 +93,7 @@ def test_the_cancellations_are_registered():
     """The builder registers the cancellation of a round and of a division, once each, as
     "season.round.cancel" and "season.division.cancel" (#439, slice 4b)."""
     from leaguebot.__main__ import register_change_types
-    from leaguebot.core.services.cancellation_changes import DIVISION_CANCEL, ROUND_CANCEL
+    from leaguebot.core.services.cancellations.cancellation_changes import DIVISION_CANCEL, ROUND_CANCEL
 
     bot = MagicMock()
     register_change_types(bot)
@@ -151,7 +151,7 @@ def test_the_season_s_end_is_registered():
     for kind in ("season.complete", "season.cancel", "season.abort", "season.wind_down"):
         assert kinds.count(kind) == 1, kind
 
-    from leaguebot.core.services.cancellation_changes import SEASON_CANCEL
+    from leaguebot.core.services.cancellations.cancellation_changes import SEASON_CANCEL
     from leaguebot.core.services.seasons.season_end_changes import SEASON_ABORT, SEASON_COMPLETE
     from leaguebot.core.services.seasons.season_lifecycle_service import WIND_DOWN
 
