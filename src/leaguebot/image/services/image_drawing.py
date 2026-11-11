@@ -179,7 +179,8 @@ class ImageDrawing:
         self._db_path = db_path
         #: The bot, which the review's lineup alone needs: `render_for_command` reads the image
         #: services off it as it draws. Optional so that a drawing built for the other answers
-        #: (the capacity questions, the calendar, the lineup of record) needs none.
+        #: (the capacity questions, the calendar, the lineup of record) needs none. It stays
+        #: until image's design pass (#288) removes `render_for_command`'s lookups on the bot.
         self._bot = bot
 
     async def _drawn_template(self, aspect: str, template_key: str) -> Path | None:
@@ -651,7 +652,9 @@ class ImageDrawing:
     ) -> LineupPicture:
         """Draw *division_id*'s lineup in *guild* for a season review: `render_for_command`
         asked to obtain each seated driver's missing portrait, and to include the uncommitted
-        drivers where *include_uncommitted*. A drawing built without the bot cannot, and says so."""
+        drivers where *include_uncommitted*. It is the one method that holds the bot, because
+        `render_for_command` looks the image services up on it; a drawing built without the bot
+        cannot, and says so."""
         if self._bot is None:
             raise RuntimeError("this drawing was built without the bot, so it cannot draw a review's lineup")
         outcome = await render_for_command(
