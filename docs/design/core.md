@@ -566,6 +566,7 @@ which each `_sign_up_to_*` docstring states where it matters.
 
 | Hook | Type | Subscribers | Core calls it in |
 |---|---|---|---|
+| `starting` | `StartingHook`, read rather than called | core's two steps, then signup, results, attendance, weather, image | `start_up` |
 | `round_windows_read` | A | attendance, weather | `round_moments.read_round_windows` |
 | `phases_drawn_read` | A | weather | `round_moments.read_phases_drawn` |
 | `round_amended`, `round_clean_ups_due` | A | weather, attendance | `round_amend_change` |
