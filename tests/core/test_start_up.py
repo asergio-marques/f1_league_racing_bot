@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import importlib
 import logging
 from contextlib import asynccontextmanager
@@ -231,19 +232,25 @@ def _failing_module_step(record: _Recorder, starting: Any, error: BaseException)
     starting.subscribe(record.module_steps(record.step("missed phases")), module="weather")
 
 
-def _failing_switch(record: _Recorder, starting: Any, error: BaseException) -> None:
+#: The first start-up step of each module a switch or list case fails, which never runs.
+_FIRST_STEP = {"results": "amendment sweep", "signup": "signup close timer"}
+
+
+def _failing_switch(record: _Recorder, starting: Any, error: BaseException,
+                    key: str = "results") -> None:
     starting.subscribe(record.step("hub")[1], name="hub")
-    starting.subscribe(record.module_steps(record.step("amendment sweep")), module="results")
+    starting.subscribe(record.module_steps(record.step(_FIRST_STEP[key])), module=key)
     starting.subscribe(record.module_steps(record.step("missed phases")), module="weather")
-    record.modules.failing["results"] = error
+    record.modules.failing[key] = error
 
 
-def _failing_list(record: _Recorder, starting: Any, error: BaseException) -> None:
+def _failing_list(record: _Recorder, starting: Any, error: BaseException,
+                  key: str = "results") -> None:
     def steps() -> Any:
         raise error
 
     starting.subscribe(record.step("hub")[1], name="hub")
-    starting.subscribe(steps, module="results")
+    starting.subscribe(steps, module=key)
     starting.subscribe(record.module_steps(record.step("missed phases")), module="weather")
 
 
@@ -274,11 +281,21 @@ def _failing_queue(record: _Recorder, starting: Any, error: BaseException) -> No
                  "The details are in the host's log.",
                  ["hub", "missed phases"], True,
                  id="a module's switch read"),
+    pytest.param(functools.partial(_failing_switch, key="signup"), "signup",
+                 "❌ The bot's start-up step `signup's switch` failed — SwitchNotSignedUp. "
+                 "The details are in the host's log.",
+                 ["hub", "missed phases"], True,
+                 id="a module's switch read, its name not ending in s"),
     pytest.param(_failing_list, "results",
                  "❌ The bot's start-up step `results' start-up steps` failed — _Fault. "
                  "The details are in the host's log.",
                  ["hub", "missed phases"], True,
                  id="a module's list of steps"),
+    pytest.param(functools.partial(_failing_list, key="signup"), "signup",
+                 "❌ The bot's start-up step `signup's start-up steps` failed — _Fault. "
+                 "The details are in the host's log.",
+                 ["hub", "missed phases"], True,
+                 id="a module's list of steps, its name not ending in s"),
     pytest.param(_failing_queue, "queue",
                  "❌ The bot's start-up step `change queue start` failed — _Fault. "
                  "The details are in the host's log.",
@@ -291,7 +308,8 @@ async def test_a_failing_sweep_step_is_reported_to_the_log_channel_and_the_rest_
     """One part of the sweep raises: core's expired review prompts step (the hub and two modules'
     steps after it); attendance's RSVP views and deadlines, between its check-in calls and its
     clean-ups, weather after it; results' switch read, a fault in the bot's assembly, weather after
-    it; results' list of steps; or the queue's start. One line goes to the log channel, naming the
+    it; results' list of steps; signup's switch read or list of steps, its name taking "'s" where
+    results' takes a bare apostrophe; or the queue's start. One line goes to the log channel, naming the
     part that failed and the kind of fault and saying the detail is in the host's log; the host's log
     has the error with its traceback; every other step runs, a module whose switch or list cannot be
     read passed over; the queue starts unless its start was what failed, and the scheduler is
@@ -302,7 +320,7 @@ async def test_a_failing_sweep_step_is_reported_to_the_log_channel_and_the_rest_
     module = _fresh_start_up()
     record = _Recorder()
     starting = _starting()
-    error = (SwitchNotSignedUp("results") if arrange is _failing_switch
+    error = (SwitchNotSignedUp(named) if getattr(arrange, "func", arrange) is _failing_switch
              else _Fault("the database is locked"))
     arrange(record, starting, error)
 
