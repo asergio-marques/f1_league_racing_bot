@@ -23,7 +23,6 @@ import pytest
 from leaguebot.core.cogs import test_mode_cog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.services.config_service import ConfigService
-from leaguebot.core.services.placement_service import PlacementService
 from tests.support.change_queue import (
     Clock,
     acknowledgement,
@@ -145,9 +144,6 @@ def cog(db_path):
             db_path=db_path,
             config_service=ConfigService(db_path),
             output_router=SimpleNamespace(post_log=AsyncMock()),
-            # No bot behind it, so the template capacity guards (#150) stand aside here;
-            # they have tests of their own in test_test_roster_capacity_guards.
-            placement_service=PlacementService(db_path),
         )
     )
 
