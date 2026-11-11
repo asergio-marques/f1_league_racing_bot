@@ -3319,8 +3319,9 @@ async def test_a_request_during_the_sweep_waits_until_the_sweep_has_asked_its_ow
 
 async def test_a_held_member_s_interaction_is_deferred_while_it_waits(env):
     """The bot has restarted and holds its queue; a member presses a button before the catch-up
-    ends, then presses it again. Before each press waits, it is deferred, privately, so Discord
-    shows them "thinking…" and its three seconds do not lapse; nothing else is sent. Once the
+    ends, then presses it again. Before each press waits, it is deferred, privately and thinking,
+    so Discord shows them "thinking…" (a button or a form too, not a slash command alone) and its
+    three seconds do not lapse; nothing else is sent. Once the
     catch-up ends, one press is acknowledged as under way and the other refused as a repeat, each
     through a follow-up seen by them alone, never a first response, and only one change is saved."""
     queue = _queue(env, _type(steps=[_act("a", [])]))
@@ -3334,6 +3335,7 @@ async def test_a_held_member_s_interaction_is_deferred_while_it_waits(env):
     for press in presses:
         [deferred] = press.response.defer.await_args_list
         assert deferred.kwargs.get("ephemeral") is True
+        assert deferred.kwargs.get("thinking") is True
         assert press.response.send_message.await_count == 0
         assert press.followup.send.await_count == 0
 
