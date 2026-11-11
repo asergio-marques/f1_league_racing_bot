@@ -41,7 +41,7 @@ class LineupDrawingStub:
         self.discarded: list[Path | None] = []
 
     def _answer(self, division_id: int) -> Any:
-        from leaguebot.core.services.image_drawing import LineupPicture
+        from leaguebot.core.services.modules.image_drawing import LineupPicture
 
         own = self.by_division.get(int(division_id), {})
         fault = own.get("fault", self.fault)

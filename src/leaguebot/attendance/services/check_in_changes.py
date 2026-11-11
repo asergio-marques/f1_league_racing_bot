@@ -124,7 +124,7 @@ from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
 
 log = logging.getLogger(__name__)
 

@@ -1,7 +1,7 @@
 """Resolve and render a division's lineup (038).
 
 The lineup of record is drawn through core's drawing protocol, and posted by core
-(`leaguebot.core.services.image_drawing.ImageDrawing`, implemented by
+(`leaguebot.core.services.modules.image_drawing.ImageDrawing`, implemented by
 `leaguebot.image.services.image_drawing.ImageDrawing`): this module holds what that
 drawing, and a command's own output, both need — resolving the division into a
 `LineupDrawing` (`build_drawing`) and rendering it (`render_png`) — plus `render_for_command`,

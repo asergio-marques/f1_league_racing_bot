@@ -26,9 +26,9 @@ from leaguebot.core.models.division import Division
 from leaguebot.core.models.round import AttendanceWindows, Round, WeatherWindows
 from leaguebot.core.services.approval_window_service import calendar_faults
 from leaguebot.core.services.config_service import ConfigService
-from leaguebot.core.services.confirmation_refusals import Confirmation, read_refusals
-from leaguebot.core.services.image_drawing import DivisionTeams, ImageDrawing, TeamSeats
-from leaguebot.core.services.module_service import ModuleService, SwitchNotSignedUp
+from leaguebot.core.services.modules.confirmation_refusals import Confirmation, read_refusals
+from leaguebot.core.services.modules.image_drawing import DivisionTeams, ImageDrawing, TeamSeats
+from leaguebot.core.services.modules.module_service import ModuleService, SwitchNotSignedUp
 from leaguebot.core.services.season_service import SeasonService
 from leaguebot.core.services.team_service import TeamService, validate_team_name
 from leaguebot.core.utils.asset_slug import normalise
@@ -417,7 +417,7 @@ async def image_configuration_faults(image_drawing: ImageDrawing) -> list[str]:
     The rasteriser, every template a switched-on output draws, the per-tier colours and
     the driver portrait settings, each in the image module's own words
     (`ImageDrawing.rasteriser_fault`, `.template_faults`, `.colour_shortfall_problems`,
-    `.portrait_fault`; core/services/image_drawing.py). **The one reading of them every
+    `.portrait_fault`; core/services/modules/image_drawing.py). **The one reading of them every
     gate shares**: the configuration review and its confirmation, both placements reviews
     and both confirmations of placements. Each review withholds its button on exactly what
     its confirmation refuses, so a manager is never shown a fault as blocking and then

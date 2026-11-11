@@ -61,7 +61,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.services.amendment_service import approval_faults
-from leaguebot.core.services.module_service import ModuleService
+from leaguebot.core.services.modules.module_service import ModuleService
 from leaguebot.core.services.queue.queue_records import (
     in_hand,
 )

@@ -25,7 +25,7 @@ def _modules(on: bool) -> MagicMock:
 async def test_weather_hands_its_deadlines_to_each_review(tmp_path, review):
     """Weather on, its deadlines as stored: the Weather Config section, its deadlines in the
     words `describe_deadlines` gives them; off, no section."""
-    from leaguebot.core.services.review_sections import Review
+    from leaguebot.core.services.modules.review_sections import Review
     from leaguebot.weather.services.weather_config_service import (
         describe_deadlines,
         get_weather_pipeline_config,

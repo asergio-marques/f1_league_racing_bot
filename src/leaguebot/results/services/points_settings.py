@@ -49,7 +49,7 @@ from leaguebot.results.services.points_config_service import (
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.season_service import SeasonService
 
 CONFIG_ADD = "results.setting.config_add"

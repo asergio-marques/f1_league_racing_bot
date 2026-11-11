@@ -86,7 +86,7 @@ async def _ask(drawing, question: str, held: int):
     ``review`` for the review's longest calendar, held by Premier."""
     if question == "round":
         return await drawing.round_capacity_problem(held)
-    from leaguebot.core.services.image_drawing import Held
+    from leaguebot.core.services.modules.image_drawing import Held
 
     return await drawing.calendar_review_problem(Held("Premier", held))
 
@@ -127,7 +127,7 @@ async def test_the_warning_says_what_will_happen_instead(tmp_path, images):
     a degraded season and a broken one. The division holding the longest calendar is named, so
     a season of eight divisions knows which one to shorten. The review warns on the `calendar`
     aspect alone, whether or not the images module is on."""
-    from leaguebot.core.services.image_drawing import Held
+    from leaguebot.core.services.modules.image_drawing import Held
 
     answer = await _drawing(tmp_path, images=images).calendar_review_problem(Held("Premier", 25))
 
@@ -139,7 +139,7 @@ async def test_the_warning_says_what_will_happen_instead(tmp_path, images):
 
 
 async def test_a_season_within_capacity_earns_no_warning(tmp_path):
-    from leaguebot.core.services.image_drawing import Held
+    from leaguebot.core.services.modules.image_drawing import Held
 
     assert await _drawing(tmp_path).calendar_review_problem(Held("Division 1", 20)) is None
 

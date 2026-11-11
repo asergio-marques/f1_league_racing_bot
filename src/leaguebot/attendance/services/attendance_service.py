@@ -28,13 +28,13 @@ from leaguebot.attendance.services.module_switch_settings import attendance_enab
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.models.round import AttendanceWindows
-from leaguebot.core.services.review_sections import Review, ReviewSection
+from leaguebot.core.services.modules.review_sections import Review, ReviewSection
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
     from leaguebot.core.services.queue.change_queue import ChangeQueue
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.posting.output_router import OutputRouter
 
 

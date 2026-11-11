@@ -48,7 +48,7 @@ from leaguebot.weather.services.weather_config_service import (
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.season_service import SeasonService
 
 DEADLINE = "weather.setting.deadline"

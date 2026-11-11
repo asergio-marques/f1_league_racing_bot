@@ -32,7 +32,7 @@ from typing import Any
 from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.services.queue.change_types import Step, StepContext
-from leaguebot.core.services.module_service import ModuleService
+from leaguebot.core.services.modules.module_service import ModuleService
 from leaguebot.core.services.season_lifecycle_service import require_guild
 from leaguebot.core.services.season_service import (
     division_first_round,

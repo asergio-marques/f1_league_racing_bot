@@ -1,7 +1,7 @@
 """The image module's lineup drawing, its answer to core's drawing protocol (#283).
 
 Core asks whether the league draws its lineup and has one division's lineup drawn
-(`core/services/image_drawing.py`); the image module answers in `image/services/image_drawing.py`.
+(`core/services/modules/image_drawing.py`); the image module answers in `image/services/image_drawing.py`.
 These tests hold its answers: the three gates read, a gate that cannot be read answering text with
 the error in the host's log alone, the lineup drawn from the division's committed seats with the
 portraits refreshed at the league's own trigger, the picture, the problem and the notices handed
@@ -136,7 +136,7 @@ async def test_a_lineup_gate_whose_switch_nobody_signed_up_for_raises():
     """The images module's switch reader was never signed up (`SwitchNotSignedUp`): that is a fault
     in the bot's assembly, not a gate that cannot be read, so it is raised rather than answered as
     text."""
-    from leaguebot.core.services.module_service import SwitchNotSignedUp
+    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
 
     drawing, _, _, modules = _drawing()
     modules.is_images_enabled = AsyncMock(side_effect=SwitchNotSignedUp("images"))

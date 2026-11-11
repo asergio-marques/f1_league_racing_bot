@@ -35,7 +35,7 @@ from discord import app_commands
 from leaguebot.core.cogs.bot_cog import BotCog
 from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services import hub_service
+from leaguebot.core.services.modules import hub_service
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 27903

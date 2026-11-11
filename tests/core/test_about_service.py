@@ -1,6 +1,6 @@
 """The hub's About option: which bot this is, and which build of it is running (#258).
 
-`src/leaguebot/core/services/about_service.py` holds the reasoning. What is pinned here:
+`src/leaguebot/core/services/modules/about_service.py` holds the reasoning. What is pinned here:
 
 - **The answer** names the bot, the version, when it was made and the repository; it says
   when the version is unknown, and leaves the date out when that is.
@@ -19,8 +19,8 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.services import hub_service
-from leaguebot.core.services.about_service import (
+from leaguebot.core.services.modules import hub_service
+from leaguebot.core.services.modules.about_service import (
     ABOUT_KEY,
     ABOUT_OPTION,
     REPOSITORY_URL,
@@ -37,7 +37,7 @@ MADE_STAMP = "<t:1790076006:F>"
 
 def _hub_options(*options):
     """The hub's options as the builder makes them, each of *options* signed up on them."""
-    from leaguebot.core.services.hub_service import HubOptions
+    from leaguebot.core.services.modules.hub_service import HubOptions
 
     hub_options = HubOptions()
     for option in options:

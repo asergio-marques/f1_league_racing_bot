@@ -82,7 +82,7 @@ def _drawing(tmp_path, *, columns=(1, 2, 3), sessions=(1, 2), aspects=("attendan
 
 
 def _held(name, rounds):
-    from leaguebot.core.services.image_drawing import Held
+    from leaguebot.core.services.modules.image_drawing import Held
 
     return Held(name, rounds)
 

@@ -29,7 +29,7 @@ from datetime import datetime
 
 import discord
 
-from leaguebot.core.services.hub_service import HubOption
+from leaguebot.core.services.modules.hub_service import HubOption
 from leaguebot.core.utils.league_bot import bot_of
 
 PROJECT_NAME = "F1 League Racing Bot"

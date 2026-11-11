@@ -105,7 +105,7 @@ from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 from leaguebot.core.utils.season_gate import PLACEMENT_STAGES
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.image_drawing import ImageDrawing
+    from leaguebot.core.services.modules.image_drawing import ImageDrawing
 
 DRIVER_MOVE = "core.driver_move"
 DRIVER_SACK = "core.driver_sack"

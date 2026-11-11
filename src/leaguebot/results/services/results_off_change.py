@@ -59,7 +59,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.hub_service import HUB_REFRESH
+from leaguebot.core.services.modules.hub_service import HUB_REFRESH
 from leaguebot.core.services.season_lifecycle_service import (
     FROZEN_FOR_COMPLETION_REFUSAL,
     WIND_DOWN,

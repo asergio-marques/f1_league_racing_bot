@@ -911,7 +911,7 @@ async def test_a_portrait_check_whose_switch_nobody_signed_up_for_raises():
     """The images module's switch reader was never signed up, so the portrait check raises
     `SwitchNotSignedUp`: a fault in the bot's assembly, which the image faults raise rather than
     stand aside from as a check that cannot be read."""
-    from leaguebot.core.services.module_service import SwitchNotSignedUp
+    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
 
     cog = _image_cog()
     cog.bot.image_drawing.portrait_fault = AsyncMock(side_effect=SwitchNotSignedUp("images"))

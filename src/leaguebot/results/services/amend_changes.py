@@ -62,7 +62,7 @@ from leaguebot.results.services.submission_steps import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
 
 KIND = "results.amend.open"
 PLAN_OPEN = "plan_open"

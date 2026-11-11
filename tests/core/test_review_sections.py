@@ -30,7 +30,7 @@ async def test_the_sections_are_laid_out_in_the_review_s_order():
     subscriber handed the review, the season and the divisions. With weather signed up before
     signup, and only those two handing a section, weather's then signup's: core keeps the order
     they signed up in and sorts by no module's name."""
-    from leaguebot.core.services.review_sections import Review, ReviewSection, read_review_sections
+    from leaguebot.core.services.modules.review_sections import Review, ReviewSection, read_review_sections
 
     hook = _hook(*(ReviewSection(module=module, lines=[f"**{module}**"])
                    for module in ("signup", "attendance", "results", "weather")), None)
@@ -56,7 +56,7 @@ async def test_a_section_that_cannot_be_read_fails_the_review_as_today():
     """A subscriber raising while its section is read: the raise reaches the review command's
     failure path, as a signup, attendance, weather or points reader's raise does today. Core
     adds no catch of its own and no stand-aside."""
-    from leaguebot.core.services.review_sections import Review, read_review_sections
+    from leaguebot.core.services.modules.review_sections import Review, read_review_sections
 
     hook = AwaitedHook()
 

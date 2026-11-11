@@ -42,7 +42,7 @@ def _modules(on: bool) -> MagicMock:
 
 
 async def _section(service, on: bool, review: str):
-    from leaguebot.core.services.review_sections import Review
+    from leaguebot.core.services.modules.review_sections import Review
     from leaguebot.signup.services.signup_module_service import review_section
 
     return await review_section(service, _modules(on), review=Review[review], season_id=1,

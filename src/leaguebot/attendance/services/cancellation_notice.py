@@ -36,7 +36,7 @@ from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
 
 NOTIFY_CHECKIN = "notify_checkin"
 

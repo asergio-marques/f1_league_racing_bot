@@ -82,7 +82,7 @@ from leaguebot.core.services.channel_registry_service import (
     find_channel_use,
     refusal,
 )
-from leaguebot.core.services.hub_service import HUB_REFRESH, apply_hub_permissions, reapply_hub_permissions
+from leaguebot.core.services.modules.hub_service import HUB_REFRESH, apply_hub_permissions, reapply_hub_permissions
 from leaguebot.core.services.queue.setting_change import After, RENAMED_OUTCOME, Saved, Setting
 
 if TYPE_CHECKING:

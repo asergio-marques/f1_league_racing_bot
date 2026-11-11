@@ -20,7 +20,7 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_COLUMNS,
 )
 from leaguebot.image.services.image_config_service import ImageConfigService
-from leaguebot.core.services.module_service import ModuleService
+from leaguebot.core.services.modules.module_service import ModuleService
 from tests.support import KIND_TEMPLATES, saves
 from tests.support.change_queue import in_a_job
 

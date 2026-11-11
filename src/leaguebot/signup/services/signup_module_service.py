@@ -15,7 +15,7 @@ from leaguebot.core.models.change import PlannedStep
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.driver_service import accounts_of_profile, drivers_in_states
 from leaguebot.core.services.pack_service import CLEARED_SIGNUP_CHANNEL_ID, CLEARED_WIZARDS
-from leaguebot.core.services.review_sections import Review, ReviewSection
+from leaguebot.core.services.modules.review_sections import Review, ReviewSection
 from leaguebot.core.services.season_lifecycle_service import UNSETTLED_STATES
 from leaguebot.signup.models.signup_module import (
     AvailabilitySlot,
@@ -28,7 +28,7 @@ from leaguebot.signup.models.signup_module import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
 
 log = logging.getLogger(__name__)
 

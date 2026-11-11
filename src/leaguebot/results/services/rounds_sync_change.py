@@ -37,7 +37,7 @@ from leaguebot.results.services.result_submission_service import sync_held_by_am
 from leaguebot.results.services.results_post_service import division_repost_status
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.season_service import SeasonService
 
 ROUNDS_SYNC = "results.rounds.sync"

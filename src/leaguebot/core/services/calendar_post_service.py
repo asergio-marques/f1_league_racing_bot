@@ -48,7 +48,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
     StepView,
 )
-from leaguebot.core.services.image_drawing import CalendarPicture, ImageDrawing
+from leaguebot.core.services.modules.image_drawing import CalendarPicture, ImageDrawing
 from leaguebot.core.services.season_end_changes import SEASON_CANCEL
 from leaguebot.core.services.posting.standing_post_handler import post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job

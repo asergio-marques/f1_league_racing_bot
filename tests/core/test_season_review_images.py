@@ -199,7 +199,7 @@ async def test_the_review_section_raises_a_switch_nobody_signed_up_for():
     """A module's switch reader was never signed up, so the image module's section raises
     `SwitchNotSignedUp`: a fault in the bot's assembly, which the section raises rather than
     stating as a configuration it cannot read."""
-    from leaguebot.core.services.module_service import SwitchNotSignedUp
+    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
 
     cog = _section_cog(SwitchNotSignedUp("results"))
 

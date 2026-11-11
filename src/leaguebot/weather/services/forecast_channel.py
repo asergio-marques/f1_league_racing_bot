@@ -19,7 +19,7 @@ from leaguebot.core.services.approval_checks import channel_fault
 from leaguebot.core.services.channel_registry_service import ChannelUse, DiscordTargets
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
 
 
 async def set_division_forecast_channel(

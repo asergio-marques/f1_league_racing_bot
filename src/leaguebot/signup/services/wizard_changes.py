@@ -109,7 +109,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.services.driver_service import DriverService
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.team_service import TeamService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 

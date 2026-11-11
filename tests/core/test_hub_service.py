@@ -2,7 +2,7 @@
 
 **The hub service names no option.** The builder makes the bot's hub options and signs each
 module's up on them, saying when it is offered and what a press does; core's one, About, is
-defined by `core/services/about_service.py` (#258) and tested there. A panel offering nothing says
+defined by `core/services/modules/about_service.py` (#258) and tested there. A panel offering nothing says
 so. The tests sign their own options up on hub options of their own, made as the builder makes
 them, and hand them in where the builder and the start-up hand the bot's: to the panel, its view,
 a press, the refresh change and the restart. Nothing reads them off the bot.
@@ -24,9 +24,9 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services import hub_service
+from leaguebot.core.services.modules import hub_service
 from leaguebot.core.services.config_service import ConfigService
-from leaguebot.core.services.hub_service import (
+from leaguebot.core.services.modules.hub_service import (
     CUSTOM_ID_PREFIX,
     HubOption,
     HubPanelView,
@@ -59,7 +59,7 @@ from tests.support.mentions import NOBODY, notified
 
 def _options(*options):
     """The hub's options as the builder makes them, each of *options* signed up on them."""
-    from leaguebot.core.services.hub_service import HubOptions
+    from leaguebot.core.services.modules.hub_service import HubOptions
 
     hub_options = HubOptions()
     for option in options:
@@ -106,8 +106,8 @@ def test_the_hub_service_registers_no_option_itself():
     options, or a dict, list, tuple or set holding an option. Hub options newly made hold no
     option. That the builder signs About up, and nothing else, is pinned in
     `test_about_service.py`."""
-    from leaguebot.core.services import about_service
-    from leaguebot.core.services.hub_service import HubOptions
+    from leaguebot.core.services.modules import about_service
+    from leaguebot.core.services.modules.hub_service import HubOptions
 
     def holds_options(value):
         if isinstance(value, HubOptions):

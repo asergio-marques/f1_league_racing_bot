@@ -9,8 +9,8 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import AuditRecord
-from leaguebot.core.services.confirmation_refusals import Confirmation, Refusal
-from leaguebot.core.services.review_sections import Review, ReviewSection
+from leaguebot.core.services.modules.confirmation_refusals import Confirmation, Refusal
+from leaguebot.core.services.modules.review_sections import Review, ReviewSection
 from leaguebot.core.services.queue.setting_change import Saved
 from leaguebot.results.models.points_changed import PointsChanged, ValueChange
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
@@ -19,7 +19,7 @@ from leaguebot.results.services.module_switch_settings import results_enabled_on
 from leaguebot.results.utils.points_ordering import ordering_message, ordering_violations
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
 
 log = logging.getLogger(__name__)
 

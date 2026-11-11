@@ -41,7 +41,7 @@ from leaguebot.core.models.change import (
     module_on,
 )
 from leaguebot.core.services.queue.change_types import CheckContext, Step, StepContext
-from leaguebot.core.services.hub_service import REFRESH_HUB, hub_refresh_after
+from leaguebot.core.services.modules.hub_service import REFRESH_HUB, hub_refresh_after
 from leaguebot.core.services.season_lifecycle_service import (
     FROZEN_FOR_COMPLETION_REFUSAL,
     PLACEMENTS_CONFIRMED_REFUSAL,
@@ -52,7 +52,7 @@ from leaguebot.core.services.queue.setting_change import After, Saved, Setting
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.core.services.season_service import SeasonService
 

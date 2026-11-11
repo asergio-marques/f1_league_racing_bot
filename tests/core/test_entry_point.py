@@ -209,7 +209,7 @@ async def test_the_review_s_lineup_picture_is_drawn_through_the_image_module_s_d
     from unittest.mock import AsyncMock
 
     from leaguebot.__main__ import _draw_review_picture
-    from leaguebot.core.services.image_drawing import LineupPicture
+    from leaguebot.core.services.modules.image_drawing import LineupPicture
     from leaguebot.image.services import image_lineup_post
 
     bot = await built_bot(tmp_path, now=_NOW)
@@ -254,7 +254,7 @@ async def test_a_review_lineup_the_image_module_s_drawing_will_not_draw_raises_w
     from unittest.mock import AsyncMock
 
     from leaguebot.__main__ import _draw_review_picture
-    from leaguebot.core.services.image_drawing import LineupPicture
+    from leaguebot.core.services.modules.image_drawing import LineupPicture
     from leaguebot.image.services import image_lineup_post
 
     bot = await built_bot(tmp_path, now=_NOW)
@@ -902,7 +902,8 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     import leaguebot.__main__ as bot_module
 
     from leaguebot.core.db.database import get_connection
-    from leaguebot.core.services import hub_service, season_review_changes
+    from leaguebot.core.services import season_review_changes
+    from leaguebot.core.services.modules import hub_service
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.signup.services.wizard_service import WizardService
     from tests.support.review_prompts import store_review_prompt
@@ -1077,7 +1078,7 @@ async def test_the_builder_signs_every_module_up_to_the_review_sections(tmp_path
     weather's, each handed which review is gathered, the season and the divisions it shows."""
     import importlib
 
-    from leaguebot.core.services.review_sections import Review
+    from leaguebot.core.services.modules.review_sections import Review
 
     called: list[tuple] = []
     for module_name, name, part in _REVIEW_SECTION_PARTS:

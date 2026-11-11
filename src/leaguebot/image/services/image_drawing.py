@@ -1,6 +1,6 @@
 """The image module's answers to core's drawing protocol.
 
-`ImageDrawing` implements `leaguebot.core.services.image_drawing.ImageDrawing`: the builder
+`ImageDrawing` implements `leaguebot.core.services.modules.image_drawing.ImageDrawing`: the builder
 makes one, attaches it to the bot as `bot.image_drawing`, and hands it to
 `TemplateCapacityService` and `LineupPoster`, to every change that posts a division's calendar,
 to `/driver reassign`'s change, and to the season approval and mid-season confirmation; the
@@ -28,14 +28,14 @@ if TYPE_CHECKING:
     from leaguebot.core.utils.league_bot import LeagueBot
     from leaguebot.image.models.image_catalogues import FieldCatalogue
 
-from leaguebot.core.services.image_drawing import (
+from leaguebot.core.services.modules.image_drawing import (
     CalendarPicture,
     CapacityProblem,
     DivisionTeams,
     Held,
     LineupPicture,
 )
-from leaguebot.core.services.module_service import ModuleService, SwitchNotSignedUp
+from leaguebot.core.services.modules.module_service import ModuleService, SwitchNotSignedUp
 from leaguebot.core.utils.paths import resolve_within_project_root
 from leaguebot.image.models.image_catalogues import (
     catalogue_for,
@@ -681,7 +681,7 @@ class ImageDrawing:
 
     async def artwork_signature(self) -> list:
         """What the league's artwork looks like now, for the season fingerprint's "artwork" area
-        (core/services/image_drawing.py).
+        (core/services/modules/image_drawing.py).
 
         A stated exception (architecture.md, "A catch-all error handler"): a configured directory
         that cannot be resolved is signed `[column, value, "unresolvable"]`, with a warning to
@@ -734,7 +734,7 @@ class ImageDrawing:
 
     def rasteriser_fault(self) -> str | None:
         """What is wrong with the host's drawing program, in these words, or None where there is
-        nothing wrong (core/services/image_drawing.py)."""
+        nothing wrong (core/services/modules/image_drawing.py)."""
         from leaguebot.image.services.image_render_service import (
             CONVERTER_NAME,
             converter_available,
@@ -746,7 +746,7 @@ class ImageDrawing:
 
     async def review_section(self) -> list[str]:
         """Both season reviews' image section, beneath core's own heading
-        (core/services/image_drawing.py): built from the same `AspectStatus` list
+        (core/services/modules/image_drawing.py): built from the same `AspectStatus` list
         `/images config view` renders, so a divergence between the two surfaces is impossible
         by construction. Template detail is summarised rather than repeated in full — a season
         review is already long, and `/images config view` is where the sixteen lines belong.
@@ -881,7 +881,7 @@ class ImageDrawing:
         return lines
 
     async def template_faults(self) -> list[str]:
-        """Every broken template a switched-on output draws (core/services/image_drawing.py).
+        """Every broken template a switched-on output draws (core/services/modules/image_drawing.py).
 
         Lets a fault reading the templates out, for the caller to refuse on: a check that
         never ran is not a pass.
@@ -899,7 +899,7 @@ class ImageDrawing:
 
     async def colour_shortfall_problems(self) -> list[str]:
         """Every per-tier colour a template wants and no tier has set
-        (core/services/image_drawing.py), flattened from the same map `/images config view`
+        (core/services/modules/image_drawing.py), flattened from the same map `/images config view`
         renders, so all three surfaces name the same shortfall in the same words. One answer
         because two surfaces ask it: the review reports what would block an approval and the
         approval refuses on it, so a review that did not look for a missing colour would send a
@@ -916,7 +916,7 @@ class ImageDrawing:
 
     async def portrait_fault(self) -> str | None:
         """The driver-portrait settings fault that would withhold approval, or None
-        (core/services/image_drawing.py).
+        (core/services/modules/image_drawing.py).
 
         Lets a fault reading the configuration out, for the caller to stand aside on.
         """

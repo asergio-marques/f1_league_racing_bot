@@ -29,7 +29,7 @@ from leaguebot.core.models.season import (
     SeasonStatus,
 )
 from leaguebot.core.models.session import Session, SessionType, SESSIONS_BY_FORMAT
-from leaguebot.core.services.image_drawing import Held
+from leaguebot.core.services.modules.image_drawing import Held
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.input_validator import NAME
 

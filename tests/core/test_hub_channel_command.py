@@ -33,7 +33,7 @@ import pytest
 
 from leaguebot.core.cogs.bot_cog import BotCog
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services import hub_service
+from leaguebot.core.services.modules import hub_service
 from tests.support.change_queue import (
     PAST_THE_STOP,
     Clock,

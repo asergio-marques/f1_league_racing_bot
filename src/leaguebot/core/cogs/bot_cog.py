@@ -19,7 +19,7 @@ guards read. Confirming a season's configuration fixes both until the
 season ends.
 
 `/bot hub-channel` sets the hub: the one channel every member may use, holding the panel
-`leaguebot.core.services.hub_service` keeps. It is a league manager's, like every other channel
+`leaguebot.core.services.modules.hub_service` keeps. It is a league manager's, like every other channel
 command.
 
 `/bot pack` is a league admin's command and is given in the interaction channel like any

@@ -89,7 +89,7 @@ from leaguebot.core.utils.league_server import league_guild
 from leaguebot.weather.utils.message_builder import forecast_text, invalidation_message
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.season_service import SeasonService
 
 log = logging.getLogger(__name__)

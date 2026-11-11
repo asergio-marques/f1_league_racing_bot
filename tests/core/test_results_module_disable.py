@@ -317,7 +317,7 @@ class _FakeChannel:
 @pytest.fixture(autouse=True)
 def _no_panel_to_refresh(monkeypatch):
     """The hub has no panel here; turning results off refreshes it as a change of its own."""
-    from leaguebot.core.services import hub_service
+    from leaguebot.core.services.modules import hub_service
 
     monkeypatch.setattr(hub_service, "refresh_panel", AsyncMock(return_value=None))
 

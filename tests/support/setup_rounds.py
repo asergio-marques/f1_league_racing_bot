@@ -144,7 +144,7 @@ def no_room(problem: str, remedy: str) -> Any:
     """The image module's drawing, saying a calendar has no room: *problem* and *remedy*."""
     from unittest.mock import AsyncMock
 
-    from leaguebot.core.services.image_drawing import CapacityProblem
+    from leaguebot.core.services.modules.image_drawing import CapacityProblem
 
     return AsyncMock(return_value=CapacityProblem(problem=problem, remedy=remedy))
 

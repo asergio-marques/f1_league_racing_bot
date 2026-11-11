@@ -125,7 +125,7 @@ from leaguebot.results.services.submission_steps import (
 from leaguebot.results.utils import results_formatter
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.image_drawing import ImageDrawing
+    from leaguebot.core.services.modules.image_drawing import ImageDrawing
     from leaguebot.core.services.season_service import SeasonService
 
 KIND = "results.submission.open"

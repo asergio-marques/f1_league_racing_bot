@@ -23,7 +23,7 @@ from leaguebot.core.services.cancellation_notice_service import round_label
 from leaguebot.core.services.queue.change_types import Step, StepContext, StepView
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
 
 #: The job attendance plans for a round ending not held, reading the check-in for the log line.
 READ_CHECK_IN = "read_check_in"

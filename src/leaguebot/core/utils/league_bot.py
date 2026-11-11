@@ -41,13 +41,13 @@ if TYPE_CHECKING:
     from leaguebot.image.services.image_config_service import ImageConfigService
     from leaguebot.image.services.image_render_service import ImageRenderService
     from leaguebot.image.services.image_validity_service import ImageValidityService
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.placement_service import PlacementService
     from leaguebot.core.services.lineup_posting import LineupPoster
     from leaguebot.core.services.team_role_service import TeamRoleService
     from leaguebot.core.services.template_capacity_service import TemplateCapacityService
     from leaguebot.core.services.scheduler_service import SchedulerService
-    from leaguebot.core.services.hub_service import HubOptions
+    from leaguebot.core.services.modules.hub_service import HubOptions
     from leaguebot.core.services.start_up import StartUpStep
     from leaguebot.core.services.test_mode_service import AdvanceSteps
     from leaguebot.core.services.season_service import SeasonService
@@ -55,7 +55,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.team_service import TeamService
     from leaguebot.signup.services.wizard_service import WizardService
     from leaguebot.core.services.queue.change_queue import ChangeQueue
-    from leaguebot.core.services.image_drawing import ImageDrawing
+    from leaguebot.core.services.modules.image_drawing import ImageDrawing
     from leaguebot.results.services.attendance_hook import AttendanceAfterReview
     from leaguebot.core.services.posting.output_router import OutputRouter
     from leaguebot.core.utils.hooks import AwaitedHook, Hook

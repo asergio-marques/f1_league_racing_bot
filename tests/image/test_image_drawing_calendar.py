@@ -1,7 +1,7 @@
 """The image module's calendar drawing, its answer to core's drawing protocol (#283).
 
 Core asks whether the league draws its calendar and has one division's calendar drawn
-(`core/services/image_drawing.py`); the image module answers in `image/services/image_drawing.py`.
+(`core/services/modules/image_drawing.py`); the image module answers in `image/services/image_drawing.py`.
 These tests hold its answers: both gates read, a gate that cannot be read answering no, the two
 asset directories made absolute, a rejected directory carried as a fault, and the notices reported
 to the log channel in one message. Core's posting of the calendar is tested against a stand-in for
@@ -210,7 +210,7 @@ async def test_a_switch_nobody_signed_up_for_is_raised_not_read_as_text():
     the bot's assembly, not a gate that cannot be read, so it is raised rather than answered as
     text."""
     drawing, _, _, modules = _drawing()
-    from leaguebot.core.services.module_service import SwitchNotSignedUp
+    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
 
     modules.is_images_enabled = AsyncMock(side_effect=SwitchNotSignedUp("images"))
 

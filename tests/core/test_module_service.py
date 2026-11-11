@@ -27,7 +27,7 @@ def _modules(db_path: str):
     """The league's `ModuleService` on *db_path*, each module's switch reader signed up to it as
     the builder signs them up."""
     from leaguebot.__main__ import register_module_switches
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
 
     modules = ModuleService(db_path)
     register_module_switches(modules)
@@ -79,7 +79,7 @@ async def test_each_switch_is_answered_by_the_reader_its_module_registered(db_pa
     handed a connection to the league's database, and reads no flag itself: with every flag in
     the database off, a reader answering on is what the service says, and it was handed the
     league's database open."""
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
 
     servers = []
 
@@ -97,7 +97,7 @@ async def test_each_switch_is_answered_by_the_reader_its_module_registered(db_pa
 async def test_a_switch_no_module_signed_up_for_is_an_error_not_off(db_path):
     """A module whose reader the builder never signed up is a fault in the bot's assembly, and
     asking its switch raises naming it rather than reading it as off."""
-    from leaguebot.core.services.module_service import ModuleService, SwitchNotSignedUp
+    from leaguebot.core.services.modules.module_service import ModuleService, SwitchNotSignedUp
 
     assert issubclass(SwitchNotSignedUp, LookupError)
     with pytest.raises(SwitchNotSignedUp, match="images"):

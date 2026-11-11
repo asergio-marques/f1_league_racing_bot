@@ -162,7 +162,7 @@ async def test_a_switch_nobody_signed_up_for_is_raised_not_fingerprinted(season)
     """A module whose switch reader the builder never signed up is a fault in the bot's assembly,
     not a season that could not be read: taking the fingerprint raises it, naming the module,
     rather than giving the empty fingerprint."""
-    from leaguebot.core.services.module_service import ModuleService, SwitchNotSignedUp
+    from leaguebot.core.services.modules.module_service import ModuleService, SwitchNotSignedUp
 
     season.bot.module_service = ModuleService(season.path)
 

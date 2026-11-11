@@ -270,7 +270,7 @@ async def discard_portraits(
     """Remove the portraits obtained for *user_ids*, accounts no driver is drawn under any longer.
 
     Returns how many were removed. Two paths want this, both through core's drawing protocol
-    (`ImageDrawing.discard_portraits`, `core/services/image_drawing.py`): `/driver reassign`
+    (`ImageDrawing.discard_portraits`, `core/services/modules/image_drawing.py`): `/driver reassign`
     discards the portrait of the account a driver has just replaced, everything being drawn
     under their current account. The driver pass that ends a season discards those of every
     driver it deletes, past accounts and current alike.

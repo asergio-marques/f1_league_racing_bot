@@ -33,7 +33,7 @@ from leaguebot.core.services.channel_registry_service import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
 
 #: Results' three channels, in the order a division's lines read: the column that holds it, what a
 #: league calls it, the command that sets it, and what the review shows where it is not set.

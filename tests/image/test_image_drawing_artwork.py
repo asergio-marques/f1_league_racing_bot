@@ -3,7 +3,7 @@
 Core's placements review fingerprints the templates and the artwork on disk, so that one edited,
 deleted or added between the review and the button is named as "the templates and artwork on
 disk" changing. Core asks the image module what the league's artwork looks like now
-(`core/services/image_drawing.py`), and the image module answers in
+(`core/services/modules/image_drawing.py`), and the image module answers in
 `image/services/image_drawing.py`: each configured template file, then each configured asset
 folder, by name, size and modification time, never by content. A folder that cannot be resolved is
 recorded as such, with a warning in the host's log, and the rest is still signed. Core's digest of

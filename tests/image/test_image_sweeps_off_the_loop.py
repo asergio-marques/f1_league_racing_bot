@@ -457,13 +457,13 @@ async def test_a_placement_guard_s_fault_crosses_back_with_nothing_it_parsed(
 
 
 def _lineup_of_thirty() -> Any:
-    from leaguebot.core.services.image_drawing import DivisionTeams, TeamSeats
+    from leaguebot.core.services.modules.image_drawing import DivisionTeams, TeamSeats
 
     return [DivisionTeams("Pro", tuple(TeamSeats(f"Team {n}", 1) for n in range(1, 31)))]
 
 
 def _held(count: int) -> Any:
-    from leaguebot.core.services.image_drawing import Held
+    from leaguebot.core.services.modules.image_drawing import Held
 
     return Held("Pro", count)
 

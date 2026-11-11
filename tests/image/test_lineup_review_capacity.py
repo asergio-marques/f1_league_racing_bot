@@ -48,7 +48,7 @@ def _template_bytes(blocks: int, seats: int, reserve_slots: int = 2) -> bytes:
 def _division(name: str, *teams: tuple[str, int]):
     """What core hands for one division: its race teams in order, each with the drivers
     seated in it."""
-    from leaguebot.core.services.image_drawing import DivisionTeams, TeamSeats
+    from leaguebot.core.services.modules.image_drawing import DivisionTeams, TeamSeats
 
     return DivisionTeams(name, tuple(TeamSeats(team, seated) for team, seated in teams))
 

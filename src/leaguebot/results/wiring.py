@@ -23,7 +23,7 @@ import aiosqlite
 from leaguebot.core.utils.league_server import league_guild
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.results.services.attendance_hook import AttendanceAfterReview
     from leaguebot.core.utils.league_bot import LeagueBot
 

@@ -100,7 +100,7 @@ def _drawing(reports, *, toggle=True):
 
 
 def _held(name, count):
-    from leaguebot.core.services.image_drawing import Held
+    from leaguebot.core.services.modules.image_drawing import Held
 
     return Held(name, count)
 

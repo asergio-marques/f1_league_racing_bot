@@ -33,12 +33,12 @@ from leaguebot.core.services.configuration_confirm_change import (
 from leaguebot.core.services.configuration_confirm_change import (
     confirmation_in_hand as configuration_confirmation_in_hand,
 )
-from leaguebot.core.services.image_drawing import ImageDrawing
+from leaguebot.core.services.modules.image_drawing import ImageDrawing
 from leaguebot.core.services.mid_season_confirm_change import (
     ALREADY_BEING_CONFIRMED,
     confirmation_in_hand,
 )
-from leaguebot.core.services.module_service import ModuleService
+from leaguebot.core.services.modules.module_service import ModuleService
 from leaguebot.core.services.posting.output_router import OutputRouter
 from leaguebot.core.services.scheduler_service import SchedulerService
 from leaguebot.core.services.season_approval_change import (

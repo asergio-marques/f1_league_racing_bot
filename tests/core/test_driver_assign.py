@@ -137,7 +137,7 @@ async def _fill_the_standings(league):
     another driver, as a league's template one row short of the division would."""
     from unittest.mock import AsyncMock
 
-    from leaguebot.core.services.image_drawing import CapacityProblem
+    from leaguebot.core.services.modules.image_drawing import CapacityProblem
 
     league.bot.image_drawing.standings_capacity_problem = AsyncMock(return_value=CapacityProblem(
         problem="The driver standings template draws too few rows",

@@ -55,14 +55,14 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.module_service import SwitchNotSignedUp
+from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
 from leaguebot.core.services.season_service import renumber_rounds_on
 from leaguebot.core.utils.formatting import discord_ts, format_round_list
 from leaguebot.core.utils.input_validator import parse_datetime
 from leaguebot.core.utils.round_import import ParsedDivisionRounds, format_import_errors
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.image_drawing import ImageDrawing
+    from leaguebot.core.services.modules.image_drawing import ImageDrawing
     from leaguebot.core.services.season_service import SeasonService
 
 log = logging.getLogger(__name__)

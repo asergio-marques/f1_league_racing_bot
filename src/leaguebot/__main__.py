@@ -31,8 +31,8 @@ from leaguebot.signup import wiring as signup_wiring
 from leaguebot.weather import wiring as weather_wiring
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.module_service import ModuleService
-    from leaguebot.core.services.hub_service import HubOptions
+    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.core.services.modules.hub_service import HubOptions
 
 #: The oldest discord.py the bot runs on. `/team add` and `/team modify` take their input in a
 #: modal carrying a role picker, which needs ``discord.ui.Label`` — new in 2.6. A host
@@ -137,7 +137,7 @@ def register_module_switches(modules: "ModuleService") -> None:
 def register_hub_options(hub_options: "HubOptions") -> None:
     """Sign each option the hub's panel carries up on *hub_options*: core's About. A module's
     option is signed up here, beside it, by its module's own function."""
-    from leaguebot.core.services.about_service import ABOUT_OPTION
+    from leaguebot.core.services.modules.about_service import ABOUT_OPTION
 
     hub_options.register_option(ABOUT_OPTION)
 
@@ -565,7 +565,7 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     from leaguebot.core.services.test_mode_toggle_change import test_mode_toggle_change
     from leaguebot.core.services.clean_change import clean_change
-    from leaguebot.core.services.hub_service import hub_refresh_change
+    from leaguebot.core.services.modules.hub_service import hub_refresh_change
     from leaguebot.core.services.lineup_posting import lineup_post_change
     from leaguebot.core.services.round_amend_change import (
         amendment_in_hand,
@@ -1012,8 +1012,8 @@ async def build(settings: Settings) -> LeagueBot:
     bot.driver_service = DriverService(settings.db_path)
     bot.team_service = TeamService(settings.db_path)
 
-    from leaguebot.core.services.hub_service import HubOptions
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.hub_service import HubOptions
+    from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.image.services.image_config_service import ImageConfigService
     from leaguebot.image.services.image_validity_service import ImageValidityService
 
@@ -1236,7 +1236,7 @@ def _start_up_steps(bot: LeagueBot) -> "tuple[StartUpStep, ...]":
 
     async def recover_the_hub() -> None:
         # Route the hub's buttons again, and post its panel afresh where it was deleted.
-        from leaguebot.core.services.hub_service import recover_hub
+        from leaguebot.core.services.modules.hub_service import recover_hub
 
         await recover_hub(bot, queue=bot.change_queue, hub_options=bot.hub_options)
 

@@ -113,7 +113,7 @@ ARRIVING_EXEMPT = {
     # The hub's options, held by the hub options the builder makes and signs each module's up on:
     # the bot's wiring, not the league's data. A pack keeps the modules, so it keeps what they
     # offer (#283 S22a).
-    ("core/services/hub_service.py", "_options"): "#283 S22a",
+    ("core/services/modules/hub_service.py", "_options"): "#283 S22a",
     # A hook's subscribers, signed up by the builder before the bot connects: the bot's wiring,
     # not the league's data (#283 S8a).
     ("core/utils/hooks.py", "_subscribers"): "#283 S8a",
@@ -126,7 +126,7 @@ EXEMPT = {
     ("core/services/scheduler_service.py", "_timer_callbacks"),
     # The module switch readers the builder signs up once at start-up: the bot's wiring, not the
     # league's data.
-    ("core/services/module_service.py", "_switch_readers"),
+    ("core/services/modules/module_service.py", "_switch_readers"),
     # The amendment's session chooser: what the member ticked, read once when they press
     # Continue. It dies with the ephemeral view it belongs to (#345).
     ("results/cogs/results_cog.py", "selected"),

@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.services.module_service import ModuleService, SwitchNotSignedUp
+from leaguebot.core.services.modules.module_service import ModuleService, SwitchNotSignedUp
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
 

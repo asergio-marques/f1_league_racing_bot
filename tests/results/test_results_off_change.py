@@ -148,7 +148,7 @@ def _league(db_path: str, *, guild: bool = True) -> Any:
     """
     from leaguebot.attendance.services.attendance_service import AttendanceService
     from leaguebot.__main__ import register_module_switches
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
 
     bot = league_double(db_path)
     bot.user.id = 77
@@ -196,7 +196,7 @@ def _league(db_path: str, *, guild: bool = True) -> Any:
 @pytest.fixture(autouse=True)
 def _quiet_follow_ons(monkeypatch):
     """The hub has no panel to refresh here, unless a test says otherwise."""
-    from leaguebot.core.services import hub_service
+    from leaguebot.core.services.modules import hub_service
 
     monkeypatch.setattr(hub_service, "refresh_panel", AsyncMock(return_value=None))
 
@@ -907,7 +907,7 @@ async def test_a_hub_refresh_that_fails_names_the_refresh_not_the_switch_off(
 ):
     """The hub is set; the hub refresh failing stops the queue at the refresh's own job, named
     as refreshing the hub panel; the switch-off, done before it, keeps its success."""
-    from leaguebot.core.services import hub_service
+    from leaguebot.core.services.modules import hub_service
 
     monkeypatch.setattr(hub_service, "refresh_panel", AsyncMock(side_effect=RuntimeError("x")))
     seeded = await _seed(tmp_path)

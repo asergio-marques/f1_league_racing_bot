@@ -2,7 +2,7 @@
 
 `/season config-review` and `/season placements-review` place an image section in their report,
 and they and the two confirmations refuse on the image configuration's faults. Core asks the image
-module for both (`core/services/image_drawing.py`), and the image module answers in
+module for both (`core/services/modules/image_drawing.py`), and the image module answers in
 `image/services/image_drawing.py`, in its own words: the section's lines beneath core's heading,
 the drawing program's absence, the broken templates a switched-on output draws, the per-tier
 colours no tier has set, and the driver-portrait settings that would never fetch a portrait. Each

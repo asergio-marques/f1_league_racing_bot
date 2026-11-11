@@ -37,7 +37,7 @@ from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.weather.services.forecast_channel import forecast_channels_on
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
 
 NOTIFY_FORECAST = "notify_forecast"
 

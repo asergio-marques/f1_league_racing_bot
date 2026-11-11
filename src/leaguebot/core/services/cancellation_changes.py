@@ -138,7 +138,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
     StepView,
 )
-from leaguebot.core.services.image_drawing import ImageDrawing
+from leaguebot.core.services.modules.image_drawing import ImageDrawing
 from leaguebot.core.services.season_end_changes import (
     END,
     SEASON_CANCEL,

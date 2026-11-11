@@ -1361,7 +1361,7 @@ async def test_an_attendance_switch_nobody_signed_up_for_is_raised_not_read_as_o
     await _staged_amendment(path, season_id)
 
     bot = await _bot_recording_reposts(path, [])
-    from leaguebot.core.services.module_service import SwitchNotSignedUp
+    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
 
     switches = MagicMock()
     switches.is_attendance_enabled = AsyncMock(side_effect=SwitchNotSignedUp("attendance"))

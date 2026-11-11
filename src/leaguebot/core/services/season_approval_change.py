@@ -91,8 +91,8 @@ from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
     from leaguebot.core.services.config_service import ConfigService
-    from leaguebot.core.services.image_drawing import ImageDrawing
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.image_drawing import ImageDrawing
+    from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.lineup_posting import LineupPoster
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.core.services.team_role_service import TeamRoleService

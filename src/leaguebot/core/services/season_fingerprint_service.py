@@ -39,11 +39,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.db.database import get_connection, tuple_rows
-from leaguebot.core.services.image_drawing import ImageDrawing
-from leaguebot.core.services.module_service import SwitchNotSignedUp
+from leaguebot.core.services.modules.image_drawing import ImageDrawing
+from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.utils.hooks import AwaitedHook
 
 log = logging.getLogger(__name__)

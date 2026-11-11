@@ -23,11 +23,11 @@ from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import approval_checks
 from leaguebot.core.services.cancellation_changes import SEASON_CANCEL
-from leaguebot.core.services.image_drawing import Held
-from leaguebot.core.services.module_service import SwitchNotSignedUp
+from leaguebot.core.services.modules.image_drawing import Held
+from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
 from leaguebot.core.services.round_moments import read_phases_drawn, read_round_windows
-from leaguebot.core.services.confirmation_refusals import Confirmation, read_refusals
-from leaguebot.core.services.review_sections import (
+from leaguebot.core.services.modules.confirmation_refusals import Confirmation, read_refusals
+from leaguebot.core.services.modules.review_sections import (
     Review,
     read_division_lines,
     read_review_sections,
@@ -299,7 +299,7 @@ class SeasonCog(commands.Cog):
     async def _build_image_review_section(self) -> list[str]:
         """The image module's addendum to `/season placements-review` (FR-033), beneath core's
         own heading: the drawing's own words (`ImageDrawing.review_section`,
-        core/services/image_drawing.py), which the image module builds from the same
+        core/services/modules/image_drawing.py), which the image module builds from the same
         `AspectStatus` list `/images config view` renders, so a divergence between the two
         surfaces is impossible by construction.
 

@@ -59,7 +59,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.hub_service import HUB_REFRESH
+from leaguebot.core.services.modules.hub_service import HUB_REFRESH
 from leaguebot.core.services.season_lifecycle_service import (
     advance_on_window_close_on,
     configuration_fixed,
@@ -78,7 +78,7 @@ from leaguebot.signup.services.window_changes import (
 
 if TYPE_CHECKING:
     from leaguebot.core.models.server_config import ServerConfig
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 log = logging.getLogger(__name__)

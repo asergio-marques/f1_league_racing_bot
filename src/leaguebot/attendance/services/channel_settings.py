@@ -49,7 +49,7 @@ from leaguebot.core.services.queue.setting_change import Saved, Setting
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.season_service import SeasonService
 
 

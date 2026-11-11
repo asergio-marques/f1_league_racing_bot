@@ -220,7 +220,7 @@ class SeasonLeague:
         from leaguebot.core.cogs.division_cog import DivisionCog
         from leaguebot.core.cogs.round_cog import RoundCog
         from leaguebot.core.cogs.season_cog import SeasonCog
-        from leaguebot.core.services.module_service import ModuleService
+        from leaguebot.core.services.modules.module_service import ModuleService
 
         db_path = self.db_path
         scheduler = MagicMock()

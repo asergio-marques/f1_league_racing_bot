@@ -20,8 +20,8 @@ from collections.abc import Awaitable, Callable, Mapping
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.refusal import Refused
-from leaguebot.core.services.image_drawing import CapacityProblem, ImageDrawing
-from leaguebot.core.services.module_service import SwitchNotSignedUp
+from leaguebot.core.services.modules.image_drawing import CapacityProblem, ImageDrawing
+from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
 
 log = logging.getLogger(__name__)
 

@@ -8,7 +8,7 @@ buttons. A button asks no tier; who may see the channel is who may press it.
 each module's `HubOption` up on the `HubOptions` it makes, naming when it is offered — typically
 while the module is enabled — and what a press does. This service knows none of them by name and
 signs nothing up itself. Core adds one option of its own, About, from
-`core/services/about_service.py` and offered always; every other option is a module's. A panel
+`core/services/modules/about_service.py` and offered always; every other option is a module's. A panel
 offering nothing says so.
 
 **A press is judged when it is made, not when the panel was posted.** A panel is refreshed

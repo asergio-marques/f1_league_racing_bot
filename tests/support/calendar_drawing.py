@@ -44,7 +44,7 @@ class CalendarDrawingStub:
 
     async def draw_calendar(self, division: Any, rounds: Any, tracks: Any, *,
                             season_number: Any = None) -> Any:
-        from leaguebot.core.services.image_drawing import CalendarPicture
+        from leaguebot.core.services.modules.image_drawing import CalendarPicture
 
         self.drawn.append(division.name)
         self.asked.append({"division": division.name,

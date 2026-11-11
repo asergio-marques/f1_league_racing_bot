@@ -9,7 +9,7 @@ from __future__ import annotations
 from leaguebot.core.models.change import ChangeOrigin
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.module_service import ModuleService
+from leaguebot.core.services.modules.module_service import ModuleService
 from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 #: The states a close returns to Not Signed Up: a driver still filling in the wizard. One

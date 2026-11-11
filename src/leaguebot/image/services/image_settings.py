@@ -70,7 +70,7 @@ from leaguebot.image.utils.svg_document import off_the_loop
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.season_service import SeasonService
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.image.services.image_config_service import ImageConfigService

@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 from leaguebot.core.models.round import read_scheduled_at
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)

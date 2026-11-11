@@ -77,7 +77,7 @@ class _Drawing:
 
 
 def _problem():
-    from leaguebot.core.services.image_drawing import CapacityProblem
+    from leaguebot.core.services.modules.image_drawing import CapacityProblem
 
     return CapacityProblem(problem=PROBLEM, remedy=REMEDY)
 
@@ -194,7 +194,7 @@ async def test_the_lineup_check_asks_of_each_division_s_race_teams_in_tier_order
     """Each division in tier order, its race teams in the order they were made and the drivers
     seated in each: an empty seat is not counted and the reserve team is not handed. What the
     drawing answers is the check's answer, unchanged."""
-    from leaguebot.core.services.image_drawing import DivisionTeams, TeamSeats
+    from leaguebot.core.services.modules.image_drawing import DivisionTeams, TeamSeats
 
     drawing = _Drawing({"lineup_review_problems": ["one problem", "another"]})
     cog = _cog(await _seed(tmp_path, SEASON), drawing)
@@ -245,7 +245,7 @@ async def test_the_calendar_and_the_sheet_ask_of_the_division_holding_the_most_r
     attendance sheet of the longest calendar alone: the second division made, with twenty-five
     rounds against the first's ten, whether its name sorts after the other's or before it. Each
     answer is a warning, never a refusal."""
-    from leaguebot.core.services.image_drawing import Held
+    from leaguebot.core.services.modules.image_drawing import Held
 
     shorter, _ = names
     drawing = _Drawing({
@@ -269,7 +269,7 @@ async def test_the_attendance_warnings_ask_of_the_season_s_counts_in_review_orde
     division seating the most drivers, the one fielding the most race teams and the one holding
     the most rounds; and the check-in call of a sprint round's four sessions. Every warning in
     the order asked, then one blank line."""
-    from leaguebot.core.services.image_drawing import CapacityProblem, Held
+    from leaguebot.core.services.modules.image_drawing import CapacityProblem, Held
 
     standings = [CapacityProblem("Drivers short", "Enlarge it."), CapacityProblem("Teams short", "Enlarge that.")]
     drawing = _Drawing({
@@ -393,7 +393,7 @@ async def test_a_switch_nobody_signed_up_for_is_raised_by_a_check(tmp_path, ques
     """The images module's switch reader was never signed up (`SwitchNotSignedUp`): that is a fault
     in the bot's assembly, not a check that cannot run, so the lineup check and the round guard
     raise it rather than letting the season or the round through."""
-    from leaguebot.core.services.module_service import SwitchNotSignedUp
+    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
 
     drawing = _Drawing({question: SwitchNotSignedUp("images")})
     cog = _cog(await _seed(tmp_path, SEASON), drawing)

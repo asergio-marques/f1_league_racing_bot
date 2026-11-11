@@ -340,7 +340,7 @@ async def test_a_disable_whose_season_cannot_be_wound_down_says_so_in_its_line(
     queue at the wind-down's own job: the wind-down is a change of its own, asked for in the
     switch-off's save, so the stop names it and the switch-off's line carries no "not done"
     (#439)."""
-    from leaguebot.core.services import hub_service
+    from leaguebot.core.services.modules import hub_service
 
     monkeypatch.setattr(hub_service, "refresh_panel", AsyncMock(return_value=None))
     db_path = await _make_db(tmp_path, attendance_enabled=False, season_status="ACTIVE")
