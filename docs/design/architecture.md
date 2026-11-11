@@ -143,8 +143,8 @@ point, which would then hold every module's registrations and grow with each mod
   large, its workflows move into services before it is split. The split keeps the group in one cog:
   the cog class is composed from one file per subgroup, which discord.py allows because it collects
   a cog's commands across the classes the cog derives from. A base class that has one subclass and
-  shares no behaviour is the price, accepted for keeping each file to one subgroup. A module's commands sit under its own
-  top-level group, never under one of core's: `/weather channel`, not `/division weather-channel`.
+  shares no behaviour is the price, accepted for keeping each file to one subgroup. A module's
+  commands sit under its own top-level group, never under one of core's: `/weather channel`, not `/division weather-channel`.
   So do its tools for test mode, which sit under the module's group and work only while test mode is
   on, rather than under `/test-mode`. A command's name then says which module owns it, and the
   module's code stays in its folder. discord.py binds a subcommand only to the cog that declares its
@@ -171,8 +171,9 @@ point, which would then hold every module's registrations and grow with each mod
   checker (below). Each handler for a kind of post is a service in core, not a helper. Some helpers a
   service may call reach the bot, each for one thing. `league_guild(bot)`
   (`core/utils/league_server.py`) is the one route from a job or a service to the league's server,
-  which it finds through the configuration service. `report_failure`, `refuse` and
-  `record_abandoned` write a failure, a refusal or a lapse through the bot's log writer
+  which it finds through the configuration service. `report_failure`, `refuse` (through
+  `record_refusal`) and `record_abandoned` write a failure, a refusal, or a cancellation or a lapse,
+  through the bot's log writer
   ("Errors and failures"). Handing the configuration service or the router instead to every
   service that calls them would add a parameter to each, for no rule gained.
 - **A module's own helpers** sit in its `utils/` folder, beside its services, under the same rules.
@@ -260,10 +261,9 @@ for it raises `SwitchNotSignedUp`, a `LookupError` of its own type, which no rea
 aside takes for an answer: each lets that type through by name and stands aside from any other
 fault. A link the dependency table allows between two modules is not one of core's hooks: there the
 module depended on may name what it asks of its dependant, as results does of attendance (below).
-Only core calls the subscribers of a hook it declares as a list; of the keyed hooks, a module's own
-work may call the switch read too. A moment a module reaches is either the module's own, where any
-dependant is reached through what the builder hands it, or that of a core function that writes the
-change, which calls its own hooks.
+Only core calls the subscribers of a hook it declares as a list. Where a module reaches such a
+moment, either the moment is its own and its dependants are reached through what the builder hands
+it, or a core function writes the change and calls the hook itself.
 
 *Rejected:* a hook as one object of named operations the builder fills in, one for each module's
 part, which leaves core knowing what each module does at that moment. *Rejected:* only writing the
@@ -926,7 +926,8 @@ round raced, or ended cancelled because every session was entered as not held.
 
 **A standing sweep is an interval job that re-reads its rows each time it runs.** It is the shape
 where work is not yet due while other work is in hand and must be looked at again later, as
-results' sweep that undoes an abandoned amendment is. It is armed with no lateness limit.
+results' sweep that undoes an abandoned amendment is. Its module arms it at start-up, replacing
+itself, and it is armed with no lateness limit.
 
 **A delay is a one-off timer that asks a change.** The queue holds no delay of its own. Where
 something must happen a set time after a job (a season review's, a correction's or an
@@ -1363,7 +1364,7 @@ will not go is logged on the host and left, a teardown list going on past it (`S
 says so); and the results picker's put-back after a press the bot has already answered
 (`_ConfigSelectView._put_back`) is a stated exception: its catch-all logs the error in full and
 leaves the message as the press's own edit left it, because a report would answer the press twice
-(its docstring says so).
+or stand in place of the fault the press is reporting (its docstring says so).
 
 In every case it keeps the full error details for the host's log. Beyond the first place's own
 catch-all, a command catches only the errors it expects by name, and only to turn them into a
@@ -1458,8 +1459,8 @@ later on its own.
   sit only in the named topic folders, each named as plumbing or as league rules, with the
   scheduler's file alone loose.
 - **`tests/repository/test_architecture_rules.py`** checks the rest: database code outside services,
-  awaiting anything but the connection mid-save (in a function that opens it and in one handed it), cogs handling their own errors, catch-all handlers
-  that lose the error details, background tasks nobody keeps, code reaching past the scheduler
+  awaiting anything but the connection mid-save (in a function that opens it and in one handed
+  it), cogs handling their own errors, catch-all handlers that lose the error details, background tasks nobody keeps, code reaching past the scheduler
   service, the entry point subscribing a module to a hook only that module joins (that module's
   wiring signs it up), jobs armed with a lateness limit, private names used across modules, a new
   place naming the log channel (the check lists the six allowed, with their reasons), posting

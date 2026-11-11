@@ -119,6 +119,9 @@ Every practice names its primary source. Cite that source in a finding, not this
   fails the type check. **Settled here:** no `LeagueCog` base; it would hold two lines, and an
   error handler added to it would switch off the one failure path for every command
   (architecture.md, "Errors and failures").
+  **Settled too:** a cog split by subgroup keeps one cog for its one group, composed from one base
+  class per subgroup file (`architecture.md`, the cog bullet). Each such base has one subclass and
+  shares no behaviour; that is the stated price, not a finding.
 
 ## 4. Data access
 
