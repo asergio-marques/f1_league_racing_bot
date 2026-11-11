@@ -346,16 +346,20 @@ async def test_a_roster_asks_each_guard_once_summed_across_its_teams(tmp_path, a
     db_path, _season_id, division_id = await _seed(tmp_path)
     drawing = _Drawing({})
 
-    async with get_connection(db_path) as db:
-        await _capacity(db_path, drawing).guard_roster_capacity_on(db, division_id, added)
+    async def dry_run(recording):
+        async with get_connection(db_path) as db:
+            await recording.refusal_on(db, division_id, added)
+
+    await _capacity(db_path, drawing).hold_roster(dry_run)
 
     assert drawing.asked == asked
 
 
-async def test_a_roster_counts_the_seats_on_the_connection_of_the_save(tmp_path):
-    """The roster's guard runs inside the roster change's save and reads on that save's own
-    connection: a driver the save has seated, not yet committed, is counted, where a connection of
-    its own would count the database without it."""
+async def test_a_roster_counts_the_seats_on_the_connection_it_is_handed(tmp_path):
+    """The roster's seats are counted on the connection the judge is handed, which the save's own
+    is: a driver seated on it, not yet committed, is counted, where a connection of its own would
+    count the database without it. Counting asks the drawing nothing."""
+    from leaguebot.core.services.drivers.template_capacity_service import CapacityQuestion
 
     db_path, season_id, division_id = await _seed(tmp_path)
     drawing = _Drawing({})
@@ -375,23 +379,53 @@ async def test_a_roster_counts_the_seats_on_the_connection_of_the_save(tmp_path)
             (profile, season_id, division_id, seat),
         )
 
-        await _capacity(db_path, drawing).guard_roster_capacity_on(db, division_id, {ORDINARY: 1})
+        questions = await _capacity(db_path, drawing).roster_questions_on(
+            db, division_id, {ORDINARY: 1}
+        )
         await db.rollback()
 
-    assert drawing.asked == [("sheet_capacity_problem", 5), ("standings_capacity_problem", 4)]
+    assert questions == [CapacityQuestion("sheet", 5), CapacityQuestion("standings", 4)]
+    assert drawing.asked == []
+
+
+async def test_the_drawing_is_asked_once_before_the_judge_reads_its_answers(tmp_path):
+    """The drawing says a division's roster would outgrow the sheet: the first pass of the judge
+    records what it counts and is refused nothing, the drawing is asked each recorded question
+    once however often the judge is run, and the held capacity the second pass reads refuses with
+    the drawing's own words."""
+    from leaguebot.core.services.modules.image_drawing import CapacityProblem
+
+    db_path, _season_id, division_id = await _seed(tmp_path)
+    drawing = _Drawing({"sheet_capacity_problem": CapacityProblem(PROBLEM, REMEDY)})
+    passes: list[str | None] = []
+
+    async def dry_run(capacity):
+        async with get_connection(db_path) as db:
+            passes.append(await capacity.refusal_on(db, division_id, {ORDINARY: 1}))
+
+    held = await _capacity(db_path, drawing).hold_roster(dry_run)
+    async with get_connection(db_path) as db:
+        refusal = await held.refusal_on(db, division_id, {ORDINARY: 1})
+
+    assert passes == [None]
+    assert refusal == TEMPLATE_REFUSAL
+    assert drawing.asked == [("sheet_capacity_problem", 4), ("standings_capacity_problem", 3)]
 
 
 async def test_no_drawing_handed_means_no_guard(tmp_path):
     """A service built alone, as a test that exercises placement builds it, refuses no test
-    roster however large: the four `test_no_bot_means_no_guard` tests, merged. That such a service
-    places a driver is `test_placement_assign.py`'s."""
+    roster however large, and does not run the judge to find out: the four
+    `test_no_bot_means_no_guard` tests, merged. That such a service places a driver is
+    `test_placement_assign.py`'s."""
 
     db_path, _season_id, division_id = await _seed(tmp_path)
 
+    async def never_run(_capacity):
+        raise AssertionError("no drawing, so nothing to record")
+
+    held = await _capacity(db_path).hold_roster(never_run)
     async with get_connection(db_path) as db:
-        await _capacity(db_path).guard_roster_capacity_on(
-            db, division_id, {RESERVE: 99, ORDINARY: 99}
-        )
+        assert await held.refusal_on(db, division_id, {RESERVE: 99, ORDINARY: 99}) is None
 
 
 async def test_a_guard_whose_switch_nobody_signed_up_for_raises(tmp_path):

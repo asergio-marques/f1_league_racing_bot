@@ -7,11 +7,11 @@ driver standings — so a roster those templates could not hold was accepted, an
 surfaced only as a fallback at the first posting. A rehearsal that passes a configuration a
 real season would refuse is worse than no rehearsal.
 
-``TemplateCapacityService.guard_roster_capacity_on`` asks the three guards over a whole change at once,
-summed per division, and both roster paths call it before they write anything. What it counts
-and asks is ``tests/core/test_placement_capacity_guards.py``'s, through a stub; here the image
-module's own implementation of core's protocol is handed in (#283), so that each roster path
-is refused as a league meets it.
+``TemplateCapacityService.hold_roster`` asks the three guards over a whole change at once,
+summed per division, and both roster paths are judged against its answers before they write
+anything. What it counts and asks is ``tests/core/test_placement_capacity_guards.py``'s, through a
+stub; here the image module's own implementation of core's protocol is handed in (#283), so that
+each roster path is refused as a league meets it.
 
 Nothing here rasterises: the templates are built in memory and read as SVG.
 """
@@ -191,16 +191,20 @@ async def _add(path, service, team, division="Alpha", name="Mock"):
     capacities, on a connection of the test's own, committed as a change's save commits it."""
     from leaguebot.core.services.test_mode.test_roster_service import add_test_driver_on
 
-    async with get_connection(path) as db:
-        result = await add_test_driver_on(
-            db,
-            driver_name=name,
-            team_name=team,
-            division_name=division,
-            capacity=service,
-        )
-        await db.commit()
-    return result
+    async def seat(held, *, commit=True):
+        async with get_connection(path) as db:
+            result = await add_test_driver_on(
+                db,
+                driver_name=name,
+                team_name=team,
+                division_name=division,
+                capacity=held,
+            )
+            if commit:
+                await db.commit()
+        return result
+
+    return await seat(await service.hold_roster(lambda recording: seat(recording, commit=False)))
 
 
 async def test_a_reserve_past_the_lineup_s_reserve_slots_is_refused(tmp_path):
@@ -322,10 +326,14 @@ async def _bulk(path, service, drivers):
     connection of the test's own, committed as a change's save commits it."""
     from leaguebot.core.services.test_mode.test_roster_service import add_test_drivers_in_bulk_on
 
-    async with get_connection(path) as db:
-        result = await add_test_drivers_in_bulk_on(db, drivers, capacity=service)
-        await db.commit()
-    return result
+    async def seat(held, *, commit=True):
+        async with get_connection(path) as db:
+            result = await add_test_drivers_in_bulk_on(db, drivers, capacity=held)
+            if commit:
+                await db.commit()
+        return result
+
+    return await seat(await service.hold_roster(lambda recording: seat(recording, commit=False)))
 
 
 async def test_a_roster_outgrowing_the_standings_across_its_teams_seats_nobody(tmp_path):

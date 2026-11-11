@@ -16,9 +16,12 @@ log channel either time, in the words the command has always used: test mode not
 not in Placements (test mode replicates the live flow, where drivers are seated in Placements),
 a nationality given while test mode's nationality switch is off, and what seating the driver is
 refused for (`judge_add_on`): the name, the nationality, no live season, no such division or team,
-a template capacity a real placement into the team would be refused for, no free seat. The save
-judges them once more on its own connection, ending the change in the same words where one has come
-up since, changing nothing and not stopping the lane.
+a template capacity a real placement into the team would be refused for, no free seat. The
+template capacity is the check's alone: the image module's drawing reads on other connections and
+parses every template, so it is asked before the save opens (`TemplateCapacityService.hold_roster`),
+as a real placement's guards are, and never inside it. The save judges the rest once more on its own
+connection, ending the change in the same words where one has come up since, changing nothing and
+not stopping the lane.
 
 **One SAVE** seats the driver (`seat_on`: the profile, the seat and the season assignment) and
 writes the `TEST_DRIVER_ADDED` audit entry, which records the division's stored name, and the log
@@ -57,7 +60,10 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.services.rounds.round_add_changes import saved_result
 from leaguebot.core.services.seasons.season_lifecycle_service import live_season_stage_on
-from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService
+from leaguebot.core.services.drivers.template_capacity_service import (
+    RosterCapacity,
+    TemplateCapacityService,
+)
 from leaguebot.core.services.test_mode.test_mode_settings import NOT_IN_TEST_MODE
 from leaguebot.core.services.test_mode.test_roster_service import (
     AddPlan,
@@ -172,15 +178,16 @@ def test_roster_add_change(*, capacity: Callable[[], TemplateCapacityService]) -
     template capacity service the driver is held to the template capacities through, asked for
     each time it is needed."""
 
-    async def judge(db: aiosqlite.Connection, payload: dict[str, Any]) -> AddPlan | str:
-        """The plan to seat the driver, or the reply refusing it."""
+    async def judge(
+        db: aiosqlite.Connection, payload: dict[str, Any], held: RosterCapacity | None
+    ) -> AddPlan | str:
+        """The plan to seat the driver, or the reply refusing it, held to the capacities *held*
+        carries."""
         refusal = await standing_refusal_on(db, nationality=payload["nationality"])
         if refusal is not None:
             return refusal
         driver_name, team_name, division, nationality = _add_arguments(payload)
-        judged = await judge_add_on(
-            db, driver_name, team_name, division, nationality, capacity()
-        )
+        judged = await judge_add_on(db, driver_name, team_name, division, nationality, held)
         return f"⛔ {judged}" if isinstance(judged, str) else judged
 
     async def fill(ctx: CheckContext) -> None:
@@ -190,14 +197,23 @@ def test_roster_add_change(*, capacity: Callable[[], TemplateCapacityService]) -
             ctx.payload["team_full_name"] = located.team["full_name"]
 
     async def check(ctx: CheckContext) -> Verdict:
-        """The refusals, in the order they come, each read from the database."""
+        """The refusals, in the order they come, each read from the database, the template
+        capacities among them as the image module's drawing says them, asked here and not in the
+        save (`TemplateCapacityService.hold_roster`)."""
+
+        async def dry_run(recording: RosterCapacity) -> None:
+            async with get_connection(ctx.db_path) as db:
+                await judge(db, ctx.payload, recording)
+
+        held = await capacity().hold_roster(dry_run)
         async with get_connection(ctx.db_path) as db:
-            judged = await judge(db, ctx.payload)
+            judged = await judge(db, ctx.payload, held)
         return Verdict.refuse(judged) if isinstance(judged, str) else Verdict.go()
 
     async def save(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
-        """Seat the driver, and write the audit entry and the line."""
-        judged = await judge(db, ctx.payload)
+        """Seat the driver, and write the audit entry and the line. The capacities are the
+        check's: the drawing is not asked inside a save."""
+        judged = await judge(db, ctx.payload, None)
         if isinstance(judged, str):
             return StepResult(
                 result={"refused": judged},
@@ -305,23 +321,35 @@ def test_roster_add_bulk_change(*, capacity: Callable[[], TemplateCapacityServic
     the save stops the lane, as in `/test-mode roster add`.
     """
 
-    async def judge(db: aiosqlite.Connection, payload: dict[str, Any]) -> BulkPlan | str:
-        """The plan to seat the roster, or the reply refusing it."""
+    async def judge(
+        db: aiosqlite.Connection, payload: dict[str, Any], held: RosterCapacity | None
+    ) -> BulkPlan | str:
+        """The plan to seat the roster, or the reply refusing it, held to the capacities *held*
+        carries."""
         refusal = await standing_refusal_on(db)
         if refusal is not None:
             return refusal
-        judged = await judge_bulk_on(db, _drivers_of(payload), capacity())
+        judged = await judge_bulk_on(db, _drivers_of(payload), held)
         return format_roster_errors(judged) if isinstance(judged, list) else judged
 
     async def check(ctx: CheckContext) -> Verdict:
-        """The refusals, in the order they come, each read from the database."""
+        """The refusals, in the order they come, each read from the database, the template
+        capacities among them as the image module's drawing says them, asked here and not in the
+        save (`TemplateCapacityService.hold_roster`)."""
+
+        async def dry_run(recording: RosterCapacity) -> None:
+            async with get_connection(ctx.db_path) as db:
+                await judge(db, ctx.payload, recording)
+
+        held = await capacity().hold_roster(dry_run)
         async with get_connection(ctx.db_path) as db:
-            judged = await judge(db, ctx.payload)
+            judged = await judge(db, ctx.payload, held)
         return Verdict.refuse(judged) if isinstance(judged, str) else Verdict.go()
 
     async def save(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
-        """Seat every driver, and write the audit entries and the line."""
-        judged = await judge(db, ctx.payload)
+        """Seat every driver, and write the audit entries and the line. The capacities are the
+        check's: the drawing is not asked inside a save."""
+        judged = await judge(db, ctx.payload, None)
         if isinstance(judged, str):
             return StepResult(
                 result={"refused": judged},

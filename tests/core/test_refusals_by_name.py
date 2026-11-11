@@ -37,11 +37,18 @@ def _faulty_placement() -> MagicMock:
     """A placement service whose every guard and judge raises a bug's `ValueError`."""
     placement = MagicMock()
     for name in (
-        "guard_move", "guard_assign", "guard_roster_capacity_on", "judge_move_on", "judge_sack_on",
+        "guard_move", "guard_assign", "judge_move_on", "judge_sack_on",
         "judge_release_on", "judge_assign_on", "judge_unassign_on",
     ):
         setattr(placement, name, AsyncMock(side_effect=ValueError(BUG)))
     return placement
+
+
+def _faulty_capacity() -> MagicMock:
+    """A roster capacity whose guard raises a bug's `ValueError`."""
+    capacity = MagicMock()
+    capacity.refusal_on = AsyncMock(side_effect=ValueError(BUG))
+    return capacity
 
 
 def _placement_check(factory: str, **handed: Any) -> Callable[..., Awaitable[None]]:
@@ -83,7 +90,7 @@ async def _test_driver_added(tmp_path, monkeypatch) -> None:
     async with get_connection(path) as db:
         await add_test_driver_on(
             db, driver_name="Mock", team_name=TEAMS[0], division_name="Alpha",
-            capacity=_faulty_placement(),
+            capacity=_faulty_capacity(),
         )
 
 
@@ -96,7 +103,7 @@ async def _test_roster_imported(tmp_path, monkeypatch) -> None:
     path, _divisions = await _seed(tmp_path)
     async with get_connection(path) as db:
         await add_test_drivers_in_bulk_on(
-            db, _roster((TEAMS[0], "Alpha")), capacity=_faulty_placement(),
+            db, _roster((TEAMS[0], "Alpha")), capacity=_faulty_capacity(),
         )
 
 
