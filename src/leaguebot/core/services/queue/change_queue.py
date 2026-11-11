@@ -478,15 +478,16 @@ class ChangeQueue:
     ) -> AsyncIterator[None]:
         """Wait, where the queue is held and the ask is not the sweep's, until it is released, and
         stay inside until the ask is saved or refused. An interaction not yet answered is deferred
-        first, privately, so that Discord shows the member "thinking…" and its three seconds do not
-        lapse. While it waits, and until the ask is through, the channel of a kind that declares a
+        first, privately and with `thinking=True`, so that Discord shows the member "thinking…" for a
+        button or a form as for a command, and its three seconds do not lapse; a form opened from a
+        slash command takes only that kind of deferral. While it waits, and until the ask is through, the channel of a kind that declares a
         `turn_channel` is a held turn channel (`held_turn_channels`)."""
         hold = self._hold
         if hold is None or hold.is_set() or _in_the_sweep.get():
             yield
             return
         if interaction is not None and not interaction.response.is_done():
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer(ephemeral=True, thinking=True)
         declares = self._type(kind).turn_channel
         channel = None if declares is None else declares(payload)
         if channel is not None:
