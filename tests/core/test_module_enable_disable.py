@@ -354,9 +354,11 @@ NEEDS_RESULTS = (
 )
 
 
+@pytest.mark.xfail(strict=True, reason="#440: turning results on does not arm the amendment sweep")
 async def test_results_is_enabled(tmp_path):
     """The member is acknowledged at once, and once the change has run the module is on and
-    audited, and the reply and the Success line keep today's words."""
+    audited, the sweep that undoes a lapsed amendment is armed, once, and the reply and the
+    Success line keep today's words."""
     from tests.support.change_queue import acknowledgement, run_queue
     from tests.support.settings_league import last_said, log_lines
 
@@ -365,14 +367,48 @@ async def test_results_is_enabled(tmp_path):
 
     await cog._enable_results(asked)
     assert acknowledgement(asked).startswith("⏳ Turning Results & Standings on. ")
+    assert league.scheduler.schedule_amendment_sweep.call_count == 0
     await run_queue(league.bot)
 
     assert await _flag(league.db_path, "results_module_config") == 1
     [entry] = await _audit(league.db_path)
     assert entry["change_type"] == "MODULE_ENABLE"
     assert json.loads(entry["new_value"])["module"] == "results"
+    league.scheduler.schedule_amendment_sweep.assert_called_once_with()
     assert last_said(asked) == "✅ Results & Standings module enabled."
     assert await log_lines(league) == [f"{NAMED} | /module enable results | Success"]
+
+
+@pytest.mark.xfail(strict=True, reason="#440: turning results on does not arm the amendment sweep")
+async def test_a_results_enable_whose_sweep_cannot_be_armed_leaves_results_on_and_says_so(
+    tmp_path,
+):
+    """The scheduler refuses to arm the sweep that undoes a lapsed amendment as results is turned
+    on: the module stays on with its audit entry, the reply says it is enabled and adds a warning
+    line, the Success line and one failure line are written, and no job is left stopped on the
+    queue."""
+    from tests.support.change_queue import run_queue, stopped_job
+    from tests.support.settings_league import last_said, log_lines
+
+    league, cog = await _league(tmp_path)
+    league.scheduler.schedule_amendment_sweep.side_effect = RuntimeError("the job store refused")
+    asked = _asked(league, "enable")
+
+    await cog._enable_results(asked)
+    await run_queue(league.bot)
+
+    league.scheduler.schedule_amendment_sweep.assert_called_once_with()
+    assert await _flag(league.db_path, "results_module_config") == 1
+    assert [entry["change_type"] for entry in await _audit(league.db_path)] == ["MODULE_ENABLE"]
+    enabled, *warning = last_said(asked).split("\n")
+    assert enabled == "✅ Results & Standings module enabled."
+    assert len(warning) == 1 and warning[0].startswith("⚠️ "), warning
+    lines = await log_lines(league)
+    assert lines.count(f"{NAMED} | /module enable results | Success") == 1
+    assert [line for line in lines if line.startswith("❌ ")] == [
+        f"❌ `/module enable` failed for {NAMED} — RuntimeError. The details are in the host's log."
+    ]
+    assert await stopped_job(league.db_path) is None
 
 
 async def test_results_cannot_be_enabled_mid_season(tmp_path):
