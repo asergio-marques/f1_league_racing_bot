@@ -696,12 +696,25 @@ async def test_the_review_s_drawing_runs_through_the_callable_the_builder_hands_
     assert all(thread is not threading.current_thread() for thread in posting.drawing.threads)
 
 
+def _with_image_s_drawing(bot: Any) -> None:
+    """Attach to *bot* the image module's drawing, built over the bot's services as the builder
+    builds it, so that a review's lineup drawn through it reaches image's own code."""
+    from leaguebot.image.services.image_drawing import ImageDrawing
+
+    bot.image_drawing = ImageDrawing(
+        bot.module_service, bot.image_config_service, bot.image_validity_service,
+        renderer=bot.image_render_service, post_log=bot.output_router.post_log,
+        db_path=bot.db_path,
+    )
+
+
 @pytest.mark.parametrize("uncommitted", [False, True], ids=["placements", "mid_season"])
 async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portraits(
         posting, monkeypatch, uncommitted):
     """The real change types are registered, as the builder registers them, and the drawing it
-    hands `season.review.post` is kept. Asked, off the event loop, to draw Pro's lineup for
-    Alex's review, it has the image module draw the lineup obtaining each seated driver's
+    hands `season.review.post` is kept, and the bot carries the image module's drawing as the
+    builder attaches it. Asked, off the event loop, to draw Pro's lineup for Alex's review, it
+    has the image module draw the lineup obtaining each seated driver's
     missing portrait (#407), so the review is not judged on a placeholder the league will not
     see (image specification, "The drawing of placements under review"). A mid-season review's
     lineup, asked with `include_uncommitted`, is drawn with its uncommitted drivers in it, as
@@ -725,6 +738,7 @@ async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portrait
                                                     notices=[]))
     monkeypatch.setattr(image_lineup_post, "render_png", render)
     monkeypatch.setattr(image_lineup_post, "lineup_enabled", AsyncMock(return_value=True))
+    _with_image_s_drawing(posting.bot)
     attach_queue(posting.bot, posting.db_path, now=posting.clock)
 
     picture = dict(PICTURES[1])

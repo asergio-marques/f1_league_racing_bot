@@ -179,6 +179,47 @@ async def test_the_review_s_calendar_picture_is_drawn_through_the_image_module_s
     assert drawing.asked == [{"division": "Pro", "tracks": [], "season_number": 3}]
 
 
+@pytest.mark.xfail(strict=True,
+                   reason="#283: the review's lineup picture is drawn past the image module's drawing")
+async def test_the_review_s_lineup_picture_is_drawn_through_the_image_module_s_drawing(
+    tmp_path, monkeypatch,
+):
+    """The review asks for Pro's lineup picture with its uncommitted drivers in it: the builder's
+    drawing of review pictures draws it through the image module's drawing the builder attached to
+    the bot (`draw_review_lineup`), handed the league's server, the division and the uncommitted
+    drivers, and hands back the PNG drawn; it never reaches past the drawing to image's renderer."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from leaguebot.__main__ import _draw_review_picture
+    from leaguebot.core.services.image_drawing import LineupPicture
+    from leaguebot.image.services import image_lineup_post
+
+    bot = await built_bot(tmp_path, now=_NOW)
+    png = tmp_path / "lineup.png"
+    png.write_bytes(b"\x89PNG")
+    guild = SimpleNamespace(id=1)
+    monkeypatch.setattr(bot.config_service, "get_league_server_id", AsyncMock(return_value=1))
+    monkeypatch.setattr(bot, "get_guild", lambda server_id: guild if server_id == 1 else None)
+    asked: list[tuple[object, int, bool]] = []
+
+    async def draw_review_lineup(on: object, division_id: int, *,
+                                 include_uncommitted: bool) -> LineupPicture:
+        asked.append((on, division_id, include_uncommitted))
+        return LineupPicture(path=png, problem=None)
+
+    monkeypatch.setattr(bot.image_drawing, "draw_review_lineup", draw_review_lineup,
+                        raising=False)
+    monkeypatch.setattr(image_lineup_post, "render_for_command", AsyncMock(
+        side_effect=AssertionError("the review drew its lineup past the image module's drawing")))
+
+    drawn = await _draw_review_picture(
+        bot, {"kind": "lineup", "division_id": 11, "include_uncommitted": True})
+
+    assert drawn == png
+    assert asked == [(guild, 11, True)]
+
+
 #: The kinds of the scheduler's own jobs, each signed up with its handler by the builder.
 _SCHEDULER_KINDS = {
     "weather_p1", "weather_p2", "weather_p3", "cleanup", "results", "rsvp_notice",
