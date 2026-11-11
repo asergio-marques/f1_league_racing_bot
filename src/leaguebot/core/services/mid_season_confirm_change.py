@@ -84,6 +84,7 @@ from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 
 if TYPE_CHECKING:
     from leaguebot.core.services.image_drawing import ImageDrawing
+    from leaguebot.core.services.lineup_posting import LineupPoster
     from leaguebot.core.services.team_role_service import TeamRoleService
 
 __all__ = [
@@ -193,7 +194,7 @@ async def every_division_done_in(db_path: str, season_id: int) -> bool:
 def mid_season_confirm_change(
     *,
     modules: Any,
-    placement: Any,
+    lineups: "LineupPoster",
     roles: "TeamRoleService",
     drawing: "ImageDrawing",
     rasteriser_fault: Callable[[], str | None],
@@ -204,9 +205,9 @@ def mid_season_confirm_change(
 ) -> ChangeType:
     """The change that confirms a season's placements mid-season; see the module.
 
-    The builder hands in *modules* (which modules are on), the *placement* service (a division's
-    lineup), the team-role service *roles* (a driver's roles), the image module's own drawing (*drawing*) and
-    *rasteriser_fault* (what is wrong with the host's drawing program, None where nothing is),
+    The builder hands in *modules* (which modules are on), the *lineups* poster (a division's
+    lineup), the team-role service *roles* (a driver's roles), the image module's own drawing
+    (*drawing*) and *rasteriser_fault* (what is wrong with the host's drawing program, None where nothing is),
     *driver_names_read* (the hook an unsettled driver is named through),
     *division_channel_faults_read* (the hook each module names its own channels' faults through),
     *fingerprint_areas_read* (the hook each module's own areas of the fingerprint are asked
@@ -457,7 +458,7 @@ def mid_season_confirm_change(
         APPLY: Step(APPLY, StepKind.SAVE, apply, describe=describe_apply),
         JUDGE: Step(JUDGE, StepKind.ACT, judge, describe=describe_judge),
         GRANT_ROLES: driver_roles_step(roles),
-        POST_LINEUP: lineup_posting.lineup_step(placement, now=now),
+        POST_LINEUP: lineup_posting.lineup_step(lineups, now=now),
         standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
         TELL_REVIEW_CHANNEL: Step(
             TELL_REVIEW_CHANNEL, StepKind.ACT, tell_review_channel, still_due=reply_lost,

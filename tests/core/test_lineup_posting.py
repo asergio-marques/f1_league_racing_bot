@@ -45,9 +45,6 @@ from tests.support.season_league import (
 KIND = "lineup.post"
 LINEUP = {PRO: DIVISIONS[PRO][3].lineup, AM: DIVISIONS[AM][3].lineup}
 
-#: Why the lineup step's own tests fail until the bot declares a lineup poster to hand it (#283).
-_NOT_YET_A_POSTER = "#283: the bot declares no LineupPoster to hand the lineup step"
-
 
 async def _said(league: Any) -> str:
     """Every log line, sent or still waiting on the old retry queue."""
@@ -476,10 +473,7 @@ async def _placements_confirmed(tmp_path: Any, monkeypatch: Any, drawing: Any) -
     pytest.param(_lineup_asked, "the bot", "posting the lineup of **Pro**", ("Pro",),
                  id="a lineup asked"),
     pytest.param(_review_approved, "Alex (`<@{member_id}>`)",
-                 "✅ Approve on round 3's penalty review", ("Pro",), id="a review's sanction",
-                 marks=pytest.mark.xfail(strict=True, reason="#283: the capacity guards, the team "
-                                         "roles and the lineup posting are not yet services of "
-                                         "their own handed to attendance's hook")),
+                 "✅ Approve on round 3's penalty review", ("Pro",), id="a review's sanction"),
     pytest.param(_placements_approved, "Admin (`<@{admin_id}>`)",
                  "the ✅ Approve button of `/season placements-review`", ("Pro", "Am"),
                  id="the placements approved"),
@@ -594,7 +588,6 @@ async def test_a_stop_between_the_lineup_post_and_its_delete_deletes_the_old_one
         "delete_replaced") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_a_lineup_step_with_no_channel_raises(tmp_path):
     """Pro's lineup channel was never set. The lineup job a review or an approval runs for Pro
     (`lineup_step`, through the real lineup poster) raises, naming the command that sets the
@@ -620,7 +613,6 @@ async def test_a_lineup_step_with_no_channel_raises(tmp_path):
     assert len(league.texts(LINEUP[PRO])) == before
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_A_POSTER)
 async def test_a_lineup_step_whose_images_switch_nobody_signed_up_for_raises(tmp_path):
     """The images module's switch reader was never signed up, so asking whether the lineup is drawn
     raises `SwitchNotSignedUp`. The lineup job for Pro (`lineup_step`, through the real lineup

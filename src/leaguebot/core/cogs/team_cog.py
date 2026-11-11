@@ -422,7 +422,7 @@ class TeamCog(commands.Cog):
             # every division has drawn clean, and closed again before this hands the paths to
             # `discard_picture`, so no render is unlinked while its handle is still open — the
             # model `calendar_post_service.replace_calendar_message` and
-            # `placement_service._refresh_lineup_post` both set.
+            # `LineupPoster._refresh_lineup_post` both set.
             try:
                 for div in all_divisions:
                     picture = await self.bot.image_drawing.draw_lineup_for_command(

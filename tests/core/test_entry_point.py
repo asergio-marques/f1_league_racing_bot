@@ -74,8 +74,6 @@ async def test_build_returns_every_service_complete(tmp_path):
     assert not hasattr(bot.wizard_service, "set_bot")
 
 
-@pytest.mark.xfail(strict=True, reason="#283: placement's capacity guards, team roles and "
-                   "lineup posting are not yet services of their own")
 async def test_the_builder_hands_the_capacity_guards_and_the_lineups_the_image_module_s_drawing(
     tmp_path,
 ):

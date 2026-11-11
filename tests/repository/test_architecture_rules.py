@@ -40,12 +40,6 @@ from tests.support.source import package_sources
 sys.path.insert(0, str(ROOT / "tools"))
 from coverage_by_module import classify  # noqa: E402
 
-#: Why the catch-all checks fail until the placement service's capacity guards and lineup
-#: posting sit in their own homes, under which `CATCH_ALLS_ALLOWED` already names them (#283).
-_NOT_YET_SPLIT = (
-    "#283: the capacity guards and the lineup posting are not yet out of the placement service"
-)
-
 # ── The issues that will remove today's breaches ────────────────────────────────────────────
 
 #: Each module's design pass, which moves its own code into line with the architecture.
@@ -3366,7 +3360,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
 }
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_SPLIT)
 def test_a_catch_all_handler_sits_in_one_of_the_five_places():
     """A catch-all handler (`except Exception`) is allowed in five places only (architecture.md,
     "A catch-all error handler"): on a failure path, where `report_failure` is called; around a
@@ -3383,7 +3376,6 @@ def test_a_catch_all_handler_sits_in_one_of_the_five_places():
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_SPLIT)
 def test_every_catch_all_allowed_for_good_still_exists():
     """Each function named in `CATCH_ALLS_ALLOWED` still holds a catch-all, with its reason: a
     rename cannot leave the exception pointing at nothing."""

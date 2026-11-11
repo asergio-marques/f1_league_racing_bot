@@ -1,29 +1,28 @@
-"""PlacementService — the seats: driver placement, the lineup it leaves and the sack."""
+"""PlacementService — the seats: a driver assigned, moved, unassigned, released and sacked, and the
+judges of each.
+
+It is handed what it does not own, by the builder: the template capacity service that tells whether
+the image templates could draw a seat (`TemplateCapacityService`) and the team-role service that
+reads each team's role (`TeamRoleService`). A change that moves a seat names the divisions whose
+lineup is owed and the roles to give or take; it posts no lineup (`LineupPoster`) and the change
+queue's jobs give and take the roles.
+"""
 from __future__ import annotations
 
 import json
-import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any
 
 import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection, sole_row
-from leaguebot.core.models.change import StepFailedOnDiscord
-from leaguebot.core.models.driver_profile import DriverProfile, DriverState
+from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.models.refusal import Refused
-from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.driver_service import write_transition
-from leaguebot.core.services.image_drawing import ImageDrawing
-from leaguebot.core.services.standing_post_handler import post_standing
 from leaguebot.core.services.team_role_service import TeamRoleService
 from leaguebot.core.services.template_capacity_service import TemplateCapacityService
-from leaguebot.core.utils.in_a_job import posts_in_a_job
 
-log = logging.getLogger(__name__)
 
 @dataclass
 class SackSaved:
@@ -41,26 +40,6 @@ class SackSaved:
     user_id: int
     is_test_driver: bool
     audit: dict
-
-
-@dataclass
-class LineupPosted:
-    """A lineup posted: the message sent and the one it replaces, for the jobs after the post.
-
-    *previous* is the division's recorded lineup message as it stood when the post was made, and
-    *form* is "image" for a picture and "text" for the embed. *problem* is the image module's
-    words for why a picture could not be drawn, carried for the job's own line where the lineup
-    fell back to text, or None where nothing went wrong. Nothing is saved: the post job's
-    `record` saves *message_id* (`lineup_posting.record_lineup_on`) and the job after it deletes
-    *previous*.
-    """
-
-    message_id: int
-    channel_id: int
-    previous: int | None
-    division_name: str
-    form: str
-    problem: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +78,6 @@ class PlacementService:
         self,
         db_path: str,
         *,
-        drawing: ImageDrawing | None = None,
         capacity: TemplateCapacityService | None = None,
         roles: TeamRoleService | None = None,
     ) -> None:
@@ -114,10 +92,6 @@ class PlacementService:
         #: or sacked outside the queue gives and takes the roles through its logging helpers.
         #: Built over the same database where a unit test exercises placement alone.
         self._roles = roles if roles is not None else TeamRoleService(db_path)
-        #: The image module's answers to core's drawing protocol (`image_drawing.ImageDrawing`),
-        #: handed in by the builder. The lineup refresh asks it rather than reach image's
-        #: services through the bot. None in every unit test that exercises placement alone.
-        self._drawing = drawing
 
     # ------------------------------------------------------------------
     # Confirming placements mid-season
@@ -1234,206 +1208,6 @@ class PlacementService:
     # ------------------------------------------------------------------
     # Division resolution helper (used by cogs)
     # ------------------------------------------------------------------
-
-    async def refresh_lineup(
-        self, guild: discord.Guild, division_id: int, *, as_text: bool = False
-    ) -> LineupPosted | None:
-        """Post the division's lineup afresh, **raising** where it could not be posted.
-
-        What the post job of a change on the change queue calls: a lineup channel the division was
-        given and the guild no longer holds, or a send Discord refuses, raises
-        `StepFailedOnDiscord`, for the queue to stop on and try again; so does a division never
-        given a lineup channel, the message naming `/division lineup-channel`. A division no longer
-        there posts nothing and gives None. The post is all it does: the job's `record` saves the
-        new id and a job after it deletes the message replaced.
-
-        *as_text* skips the picture and posts the textual lineup: a job tried again goes as text
-        (Constitution XIV, rule 8).
-        """
-        return await self._refresh_lineup_post(
-            guild, division_id, as_text=as_text, require_channel=True
-        )
-
-    @posts_in_a_job
-    async def _refresh_lineup_post(
-        self,
-        guild: discord.Guild,
-        division_id: int,
-        *,
-        as_text: bool = False,
-        require_channel: bool = False,
-    ) -> LineupPosted | None:
-        """Post the division's lineup: as a graphic where the drawing draws it, else as the
-        embed.
-
-        *as_text* skips asking the drawing altogether, whatever it would answer (Constitution
-        XIV, rule 8: a job tried again goes as text). *require_channel* raises for a division
-        never given a lineup channel, as the post job of a change must; without it such a
-        division posts nothing, since configuring one is optional.
-
-        **The picture is asked of the drawing in front of an untouched body.** Where the drawing
-        the builder hands this service (core's drawing protocol) answers that the league
-        draws its lineup, it draws the division's picture and this method posts it through the
-        standing-post handler with no mentions, then releases the file. A picture that cannot be
-        drawn — the drawing raises, or hands back a problem — falls through to the text embed
-        below, carrying what went wrong for the job's own line. Where the league does not draw
-        its lineup at all, the text embed is the lineup.
-
-        Either way the lineup is posted before the message it replaces is deleted, by a job after
-        it (Constitution XIV rule 8; image spec :706): this method deletes nothing and saves
-        nothing, and a refusal raises `StepFailedOnDiscord` for the queue to stop on. A picture
-        Discord refuses stands aside, so the text is posted in the same try; only a refused text
-        post stops the lane.
-        """
-        async with get_connection(self._db_path) as db:
-            cur = await db.execute(
-                "SELECT d.name AS div_name, d.lineup_channel_id, d.lineup_message_id "
-                "FROM divisions d JOIN seasons s ON s.id = d.season_id WHERE d.id = ?",
-                (division_id,),
-            )
-            div_row = await cur.fetchone()
-
-        if div_row is None:
-            return None
-        if div_row["lineup_channel_id"] is None:
-            if not require_channel:
-                return None
-            raise StepFailedOnDiscord(
-                f"{div_row['div_name'] or division_id} has no lineup channel set: set one with "
-                "/division lineup-channel, then press Retry"
-            )
-
-        lineup_channel_id: int = div_row["lineup_channel_id"]
-        lineup_message_id: int | None = div_row["lineup_message_id"]
-        div_name: str = div_row["div_name"] or str(division_id)
-
-        # Resolve the channel. Needed for both forms, read once.
-        channel = as_text_channel(guild.get_channel(lineup_channel_id))
-        if channel is None:
-            try:
-                channel = as_text_channel(await guild.fetch_channel(lineup_channel_id))
-            except (discord.NotFound, discord.HTTPException) as exc:
-                log.error(
-                    "_refresh_lineup_post: lineup channel %s not found for division %s",
-                    lineup_channel_id, division_id,
-                )
-                raise StepFailedOnDiscord(
-                    f"the lineup channel (id {lineup_channel_id}) is not in the server"
-                ) from exc
-        if not isinstance(channel, discord.TextChannel):
-            raise StepFailedOnDiscord(
-                f"the lineup channel (id {lineup_channel_id}) is not a text channel"
-            )
-
-        image_path: Path | None = None
-        problem: str | None = None
-        drawing = self._drawing
-        # Asked before the drawing's catch-all: the gate stands aside from its own faults, and a
-        # switch nobody signed up for is a fault in the bot's assembly, not a picture not drawn.
-        if not as_text and drawing is not None and await drawing.lineup_wanted():
-            try:
-                picture = await drawing.draw_lineup(guild, division_id)
-                if picture.problem is not None:
-                    problem = picture.problem
-                elif picture.path is not None:
-                    image_path = picture.path
-            except Exception as exc:  # noqa: BLE001 — never block a placement on this
-                log.error("_refresh_lineup_post: image path failed: %s", exc, exc_info=True)
-                problem = str(exc)
-
-        # The drawn path is released whichever way this ends — posted, refused and fallen
-        # back to text, or lost to a Discord fault that stops the queue at the posting — so it
-        # is kept apart from *send_as_image*, which only says whether the picture is still the
-        # one to try sending.
-        drawn_path = image_path
-        send_as_image = image_path is not None
-
-        try:
-            if send_as_image:
-                assert image_path is not None  # true by construction: send_as_image says so
-                attachment = discord.File(str(image_path), filename=image_path.name)
-                try:
-                    new_msg_id = await post_standing(
-                        channel, mentions=discord.AllowedMentions.none(), file=attachment
-                    )
-                except discord.HTTPException:
-                    # Discord refused the picture: fall to the text in the same try.
-                    send_as_image = False
-                else:
-                    return LineupPosted(
-                        new_msg_id, lineup_channel_id, lineup_message_id, div_name, "image",
-                    )
-                finally:
-                    attachment.close()
-
-            embed = self._lineup_embed(div_name, await self._lineup_rows(division_id))
-            try:
-                new_msg_id = await post_standing(
-                    channel, mentions=discord.AllowedMentions.none(), embed=embed
-                )
-            except discord.HTTPException as exc:
-                log.error("_refresh_lineup_post: failed to post embed: %s", exc)
-                raise StepFailedOnDiscord(f"the lineup could not be posted: {exc}") from exc
-
-            return LineupPosted(
-                new_msg_id, lineup_channel_id, lineup_message_id, div_name, "text",
-                problem=problem,
-            )
-        finally:
-            if drawing is not None:
-                drawing.discard_picture(drawn_path)
-
-    async def _lineup_rows(self, division_id: int) -> list[aiosqlite.Row]:
-        """The division's committed, assigned seats, for the textual lineup."""
-        async with get_connection(self._db_path) as db:
-            cur = await db.execute(
-                """
-                SELECT ti.full_name AS team_name, ti.is_reserve,
-                       dp.discord_user_id,
-                       dp.is_test_driver, dp.test_display_name
-                FROM driver_season_assignments dsa
-                JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
-                JOIN team_seats ts ON ts.id = dsa.team_seat_id
-                JOIN team_instances ti ON ti.id = ts.team_instance_id
-                JOIN seasons s ON s.id = dsa.season_id
-                WHERE dsa.division_id = ? AND dp.current_state = 'ASSIGNED'
-                  -- A placement not yet confirmed mid-season is not posted.
-                  AND (dsa.committed = 1 OR s.status != 'ACTIVE')
-                ORDER BY ti.is_reserve ASC, ti.full_name ASC
-                """,
-                (division_id,),
-            )
-            return list(await cur.fetchall())
-
-    @staticmethod
-    def _lineup_embed(div_name: str, assign_rows: Any) -> discord.Embed:
-        """The textual lineup embed: regular teams, then reserves after a separator."""
-        regular: dict[str, list[str]] = {}
-        reserve: dict[str, list[str]] = {}
-        for row in assign_rows:
-            uid = int(row["discord_user_id"])
-            mention = f"<@{uid}>"
-            if row["is_test_driver"] and row["test_display_name"]:
-                mention = f"<@{uid}> ({row['test_display_name']})"
-            target = reserve if row["is_reserve"] else regular
-            target.setdefault(row["team_name"], []).append(mention)
-
-        parts: list[str] = [
-            f"**{t}**: {', '.join(labels)}" for t, labels in regular.items()
-        ]
-        if reserve:
-            if parts:
-                parts.append("---")
-            parts.extend(
-                f"**{t}**: {', '.join(labels)}" for t, labels in reserve.items()
-            )
-
-        description = "\n".join(parts) if parts else "*(no drivers assigned)*"
-        return discord.Embed(
-            title=f"\U0001f4cb {div_name} Lineup",
-            description=description,
-            color=discord.Color.blurple(),
-        )
 
     async def resolve_division(
         self, season_id: int, division_input: str

@@ -261,8 +261,9 @@ hands it to the review's change types, so results imports nothing of attendance 
 that do not apply" requires. Every other method checks the switch itself, on the connection it is
 handed where it writes, and does nothing while the module is off. A change type never reads the
 switch itself; one whose job serves attendance alone asks `enabled`. The placement service, which a
-sanction moves seats through, is handed to attendance's implementation by the builder and not looked
-up on the bot.
+sanction moves seats through, the team-role service that gives and takes its roles and the lineup
+poster that posts the lineups it touches are handed to attendance's implementation by the builder
+and not looked up on the bot.
 
 *Rejected:* results calling attendance's functions directly and checking the switch itself, which
 is the dependency the table forbids and leaves each caller to remember the switch.

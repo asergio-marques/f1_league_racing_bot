@@ -300,12 +300,6 @@ async def test_a_test_driver_is_drawn_under_its_test_name(tmp_path, drawn):
     assert [item["driver_name"] for item in drawn] == ["Test Lewis"]
 
 
-#: Why the tests handing attendance's hook a team-role service or a lineup poster fail until
-#: the role helpers and the lineup posting are services of their own (#283).
-_NOT_YET_HANDED = ("#283: the team roles and the lineup posting are not yet services of their own "
-                   "handed to attendance's hook")
-
-
 #: The change `/attendance sync` asks for the cards of the sanctions it applied (C37).
 SANCTIONS_ANNOUNCE = "attendance.sanctions.announce"
 
@@ -329,7 +323,6 @@ async def _announce_lewis_s_autoreserve(league: ReviewLeague) -> None:
     await run_queue(league.bot)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED)
 async def test_a_sync_s_sanction_card_is_drawn_under_the_driver_s_server_name(tmp_path, drawn):
     """Attendance is on with its real hook, and the verdict graphic is on. A sync has moved
     Lewis (101), known to the server as "Lewis", to reserve, and asks the queue to announce it:
@@ -344,7 +337,6 @@ async def test_a_sync_s_sanction_card_is_drawn_under_the_driver_s_server_name(tm
     assert str(LEWIS) not in drawn[0]["driver_name"]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED)
 async def test_a_sync_s_sanction_card_as_text_mentions_the_driver(tmp_path):
     """As above, but with image generation off: the card is posted as text in Pro's verdicts
     channel (704), mentioning Lewis as <@101> and saying he was moved to reserve."""
@@ -598,7 +590,6 @@ async def _no_reserve_team(league: ReviewLeague) -> None:
                      "SanctionNotApplicable", id="sanction"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED)
 async def test_a_sheet_or_sanction_stop_names_what_to_repair(tmp_path, seed, job, reason, fault):
     """Attendance is on and its real hook, `AttendanceAfterReview`, is the one the change types
     are handed. Division 11's attendance channel is gone from the server, or it has an
@@ -646,7 +637,6 @@ def _sheet_stop(league: ReviewLeague) -> str:
     return stop
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED)
 async def test_a_review_s_attendance_sheet_with_no_channel_stops_the_queue_naming_the_command(
     tmp_path,
 ):
@@ -662,7 +652,6 @@ async def test_a_review_s_attendance_sheet_with_no_channel_stops_the_queue_namin
     assert "/attendance channel attendance" in _sheet_stop(league)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED)
 async def test_an_amendment_s_attendance_sheet_with_no_channel_stops_the_queue(tmp_path):
     """Round 3 of Pro, final, is under an amendment of its Feature Race whose report stage is
     approved, its appeals prompt standing in the amendment channel. Attendance is on and Pro was
@@ -705,7 +694,6 @@ async def test_an_amendment_s_attendance_sheet_with_no_channel_stops_the_queue(t
 ATTENDANCE_CHANNEL = 707
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED)
 async def test_a_review_s_lineup_with_no_channel_stops_the_queue_naming_the_command(tmp_path):
     """Attendance is on, with its real hook, the real placement service and the real lineup
     poster (roles granted and revoked by doubles on the real team-role service), and division 11
@@ -777,7 +765,6 @@ async def test_a_review_s_lineup_with_no_channel_stops_the_queue_naming_the_comm
 TEAM_ROLE, RESERVE_ROLE = 5502, 5503
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED)
 async def test_a_review_s_sanction_whose_role_change_discord_refuses_stops_the_queue(tmp_path):
     """Attendance is on, with its real hook, the real placement service, the real team-role
     service and the real lineup poster. Pro sets an

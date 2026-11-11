@@ -284,23 +284,14 @@ async def _tiers_checked(tmp_path, monkeypatch) -> None:
     await _run(cog, _interaction())
 
 
-#: Why the driver changes that move roles fail until they are handed the team-role service (#283).
-_NOT_YET_HANDED_DRIVER_ROLES = (
-    "#283: the driver changes that move roles are not yet handed a TeamRoleService as roles="
-)
-
-
 #: One case per catch: what it guards, and how to raise a bug's `ValueError` inside it.
 CATCHES = [
     pytest.param(_placement_check("driver_move_change", roles=MagicMock(), lineups=MagicMock()),
-                 id="driver move check",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_DRIVER_ROLES)),
+                 id="driver move check"),
     pytest.param(_placement_check("driver_sack_change", roles=MagicMock(), lineups=MagicMock()),
-                 id="driver sack check",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_DRIVER_ROLES)),
+                 id="driver sack check"),
     pytest.param(_placement_check("driver_release_change", roles=MagicMock(), lineups=MagicMock()),
-                 id="driver release check",
-                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_DRIVER_ROLES)),
+                 id="driver release check"),
     pytest.param(_placement_check("driver_assign_change"), id="driver assign check"),
     pytest.param(_placement_check("driver_unassign_change"), id="driver unassign check"),
     pytest.param(_test_driver_added, id="test driver added"),

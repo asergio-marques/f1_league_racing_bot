@@ -233,12 +233,6 @@ def _real_roles(db_path: str) -> Any:
     return TeamRoleService(db_path)
 
 
-#: Why the tests handing the hook a team-role service or a lineup poster fail until the role
-#: helpers and the lineup posting are services of their own (#283).
-_NOT_YET_HANDED = ("#283: the team roles and the lineup posting are not yet services of their own "
-                   "handed to attendance's hook")
-
-
 def _role_guild(held: tuple[int, ...] = (), *, gone: tuple[int, ...] = (),
                 fetch_fails: Exception | None = None, refuses: Exception | None = None) -> Any:
     """The league's server, holding the roles of Pro, Alpha and the Reserve team save those
@@ -694,7 +688,6 @@ async def test_a_sheet_discord_refuses_raises_and_is_not_put_on_the_retry_queue(
     assert row["attendance_message_id"] == str(OLD_SHEET)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED)
 async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
     """Each method checks attendance's switch itself; the writers read it on the connection they
     are handed. With attendance off and Lewis over the autosack threshold: no driver is owed a

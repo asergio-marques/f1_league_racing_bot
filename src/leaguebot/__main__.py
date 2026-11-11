@@ -596,24 +596,24 @@ def register_change_types(bot: LeagueBot) -> None:
     ))
     bot.change_queue.register(calendar_sync_change(bot.season_service, bot.image_drawing))
     bot.change_queue.register(
-        lineup_post_change(bot.placement_service, now=lambda: bot.change_queue.now())
+        lineup_post_change(bot.lineup_poster, now=lambda: bot.change_queue.now())
     )
     bot.change_queue.register(
         driver_move_change(
             placement=bot.placement_service, roles=bot.team_role_service,
-            now=lambda: bot.change_queue.now(),
+            lineups=bot.lineup_poster, now=lambda: bot.change_queue.now(),
         )
     )
     bot.change_queue.register(
         driver_sack_change(
             placement=bot.placement_service, roles=bot.team_role_service,
-            now=lambda: bot.change_queue.now(),
+            lineups=bot.lineup_poster, now=lambda: bot.change_queue.now(),
         )
     )
     bot.change_queue.register(
         driver_release_change(
             placement=bot.placement_service, roles=bot.team_role_service,
-            now=lambda: bot.change_queue.now(),
+            lineups=bot.lineup_poster, now=lambda: bot.change_queue.now(),
         )
     )
     bot.change_queue.register(
@@ -624,7 +624,7 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     bot.change_queue.register(
         driver_reject_change(
-            placement=bot.placement_service, roles=bot.team_role_service,
+            roles=bot.team_role_service, lineups=bot.lineup_poster,
             driver_turned_down=bot.driver_turned_down,
             now=lambda: bot.change_queue.now(),
         )
@@ -745,7 +745,7 @@ def register_change_types(bot: LeagueBot) -> None:
             config=bot.config_service,
             seasons=bot.season_service,
             scheduler=bot.scheduler_service,
-            placement=bot.placement_service,
+            lineups=bot.lineup_poster,
             roles=bot.team_role_service,
             drawing=bot.image_drawing,
             round_windows_read=bot.round_windows_read,
@@ -764,7 +764,7 @@ def register_change_types(bot: LeagueBot) -> None:
     bot.change_queue.register(
         mid_season_confirm_change(
             modules=bot.module_service,
-            placement=bot.placement_service,
+            lineups=bot.lineup_poster,
             roles=bot.team_role_service,
             drawing=bot.image_drawing,
             rasteriser_fault=bot.image_drawing.rasteriser_fault,
@@ -1049,19 +1049,21 @@ async def build(settings: Settings) -> LeagueBot:
         db_path=settings.db_path, bot=bot,
     )
 
+    from leaguebot.core.services.lineup_posting import LineupPoster
     from leaguebot.core.services.placement_service import PlacementService
     from leaguebot.core.services.team_role_service import TeamRoleService
     from leaguebot.core.services.template_capacity_service import TemplateCapacityService
-    # The drawing is handed so the capacity guards and the lineup refresh can ask image's
-    # answer without a bot of their own: neither posts but through the guild it is given, and
-    # each reaches the image module only through this drawing.
+    # The drawing is handed so the capacity guards and the lineup poster can ask image's answer
+    # without a bot of their own: neither posts but through the guild it is given, and each
+    # reaches the image module only through this drawing. The placement service keeps the seats
+    # alone, handed the capacity and the role services it asks.
     bot.team_role_service = TeamRoleService(settings.db_path)
     bot.template_capacity_service = TemplateCapacityService(
         settings.db_path, drawing=bot.image_drawing
     )
+    bot.lineup_poster = LineupPoster(settings.db_path, drawing=bot.image_drawing)
     bot.placement_service = PlacementService(
-        settings.db_path, drawing=bot.image_drawing, capacity=bot.template_capacity_service,
-        roles=bot.team_role_service,
+        settings.db_path, capacity=bot.template_capacity_service, roles=bot.team_role_service
     )
 
     from leaguebot.signup.services.signup_module_service import SignupModuleService
@@ -1081,9 +1083,10 @@ async def build(settings: Settings) -> LeagueBot:
     from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
 
     # Attendance's share of a round's review, handed the placement service it moves seats
-    # through; results' change types reach attendance through it alone.
+    # through, the team-role service and the lineup poster; results' change types reach
+    # attendance through it alone.
     bot.attendance_after_review = AttendanceAfterReview(
-        bot, bot.placement_service, roles=bot.team_role_service
+        bot, bot.placement_service, roles=bot.team_role_service, lineups=bot.lineup_poster
     )
     _make_hooks(bot)
     _sign_up_to_round_windows(bot)

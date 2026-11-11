@@ -1,8 +1,8 @@
 """Attendance's share of a round's review, as the hook the builder hands results' change types
 (#439, slice 2, plan 2.6; the protocol is `results/services/attendance_hook.py`).
 
-Built once by the entry point, handed the placement service and the team-role service and attached
-as `bot.attendance_after_review`. It uses the bot for Discord alone (the league's server, the log
+Built once by the entry point, handed the placement service, the team-role service and the lineup
+poster and attached as `bot.attendance_after_review`. It uses the bot for Discord alone (the league's server, the log
 channel, posting) and never looks another service up on it: the services are the ones it was
 handed, and attendance's switch is read from the database, on the connection a writer is
 handed.
@@ -40,6 +40,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord
 from leaguebot.core.models.refusal import Refused
 from leaguebot.core.services import lineup_posting
+from leaguebot.core.services.lineup_posting import LineupPoster
 from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.core.services.team_role_service import TeamRoleService
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -50,9 +51,10 @@ _Pardon = TypeVar("_Pardon")
 
 class AttendanceAfterReview:
     """See the module docstring. Constructed as ``AttendanceAfterReview(bot, placement,
-    roles=roles)``: *roles* is the team-role service that gives and takes a sanction's roles. It is
-    optional so that a hook which is never asked to change a sanction's roles is built without
-    one, and asking it then raises."""
+    roles=roles, lineups=lineups)``: *roles* is the team-role service that gives and takes a
+    sanction's roles and *lineups* the poster of the lineups a review owes. Each is optional so
+    that a hook which is never asked to change a sanction's roles or to post a lineup is built
+    without one, and asking it then raises."""
 
     def __init__(
         self,
@@ -60,10 +62,12 @@ class AttendanceAfterReview:
         placement: PlacementService,
         *,
         roles: TeamRoleService | None = None,
+        lineups: LineupPoster | None = None,
     ) -> None:
         self._bot = bot
         self._placement = placement
         self._roles = roles
+        self._lineups = lineups
 
     @property
     def _db_path(self) -> str:
@@ -219,7 +223,10 @@ class AttendanceAfterReview:
     ) -> dict[str, Any] | None:
         if not await self.enabled():
             return None
-        posted = await self._placement.refresh_lineup(
+        lineups = self._lineups
+        if lineups is None:
+            raise TypeError("the hook was built without a lineup poster to post a lineup with")
+        posted = await lineups.refresh_lineup(
             await self._guild(), division_id, as_text=as_text
         )
         return lineup_posting.posted_result(posted)

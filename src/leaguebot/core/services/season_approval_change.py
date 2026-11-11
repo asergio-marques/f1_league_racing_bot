@@ -92,7 +92,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.services.image_drawing import ImageDrawing
     from leaguebot.core.services.module_service import ModuleService
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.lineup_posting import LineupPoster
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.core.services.team_role_service import TeamRoleService
 
@@ -279,7 +279,7 @@ def season_approval_change(
     config: "ConfigService",
     seasons: SeasonService,
     scheduler: "SchedulerService",
-    placement: "PlacementService",
+    lineups: "LineupPoster",
     roles: "TeamRoleService",
     drawing: "ImageDrawing",
     round_windows_read: AwaitedHook,
@@ -295,7 +295,7 @@ def season_approval_change(
 
     The builder hands in *modules* and *config* (which modules are on, and test mode), the
     *seasons* service (the divisions and rounds the check, the arming and the calendar read), the
-    *scheduler*, the *placement* service (which posts the lineups) and the team-role service
+    *scheduler*, the *lineups* poster (which posts the lineups) and the team-role service
     *roles* (which gives the drivers their roles), the image module's own drawing (*drawing*),
     *round_windows_read* (the hook the enabled modules' windows are read through),
     *placements_confirmed* (the hook each module's opening post is planned through, called
@@ -736,7 +736,7 @@ def season_approval_change(
         POST_BATCH_NOTICE: Step(
             POST_BATCH_NOTICE, StepKind.ACT, post_batch_notice, describe=describe_notice_post
         ),
-        REFRESH_LINEUP: lineup_posting.lineup_step(placement, name=REFRESH_LINEUP, now=now),
+        REFRESH_LINEUP: lineup_posting.lineup_step(lineups, name=REFRESH_LINEUP, now=now),
         **calendar_steps(seasons, drawing),
         **{
             name: step

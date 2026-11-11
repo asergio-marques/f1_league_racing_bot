@@ -437,8 +437,6 @@ async def test_the_sheet_is_not_put_on_the_old_retry_queue(tmp_path):
     assert await one(league.db_path, "SELECT COUNT(*) FROM pending_messages") == 0
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the lineup posting is not yet a service of "
-                   "its own handed to attendance's hook")
 async def test_the_sheet_after_a_review_replaces_the_old_one_by_a_delete_job(tmp_path):
     """Attendance is on, with its real hook (the placement service and the lineup poster
     doubles: no sanction is owed). Pro's attendance channel 707 holds its sheet 8805, recorded as
@@ -1543,8 +1541,6 @@ async def _lewis_owed_an_autoreserve(league: ReviewLeague) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason="#283: the team roles and the lineup posting are not yet "
-                   "services of their own handed to attendance's hook")
 async def test_a_sanction_posts_each_lineup_it_touches_once(tmp_path):
     """Attendance is on, with its real hook and the real placement service (roles not the
     subject, so granted and revoked by doubles). Lewis is owed an autoreserve in Pro. Alex

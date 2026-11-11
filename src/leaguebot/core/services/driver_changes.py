@@ -93,6 +93,7 @@ from leaguebot.core.services.change_types import (
     StepView,
 )
 from leaguebot.core.services.driver_service import DriverService, write_transition
+from leaguebot.core.services.lineup_posting import LineupPoster
 from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.core.services.role_moves import MOVE_ROLES, PLACEMENT_REASON, role_move_step
 from leaguebot.core.services.season_approval_change import unposted_lineup_line
@@ -321,13 +322,14 @@ async def _division_names(db: aiosqlite.Connection, division_ids: Sequence[int])
 
 def _change(
     kind: _Kind,
-    placement: PlacementService,
     now: Callable[[], datetime],
     roles: TeamRoleService | None = None,
+    lineups: LineupPoster | None = None,
 ) -> ChangeType:
     """The change type *kind* describes, its jobs as the module says, the lineup's audit stamped by
     *now*, the queue's clock. A change with jobs after its save (`kind.afterwards`) is handed
-    *roles*, the team-role service that gives and takes the roles it planned."""
+    *roles*, the team-role service that gives and takes the roles it planned, and *lineups*, the
+    poster of the lineups it names."""
 
     async def save(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """The one save; see the module."""
@@ -385,10 +387,13 @@ def _change(
         CLOSE: Step(CLOSE, StepKind.SAVE, close, describe=describe_close),
     }
     if kind.afterwards:
-        if roles is None:
-            raise TypeError(f"{kind.kind} gives roles and is handed no team-role service")
+        if roles is None or lineups is None:
+            raise TypeError(
+                f"{kind.kind} gives roles and posts lineups and is handed no team-role service "
+                "or lineup poster"
+            )
         steps[MOVE_ROLES] = role_move_step(roles, reason=kind.role_reason)
-        steps[POST_LINEUP] = lineup_posting.lineup_step(placement, now=now)
+        steps[POST_LINEUP] = lineup_posting.lineup_step(lineups, now=now)
         steps[standing_posts.DELETE_REPLACED] = standing_posts.delete_replaced_step()
     return ChangeType(
         kind=kind.kind,
@@ -406,11 +411,12 @@ def _change(
 
 
 def driver_move_change(
-    *, placement: PlacementService, roles: TeamRoleService, now: Callable[[], datetime]
+    *, placement: PlacementService, roles: TeamRoleService, lineups: LineupPoster,
+    now: Callable[[], datetime],
 ) -> ChangeType:
     """The `core.driver_move` change type, for the builder to register: *placement* is what the
-    check judges the move through, the save moves the driver through, and the jobs after it give
-    the roles and post the lineups through.
+    check judges the move through and the save moves the driver through; the jobs after it give
+    the roles through *roles* and post the lineups through *lineups*.
 
     The payload names the driver (`driver_profile_id`, `discord_user_id`, `driver_name`), the
     season, the divisions (`from_division_id` and `to_division_id`, with their names as typed,
@@ -493,7 +499,7 @@ def driver_move_change(
             kind=DRIVER_MOVE, command=MOVE_COMMAND, doing=doing, nothing_done=NOTHING_MOVED,
             done=done, details=details, check=check, apply=apply,
         ),
-        placement, now, roles,
+        now, roles, lineups,
     )
 
 
@@ -501,11 +507,12 @@ def driver_move_change(
 
 
 def driver_sack_change(
-    *, placement: PlacementService, roles: TeamRoleService, now: Callable[[], datetime]
+    *, placement: PlacementService, roles: TeamRoleService, lineups: LineupPoster,
+    now: Callable[[], datetime],
 ) -> ChangeType:
     """The `core.driver_sack` change type, for the builder to register: *placement* is what the
-    check judges the sack through, the save sacks the driver through, and the jobs after it take
-    the roles and post the lineups through.
+    check judges the sack through and the save sacks the driver through; the jobs after it take
+    the roles through *roles* and post the lineups through *lineups*.
 
     The payload names the driver (`driver_profile_id`, `discord_user_id`, `driver_name`) and the
     season (`season_id`). The roles come after the save, which reads them as it frees the seats.
@@ -559,7 +566,7 @@ def driver_sack_change(
             kind=DRIVER_SACK, command=SACK_COMMAND, doing=doing, nothing_done=NOBODY_SACKED,
             done=done, details=details, check=check, apply=apply,
         ),
-        placement, now, roles,
+        now, roles, lineups,
     )
 
 
@@ -567,11 +574,12 @@ def driver_sack_change(
 
 
 def driver_release_change(
-    *, placement: PlacementService, roles: TeamRoleService, now: Callable[[], datetime]
+    *, placement: PlacementService, roles: TeamRoleService, lineups: LineupPoster,
+    now: Callable[[], datetime],
 ) -> ChangeType:
     """The `core.driver_release` change type, for the builder to register: *placement* is what
-    the check judges the release through, the save releases the driver through, and the jobs
-    after it take the roles and post the division's lineup through.
+    the check judges the release through and the save releases the driver through; the jobs
+    after it take the roles through *roles* and post the division's lineup through *lineups*.
 
     The payload names the driver (`driver_profile_id`, `discord_user_id`, `driver_name`), the
     season (`season_id`) and the division (`division_id`, with its name as typed, `division`).
@@ -635,7 +643,7 @@ def driver_release_change(
             kind=DRIVER_RELEASE, command=RELEASE_COMMAND, doing=doing,
             nothing_done=NOTHING_RELEASED, done=done, details=details, check=check, apply=apply,
         ),
-        placement, now, roles,
+        now, roles, lineups,
     )
 
 
@@ -722,7 +730,7 @@ def driver_assign_change(
             nothing_done=NOTHING_ASSIGNED, done=done, details=details, check=check, apply=apply,
             afterwards=False,
         ),
-        placement, now,
+        now,
     )
 
 
@@ -800,7 +808,7 @@ def driver_unassign_change(
             nothing_done=NOTHING_UNASSIGNED, done=done, details=details, check=check,
             apply=apply, afterwards=False,
         ),
-        placement, now,
+        now,
     )
 
 
@@ -834,13 +842,13 @@ async def _account_gone_refusal(ctx: CheckContext) -> Verdict | None:
 
 
 def driver_reject_change(
-    *, placement: PlacementService, roles: TeamRoleService, driver_turned_down: AwaitedHook,
+    *, roles: TeamRoleService, lineups: LineupPoster, driver_turned_down: AwaitedHook,
     now: Callable[[], datetime],
 ) -> ChangeType:
-    """The `core.driver_reject` change type, for the builder to register: *placement* is what the
-    job after the save takes the driver role through, and *driver_turned_down* the hook the save
-    calls, given its connection and the driver's profile id, for each module to let go of what it
-    holds for them.
+    """The `core.driver_reject` change type, for the builder to register: *roles* is what the
+    job after the save takes the driver role through, *lineups* what posts the lineup, and
+    *driver_turned_down* the hook the save calls, given its connection and the driver's profile id,
+    for each module to let go of what it holds for them.
 
     The payload names the driver (`driver_profile_id`, `discord_user_id`, `driver_name`) and the
     season (`season_id`). The driver role is read inside the save and taken after it, from the
@@ -909,7 +917,7 @@ def driver_reject_change(
             nothing_done=NOBODY_TURNED_DOWN, done=done, details=details, check=check, apply=apply,
             role_reason="Driver rejected",
         ),
-        placement, now, roles,
+        now, roles, lineups,
     )
 
 
