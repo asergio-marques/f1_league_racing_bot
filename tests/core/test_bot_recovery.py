@@ -28,10 +28,6 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 
-#: Why each test reaching a recovery the entry point held fails until it moves to its
-#: module's wiring (#283).
-_NOT_YET_IN_THE_WIRING = "#283: the recovery is not yet in its module's wiring"
-
 # ---------------------------------------------------------------------------
 # The sweep
 # ---------------------------------------------------------------------------
@@ -88,7 +84,6 @@ async def _portrait_bot(tmp_path, *, use_pfp: int, pfp_daily: int):
     return bot
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_the_portrait_refresh_is_re_armed_at_its_own_time(tmp_path):
     """The job is recurring and in memory only, so a restart loses it until this re-adds it."""
     from leaguebot.image.wiring import recover_portrait_refresh_job
@@ -100,7 +95,6 @@ async def test_the_portrait_refresh_is_re_armed_at_its_own_time(tmp_path):
     bot.scheduler_service.schedule_portrait_refresh.assert_called_once_with("04:30")
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 @pytest.mark.parametrize("use_pfp,pfp_daily", [(0, 1), (1, 0)])
 async def test_a_refresh_the_league_has_not_asked_for_is_not_armed(tmp_path, use_pfp, pfp_daily):
     from leaguebot.image.wiring import recover_portrait_refresh_job
@@ -112,7 +106,6 @@ async def test_a_refresh_the_league_has_not_asked_for_is_not_armed(tmp_path, use
     bot.scheduler_service.schedule_portrait_refresh.assert_not_called()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_refresh_that_cannot_be_armed_does_not_stop_the_start(tmp_path):
     from leaguebot.image.wiring import recover_portrait_refresh_job
 

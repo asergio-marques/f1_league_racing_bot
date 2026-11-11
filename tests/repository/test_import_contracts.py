@@ -57,8 +57,6 @@ KINDS = frozenset({"cogs", "services", "models", "utils"})
 WIRING = "wiring.py"
 #: The contract that keeps every module's wiring to the entry point.
 WIRING_CONTRACT = "nothing-imports-a-module-s-wiring-but-the-entry-point"
-#: Why the contract and the files are not there yet.
-NO_WIRING_YET = "#283: no module has its wiring, and no contract keeps it to the entry point"
 
 
 def _contracts() -> configparser.ConfigParser:
@@ -156,7 +154,6 @@ def test_a_module_s_wiring_sits_beside_its_kind_folders(parts, placed):
     assert _placed(parts) is placed
 
 
-@pytest.mark.xfail(strict=True, reason=NO_WIRING_YET)
 def test_every_module_has_its_wiring_and_only_the_entry_point_imports_it():
     """Each module's wiring signs it up as the builder asks, and nothing but the entry point
     imports one: not a module's own services, cogs, models or utilities, not core, and not another

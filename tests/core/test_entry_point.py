@@ -845,8 +845,6 @@ _RECOVERIES_OF_THE_STEPS = {
 }
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="#283: the recoveries are not yet in their modules' wiring")
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     """`build` on paths under `tmp_path` gives the start-up's steps by name, in today's order
     (architecture.md, "Start-up runs once, in one function"), so the order is read from the list

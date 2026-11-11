@@ -53,9 +53,9 @@ PASS = {
 }
 #: One failure path for timed jobs, events and background tasks.
 BACKGROUND_FAILURES = "#453"
-#: The start-up catch-up in the entry point: each module moves its own share into the handler it
-#: provides for the start-up sweep (architecture.md, "Timed work and restarts"). The missed
-#: post-race cleanups are weather's forecast and attendance's check-in call, so both passes'.
+#: The start-up catch-up, each module's share in its wiring: each module moves its own into the
+#: handler it provides for the start-up sweep (architecture.md, "Timed work and restarts"). The
+#: missed post-race cleanups are weather's forecast and attendance's check-in call, so both passes'.
 CLEANUPS = f"{PASS['weather']} and {PASS['attendance']}"
 
 
@@ -176,7 +176,7 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("weather/wiring.py", "recover_missed_phases"): (2, PASS["weather"]),
     ("results/wiring.py", "recover_orphaned_amend_channels"): (2, PASS["results"]),
     ("results/wiring.py", "recover_orphaned_submission_channels"): (2, PASS["results"]),
-    ("__main__.py", "_recover_portrait_refresh_job"): (2, PASS["image"]),
+    ("image/wiring.py", "recover_portrait_refresh_job"): (2, PASS["image"]),
     ("attendance/wiring.py", "recover_rsvp_views_and_deadlines"): (2, PASS["attendance"]),
     ("signup/wiring.py", "recover_signup_close_timers"): (1, PASS["signup"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.sync"): (2, PASS["attendance"]),
@@ -2329,8 +2329,7 @@ def _reads_outside_the_owner() -> Counter[tuple[str, str]]:
 
 
 #: Today's reads of a table outside its owner, under the design pass that removes each: a module's
-#: pass for its own files, and the pass of the module whose recovery the entry point's function
-#: carries. A table whose name is spliced into the statement at run time counts here, unless its
+#: pass for its own files, its wiring's included. A table whose name is spliced into the statement at run time counts here, unless its
 #: function was read by hand (`SPLICED_READS_READ_BY_HAND`).
 KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/wiring.py", "recover_missed_check_in_calls"): (4, PASS["attendance"]),
@@ -2338,7 +2337,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (2, PASS["weather"]),
     ("weather/wiring.py", "recover_missed_phases"): (3, PASS["weather"]),
     ("results/wiring.py", "recover_orphaned_submission_channels"): (3, PASS["results"]),
-    ("__main__.py", "_recover_portrait_refresh_job"): (1, PASS["image"]),
     ("attendance/wiring.py", "recover_rsvp_views_and_deadlines"): (4, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.sync"): (1, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.test_rsvp"): (2, PASS["attendance"]),
@@ -2603,7 +2601,7 @@ def _own_columns_outside_the_owner_among(nodes) -> Counter[tuple[str, str]]:
 
 
 #: Today's mentions of a module's own column outside it, under the design pass that removes each:
-#: core's under its own, the entry point's under the module whose recovery it carries.
+#: core's under its own, each module's under its own, its wiring's included.
 KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_weather_post.py", "build_drawing_for_round"): (5, PASS["image"]),
 }
@@ -3255,14 +3253,13 @@ def _catch_alls_outside_the_places_among(nodes) -> Counter[tuple[str, str]]:
 
 
 #: Today's catch-alls in none of the five places, under the issue that removes each: a module's
-#: design pass for its own files, the pass of the module whose recovery the entry point's function
-#: carries, and the failure path of timed jobs, loops and background tasks. Each pass judges its
-#: own, to a failure path, a place by its reason or a stated exception, or narrows it.
+#: design pass for its own files, its wiring's included, and the failure path of timed jobs, loops
+#: and background tasks. Each pass judges its own, to a failure path, a place by its reason or a stated exception, or narrows it.
 KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/wiring.py", "recover_missed_check_in_calls"): (1, PASS["attendance"]),
     ("attendance/wiring.py", "recover_missed_check_in_clean_ups"): (1, PASS["attendance"]),
     ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (1, PASS["weather"]),
-    ("__main__.py", "_recover_portrait_refresh_job"): (1, PASS["image"]),
+    ("image/wiring.py", "recover_portrait_refresh_job"): (1, PASS["image"]),
     ("attendance/wiring.py", "recover_rsvp_views_and_deadlines"): (5, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "_record_failed"): (1, PASS["attendance"]),
     ("attendance/services/attendance_service.py", "_round_grid"): (2, PASS["attendance"]),
@@ -3473,8 +3470,6 @@ def test_a_listed_catch_all_that_is_gone_fails_the_check():
 #: The entry point: it makes every hook, and signs up in their order the modules of each hook that
 #: several join (architecture.md, "How the code is laid out").
 ENTRY_POINT = "__main__.py"
-#: Why the entry point still signs up a hook one module joins, until the build moves it.
-SIGN_UPS_IN_THE_WIRING = "#283: the entry point still signs up hooks one module joins"
 
 
 def _root_of_the_subscriber(expr: ast.expr) -> tuple[str, str] | None:
@@ -3555,7 +3550,6 @@ def _modules_of_the_bot_s_attributes() -> dict[str, str]:
     }
 
 
-@pytest.mark.xfail(strict=True, reason=SIGN_UPS_IN_THE_WIRING)
 def test_the_entry_point_signs_up_no_hook_one_module_joins():
     """A hook one module joins is signed up in that module's wiring (`<module>/wiring.py`); the
     entry point signs up only the hooks several modules join, each in the order its subscribers

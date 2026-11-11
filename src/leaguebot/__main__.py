@@ -27,6 +27,7 @@ from leaguebot.core.utils.league_server import (
     warn_if_serving_several,
 )
 from leaguebot.core.utils.log_filters import install_late_autocomplete_filter
+from leaguebot.image import wiring as image_wiring
 from leaguebot.results import wiring as results_wiring
 from leaguebot.signup import wiring as signup_wiring
 from leaguebot.weather import wiring as weather_wiring
@@ -129,13 +130,12 @@ def create_bot() -> LeagueBot:
 def register_module_switches(modules: "ModuleService") -> None:
     """Sign each module up with `ModuleService` for the reader of its own switch, keyed by the
     name `is_<module>_enabled` asks it by."""
-    from leaguebot.image.services.module_switch_settings import images_enabled_on
 
     weather_wiring.register_switch(modules)
     signup_wiring.register_switch(modules)
     results_wiring.register_switch(modules)
     attendance_wiring.register_switch(modules)
-    modules.register_switch("images", images_enabled_on)
+    image_wiring.register_switch(modules)
 
 
 def register_hub_options(hub_options: "HubOptions") -> None:
@@ -163,6 +163,7 @@ def _make_hooks(bot: LeagueBot) -> None:
     bot.phases_drawn_read = AwaitedHook()
     bot.amendment_step_failure = Hook()
     bot.test_mode_flushed = AwaitedHook()
+    bot.drivers_deleted = AwaitedHook()
     bot.configuration_confirmed = AwaitedHook()
     bot.driver_names_read = AwaitedHook()
     bot.driver_turned_down = AwaitedHook()
@@ -350,8 +351,6 @@ def _sign_up_to_fingerprint_areas_read(bot: LeagueBot) -> None:
     and the season's id. They sign up in the order a division's channels read (architecture.md,
     "How modules and core fit together"). The builder hands it to every caller of
     `take_fingerprint`."""
-    from leaguebot.image.services import fingerprint_areas as image_areas
-
     bot.fingerprint_areas_read = AwaitedHook()
     # Weather, results and attendance read their channels by division, as the season service
     # reads the divisions of the season; signup and image read the server's configuration.
@@ -359,7 +358,7 @@ def _sign_up_to_fingerprint_areas_read(bot: LeagueBot) -> None:
     results_wiring.sign_up_to_fingerprint_areas_read(bot)
     attendance_wiring.sign_up_to_fingerprint_areas_read(bot)
     signup_wiring.sign_up_to_fingerprint_areas_read(bot)
-    bot.fingerprint_areas_read.subscribe(image_areas.fingerprint_areas)
+    image_wiring.sign_up_to_fingerprint_areas_read(bot)
 
 
 def _sign_up_to_pending_steps_read(bot: LeagueBot) -> None:
@@ -420,17 +419,10 @@ def _sign_up_to_season_end(bot: LeagueBot) -> None:
     drivers returned; the jobs planned for each driver returned (signup's); the steps the modules
     define for it (signup's close of its window, the button's deletion and the closed post, each
     driver's notice and channel's close, then weather's deletion of a forecast); the jobs that
-    clear what test mode posted (weather's); and the drivers deleted (image's discard of their
-    portraits)."""
-    from leaguebot.image.services import driver_portrait_service
-
+    clear what test mode posted (weather's)."""
     bot.season_end_steps = Hook()
     signup_wiring.sign_up_to_season_end_steps(bot)
     weather_wiring.sign_up_to_season_end_steps(bot)
-    bot.drivers_deleted = AwaitedHook()
-    bot.drivers_deleted.subscribe(
-        partial(driver_portrait_service.discard_portraits, bot.db_path, bot.image_config_service)
-    )
 
 
 async def _draw_review_picture(bot: LeagueBot, picture: Mapping[str, Any]) -> "Path":
@@ -604,11 +596,6 @@ def register_change_types(bot: LeagueBot) -> None:
     from leaguebot.image.services.image_render_service import discard_render
     from leaguebot.results.services.season_points_service import snapshot_configs_to_season_on
     from leaguebot.core.services.setting_change import setting_change
-    from leaguebot.image.services.image_settings import image_settings
-    from leaguebot.image.services.module_switch_settings import (
-        module_off_images,
-        module_on_images,
-    )
 
     bot.change_queue.register(hub_refresh_change(
         bot.change_queue, bot.config_service, hub_options=bot.hub_options
@@ -806,14 +793,6 @@ def register_change_types(bot: LeagueBot) -> None:
             discard=discard_render,
         )
     )
-    bot.change_queue.register(
-        setting_change(
-            module_on_images(modules=bot.module_service, seasons=bot.season_service)
-        )
-    )
-    bot.change_queue.register(
-        setting_change(module_off_images(modules=bot.module_service))
-    )
     bot.change_queue.register(bot_init_change(config=bot.config_service))
     bot.change_queue.register(
         season_setup_change(seasons=bot.season_service, now=lambda: bot.change_queue.now())
@@ -878,14 +857,6 @@ def register_change_types(bot: LeagueBot) -> None:
         hub_channel_setting(config=bot.config_service),
         *division_channel_settings(seasons=bot.season_service),
         test_mode_nationality_setting(config=bot.config_service),
-        *image_settings(
-            modules=bot.module_service,
-            config=bot.image_config_service,
-            validity=bot.image_validity_service,
-            render=bot.image_render_service,
-            seasons=bot.season_service,
-            scheduler=bot.scheduler_service,
-        ),
     ):
         bot.change_queue.register(setting_change(setting))
     bot.change_queue.register(channel_tell_change())
@@ -949,6 +920,7 @@ def register_change_types(bot: LeagueBot) -> None:
     attendance_wiring.register_change_types(bot)
     signup_wiring.register_change_types(bot)
     weather_wiring.register_change_types(bot)
+    image_wiring.register_change_types(bot)
     results_wiring.register_change_types(
         bot,
         attendance=bot.attendance_after_review,
@@ -969,22 +941,13 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
     queue must register these handlers again. Called by :func:`build`, so that every kind is
     registered before the bot starts and before the scheduler does.
     """
-    scheduler = bot.scheduler_service
     weather_wiring.register_scheduler_callbacks(bot)
 
     results_wiring.register_scheduler_callbacks(bot)
 
     attendance_wiring.register_scheduler_callbacks(bot)
 
-    # Register the daily driver-portrait refresh and re-arm it after a restart. Unlike
-    # every other job here the trigger is recurring, so recovery re-adds it rather than
-    # working out whether it was missed: a cron job that did not fire while the bot was
-    # down simply fires at its next due time.
-    async def _portrait_refresh_cb() -> None:
-        from leaguebot.image.services.driver_portrait_service import run_daily_refresh
-        await run_daily_refresh(bot)
-
-    scheduler.register_timer("portrait_refresh", _portrait_refresh_cb)
+    image_wiring.register_scheduler_callbacks(bot)
 
     signup_wiring.register_scheduler_callbacks(bot)
 
@@ -1128,6 +1091,7 @@ async def build(settings: Settings) -> LeagueBot:
     results_wiring.sign_up(bot)
     signup_wiring.sign_up(bot)
     weather_wiring.sign_up(bot)
+    image_wiring.sign_up(bot)
     register_change_types(bot)
     from leaguebot.core.services.test_mode_service import AdvanceSteps
 
@@ -1271,7 +1235,7 @@ def _start_up_steps(bot: LeagueBot) -> "tuple[StartUpStep, ...]":
 
     return (
         ("amendment sweep", arm_the_amendment_sweep),
-        ("portrait refresh job", lambda: _recover_portrait_refresh_job(bot)),
+        ("portrait refresh job", lambda: image_wiring.recover_portrait_refresh_job(bot)),
         # A signup close timer lost on restart; its callback is registered by `build`.
         ("signup close timer", lambda: signup_wiring.recover_signup_close_timers(bot)),
         # Results-amend channels left open by a previous run. **Before the submission channels,
@@ -1375,25 +1339,6 @@ async def _recover_missed_cleanups(bot: LeagueBot) -> None:
     check-in calls. Each is its module's own and contains its own failures."""
     await weather_wiring.recover_missed_forecast_clean_ups(bot)
     await attendance_wiring.recover_missed_check_in_clean_ups(bot)
-
-
-async def _recover_portrait_refresh_job(bot: LeagueBot) -> None:
-    """Re-arm the daily driver-portrait refresh, where the league has it switched on."""
-    from leaguebot.core.db.database import get_connection
-
-    async with get_connection(bot.db_path) as db:
-        cursor = await db.execute(
-            "SELECT pfp_daily_time FROM image_config "
-            "WHERE use_pfp = 1 AND pfp_daily = 1"
-        )
-        row = await cursor.fetchone()
-    if row is not None:
-        try:
-            bot.scheduler_service.schedule_portrait_refresh(
-                row["pfp_daily_time"]
-            )
-        except Exception:
-            log.warning("Failed to re-arm the daily portrait refresh", exc_info=True)
 
 
 if __name__ == "__main__":
