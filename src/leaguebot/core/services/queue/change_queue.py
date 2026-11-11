@@ -393,6 +393,9 @@ class ChangeQueue:
         self._retrying: dict[int, tuple[str, str | None]] = {}
         # The hold (`hold`): None until the entry point holds the queue, set when released.
         self._hold: asyncio.Event | None = None
+        # The channels of the typed answers whose ask waits out the hold, kept apart from `_held`,
+        # which holds the kept replies: each is dropped once its ask is saved or refused.
+        self._held_turns: set[int] = set()
 
     # ------------------------------------------------------------------
     # Registering and asking
@@ -469,16 +472,36 @@ class ChangeQueue:
             _in_the_sweep.reset(token)
             self.release()
 
-    async def _wait_out_the_hold(self, interaction: discord.Interaction | None) -> None:
-        """Wait, where the queue is held and the ask is not the sweep's, until it is released. An
-        interaction not yet answered is deferred first, privately, so that Discord shows the member
-        "thinking…" and its three seconds do not lapse."""
+    @asynccontextmanager
+    async def _out_the_hold(
+        self, kind: str, payload: dict[str, Any], interaction: discord.Interaction | None
+    ) -> AsyncIterator[None]:
+        """Wait, where the queue is held and the ask is not the sweep's, until it is released, and
+        stay inside until the ask is saved or refused. An interaction not yet answered is deferred
+        first, privately, so that Discord shows the member "thinking…" and its three seconds do not
+        lapse. While it waits, and until the ask is through, the channel of a kind that declares a
+        `turn_channel` is a held turn channel (`held_turn_channels`)."""
         hold = self._hold
         if hold is None or hold.is_set() or _in_the_sweep.get():
+            yield
             return
         if interaction is not None and not interaction.response.is_done():
             await interaction.response.defer(ephemeral=True)
-        await hold.wait()
+        declares = self._type(kind).turn_channel
+        channel = None if declares is None else declares(payload)
+        if channel is not None:
+            self._held_turns.add(channel)
+        try:
+            await hold.wait()
+            yield
+        finally:
+            if channel is not None:
+                self._held_turns.discard(channel)
+
+    def held_turn_channels(self) -> frozenset[int]:
+        """The channels of the typed answers waiting out the hold, for `turn_waiting`: a second
+        message typed there is turned away as at any other time."""
+        return frozenset(self._held_turns)
 
     async def check(
         self, kind: str, payload: dict[str, Any], *, origin: ChangeOrigin = ChangeOrigin.MEMBER
@@ -519,7 +542,24 @@ class ChangeQueue:
 
         Where the queue is held (`hold`), it waits first, before its check.
         """
-        await self._wait_out_the_hold(interaction)
+        async with self._out_the_hold(kind, payload, interaction):
+            return await self._ask(
+                kind, payload, interaction=interaction, actor=actor, what=what,
+                refusal_what=refusal_what, origin=origin,
+            )
+
+    async def _ask(
+        self,
+        kind: str,
+        payload: dict[str, Any],
+        *,
+        interaction: discord.Interaction | None = None,
+        actor: Any = None,
+        what: str,
+        refusal_what: str | None = None,
+        origin: ChangeOrigin = ChangeOrigin.MEMBER,
+    ) -> int | None:
+        """`ask`, once the hold has let it through."""
         change_type = self._type(kind)
         member = actor if actor is not None else (interaction.user if interaction else None)
         verdict = await self.check(kind, payload, origin=origin)
@@ -724,13 +764,31 @@ class ChangeQueue:
 
         Where the queue is held (`hold`), it waits first, before its check.
         """
-        await self._wait_out_the_hold(interaction)
+        async with self._out_the_hold(kind, payload, interaction):
+            return await self._ask_after(
+                ahead, kind, payload, interaction=interaction, actor=actor, what=what,
+                refusal_what=refusal_what, origin=origin,
+            )
+
+    async def _ask_after(
+        self,
+        ahead: "Ahead",
+        kind: str,
+        payload: dict[str, Any],
+        *,
+        interaction: discord.Interaction | None = None,
+        actor: Any = None,
+        what: str,
+        refusal_what: str | None = None,
+        origin: ChangeOrigin = ChangeOrigin.MEMBER,
+    ) -> int | None:
+        """`ask_after`, once the hold has let it through."""
         change_type = self._type(kind)
         ahead_type = self._type(ahead.kind)
         member = actor if actor is not None else (interaction.user if interaction else None)
         verdict = await self.check(kind, payload, origin=origin)
         if verdict.kind is not VerdictKind.GO:
-            return await self.ask(
+            return await self._ask(
                 kind, payload, interaction=interaction, actor=actor, what=what,
                 refusal_what=refusal_what, origin=origin,
             )

@@ -441,8 +441,6 @@ async def test_a_league_change_a_turn_handed_over_still_makes_its_channel_wait(e
     assert len(env.channel.sent) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#440: the change queue has no hold, and turn_waiting "
-                                       "takes no held channels")
 async def test_a_second_message_typed_while_the_first_is_held_is_turned_away(env):
     """The bot has restarted and holds its queue while it catches up. A driver types an answer
     into their channel: it is marked and its turn asked, and the ask waits, nothing saved. While it
