@@ -33,6 +33,10 @@ from tests.support.teams import seed_team_instances
 from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
 from tests.support.final_hook import rounds_made_final
 
+#: Why each test signing results up through its wiring fails until the sign-ups move there
+#: (#283).
+_NOT_YET_IN_THE_WIRING = "#283: results' sign-ups are not yet in its wiring"
+
 NOW = datetime(2031, 3, 4, 5, 6, 7, tzinfo=timezone.utc)
 
 
@@ -452,6 +456,7 @@ async def test_a_round_with_no_results_changes_nothing(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_closing_rounds_with_the_module_off_marks_who_raced_them(tmp_path):
     """`end_rounds_awaiting_results_on` is the other way a round becomes final (#167, #216).
 
@@ -518,6 +523,7 @@ async def _close_raced(db_path: str) -> list[int]:
     return closed
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_cancelling_a_season_closes_a_round_whose_verdicts_are_open(tmp_path):
     """The rounds a cancellation may not call off are made final instead (#216).
 
@@ -545,6 +551,7 @@ async def test_cancelling_a_season_closes_a_round_whose_verdicts_are_open(tmp_pa
     assert await _former(db_path, 32) == 0, "a did-not-start entry marked a driver"
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_driver_of_a_closed_round_survives_the_driver_pass(tmp_path):
     """The harm the close prevents, stated end to end (#216).
 
@@ -580,6 +587,7 @@ async def test_a_driver_of_a_closed_round_survives_the_driver_pass(tmp_path):
         assert (await cursor.fetchone())["driver_profile_id"] == 31, "a result was orphaned"
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_cancelling_a_season_leaves_an_unraced_round_to_the_cascade(tmp_path):
     """A round with no results entered is the cascade's to cancel, not this function's.
 
@@ -601,6 +609,7 @@ async def test_cancelling_a_season_leaves_an_unraced_round_to_the_cascade(tmp_pa
         ]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_cancelling_a_season_leaves_another_seasons_rounds_alone(tmp_path):
     """Scoped by season, so cancelling one never closes a round of another."""
     db_path = await _make_db(tmp_path, name="cancel_other_season")

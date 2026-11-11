@@ -11,6 +11,10 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.driver_transitions import reassigned
 
+#: Why each test signing results up through its wiring fails until the sign-ups move there
+#: (#283).
+_NOT_YET_IN_THE_WIRING = "#283: results' sign-ups are not yet in its wiring"
+
 SERVER_ID = 22120
 
 
@@ -127,6 +131,7 @@ async def _seed_a_finished_season(db_path: str) -> None:
         await db.commit()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_re_keyed_driver_s_history_carries_their_final_standing(db_path):
     """Issue #222, as a league sees it: the season ends and the driver's history is right."""
     from leaguebot.core.services.season_end_service import write_driver_history_entries_on

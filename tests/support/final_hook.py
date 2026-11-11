@@ -5,9 +5,9 @@ Core's two closers that make a round FINAL (results turned off, and a season can
 rounds they made FINAL to the hook core declares for a round's results made final
 (architecture.md, "How modules and core fit together"): `rounds_made_final`, on the save's
 connection. Results signs up its part, which marks the drivers who raced each round as former
-drivers. A test that closes rounds hands the hook made here by the builder's own
-`_sign_up_to_rounds_made_final`, so that results' part is the bot's and not a copy, or one that
-records what it is handed and does nothing else.
+drivers. A test that closes rounds hands the hook made here as the builder makes it, results signed up by
+its wiring's own `sign_up_to_rounds_made_final`, so that results' part is the bot's and not a copy,
+or one that records what it is handed and does nothing else.
 """
 from __future__ import annotations
 
@@ -18,10 +18,11 @@ from typing import Any
 def rounds_made_final() -> Any:
     """The `rounds_made_final` hook, as the builder makes it and signs results up, to hand a
     closer."""
-    from leaguebot.__main__ import _sign_up_to_rounds_made_final
+    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.results.wiring import sign_up_to_rounds_made_final
 
-    bot = SimpleNamespace()
-    _sign_up_to_rounds_made_final(bot)
+    bot = SimpleNamespace(rounds_made_final=AwaitedHook())
+    sign_up_to_rounds_made_final(bot)
     return bot.rounds_made_final
 
 

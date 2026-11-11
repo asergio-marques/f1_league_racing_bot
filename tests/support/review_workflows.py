@@ -28,10 +28,10 @@ from typing import Any
 
 def sign_up_confirmation_refused(bot: Any) -> None:
     """Give *bot* the hook a season's confirmation is refused through (`confirmation_refused`),
-    results' refusals signed up to it as the builder signs them: handed *bot*'s module service and
+    results' refusals signed up to it as its wiring signs them: handed *bot*'s module service and
     database, then what the hook is called with. Results' function is looked up as the hook is
     called, so a stand-in bot carries the hook whether or not any workflow asks it yet. It mirrors
-    the builder's `_sign_up_to_confirmation_refused`."""
+    results' wiring's `sign_up_to_confirmation_refused`."""
     from leaguebot.core.utils.hooks import AwaitedHook
 
     async def results_refusals(*args: Any, **kwargs: Any) -> Any:
@@ -47,10 +47,10 @@ def sign_up_confirmation_refused(bot: Any) -> None:
 
 def sign_up_driver_names_read(bot: Any) -> None:
     """Give *bot* the hook a driver's name is read through (`driver_names_read`), signup's names
-    signed up as the builder signs them: signup's module service over *bot*'s database, then the
+    signed up as its wiring signs them: signup's module service over *bot*'s database, then the
     drivers' profile ids. Signup's function is looked up as the hook is called, so a stand-in bot
     carries the hook whether or not any check asks it yet. It mirrors the builder's
-    `_sign_up_to_driver_names_read`."""
+    `sign_up_to_driver_names_read` in signup's wiring."""
     from leaguebot.core.utils.hooks import AwaitedHook
 
     async def signup_names(*args: Any, **kwargs: Any) -> Any:

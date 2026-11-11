@@ -13,6 +13,10 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.teams import seed_team_instances
 
+#: Why each test signing results up through its wiring fails until the sign-ups move there
+#: (#283).
+_NOT_YET_IN_THE_WIRING = "#283: results' sign-ups are not yet in its wiring"
+
 A, B, C = "6501", "6502", "6503"
 LEADER = "6464"
 #: Seasons 1 and 3; season 1 holds Pro and Am, season 3 holds Pro.
@@ -125,6 +129,7 @@ async def test_results_answers_a_driver_s_last_standing_and_the_winner_s_points(
         assert tuple(await season_standing_on(db, S1_AM, [A, B])) == (None, None)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_the_builder_signs_results_up_for_a_driver_s_records(tmp_path, monkeypatch):
     """Results answers which divisions a driver raced in and their season standing. The hooks as
     the builder makes them ask results' own answers, each handed the save's connection and what
