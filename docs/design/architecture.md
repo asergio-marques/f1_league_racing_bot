@@ -1187,8 +1187,7 @@ request itself fails, and the queue once the change is under way.
   with no choices and keeps the error for the host's log. It writes nothing to the log channel: an
   autocomplete changes nothing, and Discord gives it no message to answer with.
 - **Background tasks** go through the helper that starts them.
-- **The start-up sweep** runs one step at a time, each contained and reported to the log channel in
-  one line, as the job runner would report a scheduled job; it can be swapped for the runner.
+- **The start-up sweep** goes through the job runner, one step at a time, like a scheduled job.
 
 **A refusal is not a failure, and has helpers of its own.** A command, button or form that
 refuses answers the member itself through `refuse` (`core/utils/log_lines.py`), which replies,
