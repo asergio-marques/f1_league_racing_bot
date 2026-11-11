@@ -2,7 +2,7 @@
 
 `docs/design/architecture.md`, "How a change is carried out", designs the queue. This module holds
 the types a change type's steps are written in, which is why they live in a model: another module's
-step code imports them from core, and core's queue (`core/services/change_queue.py`) reads them.
+step code imports them from core, and core's queue (`core/services/queue/change_queue.py`) reads them.
 
 A change is a row of `queued_changes` and its steps are the rows of `queued_change_steps`;
 `ChangeState` and `ChangeOrigin` are the closed lists of the `CHECK` constraints on the first, tied

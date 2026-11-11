@@ -1,6 +1,6 @@
 """A real change queue for a test, on the test's own database, with "now" pinned (#439).
 
-The queue is the one the bot builds (`leaguebot.core.services.change_queue.ChangeQueue`), handed the
+The queue is the one the bot builds (`leaguebot.core.services.queue.change_queue.ChangeQueue`), handed the
 router the test gives it, or the bot's own. `built_bot` is the real bot instead, every service
 and change type as the entry point's `build` makes them (#283), its queue's clock pinned the same way.
 
@@ -104,7 +104,7 @@ def attach_queue(bot: Any, db_path: str, *, now: datetime | Clock, router: Any =
     *types*, the bot's real change types are registered through `register_change_types`, as the
     builder registers them; with *types*, those alone.
     """
-    from leaguebot.core.services.change_queue import ChangeQueue
+    from leaguebot.core.services.queue.change_queue import ChangeQueue
 
     clock = now if isinstance(now, Clock) else Clock(now)
     chosen = router if router is not None else bot.output_router
@@ -176,7 +176,7 @@ async def restart_queue(bot: Any) -> Any:
     The old queue is stopped first where it was started. The same change types are registered.
     The queue is remembered, for `stop_started_queues` to stop once the test has run.
     """
-    from leaguebot.core.services.change_queue import ChangeQueue
+    from leaguebot.core.services.queue.change_queue import ChangeQueue
 
     setup: _Setup = getattr(bot, _SETUP)
     old = bot.change_queue
@@ -715,7 +715,7 @@ async def stop_the_league_lane(bot: Any, db_path: str) -> dict[str, Any]:
     """Stop the league's lane on another job: a change whose one job fails on a fault in the bot
     is asked and run. Gives the job it stopped at."""
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
-    from leaguebot.core.services.change_types import ChangeType, Step
+    from leaguebot.core.services.queue.change_types import ChangeType, Step
 
     async def fails(_ctx: Any) -> StepResult:
         raise RuntimeError("a fault in the bot")
@@ -900,7 +900,7 @@ async def ask_turn(bot: Any, kind: str, message: Any, *, types: Any = None,
     it is marked at once and the turn of *kind* asked for as the member's, with no interaction.
     *types* are the change types `turn_waiting` reads, by default those the test registered.
     """
-    from leaguebot.core.services import typed_turns
+    from leaguebot.core.services.queue import typed_turns
 
     chosen = types if types is not None else getattr(bot, _SETUP).types
     if await typed_turns.turn_waiting(bot.db_path, chosen, message.channel.id):

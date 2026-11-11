@@ -70,10 +70,10 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.round import RoundFormat, RoundStatus
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
 )
-from leaguebot.core.services.change_types import (
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

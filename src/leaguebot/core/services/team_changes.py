@@ -45,7 +45,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import AuditRecord, LEAGUE_LANE, PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.models.refusal import Refused
 from leaguebot.core.models.season import Season, SeasonStage
-from leaguebot.core.services.change_types import (
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

@@ -550,7 +550,7 @@ async def test_a_fault_in_the_save_saves_neither_the_channel_nor_its_audit(tmp_p
     channel and no audit entry stands. The manager is told in `setting_change`'s words that
     nothing was saved and to run it again; the log channel gets the one failure line and no
     success line; the queue is not stopped."""
-    from leaguebot.core.services import change_queue
+    from leaguebot.core.services.queue import change_queue
 
     db_path = await _make_db(tmp_path)
     cog = await _make_cog(db_path)

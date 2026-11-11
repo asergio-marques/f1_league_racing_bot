@@ -1,7 +1,7 @@
 """Test mode's nationality switch, as a core `Setting` on the change queue.
 
 `/test-mode nationality` asks one change built from the `Setting` below by `setting_change`
-(`core/services/setting_change.py`, which holds what every settings change does with a value
+(`core/services/queue/setting_change.py`, which holds what every settings change does with a value
 already held and with a fault). While test mode is active the switch stands in for the signup
 one everywhere the image module asks whether the league collects nationality, so the graphics of
 a server under test may be seen with flags and without them without the setting real signups run
@@ -33,8 +33,8 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 
 from leaguebot.core.models.change import AuditRecord, Verdict
-from leaguebot.core.services.change_types import CheckContext
-from leaguebot.core.services.setting_change import Saved, Setting
+from leaguebot.core.services.queue.change_types import CheckContext
+from leaguebot.core.services.queue.setting_change import Saved, Setting
 
 if TYPE_CHECKING:
     from leaguebot.core.services.config_service import ConfigService

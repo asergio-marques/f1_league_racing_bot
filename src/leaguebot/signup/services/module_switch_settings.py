@@ -1,7 +1,7 @@
 """Signup's own switch-on, as a setting on the change queue.
 
 `/module enable signup` asks one change built from the `Setting` below by `setting_change`
-(`core/services/setting_change.py`, which holds what every settings change does with a value
+(`core/services/queue/setting_change.py`, which holds what every settings change does with a value
 already held and with a fault): `module_on("signup")` (`core/models/change.py`), so core's cog
 names the change without importing signup, as `docs/design/architecture.md`, "How modules and
 core fit together", designs it: weather's switch
@@ -37,13 +37,13 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.models.change import AuditRecord, PlannedStep, Verdict, module_on
-from leaguebot.core.services.change_types import CheckContext
+from leaguebot.core.services.queue.change_types import CheckContext
 from leaguebot.core.services.hub_service import REFRESH_HUB, hub_refresh_after
 from leaguebot.core.services.season_lifecycle_service import (
     configuration_fixed,
     configuration_fixed_refusal,
 )
-from leaguebot.core.services.setting_change import Saved, Setting
+from leaguebot.core.services.queue.setting_change import Saved, Setting
 
 if TYPE_CHECKING:
     import aiosqlite

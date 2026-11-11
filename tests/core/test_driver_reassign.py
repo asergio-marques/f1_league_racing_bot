@@ -555,7 +555,7 @@ async def test_a_failed_driver_reassign_changes_nothing(tmp_path, monkeypatch):
     discarded = _portraits_discarded(league, monkeypatch)
     standing = await _accounts(league)
     asked = await _ask_reassign(league, UNASSIGNED, _NEW)
-    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _accounts(league) == standing

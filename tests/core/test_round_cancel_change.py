@@ -485,7 +485,7 @@ async def test_a_notice_stops_where_the_league_s_server_is_not_in_the_cache(
     GuildUnavailable, so the queue stops on the server and Retry runs it again: it never reports a
     channel that is still there as gone, nor ends as "no channel is set" without having looked."""
     from leaguebot.core.models.change import GuildUnavailable
-    from leaguebot.core.services.change_types import StepContext
+    from leaguebot.core.services.queue.change_types import StepContext
     from leaguebot.core.services.module_service import ModuleService
     from leaguebot.core.services.season_service import SeasonService
     from tests.support.cancellation_notice import (

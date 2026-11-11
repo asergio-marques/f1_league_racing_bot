@@ -20,7 +20,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
 from leaguebot.core.services import driver_service, season_service, team_service
 from leaguebot.core.services.cancellation_notice_service import round_label
-from leaguebot.core.services.change_types import Step, StepContext, StepView
+from leaguebot.core.services.queue.change_types import Step, StepContext, StepView
 
 if TYPE_CHECKING:
     from leaguebot.core.services.module_service import ModuleService

@@ -59,7 +59,7 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.services import standing_posts, track_service
 from leaguebot.core.services.driver_service import write_transition
-from leaguebot.core.services.change_types import (
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -96,7 +96,7 @@ from leaguebot.signup.services.signup_posting import post
 from leaguebot.signup.services.signup_views import SignupButtonView
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.change_queue import ChangeQueue
+    from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.services.module_service import ModuleService
     from leaguebot.core.services.scheduler_service import SchedulerService

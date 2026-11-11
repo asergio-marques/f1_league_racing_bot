@@ -1,7 +1,7 @@
 """A division's lineup channel and calendar channel, as core `Setting`s on the change queue.
 
 `/division lineup-channel` and `/division calendar-channel` each ask one change built from a
-`Setting` below by `setting_change` (`core/services/setting_change.py`, which holds what every
+`Setting` below by `setting_change` (`core/services/queue/setting_change.py`, which holds what every
 settings change does with a fault). Both are every season's, whatever modules are on, so they are
 core's; the division's other channels are its modules'. Each overtakes a stopped job on the league
 lane (`Setting.repairs_the_bot`, which `setting_change` says the meaning of), as every setting that
@@ -34,13 +34,13 @@ import aiosqlite
 
 from leaguebot.core.db.database import sole_row
 from leaguebot.core.models.change import AuditRecord, Verdict
-from leaguebot.core.services.change_types import CheckContext
+from leaguebot.core.services.queue.change_types import CheckContext
 from leaguebot.core.services.channel_registry_service import (
     ChannelUse,
     find_channel_use,
     refusal,
 )
-from leaguebot.core.services.setting_change import Saved, Setting
+from leaguebot.core.services.queue.setting_change import Saved, Setting
 
 if TYPE_CHECKING:
     from leaguebot.core.services.season_service import SeasonService

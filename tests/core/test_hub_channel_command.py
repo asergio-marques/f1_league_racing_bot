@@ -273,7 +273,7 @@ async def test_a_fault_in_the_save_saves_neither_the_hub_nor_its_audit_entry(
     stopped."""
     import sqlite3
 
-    from leaguebot.core.services import change_queue
+    from leaguebot.core.services.queue import change_queue
 
     await _configure(db_path, hub_channel_id=OLD_HUB, hub_message_id=OLD_PANEL)
     old, new = _channel(OLD_HUB), _channel(HUB)

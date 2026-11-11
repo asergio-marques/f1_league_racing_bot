@@ -331,7 +331,7 @@ def _renumbering_fails() -> ExitStack:
 def _blind_to_the_queue() -> ExitStack:
     """Every check reading the queue for a change in hand finds none, as two asks in the same
     instant leave each other unseen."""
-    from leaguebot.core.services import queue_records
+    from leaguebot.core.services.queue import queue_records
 
     real = queue_records.in_hand
 
@@ -907,7 +907,7 @@ async def test_a_module_s_part_of_the_save_runs_on_its_connection_before_the_ren
 
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
-    from leaguebot.core.services.change_types import Step
+    from leaguebot.core.services.queue.change_types import Step
     from tests.support.change_queue import restart_queue
 
     further = "a_further_module_s_post"

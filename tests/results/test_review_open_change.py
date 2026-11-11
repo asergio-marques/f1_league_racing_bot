@@ -674,7 +674,7 @@ async def test_the_change_names_its_round_and_division(tmp_path, caplog, route):
         review_open_change,
     )
 
-    caplog.set_level(logging.INFO, logger="leaguebot.core.services.change_queue")
+    caplog.set_level(logging.INFO, logger="leaguebot.core.services.queue.change_queue")
     appeals = route == "appeals-recovery"
     league = await _league(
         tmp_path, name=f"names_{route}", in_review=True, results_posted=True,

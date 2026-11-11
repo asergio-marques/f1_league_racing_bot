@@ -265,7 +265,7 @@ async def test_a_fault_in_the_save_saves_neither_the_flag_nor_its_audit(league):
     interaction = _asks(league)
 
     await _ask(league, interaction, True)
-    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _flags(league.db_path) == [False]

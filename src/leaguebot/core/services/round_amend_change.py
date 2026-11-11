@@ -71,10 +71,10 @@ from leaguebot.core.services.round_moments import phases_due as round_moments_ph
 from leaguebot.core.services.round_steps import JUDGE, named_now, round_number_now as number_now
 from leaguebot.core.services import cancellation_notice_service as notices
 from leaguebot.core.services.cancellation_changes import ROUND_REARM, cancellation_holding_amendment
-from leaguebot.core.services.queue_records import (
+from leaguebot.core.services.queue.queue_records import (
     in_hand,
 )
-from leaguebot.core.services.change_types import (
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

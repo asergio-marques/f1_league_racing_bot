@@ -52,7 +52,7 @@ from leaguebot.core.models.change import (
     module_off,
 )
 from leaguebot.core.models.module_dependencies import taken_down_with
-from leaguebot.core.services.change_types import (
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

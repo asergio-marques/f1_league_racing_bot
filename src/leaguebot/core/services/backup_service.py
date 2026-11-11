@@ -35,7 +35,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from leaguebot.core.services.queue_records import (
+from leaguebot.core.services.queue.queue_records import (
     carry_job_numbering,
     empty_queue_in,
     highest_job_number,

@@ -25,7 +25,7 @@ import discord
 
 from leaguebot.core.services import season_fingerprint_service, season_review_workflows
 from leaguebot.core.services.approval_checks import SignupModuleSettings
-from leaguebot.core.services.change_queue import ChangeQueue
+from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.config_service import ConfigService
 from leaguebot.core.services.configuration_confirm_change import (
     ALREADY_BEING_CONFIRMED as ALREADY_CONFIGURATION_BEING_CONFIRMED,

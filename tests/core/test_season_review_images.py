@@ -619,7 +619,7 @@ def _approval_double(refusal: str, on_check=None):
     """A `season.approve` whose check, made as the queue is asked, refuses with *refusal*,
     calling *on_check* first where given. Its jobs, never reached, do nothing."""
     from leaguebot.core.models import change
-    from leaguebot.core.services import change_types
+    from leaguebot.core.services.queue import change_types
 
     async def _check(_ctx):
         if on_check is not None:

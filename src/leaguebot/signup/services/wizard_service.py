@@ -31,7 +31,7 @@ from leaguebot.signup.services.closing_steps import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.change_queue import ChangeQueue
+    from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.core.utils.league_bot import LeagueBot
 
     from leaguebot.core.services.scheduler_service import SchedulerService

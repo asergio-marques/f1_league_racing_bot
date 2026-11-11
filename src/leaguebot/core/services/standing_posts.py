@@ -36,7 +36,7 @@ from leaguebot.core.models.change import (
     StepKind,
     StepResult,
 )
-from leaguebot.core.services.change_types import Step, StepContext, StepView
+from leaguebot.core.services.queue.change_types import Step, StepContext, StepView
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.standing_post_handler import delete_standing
 from leaguebot.core.utils.league_bot import LeagueBot

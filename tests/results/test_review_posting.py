@@ -277,7 +277,7 @@ def _posting_type(
     """A change whose one opening job plans the round's republication through the module, under
     *label*."""
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
-    from leaguebot.core.services.change_types import ChangeType, Step
+    from leaguebot.core.services.queue.change_types import ChangeType, Step
     from leaguebot.results.services import review_posting
 
     async def plan(db: Any, ctx: Any) -> Any:
@@ -1307,7 +1307,7 @@ async def test_names_go_unresolved_where_the_server_is_not_in_the_cache(tmp_path
     """The names only order a full tie, so a server the bot cannot see leaves them unresolved
     rather than stopping the queue: a post after the job stops it on the same fault."""
     from leaguebot.core.models.change import PlannedStep, Verdict
-    from leaguebot.core.services.change_types import ChangeType
+    from leaguebot.core.services.queue.change_types import ChangeType
     from leaguebot.results.services import review_posting
 
     league = await _league(tmp_path)
@@ -1348,7 +1348,7 @@ async def test_names_go_unresolved_where_the_server_is_not_in_the_cache(tmp_path
 # ---------------------------------------------------------------------------
 
 def _outcome_context(*steps: Any) -> Any:
-    from leaguebot.core.services.change_types import OutcomeContext
+    from leaguebot.core.services.queue.change_types import OutcomeContext
 
     return OutcomeContext(
         bot=MagicMock(), db_path="unused.db", change_id=1, kind=KIND, payload={},
@@ -1361,7 +1361,7 @@ async def test_names_are_read_back_by_division():
     """Pro's (11) and Am's (12) `names` jobs both done, Beta's (13) not yet: asked for a division,
     the names of that division's job; for one whose job is not done, none; asked for no division,
     the first done, as slice 2's callers read it."""
-    from leaguebot.core.services.change_types import StepView
+    from leaguebot.core.services.queue.change_types import StepView
     from leaguebot.results.services import review_posting
 
     ctx = _outcome_context(
@@ -1381,7 +1381,7 @@ async def test_a_post_planned_with_its_division_names_it_when_discarded(tmp_path
     one a league admin discards is named with the division ("Round 3's Feature Race results in
     Pro were not posted."), the sync commands last. Planned with no name, as slice 2's rebuild
     plans them, the lines are today's."""
-    from leaguebot.core.services.change_types import StepView
+    from leaguebot.core.services.queue.change_types import StepView
     from leaguebot.results.services import review_posting
 
     db_path = await _make_db(tmp_path)

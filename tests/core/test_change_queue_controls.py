@@ -527,7 +527,7 @@ async def test_discard_of_a_job_the_worker_is_trying_is_refused(env):
     its own result, so the request's outcome does not tell the job as left undone."""
     import asyncio
 
-    from leaguebot.core.services.change_types import Step
+    from leaguebot.core.services.queue.change_types import Step
     from tests.support.change_queue import updated_reply
 
     api = _api()
@@ -634,7 +634,7 @@ async def test_discard_saves_the_partial_result_a_try_kept_while_the_press_waite
     and, while the press waits to be carried out, the job's one-minute try runs and fails, keeping
     more of what it did: the discard is saved from the job as it stands after that try, not as it
     was when the press was read, and the request's later job runs."""
-    from leaguebot.core.services.change_types import Step
+    from leaguebot.core.services.queue.change_types import Step
 
     api = _api()
     kept = {"result": {"removed": [1]}}
@@ -680,7 +680,7 @@ async def test_a_retry_of_a_job_being_tried_is_refused_and_the_try_s_outcome_sta
     next try one minute on."""
     import asyncio
 
-    from leaguebot.core.services.change_types import Step
+    from leaguebot.core.services.queue.change_types import Step
 
     api = _api()
     hold = {"held": False}

@@ -269,7 +269,7 @@ async def test_a_fault_in_the_save_adds_nobody(league):
     interaction = _asks(league)
 
     await _ask(league, interaction, None)
-    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _fake_drivers(league) == []

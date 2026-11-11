@@ -187,7 +187,7 @@ async def test_a_failed_driver_unassignment_removes_nothing(tmp_path):
 
     league = await _in_placements(tmp_path)
     asked = await _ask_unassign(league, 103)
-    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _charles(league) == _SEATED

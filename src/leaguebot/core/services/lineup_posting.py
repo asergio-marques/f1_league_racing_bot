@@ -43,10 +43,10 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
 )
-from leaguebot.core.services.change_types import (
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -54,7 +54,7 @@ from leaguebot.core.services.change_types import (
     StepContext,
 )
 from leaguebot.core.services import standing_posts
-from leaguebot.core.services.audit_service import record_change_on
+from leaguebot.core.services.queue.audit_service import record_change_on
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.image_drawing import ImageDrawing
 from leaguebot.core.services.standing_post_handler import post_standing

@@ -85,7 +85,7 @@ async def env(tmp_path):
 
 def _api() -> SimpleNamespace:
     from leaguebot.core.models import change
-    from leaguebot.core.services import change_types, typed_turns
+    from leaguebot.core.services.queue import change_types, typed_turns
 
     return SimpleNamespace(
         StepKind=change.StepKind, Verdict=change.Verdict, PlannedStep=change.PlannedStep,
@@ -154,7 +154,7 @@ def _typed(env, content: str = "Max Verstappen", *, channel: Any = None) -> Any:
 
 
 async def _waiting(env, channel_id: int = CHANNEL) -> bool:
-    from leaguebot.core.services.typed_turns import turn_waiting
+    from leaguebot.core.services.queue.typed_turns import turn_waiting
 
     return await turn_waiting(env.db_path, env.types, channel_id)
 

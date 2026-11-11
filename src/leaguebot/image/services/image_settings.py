@@ -1,7 +1,7 @@
 """The image settings as settings on the change queue (#439, slice 7).
 
 Each `/images` command that changes the module's configuration asks one `image.setting.…` change,
-built from a `Setting` below by `setting_change` (`core/services/setting_change.py`, which holds
+built from a `Setting` below by `setting_change` (`core/services/queue/setting_change.py`, which holds
 what every settings change does with a value already held and with a fault). The check of each is
 the command's, in today's order and words, run at the ask and again as the change starts, so a
 module switched off, a template broken by a directory set ahead of it or an output whose drawings
@@ -36,8 +36,8 @@ from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
-from leaguebot.core.services.change_types import CheckContext, Step, StepContext
-from leaguebot.core.services.setting_change import NOTHING_SAVED, After, Saved, Setting
+from leaguebot.core.services.queue.change_types import CheckContext, Step, StepContext
+from leaguebot.core.services.queue.setting_change import NOTHING_SAVED, After, Saved, Setting
 from leaguebot.core.utils.paths import resolve_within_project_root
 from leaguebot.core.utils.timezones import is_known_zone
 from leaguebot.image.models.image_constants import (

@@ -487,7 +487,7 @@ async def test_a_failed_division_rename_or_amendment_changes_nothing(tmp_path, c
         asked = await _ask_rename(league)
     else:
         asked = await _ask_amend(league, tier=3)
-    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _divisions(league.db_path) == _STANDING
@@ -1149,7 +1149,7 @@ async def test_a_failed_division_delete_deletes_nothing(tmp_path):
     await _give_the_modules_rows(league.db_path)
     before = await _modules_rows(league.db_path)
     asked = await _ask_delete(league)
-    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _divisions(league.db_path) == _STANDING

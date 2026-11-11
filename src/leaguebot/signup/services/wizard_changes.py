@@ -62,10 +62,10 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
-from leaguebot.core.services.queue_records import (
+from leaguebot.core.services.queue.queue_records import (
     unfinished,
 )
-from leaguebot.core.services.change_types import (
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -106,7 +106,7 @@ from leaguebot.signup.services.wizard_answers import (
 from leaguebot.signup.services.wizard_service import WizardService, build_step_view
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.change_queue import ChangeQueue
+    from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.config_service import ConfigService
     from leaguebot.core.services.driver_service import DriverService
     from leaguebot.core.services.module_service import ModuleService

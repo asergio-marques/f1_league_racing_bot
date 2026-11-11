@@ -758,7 +758,7 @@ async def test_a_fault_in_the_save_saves_neither_the_channel_nor_its_audit(
     either: Division 1 still has none of its channels and no audit entry stands. The manager is
     told in `setting_change`'s words that nothing was saved and to run it again; the log channel
     gets the one failure line and no success line; the queue is not stopped."""
-    from leaguebot.core.services import change_queue
+    from leaguebot.core.services.queue import change_queue
 
     db_path = await _make_db(tmp_path)
     cog = await _make_cog(db_path)
@@ -857,7 +857,7 @@ async def test_the_channel_is_set_while_the_queue_is_stopped_on_another_job(tmp_
     Once the queue runs, Division 1 has 770001, the manager is told the channel was set, and the
     other job is still stopped where it was."""
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
-    from leaguebot.core.services.change_types import ChangeType, Step
+    from leaguebot.core.services.queue.change_types import ChangeType, Step
 
     async def fails(_ctx) -> StepResult:
         raise RuntimeError("a fault in the bot")

@@ -391,7 +391,7 @@ async def test_a_fault_in_the_save_seats_nobody(league, setup, text, divisions):
     interaction = _asks(league)
 
     await _submit(league, interaction, text)
-    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _fake_drivers(league) == []

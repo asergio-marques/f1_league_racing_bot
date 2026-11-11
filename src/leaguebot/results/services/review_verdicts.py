@@ -80,7 +80,7 @@ from leaguebot.core.models.change import (
     StepResult,
 )
 from leaguebot.core.services import lineup_posting, standing_posts
-from leaguebot.core.services.change_types import OutcomeContext, Step, StepContext
+from leaguebot.core.services.queue.change_types import OutcomeContext, Step, StepContext
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.image.services import image_verdict_banner_post
 from leaguebot.results.services import verdict_announcement_service as vas

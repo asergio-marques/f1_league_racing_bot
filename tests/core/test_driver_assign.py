@@ -204,7 +204,7 @@ async def test_a_failed_driver_assignment_places_nothing(tmp_path):
 
     league = await _placing(tmp_path)
     asked = await _ask_assign(league, 106)
-    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _valtteri(league) == _UNPLACED

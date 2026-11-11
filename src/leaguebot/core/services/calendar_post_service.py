@@ -40,7 +40,7 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services import standing_posts
-from leaguebot.core.services.change_types import (
+from leaguebot.core.services.queue.change_types import (
     CheckContext,
     ChangeType,
     OutcomeContext,

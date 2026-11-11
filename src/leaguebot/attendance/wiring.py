@@ -266,7 +266,7 @@ def register_change_types(bot: "LeagueBot") -> None:
         sanctions_announce_change,
     )
     from leaguebot.attendance.services.sheet_posting import sheet_post_change
-    from leaguebot.core.services.setting_change import setting_change
+    from leaguebot.core.services.queue.setting_change import setting_change
 
     bot.change_queue.register(sheet_post_change())
     bot.change_queue.register(
@@ -478,7 +478,7 @@ async def recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
     from leaguebot.attendance.services.rsvp_service import RsvpView
     from leaguebot.core.db.database import get_connection as _gc
     from leaguebot.core.models.change import ChangeOrigin
-    from leaguebot.core.services.queue_records import unfinished
+    from leaguebot.core.services.queue.queue_records import unfinished
     from datetime import datetime as _dt, timezone as _tz
 
     # Re-arm all embed views by message_id so persistent buttons survive restarts

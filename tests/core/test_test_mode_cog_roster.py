@@ -430,7 +430,7 @@ class TestTheNationalityCommand:
         saved either: it is still on and no audit entry stands. Admin is told in
         `setting_change`'s words that nothing was saved and to run it again; the log channel
         gets the one failure line and no success line; the queue is not stopped."""
-        from leaguebot.core.services import change_queue
+        from leaguebot.core.services.queue import change_queue
 
         monkeypatch.setattr(
             change_queue, "record_change_on",

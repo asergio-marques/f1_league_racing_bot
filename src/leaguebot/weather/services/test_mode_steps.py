@@ -32,7 +32,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import FORECAST, FORECAST_CLEAN_UP
-from leaguebot.core.services.queue_records import unfinished
+from leaguebot.core.services.queue.queue_records import unfinished
 from leaguebot.core.services.test_mode_service import (
     PASSED_OVER,
     PHASE_KINDS,

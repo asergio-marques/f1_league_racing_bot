@@ -208,7 +208,7 @@ async def test_a_fault_in_a_deadline_s_save_saves_nothing_and_the_lane_goes_on(t
     league = await settings_league(tmp_path)
 
     asked = await _ask(league, 1, 6)
-    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot, steps=1)
     behind = await _ask(league, 2, 3)
     await run_queue(league.bot)

@@ -37,14 +37,14 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.services import standing_posts
-from leaguebot.core.services.audit_service import record_system_change_on
+from leaguebot.core.services.queue.audit_service import record_system_change_on
 from leaguebot.core.services.season_end_changes import season_ending_on
 from leaguebot.core.services.season_lifecycle_service import (
     NO_CHANNEL_LEFT,
     advance_on_window_close_on,
     require_guild,
 )
-from leaguebot.core.services.change_types import (
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     DiscardedContext,
@@ -57,7 +57,7 @@ from leaguebot.core.utils.league_server import league_guild
 from leaguebot.signup.services.signup_posting import post
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.change_queue import ChangeQueue
+    from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
     from leaguebot.signup.services.wizard_service import WizardService

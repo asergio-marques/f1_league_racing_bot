@@ -265,7 +265,7 @@ async def test_a_failed_division_save_adds_nothing(tmp_path):
 
     league = await _setup_league(tmp_path)
     asked = await _ask_add(league, "Am", 2)
-    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _division_rows(league.db_path) == [("Pro", 1, 10)]

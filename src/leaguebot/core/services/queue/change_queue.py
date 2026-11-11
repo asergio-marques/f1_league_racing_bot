@@ -185,8 +185,8 @@ from leaguebot.core.models.change import (
     Verdict,
     VerdictKind,
 )
-from leaguebot.core.services.audit_service import record_change_on
-from leaguebot.core.services.change_types import (
+from leaguebot.core.services.queue.audit_service import record_change_on
+from leaguebot.core.services.queue.change_types import (
     Ahead,
     ChangeRefused,
     ChangeType,
@@ -198,7 +198,7 @@ from leaguebot.core.services.change_types import (
     StepContext,
     StepView,
 )
-from leaguebot.core.services.queue_stop_view import QueueStopView
+from leaguebot.core.services.queue.queue_stop_view import QueueStopView
 from leaguebot.core.utils.channel_guard import is_league_admin, is_league_manager
 from leaguebot.core.utils.in_a_job import running_job
 from leaguebot.core.utils.interaction_errors import describe_fault, failure_line

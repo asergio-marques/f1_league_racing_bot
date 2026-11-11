@@ -51,7 +51,7 @@ async def _save(
 ) -> tuple[Any, dict[str, str]]:
     """Run the save *step* of a *kind* change for 4242, asked by Admin, and return its result
     with every driver's state as the save left it, read on the save's own connection."""
-    from leaguebot.core.services.change_types import StepContext
+    from leaguebot.core.services.queue.change_types import StepContext
 
     async with get_connection(db_path) as db:
         result = await step.run(db, StepContext(

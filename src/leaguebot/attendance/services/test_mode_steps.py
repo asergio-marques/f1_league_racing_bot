@@ -37,7 +37,7 @@ from leaguebot.core.models.change import (
     CHECK_IN_DEADLINE,
     CHECK_IN_LAST_NOTICE,
 )
-from leaguebot.core.services.queue_records import unfinished
+from leaguebot.core.services.queue.queue_records import unfinished
 from leaguebot.core.services.test_mode_service import (
     PHASE_KINDS,
     ActiveRound,

@@ -589,7 +589,7 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     from leaguebot.image.services.image_render_service import discard_render
     from leaguebot.results.services.season_points_service import snapshot_configs_to_season_on
-    from leaguebot.core.services.setting_change import setting_change
+    from leaguebot.core.services.queue.setting_change import setting_change
 
     bot.change_queue.register(hub_refresh_change(
         bot.change_queue, bot.config_service, hub_options=bot.hub_options
@@ -1006,7 +1006,7 @@ async def build(settings: Settings) -> LeagueBot:
         now=lambda: bot.change_queue.now(),
     )
     # The queue is handed the router, and is started by start-up, after the recoveries.
-    from leaguebot.core.services.change_queue import ChangeQueue
+    from leaguebot.core.services.queue.change_queue import ChangeQueue
 
     bot.change_queue = ChangeQueue(settings.db_path, bot, bot.output_router, bot.config_service)
     bot.driver_service = DriverService(settings.db_path)

@@ -49,7 +49,7 @@ TURNS_8 = "channel:8"
 
 def _api() -> SimpleNamespace:
     from leaguebot.core.models import change
-    from leaguebot.core.services import change_types
+    from leaguebot.core.services.queue import change_types
 
     return SimpleNamespace(
         StepKind=change.StepKind,
@@ -1312,7 +1312,7 @@ async def test_at_most_three_conversation_lanes_run_beside_the_league(env):
     league change, each in the middle of a job that takes its time. The league change and the
     three oldest turns, in channels 7, 8 and 9, are under way at once; the turn in channel 10 waits
     untouched. Once the turn in channel 8 finishes, the turn in channel 10 starts."""
-    from leaguebot.core.services import change_queue
+    from leaguebot.core.services.queue import change_queue
 
     assert change_queue.CONVERSATION_LANES_AT_ONCE == 3
     gates = {channel: _holding() for channel in (7, 8, 9, 10)}
@@ -1356,7 +1356,7 @@ async def test_a_fault_outside_a_change_pauses_only_its_lane(env, monkeypatch):
     channel 7 waits, still asked and not started."""
     import sqlite3
 
-    from leaguebot.core.services import change_queue
+    from leaguebot.core.services.queue import change_queue
 
     monkeypatch.setattr(change_queue, "WORKER_PAUSE_AFTER_FAULT", 3600.0)
     ran: list[str] = []

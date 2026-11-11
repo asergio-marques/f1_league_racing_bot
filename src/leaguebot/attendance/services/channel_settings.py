@@ -1,7 +1,7 @@
 """A division's check-in call (RSVP) and attendance channels, as settings on the change queue.
 
 `/attendance channel rsvp` and `/attendance channel attendance` each ask one change built from the
-`Setting` below by `setting_change` (`core/services/setting_change.py`, which holds what every
+`Setting` below by `setting_change` (`core/services/queue/setting_change.py`, which holds what every
 settings change does with a value already held and with a fault), `{"division_id",
 "division_name", "value", "channel_name"}`, for the division by its id: the command finds it from
 the name a manager typed and carries that name for the reply and the line, so a division renamed
@@ -36,7 +36,7 @@ from leaguebot.attendance.services.division_channels import (
     set_rsvp_channel,
 )
 from leaguebot.core.models.change import AuditRecord, Verdict
-from leaguebot.core.services.change_types import CheckContext
+from leaguebot.core.services.queue.change_types import CheckContext
 from leaguebot.core.services.channel_registry_service import (
     ChannelUse,
     as_text_channel,
@@ -44,7 +44,7 @@ from leaguebot.core.services.channel_registry_service import (
     refusal,
 )
 from leaguebot.core.services.division_settings import NO_SEASON_REFUSAL
-from leaguebot.core.services.setting_change import Saved, Setting
+from leaguebot.core.services.queue.setting_change import Saved, Setting
 
 if TYPE_CHECKING:
     import aiosqlite

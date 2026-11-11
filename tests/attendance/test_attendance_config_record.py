@@ -18,7 +18,7 @@ import pytest
 from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
 from leaguebot.attendance.services.attendance_service import AttendanceService
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services import audit_service
+from leaguebot.core.services.queue import audit_service
 from tests.attendance.test_attendance_config_commands import (
     CONFIG_SETTER_IDS,
     CONFIG_SETTERS,

@@ -35,7 +35,7 @@ from leaguebot.core.models.refusal import Refused
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import approval_checks, backup_service
 from leaguebot.core.services.approval_checks import SignupModuleSettings
-from leaguebot.core.services.change_queue import ChangeQueue
+from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.config_service import ConfigService
 from leaguebot.core.services.configuration_confirm_change import KIND as CONFIGURATION_CONFIRM_KIND
 from leaguebot.core.services.confirmation_refusals import Confirmation, read_refusals

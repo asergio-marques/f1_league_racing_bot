@@ -8,7 +8,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection, sole_row
 from leaguebot.core.models.change import AuditRecord
-from leaguebot.core.services.setting_change import Saved
+from leaguebot.core.services.queue.setting_change import Saved
 from leaguebot.results.models.points_config import (
     PointsConfigEntry,
     PointsConfigFastestLap,

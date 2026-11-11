@@ -243,7 +243,7 @@ async def test_the_held_channel_s_record_moves_in_the_reassign_s_own_save(tmp_pa
     from tests.support.settings_league import fault_in
 
     league, _asked, held, _theirs = await _reassign(tmp_path, monkeypatch)
-    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _channel_of(league, UNASSIGNED) == HELD

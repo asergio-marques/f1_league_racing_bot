@@ -52,7 +52,7 @@ from leaguebot.core.models.change import (
     module_off,
 )
 from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.core.services.change_types import (
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

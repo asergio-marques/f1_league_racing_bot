@@ -3,7 +3,7 @@ the change queue: the four a league repairs itself with, the hub channel, and th
 driver roles.
 
 `/bot log-channel`, `interaction-channel`, `interaction-role` and `admin-role` each ask one change
-built from a `Setting` below by `setting_change` (`core/services/setting_change.py`, which holds
+built from a `Setting` below by `setting_change` (`core/services/queue/setting_change.py`, which holds
 what every settings change does with a value already held and with a fault): weather's switch
 (`weather/services/module_switch_settings.py`) is the model. Each writes a single column of
 `server_configs`, so nothing else in the row — test mode, the module flags, the other three settings
@@ -76,14 +76,14 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.services.change_types import CheckContext, Step, StepContext
+from leaguebot.core.services.queue.change_types import CheckContext, Step, StepContext
 from leaguebot.core.services.channel_registry_service import (
     ChannelUse,
     find_channel_use,
     refusal,
 )
 from leaguebot.core.services.hub_service import HUB_REFRESH, apply_hub_permissions, reapply_hub_permissions
-from leaguebot.core.services.setting_change import After, RENAMED_OUTCOME, Saved, Setting
+from leaguebot.core.services.queue.setting_change import After, RENAMED_OUTCOME, Saved, Setting
 
 if TYPE_CHECKING:
     from leaguebot.core.services.config_service import ConfigService

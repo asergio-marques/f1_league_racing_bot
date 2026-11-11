@@ -64,13 +64,13 @@ import aiosqlite
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.models.change import ChangeOrigin
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
 )
-from leaguebot.core.services.queue_records import (
+from leaguebot.core.services.queue.queue_records import (
     unfinished,
 )
-from leaguebot.core.services.change_types import (
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

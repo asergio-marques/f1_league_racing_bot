@@ -535,7 +535,7 @@ async def test_a_failed_round_delete_deletes_nothing(tmp_path):
     await _give_every_round_a_weather_phase(league.db_path)
     drawn = await _drawn(league.db_path)
     asked = await _ask_delete(league)
-    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await round_rows(league.db_path, "Pro") == _PRO_STANDING

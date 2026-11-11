@@ -62,10 +62,10 @@ from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.services import approval_checks
 from leaguebot.core.services import lineup_posting, standing_posts
 from leaguebot.core.services.calendar_post_service import POST_CALENDAR, calendar_steps
-from leaguebot.core.services.queue_records import (
+from leaguebot.core.services.queue.queue_records import (
     unfinished,
 )
-from leaguebot.core.services.change_types import (
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

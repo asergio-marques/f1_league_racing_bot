@@ -17,7 +17,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import AuditRecord
 from leaguebot.core.models.round import WeatherWindows
 from leaguebot.core.services.review_sections import Review, ReviewSection
-from leaguebot.core.services.setting_change import Saved
+from leaguebot.core.services.queue.setting_change import Saved
 from leaguebot.weather.models.weather_config import WeatherPipelineConfig
 
 if TYPE_CHECKING:

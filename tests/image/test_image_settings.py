@@ -577,7 +577,7 @@ async def test_a_colour_import_saves_every_tier_in_one_save_with_its_audit_entri
 
     asked = await _import_file(TWO_TIERS)(league)
     second_fails = AsyncMock(side_effect=[None, sqlite3.OperationalError("database or disk is full")])
-    with patch("leaguebot.core.services.change_queue.record_change_on", second_fails):
+    with patch("leaguebot.core.services.queue.change_queue.record_change_on", second_fails):
         await run_queue(league.bot, steps=1)
     await run_queue(league.bot)
 
@@ -603,7 +603,7 @@ async def test_a_fault_in_a_pasted_palette_s_save_saves_none_of_it_says_paste_it
     league = await _league(tmp_path)
 
     asked = await CASES["tier-palette"].ask(league)
-    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot, steps=1)
     behind = await _time_format()(league)
     await run_queue(league.bot)
@@ -652,7 +652,7 @@ async def test_an_image_setting_whose_audit_entry_fails_saves_nothing_and_the_la
     league = await _league(tmp_path)
 
     asked = await CASES["time-zone"].ask(league)
-    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot, steps=1)
     behind = await _time_format()(league)
     await run_queue(league.bot)

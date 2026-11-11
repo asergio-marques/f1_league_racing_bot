@@ -820,7 +820,7 @@ NOT_A_POST = {
         "the owner's own `!sync` command, which deletes the owner's message and posts a note "
         "that deletes itself: a prefix command's reply"
     ),
-    ("core/services/change_queue.py", "ChangeQueue._update_reply"): (
+    ("core/services/queue/change_queue.py", "ChangeQueue._update_reply"): (
         "edits the member's own ephemeral acknowledgement, a WebhookMessage the follow-up "
         "returned, which answers a member and posts in no channel"
     ),
@@ -1115,7 +1115,7 @@ def test_a_not_a_post_entry_is_not_counted_by_the_job_check():
     """The queue's edit of a member's own acknowledgement, named in `NOT_A_POST`, answers the
     member and posts in no channel: undecorated, it is not counted, while the same edit in another
     function of the file is."""
-    path = "core/services/change_queue.py"
+    path = "core/services/queue/change_queue.py"
     nodes = _sample(
         "class ChangeQueue:\n"
         "    async def _update_reply(self, reply):\n"
@@ -1990,10 +1990,10 @@ _SAVING_CALLS = frozenset({"commit", "executescript"})
 SAVES_ALLOWED = {
     ("core/db/database.py", "run_migrations"): "the migrations, which build the schema",
     ("core/db/database.py", "_enable_wal"): "the journal mode, set on the database file itself",
-    ("core/services/change_queue.py", "*"): "the queue's own records of the changes it carries out",
-    ("core/services/queue_records.py", "empty_queue_in"):
+    ("core/services/queue/change_queue.py", "*"): "the queue's own records of the changes it carries out",
+    ("core/services/queue/queue_records.py", "empty_queue_in"):
         "the queue's own records, emptied in a restored database before it is put in place",
-    ("core/services/queue_records.py", "carry_job_numbering"):
+    ("core/services/queue/queue_records.py", "carry_job_numbering"):
         "the queue's own records, numbering a database put in place after the jobs already named",
     ("core/services/retry_service.py", "enqueue"): "the retry queue for log lines",
     ("core/services/retry_service.py", "mark_delivered"): "the retry queue for log lines",
@@ -2948,7 +2948,7 @@ _SQL_CLOCK = re.compile(
 
 #: The functions allowed for good to read the wall clock in a service, and why.
 WALL_CLOCK_ALLOWED = {
-    ("core/services/change_queue.py", "ChangeQueue.__init__"):
+    ("core/services/queue/change_queue.py", "ChangeQueue.__init__"):
         "the change queue's own default clock, `ChangeQueue.now`, which hands every service its time",
 }
 
@@ -3101,11 +3101,11 @@ def test_the_wall_clock_check_sees_each_read_in_a_services_file_but_not_elsewher
 
     assert _wall_clock_reads_among(_sample(source, path)) == Counter({(path, "handler"): 1})
     assert _wall_clock_reads_among(_sample(source, "weather/cogs/sample_cog.py")) == Counter()
-    assert _wall_clock_reads_among(_sample(source, "core/services/change_queue.py")) == Counter(
-        {("core/services/change_queue.py", "handler"): 1}
+    assert _wall_clock_reads_among(_sample(source, "core/services/queue/change_queue.py")) == Counter(
+        {("core/services/queue/change_queue.py", "handler"): 1}
     )
     named = f"class ChangeQueue:\n    def __init__(self):\n        {line}\n"
-    assert _wall_clock_reads_among(_sample(named, "core/services/change_queue.py")) == Counter()
+    assert _wall_clock_reads_among(_sample(named, "core/services/queue/change_queue.py")) == Counter()
 
 
 def test_a_listed_clock_read_that_is_gone_fails_the_clock_checks():
@@ -3129,50 +3129,50 @@ def test_a_listed_clock_read_that_is_gone_fails_the_clock_checks():
 #: error handler"). A handler that re-raises, that calls `report_failure`, or that sits
 #: directly in the body of a loop needs no entry.
 CATCH_ALLS_ALLOWED = {
-    ("core/services/change_queue.py", "ChangeQueue._work_lane"):
+    ("core/services/queue/change_queue.py", "ChangeQueue._work_lane"):
         "the lane's worker, a failure path: the error goes to the host's log and the worker pauses",
-    ("core/services/change_queue.py", "ChangeQueue._work"):
+    ("core/services/queue/change_queue.py", "ChangeQueue._work"):
         "the dispatcher, a failure path: a fault in starting the lanes goes to the host's log",
-    ("core/services/change_queue.py", "ChangeQueue._run_step"):
+    ("core/services/queue/change_queue.py", "ChangeQueue._run_step"):
         "the queue's catch of a step that raises, a failure path: it stops the lane or ends the job",
-    ("core/services/change_queue.py", "ChangeQueue._start"):
+    ("core/services/queue/change_queue.py", "ChangeQueue._start"):
         "the queue's catch of a check that raises, a failure path: it stops the lane or ends the "
         "change",
     ("core/utils/autocomplete.py", "bounded_autocomplete.decorate.wrapper"):
         "the autocompletes' failure path: no choices, and the error to the host's log",
-    ("core/services/change_queue.py", "ChangeQueue._acknowledge"):
+    ("core/services/queue/change_queue.py", "ChangeQueue._acknowledge"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/change_queue.py", "ChangeQueue._acknowledge_saved"):
+    ("core/services/queue/change_queue.py", "ChangeQueue._acknowledge_saved"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/change_queue.py", "ChangeQueue._finish"):
+    ("core/services/queue/change_queue.py", "ChangeQueue._finish"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/change_queue.py", "ChangeQueue._name_job"):
+    ("core/services/queue/change_queue.py", "ChangeQueue._name_job"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/change_queue.py", "ChangeQueue._post_notice"):
+    ("core/services/queue/change_queue.py", "ChangeQueue._post_notice"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/change_queue.py", "ChangeQueue._tell"):
+    ("core/services/queue/change_queue.py", "ChangeQueue._tell"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/change_queue.py", "ChangeQueue._tell_origin"):
+    ("core/services/queue/change_queue.py", "ChangeQueue._tell_origin"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/change_queue.py", "ChangeQueue._update_reply"):
+    ("core/services/queue/change_queue.py", "ChangeQueue._update_reply"):
         "a stated exception: the queue's own telling, of an outcome, a stop or a press, never "
         "undoes what it tells",
-    ("core/services/change_queue.py", "ChangeQueue._end_on_check_fault"):
+    ("core/services/queue/change_queue.py", "ChangeQueue._end_on_check_fault"):
         "a failure path: a hook that raises leads to the lane's stop",
-    ("core/services/change_queue.py", "ChangeQueue._refuse"):
+    ("core/services/queue/change_queue.py", "ChangeQueue._refuse"):
         "a failure path: a hook that raises leads to the lane's stop",
-    ("core/services/change_queue.py", "ChangeQueue._step_failed"):
+    ("core/services/queue/change_queue.py", "ChangeQueue._step_failed"):
         "a failure path: a hook that raises leads to the lane's stop",
-    ("core/services/change_queue.py", "ChangeQueue._discard_follow_ons"):
+    ("core/services/queue/change_queue.py", "ChangeQueue._discard_follow_ons"):
         "a stated exception: a hook that raises must not hold a Discard, the queue's last way past a stop",
-    ("core/services/change_queue.py", "ChangeQueue._undiscardable_refusal"):
+    ("core/services/queue/change_queue.py", "ChangeQueue._undiscardable_refusal"):
         "a stated exception: the Discard is refused all the same, whatever the reader does",
     ("results/services/amend_end_changes.py", "_names_step.run"):
         "a stated exception: a tie ordered by user id is the lesser fault than a round not put back",

@@ -62,10 +62,10 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.services.amendment_service import approval_faults
 from leaguebot.core.services.module_service import ModuleService
-from leaguebot.core.services.queue_records import (
+from leaguebot.core.services.queue.queue_records import (
     in_hand,
 )
-from leaguebot.core.services.change_types import (
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

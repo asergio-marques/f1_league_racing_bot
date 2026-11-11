@@ -166,7 +166,7 @@ async def test_a_failed_round_save_adds_nothing(tmp_path):
     league = await setup_league(tmp_path, divisions=_HELD)
     before = await round_rows(league.db_path, "Pro")
     asked = await _ask(league)
-    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await round_rows(league.db_path, "Pro") == before

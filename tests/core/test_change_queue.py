@@ -84,7 +84,7 @@ def _acknowledges(text: str) -> bool:
 
 def _api() -> SimpleNamespace:
     from leaguebot.core.models import change
-    from leaguebot.core.services import change_types
+    from leaguebot.core.services.queue import change_types
 
     return SimpleNamespace(
         ChangeOrigin=change.ChangeOrigin,
@@ -1230,7 +1230,7 @@ async def test_a_check_that_raises_stops_the_queue_and_later_changes_run_once_it
 async def test_the_worker_carries_on_after_a_fault_outside_any_change(env, monkeypatch):
     """A fault outside any change, such as the database locked while the worker chooses, ends
     neither the worker nor the queue: a change asked for afterwards is carried out."""
-    from leaguebot.core.services import change_queue
+    from leaguebot.core.services.queue import change_queue
 
     monkeypatch.setattr(change_queue, "WORKER_PAUSE_AFTER_FAULT", 0.01)
     ran: list[str] = []
@@ -1272,7 +1272,7 @@ async def test_the_worker_carries_on_after_a_fault_outside_any_change(env, monke
 async def test_the_worker_looks_again_after_a_fault_with_no_signal_to_wake_it(env, monkeypatch):
     """A change saved before a fault outside any change is not left QUEUED until the next ask, wake
     or restart: once it has paused, the worker looks at the queue again of its own accord."""
-    from leaguebot.core.services import change_queue
+    from leaguebot.core.services.queue import change_queue
 
     monkeypatch.setattr(change_queue, "WORKER_PAUSE_AFTER_FAULT", 0.01)
     ran: list[str] = []
@@ -1711,7 +1711,7 @@ async def test_a_fault_while_recording_a_stop_is_logged_and_the_job_is_tried_aga
                                                                                    monkeypatch):
     """Where the stop's own save raises, the worker's catch-all logs it to the host and looks again
     after its pause: the job, not marked stopped, runs again, and its failure is recorded then."""
-    from leaguebot.core.services import change_queue
+    from leaguebot.core.services.queue import change_queue
 
     caplog.set_level(logging.INFO)
     monkeypatch.setattr(change_queue, "WORKER_PAUSE_AFTER_FAULT", 0.01)
@@ -2141,7 +2141,7 @@ async def test_unfinished_finds_the_changes_in_hand_and_not_those_ended(env):
     """`unfinished` gives the payloads of the changes of the kinds asked that are queued or
     running (a running one asking about its own kind finds itself), a stopped one included, and not those done, refused, dropped or discarded, nor
     those of other kinds; the change named in `excluding` is left out."""
-    from leaguebot.core.services.queue_records import unfinished
+    from leaguebot.core.services.queue.queue_records import unfinished
 
     api = _api()
     armed = {"on": False}
@@ -2205,7 +2205,7 @@ async def test_in_hand_leaves_out_the_change_named_in_excluding(env):
     """`in_hand` leaves out the change whose id is *excluding*, as `unfinished` does, so a check
     reading the queue for its own kind does not find itself; with none named it gives every
     change in hand, each with the number of the job it waits on."""
-    from leaguebot.core.services.queue_records import in_hand
+    from leaguebot.core.services.queue.queue_records import in_hand
 
     api = _api()
 
@@ -2235,7 +2235,7 @@ async def test_ever_asked_finds_the_changes_of_a_kind_in_any_state(env):
     """`ever_asked` gives the payloads of every change of the kinds asked that the queue saved,
     oldest first, whether done, dropped at its check, discarded or still queued, and none of
     another kind. A request its check refuses as it is asked is not saved, so is not given."""
-    from leaguebot.core.services.queue_records import ever_asked
+    from leaguebot.core.services.queue.queue_records import ever_asked
 
     api = _api()
     armed = {"on": False}
@@ -3123,7 +3123,7 @@ async def test_a_save_that_ends_on_a_fault_has_its_writes_rolled_back(env, monke
     """A `SAVE` step with `on_fault` that faults, in its own run or in the queue's write of its
     audit entry, keeps none of its writes, its audit entry or its own line: only its mark and
     `on_fault`'s line are saved."""
-    from leaguebot.core.services import change_queue
+    from leaguebot.core.services.queue import change_queue
 
     api = _api()
 

@@ -103,10 +103,10 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundStatus
-from leaguebot.core.services.queue_records import (
+from leaguebot.core.services.queue.queue_records import (
     unfinished,
 )
-from leaguebot.core.services.change_types import (
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -116,7 +116,7 @@ from leaguebot.core.services.change_types import (
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services import season_service
 from leaguebot.core.services.season_service import set_round_status_on
-from leaguebot.core.services import typed_turns
+from leaguebot.core.services.queue import typed_turns
 from leaguebot.core.utils.log_lines import abandoned_line
 from leaguebot.results.services import review_posting, review_verdicts
 from leaguebot.results.services.result_submission_service import (

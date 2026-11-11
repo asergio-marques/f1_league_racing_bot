@@ -99,10 +99,10 @@ from leaguebot.core.models.round import (
     read_scheduled_at,
 )
 from leaguebot.core.services import season_service, standing_posts
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
 )
-from leaguebot.core.services.change_types import (
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

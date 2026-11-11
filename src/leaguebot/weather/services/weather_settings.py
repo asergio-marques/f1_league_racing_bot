@@ -1,6 +1,6 @@
 """The weather deadlines and a division's forecast channel, as settings on the change queue.
 
-Each is built from a `Setting` below by `setting_change` (`core/services/setting_change.py`,
+Each is built from a `Setting` below by `setting_change` (`core/services/queue/setting_change.py`,
 which holds what every settings change does with a value already held and with a fault).
 
 **The deadlines.** `/weather config phase-1-deadline`, `phase-2-deadline` and `phase-3-deadline`
@@ -30,14 +30,14 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.models.change import AuditRecord, Verdict
-from leaguebot.core.services.change_types import CheckContext
+from leaguebot.core.services.queue.change_types import CheckContext
 from leaguebot.core.services.channel_registry_service import (
     ChannelUse,
     find_channel_use,
     refusal,
 )
 from leaguebot.core.services.division_settings import NO_SEASON_REFUSAL, division_not_found
-from leaguebot.core.services.setting_change import Saved, Setting
+from leaguebot.core.services.queue.setting_change import Saved, Setting
 from leaguebot.weather.services.forecast_channel import set_division_forecast_channel
 from leaguebot.weather.services.weather_config_service import (
     deadline_refusal,

@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 
-from leaguebot.core.services.change_queue import ChangeQueue
+from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.scheduler_service import SchedulerService
 
 log = logging.getLogger(__name__)

@@ -362,7 +362,7 @@ async def test_a_failed_first_setup_save_leaves_no_setup_behind(tmp_path):
 
     league = await _league(tmp_path)
     first = await _ask_setup(league, 25)
-    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _setup_rows(league.db_path) == []

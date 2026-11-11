@@ -21,7 +21,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import AuditRecord
-from leaguebot.core.services.setting_change import Saved
+from leaguebot.core.services.queue.setting_change import Saved
 from leaguebot.results.models.amendment_state import SeasonAmendmentState
 from leaguebot.results.utils.points_ordering import ordering_message, ordering_violations
 

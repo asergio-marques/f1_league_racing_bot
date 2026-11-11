@@ -227,7 +227,7 @@ async def test_a_failed_driver_release_releases_nothing(tmp_path):
 
     league = await _twice_seated(tmp_path)
     asked = await _ask_release(league, LEWIS)
-    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await _lewis_seats(league) == _BOTH

@@ -54,10 +54,10 @@ from leaguebot.core.models.change import (
     VerdictKind,
 )
 from leaguebot.core.services import approval_checks, lineup_posting, standing_posts
-from leaguebot.core.services.queue_records import (
+from leaguebot.core.services.queue.queue_records import (
     unfinished,
 )
-from leaguebot.core.services.change_types import (
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     DiscardedContext,

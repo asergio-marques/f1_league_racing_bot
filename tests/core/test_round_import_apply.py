@@ -435,7 +435,7 @@ async def test_a_failed_import_save_adds_nothing(tmp_path, form, value, command)
     league = await setup_league(tmp_path, divisions=_HELD)
     before = await round_rows(league.db_path, "Pro")
     asked = await import_rounds(league, form, value)
-    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot)
 
     assert await round_rows(league.db_path, "Pro") == before

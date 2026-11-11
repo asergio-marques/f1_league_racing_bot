@@ -29,7 +29,7 @@ import pytest
 from lxml import etree
 
 from leaguebot.core.models.change import ChangeOrigin, Verdict
-from leaguebot.core.services.change_types import CheckContext
+from leaguebot.core.services.queue.change_types import CheckContext
 from leaguebot.image.services import driver_portrait_service, image_render_service
 from leaguebot.image.services import image_validity_service as validity_module
 from leaguebot.image.services.image_settings import TEMPLATE, TEMPLATE_DIRECTORY, image_settings

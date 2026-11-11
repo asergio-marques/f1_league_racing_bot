@@ -218,7 +218,7 @@ def register_change_types(bot: "LeagueBot") -> None:
     from leaguebot.signup.services.signup_off_change import KIND as OFF_KIND
     from leaguebot.signup.services.window_changes import CLOSE as CLOSE_KIND
 
-    from leaguebot.core.services.setting_change import setting_change
+    from leaguebot.core.services.queue.setting_change import setting_change
     from leaguebot.signup.services.module_switch_settings import module_on_signup
 
     bot.change_queue.register(reason_delete_change())

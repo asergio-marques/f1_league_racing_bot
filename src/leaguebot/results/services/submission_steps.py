@@ -32,7 +32,7 @@ import discord
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord, StepKind, StepResult
 from leaguebot.core.models.round import RoundFormat
-from leaguebot.core.services.change_types import Step, StepContext
+from leaguebot.core.services.queue.change_types import Step, StepContext
 from leaguebot.core.services.owned_channel_handler import post_in_owned_channel
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_server import league_guild

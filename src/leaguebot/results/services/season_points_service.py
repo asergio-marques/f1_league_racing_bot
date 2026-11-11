@@ -11,7 +11,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import AuditRecord
 from leaguebot.core.services.confirmation_refusals import Confirmation, Refusal
 from leaguebot.core.services.review_sections import Review, ReviewSection
-from leaguebot.core.services.setting_change import Saved
+from leaguebot.core.services.queue.setting_change import Saved
 from leaguebot.results.models.points_changed import PointsChanged, ValueChange
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.results.services import points_config_service

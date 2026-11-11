@@ -382,7 +382,7 @@ async def test_a_league_role_saves_its_value_and_audit_together(
     channel gets the one failure line and no success line; the queue is not stopped."""
     import sqlite3
 
-    from leaguebot.core.services import change_queue
+    from leaguebot.core.services.queue import change_queue
     from tests.support.change_queue import stopped_job
 
     db_path = await _make_db(tmp_path)

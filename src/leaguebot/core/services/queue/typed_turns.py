@@ -29,8 +29,8 @@ from collections.abc import Collection
 import discord
 
 from leaguebot.core.models.change import StepFailedOnDiscord, StepKind, StepResult
-from leaguebot.core.services.queue_records import unfinished
-from leaguebot.core.services.change_types import ChangeType, Step, StepContext
+from leaguebot.core.services.queue.queue_records import unfinished
+from leaguebot.core.services.queue.change_types import ChangeType, Step, StepContext
 from leaguebot.core.services.output_router import OutputRouter
 
 log = logging.getLogger(__name__)

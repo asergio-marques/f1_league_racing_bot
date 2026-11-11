@@ -597,7 +597,7 @@ async def test_bot_init_ends_on_a_fault_without_stopping_the_queue(
     clear a stop: run again once the fault is gone, `/bot init` claims the server."""
     import sqlite3
 
-    from leaguebot.core.services import change_queue
+    from leaguebot.core.services.queue import change_queue
     from leaguebot.core.services.config_service import RELEASE_CLAIM_SQL
     from tests.support.change_queue import queued_log_lines, run_queue, stopped_job
 
@@ -919,7 +919,7 @@ async def test_a_core_setting_saves_its_value_and_audit_together(
     the log channel gets the one failure line and no success line; the queue is not stopped."""
     import sqlite3
 
-    from leaguebot.core.services import change_queue
+    from leaguebot.core.services.queue import change_queue
     from tests.support.change_queue import run_queue, stopped_job
 
     db_path = await _make_db(tmp_path)
@@ -1011,7 +1011,7 @@ async def test_a_repair_setting_takes_effect_while_the_queue_is_stopped_on_anoth
     is saved and they are answered with today's reply, past the stop, while the other job stays
     stopped where it was."""
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
-    from leaguebot.core.services.change_types import ChangeType, Step
+    from leaguebot.core.services.queue.change_types import ChangeType, Step
     from tests.support.change_queue import (
         acknowledgement,
         member,

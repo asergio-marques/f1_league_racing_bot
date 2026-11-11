@@ -71,10 +71,10 @@ from leaguebot.core.models.change import (
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
 from leaguebot.core.models.season_end import COMPLETION
 from leaguebot.core.services import approval_checks, standing_posts
-from leaguebot.core.services.queue_records import (
+from leaguebot.core.services.queue.queue_records import (
     in_hand,
 )
-from leaguebot.core.services.change_types import (
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

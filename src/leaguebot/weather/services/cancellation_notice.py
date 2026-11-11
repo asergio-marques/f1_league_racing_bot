@@ -29,7 +29,7 @@ from leaguebot.core.services.cancellation_notice_service import (
     require_division,
     round_label,
 )
-from leaguebot.core.services.change_types import Step, StepContext
+from leaguebot.core.services.queue.change_types import Step, StepContext
 from leaguebot.core.services.season_lifecycle_service import require_guild
 from leaguebot.core.services.season_service import SeasonService
 from leaguebot.core.utils.in_a_job import posts_in_a_job

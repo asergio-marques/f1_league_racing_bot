@@ -38,7 +38,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.services import standing_posts
-from leaguebot.core.services.change_types import (
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

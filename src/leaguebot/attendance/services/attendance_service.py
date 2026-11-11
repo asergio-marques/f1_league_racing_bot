@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
-from leaguebot.core.services import audit_service
+from leaguebot.core.services.queue import audit_service
 from leaguebot.core.services.approval_checks import channel_fault
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
@@ -33,7 +33,7 @@ from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.change_queue import ChangeQueue
+    from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.module_service import ModuleService
     from leaguebot.core.services.output_router import OutputRouter
 

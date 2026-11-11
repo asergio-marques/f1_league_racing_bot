@@ -108,7 +108,7 @@ async def test_a_duplicate_that_fails_part_way_leaves_nothing_behind(tmp_path, f
     league = await _league(tmp_path)
     asked = await ask_duplicate(league)
     if fault is None:
-        with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+        with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
             await run_queue(league.bot)
     else:
         async with get_connection(league.db_path) as db:

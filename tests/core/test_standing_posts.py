@@ -141,7 +141,7 @@ async def test_a_replaced_message_whose_channel_is_gone_completes_its_delete(env
 
 def test_a_discarded_delete_is_named_with_its_link_for_deletion_by_hand():
     from leaguebot.core.services import standing_posts
-    from leaguebot.core.services.change_types import StepView
+    from leaguebot.core.services.queue.change_types import StepView
 
     link = f"https://discord.test/{CALENDAR_CHANNEL}/{OLD}"
     view = StepView(

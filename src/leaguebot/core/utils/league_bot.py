@@ -54,7 +54,7 @@ if TYPE_CHECKING:
     from leaguebot.signup.services.signup_module_service import SignupModuleService
     from leaguebot.core.services.team_service import TeamService
     from leaguebot.signup.services.wizard_service import WizardService
-    from leaguebot.core.services.change_queue import ChangeQueue
+    from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.image_drawing import ImageDrawing
     from leaguebot.results.services.attendance_hook import AttendanceAfterReview
     from leaguebot.core.services.output_router import OutputRouter
