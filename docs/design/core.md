@@ -71,7 +71,7 @@ the division is seeded and keep them, so a season keeps the names it ran under (
 comment on `team_instances`).
 
 **`team_role_configs` is linked to the list by name.** A team's rename re-keys its role through
-`PlacementService.rename_team_role_config_on`.
+`TeamRoleService.rename_team_role_config_on`.
 
 ### The modules' own columns on core's tables
 
@@ -155,9 +155,9 @@ Answers to `architecture.md`, "How the code is laid out". Core's code sits in `c
 |---|---|---|
 | Configuration | `config_service` (`ConfigService`) | `server_configs`, and the claim on the server |
 | Seasons, divisions, rounds | `season_service` (`SeasonService`), `season_lifecycle_service`, `season_end_service`, `round_moments`, `track_service` | seasons, divisions, rounds, sessions; reads `tracks` |
-| Teams and placements | `team_service` (`TeamService`), `placement_service` (`PlacementService`) | the list and the divisions' teams; `team_role_configs`, seats, placements, and the roles they grant |
+| Teams and placements | `team_service` (`TeamService`), `placement_service` (`PlacementService`), `team_role_service` (`TeamRoleService`), `template_capacity_service` (`TemplateCapacityService`), `lineup_posting` (`LineupPoster`) | the list and the divisions' teams; the seats and placements (`PlacementService`, which posts nothing and reads no role); `team_role_configs` and the helpers that give and take a team's Discord role (`TeamRoleService`); nothing for the capacity guards, which ask the image module's drawing whether its templates could draw a seat (`TemplateCapacityService`); nothing for the lineup's posting, the picture or its text (`LineupPoster`) |
 | Drivers | `driver_service` (`DriverService`) | profiles, accounts, memberships, and the state machine; history is written by `season_end_service.write_driver_history_entries_on` |
-| The change queue | `change_queue` (`ChangeQueue`), `setting_change`, `queue_stop_view`, `typed_turns` | `queued_changes`, `queued_change_steps` |
+| The change queue | `change_queue` (`ChangeQueue`), `change_types`, `queue_records`, `setting_change`, `queue_stop_view`, `typed_turns` | `queued_changes`, `queued_change_steps` |
 | Timed work | `scheduler_service` (`SchedulerService`), `start_up` | the job store, a file of its own |
 | Posting | `output_router` (`OutputRouter`), `notice_handler`, `standing_post_handler`, `owned_channel_handler`, `standing_posts`, `retry_service` | `pending_messages` |
 | The record | `audit_service` | `audit_entries` |
@@ -246,13 +246,24 @@ specification's section of the same name holds what a league is told.
 
 ### The queue's code
 
-The queue is `ChangeQueue` (`core/services/change_queue.py`). Beside it in that file are `Step`
-and `ChangeType`, and the queue's constants: `RETRY_AFTER`, the bot's own tries;
+The queue is `ChangeQueue` (`core/services/change_queue.py`), and it is one class: asking, the
+dispatcher, a change's start and end, a step's run, the stop and its notice, Retry and Discard, the
+audit and the held reply are one state machine around one lock order (`_working[lane]`, then
+`_asking`, then `_writing`) and the attributes they share. *Rejected:* mixins, which would split the
+file and leave one state machine whose lock order no single class states; and collaborator objects,
+which would reach into the queue's private state or be handed all of it (`ChangeQueue`'s docstring).
+What reads none of that state is out of the file. `core/services/change_types.py` holds the types a
+change is made of, `Step` and `ChangeType` with the contexts a check, a step and an outcome are
+handed, and the decisions that govern them (a post's id saved with its mark, a step's four kinds, a
+job that ends on a fault); `core/services/queue_records.py` holds the bookkeeping over the queue's
+tables, what is in hand, what was ever asked, the job numbering and the emptying of a restored
+database, which a check, a recovery, a restore and a factory reset call without a queue. The queue
+file keeps the constants it reads: `RETRY_AFTER`, the bot's own tries; `RETRY_AFTER`, the bot's own tries;
 `CONVERSATION_LANES_AT_ONCE`; `UPDATABLE_FOR`, how long a reply may be updated; and
-`WORKER_PAUSE_AFTER_FAULT`. The plain data is in `core/models/change.py`: `StepKind` (`SAVE`,
+`WORKER_PAUSE_AFTER_FAULT`; and `QUEUE_TABLES`. The plain data is in `core/models/change.py`: `StepKind` (`SAVE`,
 `ACT`, `DELETE`, `EDIT`), `Verdict`, `StepResult`, `StepFailedOnDiscord`, `GuildUnavailable` and
-the lane names. The queue's module docstring holds the engineering decisions,
-each pinned by a test in `tests/core/test_change_queue.py`, `test_change_queue_lanes.py` or
+the lane names. The queue's module docstring holds the engineering decisions
+that govern the queue, each pinned by a test in `tests/core/test_change_queue.py`, `test_change_queue_lanes.py` or
 `test_change_queue_controls.py`. Among them:
 
 - **One save at a time across lanes**, under an in-process lock (`ChangeQueue._writing`) held for
@@ -260,7 +271,7 @@ each pinned by a test in `tests/core/test_change_queue.py`, `test_change_queue_l
   conversation behind the league's Discord calls; and SQLite's own busy wait, which gives up where
   a save is held longer (the module docstring; `test_two_lanes_saves_never_overlap`).
 - **A post's id is saved with its mark** (`Step.record`). *Rejected:* a `SAVE` job after each post
-  to write its id, which doubles the jobs a change numbers and stops on (the module docstring).
+  to write its id, which doubles the jobs a change numbers and stops on (`change_types`' docstring).
 - **A change starts only if it is still queued:** the claim that sets it running is conditioned
   on its state in the statement, so a change ended while its check ran does not start
   (`test_a_change_discarded_while_its_check_runs_does_not_start`).
@@ -416,8 +427,9 @@ what the queue's start does.
 The steps are a fixed tuple the builder makes (`_start_up_steps`), in an order its comments give
 where the order matters (`test_the_builder_orders_the_start_up_steps`). Each module's recovery is
 a function of its wiring, which the builder names in the step; core's own, the review prompts and
-the hub, are the builder's. The builder writes two module steps itself: arming results' amendment
-sweep, and signup's wizard recovery through its service. The missed clean-ups are one step the
+the hub, are the builder's. Results' amendment sweep is armed by
+`results.wiring.arm_amendment_sweep` and signup's wizards recovered by `signup.wiring.recover_wizards`,
+each a function of its module's wiring like the recoveries. The missed clean-ups are one step the
 builder composes of weather's part and attendance's:
 
 | # | Step | What it does |
@@ -454,7 +466,7 @@ files; this section says what core posts through them.
 
 | Post | Kind | Channel | Posted by | Found again by |
 |---|---|---|---|---|
-| A division's lineup | standing post | `divisions.lineup_channel_id` | `lineup_posting.lineup_step` → `PlacementService.refresh_lineup` | `divisions.lineup_message_id`, saved in the job's `record` |
+| A division's lineup | standing post | `divisions.lineup_channel_id` | `lineup_posting.lineup_step` → `LineupPoster.refresh_lineup` | `divisions.lineup_message_id`, saved in the job's `record` |
 | A division's calendar | standing post | `divisions.calendar_channel_id` | `calendar_post_service.calendar_steps` | `divisions.calendar_message_id`, saved in the job's `record` |
 | The hub's panel | standing post | `server_configs.hub_channel_id` | `hub_service.refresh_panel`, which edits in place or posts again where gone | `server_configs.hub_message_id`, saved in the job's `record` |
 | A season review's report, pictures and drawing notice | notice | the channel the review was run in | `season.review.post`'s jobs | the question's row (`season_review_prompts.report_message_ids`) |
@@ -473,7 +485,7 @@ A replaced standing post is deleted by a job after the new one, built by `standi
 `test_moving_the_hub_posts_the_new_panel_before_deleting_the_old` pin it.
 
 **Where a picture falls back to text** (Constitution XIV, rules 7 and 8): the lineup's in
-`PlacementService._refresh_lineup_post`, the review's in `season_review_changes`' `draw_and_post`,
+`LineupPoster._refresh_lineup_post`, the review's in `season_review_changes`' `draw_and_post`,
 and the calendar's in `post_division_calendar`, whose `commanded` parameter tells a posting a member
 asked for from one that was not (`test_an_uncommanded_posting_falls_back_to_the_text`). The lineup's
 and the calendar's post job ask for text on every try after the first (`as_text`).
@@ -589,7 +601,7 @@ the image module's class of the same name implements it; the builder makes it an
 `bot.image_drawing`. Its methods fall in five groups:
 
 - **Capacity questions**, each answering what the template cannot hold, or nothing: the four
-  placement guards (`PlacementService`), a round's (`round_add_changes`), and the season review's.
+  placement guards (`TemplateCapacityService`), a round's (`round_add_changes`), and the season review's.
 - **Gates and pictures**: `calendar_wanted`, `draw_calendar`, `lineup_wanted`, `draw_lineup`,
   `draw_lineup_for_command`, `draw_review_lineup`, `discard_picture`. The review's lineup is drawn
   through `draw_review_lineup`, as the builder's drawing of a review's picture asks it, so that
@@ -603,7 +615,7 @@ the image module's class of the same name implements it; the builder makes it an
 - **Portraits**: `discard_portraits`, for a reassign. A season's driver pass discards through the
   `drivers_deleted` hook instead.
 
-`PlacementService` is handed the drawing by the builder; the cogs read it off the bot.
+`TemplateCapacityService` and `LineupPoster` are handed the drawing by the builder; the cogs read it off the bot.
 
 ---
 
