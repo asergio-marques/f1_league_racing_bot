@@ -431,9 +431,9 @@ def turn_steps(
 
 
 async def _attached_configs(db_path: str, season_id: int) -> list[str]:
-    from leaguebot.results.services.season_points_service import get_season_config_names
+    from leaguebot.results.services.season_points_service import get_attached_config_names
 
-    return await get_season_config_names(db_path, season_id)
+    return await get_attached_config_names(db_path, season_id)
 
 
 async def _existing_config(db_path: str, round_id: int, session: SessionType) -> str | None:

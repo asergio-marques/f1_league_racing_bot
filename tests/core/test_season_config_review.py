@@ -709,7 +709,7 @@ async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
         )
     )
     monkeypatch.setattr(
-        season_points_service, "get_season_config_names",
+        season_points_service, "get_attached_config_names",
         AsyncMock(return_value=["Standard", "Sprint"]),
     )
     monkeypatch.setattr(

@@ -43,7 +43,7 @@ from leaguebot.results.services.points_config_service import (
     points_value_refusal,
 )
 from leaguebot.results.services.points_settings import MODULE_OFF
-from leaguebot.results.services.season_points_service import get_season_config_names
+from leaguebot.results.services.season_points_service import get_attached_config_names
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -119,7 +119,7 @@ async def _mode_off(ctx: CheckContext) -> bool:
 async def _not_held(ctx: CheckContext) -> Verdict | None:
     """The refusal where the season does not score on the configuration named, else None."""
     name = str(ctx.payload["config"])
-    held = await get_season_config_names(ctx.db_path, int(ctx.payload["season_id"]))
+    held = await get_attached_config_names(ctx.db_path, int(ctx.payload["season_id"]))
     if name in held:
         return None
     return Verdict.refuse(NOT_THE_SEASONS.format(name=name, held=", ".join(held) or "none"))

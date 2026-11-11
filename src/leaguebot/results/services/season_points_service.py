@@ -90,6 +90,7 @@ async def detach_config_on(db: aiosqlite.Connection, season_id: int, config_name
 
 
 async def get_attached_config_names(db_path: str, season_id: int) -> list[str]:
+    """Return all config names attached to the given season."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT config_name FROM season_points_links WHERE season_id = ? ORDER BY config_name",
@@ -423,7 +424,7 @@ async def review_section(
     results_on = await modules.is_results_enabled()
     if review is Review.CONFIGURATION and not results_on:
         return None
-    config_names = await get_season_config_names(db_path, season_id)
+    config_names = await get_attached_config_names(db_path, season_id)
     lines = [
         "**Points Configs:** " + ", ".join(config_names)
         if config_names
@@ -583,17 +584,6 @@ async def list_season_configs_with_sessions(
         rows = await cursor.fetchall()
 
     return points_config_service.group_sessions_by_config(rows)
-
-
-async def get_season_config_names(db_path: str, season_id: int) -> list[str]:
-    """Return all config names attached to the given season."""
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT config_name FROM season_points_links WHERE season_id = ? ORDER BY config_name",
-            (season_id,),
-        )
-        rows = await cursor.fetchall()
-    return [r["config_name"] for r in rows]
 
 
 async def install_staged_points_on(db: aiosqlite.Connection, season_id: int) -> PointsChanged:
