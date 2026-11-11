@@ -141,7 +141,6 @@ class _Recorder:
             self._calls.append("scheduler resumed")
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_start_up_runs_once_on_a_second_ready(caplog):
     """The bot is reported ready twice in one run, as after a network drop. The first call runs
     core's one step, starts the queue and resumes the scheduler (their order is
@@ -165,7 +164,6 @@ async def test_start_up_runs_once_on_a_second_ready(caplog):
         "the second call logs no line saying start-up was skipped"
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_the_sweep_runs_core_s_steps_then_each_enabled_module_s_in_turn():
     """Core signs up two steps, the expired review prompts and then the hub; results then signs up
     its steps, the amendment sweep and then the orphaned amend channels; attendance then its, the
@@ -196,7 +194,6 @@ async def test_the_sweep_runs_core_s_steps_then_each_enabled_module_s_in_turn():
     assert record.calls.index("queue started") > record.calls.index("RSVP views and deadlines")
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_disabled_module_s_steps_are_passed_over(caplog):
     """Results is off and attendance on, each with two steps signed up. None of results' steps runs,
     attendance's both do, the host's log has a line naming results as passed over, and nothing is
@@ -264,7 +261,6 @@ def _failing_queue(record: _Recorder, starting: Any, error: BaseException) -> No
     record.queue.start = fails  # type: ignore[method-assign]
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize("arrange, named, posted, ran, queue_started", [
     pytest.param(_failing_core_step, "expired review prompts",
                  "❌ The bot's start-up step `expired review prompts` failed — _Fault. "
@@ -328,7 +324,6 @@ async def test_a_failing_sweep_step_is_reported_to_the_log_channel_and_the_rest_
     assert record.calls.count("scheduler resumed") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 @pytest.mark.parametrize("fails", [None, "step", "scheduler"],
                          ids=["every step done", "a step raised", "the scheduler's start raised"])
 async def test_the_sweep_releases_held_requests_before_the_queue_starts(fails):
@@ -365,7 +360,6 @@ async def test_the_sweep_releases_held_requests_before_the_queue_starts(fails):
         "queue started")
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_no_job_runs_until_start_up_has_ended():
     """Two steps run at start-up. The scheduler is started paused before the first of them, so its
     job store is readable and no job runs, and it is resumed only once the queue has started, as
