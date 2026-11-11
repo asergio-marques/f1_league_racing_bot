@@ -752,6 +752,62 @@ async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portrait
     assert bool(render.await_args.kwargs.get("include_uncommitted")) is uncommitted
 
 
+def _lineup_will_not_post() -> Any:
+    """The image module's decision not to post Pro's lineup: its template has no rows."""
+    from leaguebot.image.models.image_module import PROBLEM_MISSING_MANDATORY_FIELD, Problem
+    from leaguebot.image.services.image_render_service import REJECT_COMMAND, PostingDecision
+
+    return PostingDecision(action=REJECT_COMMAND, problem=Problem(
+        kind=PROBLEM_MISSING_MANDATORY_FIELD, detail="the template has no rows"))
+
+
+@pytest.mark.parametrize(("failing", "fault"), [
+    ("render_raises", "❌ the template's font could not be loaded"),
+    ("will_not_post", "❌ the lineup: the template has no rows"),
+    ("switched_off", "the lineup could not be drawn"),
+    ("no_server", "the lineup could not be drawn"),
+])
+async def test_the_builder_s_drawing_of_a_review_lineup_that_will_not_draw_keeps_today_s_words(
+        posting, monkeypatch, failing, fault):
+    """The real change types are registered, as the builder registers them, and the bot carries
+    the image module's drawing as the builder attaches it. Asked to draw Pro's lineup for Alex's
+    review, the image module cannot: its renderer fails because the template's font cannot be
+    loaded, or it will not post the lineup because the template has no rows, or the lineup is
+    switched off, or the league's server is not found. The drawing raises, and the fault the
+    review keeps, tells Alex and writes to the log channel reads as it does today: the renderer's
+    words after "❌", the image module's reason after "❌ the lineup:", or "the lineup could not
+    be drawn" (core specification, season review; image specification, "The drawing of
+    placements under review")."""
+    import asyncio
+
+    from leaguebot.core.services import season_review_changes
+    from leaguebot.image.services import image_lineup_post
+
+    handed: dict[str, Any] = {}
+    built = season_review_changes.season_review_post_change
+
+    def _capture(**kwargs: Any) -> Any:
+        handed.update(kwargs)
+        return built(**kwargs)
+
+    monkeypatch.setattr(season_review_changes, "season_review_post_change", _capture)
+    render = AsyncMock(return_value=_lineup_will_not_post())
+    if failing == "render_raises":
+        render = AsyncMock(side_effect=RuntimeError("the template's font could not be loaded"))
+    monkeypatch.setattr(image_lineup_post, "render_png", render)
+    monkeypatch.setattr(image_lineup_post, "lineup_enabled",
+                        AsyncMock(return_value=failing != "switched_off"))
+    if failing == "no_server":
+        posting.bot.get_guild = MagicMock(return_value=None)
+    _with_image_s_drawing(posting.bot)
+    attach_queue(posting.bot, posting.db_path, now=posting.clock)
+
+    with pytest.raises(Exception) as raised:
+        await asyncio.to_thread(handed["drawing"], dict(PICTURES[1]))
+
+    assert str(raised.value) == fault
+
+
 async def test_a_drawn_picture_s_render_directory_is_gone_once_its_job_completes(
         posting, tmp_path):
     """Alex's review carries two pictures, each drawn by the image module into a directory of its

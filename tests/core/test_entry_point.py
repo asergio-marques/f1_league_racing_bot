@@ -220,6 +220,50 @@ async def test_the_review_s_lineup_picture_is_drawn_through_the_image_module_s_d
     assert asked == [(guild, 11, True)]
 
 
+@pytest.mark.parametrize(("problem", "fault"), [
+    pytest.param("❌ the template's font could not be loaded",
+                 "❌ the template's font could not be loaded", id="its_words",
+                 marks=pytest.mark.xfail(strict=True, reason="#283: the review's lineup picture "
+                                         "is drawn past the image module's drawing")),
+    pytest.param(None, "the lineup could not be drawn", id="no_words",
+                 marks=pytest.mark.xfail(strict=True, reason="#283: the review's lineup picture "
+                                         "is drawn past the image module's drawing")),
+])
+async def test_a_review_lineup_the_image_module_s_drawing_will_not_draw_raises_with_its_words(
+    tmp_path, monkeypatch, problem, fault,
+):
+    """The review asks for Pro's lineup picture, and the image module's drawing the builder
+    attached to the bot answers `draw_review_lineup` with no picture: with its words for why, or
+    with none. The builder's drawing of review pictures raises with exactly those words, or, with
+    none, with "the lineup could not be drawn", so the review withholds its question and keeps
+    the fault as the reviewer and the log channel read it today."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from leaguebot.__main__ import _draw_review_picture
+    from leaguebot.core.services.image_drawing import LineupPicture
+    from leaguebot.image.services import image_lineup_post
+
+    bot = await built_bot(tmp_path, now=_NOW)
+    guild = SimpleNamespace(id=1)
+    monkeypatch.setattr(bot.config_service, "get_league_server_id", AsyncMock(return_value=1))
+    monkeypatch.setattr(bot, "get_guild", lambda server_id: guild if server_id == 1 else None)
+
+    async def draw_review_lineup(on: object, division_id: int, *,
+                                 include_uncommitted: bool) -> LineupPicture:
+        return LineupPicture(path=None, problem=problem)
+
+    monkeypatch.setattr(bot.image_drawing, "draw_review_lineup", draw_review_lineup,
+                        raising=False)
+    monkeypatch.setattr(image_lineup_post, "render_for_command", AsyncMock(
+        side_effect=AssertionError("the review drew its lineup past the image module's drawing")))
+
+    with pytest.raises(RuntimeError) as raised:
+        await _draw_review_picture(bot, {"kind": "lineup", "division_id": 11})
+
+    assert str(raised.value) == fault
+
+
 #: The kinds of the scheduler's own jobs, each signed up with its handler by the builder.
 _SCHEDULER_KINDS = {
     "weather_p1", "weather_p2", "weather_p3", "cleanup", "results", "rsvp_notice",
