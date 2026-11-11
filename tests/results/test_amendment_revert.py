@@ -426,10 +426,10 @@ def test_the_sweep_is_scheduled_as_a_standing_job():
     assert "def schedule_amendment_sweep" in source
     assert "IntervalTrigger" in source
 
-    import leaguebot.__main__ as bot_module
+    from leaguebot.results import wiring
 
-    startup = inspect.getsource(bot_module)
-    assert "schedule_amendment_sweep()" in startup
+    arming = inspect.getsource(wiring.arm_amendment_sweep)
+    assert "schedule_amendment_sweep()" in arming
 
 
 def test_the_sweep_runs_often_enough_to_honour_the_deadline():
