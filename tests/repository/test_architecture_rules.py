@@ -1380,10 +1380,28 @@ def test_the_queue_check_lists_the_view_callbacks_in_results_services_under_its_
 
 # ── 10c. No service looks another service up on the bot ─────────────────────────────────────
 
-#: How the name of a service the bot holds ends (`core/utils/league_bot.py`), and the services
-#: named otherwise.
-_SERVICE_SUFFIX = "_service"
-_SERVICES_NAMED_OTHERWISE = frozenset({"lineup_poster"})
+#: What `LeagueBot` (`core/utils/league_bot.py`) declares that is not a service or a hook the
+#: lookup check counts: the bot's own state, and the change queue, which the queue check counts.
+_BOT_STATE_NOT_LOOKED_UP = frozenset({
+    "db_path", "running_version", "running_version_date", CHANGE_QUEUE,
+})
+_LEAGUE_BOT = "core/utils/league_bot.py"
+
+
+@cache
+def _bot_attributes_looked_up() -> frozenset[str]:
+    """The names a service or a helper may not look up on the bot: every attribute `LeagueBot`
+    declares, which is each service, the router and the posters, each hook and the callbacks the
+    builder sets, but not what the bot itself holds (`_BOT_STATE_NOT_LOOKED_UP`) or what discord.py's
+    own `Bot` carries, which the class does not declare."""
+    tree = dict(_sources())[_LEAGUE_BOT]
+    league_bot = next(
+        node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "LeagueBot"
+    )
+    return frozenset(
+        node.target.id for node in league_bot.body
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+    ) - _BOT_STATE_NOT_LOOKED_UP
 
 
 def _visible(bound: dict[tuple[str, str], set[str]], path: str, function: str) -> set[str]:
@@ -1463,8 +1481,9 @@ def _locals_bound_to_the_bot(nodes) -> dict[tuple[str, str], set[str]]:
 
 #: The helpers in core the cogs use, which reach core's services through the bot as a cog does
 #: (architecture.md, "How the code is laid out"), by file and function, what a function nests
-#: included: the tier guards on a command, the autocomplete, and the checks that admit an
-#: interaction to the league's server. The lookup check does not count them.
+#: included: the tier guards on a command, the autocomplete, the checks that admit an
+#: interaction to the league's server, and the bot's handler of an event's error, which the builder
+#: attaches to the bot as a cog's `on_error` is. The lookup check does not count them.
 COG_FACING_HELPERS = frozenset({
     ("core/utils/autocomplete.py", "team_autocomplete"),
     ("core/utils/channel_guard.py", "_tier_guard"),
@@ -1472,6 +1491,7 @@ COG_FACING_HELPERS = frozenset({
     ("core/utils/channel_guard.py", "server_owner_only"),
     ("core/utils/league_server.py", "admits"),
     ("core/utils/league_server.py", "is_foreign_guild"),
+    ("core/utils/league_server.py", "on_event_error"),
 })
 
 #: The helpers a service calls that may look a core service up on the bot, for good, with the reason.
@@ -1481,6 +1501,27 @@ LOOKUPS_ALLOWED: dict[tuple[str, str], str] = {
         "configuration service to find it: handing the configuration service instead to every "
         "service that posts would add a parameter to each, for no rule gained (architecture.md, "
         "\"How the code is laid out\")"
+    ),
+    ("core/utils/interaction_errors.py", "report_failure"): (
+        "the one failure path, which a service's view or a change's step calls with the "
+        "interaction and which writes the failure's line through the bot's log writer: handing "
+        "the router to each caller would add a parameter to each, for no rule gained "
+        "(architecture.md, \"Errors and failures\")"
+    ),
+    ("core/utils/log_lines.py", "record_refusal"): (
+        "writes the one line of a refusal through the bot's log writer, for `refuse`, which has "
+        "the same reason as `refuse` (architecture.md, \"Errors and failures\")"
+    ),
+    ("core/utils/log_lines.py", "refuse"): (
+        "the one way a command, button or form refuses, which a service's view or a change's "
+        "step calls and which writes the refusal's line through the bot's log writer: handing the "
+        "router to each caller would add a parameter to each, for no rule gained "
+        "(architecture.md, \"Errors and failures\")"
+    ),
+    ("core/utils/log_lines.py", "record_abandoned"): (
+        "records a confirmation cancelled or left to lapse through the bot's log writer, for a "
+        "service's view or a scheduled lapse, which have no router to hand it (architecture.md, "
+        "\"Errors and failures\")"
     ),
 }
 
@@ -1494,8 +1535,8 @@ def _passed_over_by_the_lookup_check(path: str, function: str) -> bool:
 
 
 def _service_lookups_among(nodes) -> Counter[tuple[str, str]]:
-    """The services among *nodes* that a service or a helper looks up on the bot, ``bot.X_service``
-    or ``getattr(bot, "X_service")``, the bot reached as `_reaches_the_bot` reads it or through a
+    """The services and hooks among *nodes* that a service or a helper looks up on the bot, ``bot.X``
+    or ``getattr(bot, "X")`` for an `X` that `_bot_attributes_looked_up` names, the bot reached as `_reaches_the_bot` reads it or through a
     local name bound to it (`_locals_bound_to_the_bot`), counted by file and function. The change
     queue is the queue check's, and not counted here; nor are the cog-facing helpers
     (`COG_FACING_HELPERS`) and the lookups allowed for good (`LOOKUPS_ALLOWED`)."""
@@ -1518,14 +1559,16 @@ def _service_lookups_among(nodes) -> Counter[tuple[str, str]]:
                 and bot_local(path, function, node.args[0])
                 and isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str)):
             name = node.args[1].value
-        if name is not None and (
-                name.endswith(_SERVICE_SUFFIX) or name in _SERVICES_NAMED_OTHERWISE):
+        if name is not None and name in _bot_attributes_looked_up():
             found[(path, function)] += 1
     return found
 
 
 KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
-    ("attendance/services/attendance_service.py", "enforce_attendance_sanctions"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "apply_sanction"): (2, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "enforce_attendance_sanctions"): (3, PASS["attendance"]),
+    ("attendance/services/channel_settings.py", "_channel_setting.check"): (1, PASS["attendance"]),
+    ("attendance/services/check_in_changes.py", "_forget_vanished_call.forget"): (1, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "_checkin_attachment"): (1, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "_rebuild_embed_for_round"): (1, PASS["attendance"]),
     ("attendance/services/sheet_posting.py", "sheet_step.still_due"): (1, PASS["attendance"]),
@@ -1539,12 +1582,15 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_preview_service.py", "build_rsvp_preview"): (2, PASS["image"]),
     ("image/services/image_preview_service.py", "resolve_asset_directories"): (1, PASS["image"]),
     ("image/services/image_preview_service.py", "resolve_context"): (3, PASS["image"]),
+    ("image/services/image_render_service.py", "ImageRenderService.report_notices"): (1, PASS["image"]),
     ("image/services/image_results_post.py", "build_drawing"): (1, PASS["image"]),
     ("image/services/image_results_post.py", "render_png"): (2, PASS["image"]),
+    ("image/services/image_results_post.py", "report"): (1, PASS["image"]),
     ("image/services/image_results_post.py", "results_enabled"): (3, PASS["image"]),
     ("image/services/image_rsvp_post.py", "rsvp_enabled"): (3, PASS["image"]),
     ("image/services/image_rsvp_post.py", "try_attach"): (2, PASS["image"]),
     ("image/services/image_standings_post.py", "render_png"): (2, PASS["image"]),
+    ("image/services/image_standings_post.py", "report"): (1, PASS["image"]),
     ("image/services/image_standings_post.py", "standings_enabled"): (3, PASS["image"]),
     ("image/services/image_validity_service.py", "aspect_attaches_files"): (2, PASS["image"]),
     ("image/services/image_verdict_banner_post.py", "banner_enabled"): (3, PASS["image"]),
@@ -1553,15 +1599,22 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_verdict_post.py", "verdicts_enabled"): (3, PASS["image"]),
     ("image/services/image_weather_post.py", "render_forecast"): (2, PASS["image"]),
     ("image/services/image_weather_post.py", "weather_enabled"): (3, PASS["image"]),
+    ("results/services/amend_end_changes.py", "amend_lapse_change.record_lapse"): (1, PASS["results"]),
+    ("results/services/amend_turn_change.py", "take_amended_paste"): (1, PASS["results"]),
+    ("results/services/channel_settings.py", "_channel_setting.check"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "_is_league_manager"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "_build_division_validation_data"): (2, PASS["results"]),
+    ("results/services/submission_turn_change.py", "take_paste"): (1, PASS["results"]),
+    ("signup/services/signup_views.py", "AdminReviewView._ask_for_reason"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "AdminReviewView._guard"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "AdminReviewView._resolve"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "CorrectionParameterView.__init__.make_callback.callback"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "PreferredTeamsButtonView._make_team_callback.callback"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "_may_review_signup"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "_resolve_view_context"): (1, PASS["signup"]),
+    ("signup/services/wizard_answers.py", "take_typed_answer"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._signup_svc"): (1, PASS["signup"]),
+    ("weather/services/weather_settings.py", "forecast_channel_setting.check"): (1, PASS["weather"]),
 }
 
 
@@ -1570,8 +1623,9 @@ def test_no_service_looks_another_service_up_on_the_bot():
     one up on the bot (architecture.md, "How modules and core fit together": "Services stay
     attached to the bot, and are built in one place"; #439 slice 6b, folded in at Gate 1). A cog
     may look a service up there, and so may a helper in core the cogs use, as a cog does; of the
-    helpers a service calls, `league_guild` alone may, for good. Today's lookups are listed under
-    the pass of the module whose file makes them; a lookup a design pass removes deletes its line
+    helpers a service calls, only those in `LOOKUPS_ALLOWED` may, for good, each with its reason.
+    What is looked up is every service and hook `LeagueBot` declares, and the router. Today's
+    lookups are listed under the pass of the module whose file makes them; a lookup a design pass removes deletes its line
     in that commit."""
     _check(
         "no service looks another service up on the bot",
@@ -1604,6 +1658,29 @@ def test_the_lookup_check_finds_a_lookup_in_a_services_or_utils_file(path):
     the change queue, held by the queue check, and an attribute that is not a service are not.
     A helper is held to the rule as a service is."""
     assert _service_lookups_among(_sample(_LOOKUP_SAMPLE, path)) == Counter({(path, "handler"): 6})
+
+
+def test_the_lookup_check_counts_each_service_and_hook_the_bot_declares():
+    """A read of the router, a poster or a hook, none named for a service, is counted, as is the
+    read of any other attribute `LeagueBot` declares; what the bot itself holds, its change queue
+    (the queue check's) and an attribute discord.py's own bot carries are not."""
+    path = "weather/services/sample_service.py"
+    source = (
+        "async def handler(bot, hook):\n"
+        "    bot.output_router.post_log('x')\n"
+        "    getattr(bot, 'channel_uses_read', None)\n"
+        "    bot.lineup_poster.post()\n"
+        "    bot.starting\n"
+        "    bot.db_path\n"
+        "    bot.running_version\n"
+        "    bot.change_queue.ask('kind', {})\n"
+        "    bot.user\n"
+        "    bot.get_channel(1)\n"
+        "    hook.output_router\n"
+    )
+
+    assert _bot_attributes_looked_up() >= {"output_router", "channel_uses_read", "lineup_poster"}
+    assert _service_lookups_among(_sample(source, path)) == Counter({(path, "handler"): 4})
 
 
 def test_the_lookup_check_does_not_count_a_cog_s_lookup():

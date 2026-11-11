@@ -168,11 +168,13 @@ point, which would then hold every module's registrations and grow with each mod
   autocomplete) reach core's own services through the bot, as a cog does. Plain helpers
   (formatting, parsing, time) use no service at all. Neither imports a service, and core uses no
   module; the one exception to both is the bot's type, which names every service for the type
-  checker (below). Each handler for a kind of post is a service in core, not a helper. One helper a
-  service may call reaches a core service through the bot: `league_guild(bot)`
-  (`core/utils/league_server.py`), the one route from a job or a service to the league's server,
-  which reads the configuration service to find it. Handing the configuration service instead to
-  every service that posts would add a parameter to each, for no rule gained.
+  checker (below). Each handler for a kind of post is a service in core, not a helper. Some helpers a
+  service may call reach the bot, each for one thing. `league_guild(bot)`
+  (`core/utils/league_server.py`) is the one route from a job or a service to the league's server,
+  which it finds through the configuration service. `report_failure`, `refuse` and
+  `record_abandoned` write a failure, a refusal or a lapse through the bot's log writer
+  ("Errors and failures"). Handing the configuration service or the router instead to every
+  service that calls them would add a parameter to each, for no rule gained.
 - **A module's own helpers** sit in its `utils/` folder, beside its services, under the same rules.
 - **A model** is plain data. It uses no Discord and no database, and no service or cog.
 - **The database code in core** opens connections, lends them again, closes them and applies
@@ -186,9 +188,9 @@ attribute for each service object. Most services are plain functions and need no
 makes every service object, handing each the other services it needs, and a service is complete
 once it is built: nothing is wired into it after the bot starts. A test can call the builder to
 get the real set of services. A service that needs Discord itself, to post or to find a channel,
-is given the bot for that and nothing more. It does not use the bot to look up other services,
-save through `league_guild` (above), and a service that is a plain function is handed the services
-it needs by whoever calls it. Looking services up on the bot is what lets a hand-made fake bot in a
+is given the bot for that and nothing more. It does not use the bot to look up other services, the
+router or a hook, bar the helpers above, and a service that is a plain function is handed the
+services it needs by whoever calls it. Looking services up on the bot is what lets a hand-made fake bot in a
 test decide which code runs.
 
 *Rejected:* a separate container object holding the services, since the services still need the
@@ -1466,9 +1468,10 @@ later on its own.
   nor named off the queue with its reason (`POSTS_OFF_THE_QUEUE`, which fails too on an entry with
   no reason or no function; the router is exempt, `JOB_CHECK_ALLOWED`, and `NOT_A_POST` names the
   two calls that are not posts, under "Every post is made in a job"), a service or helper reaching
-  the change queue through the bot, a service looking another service up on the bot (a helper the
-  cogs use may, as a cog does; `league_guild` is the one a service calls), a table written by a
-  module that does not own it, a table read outside its owner (core's tables too; the scan sees
+  the change queue through the bot, a service looking a service, the router or a hook up on the bot
+  (every one `LeagueBot` declares but the change queue and what the bot itself holds; a helper the
+  cogs use may, as a cog does, and so may the helpers a service calls that are named for good with
+  their reasons, `LOOKUPS_ALLOWED`), a table written by a module that does not own it, a table read outside its owner (core's tables too; the scan sees
   tables, not columns, so a module's read of its own columns on a core table is named for good,
   `READS_OF_OWN_COLUMNS`; a table whose name is spliced into an f-string after `FROM` or `JOIN`
   cannot be told, so each counts unless its function was read by hand and found to name only its own
