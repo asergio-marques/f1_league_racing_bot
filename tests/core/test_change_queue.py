@@ -3259,16 +3259,11 @@ async def test_a_step_cannot_both_end_on_a_fault_and_be_undiscardable(env):
 # The catch-up after a restart: what is asked meanwhile waits (#440)
 # ---------------------------------------------------------------------------
 
-#: Why the hold's tests fail until #440 is built.
-_NO_HOLD = "#440: the change queue has no hold, so a request during the catch-up is saved at once"
-
-
 async def _yield_to_the_loop(times: int = 20) -> None:
     for _ in range(times):
         await asyncio.sleep(0)
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_HOLD)
 @pytest.mark.parametrize(
     "asked_by", ["member", "event", "member, another ahead"],
     ids=["a member's request", "a Discord event", "a member's request with another ahead of it"],
@@ -3322,7 +3317,6 @@ async def test_a_request_during_the_sweep_waits_until_the_sweep_has_asked_its_ow
     assert [row["id"] for row in rows][:2] == [first, second]
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_HOLD)
 async def test_a_held_member_s_interaction_is_deferred_while_it_waits(env):
     """The bot has restarted and holds its queue; a member presses a button before the catch-up
     ends, then presses it again. Before each press waits, it is deferred, privately, so Discord

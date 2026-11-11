@@ -149,6 +149,19 @@ the last change asked for, whatever became of any other, has the same key and ha
 Asked again once anything else has been asked for after it, or once it has started, a change is
 queued again; a once-only change is refused by its own check once done.
 
+**After a restart the queue is held until the start-up sweep has asked its own.** The entry point
+calls `hold()` before the bot connects; from then on every `ask` and `ask_after` waits, before its
+check, until `release()` is called, which `sweeping()` does on leaving, whether the sweep succeeded
+or raised, and which start-up calls itself where it fails before the sweep begins (calling it twice
+is harmless). The sweep's own asks are made inside `sweeping()`, which marks them by a context
+variable, so they pass the hold; a task started from outside it does not inherit the mark. A held ask
+that has an interaction not yet answered defers it, privately, before it waits, so that Discord's
+three seconds do not lapse, and its acknowledgement or refusal is then a follow-up, as for any
+deferred interaction. A queue never held (every test's, bar those of the hold) asks at once. *Rejected:* refusing a request made during the
+catch-up, which would turn away what a league manager asked for a moment after a restart, and
+queueing it unchecked, which would decide it against a league the catch-up has not finished
+changing. Pinned by `test_a_request_during_the_sweep_waits_until_the_sweep_has_asked_its_own`.
+
 **The acknowledgement is updated, never stored.** The member's interaction is held in memory against
 the change id, and only while fewer than 14 minutes (a minute short of Discord's token) have passed
 since the acknowledgement. An interaction already answered is acknowledged through a follow-up,
@@ -162,7 +175,9 @@ import asyncio
 import json
 import logging
 import sqlite3
-from collections.abc import Awaitable, Callable, Collection
+from collections.abc import AsyncIterator, Awaitable, Callable, Collection
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Optional
@@ -226,6 +241,10 @@ if TYPE_CHECKING:
     from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
+
+#: True inside `ChangeQueue.sweeping()`, and in the tasks started there: an ask made so passes the
+#: hold. A task started from outside the sweep keeps its own, False.
+_in_the_sweep: ContextVar[bool] = ContextVar("in_the_sweep", default=False)
 
 #: How long after the acknowledgement it may still be updated: a minute short of the fifteen
 #: Discord's token lasts.
@@ -372,6 +391,8 @@ class ChangeQueue:
         # A job a Retry has made due, with who pressed it and when its next try stood before: a
         # Retry that fails writes its own line and leaves the schedule as it was.
         self._retrying: dict[int, tuple[str, str | None]] = {}
+        # The hold (`hold`): None until the entry point holds the queue, set when released.
+        self._hold: asyncio.Event | None = None
 
     # ------------------------------------------------------------------
     # Registering and asking
@@ -424,6 +445,41 @@ class ChangeQueue:
         except KeyError:
             raise KeyError(f"no change type {kind!r} is registered") from None
 
+    def hold(self) -> None:
+        """From now, every `ask` and `ask_after` waits, before its check, until `release()`: the
+        entry point's, before the bot connects, so that nothing a member does or Discord reports
+        lands on a lane ahead of what the start-up sweep asks. Held already, it stays held."""
+        if self._hold is None or self._hold.is_set():
+            self._hold = asyncio.Event()
+
+    def release(self) -> None:
+        """Let the asks that wait for the hold go ahead, and every ask after them. Harmless where
+        the queue is not held or is released already."""
+        if self._hold is not None:
+            self._hold.set()
+
+    @asynccontextmanager
+    async def sweeping(self) -> AsyncIterator[None]:
+        """The start-up sweep's own asks are made inside it and pass the hold; leaving it, whether
+        the sweep succeeded or raised, releases the hold."""
+        token = _in_the_sweep.set(True)
+        try:
+            yield
+        finally:
+            _in_the_sweep.reset(token)
+            self.release()
+
+    async def _wait_out_the_hold(self, interaction: discord.Interaction | None) -> None:
+        """Wait, where the queue is held and the ask is not the sweep's, until it is released. An
+        interaction not yet answered is deferred first, privately, so that Discord shows the member
+        "thinking…" and its three seconds do not lapse."""
+        hold = self._hold
+        if hold is None or hold.is_set() or _in_the_sweep.get():
+            return
+        if interaction is not None and not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
+        await hold.wait()
+
     async def check(
         self, kind: str, payload: dict[str, Any], *, origin: ChangeOrigin = ChangeOrigin.MEMBER
     ) -> Verdict:
@@ -460,7 +516,10 @@ class ChangeQueue:
         so once it is saved its id is returned and the worker woken whatever the acknowledgement
         meets (`_acknowledge_saved`). Pinned by
         `test_a_fault_acknowledging_a_saved_change_still_returns_its_id_and_runs_it`.
+
+        Where the queue is held (`hold`), it waits first, before its check.
         """
+        await self._wait_out_the_hold(interaction)
         change_type = self._type(kind)
         member = actor if actor is not None else (interaction.user if interaction else None)
         verdict = await self.check(kind, payload, origin=origin)
@@ -662,7 +721,10 @@ class ChangeQueue:
         the bot stopped or the ask raised between the two; one save cannot. Only *kind*'s change
         is acknowledged. *ahead* is dropped, and *kind* asked alone, where *ahead* repeats a
         change not yet started or is no longer due.
+
+        Where the queue is held (`hold`), it waits first, before its check.
         """
+        await self._wait_out_the_hold(interaction)
         change_type = self._type(kind)
         ahead_type = self._type(ahead.kind)
         member = actor if actor is not None else (interaction.user if interaction else None)
