@@ -59,7 +59,7 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.services import standing_posts, track_service
 from leaguebot.core.services.driver_service import write_transition
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

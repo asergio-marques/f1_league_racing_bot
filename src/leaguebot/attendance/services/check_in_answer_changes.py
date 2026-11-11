@@ -59,12 +59,14 @@ from leaguebot.core.models.change import (
 from leaguebot.core.models.round import RoundStatus, read_scheduled_at
 from leaguebot.core.services.change_queue import (
     ChangeQueue,
+    in_hand,
+)
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
-    in_hand,
 )
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.driver_service import resolve_driver_profile_id

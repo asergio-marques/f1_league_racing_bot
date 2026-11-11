@@ -65,6 +65,8 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.services.change_queue import (
     ChangeQueue,
+)
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

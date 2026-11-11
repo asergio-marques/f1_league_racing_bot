@@ -1011,7 +1011,7 @@ async def test_a_repair_setting_takes_effect_while_the_queue_is_stopped_on_anoth
     is saved and they are answered with today's reply, past the stop, while the other job stays
     stopped where it was."""
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
-    from leaguebot.core.services.change_queue import ChangeType, Step
+    from leaguebot.core.services.change_types import ChangeType, Step
     from tests.support.change_queue import (
         acknowledgement,
         member,

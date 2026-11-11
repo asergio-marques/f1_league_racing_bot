@@ -54,6 +54,8 @@ from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.services import typed_turns
 from leaguebot.core.services.change_queue import (
     ChangeQueue,
+)
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

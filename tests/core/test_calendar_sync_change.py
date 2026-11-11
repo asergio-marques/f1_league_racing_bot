@@ -102,7 +102,7 @@ async def _queue_stopped_ahead(league: Any) -> None:
     """A change of the bot's, asked before anything else, whose job Discord refuses: the queue
     stops at it, and whatever is asked after it waits."""
     from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord, StepKind, Verdict
-    from leaguebot.core.services.change_queue import ChangeType, Step
+    from leaguebot.core.services.change_types import ChangeType, Step
 
     async def _refused(_ctx: Any) -> Any:
         raise StepFailedOnDiscord("Missing Access")

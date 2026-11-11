@@ -38,6 +38,8 @@ from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verd
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.change_queue import (
     ChangeQueue,
+)
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

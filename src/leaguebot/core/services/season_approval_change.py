@@ -63,6 +63,9 @@ from leaguebot.core.services import approval_checks
 from leaguebot.core.services import lineup_posting, standing_posts
 from leaguebot.core.services.calendar_post_service import POST_CALENDAR, calendar_steps
 from leaguebot.core.services.change_queue import (
+    unfinished,
+)
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
@@ -71,7 +74,6 @@ from leaguebot.core.services.change_queue import (
     Step,
     StepContext,
     StepView,
-    unfinished,
 )
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.season_fingerprint_service import SeasonFingerprint, take_fingerprint

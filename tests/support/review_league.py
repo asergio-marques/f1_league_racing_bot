@@ -610,7 +610,7 @@ async def block_queue(league: ReviewLeague, *, lane: str | None = None) -> dict[
     It stops the league lane, or with *lane* a conversation's (`"channel:<id>"`); `"league"` names
     the league's own."""
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
-    from leaguebot.core.services.change_queue import ChangeType, Step
+    from leaguebot.core.services.change_types import ChangeType, Step
 
     holder: dict[str, Any] = {"fail": True}
 

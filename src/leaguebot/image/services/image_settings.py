@@ -36,7 +36,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
-from leaguebot.core.services.change_queue import CheckContext, Step, StepContext
+from leaguebot.core.services.change_types import CheckContext, Step, StepContext
 from leaguebot.core.services.setting_change import NOTHING_SAVED, After, Saved, Setting
 from leaguebot.core.utils.paths import resolve_within_project_root
 from leaguebot.core.utils.timezones import is_known_zone

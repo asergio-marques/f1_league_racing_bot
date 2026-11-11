@@ -76,7 +76,7 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.services.change_queue import CheckContext, Step, StepContext
+from leaguebot.core.services.change_types import CheckContext, Step, StepContext
 from leaguebot.core.services.channel_registry_service import (
     ChannelUse,
     find_channel_use,

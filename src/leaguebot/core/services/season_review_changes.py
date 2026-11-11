@@ -82,13 +82,15 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.services import standing_posts
 from leaguebot.core.services.change_queue import (
+    unfinished,
+)
+from leaguebot.core.services.change_types import (
     Ahead,
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
-    unfinished,
 )
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.notice_handler import delete_notice, send_notice

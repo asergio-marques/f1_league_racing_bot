@@ -72,13 +72,15 @@ from leaguebot.core.services.round_steps import JUDGE, named_now, round_number_n
 from leaguebot.core.services import cancellation_notice_service as notices
 from leaguebot.core.services.cancellation_changes import ROUND_REARM, cancellation_holding_amendment
 from leaguebot.core.services.change_queue import (
+    in_hand,
+)
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
     StepView,
-    in_hand,
 )
 from leaguebot.core.services.season_service import renumber_rounds_on, round_called
 from leaguebot.core.utils.formatting import format_round_list

@@ -66,12 +66,14 @@ from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verd
 from leaguebot.core.models.change import ChangeOrigin
 from leaguebot.core.services.change_queue import (
     ChangeQueue,
+    unfinished,
+)
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
-    unfinished,
 )
 from leaguebot.core.utils.log_lines import abandoned_line, name_of_member
 from leaguebot.results.services import result_submission_service as submissions

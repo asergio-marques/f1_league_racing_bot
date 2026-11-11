@@ -56,6 +56,8 @@ from leaguebot.core.models.round import Round, RoundStatus, WeatherWindows, read
 from leaguebot.core.services import standing_posts
 from leaguebot.core.services.change_queue import (
     ChangeQueue,
+)
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

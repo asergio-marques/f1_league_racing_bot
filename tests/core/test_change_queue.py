@@ -84,7 +84,7 @@ def _acknowledges(text: str) -> bool:
 
 def _api() -> SimpleNamespace:
     from leaguebot.core.models import change
-    from leaguebot.core.services import change_queue
+    from leaguebot.core.services import change_types
 
     return SimpleNamespace(
         ChangeOrigin=change.ChangeOrigin,
@@ -95,8 +95,8 @@ def _api() -> SimpleNamespace:
         FollowOn=change.FollowOn,
         StepResult=change.StepResult,
         StepFailedOnDiscord=change.StepFailedOnDiscord,
-        ChangeType=change_queue.ChangeType,
-        Step=change_queue.Step,
+        ChangeType=change_types.ChangeType,
+        Step=change_types.Step,
     )
 
 

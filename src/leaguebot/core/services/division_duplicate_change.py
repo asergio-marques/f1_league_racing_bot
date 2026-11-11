@@ -46,7 +46,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

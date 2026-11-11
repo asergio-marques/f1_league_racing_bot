@@ -42,6 +42,8 @@ from leaguebot.core.models.change import (
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.services.change_queue import (
     ChangeQueue,
+)
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

@@ -101,6 +101,8 @@ from leaguebot.core.models.round import (
 from leaguebot.core.services import season_service, standing_posts
 from leaguebot.core.services.change_queue import (
     ChangeQueue,
+)
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

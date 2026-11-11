@@ -65,12 +65,14 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.change_queue import (
+    unfinished,
+)
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
-    unfinished,
 )
 from leaguebot.core.services.driver_service import current_account_map_for_division
 from leaguebot.core.services import season_lifecycle_service, season_service

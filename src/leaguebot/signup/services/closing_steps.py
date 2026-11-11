@@ -44,7 +44,7 @@ from leaguebot.core.services.season_lifecycle_service import (
     advance_on_window_close_on,
     require_guild,
 )
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     DiscardedContext,

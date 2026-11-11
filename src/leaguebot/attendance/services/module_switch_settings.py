@@ -46,7 +46,7 @@ from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.models.change import AuditRecord, PlannedStep, Verdict, module_off, module_on
 from leaguebot.core.models.module_dependencies import needs
-from leaguebot.core.services.change_queue import CheckContext
+from leaguebot.core.services.change_types import CheckContext
 from leaguebot.core.services.hub_service import REFRESH_HUB, hub_refresh_after
 from leaguebot.core.services.season_lifecycle_service import (
     FROZEN_FOR_COMPLETION_REFUSAL,

@@ -41,6 +41,8 @@ from leaguebot.core.models.change import FollowOn, PlannedStep, StepKind, StepRe
 from leaguebot.core.services import typed_turns
 from leaguebot.core.services.change_queue import (
     ChangeQueue,
+)
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

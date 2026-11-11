@@ -63,12 +63,14 @@ from leaguebot.core.models.change import (
 from leaguebot.core.services.amendment_service import approval_faults
 from leaguebot.core.services.module_service import ModuleService
 from leaguebot.core.services.change_queue import (
+    in_hand,
+)
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
-    in_hand,
 )
 from leaguebot.core.services.season_service import live_season
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason

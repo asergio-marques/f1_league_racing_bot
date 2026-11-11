@@ -89,7 +89,7 @@ def _setting(env, *, after: str | None = None, carries_line: bool = False, **fie
     success line wait for it.
     """
     from leaguebot.core.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
-    from leaguebot.core.services.change_queue import Step
+    from leaguebot.core.services.change_types import Step
     from leaguebot.core.services.setting_change import After, Saved, Setting
 
     knobs = env.knobs

@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.models.change import Verdict
 from leaguebot.core.models.season import SeasonStatus
-from leaguebot.core.services.change_queue import CheckContext
+from leaguebot.core.services.change_types import CheckContext
 from leaguebot.core.services.setting_change import NOTHING_SAVED, SAVE, Saved, Setting
 from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.models.points_config import SessionType

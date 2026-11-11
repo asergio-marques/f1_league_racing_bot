@@ -81,7 +81,7 @@ async def _run(league: ReviewLeague, *planned: tuple[Any, dict[str, Any]]) -> No
     """Ask a member's dummy change running the *planned* steps, each with its payload, then run
     the queue."""
     from leaguebot.core.models.change import PlannedStep, Verdict
-    from leaguebot.core.services.change_queue import ChangeType
+    from leaguebot.core.services.change_types import ChangeType
 
     async def _go(_ctx: Any) -> Any:
         return Verdict.go()

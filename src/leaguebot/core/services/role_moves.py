@@ -24,7 +24,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord, StepKind, StepResult
-from leaguebot.core.services.change_queue import Step, StepContext
+from leaguebot.core.services.change_types import Step, StepContext
 from leaguebot.core.utils.interaction_errors import describe_fault
 from leaguebot.core.utils.league_server import league_guild
 

@@ -573,7 +573,7 @@ async def test_a_question_whose_posting_was_not_marked_arms_its_five_minutes_on_
     says so in its result."""
     from datetime import timedelta
 
-    from leaguebot.core.services.change_queue import StepContext, StepView
+    from leaguebot.core.services.change_types import StepContext, StepView
     from leaguebot.core.services.season_review_changes import season_review_post_change
 
     change_type = season_review_post_change(

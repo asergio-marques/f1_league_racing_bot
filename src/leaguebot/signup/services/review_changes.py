@@ -99,12 +99,14 @@ from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTrans
 from leaguebot.core.services import standing_posts, track_service
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.change_queue import (
+    unfinished,
+)
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
-    unfinished,
 )
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.input_validator import parse_time

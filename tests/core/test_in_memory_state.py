@@ -269,7 +269,7 @@ async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queu
     `test_the_acknowledgement_is_updated_with_the_outcome` shows of a change nobody cleared.
     """
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
-    from leaguebot.core.services.change_queue import ChangeType, Step
+    from leaguebot.core.services.change_types import ChangeType, Step
     from leaguebot.core.utils.hooks import Hook
 
     db_path = str(tmp_path / "queue.db")

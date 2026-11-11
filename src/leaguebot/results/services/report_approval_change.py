@@ -67,12 +67,14 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.change_queue import (
+    unfinished,
+)
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
-    unfinished,
 )
 from leaguebot.core.services.season_service import round_called, set_round_status_on
 from leaguebot.results.services import review_posting, review_verdicts

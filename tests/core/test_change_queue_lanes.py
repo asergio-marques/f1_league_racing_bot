@@ -49,7 +49,7 @@ TURNS_8 = "channel:8"
 
 def _api() -> SimpleNamespace:
     from leaguebot.core.models import change
-    from leaguebot.core.services import change_queue
+    from leaguebot.core.services import change_types
 
     return SimpleNamespace(
         StepKind=change.StepKind,
@@ -59,8 +59,8 @@ def _api() -> SimpleNamespace:
         StepResult=change.StepResult,
         AuditRecord=change.AuditRecord,
         StepFailedOnDiscord=change.StepFailedOnDiscord,
-        ChangeType=change_queue.ChangeType,
-        Step=change_queue.Step,
+        ChangeType=change_types.ChangeType,
+        Step=change_types.Step,
     )
 
 

@@ -51,13 +51,15 @@ from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import approval_checks
 from leaguebot.core.services.approval_checks import SignupModuleSettings
 from leaguebot.core.services.change_queue import (
+    unfinished,
+)
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
     StepView,
-    unfinished,
 )
 from leaguebot.core.services.config_service import ConfigService
 from leaguebot.core.services.image_drawing import ImageDrawing

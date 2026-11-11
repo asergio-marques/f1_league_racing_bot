@@ -30,7 +30,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.models.change import AuditRecord, Verdict
-from leaguebot.core.services.change_queue import CheckContext
+from leaguebot.core.services.change_types import CheckContext
 from leaguebot.core.services.channel_registry_service import (
     ChannelUse,
     find_channel_use,

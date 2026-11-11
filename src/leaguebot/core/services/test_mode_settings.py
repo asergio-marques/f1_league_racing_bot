@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 
 from leaguebot.core.models.change import AuditRecord, Verdict
-from leaguebot.core.services.change_queue import CheckContext
+from leaguebot.core.services.change_types import CheckContext
 from leaguebot.core.services.setting_change import Saved, Setting
 
 if TYPE_CHECKING:

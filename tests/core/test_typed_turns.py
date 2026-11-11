@@ -85,13 +85,13 @@ async def env(tmp_path):
 
 def _api() -> SimpleNamespace:
     from leaguebot.core.models import change
-    from leaguebot.core.services import change_queue, typed_turns
+    from leaguebot.core.services import change_types, typed_turns
 
     return SimpleNamespace(
         StepKind=change.StepKind, Verdict=change.Verdict, PlannedStep=change.PlannedStep,
         FollowOn=change.FollowOn, StepResult=change.StepResult,
-        StepFailedOnDiscord=change.StepFailedOnDiscord, ChangeType=change_queue.ChangeType,
-        Step=change_queue.Step, typed_turns=typed_turns,
+        StepFailedOnDiscord=change.StepFailedOnDiscord, ChangeType=change_types.ChangeType,
+        Step=change_types.Step, typed_turns=typed_turns,
     )
 
 

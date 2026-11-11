@@ -72,6 +72,8 @@ from leaguebot.core.models.change import (
 from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.services.change_queue import (
     ChangeQueue,
+)
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

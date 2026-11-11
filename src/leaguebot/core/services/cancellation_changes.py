@@ -128,13 +128,15 @@ from leaguebot.core.services import cancellation_notice_service as notices
 from leaguebot.core.services import standing_posts
 from leaguebot.core.services.calendar_post_service import POST_CALENDAR, calendar_steps
 from leaguebot.core.services.change_queue import (
+    in_hand,
+)
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
     StepView,
-    in_hand,
 )
 from leaguebot.core.services.image_drawing import ImageDrawing
 from leaguebot.core.services.season_end_changes import (

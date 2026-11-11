@@ -40,7 +40,7 @@ from leaguebot.core.models.change import (
     module_off,
     module_on,
 )
-from leaguebot.core.services.change_queue import CheckContext, Step, StepContext
+from leaguebot.core.services.change_types import CheckContext, Step, StepContext
 from leaguebot.core.services.hub_service import REFRESH_HUB, hub_refresh_after
 from leaguebot.core.services.season_lifecycle_service import (
     FROZEN_FOR_COMPLETION_REFUSAL,

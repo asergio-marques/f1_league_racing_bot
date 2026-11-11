@@ -259,7 +259,7 @@ async def test_a_lane_armed_timer_asks_on_its_conversation_s_lane(services, tmp_
         StepResult,
         Verdict,
     )
-    from leaguebot.core.services.change_queue import ChangeType, Step
+    from leaguebot.core.services.change_types import ChangeType, Step
 
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)

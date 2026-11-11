@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any
 from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.change_queue import StepContext
+    from leaguebot.core.services.change_types import StepContext
     from leaguebot.core.services.season_service import SeasonService
 
 

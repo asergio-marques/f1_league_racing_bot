@@ -72,13 +72,15 @@ from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
 from leaguebot.core.models.season_end import COMPLETION
 from leaguebot.core.services import approval_checks, standing_posts
 from leaguebot.core.services.change_queue import (
+    in_hand,
+)
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
     StepView,
-    in_hand,
 )
 from leaguebot.core.services.season_end_service import (
     DISCARD_BACKUP,

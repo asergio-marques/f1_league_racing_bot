@@ -45,7 +45,7 @@ from leaguebot.core.models.change import (
 from leaguebot.core.models.round import Round, RoundFormat, stored_scheduled_at
 from leaguebot.core.services import track_service
 from leaguebot.core.services.amendment_rules_service import amendment_changes_nothing
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,

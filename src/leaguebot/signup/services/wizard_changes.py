@@ -63,12 +63,14 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
 from leaguebot.core.services.change_queue import (
+    unfinished,
+)
+from leaguebot.core.services.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
-    unfinished,
 )
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services import track_service
