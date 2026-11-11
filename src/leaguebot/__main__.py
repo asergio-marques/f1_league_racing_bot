@@ -1,21 +1,19 @@
-"""Entry point for the F1 League Weather Randomizer Bot."""
+"""Entry point for the F1 League Racing Bot."""
 
 import asyncio
-import json
 import logging
 import os
 from pathlib import Path
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from functools import partial
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
 from leaguebot.attendance import wiring as attendance_wiring
-from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.season_review_changes import recover_expired_review_prompts
 from leaguebot.core.services.start_up import StartUpStep, start_up
 from leaguebot.core.utils.hooks import AwaitedHook, Hook
@@ -931,11 +929,11 @@ def register_scheduler_callbacks(bot: LeagueBot) -> None:
     kind of a round's job, the step `/test-mode advance` runs for it, signed up on the bot's
     `advance_steps`.
 
-    Each asks the change queue. Weather's handlers hold the queue they were handed here
-    (`timer_callbacks`); the others read it from the bot when they fire. The bot keeps the one
-    queue `build` made, so in the running bot the two come to the same; a test that replaces the
-    queue must register these handlers again. Called by :func:`build`, so that every kind is
-    registered before the bot starts and before the scheduler does.
+    Each asks the change queue. Weather's handlers (`weather/wiring.py`) hold the queue they were
+    handed there (`timer_callbacks`); the others read it from the bot when they fire. The bot keeps
+    the one queue `build` made, so in the running bot the two come to the same; a test that
+    replaces the queue must register these handlers again. Called by :func:`build`, so that every
+    kind is registered before the bot starts and before the scheduler does.
     """
     weather_wiring.register_scheduler_callbacks(bot)
 
@@ -1047,7 +1045,6 @@ async def build(settings: Settings) -> LeagueBot:
     from leaguebot.signup.services.signup_module_service import SignupModuleService
     from leaguebot.signup.services.wizard_service import WizardService
     from leaguebot.attendance.services.attendance_service import AttendanceService
-    from leaguebot.core.services.output_router import OutputRouter as _OutputRouter  # already imported above
 
     bot.signup_module_service = SignupModuleService(settings.db_path)
     bot.wizard_service = WizardService(
