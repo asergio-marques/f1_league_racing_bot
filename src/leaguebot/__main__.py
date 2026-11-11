@@ -33,10 +33,8 @@ from leaguebot.signup import wiring as signup_wiring
 from leaguebot.weather import wiring as weather_wiring
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.calendar_post_service import CalendarCommandOutcome
     from leaguebot.core.services.module_service import ModuleService
     from leaguebot.core.services.hub_service import HubOptions
-    from leaguebot.image.services.image_lineup_post import LineupPostOutcome
 
 #: The oldest discord.py the bot runs on. `/team add` and `/team modify` take their input in a
 #: modal carrying a role picker, which needs ``discord.ui.Label`` — new in 2.6. A host
@@ -435,23 +433,21 @@ async def _draw_review_picture(bot: LeagueBot, picture: Mapping[str, Any]) -> "P
     """
     kind, division_id = str(picture["kind"]), int(picture["division_id"])
     if kind == "lineup":
-        from leaguebot.image.services import image_lineup_post
-
-        outcome: "LineupPostOutcome | CalendarCommandOutcome"
-        outcome = await image_lineup_post.render_for_command(
-            bot, await league_guild(bot), division_id,
+        lineup = await bot.image_drawing.draw_review_lineup(
+            await league_guild(bot), division_id,
             include_uncommitted=bool(picture.get("include_uncommitted")),
-            obtain_missing_portraits=True,
         )
-    else:
-        from leaguebot.core.services import calendar_post_service
+        if lineup.path is None:
+            raise RuntimeError(lineup.problem or "the lineup could not be drawn")
+        return lineup.path
+    from leaguebot.core.services import calendar_post_service
 
-        division = await bot.season_service.get_division(division_id)
-        outcome = await calendar_post_service.render_for_command(
-            bot.image_drawing, division, await bot.season_service.get_division_rounds(division_id),
-            await calendar_post_service.tracks_by_name(bot.db_path),
-            season_number=picture.get("season_number"),
-        )
+    division = await bot.season_service.get_division(division_id)
+    outcome = await calendar_post_service.render_for_command(
+        bot.image_drawing, division, await bot.season_service.get_division_rounds(division_id),
+        await calendar_post_service.tracks_by_name(bot.db_path),
+        season_number=picture.get("season_number"),
+    )
     if outcome.png_path is None:
         raise RuntimeError(outcome.message or f"the {kind} could not be drawn")
     return outcome.png_path
@@ -1039,7 +1035,7 @@ async def build(settings: Settings) -> LeagueBot:
     bot.image_drawing = ImageDrawing(
         bot.module_service, bot.image_config_service, bot.image_validity_service,
         renderer=bot.image_render_service, post_log=bot.output_router.post_log,
-        db_path=settings.db_path,
+        db_path=settings.db_path, bot=bot,
     )
 
     from leaguebot.core.services.placement_service import PlacementService

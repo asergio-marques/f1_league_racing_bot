@@ -704,7 +704,7 @@ def _with_image_s_drawing(bot: Any) -> None:
     bot.image_drawing = ImageDrawing(
         bot.module_service, bot.image_config_service, bot.image_validity_service,
         renderer=bot.image_render_service, post_log=bot.output_router.post_log,
-        db_path=bot.db_path,
+        db_path=bot.db_path, bot=bot,
     )
 
 

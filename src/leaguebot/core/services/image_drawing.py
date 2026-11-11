@@ -197,9 +197,20 @@ class ImageDrawing(Protocol):
         database cannot be opened) is let out, for the command's own failure path to report,
         rather than turned into refusal words."""
 
+    async def draw_review_lineup(
+        self, guild: Any, division_id: int, *, include_uncommitted: bool,
+    ) -> LineupPicture:
+        """Draw *division_id*'s lineup in *guild* for a season review, as a command's own output
+        rather than the lineup of record: obtaining the portrait of each seated driver who has
+        none first, so a review is not judged on a placeholder the league will not see, and with
+        the drivers a mid-season confirmation has not yet committed in it where
+        *include_uncommitted*. Hands back the picture drawn, or the problem naming why it could
+        not be, worded for the command's own refusal, and the notices it survived, already
+        reported to the log channel in one message."""
+
     def discard_picture(self, path: Path | None) -> None:
-        """Release a path `draw_calendar`, `draw_lineup` or `draw_lineup_for_command` handed
-        back, whichever way its posting ended. A path of None is a no-op, covering a picture
+        """Release a path `draw_calendar`, `draw_lineup`, `draw_lineup_for_command` or
+        `draw_review_lineup` handed back, whichever way its posting ended. A path of None is a no-op, covering a picture
         that was never drawn."""
 
     async def discard_portraits(self, user_ids: Any) -> int:

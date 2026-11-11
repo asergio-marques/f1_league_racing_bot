@@ -179,8 +179,6 @@ async def test_the_review_s_calendar_picture_is_drawn_through_the_image_module_s
     assert drawing.asked == [{"division": "Pro", "tracks": [], "season_number": 3}]
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="#283: the review's lineup picture is drawn past the image module's drawing")
 async def test_the_review_s_lineup_picture_is_drawn_through_the_image_module_s_drawing(
     tmp_path, monkeypatch,
 ):
@@ -222,12 +220,8 @@ async def test_the_review_s_lineup_picture_is_drawn_through_the_image_module_s_d
 
 @pytest.mark.parametrize(("problem", "fault"), [
     pytest.param("❌ the template's font could not be loaded",
-                 "❌ the template's font could not be loaded", id="its_words",
-                 marks=pytest.mark.xfail(strict=True, reason="#283: the review's lineup picture "
-                                         "is drawn past the image module's drawing")),
-    pytest.param(None, "the lineup could not be drawn", id="no_words",
-                 marks=pytest.mark.xfail(strict=True, reason="#283: the review's lineup picture "
-                                         "is drawn past the image module's drawing")),
+                 "❌ the template's font could not be loaded", id="its_words"),
+    pytest.param(None, "the lineup could not be drawn", id="no_words"),
 ])
 async def test_a_review_lineup_the_image_module_s_drawing_will_not_draw_raises_with_its_words(
     tmp_path, monkeypatch, problem, fault,

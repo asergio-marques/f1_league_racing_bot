@@ -11,7 +11,9 @@ loop, since parsing and measuring a template takes real time. ``calendar_wanted`
 the asset directories resolved absolutely, the file named, the render, and the notices reported
 to the log channel in one message. ``artwork_signature`` answers what the league's artwork
 looks like now, for the fingerprint to digest. ``draw_lineup_for_command`` draws a lineup as a
-command's output, and ``discard_portraits`` removes the portraits of accounts no longer drawn.
+command's output, ``draw_review_lineup`` draws it for a season review (through
+`image_lineup_post.render_for_command`, so it holds the bot), and ``discard_portraits`` removes the
+portraits of accounts no longer drawn.
 """
 from __future__ import annotations
 
@@ -21,6 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from leaguebot.core.utils.league_bot import LeagueBot
     from leaguebot.image.models.image_catalogues import FieldCatalogue
 
 from leaguebot.core.services.image_drawing import (
@@ -55,7 +58,7 @@ from leaguebot.image.services.image_calendar_service import (
     resolve_drawing,
 )
 from leaguebot.image.services.image_config_service import ImageConfigService
-from leaguebot.image.services.image_lineup_post import LINEUP_TEMPLATE_KEY
+from leaguebot.image.services.image_lineup_post import LINEUP_TEMPLATE_KEY, render_for_command
 from leaguebot.image.services.image_render_service import (
     ImageRenderService,
     discard_render,
@@ -162,6 +165,7 @@ class ImageDrawing:
         renderer: ImageRenderService,
         post_log: Callable[[str], Awaitable[object]],
         db_path: str,
+        bot: LeagueBot | None = None,
     ) -> None:
         self._modules = modules
         self._config = config
@@ -173,6 +177,10 @@ class ImageDrawing:
         #: though the calendar and the capacity questions read none of it, so that a drawing
         #: is never built unable to do what `draw_lineup` needs.
         self._db_path = db_path
+        #: The bot, which the review's lineup alone needs: `render_for_command` reads the image
+        #: services off it as it draws. Optional so that a drawing built for the other answers
+        #: (the capacity questions, the calendar, the lineup of record) needs none.
+        self._bot = bot
 
     async def _drawn_template(self, aspect: str, template_key: str) -> Path | None:
         """The template's path where the module and *aspect* are both drawn and the template
@@ -637,6 +645,23 @@ class ImageDrawing:
         notices = tuple(each.detail for each in outcome.notices)
         path = outcome.png_paths[0] if outcome.png_paths else None
         return LineupPicture(path=path, problem=problem, notices=notices)
+
+    async def draw_review_lineup(
+        self, guild: Any, division_id: int, *, include_uncommitted: bool,
+    ) -> LineupPicture:
+        """Draw *division_id*'s lineup in *guild* for a season review: `render_for_command`
+        asked to obtain each seated driver's missing portrait, and to include the uncommitted
+        drivers where *include_uncommitted*. A drawing built without the bot cannot, and says so."""
+        if self._bot is None:
+            raise RuntimeError("this drawing was built without the bot, so it cannot draw a review's lineup")
+        outcome = await render_for_command(
+            self._bot, guild, division_id,
+            include_uncommitted=include_uncommitted, obtain_missing_portraits=True,
+        )
+        return LineupPicture(
+            path=outcome.png_path, problem=outcome.message,
+            notices=tuple(each.detail for each in outcome.notices),
+        )
 
     def discard_picture(self, path: Path | None) -> None:
         """Release a drawn calendar's or lineup's file, whichever way its posting ended."""
