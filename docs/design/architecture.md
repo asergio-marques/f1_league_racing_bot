@@ -142,7 +142,8 @@ point, which would then hold every module's registrations and grow with each mod
   service with no Discord interaction involved. A cog holds one command group; when one grows too
   large, its workflows move into services before it is split. The split keeps the group in one cog:
   the cog class is composed from one file per subgroup, which discord.py allows because it collects
-  a cog's commands across the classes the cog derives from. A module's commands sit under its own
+  a cog's commands across the classes the cog derives from. A base class that has one subclass and
+  shares no behaviour is the price, accepted for keeping each file to one subgroup. A module's commands sit under its own
   top-level group, never under one of core's: `/weather channel`, not `/division weather-channel`.
   So do its tools for test mode, which sit under the module's group and work only while test mode is
   on, rather than under `/test-mode`. A command's name then says which module owns it, and the
@@ -153,9 +154,8 @@ point, which would then hold every module's registrations and grow with each mod
   *Rejected:* core's cog holding a module's commands and handing the work to the module through a
   hook, which puts part of every module in core. *Rejected:* a module binding its own commands to
   core's groups as it loads, which works, but leaves a module's commands under names that are
-  core's. *Rejected:* a cog for each subgroup, bound to the group by hand, which binds outside
-  discord.py's own collection, as the rejection above gives for a module binding its commands to
-  core's groups.
+  core's. *Rejected:* a cog for each subgroup, bound to the group by hand, which fights the library
+  for no gain (`steward_module.md` §5).
 - **A service** holds the league's rules and all the database code. It may use discord.py: it can
   post to a channel and build the buttons it posts, and a workflow, to which a cog hands a button's
   press, takes the pressed interaction and answers the member through it, while the gates it walks
@@ -258,9 +258,10 @@ for it raises `SwitchNotSignedUp`, a `LookupError` of its own type, which no rea
 aside takes for an answer: each lets that type through by name and stands aside from any other
 fault. A link the dependency table allows between two modules is not one of core's hooks: there the
 module depended on may name what it asks of its dependant, as results does of attendance (below).
-Only core calls a hook it declares. A moment a module reaches is either the module's own, where any
-dependant is reached through what the builder hands it, or a core writer's, which calls its own
-hooks.
+Only core calls the subscribers of a hook it declares as a list, the switch read, which a module's
+own work may also call, aside. A moment a module reaches is either the module's own, where any
+dependant is reached through what the builder hands it, or that of a core function that writes the
+change, which calls its own hooks.
 
 *Rejected:* a hook as one object of named operations the builder fills in, one for each module's
 part, which leaves core knowing what each module does at that moment. *Rejected:* only writing the
@@ -393,10 +394,9 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   What a change type refuses is read from the database and the queue, never from a flag kept in
   memory, so it holds across a restart. State that may be held in memory is state a module's
   specification lets a restart lose: the change it feeds reads it, and finds its work no longer due
-  after a restart, as results' penalty-review staging does.
-  A bot's request that this check finds no longer due (a
-  review reopened for a round that has since gone final) is dropped, not stopped: only a channel
-  missing or unusable stops its lane.
+  after a restart, as results' penalty-review staging does. A bot's request that this check finds no
+  longer due (a review reopened for a round that has since gone final) is dropped, not stopped: only
+  a channel missing or unusable stops its lane.
 - **All or nothing in one step.** Where a change must be all or nothing (as the results
   specification's "Changing points system mid-season" requires of an approval), everything it
   saves is saved in one step behind the gate, and only its posts come after, as
@@ -1130,10 +1130,9 @@ The exceptions, each with its reason:
   message it replaces in the step after, so each table keeps one writer. A message nobody recorded
   can never be found again, to be edited or deleted. Where a module's specification takes its output
   down when the module is switched off, every post in that output counts as one that might later be
-  deleted; each module's design file names, post by post, whether its switch-off takes it down. A
-  posted message's ids are kept on a row whose identity is the posting or the thing posted, never on
-  a row a recalculation deletes or rewrites, where a reordering or a rebuild would carry them off or
-  drop them.
+  deleted. A posted message's ids are kept on a row whose identity is the posting or the thing
+  posted, never on a row a recalculation deletes or rewrites, where a reordering or a rebuild would
+  carry them off or drop them.
 - **Who it may mention,** stated where it is sent. A log line's mentions are wrapped so that they
   name without notifying, but one: the stop notice's mention of the league admins' role
   (`OutputRouter.post_notice`), the one mention the log channel notifies. Who it mentions is the
