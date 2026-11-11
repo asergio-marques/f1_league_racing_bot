@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -43,9 +44,11 @@ def _faulty_placement() -> MagicMock:
     return placement
 
 
-def _placement_check(factory: str) -> Callable[..., Awaitable[None]]:
+def _placement_check(factory: str, **handed: Any) -> Callable[..., Awaitable[None]]:
     """The check of `driver_changes.<factory>`'s change, every refusal read from the database
-    standing aside, judged with a placement service that raises a bug's `ValueError`."""
+    standing aside, judged with a placement service that raises a bug's `ValueError`, and
+    handed *handed* besides: the team-role service and the lineup poster of a change that moves
+    roles and posts a lineup afterwards."""
 
     async def run(tmp_path, monkeypatch) -> None:
         from leaguebot.core.models.change import ChangeOrigin
@@ -59,6 +62,7 @@ def _placement_check(factory: str) -> Callable[..., Awaitable[None]]:
         await run_migrations(db_path)
         change = getattr(driver_changes, factory)(
             placement=_faulty_placement(),
+            **handed,
             now=lambda: datetime(2026, 9, 17, 12, tzinfo=timezone.utc),
         )
         await change.check(CheckContext(
@@ -201,12 +205,12 @@ _RESERVE_ROLE_GARBLED = {"role_id": "x", "role_name": "Reserve"}
 def _reassign_change(driver, profiles_merged=None):
     """`driver_changes.driver_reassign_change`'s change, judged and saved through *driver*, a
     merge calling *profiles_merged*, no module answering which divisions a side raced in, and
-    every Discord job a double."""
+    every Discord job a double, the team-role service among them."""
     from leaguebot.core.services.driver_changes import driver_reassign_change
     from leaguebot.core.utils.hooks import AwaitedHook
 
     return driver_reassign_change(
-        driver=driver, placement=MagicMock(), drawing=MagicMock(),
+        driver=driver, placement=MagicMock(), roles=MagicMock(), drawing=MagicMock(),
         profiles_merged=profiles_merged or AwaitedHook(), divisions_raced_read=AwaitedHook(),
         driver_account_changed=AwaitedHook(), driver_account_changed_steps=MagicMock(),
         now=lambda: datetime(2026, 9, 17, 12, tzinfo=timezone.utc),
@@ -289,12 +293,20 @@ _NOT_YET_HANDED_CAPACITY = (
 #: Why the team changes' cases fail until their factories are handed the team-role service (#283).
 _NOT_YET_HANDED_ROLES = "#283: the team changes are not yet handed a TeamRoleService as roles="
 
+#: Why the driver changes that move roles fail until they are handed the team-role service (#283).
+_NOT_YET_HANDED_DRIVER_ROLES = (
+    "#283: the driver changes that move roles are not yet handed a TeamRoleService as roles="
+)
+
 
 #: One case per catch: what it guards, and how to raise a bug's `ValueError` inside it.
 CATCHES = [
-    pytest.param(_placement_check("driver_move_change"), id="driver move check"),
-    pytest.param(_placement_check("driver_sack_change"), id="driver sack check"),
-    pytest.param(_placement_check("driver_release_change"), id="driver release check"),
+    pytest.param(_placement_check("driver_move_change", roles=MagicMock(), lineups=MagicMock()),
+                 id="driver move check", marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_DRIVER_ROLES)),
+    pytest.param(_placement_check("driver_sack_change", roles=MagicMock(), lineups=MagicMock()),
+                 id="driver sack check", marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_DRIVER_ROLES)),
+    pytest.param(_placement_check("driver_release_change", roles=MagicMock(), lineups=MagicMock()),
+                 id="driver release check", marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_DRIVER_ROLES)),
     pytest.param(_placement_check("driver_assign_change"), id="driver assign check"),
     pytest.param(_placement_check("driver_unassign_change"), id="driver unassign check"),
     pytest.param(_test_driver_added, id="test driver added",
@@ -317,8 +329,9 @@ CATCHES = [
     pytest.param(_team_save("team_reserve_role_change", _RESERVE_ROLE_GARBLED),
                  id="team reserve-role save, a role id no number",
                  marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_ROLES)),
-    pytest.param(_reassign_checked, id="driver reassign check"),
-    pytest.param(_reassign_merge_hook_faulted, id="driver reassign save, a merge hook's fault"),
+    pytest.param(_reassign_checked, id="driver reassign check", marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_DRIVER_ROLES)),
+    pytest.param(_reassign_merge_hook_faulted, id="driver reassign save, a merge hook's fault",
+                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_DRIVER_ROLES)),
     pytest.param(_tiers_checked, id="season approval's tier check"),
 ]
 
