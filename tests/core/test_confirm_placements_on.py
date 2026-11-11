@@ -114,21 +114,21 @@ async def test_the_uncommitted_placements_are_read_on_the_connection_handed(db_p
 
 
 def _granting(monkeypatch):
-    """The step's placement double, and the league's server it reaches."""
+    """The step's team-role service double, and the league's server it reaches."""
     from leaguebot.core.services import season_approval_change
 
     guild = MagicMock()
     monkeypatch.setattr(season_approval_change, "league_guild", AsyncMock(return_value=guild))
-    placement = MagicMock()
-    placement.get_team_role_config = AsyncMock(return_value=SimpleNamespace(role_id=777))
-    placement.grant_roles = AsyncMock(return_value=True)
-    return guild, placement
+    roles = MagicMock()
+    roles.get_team_role_config = AsyncMock(return_value=SimpleNamespace(role_id=777))
+    roles.grant_roles = AsyncMock(return_value=True)
+    return guild, roles
 
 
-async def _grant(db_path, placement, payload):
+async def _grant(db_path, roles, payload):
     from leaguebot.core.services.season_approval_change import driver_roles_step
 
-    step = driver_roles_step(placement)
+    step = driver_roles_step(roles)
     ctx = SimpleNamespace(bot=MagicMock(), db_path=db_path, step_payload=payload,
                           step_name=step.name, tries=0, kept=None)
     return await step.run(ctx)

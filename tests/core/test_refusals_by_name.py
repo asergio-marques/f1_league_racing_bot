@@ -111,14 +111,14 @@ def _faulty_teams() -> MagicMock:
     return teams
 
 
-def _team_placement() -> MagicMock:
-    """A placement service for which no team holds a role, and every role write goes through."""
-    placement = MagicMock()
-    placement.team_holding_role = AsyncMock(return_value=None)
-    placement.set_team_role_config_on = AsyncMock(return_value=None)
-    placement.delete_team_role_config_on = AsyncMock(return_value=None)
-    placement.seated_user_ids_on = AsyncMock(return_value=[])
-    return placement
+def _team_roles() -> MagicMock:
+    """A team-role service for which no team holds a role, and every role write goes through."""
+    roles = MagicMock()
+    roles.team_holding_role = AsyncMock(return_value=None)
+    roles.set_team_role_config_on = AsyncMock(return_value=None)
+    roles.delete_team_role_config_on = AsyncMock(return_value=None)
+    roles.seated_user_ids_on = AsyncMock(return_value=[])
+    return roles
 
 
 def _team_bot() -> MagicMock:
@@ -133,7 +133,7 @@ def _team_change(factory: str):
     from leaguebot.core.services import team_changes
 
     made = getattr(team_changes, factory)
-    kwargs = {"placement": _team_placement()}
+    kwargs = {"roles": _team_roles()}
     if factory != "team_reserve_role_change":
         kwargs["teams"] = _faulty_teams()
     if factory != "team_remove_change":
@@ -286,6 +286,10 @@ _NOT_YET_HANDED_CAPACITY = (
 )
 
 
+#: Why the team changes' cases fail until their factories are handed the team-role service (#283).
+_NOT_YET_HANDED_ROLES = "#283: the team changes are not yet handed a TeamRoleService as roles="
+
+
 #: One case per catch: what it guards, and how to raise a bug's `ValueError` inside it.
 CATCHES = [
     pytest.param(_placement_check("driver_move_change"), id="driver move check"),
@@ -297,15 +301,22 @@ CATCHES = [
                  marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_CAPACITY)),
     pytest.param(_test_roster_imported, id="test roster imported",
                  marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_CAPACITY)),
-    pytest.param(_team_check("team_add_change", _TEAM_ADDED), id="team add check"),
-    pytest.param(_team_save("team_add_change", _TEAM_ADDED), id="team add save"),
-    pytest.param(_team_check("team_remove_change", _TEAM_REMOVED), id="team remove check"),
-    pytest.param(_team_save("team_remove_change", _TEAM_REMOVED), id="team remove save"),
-    pytest.param(_team_check("team_modify_change", _TEAM_RENAMED), id="team modify check"),
+    pytest.param(_team_check("team_add_change", _TEAM_ADDED), id="team add check",
+                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_ROLES)),
+    pytest.param(_team_save("team_add_change", _TEAM_ADDED), id="team add save",
+                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_ROLES)),
+    pytest.param(_team_check("team_remove_change", _TEAM_REMOVED), id="team remove check",
+                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_ROLES)),
+    pytest.param(_team_save("team_remove_change", _TEAM_REMOVED), id="team remove save",
+                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_ROLES)),
+    pytest.param(_team_check("team_modify_change", _TEAM_RENAMED), id="team modify check",
+                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_ROLES)),
     pytest.param(_team_save("team_modify_change", _TEAM_ROLE_GARBLED),
-                 id="team modify save, a role id no number"),
+                 id="team modify save, a role id no number",
+                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_ROLES)),
     pytest.param(_team_save("team_reserve_role_change", _RESERVE_ROLE_GARBLED),
-                 id="team reserve-role save, a role id no number"),
+                 id="team reserve-role save, a role id no number",
+                 marks=pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED_ROLES)),
     pytest.param(_reassign_checked, id="driver reassign check"),
     pytest.param(_reassign_merge_hook_faulted, id="driver reassign save, a merge hook's fault"),
     pytest.param(_tiers_checked, id="season approval's tier check"),

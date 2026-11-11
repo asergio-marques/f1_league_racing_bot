@@ -31,7 +31,7 @@ def _cog() -> MagicMock:
 
     bot = MagicMock()
     bot.season_service.get_setup_or_active_season = AsyncMock(return_value=None)
-    bot.placement_service.team_holding_role = AsyncMock(return_value=None)
+    bot.team_role_service.team_holding_role = AsyncMock(return_value=None)
     bot.output_router.post_log = AsyncMock()
     cog = TeamCog.__new__(TeamCog)
     cog.bot = bot

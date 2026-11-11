@@ -1,6 +1,6 @@
 """A team's role must be one the bot can grant (#381).
 
-A team's role is granted to every driver placed in it, and `placement_service._grant_roles` only
+A team's role is granted to every driver placed in it, and `team_role_service._grant_roles` only
 logs a failure — so a role Discord will not let the bot grant costs a whole team their role with
 nobody told. The four cases are refused where the role is chosen, which is the one moment a league
 is there to choose another.

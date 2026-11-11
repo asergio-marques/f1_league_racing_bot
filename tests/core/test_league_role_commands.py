@@ -630,6 +630,8 @@ async def test_a_driver_who_could_not_be_given_it_is_named(tmp_path, column, cha
     ]
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the driver role is not yet given out by a "
+                   "TeamRoleService of its own")
 @pytest.mark.parametrize("column,change_type", _BOTH)
 async def test_a_fault_giving_the_replacement_leaves_the_role_saved(
     tmp_path, monkeypatch, column, change_type
@@ -640,13 +642,13 @@ async def test_a_fault_giving_the_replacement_leaves_the_role_saved(
     then that it could not be given to the drivers, for the league to give it by hand, a base role
     still reminding the league that its other members need it too; the log channel gets the
     queue's failure line, and no success line, the grants carrying it."""
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.team_role_service import TeamRoleService
     from tests.support.change_queue import stopped_job
 
     db_path = await _make_db(tmp_path, stage="ONGOING", drivers=_TWO_DRIVERS)
     command, label = _WORDS[column]
     monkeypatch.setattr(
-        PlacementService, "grant_to_every_driver", AsyncMock(side_effect=RuntimeError("x"))
+        TeamRoleService, "grant_to_every_driver", AsyncMock(side_effect=RuntimeError("x"))
     )
 
     bot, asked, _guild = await _set(db_path, column, old_role_gone=True)
