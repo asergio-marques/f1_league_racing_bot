@@ -415,9 +415,10 @@ what the queue's start does.
 
 The steps are a fixed tuple the builder makes (`_start_up_steps`), in an order its comments give
 where the order matters (`test_the_builder_orders_the_start_up_steps`). Each module's recovery is
-a function of its wiring, which the builder names in the step; core's own, the amendment sweep, the
-review prompts, the hub and the wizards, are the builder's, and the missed clean-ups are one step
-the builder composes of weather's part and attendance's:
+a function of its wiring, which the builder names in the step; core's own, the review prompts and
+the hub, are the builder's. The builder writes two module steps itself: arming results' amendment
+sweep, and signup's wizard recovery through its service. The missed clean-ups are one step the
+builder composes of weather's part and attendance's:
 
 | # | Step | What it does |
 |---|---|---|
