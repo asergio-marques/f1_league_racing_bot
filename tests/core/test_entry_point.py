@@ -84,9 +84,11 @@ async def test_the_builder_hands_the_capacity_guards_and_the_lineups_the_image_m
     without it, every capacity guard would let every placement through, and no lineup would be
     drawn. `PlacementService` is handed the capacity service and the team-role service the bot
     declares, the same objects, so its seats are guarded and its roles granted by what every other
-    caller uses. The drawing is handed the bot's database, which is all a lineup's drawing reads
-    beyond the image module's own services, and none of the four services is handed the bot,
-    since each posts or grants through the guild or member it is given."""
+    caller uses. It keeps no lineup posting of its own: a move or a sack names the divisions
+    whose lineup is owed, and the poster posts them. The drawing is handed the bot's database,
+    which is all a lineup's drawing reads beyond the image module's own services, and none of the
+    four services is handed the bot, since each posts or grants through the guild or member it is
+    given."""
     from leaguebot.image.services.image_drawing import ImageDrawing
 
     bot = await built_bot(tmp_path, now=_NOW)
@@ -97,6 +99,7 @@ async def test_the_builder_hands_the_capacity_guards_and_the_lineups_the_image_m
     assert bot.placement_service._capacity is bot.template_capacity_service
     assert bot.placement_service._roles is bot.team_role_service
     assert not hasattr(bot.placement_service, "_drawing")
+    assert not hasattr(bot.placement_service, "_refresh_lineup_post")
     assert bot.image_drawing._db_path == bot.db_path
     for service in (bot.placement_service, bot.template_capacity_service, bot.lineup_poster,
                     bot.team_role_service):

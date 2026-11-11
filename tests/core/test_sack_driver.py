@@ -590,7 +590,6 @@ async def test_the_sack_names_the_divisions_whose_lineup_is_owed(tmp_path):
     guild = _guild()
 
     assert await _sack(service, guild) == [DIVISION_ID]
-    assert not hasattr(service, "_refresh_lineup_post")
 
 
 # ---------------------------------------------------------------------------

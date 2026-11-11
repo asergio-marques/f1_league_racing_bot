@@ -152,7 +152,6 @@ async def test_a_full_time_driver_is_moved_to_reserve_in_one_step(db_path):
     service._roles._revoke_roles.assert_awaited_once()
     assert service._roles._revoke_roles.await_args.args[1:] == (ROLES["Alpha"],)
     assert service._roles._grant_roles.await_args.args[1:] == (1001, ROLES["Reserve"])
-    assert not hasattr(service, "_refresh_lineup_post")
     assert result["lineups"] == [PRO]
 
 
@@ -167,7 +166,6 @@ async def test_a_driver_is_promoted_to_another_division(db_path):
     # The division role swaps; the team role is kept, the driver sitting in Bravo still.
     assert service._roles._revoke_roles.await_args.args[1:] == (1002,)
     assert service._roles._grant_roles.await_args.args[1:] == (1001, ROLES["Bravo"])
-    assert not hasattr(service, "_refresh_lineup_post")
     assert result["lineups"] == [AM, PRO]
 
 
@@ -324,7 +322,6 @@ async def test_a_member_who_left_the_server_is_moved_without_roles(db_path):
     assert await _where(db_path) == [(PRO, "Reserve")]
     service._roles._grant_roles.assert_not_awaited()
     service._roles._revoke_roles.assert_not_awaited()
-    assert not hasattr(service, "_refresh_lineup_post")
     assert result["lineups"] == [PRO]
 
 
