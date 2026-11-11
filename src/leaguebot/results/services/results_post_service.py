@@ -1,7 +1,6 @@
 """results_post_service.py — Post and edit results/standings in Discord channels."""
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from collections.abc import Sequence
@@ -84,29 +83,6 @@ def _split_content(text: str) -> list[str]:
     if current:
         chunks.append("".join(current).rstrip("\n"))
     return chunks or [text[:_MSG_MAX]]
-
-
-#: Seconds to wait between one posting and the next when rebuilding a division's channels.
-#:
-#: Discord's practical limit is around five messages to a channel in five seconds, and a
-#: whole-division replay posts every round of every channel in one go — some tens of messages
-#: where the ordinary path posts two or three. discord.py waits out a 429 by itself, so this is
-#: not what makes the replay correct; it is what stops it spending its time in rate-limit
-#: backoff, which is slower and far less predictable than simply going at a walking pace.
-#:
-#: A second is comfortably inside the limit and keeps a forty-message rebuild under a minute.
-#: Tests patch it to zero — see ``tests/results/test_replay_throttle.py``.
-POSTING_THROTTLE_SECONDS: float = 1.0
-
-
-async def throttle() -> None:
-    """Wait ``POSTING_THROTTLE_SECONDS`` before the next posting of a division-wide replay.
-
-    A function rather than a bare ``sleep`` at each call site so the pacing is named, is read
-    from one place, and can be stood down in a test without patching :mod:`asyncio`.
-    """
-    if POSTING_THROTTLE_SECONDS > 0:
-        await asyncio.sleep(POSTING_THROTTLE_SECONDS)
 
 
 @posts_in_a_job
