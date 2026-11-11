@@ -300,6 +300,12 @@ async def test_a_test_driver_is_drawn_under_its_test_name(tmp_path, drawn):
     assert [item["driver_name"] for item in drawn] == ["Test Lewis"]
 
 
+#: Why the tests handing attendance's hook a team-role service or a lineup poster fail until
+#: the role helpers and the lineup posting are services of their own (#283).
+_NOT_YET_HANDED = ("#283: the team roles and the lineup posting are not yet services of their own "
+                   "handed to attendance's hook")
+
+
 #: The change `/attendance sync` asks for the cards of the sanctions it applied (C37).
 SANCTIONS_ANNOUNCE = "attendance.sanctions.announce"
 
@@ -323,6 +329,7 @@ async def _announce_lewis_s_autoreserve(league: ReviewLeague) -> None:
     await run_queue(league.bot)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED)
 async def test_a_sync_s_sanction_card_is_drawn_under_the_driver_s_server_name(tmp_path, drawn):
     """Attendance is on with its real hook, and the verdict graphic is on. A sync has moved
     Lewis (101), known to the server as "Lewis", to reserve, and asks the queue to announce it:
@@ -337,6 +344,7 @@ async def test_a_sync_s_sanction_card_is_drawn_under_the_driver_s_server_name(tm
     assert str(LEWIS) not in drawn[0]["driver_name"]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED)
 async def test_a_sync_s_sanction_card_as_text_mentions_the_driver(tmp_path):
     """As above, but with image generation off: the card is posted as text in Pro's verdicts
     channel (704), mentioning Lewis as <@101> and saying he was moved to reserve."""
@@ -590,6 +598,7 @@ async def _no_reserve_team(league: ReviewLeague) -> None:
                      "SanctionNotApplicable", id="sanction"),
     ],
 )
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED)
 async def test_a_sheet_or_sanction_stop_names_what_to_repair(tmp_path, seed, job, reason, fault):
     """Attendance is on and its real hook, `AttendanceAfterReview`, is the one the change types
     are handed. Division 11's attendance channel is gone from the server, or it has an
@@ -619,14 +628,16 @@ AMEND_APPEALS_PROMPT = 8952
 
 
 def _real_attendance_hook(bot: Any, _db_path: str) -> Any:
-    """Attendance's real hook, `AttendanceAfterReview`, for *bot*, with a placement service that
-    does nothing, so that the sheet is posted by `post_attendance_sheet` itself: handed to the
-    league as it is built (`review_league`'s *attendance_hook*), so the change types hold it."""
+    """Attendance's real hook, `AttendanceAfterReview`, for *bot*, with a placement service and a
+    lineup poster that do nothing, so that the sheet is posted by `post_attendance_sheet` itself:
+    handed to the league as it is built (`review_league`'s *attendance_hook*), so the change types
+    hold it."""
     placement = MagicMock()
-    for name in ("sack_driver", "move_driver", "refresh_lineup", "guard_move", "sack_on",
-                 "move_on"):
+    for name in ("sack_driver", "move_driver", "guard_move", "sack_on", "move_on"):
         setattr(placement, name, AsyncMock(return_value=None))
-    return AttendanceAfterReview(bot, placement)
+    lineups = MagicMock()
+    lineups.refresh_lineup = AsyncMock(return_value=None)
+    return AttendanceAfterReview(bot, placement, lineups=lineups)
 
 
 def _sheet_stop(league: ReviewLeague) -> str:
@@ -635,6 +646,7 @@ def _sheet_stop(league: ReviewLeague) -> str:
     return stop
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED)
 async def test_a_review_s_attendance_sheet_with_no_channel_stops_the_queue_naming_the_command(
     tmp_path,
 ):
@@ -650,6 +662,7 @@ async def test_a_review_s_attendance_sheet_with_no_channel_stops_the_queue_namin
     assert "/attendance channel attendance" in _sheet_stop(league)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED)
 async def test_an_amendment_s_attendance_sheet_with_no_channel_stops_the_queue(tmp_path):
     """Round 3 of Pro, final, is under an amendment of its Feature Race whose report stage is
     approved, its appeals prompt standing in the amendment channel. Attendance is on and Pro was
@@ -692,24 +705,30 @@ async def test_an_amendment_s_attendance_sheet_with_no_channel_stops_the_queue(t
 ATTENDANCE_CHANNEL = 707
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED)
 async def test_a_review_s_lineup_with_no_channel_stops_the_queue_naming_the_command(tmp_path):
-    """Attendance is on, with its real hook and the real placement service (roles granted and
-    revoked by doubles), and division 11 (Pro) has an attendance channel but was never given a
+    """Attendance is on, with its real hook, the real placement service and the real lineup
+    poster (roles granted and revoked by doubles on the real team-role service), and division 11
+    (Pro) has an attendance channel but was never given a
     lineup channel. Pro sets an
     autoreserve threshold of one point and has a Reserve team with a free seat; Lewis, raced
     round 4 without an RSVP, is on the threshold. Alex approves round 3's reports: Lewis is moved
     to the Reserve team, and the queue stops at the lineup the sanction owes, its stop line
     naming the command that sets the channel, rather than the lineup completing having posted
     nothing."""
+    from leaguebot.core.services.lineup_posting import LineupPoster
     from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.team_role_service import TeamRoleService
 
     def _hook(bot: Any, db_path: str) -> Any:
-        placement = PlacementService(db_path)
-        placement._grant_roles = AsyncMock()
-        placement._revoke_roles = AsyncMock()
-        placement.grant_roles = AsyncMock()
-        placement.revoke_roles = AsyncMock()
-        return AttendanceAfterReview(bot, placement)
+        roles = TeamRoleService(db_path)
+        roles._grant_roles = AsyncMock()
+        roles._revoke_roles = AsyncMock()
+        roles.grant_roles = AsyncMock()
+        roles.revoke_roles = AsyncMock()
+        placement = PlacementService(db_path, roles=roles)
+        return AttendanceAfterReview(bot, placement, roles=roles,
+                                     lineups=LineupPoster(db_path))
 
     league = await review_league(tmp_path, attendance=True, attendance_hook=_hook)
     async with get_connection(league.db_path) as db:
@@ -759,21 +778,26 @@ async def test_a_review_s_lineup_with_no_channel_stops_the_queue_naming_the_comm
 TEAM_ROLE, RESERVE_ROLE = 5502, 5503
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_YET_HANDED)
 async def test_a_review_s_sanction_whose_role_change_discord_refuses_stops_the_queue(tmp_path):
-    """Attendance is on, with its real hook and the real placement service. Pro sets an
+    """Attendance is on, with its real hook, the real placement service, the real team-role
+    service and the real lineup poster. Pro sets an
     autoreserve threshold of one point and has a Reserve team with a free seat; Lewis, placed in
     Team 3001 and raced round 4 without an RSVP, is on the threshold. Team 3001 and the Reserve
     team each have a role, and Discord refuses every role change for Lewis (Missing
     Permissions). Alex approves round 3's reports: Lewis is moved to the Reserve team, and the
     queue stops at the job changing his roles, its notice naming it, rather than the approval
     going on as though his roles had been changed."""
+    from leaguebot.core.services.lineup_posting import LineupPoster
     from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.team_role_service import TeamRoleService
 
-    league = await review_league(
-        tmp_path, attendance=True,
-        attendance_hook=lambda bot, db_path: AttendanceAfterReview(
-            bot, PlacementService(db_path)),
-    )
+    def _hook(bot: Any, db_path: str) -> Any:
+        roles = TeamRoleService(db_path)
+        return AttendanceAfterReview(bot, PlacementService(db_path, roles=roles), roles=roles,
+                                     lineups=LineupPoster(db_path))
+
+    league = await review_league(tmp_path, attendance=True, attendance_hook=_hook)
     await _no_reserve_team(league)
     async with get_connection(league.db_path) as db:
         reserve = await db.execute(

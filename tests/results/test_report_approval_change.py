@@ -437,10 +437,13 @@ async def test_the_sheet_is_not_put_on_the_old_retry_queue(tmp_path):
     assert await one(league.db_path, "SELECT COUNT(*) FROM pending_messages") == 0
 
 
+@pytest.mark.xfail(strict=True, reason="#283: the lineup posting is not yet a service of "
+                   "its own handed to attendance's hook")
 async def test_the_sheet_after_a_review_replaces_the_old_one_by_a_delete_job(tmp_path):
-    """Attendance is on, with its real hook (the placement service a double: no sanction is
-    owed). Pro's attendance channel 707 holds its sheet 8805, recorded as the live one. Alex
-    approves round 3's reports: the `attendance_sheet` job posts the new sheet and its save
+    """Attendance is on, with its real hook (the placement service and the lineup poster
+    doubles: no sanction is owed). Pro's attendance channel 707 holds its sheet 8805, recorded as
+    the live one. Alex approves round 3's reports: the `attendance_sheet` job posts the new sheet
+    and its save
     records it, the old one still standing; then a `delete_message` job of the review deletes
     the old sheet."""
     from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
@@ -448,11 +451,14 @@ async def test_the_sheet_after_a_review_replaces_the_old_one_by_a_delete_job(tmp
 
     sheet_channel, old_sheet = 707, 8805
     placement = MagicMock()
-    for name in ("sack_driver", "move_driver", "refresh_lineup"):
+    for name in ("sack_driver", "move_driver"):
         setattr(placement, name, AsyncMock(return_value=None))
+    lineups = MagicMock()
+    lineups.refresh_lineup = AsyncMock(return_value=None)
     league = await review_league(
         tmp_path, attendance=True,
-        attendance_hook=lambda bot, _db_path: AttendanceAfterReview(bot, placement),
+        attendance_hook=lambda bot, _db_path: AttendanceAfterReview(
+            bot, placement, lineups=lineups),
     )
     league.channels[sheet_channel] = channel(sheet_channel, league.events)
     league.channels[sheet_channel].guild = league.guild
