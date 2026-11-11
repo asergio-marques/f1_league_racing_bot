@@ -3253,3 +3253,160 @@ async def test_a_step_cannot_both_end_on_a_fault_and_be_undiscardable(env):
 
     with pytest.raises(ValueError):
         queue.register(_type(steps=[step]))
+
+
+# ---------------------------------------------------------------------------
+# The catch-up after a restart: what is asked meanwhile waits (#440)
+# ---------------------------------------------------------------------------
+
+async def _yield_to_the_loop(times: int = 20) -> None:
+    for _ in range(times):
+        await asyncio.sleep(0)
+
+
+@pytest.mark.parametrize(
+    "asked_by", ["member", "event", "member, another ahead"],
+    ids=["a member's request", "a Discord event", "a member's request with another ahead of it"],
+)
+async def test_a_request_during_the_sweep_waits_until_the_sweep_has_asked_its_own(env, asked_by):
+    """The bot has restarted and holds its queue. The catch-up asks a first change, then, while it
+    is mid-way, a member presses a button (or Discord reports a member leaving, the bot's own
+    change, or a league admin approves a season's placements, which asks the review's take-down
+    ahead of the approval in one save) from outside the catch-up; the catch-up then asks a second
+    change. Nothing of the member's (or the event's) is saved while the catch-up runs, the
+    take-down included; once it ends, it is saved after both the catch-up's changes on the lane,
+    and its call returns its id."""
+    import contextvars
+
+    from leaguebot.core.services.queue.change_types import Ahead
+
+    queue = _queue(
+        env, _type(steps=[_act("a", [])]), _type("dummy.ahead", steps=[_act("b", [])]),
+    )
+    queue.hold()
+    outside = contextvars.copy_context()
+
+    async with queue.sweeping():
+        first = await _ask(env, payload={"asked": "catch-up 1"}, origin=_api().ChangeOrigin.BOT)
+        if asked_by == "member":
+            pressed = _ask(env, payload={"asked": "press"})
+        elif asked_by == "event":
+            pressed = _ask(env, payload={"asked": "press"}, origin=_api().ChangeOrigin.BOT)
+        else:
+            pressed = queue.ask_after(
+                Ahead("dummy.ahead", {"asked": "take-down"}, "the take-down"),
+                "dummy", {"asked": "press"},
+                interaction=member_interaction(env.bot), what=WHAT, refusal_what=WHAT,
+            )
+        waiting = asyncio.create_task(pressed, context=outside)
+        await _yield_to_the_loop()
+        assert not waiting.done()
+        second = await _ask(env, payload={"asked": "catch-up 2"}, origin=_api().ChangeOrigin.BOT)
+        await _yield_to_the_loop()
+        assert not waiting.done()
+        assert [row["id"] for row in await change_rows(env.db_path)] == [first, second]
+
+    asked = await asyncio.wait_for(waiting, timeout=5)
+
+    rows = await change_rows(env.db_path)
+    assert rows[-1]["id"] == asked
+    expected = ["catch-up 1", "catch-up 2", "press"]
+    if asked_by == "member, another ahead":
+        expected.insert(2, "take-down")
+    assert [json.loads(row["payload"])["asked"] for row in rows] == expected
+    assert [row["id"] for row in rows][:2] == [first, second]
+
+
+async def test_a_held_member_s_interaction_is_deferred_while_it_waits(env):
+    """The bot has restarted and holds its queue; a member presses a button before the catch-up
+    ends, then presses it again. Before each press waits, it is deferred, privately and thinking,
+    so Discord shows them "thinking…" (a button or a form too, not a slash command alone) and its
+    three seconds do not lapse; nothing else is sent. Once the
+    catch-up ends, one press is acknowledged as under way and the other refused as a repeat, each
+    through a follow-up seen by them alone, never a first response, and only one change is saved."""
+    queue = _queue(env, _type(steps=[_act("a", [])]))
+    queue.hold()
+    presses = [member_interaction(env.bot), member_interaction(env.bot)]
+
+    waiting = [asyncio.create_task(_ask(env, interaction=press)) for press in presses]
+    await _yield_to_the_loop()
+
+    assert not any(task.done() for task in waiting)
+    for press in presses:
+        [deferred] = press.response.defer.await_args_list
+        assert deferred.kwargs.get("ephemeral") is True
+        assert deferred.kwargs.get("thinking") is True
+        assert press.response.send_message.await_count == 0
+        assert press.followup.send.await_count == 0
+
+    async with queue.sweeping():
+        pass
+    await asyncio.wait_for(asyncio.gather(*waiting), timeout=5)
+
+    replies = []
+    for press in presses:
+        assert press.response.send_message.await_count == 0
+        [sent] = press.followup.send.await_args_list
+        assert sent.kwargs.get("ephemeral") is True
+        replies.append(sent.args[0] if sent.args else sent.kwargs.get("content"))
+    refusal = (
+        f"⚠️ {DOING} has already been asked for and has not started yet, "
+        "so it was not asked for again."
+    )
+    assert sorted(_acknowledges(reply) for reply in replies) == [False, True]
+    assert refusal in replies
+    assert len(await change_rows(env.db_path)) == 1
+
+
+@pytest.mark.parametrize(
+    ("state", "waits", "defers"),
+    [
+        ("held", True, True),
+        ("held, answered", True, False),
+        ("never held", False, False),
+        ("released", False, False),
+        ("inside the sweep", False, False),
+    ],
+    ids=[
+        "held, not yet answered", "held, already answered", "never held", "released already",
+        "asked inside the sweep",
+    ],
+)
+async def test_a_command_answered_off_the_queue_waits_out_the_hold(env, state, waits, defers):
+    """A command answered off the queue (`/bot pack`, say) asks the queue whether to wait. While
+    the bot holds its queue for the catch-up after a restart, the call does not return until the
+    catch-up ends, then says it waited; an interaction not yet answered is deferred first, privately
+    and thinking, and one already answered is left as it is. On a queue never held, one released
+    already, or a call made by the catch-up itself, it says at once that it did not wait, and
+    defers nothing."""
+    queue = _queue(env)
+    press = member_interaction(env.bot)
+    if state == "held, answered":
+        await press.response.send_message("a form")
+        press.response.send_message.reset_mock()
+    if state != "never held":
+        queue.hold()
+    if state == "released":
+        queue.release()
+
+    if state == "inside the sweep":
+        async with queue.sweeping():
+            waited = await asyncio.wait_for(queue.wait_out_the_hold(press), timeout=5)
+    else:
+        waiting = asyncio.create_task(queue.wait_out_the_hold(press))
+        await _yield_to_the_loop()
+        assert waiting.done() is not waits
+        if waits:
+            async with queue.sweeping():
+                pass
+        waited = await asyncio.wait_for(waiting, timeout=5)
+
+    assert waited is waits
+    if defers:
+        [deferred] = press.response.defer.await_args_list
+        assert deferred.kwargs.get("ephemeral") is True
+        assert deferred.kwargs.get("thinking") is True
+    else:
+        assert press.response.defer.await_count == 0
+    assert press.response.send_message.await_count == 0
+    assert press.followup.send.await_count == 0

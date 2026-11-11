@@ -42,6 +42,7 @@ from leaguebot.core.models.change import LEAGUE_LANE
 from leaguebot.core.services.upkeep import backup_service, factory_reset_service, pack_service
 from leaguebot.core.services.settings.bot_init_change import ANOTHER_SERVER as _ANOTHER_SERVER
 from leaguebot.core.services.settings.bot_init_change import KIND as BOT_INIT
+from leaguebot.core.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import (
     DRIVER_ROLE_STANDS_FOR,
     bot_setup_only,
@@ -54,6 +55,10 @@ from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.interaction_errors import describe, describe_fault, report_failure
 from leaguebot.core.utils.league_server import guild_of
 from leaguebot.core.utils.log_lines import lane_name, refuse
+
+#: Waits for the catch-up after a restart before a command answered off the change queue acts.
+_after_the_catch_up = after_the_catch_up(lambda cog: cog.bot.change_queue)
+
 
 log = logging.getLogger(__name__)
 
@@ -461,6 +466,7 @@ class BotCog(commands.Cog):
         confirm=f'Type "{_CONFIRM_WORD}" (case-sensitive) to free this server.'
     )
     @league_admin_only
+    @_after_the_catch_up
     async def handle_pack(self, interaction: discord.Interaction, confirm: str) -> None:
         """Clear everything tied to this server, keep the league, and free the claim.
 
@@ -563,6 +569,7 @@ class BotCog(commands.Cog):
         confirm=f'Type "{_CONFIRM_WORD}" (case-sensitive) to erase the league entire.'
     )
     @server_owner_only
+    @_after_the_catch_up
     async def handle_factory_reset(
         self, interaction: discord.Interaction, confirm: str
     ) -> None:

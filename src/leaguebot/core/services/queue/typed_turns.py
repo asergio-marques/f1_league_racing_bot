@@ -5,11 +5,14 @@ waiting in the message's channel (`turn_waiting`), it turns the message away (`t
 none is, it marks the message with ⏳ at once (`mark`) and asks the change that answers it, a change
 type declaring `turn_channel`; that change's last job is `clear_mark_step`, which takes the ⏳ off.
 
-**A channel waits on the queue's records, never on memory.** `turn_waiting` reads the changes in
-hand of the kinds that declare a `turn_channel`, so a restart, a stop and a Discard all leave it
-right: a stopped turn still holds its channel, a discarded one frees it. A league change a turn
+**A channel waits on the queue's records, never on memory,** but for one exception.
+`turn_waiting` reads the changes in hand of the kinds that declare a `turn_channel`, so a restart,
+a stop and a Discard all leave it right: a stopped turn still holds its channel, a discarded one frees it. A league change a turn
 handed over (a signup sent for review) declares the channel too, and so holds it until it is done;
-a league stop alone, at a change that names no turn channel, holds nothing.
+a league stop alone, at a change that names no turn channel, holds nothing. The exception is an ask
+the queue holds back while the start-up sweep catches up after a restart: nothing is saved of it
+yet, so its channel is handed in as *held* and counts as waiting, and a second message typed there
+meanwhile is turned away as at any other time; the queue drops it once the ask is saved or refused.
 
 **The turn-away is off the queue.** Its note and the deletion of the turned-away message are made
 at once, so that the member is told while the earlier answer waits; queued, they would wait behind
@@ -49,10 +52,14 @@ TURN_AWAY_NOTE = (
 
 
 async def turn_waiting(
-    db_path: str, types: Collection[ChangeType], channel_id: int
+    db_path: str, types: Collection[ChangeType], channel_id: int, *, held: Collection[int] = ()
 ) -> bool:
     """Whether a turn is waiting in *channel_id*: a change of a kind in *types* that declares
-    `turn_channel` is queued, running or stopped, and names that channel."""
+    `turn_channel` is queued, running or stopped, and names that channel, or the channel is one of
+    *held*, the channels of the asks the queue holds back during the catch-up after a restart
+    (`ChangeQueue.held_turn_channels`)."""
+    if channel_id in held:
+        return True
     declaring = {t.kind: t.turn_channel for t in types if t.turn_channel is not None}
     for kind, turn_channel in declaring.items():
         for payload in await unfinished(db_path, [kind]):

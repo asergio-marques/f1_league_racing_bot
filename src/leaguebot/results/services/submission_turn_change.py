@@ -164,7 +164,9 @@ async def take_paste(
             submissions.expected_resubmitted_session_on if resubmitting
             else submissions.expected_session_on
         )(db, int(row["round_id"]))
-    if await typed_turns.turn_waiting(bot.db_path, queue.types, message.channel.id):
+    if await typed_turns.turn_waiting(
+        bot.db_path, queue.types, message.channel.id, held=queue.held_turn_channels()
+    ):
         await typed_turns.turn_away(message, typed_turns.TURN_AWAY_NOTE)
         waiting = "its session" if expected is None else _label(expected, row)
         await bot.output_router.post_log(

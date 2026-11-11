@@ -52,6 +52,7 @@ from leaguebot.core.services.test_mode.test_mode_service import (
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services.upkeep import backup_service
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
+from leaguebot.core.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import league_admin_only, changes_nothing
 from leaguebot.core.utils.input_validator import parse_user_id
 from leaguebot.core.utils.interaction_errors import describe, describe_form, report_failure
@@ -62,6 +63,10 @@ from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.messages import chunk_message
 from leaguebot.core.utils.roster_import import format_roster_errors as _format_roster_errors
 from leaguebot.core.utils.roster_import import parse_roster_csv
+
+#: Waits for the catch-up after a restart before a command answered off the change queue acts.
+_after_the_catch_up = after_the_catch_up(lambda cog: cog.bot.change_queue)
+
 
 log = logging.getLogger(__name__)
 
@@ -392,6 +397,7 @@ class TestModeCog(commands.Cog):
         description="Save the current database and scheduler as a backup.",
     )
     @league_admin_only
+    @_after_the_catch_up
     async def backup_save(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         if await self._refuse_outside_test_mode(interaction):
@@ -444,6 +450,7 @@ class TestModeCog(commands.Cog):
         description="Lock or unlock the saved backup, so a save cannot overwrite it.",
     )
     @league_admin_only
+    @_after_the_catch_up
     async def backup_lock(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         if await self._refuse_outside_test_mode(interaction):
@@ -513,6 +520,7 @@ class TestModeCog(commands.Cog):
         description="Replace the database with the saved backup. Needs a restart.",
     )
     @league_admin_only
+    @_after_the_catch_up
     async def backup_restore(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
         if await self._refuse_outside_test_mode(interaction):

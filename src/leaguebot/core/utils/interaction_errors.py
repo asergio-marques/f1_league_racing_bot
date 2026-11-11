@@ -106,6 +106,19 @@ def event_failure_line(event: str, error: BaseException) -> str:
     )
 
 
+def start_up_failure_line(step: str, error: BaseException) -> str:
+    """The log channel's line for the start-up step *step* (named as it signed up, or what the
+    start-up ran if it has no name of its own) that failed with *error*.
+
+    The failure line's shape, as `event_failure_line` has it: what failed, the kind of fault, and
+    that the detail is in the host's log.
+    """
+    return (
+        f"❌ The bot's start-up step `{step}` failed — "
+        f"{type(error).__name__}. The details are in the host's log."
+    )
+
+
 def describe_fault(error: BaseException) -> str:
     """The kind of fault *error* is, in plain words, never the exception itself."""
     if isinstance(error, app_commands.CommandInvokeError):

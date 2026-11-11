@@ -531,7 +531,8 @@ class SchedulerService:
         ``schedule_attendance_round`` calls this for the second alone, and a refused
         cancellation arms both for a round raced, or ended cancelled as not held). The
         forecast's is armed whatever the hour; the check-in's only while its moment is still
-        ahead of *now*, the restart's catch-up taking one already past (`_recover_missed_cleanups`).
+        ahead of *now*, the restart's catch-up taking one already past (weather's
+        `recover_missed_forecast_clean_ups`, attendance's `recover_missed_check_in_clean_ups`).
         Both replace a job of the same id.
         """
         if forecast:

@@ -18,6 +18,7 @@ is sent, his wizard asking for his nationality unless a test says otherwise.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import timedelta
 from typing import Any
@@ -31,6 +32,7 @@ from tests.support.change_queue import (
     acknowledgement,
     change_rows,
     discard_job,
+    held_on,
     http_error,
     member_interaction,
     retry_job,
@@ -273,17 +275,35 @@ async def test_rearming_the_24_hours_cannot_be_discarded(tmp_path):
     assert any("Step 2 — Platform" in text for text in _texts(league))
 
 
+@pytest.mark.parametrize("held", [
+        pytest.param(False, id="at any time"),
+        pytest.param(True, id="during the catch-up after a restart"),
+    ])
 async def test_a_typed_answer_while_its_turn_waits_is_turned_away_with_a_note_and_a_line(
-    tmp_path,
+    tmp_path, held,
 ):
     """Kimi types "British", and before its turn comes types "French". The second message is
     turned away at once: it is deleted, a note in his channel says his earlier message is still
     waiting its turn, and a line in the log channel records the refusal at the nationality step.
-    Only one `signup.answer` change is asked; when the queue runs his nationality is British."""
+    Only one `signup.answer` change is asked; when the queue runs his nationality is British. So
+    too just after a restart, while the catch-up holds his first answer's turn: "French" is turned
+    away all the same, and "British" is asked, and marked ⏳, once the catch-up ends."""
     league = await _league(tmp_path)
+    queue = league.bot.change_queue
 
-    await _type(league, "British")
+    if held:
+        queue.hold()
+        asking = asyncio.create_task(_type(league, "British"))
+        await held_on(queue, KIMI_CHANNEL)
+    else:
+        await _type(league, "British")
     second = await _type(league, "French")
+    if held:
+        assert await _changes_of(league, ANSWER_KIND) == []
+        async with queue.sweeping():
+            pass
+        first = await asyncio.wait_for(asking, timeout=5)
+        assert MARK in first.marks
 
     assert second.gone
     assert any("still waiting its turn" in text for text in _texts(league))

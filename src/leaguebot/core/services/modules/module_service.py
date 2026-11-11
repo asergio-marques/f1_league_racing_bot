@@ -50,21 +50,24 @@ class ModuleService:
             raise SwitchNotSignedUp(f"no switch reader is signed up for the {module} module")
         return await reader(db)
 
-    async def _is_enabled(self, module: str) -> bool:
+    async def is_enabled(self, module: str) -> bool:
+        """Whether *module* is on, read on a connection of its own, by the module's switch key: the
+        start-up sweep asks it of each module in turn. A module with no switch signed up raises
+        `SwitchNotSignedUp`, which the caller reports and never reads as off."""
         async with get_connection(self._db_path) as db:
             return await self.is_enabled_on(db, module)
 
     async def is_weather_enabled(self) -> bool:
-        return await self._is_enabled("weather")
+        return await self.is_enabled("weather")
 
     async def is_signup_enabled(self) -> bool:
-        return await self._is_enabled("signup")
+        return await self.is_enabled("signup")
 
     async def is_results_enabled(self) -> bool:
-        return await self._is_enabled("results")
+        return await self.is_enabled("results")
 
     async def is_attendance_enabled(self) -> bool:
-        return await self._is_enabled("attendance")
+        return await self.is_enabled("attendance")
 
     async def is_images_enabled(self) -> bool:
-        return await self._is_enabled("images")
+        return await self.is_enabled("images")

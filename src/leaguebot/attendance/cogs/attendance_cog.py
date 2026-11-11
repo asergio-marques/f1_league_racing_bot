@@ -33,12 +33,17 @@ from leaguebot.attendance.services.attendance_service import (
     validate_timing_invariant,
 )
 from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL
+from leaguebot.core.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only, changes_nothing
 from leaguebot.core.utils.input_validator import parse_user_id
 from leaguebot.core.utils.interaction_errors import describe, describe_form
 from leaguebot.core.utils.league_bot import LeagueBot, bot_of
 from leaguebot.core.utils.league_server import LeagueModal, guild_of
 from leaguebot.core.utils.log_lines import interaction_member, refuse
+
+#: Waits for the catch-up after a restart before a command answered off the change queue acts.
+_after_the_catch_up = after_the_catch_up(lambda cog: cog.bot.change_queue)
+
 
 log = logging.getLogger(__name__)
 
@@ -250,6 +255,7 @@ class AttendanceCog(commands.Cog):
     )
     @app_commands.describe(days="Number of days before the race for the RSVP notice (≥ 1)")
     @league_manager_only
+    @_after_the_catch_up
     async def config_rsvp_notice(
         self, interaction: discord.Interaction, days: int
     ) -> None:
@@ -288,6 +294,7 @@ class AttendanceCog(commands.Cog):
     )
     @app_commands.describe(hours="Hours before the race for the last notice (0 to disable)")
     @league_manager_only
+    @_after_the_catch_up
     async def config_rsvp_last_notice(
         self, interaction: discord.Interaction, hours: int
     ) -> None:
@@ -331,6 +338,7 @@ class AttendanceCog(commands.Cog):
     )
     @app_commands.describe(hours="Hours before the race when RSVPs close")
     @league_manager_only
+    @_after_the_catch_up
     async def config_rsvp_deadline(
         self, interaction: discord.Interaction, hours: int
     ) -> None:
@@ -397,6 +405,7 @@ class AttendanceCog(commands.Cog):
     )
     @app_commands.describe(points="Penalty points (≥ 0)")
     @league_manager_only
+    @_after_the_catch_up
     async def config_no_rsvp_penalty(
         self, interaction: discord.Interaction, points: int
     ) -> None:
@@ -412,6 +421,7 @@ class AttendanceCog(commands.Cog):
     )
     @app_commands.describe(points="Penalty points (≥ 0)")
     @league_manager_only
+    @_after_the_catch_up
     async def config_absent_penalty(
         self, interaction: discord.Interaction, points: int
     ) -> None:
@@ -427,6 +437,7 @@ class AttendanceCog(commands.Cog):
     )
     @app_commands.describe(points="Penalty points (≥ 0)")
     @league_manager_only
+    @_after_the_catch_up
     async def config_no_show_penalty(
         self, interaction: discord.Interaction, points: int
     ) -> None:
@@ -444,6 +455,7 @@ class AttendanceCog(commands.Cog):
     )
     @app_commands.describe(points="Cumulative threshold for auto-sack (0 to disable)")
     @league_manager_only
+    @_after_the_catch_up
     async def config_autosack(
         self, interaction: discord.Interaction, points: int
     ) -> None:
@@ -493,6 +505,7 @@ class AttendanceCog(commands.Cog):
     )
     @app_commands.describe(points="Cumulative threshold for auto-reserve (0 to disable)")
     @league_manager_only
+    @_after_the_catch_up
     async def config_autoreserve(
         self, interaction: discord.Interaction, points: int
     ) -> None:
@@ -581,6 +594,7 @@ class AttendanceCog(commands.Cog):
         round="Round number to recalculate from; every finalised round after it follows.",
     )
     @league_manager_only
+    @_after_the_catch_up
     async def sync(
         self, interaction: discord.Interaction, division: str, round: int
     ) -> None:

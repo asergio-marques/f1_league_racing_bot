@@ -49,6 +49,7 @@ from tests.support.change_queue import (
     acknowledgement,
     change_rows,
     discard_job,
+    held_on,
     http_error,
     member_interaction,
     retry_job,
@@ -385,21 +386,38 @@ async def test_each_amended_paste_is_deleted_and_saved_as_a_draft_by_its_turn(
     assert "Feature Race" in _texts(league)[-1]
 
 
-async def test_an_amended_paste_while_its_turn_waits_is_turned_away(tmp_path, monkeypatch):
+@pytest.mark.parametrize("held", [
+        pytest.param(False, id="at any time"),
+        pytest.param(True, id="during the catch-up after a restart"),
+    ])
+async def test_an_amended_paste_while_its_turn_waits_is_turned_away(tmp_path, monkeypatch, held):
     """Alex pastes the Feature Race, and before its turn has run pastes it again. The second
     message is turned away at once: deleted, with a note in the channel, and no second turn is
     asked; the first stays marked ⏳. The refusal is logged: one ⛔ line naming Alex, round 3 and
-    the Feature Race still waited on (results :257)."""
+    the Feature Race still waited on (results :257). So too just after a restart, while the
+    catch-up holds the first paste's turn: the second is turned away all the same, and the first
+    is asked once the catch-up ends."""
     from tests.support.change_queue import queued_log_lines
 
     league = await _league(tmp_path, monkeypatch)
     await _ask_open(league)
-    first = await _type(league, run=False)
+    queue = league.bot.change_queue
+    if held:
+        queue.hold()
+        asking = asyncio.create_task(_type(league, run=False))
+        await held_on(queue, AMEND_CHANNEL)
+    else:
+        first = await _type(league, run=False)
     sent_before = len(league.sent_to(AMEND_CHANNEL))
 
     second = await _type(league, run=False)
 
     assert second.gone
+    if held:
+        assert await _changes(league, TURN) == []
+        async with queue.sweeping():
+            pass
+        first = await asyncio.wait_for(asking, timeout=5)
     assert MARK in first.marks
     assert len(await _changes(league, TURN)) == 1
     assert len(league.sent_to(AMEND_CHANNEL)) == sent_before + 1

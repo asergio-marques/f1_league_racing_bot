@@ -97,6 +97,7 @@ def _make_cog(*, cfg: AttendanceConfig | None = None) -> AttendanceCog:
     bot.season_service = MagicMock()
     bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
     bot.db_path = "unused.db"
+    bot.change_queue.wait_out_the_hold = AsyncMock(return_value=False)
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
     bot.output_router.queue_log_on = AsyncMock(return_value=1)

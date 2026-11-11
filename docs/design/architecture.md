@@ -104,25 +104,28 @@ and the bot-owned channel handler, each a service of its own in `core/services/p
 imports every module at run time. It holds the builder, which makes every service and every hook,
 loads every module's cogs and persistent views, signs up the hooks that several modules join, each
 module's function in the order its subscribers are called, calls each module's wiring, and orders
-the steps of the start-up, all before the bot connects. It then starts the bot. That is how core can
+the steps of the start-up, core's own and then each module's, in the order it names the modules, and
+holds the change queue, all before the bot connects. It then starts the bot. That is how core can
 offer hooks without importing a module.
 
 **A module's wiring** (`<module>/wiring.py`) is the module's part of the builder: its sign-ups to
 every hook it joins, its switch reader, its change types and settings, its timed jobs' handlers and
 their steps for `/test-mode advance`, its part of the in-memory state cleared, and its start-up
-steps, each written in the module's own file. It is a kind of its own, under the entry point's
-rules: it may look services and the queue up on the bot, as the builder does and a service may not;
-it holds no rules and no database code of its own, the work it signs up being its services'; it
-imports its own module and core, and another module only where its module may, what it needs of
-another module being handed it by the builder (results' share of attendance, handed to its change
-types) or read on the bot as core's (image's drawing, as core's drawing protocol); and nothing
-imports it but the entry point. It offers the builder a function for each step of the build the
-module has a part in, and only those: one for its hooks no other module joins (`sign_up`), its
-switch, its change types, its timed jobs, each of its start-up steps, and each hook several modules
-join that it joins. The builder makes each hook before any module signs up on it: a hook one module
-joins before any module's `sign_up` runs, a hook several modules join in the step that calls their
-functions. It keeps the order of each hook several modules join by naming each module's function
-itself, so no subscriber's order depends on which module wires first.
+steps (one function returning them by name, in the module's own order), each written in the module's
+own file. It is a kind of its own, under the entry point's rules: it may look services and the queue
+up on the bot, as the builder does and a service may not; it holds no rules and no database code of
+its own, the work it signs up being its services'; it imports its own module and core, and another
+module only where its module may, what it needs of another module being handed it by the builder
+(results' share of attendance, handed to its change types) or read on the bot as core's (image's
+drawing, as core's drawing protocol); and nothing imports it but the entry point. It offers the
+builder a function for each step of the build the module has a part in, and only those: one for its
+hooks no other module joins (`sign_up`), its switch, its change types, its timed jobs, its start-up
+steps (`start_up_steps`, one function returning them by name in the module's own order, signed up to
+the hook for the bot starting by the builder, which names the modules' order), and each hook several
+modules join that it joins. The builder makes each hook before any module signs up on it: a hook one
+module joins before any module's `sign_up` runs, a hook several modules join in the step that calls
+their functions. It keeps the order of each hook several modules join by naming each module's
+function itself, so no subscriber's order depends on which module wires first.
 
 *Rejected:* a module's wiring as a service: looking services and the queue up on the bot, it would
 do what the services' rules refuse, and handed them instead, it would bind them as it is wired,
@@ -244,7 +247,8 @@ by the module's name, which the module's own work may also call; core asks for i
 modules and shows which are on in the reviews (the core specification's "Modules"), and keeps the
 dependency table (above). The key is the name the module's switch is asked by: `images` for the
 image module, the module's own name for the rest. So a module added later adds its
-`is_<module>_enabled` to core's module service as well as signing up; core knows its name for its
+`is_<module>_enabled` to core's module service as well as signing up (the start-up sweep asks the same
+reader by the key, `ModuleService.is_enabled`, to pass a disabled module over); core knows its name for its
 switch and nothing more. A module that never signed up is a fault in the bot's assembly, and asking
 for it raises `SwitchNotSignedUp`, a `LookupError` of its own type, which no reader that stands
 aside takes for an answer: each lets that type through by name and stands aside from any other
@@ -842,8 +846,9 @@ written, and goes stale without anyone noticing.
 The bot is mostly driven by the clock: weather phases, check-in calls and deadlines, results
 channels opening, clean-ups. It also has to carry on correctly after it has been stopped. The whole
 bot does this in the shape `steward_module.md` §3 designs for stewarding: the database holds the
-moment work is due, a job only wakes the bot, the scheduler drops no job for being late, and one
-sweep at start-up works through what was missed, in order, before the scheduler runs. §3's heartbeat
+moment work is due, a job only wakes the bot, the scheduler drops no job for being late, and a
+sweep at start-up, which runs core's own steps and then gives each enabled module its turn to catch up
+what it missed, in its own order, runs before the scheduler does. §3's heartbeat
 and downtime extension stay stewarding's own.
 
 *Rejected:* using this shape for stewarding only, which leaves the bot with three different ways
@@ -870,6 +875,11 @@ grace never decides; the jobs armed otherwise are those the lateness check in
 league notices, so it belongs to the specifications (the core specification's "When the bot
 stops", and the stewarding specification's [STW-RST-001] to [STW-RST-003]).
 
+*Rejected:* one pass across every module that puts the missed events of all of them in the order they
+fell due, which would need core to read each module's due moments and to interleave modules that no
+rule orders against one another (the core specification's "When the bot stops" orders no module's
+recovery against another's), and would put a module's rule in core. Each module catches up its own in
+its turn, and the order a rule gives holds within the module, as [STW-RST-001]'s does for stewarding.
 *Rejected:* declaring for each kind of job whether a missed one runs late or is skipped, for the
 sweep to apply, which puts a module's rule in core.
 
@@ -928,9 +938,11 @@ Steps 1 to 4 run in the entry point, before the bot connects; steps 5 to 7 are o
    store (the core specification's "Saving a state and returning to it");
 3. applies the migrations, before connecting to Discord;
 4. runs the builder: the services, the cogs, the hooks and the kinds of timed job;
-5. runs the start-up sweep once, when Discord first connects, while every other change, whether a
-   member or a Discord event asks for it, waits until the sweep has put its own on the queue, so
-   none overtakes a missed event that would have happened first;
+5. runs the start-up sweep once, when Discord first connects. The queue has been held since before the
+   connection (`ChangeQueue.hold`), so every other change, whether a member or a Discord event asks for
+   it, waits, a member's interaction deferred meanwhile, until the sweep has asked its own
+   (`ChangeQueue.sweeping`, whose exit, or `release`, lifts the hold, harmlessly if already lifted), so
+   none overtakes a recovery asked for a missed event;
 6. starts the queue, which carries on with any change a stop cut off, leaves a job that was stopped
    on a failure stopped, to be cleared by Retry, or by Discard where the job may be discarded, and
    posts again any stop notice that never landed;
@@ -945,29 +957,28 @@ no change.
 Tests can then run the whole start-up in order, instead of checking its order by searching the
 source code.
 
-**One sweep picks up the timed events that were missed.** It walks everything that came due while
-the bot was down, in the order it would have happened, and hands each to its handler. A timed event
-that makes a change puts it on the queue, like any other. A module's start-up work that is no missed
-event (a review posted again, an interrupted submission reopened, the hub's panel posted again, as
-the core specification's "When the bot stops" lists) is a step of the sweep too, reached through the
-hook for the bot starting. Each step of the sweep is kept separate, so one failing is reported and
-does not stop the rest. A step holds no module's rule: the step for putting a round's review back,
-which results' wiring offers, calls the results service that decides it (core specification, "When
-the bot stops"), and that decision is asked of the queue as a change like any other.
+**The sweep is core's own steps, then each enabled module's turn.** It runs the steps core signed up
+for the bot starting, one at a time, then turns to each module in the order the builder named them and
+reads its switch (`ModuleService.is_enabled`). A disabled module is passed over, with a line in the
+host's log; an enabled module's turn runs its own start-up steps, one at a time, in the order its
+wiring gives. A timed event that was missed is caught up in its module's turn, by the handler its
+module provides for the kind of job, so a job run on time and one caught up take one path; a module's
+start-up work that is no missed event (a review posted again, an interrupted submission reopened, the
+hub's panel posted again, as the core specification's "When the bot stops" lists) is a step of the same
+turn. A change a step makes is asked of the queue, like any other. Each step is kept separate, as are
+each switch read, each module's list of steps and the queue's start: one that fails is logged with its
+traceback and reported to the log channel in one line, and the rest carry on. A step holds no module's
+rule: the step for putting a round's review back, which results' wiring offers, calls the results
+service that decides it, and that decision is asked of the queue as a change like any other.
 
-**The sweep only delegates.** It is core's: it asks each kind of job, through what its module signed
-up, which of its events came due, puts them all in the order they fell due, and hands each to the
-handler its module provides for that kind of job, one at a time: each handler finishes before the
-next is called, and none runs beside another. Before any of them, it calls whoever signed up for the
-bot starting, one at a time as well, so a module's start step's change is queued, and carried out,
-ahead of any change its missed events ask for. A handler asks for its change on the queue; what an
-earlier event changed is seen by a later one's change when the queue runs it, not by the later one's
-handler. The sweep holds no module's logic. The builder, or the module's wiring it calls, signs each
-handler up with its kind of job, together with the kind's own way of telling which of its events
-came due, as it registers the kind with the scheduler service; that is the hook core offers for a
-timed event falling due. The handler holds its module's logic, what becomes of a missed event
-included; core holds none of it. Each module writes the handler for every kind of timed job it has,
-and neither the entry point nor a module's wiring holds the module's rules in it.
+**The sweep only delegates.** Core holds the order of the turns and nothing of what happens in one:
+it does not read a module's due moments, interleave one module's events with another's or decide what
+becomes of a missed one. Each module writes the handler for every kind of timed job it has, signed up
+by the builder, or the module's wiring it calls, with the kind as it registers the kind with the
+scheduler service, and its start-up steps, offered by its wiring. The handler holds its module's logic,
+what becomes of a missed event included; neither the entry point nor a module's wiring holds the
+module's rules in it. What an earlier step changed is seen by a later one's change when the queue
+runs it, not by the later step.
 
 **A change cut off by a stop is the queue's to finish,** not the sweep's (see "How a change is
 carried out"). Approving a season, for example, is one change: its lineups, calendars and sheets

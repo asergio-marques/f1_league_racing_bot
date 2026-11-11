@@ -214,9 +214,11 @@ in the order the hook calls its subscribers), and calls each module's wiring (`<
 (`sign_up`), its switch (`register_switch`, through `register_module_switches`), its change types
 (`register_change_types`) and its kinds of timed job (`register_scheduler_callbacks`). It signs up
 core's own About option (`register_hub_options`), loads the cogs, registers the persistent views and
-sets the start-up steps (`_start_up_steps`), all before the bot connects. Beside core's own part,
-the builder keeps what joins modules: every service, every hook and the order of its subscribers, a
-hand-in from one module to another, the cogs and views, and the order of the steps. Core has no
+signs the start-up steps up to the starting hook (`_sign_up_to_starting`), all before the bot
+connects; `main()` then holds the change queue (`ChangeQueue.hold`), so that a request made before
+the sweep has asked its own waits for it. Beside core's own part, the builder keeps what joins
+modules: every service, every hook and the order of its subscribers, a hand-in from one module to
+another, the cogs and views, and the order of the modules' start-up turns. Core has no
 wiring of its own. `test_build_returns_every_service_complete` and
 `test_every_kind_is_registered_before_the_scheduler_starts` pin that. `LeagueBot`
 (`core/utils/league_bot.py`) declares every attribute the builder attaches, each hook among them,
@@ -280,6 +282,15 @@ Among them:
 - **A change starts only if it is still queued:** the claim that sets it running is conditioned
   on its state in the statement, so a change ended while its check ran does not start
   (`test_a_change_discarded_while_its_check_runs_does_not_start`).
+- **The queue is held from the entry point's `hold()` until the start-up sweep has asked its own**
+  (`sweeping()`, whose leaving, or `release()`, lets the asks go ahead; releasing twice is harmless).
+  Every `ask` and `ask_after` made outside the sweep waits before its check, so nothing a member
+  does or Discord reports lands on a lane ahead of a recovery asked a moment later. An interaction
+  not yet answered is deferred, privately, before the ask waits, for Discord's three seconds. A kind
+  that declares a `turn_channel` puts it in `_held_turns` while its ask waits, which
+  `held_turn_channels()` returns, so `turn_waiting` counts a typed answer held there as waiting and
+  a second message typed meanwhile is turned away. *Rejected:* the held channels in `_held`, which
+  holds the kept replies. A queue never held asks at once, as every test queue does. A command answered off the queue waits through `wait_out_the_hold` by the `after_the_catch_up` decorator (`core/utils/catch_up_gate.py`), worn below the tier guard, which hands the command a response that follows up in the place of the one the deferral used; each cog gives it the way to its own queue, a helper never reading the queue off the bot.
 - **A kept reply is the same entry held in memory**, let go once it can no longer be updated.
   *Rejected:* a second table of replies (`ChangeQueue.keep_reply`'s docstring;
   `test_a_kept_reply_no_later_change_takes_over_is_let_go_once_it_cannot_be_updated`).
@@ -402,8 +413,8 @@ window is, `REVIEW_WINDOW`'s comment says. When it fires, `review_expiry_timer` 
 and asks `season.review.take_down`, or nothing where the review is gone or already being taken down.
 What became of a review's button is held in memory (`_PRESSES`), for the reason its comment gives.
 **Missed while the bot was down**, the timer fires on start, and finds the review already in hand:
-start-up's step for expired review prompts asks the take-down first, since the scheduler is paused
-until start-up ends.
+start-up's step for expired review prompts, core's first, asks the take-down first, since the
+scheduler is paused until start-up ends.
 
 **A round's timed work is armed by three changes**: the season's approval (its `ARM` job), and the
 amendment and re-arming of a round (`round_amend_change`), through the scheduler service's arming
@@ -416,12 +427,29 @@ for a round's kinds are the modules'.
 
 `main()` reads the settings, swaps in a staged restore, applies the migrations, builds the bot and
 connects it, in that order (`test_migrations_run_before_the_bot_connects`). When Discord first
-reports the bot ready, `start_up` (`core/services/upkeep/start_up.py`) runs once per process:
+reports the bot ready, `start_up` (`core/services/upkeep/start_up.py`) runs once per process, as the
+sweep of everything that came due while the bot was stopped:
 
 - **It starts the scheduler paused**, so the job store can be read while no job runs, and resumes
   it last, in a `finally`, so a queue that fails to start does not hold the jobs paused.
-- **It runs each step in turn, each contained**: a step that raises is logged and the next runs.
-- **The queue's start is its last step.** `ChangeQueue.start` registers the stop notice's view,
+- **It runs core's own steps, then turns to each module in turn.** Inside the queue's `sweeping()`
+  it runs core's steps in the order they signed up, one at a time. Then, for each module in sign-up
+  order, it reads the module's switch (`ModuleService.is_enabled`, by the switch key), passes the
+  module over, with a line in the host's log, where it is off, and otherwise runs the module's own
+  steps in the module's own order. Each enabled module catches up its own missed events in its
+  turn: no pass interleaves the events of different modules by time (`architecture.md`, "Timed work
+  and restarts"). *Rejected:* one list of every module's steps in core's hands, which ran a
+  disabled module's recoveries and left the order of the modules' steps among themselves to the
+  builder.
+- **Each step, each switch read, each module's list of steps and the queue's start is contained**:
+  one that raises is logged with its traceback and reported to the log channel by one line
+  (`start_up_failure_line`), and the rest carry on, the module's later steps included. A module whose
+  switch or list cannot be read is passed over; a switch not signed up is a fault in the assembly and
+  is reported, never read as off.
+- **The hold is released when the sweep has asked its own**, on leaving `sweeping()`, and again in an
+  outer `finally`, so a scheduler that cannot start does not leave every request waiting for the rest
+  of the run.
+- **The queue's start follows the sweep.** `ChangeQueue.start` registers the stop notice's view,
   leaves every stopped job stopped, delivers lines never tried, posts any stop notice that never
   landed, and starts the dispatcher.
 - **A guard of its own** makes a second ready, after a network drop, run nothing.
@@ -429,27 +457,32 @@ reports the bot ready, `start_up` (`core/services/upkeep/start_up.py`) runs once
 Each is pinned by a test in `tests/core/test_start_up.py`; `ChangeQueue.start`'s docstring says
 what the queue's start does.
 
-The steps are a fixed tuple the builder makes (`_start_up_steps`), in an order its comments give
-where the order matters (`test_the_builder_orders_the_start_up_steps`). Each module's start-up step
-is a function of its wiring, which the builder names in the step: its recoveries, results' arming of
-its amendment sweep (`results.wiring.arm_amendment_sweep`) and signup's wizard recovery
-(`signup.wiring.recover_wizards`); core's own, the review prompts and the hub, are the builder's.
-The missed clean-ups are one step the builder composes of weather's part and attendance's:
+The steps are signed up to `StartingHook` by the builder (`_sign_up_to_starting`): core's two, by
+name, then each module's, by the module's own `start_up_steps` function in its wiring bound to the
+bot, under the module's switch key, the modules in the order the core specification lists them
+(`test_the_builder_orders_the_start_up_steps`). A module's function names its steps in its own order,
+with the comments that order them. Each step is a recovery, which looks its work up when it runs;
+turning each into the handler for its kind of job, called in the module's turn, is the module's
+own design pass.
 
-| # | Step | What it does |
+| Turn | Step | What it does |
 |---|---|---|
-| 1 | amendment sweep | arms results' standing sweep of lapsed amendments |
-| 2 | portrait refresh job | arms the image module's daily refresh where it is on |
-| 3 | signup close timer | closes a signup window whose close passed, or arms its timer again |
-| 4 | orphaned amend channels | asks each open amendment's lapse; before step 5, for the reason its comment gives |
-| 5 | orphaned submission channels | asks each open submission's review or restart |
-| 6 | expired review prompts | core's: asks each standing review's take-down, and routes its Approve view again |
-| 7 | missed phases | asks each weather phase whose moment passed |
-| 8 | missed check-in calls | asks each check-in call that fell due |
-| 9 | RSVP views and deadlines | routes each check-in message's view again and asks each deadline passed |
-| 10 | missed clean-ups | asks each forecast's and check-in's clean-up that fell due |
-| 11 | hub | core's: routes the hub's buttons again and asks the panel's refresh |
-| 12 | wizards | arms each signup wizard's inactivity timer again |
+| core | expired review prompts | asks each standing review's take-down, and routes its Approve view again |
+| core | hub | routes the hub's buttons again and asks the panel's refresh |
+| signup | signup close timer | closes a signup window whose close passed, or arms its timer again |
+| signup | wizards | arms each signup wizard's inactivity timer again |
+| results | amendment sweep | arms results' standing sweep of lapsed amendments |
+| results | orphaned amend channels | asks each open amendment's lapse; before the submission channels, for the reason its comment gives |
+| results | orphaned submission channels | asks each open submission's review or restart |
+| attendance | missed check-in calls | asks each check-in call that fell due |
+| attendance | RSVP views and deadlines | routes each check-in message's view again and asks each deadline passed |
+| attendance | missed check-in clean-ups | asks each check-in's clean-up that fell due |
+| weather | missed phases | asks each weather phase whose moment passed |
+| weather | missed forecast clean-ups | asks each forecast's clean-up that fell due |
+| image | portrait refresh job | arms the image module's daily refresh |
+
+Results also arms the amendment sweep when it is switched on (`module_on_results`'s `After` step),
+so the sweep runs whenever results is on, a restart or not.
 
 The retry loop for log lines is no step (`architecture.md`, "Start-up runs once, in one
 function"): core's is `RetryCog.retry_loop` (`retry_cog`), started by `LeagueBot.setup_hook`
@@ -520,6 +553,11 @@ path has it (the module docstring;
 The builder makes every hook, signs the modules up and attaches it to the bot; a cog reads it off
 the bot and hands it on, and a change type is handed it by the builder.
 
+`StartingHook` is of another shape: it holds core's own steps, signed up by name, and each module's,
+signed up as one function bound to the bot, under the module's switch key. The hook calls nothing:
+`start_up` reads it and runs each step contained, a module's only where its switch is on (see
+"Start-up"). `StartUpStep`, a name and what it runs, is declared beside it.
+
 ### The hooks core declares
 
 Each is declared on `LeagueBot`, whose comment on it says what it hands over and what core does with
@@ -528,6 +566,7 @@ which each `_sign_up_to_*` docstring states where it matters.
 
 | Hook | Type | Subscribers | Core calls it in |
 |---|---|---|---|
+| `starting` | `StartingHook`, read rather than called | core's two steps, then signup, results, attendance, weather, image | `start_up` |
 | `round_windows_read` | A | attendance, weather | `round_moments.read_round_windows` |
 | `phases_drawn_read` | A | weather | `round_moments.read_phases_drawn` |
 | `round_amended`, `round_clean_ups_due` | A | weather, attendance | `round_amend_change` |
@@ -632,11 +671,12 @@ stated exception, core's among them; each docstring there named carries its reas
 | Starting point | Core's code |
 |---|---|
 | A command, button or form | `LeagueCommandTree.on_error`, `LeagueView.on_error`, `LeagueModal.on_error` (`core/utils/league_server.py`), each calling `report_failure` (`core/utils/interaction_errors.py`) |
+| The slash-command sync at start-up | `on_ready`, which logs a refusal on the host and reports it to the log channel by `start_up_failure_line` |
 | A Discord event | `on_event_error` (`core/utils/league_server.py`), attached by the builder with `setattr` |
 | An autocomplete | `bounded_autocomplete` (`core/utils/autocomplete.py`) |
 | A change | `ChangeQueue._start` and `_run_step`, leading to `_stop`, or to `on_fault` or `on_check_fault` where the type gives one |
 | A scheduled job | `_one_off_timer_job` (`core/services/scheduler_service.py`), which logs a handler's fault on the host |
-| A start-up step | `start_up`, each step contained |
+| A start-up step, a module's switch read, a module's list of steps, the queue's start | `start_up`, each contained and reported to the log channel by `start_up_failure_line` |
 | The retry loop | `RetryCog.retry_loop` and `retry_service.attempt_delivery` |
 
 `report_failure` never raises: its reply and its line are each tried on their own. Its docstring
@@ -680,6 +720,8 @@ Each is stated where it lives and pinned by the test named.
 | `write_transition` is the one writer of a driver's state | `write_transition` | `test_every_reset_goes_through_the_transition_table` |
 | The driver has no ban states | `DriverState` | `test_the_driver_has_seven_states_and_no_ban_among_them` |
 | The scheduler starts paused and is resumed last, so a restart's take-down of a review comes before its timer | `core/services/upkeep/start_up.py` | `test_no_job_runs_until_start_up_has_ended` |
+| The queue is held from before the bot connects until the sweep has asked its own, and released whatever the sweep does | `ChangeQueue.hold`, `release` and `sweeping`, `start_up`'s docstring | `test_a_request_during_the_sweep_waits_until_the_sweep_has_asked_its_own`, `test_the_sweep_releases_held_requests_before_the_queue_starts` |
+| A held typed answer counts as waiting, so a second is turned away | `turn_waiting`, `ChangeQueue.held_turn_channels` | `test_a_second_message_typed_while_the_first_is_held_is_turned_away` |
 | A fingerprint that cannot be taken is empty, and differs from every fingerprint | `season_fingerprint_service.take_fingerprint` | `test_a_fingerprint_that_could_not_be_taken_differs_from_everything` |
 | A review's expiry asked twice posts one notice | `season_review_changes.claim_take_down` | `test_a_review_expired_twice_at_once_posts_one_notice` |
 | A season starts on the UTC date of the queue's clock | `season_setup_change`'s docstring | `test_the_start_date_is_the_utc_date` |

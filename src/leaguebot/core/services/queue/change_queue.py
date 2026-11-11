@@ -149,6 +149,20 @@ the last change asked for, whatever became of any other, has the same key and ha
 Asked again once anything else has been asked for after it, or once it has started, a change is
 queued again; a once-only change is refused by its own check once done.
 
+**After a restart the queue is held until the start-up sweep has asked its own.** The entry point
+calls `hold()` before the bot connects; from then on every `ask` and `ask_after` waits, before its
+check, until `release()` is called, which `sweeping()` does on leaving, whether the sweep succeeded
+or raised, and which start-up calls itself where it fails before the sweep begins (calling it twice
+is harmless). The sweep's own asks are made inside `sweeping()`, which marks them by a context
+variable, so they pass the hold; a task started from outside it does not inherit the mark. A held ask
+that has an interaction not yet answered defers it, privately, before it waits, so that Discord's
+three seconds do not lapse, and its acknowledgement or refusal is then a follow-up, as for any
+deferred interaction. A command answered off the queue waits the same way through `wait_out_the_hold`
+(`leaguebot.core.utils.catch_up_gate`). A queue never held (every test's, bar those of the hold) asks at once. *Rejected:* refusing a request made during the
+catch-up, which would turn away what a league manager asked for a moment after a restart, and
+queueing it unchecked, which would decide it against a league the catch-up has not finished
+changing. Pinned by `test_a_request_during_the_sweep_waits_until_the_sweep_has_asked_its_own`.
+
 **The acknowledgement is updated, never stored.** The member's interaction is held in memory against
 the change id, and only while fewer than 14 minutes (a minute short of Discord's token) have passed
 since the acknowledgement. An interaction already answered is acknowledged through a follow-up,
@@ -162,7 +176,9 @@ import asyncio
 import json
 import logging
 import sqlite3
-from collections.abc import Awaitable, Callable, Collection
+from collections.abc import AsyncIterator, Awaitable, Callable, Collection
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Optional
@@ -226,6 +242,10 @@ if TYPE_CHECKING:
     from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
+
+#: True inside `ChangeQueue.sweeping()`, and in the tasks started there: an ask made so passes the
+#: hold. A task started from outside the sweep keeps its own, False.
+_in_the_sweep: ContextVar[bool] = ContextVar("in_the_sweep", default=False)
 
 #: How long after the acknowledgement it may still be updated: a minute short of the fifteen
 #: Discord's token lasts.
@@ -372,6 +392,11 @@ class ChangeQueue:
         # A job a Retry has made due, with who pressed it and when its next try stood before: a
         # Retry that fails writes its own line and leaves the schedule as it was.
         self._retrying: dict[int, tuple[str, str | None]] = {}
+        # The hold (`hold`): None until the entry point holds the queue, set when released.
+        self._hold: asyncio.Event | None = None
+        # The channels of the typed answers whose ask waits out the hold, kept apart from `_held`,
+        # which holds the kept replies: each is dropped once its ask is saved or refused.
+        self._held_turns: set[int] = set()
 
     # ------------------------------------------------------------------
     # Registering and asking
@@ -424,6 +449,83 @@ class ChangeQueue:
         except KeyError:
             raise KeyError(f"no change type {kind!r} is registered") from None
 
+    def hold(self) -> None:
+        """From now, every `ask` and `ask_after` waits, before its check, until `release()`: the
+        entry point's, before the bot connects, so that nothing a member does or Discord reports
+        lands on a lane ahead of what the start-up sweep asks. Held already, it stays held."""
+        if self._hold is None or self._hold.is_set():
+            self._hold = asyncio.Event()
+
+    def release(self) -> None:
+        """Let the asks that wait for the hold go ahead, and every ask after them. Harmless where
+        the queue is not held or is released already."""
+        if self._hold is not None:
+            self._hold.set()
+
+    @asynccontextmanager
+    async def sweeping(self) -> AsyncIterator[None]:
+        """The start-up sweep's own asks are made inside it and pass the hold; leaving it, whether
+        the sweep succeeded or raised, releases the hold."""
+        token = _in_the_sweep.set(True)
+        try:
+            yield
+        finally:
+            _in_the_sweep.reset(token)
+            self.release()
+
+    def _holding(self) -> asyncio.Event | None:
+        """The hold, where a request made now has to wait for it: the queue is held, not yet
+        released, and the request is not the sweep's own."""
+        hold = self._hold
+        if hold is None or hold.is_set() or _in_the_sweep.get():
+            return None
+        return hold
+
+    async def wait_out_the_hold(self, interaction: discord.Interaction) -> bool:
+        """For a command answered off the queue: wait, where the queue is held, until it is
+        released, and say whether it had to. An interaction not yet answered is deferred first,
+        as an ask's is (`_out_the_hold`), so that Discord shows "thinking…" and its three seconds
+        do not lapse; the command then answers by a follow-up."""
+        hold = self._holding()
+        if hold is None:
+            return False
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True, thinking=True)
+        await hold.wait()
+        return True
+
+    @asynccontextmanager
+    async def _out_the_hold(
+        self, kind: str, payload: dict[str, Any], interaction: discord.Interaction | None
+    ) -> AsyncIterator[None]:
+        """Wait, where the queue is held and the ask is not the sweep's, until it is released, and
+        stay inside until the ask is saved or refused. An interaction not yet answered is deferred
+        first, privately and with `thinking=True`, so that Discord shows the member "thinking…" for a
+        button or a form as for a command, and its three seconds do not lapse; a form opened from a
+        slash command takes only that kind of deferral. While it waits, and until the ask is through, the channel of a kind that declares a
+        `turn_channel` is a held turn channel (`held_turn_channels`)."""
+        hold = self._holding()
+        if hold is None:
+            yield
+            return
+        if interaction is not None and not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True, thinking=True)
+        declares = self._type(kind).turn_channel
+        channel = None if declares is None else declares(payload)
+        if channel is not None:
+            self._held_turns.add(channel)
+        try:
+            await hold.wait()
+            yield
+        finally:
+            if channel is not None:
+                self._held_turns.discard(channel)
+
+    def held_turn_channels(self) -> frozenset[int]:
+        """The channels of the typed answers waiting out the hold, for `turn_waiting`: a second
+        message typed there is turned away as at any other time."""
+        return frozenset(self._held_turns)
+
     async def check(
         self, kind: str, payload: dict[str, Any], *, origin: ChangeOrigin = ChangeOrigin.MEMBER
     ) -> Verdict:
@@ -460,7 +562,27 @@ class ChangeQueue:
         so once it is saved its id is returned and the worker woken whatever the acknowledgement
         meets (`_acknowledge_saved`). Pinned by
         `test_a_fault_acknowledging_a_saved_change_still_returns_its_id_and_runs_it`.
+
+        Where the queue is held (`hold`), it waits first, before its check.
         """
+        async with self._out_the_hold(kind, payload, interaction):
+            return await self._ask(
+                kind, payload, interaction=interaction, actor=actor, what=what,
+                refusal_what=refusal_what, origin=origin,
+            )
+
+    async def _ask(
+        self,
+        kind: str,
+        payload: dict[str, Any],
+        *,
+        interaction: discord.Interaction | None = None,
+        actor: Any = None,
+        what: str,
+        refusal_what: str | None = None,
+        origin: ChangeOrigin = ChangeOrigin.MEMBER,
+    ) -> int | None:
+        """`ask`, once the hold has let it through."""
         change_type = self._type(kind)
         member = actor if actor is not None else (interaction.user if interaction else None)
         verdict = await self.check(kind, payload, origin=origin)
@@ -662,13 +784,34 @@ class ChangeQueue:
         the bot stopped or the ask raised between the two; one save cannot. Only *kind*'s change
         is acknowledged. *ahead* is dropped, and *kind* asked alone, where *ahead* repeats a
         change not yet started or is no longer due.
+
+        Where the queue is held (`hold`), it waits first, before its check.
         """
+        async with self._out_the_hold(kind, payload, interaction):
+            return await self._ask_after(
+                ahead, kind, payload, interaction=interaction, actor=actor, what=what,
+                refusal_what=refusal_what, origin=origin,
+            )
+
+    async def _ask_after(
+        self,
+        ahead: "Ahead",
+        kind: str,
+        payload: dict[str, Any],
+        *,
+        interaction: discord.Interaction | None = None,
+        actor: Any = None,
+        what: str,
+        refusal_what: str | None = None,
+        origin: ChangeOrigin = ChangeOrigin.MEMBER,
+    ) -> int | None:
+        """`ask_after`, once the hold has let it through."""
         change_type = self._type(kind)
         ahead_type = self._type(ahead.kind)
         member = actor if actor is not None else (interaction.user if interaction else None)
         verdict = await self.check(kind, payload, origin=origin)
         if verdict.kind is not VerdictKind.GO:
-            return await self.ask(
+            return await self._ask(
                 kind, payload, interaction=interaction, actor=actor, what=what,
                 refusal_what=refusal_what, origin=origin,
             )

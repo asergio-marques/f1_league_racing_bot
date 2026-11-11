@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.core.utils.hooks import StartUpStep
     from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
@@ -95,6 +96,13 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
         await run_daily_refresh(bot)
 
     bot.scheduler_service.register_timer("portrait_refresh", _portrait_refresh_cb)
+
+
+def start_up_steps(bot: "LeagueBot") -> "tuple[StartUpStep, ...]":
+    """Image's start-up step, named, for image's turn of the start-up sweep (the entry point signs
+    it up to `bot.starting` under image's switch key). The recovery is looked up when the step
+    runs, so the step stands for that function and no other."""
+    return (("portrait refresh job", lambda: recover_portrait_refresh_job(bot)),)
 
 
 async def recover_portrait_refresh_job(bot: "LeagueBot") -> None:

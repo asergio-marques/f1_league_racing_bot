@@ -235,7 +235,7 @@ async def test_the_start_up_asks_for_each_clean_up_missed(tmp_path):
     """The bot starts again with round 3's clean-up a day past and round 4's call standing for a
     race tomorrow. The restart asks the queue for round 3's clean-up and not round 4's, and
     deletes nothing itself."""
-    from leaguebot.__main__ import _recover_missed_cleanups
+    from leaguebot.attendance.wiring import recover_missed_check_in_clean_ups
 
     league = await _league(tmp_path)
     tomorrow = league.clock.now + timedelta(days=1)
@@ -253,7 +253,7 @@ async def test_the_start_up_asks_for_each_clean_up_missed(tmp_path):
 
     with patch("leaguebot.attendance.services.check_in_changes.ask_check_in_clean_up",
                new=AsyncMock(side_effect=_record)):
-        await _recover_missed_cleanups(league.bot)
+        await recover_missed_check_in_clean_ups(league.bot)
 
     assert asked == [ROUND_3]
     assert _deleted(league) == []

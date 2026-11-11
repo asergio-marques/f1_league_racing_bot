@@ -24,6 +24,7 @@ from leaguebot.core.utils.league_server import league_guild
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.core.utils.hooks import StartUpStep
     from leaguebot.results.services.attendance_hook import AttendanceAfterReview
     from leaguebot.core.utils.league_bot import LeagueBot
 
@@ -465,7 +466,13 @@ def register_change_types(
     bot.change_queue.register(rounds_sync_change(bot.season_service, bot.module_service))
     bot.change_queue.register(standings_sync_change(bot.season_service, bot.module_service))
     bot.change_queue.register(
-        setting_change(module_on_results(modules=bot.module_service, seasons=bot.season_service))
+        setting_change(
+            module_on_results(
+                modules=bot.module_service,
+                seasons=bot.season_service,
+                scheduler=bot.scheduler_service,
+            )
+        )
     )
     for setting in (
         *points_settings(modules=bot.module_service, seasons=bot.season_service),
@@ -504,10 +511,29 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
 
 
 
+def start_up_steps(bot: "LeagueBot") -> "tuple[StartUpStep, ...]":
+    """Results' start-up steps, named and in the order they run in results' turn of the start-up
+    sweep (the entry point signs them up to `bot.starting` under results' switch key). Each
+    recovery is looked up when its step runs, so a step stands for that function and no other."""
+    return (
+        ("amendment sweep", lambda: arm_amendment_sweep(bot)),
+        # Results-amend channels left open by a previous run. **Before the submission channels,
+        # not after**. An amendment open at the restart has its corrections in the
+        # database, unapproved; recovering a submission channel whose results were saved but never
+        # posted posts its standings from that database. Reverting the amendments first means
+        # those standings are built from the round as it raced, wherever the revert succeeds.
+        ("orphaned amend channels", lambda: recover_orphaned_amend_channels(bot)),
+        # Submission channels left open by a previous run. The paste they were waiting for died
+        # with the process, so they are reset so /test-mode advance can re-trigger submission.
+        ("orphaned submission channels", lambda: recover_orphaned_submission_channels(bot)),
+    )
+
+
 async def arm_amendment_sweep(bot: "LeagueBot") -> None:
     """Arm the standing sweep that undoes an amendment nobody carried through, its callback
-    registered by `register_scheduler_callbacks`. Armed unconditionally rather than behind a
-    setting: the amendment's first stage commits, so a league running the results module at all can
+    registered by `register_scheduler_callbacks`. Run in results' turn of the start-up sweep, so
+    only while results is on, and also when results is turned on (`module_on_results`). Armed
+    without a setting of its own: the amendment's first stage commits, so a league running the results module at all can
     leave a round half-amended, and the sweep is what makes that recoverable without anybody
     noticing it happened."""
     bot.scheduler_service.schedule_amendment_sweep()

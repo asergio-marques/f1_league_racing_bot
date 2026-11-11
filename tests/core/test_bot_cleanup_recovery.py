@@ -33,8 +33,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import leaguebot.__main__ as bot_module
+from leaguebot.attendance import wiring as attendance_wiring
 from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.weather import wiring as weather_wiring
 
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -110,8 +111,10 @@ def _bot(db_path: str, *, weather_enabled: bool = True) -> MagicMock:
 async def _recover(
     bot, *, forecast_error: Exception | None = None
 ) -> tuple[list[int], list[int]]:
-    """Run the recovery, returning the rounds whose forecast clean-up and whose check-in
-    clean-up it asked the queue for; *forecast_error* makes the forecast clean-up's ask raise."""
+    """Run the two recoveries in the order the start-up runs them, weather's missed forecast
+    clean-ups and then attendance's missed check-in clean-ups, returning the rounds whose forecast
+    clean-up and whose check-in clean-up they asked the queue for; *forecast_error* makes the
+    forecast clean-up's ask raise."""
     forecasts: list[int] = []
     check_ins: list[int] = []
 
@@ -130,7 +133,8 @@ async def _recover(
         "leaguebot.attendance.services.check_in_changes.ask_check_in_clean_up",
         new=AsyncMock(side_effect=_check_in),
     ):
-        await bot_module._recover_missed_cleanups(bot)
+        await weather_wiring.recover_missed_forecast_clean_ups(bot)
+        await attendance_wiring.recover_missed_check_in_clean_ups(bot)
     return forecasts, check_ins
 
 
@@ -223,14 +227,14 @@ async def test_a_superseded_forecast_whose_deletion_was_discarded_is_caught_up_w
     league admin discarded that job, so both forecasts are still recorded. The bot starts a day
     after the race: the catch-up asks the round's forecast clean-up, naming Phase 2 among what it
     deletes, so the discarded deletion is carried out with the round's clean-up (#439, slice 8,
-    W4)."""
+    W4). The host's log line begins with the name of weather's recovery that writes it."""
     db_path = await _make_db(tmp_path, phases=(2, 3))
 
     with caplog.at_level("INFO", logger="leaguebot"):
         assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
 
     lines = [record.getMessage() for record in caplog.records]
-    assert (f"_recover_missed_cleanups: deleting the Phase 2 and 3 forecasts of "
+    assert (f"recover_missed_forecast_clean_ups: deleting the Phase 2 and 3 forecasts of "
             f"round_id={ROUND_ID}") in lines, lines
 
 
@@ -244,14 +248,16 @@ async def test_the_catch_up_s_log_line_names_the_forecast_it_deletes(
     tmp_path, caplog, phases, named
 ):
     """The host's log line for a forecast clean-up the catch-up asks names the forecast still
-    standing, "deleting the Phase 2 forecast of round_id=21", never a phase that is not."""
+    standing, "deleting the Phase 2 forecast of round_id=21", never a phase that is not, and
+    begins with the name of weather's recovery that writes it."""
     db_path = await _make_db(tmp_path, phases=phases)
 
     with caplog.at_level("INFO", logger="leaguebot"):
         await _recover(_bot(db_path))
 
     lines = [record.getMessage() for record in caplog.records]
-    assert f"_recover_missed_cleanups: deleting {named} of round_id={ROUND_ID}" in lines, lines
+    assert (f"recover_missed_forecast_clean_ups: deleting {named} of round_id={ROUND_ID}"
+            in lines), lines
 
 
 async def test_a_mystery_round_s_notice_asks_no_forecast_cleanup(tmp_path):

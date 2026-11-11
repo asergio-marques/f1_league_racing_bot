@@ -38,6 +38,7 @@ from tests.support.change_queue import (
     MANAGER_ROLE_ID,
     MARK,
     change_rows,
+    held_on,
     http_error,
     member_interaction,
     queued_log_lines,
@@ -170,16 +171,34 @@ def _names_the_paste(line: str, *, reason: str, content: str,
     assert content in line, line
 
 
-async def test_a_paste_while_its_turn_waits_is_turned_away_with_a_note(tmp_path, monkeypatch):
+@pytest.mark.parametrize("held", [
+        pytest.param(False, id="at any time"),
+        pytest.param(True, id="during the catch-up after a restart"),
+    ])
+async def test_a_paste_while_its_turn_waits_is_turned_away_with_a_note(tmp_path, monkeypatch, held):
     """The admin pastes the qualifying, then the race before the queue has reached the first.
     The second is deleted at once and a note in the channel says the earlier message is still
     waiting its turn; the refusal is logged, one ⛔ line naming the admin, season 3, round 3 and
     the qualifying still waited on (results :257; README :1781); only one turn is asked, and only
-    the qualifying is saved when it runs."""
+    the qualifying is saved when it runs. So too just after a restart, while the catch-up holds
+    the first paste's turn: the second is turned away all the same, and the first is asked, and
+    marked ⏳, once the catch-up ends."""
     league = await _league(tmp_path, monkeypatch)
+    queue = league.bot.change_queue
 
-    await _type(league, QUALI_PASTE)
+    if held:
+        queue.hold()
+        asking = asyncio.create_task(_type(league, QUALI_PASTE))
+        await held_on(queue, SUBMISSION_CHANNEL)
+    else:
+        await _type(league, QUALI_PASTE)
     second = await _type(league, RACE_PASTE)
+    if held:
+        assert await _turns(league) == []
+        async with queue.sweeping():
+            pass
+        first = await asyncio.wait_for(asking, timeout=5)
+        assert MARK in first.marks
 
     assert second.gone
     assert "still waiting its turn" in _said(league)

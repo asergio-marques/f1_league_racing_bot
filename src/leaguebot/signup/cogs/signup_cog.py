@@ -49,11 +49,16 @@ from leaguebot.core.services.rounds import track_service
 from leaguebot.core.utils.input_validator import parse_datetime
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.time_parsing import parse_time_of_day
+from leaguebot.core.utils.catch_up_gate import after_the_catch_up
 from leaguebot.core.utils.channel_guard import league_manager_only, league_role_faults, changes_nothing
 from leaguebot.core.utils.league_server import LeagueView, is_foreign_guild
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.log_lines import name_of_member, record_abandoned, refuse
 from leaguebot.core.utils.formatting import discord_ts
+
+#: Waits for the catch-up after a restart before a command answered off the change queue acts.
+_after_the_catch_up = after_the_catch_up(lambda cog: cog.bot.change_queue)
+
 
 log = logging.getLogger(__name__)
 
@@ -447,6 +452,7 @@ class SignupCog(commands.Cog):
     @signup.command(name="channel", description="Set the signup channel and apply permission overwrites.")
     @app_commands.describe(channel="Channel for signup interactions")
     @league_manager_only
+    @_after_the_catch_up
     async def signup_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
@@ -607,6 +613,7 @@ class SignupCog(commands.Cog):
 
     @signup.command(name="nationality", description="Toggle whether nationality is required in signups.")
     @league_manager_only
+    @_after_the_catch_up
     async def nationality(self, interaction: discord.Interaction) -> None:
         if not await self._module_gate(interaction):
             return
@@ -643,6 +650,7 @@ class SignupCog(commands.Cog):
 
     @signup.command(name="time-type", description="Toggle the time type setting (Time Trial / Short Qualification).")
     @league_manager_only
+    @_after_the_catch_up
     async def time_type(self, interaction: discord.Interaction) -> None:
         if not await self._module_gate(interaction):
             return
@@ -681,6 +689,7 @@ class SignupCog(commands.Cog):
 
     @signup.command(name="time-image", description="Toggle whether a time image is required in signups.")
     @league_manager_only
+    @_after_the_catch_up
     async def time_image(self, interaction: discord.Interaction) -> None:
         if not await self._module_gate(interaction):
             return
@@ -755,6 +764,7 @@ class SignupCog(commands.Cog):
     @app_commands.describe(day="Day of week", time="Time in HH:MM 24h or 12h format (e.g. 14:30 or 2:30pm)")
     @app_commands.choices(day=_DAY_CHOICES)
     @league_manager_only
+    @_after_the_catch_up
     async def time_slot_add(
         self,
         interaction: discord.Interaction,
@@ -823,6 +833,7 @@ class SignupCog(commands.Cog):
     @time_slot_group.command(name="remove", description="Remove an availability time slot by its sequence ID.")
     @app_commands.describe(slot_id="Stable sequence ID shown in /signup time-slot list")
     @league_manager_only
+    @_after_the_catch_up
     async def time_slot_remove(
         self, interaction: discord.Interaction, slot_id: int
     ) -> None:
@@ -942,6 +953,7 @@ class SignupCog(commands.Cog):
         close_time="Auto-close UTC datetime in ISO 8601 format (e.g. 2025-06-15T20:00:00)",
     )
     @league_manager_only
+    @_after_the_catch_up
     async def close_time_add(
         self, interaction: discord.Interaction, close_time: str
     ) -> None:
@@ -989,6 +1001,7 @@ class SignupCog(commands.Cog):
         name="cancel", description="Clear the auto-close time, leaving signups open."
     )
     @league_manager_only
+    @_after_the_catch_up
     async def close_time_cancel(self, interaction: discord.Interaction) -> None:
         if not await self._module_gate(interaction):
             return
@@ -1029,6 +1042,7 @@ class SignupCog(commands.Cog):
         close_time="New auto-close UTC datetime in ISO 8601 format (e.g. 2025-06-15T20:00:00)",
     )
     @league_manager_only
+    @_after_the_catch_up
     async def close_time_modify(
         self, interaction: discord.Interaction, close_time: str
     ) -> None:

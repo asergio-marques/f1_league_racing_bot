@@ -656,6 +656,32 @@ def member_interaction(bot: Any, *, user: Any = None, created_at: datetime | Non
     return interaction
 
 
+class _InItsSlot:
+    """*interaction*, its response read from discord.py's response slot (`_cs_response`), as a
+    real interaction's is, so that what puts another response in the slot is answered through."""
+
+    def __init__(self, interaction: Any) -> None:
+        self.__dict__["_inner"] = interaction
+
+    @discord.utils.cached_slot_property("_cs_response")
+    def response(self) -> Any:
+        return self._inner.response
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("_cs_"):
+            # An empty slot, which a double would otherwise invent.
+            raise AttributeError(name)
+        return getattr(self._inner, name)
+
+
+def response_in_its_slot(interaction: Any) -> Any:
+    """*interaction*, a double, answering through its response slot as a real interaction does
+    (#440): a command held for the catch-up after a restart has its response replaced there by
+    `after_the_catch_up`, which a double's own `response` attribute would never see. The double's
+    response, follow-ups and everything else are still the ones it records."""
+    return _InItsSlot(interaction)
+
+
 async def change_rows(db_path: str) -> list[dict[str, Any]]:
     """Every change asked for, in the order asked."""
     async with get_connection(db_path) as db:
@@ -869,6 +895,17 @@ def typed_message(channel: Any, author: Any, content: str = "", *,
     message.delete = AsyncMock(side_effect=_delete)
     channel.posted.append(message)
     return message
+
+
+async def held_on(queue: Any, channel_id: int, *, timeout: float = 5.0) -> None:
+    """Wait until a message typed in *channel_id* is held by the catch-up after a restart: its
+    turn is asked and waits for the catch-up to end, the channel among the queue's held turn
+    channels (#440)."""
+    async def _held() -> None:
+        while channel_id not in queue.held_turn_channels():
+            await asyncio.sleep(0.01)
+
+    await asyncio.wait_for(_held(), timeout)
 
 
 def typed_message_deleted(message: Any) -> None:

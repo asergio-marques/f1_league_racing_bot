@@ -10,6 +10,7 @@ before anything starts; a test calls it on paths under `tmp_path` through
 from __future__ import annotations
 
 import inspect
+import logging
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -834,77 +835,77 @@ async def test_login_starts_the_retry_loop_once(tmp_path, monkeypatch):
     assert starts == [()]
 
 
-#: The start-up's steps by name, in the order `on_ready` runs them before the builder makes them.
-_START_UP_STEPS = [
-    "amendment sweep", "portrait refresh job", "signup close timer", "orphaned amend channels",
-    "orphaned submission channels", "expired review prompts", "missed phases",
-    "missed check-in calls", "RSVP views and deadlines", "missed clean-ups", "hub", "wizards",
-]
+#: Core's own start-up steps by name, in the order the builder signs them up to `bot.starting`.
+_CORE_STEPS = ["expired review prompts", "hub"]
+
+#: Each module's start-up steps by name, in its own order, keyed by its switch key, the modules in
+#: the order the builder signs them up: the core specification's.
+_MODULE_STEPS = {
+    "signup": ["signup close timer", "wizards"],
+    "results": ["amendment sweep", "orphaned amend channels", "orphaned submission channels"],
+    "attendance": ["missed check-in calls", "RSVP views and deadlines",
+                   "missed check-in clean-ups"],
+    "weather": ["missed phases", "missed forecast clean-ups"],
+    "images": ["portrait refresh job"],
+}
 
 
-#: The steps whose recovery is a function of its module's wiring, or for the missed clean-ups the
-#: entry point's composing weather's part and attendance's, each with where that function lives and
-#: its name: the step hands it the bot alone.
+#: The module steps whose recovery is a function of its module's wiring handed the bot alone, with
+#: where that function lives and its name.
 _RECOVERIES_OF_THE_STEPS = {
     "portrait refresh job": ("leaguebot.image.wiring", "recover_portrait_refresh_job"),
     "orphaned amend channels": ("leaguebot.results.wiring", "recover_orphaned_amend_channels"),
     "orphaned submission channels": ("leaguebot.results.wiring",
                                      "recover_orphaned_submission_channels"),
     "missed phases": ("leaguebot.weather.wiring", "recover_missed_phases"),
+    "missed forecast clean-ups": ("leaguebot.weather.wiring",
+                                  "recover_missed_forecast_clean_ups"),
     "missed check-in calls": ("leaguebot.attendance.wiring", "recover_missed_check_in_calls"),
     "RSVP views and deadlines": ("leaguebot.attendance.wiring",
                                  "recover_rsvp_views_and_deadlines"),
-    "missed clean-ups": ("leaguebot.__main__", "_recover_missed_cleanups"),
-}
-
-
-#: The two start-up steps a module's wiring offers that reach further than a recovery handed the
-#: bot: the step's name, then where its function lives and under which name (decision 344).
-_STEPS_OFFERED_BY_A_WIRING = {
-    "amendment sweep": ("leaguebot.results.wiring", "arm_amendment_sweep"),
-    "wizards": ("leaguebot.signup.wiring", "recover_wizards"),
+    "missed check-in clean-ups": ("leaguebot.attendance.wiring",
+                                  "recover_missed_check_in_clean_ups"),
 }
 
 
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
-    """`build` on paths under `tmp_path` gives the start-up's steps by name, in today's order
-    (architecture.md, "Start-up runs once, in one function"), so the order is read from the list
-    start-up runs rather than from the source. Its rules:
+    """`build` on paths under `tmp_path` signs core's start-up steps and each module's up to
+    `bot.starting`, and the sweep is then run over it with every module on, so the order is read
+    from what start-up runs rather than from the source (architecture.md, "Timed work and
+    restarts"). Core's two come first, the expired review prompts and then the hub; then each
+    module's, the modules in the core specification's order (signup, results, attendance, weather,
+    image), each module's steps in its own order. Its rules, each within one module:
 
     - **orphaned amend channels before orphaned submission channels** (#345): an amendment open at
       the restart has its unapproved corrections in the database, and a submission channel whose
       results were saved but never posted posts its standings from it, so swept the other way round
       those standings would publish the corrections the revert then takes back;
-    - **missed check-in calls before the RSVP deadlines**: a call comes before its deadline;
-    - **the RSVP deadlines before the missed clean-ups**: a check-in whose deadline and clean-up
-      both passed while the bot was down is distributed before it is taken down;
-    - **the hub among them**, its step handing the hub's recovery the change queue, which it asks
-      for the panel, and the bot's hub options, whose buttons it routes (the recovery itself is
-      tested in `test_hub_service.py`).
+    - **missed check-in calls, then the RSVP deadlines, then the missed check-in clean-ups**: a call
+      comes before its deadline, and a check-in whose deadline and clean-up both passed while the
+      bot was down is distributed before it is taken down;
+    - **missed phases before the missed forecast clean-ups**.
 
-    Every step is then run on its own, each recovery stubbed to record what it was handed, and is
-    seen to run its own recovery once, for the bot, and no other step's, so that a name cannot
-    stand over another step's recovery. The amendment sweep arms the bot's scheduler's sweep; the
-    signup close timer, a close still ahead on record, re-arms it on the bot's scheduler (the step
-    reads the host's clock and takes no `now`, so the close is set a day after that clock); the
-    expired review prompts, a review left standing, ask the bot's queue for its take-down ending
-    `restart`; the hub hands its recovery the bot, its queue and its hub options; the wizards are
-    recovered by the bot's wizard service; and each other step hands its recovery the bot, the
-    recovery stubbed where it lives, in its module's wiring or the entry point, and under its name in
-    the entry point too, so the stub stands whichever way the entry point reaches it.
-
-    The amendment sweep and the wizards are then run once more, with the step results' wiring and
-    signup's wiring offer for each stubbed there: each step runs its module's function, handed the
-    bot, so the builder writes neither itself (architecture.md, "A module's wiring").
+    The names are read from the builder's sign-ups (`StartingHook.subscribe` watched as it is
+    called) and from the steps each module's wiring function gives; each module is signed up under
+    its switch key, the name its switch reader is signed up under with the module service. The
+    sweep then runs each step's own recovery, stubbed to record what it was handed, once, for the
+    bot, in the same order, so that a name cannot stand over another step's recovery: the expired
+    review prompts, a review left standing, ask the bot's queue for its take-down ending `restart`;
+    the hub hands its recovery the bot, its queue and its hub options; the signup close timer, a
+    close still ahead on record, re-arms it on the bot's scheduler (the step reads the host's clock
+    and takes no `now`, so the close is set a day after that clock); the wizards are recovered by
+    the bot's wizard service; the amendment sweep arms the bot's scheduler's sweep; and each other
+    step hands its recovery, in its module's wiring, the bot. Nothing is posted to the log channel.
     """
     import importlib
+    from contextlib import asynccontextmanager
 
-    import leaguebot.__main__ as bot_module
-
+    import leaguebot.core.services.upkeep.start_up as start_up_module
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.services.seasons import season_review_changes
     from leaguebot.core.services.modules import hub_service
     from leaguebot.core.services.scheduler_service import SchedulerService
+    from leaguebot.core.utils.hooks import StartingHook
     from leaguebot.signup.services.wizard_service import WizardService
     from tests.support.review_prompts import store_review_prompt
 
@@ -922,14 +923,21 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
 
     for home, function in _RECOVERIES_OF_THE_STEPS.values():
         monkeypatch.setattr(importlib.import_module(home), function, recovery(function))
-        monkeypatch.setattr(bot_module, function, recovery(function), raising=False)
     monkeypatch.setattr(hub_service, "recover_hub", recovery("recover_hub"))
-    monkeypatch.setattr(bot_module, "recover_hub", recovery("recover_hub"), raising=False)
     monkeypatch.setattr(season_review_changes, "take_review_down", recovery("take_review_down"))
     monkeypatch.setattr(WizardService, "recover_wizards", recovery("recover_wizards"))
     for method in ("schedule_amendment_sweep", "schedule_signup_close_timer"):
         monkeypatch.setattr(SchedulerService, method, scheduling(method))
     monkeypatch.setattr(SchedulerService, "has_job", lambda self, job_id: False)
+
+    signed_up: list[tuple] = []
+    subscribe = StartingHook.subscribe
+
+    def watched(self, steps, **kwargs):
+        signed_up.append((kwargs, steps))
+        return subscribe(self, steps, **kwargs)
+
+    monkeypatch.setattr(StartingHook, "subscribe", watched)
     bot = await built_bot(tmp_path, now=_NOW)
     close_at = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
     async with get_connection(bot.db_path) as db:
@@ -938,46 +946,90 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
         await store_review_prompt(db, season_id=1, channel_id=7, message_id=42, reviewer_id=9,
                                   review="/season config-review")
         await db.commit()
-    names = [name for name, _ in bot.start_up_steps]
 
-    assert names == _START_UP_STEPS
-    assert names.index("orphaned amend channels") < names.index("orphaned submission channels")
-    assert names.index("missed check-in calls") < names.index("RSVP views and deadlines")
-    assert names.index("RSVP views and deadlines") < names.index("missed clean-ups")
+    assert [kwargs for kwargs, _ in signed_up] == (
+        [{"name": name} for name in _CORE_STEPS] + [{"module": key} for key in _MODULE_STEPS])
+    async with get_connection(bot.db_path) as db:
+        for key in _MODULE_STEPS:
+            await bot.module_service.is_enabled_on(db, key)  # raises where no reader is signed up
+    for kwargs, steps in signed_up:
+        if "module" in kwargs:
+            assert [name for name, _ in steps()] == _MODULE_STEPS[kwargs["module"]], kwargs
+
+    class _Modules:
+        def __init__(self) -> None:
+            self.asked: list[str] = []
+
+        async def is_enabled(self, module: str) -> bool:
+            self.asked.append(module)
+            return True
+
+    class _Queue:
+        @asynccontextmanager
+        async def sweeping(self):
+            yield
+
+        async def start(self) -> None:
+            pass
+
+        def release(self) -> None:
+            pass
+
+    class _Scheduler:
+        def start(self, *, paused: bool) -> None:
+            pass
+
+        def resume(self) -> None:
+            pass
+
+    lines: list[str] = []
+
+    async def post_log(content: str, **_) -> None:
+        lines.append(content)
+
+    modules = _Modules()
+    start_up = importlib.reload(start_up_module).start_up
+    await start_up(starting=bot.starting, modules=modules, change_queue=_Queue(),
+                   scheduler=_Scheduler(), post_log=post_log)
+
+    assert modules.asked == list(_MODULE_STEPS)
     scheduler = bot.scheduler_service
     expected = {
-        "amendment sweep": ("schedule_amendment_sweep", (scheduler,), {}),
-        "signup close timer": ("schedule_signup_close_timer", (scheduler, close_at), {}),
         "expired review prompts": ("take_review_down", (bot.change_queue, bot.db_path, 42,
                                                         season_review_changes.RESTART), {}),
         "hub": ("recover_hub", (bot,), {"queue": bot.change_queue,
                                         "hub_options": bot.hub_options}),
+        "signup close timer": ("schedule_signup_close_timer", (scheduler, close_at), {}),
         "wizards": ("recover_wizards", (bot.wizard_service,), {}),
+        "amendment sweep": ("schedule_amendment_sweep", (scheduler,), {}),
     } | {
         step: (function, (bot,), {}) for step, (_, function) in _RECOVERIES_OF_THE_STEPS.items()
     }
-    assert sorted(expected) == sorted(_START_UP_STEPS)
-    for step, run in bot.start_up_steps:
-        ran.clear()
-        await run()
-        assert ran == [expected[step]], step
-
-    steps = dict(bot.start_up_steps)
-    for step, (home, function) in _STEPS_OFFERED_BY_A_WIRING.items():
-        monkeypatch.setattr(importlib.import_module(home), function, recovery(function))
-        ran.clear()
-        await steps[step]()
-        assert ran == [(function, (bot,), {})], step
+    order = _CORE_STEPS + [step for steps in _MODULE_STEPS.values() for step in steps]
+    assert sorted(expected) == sorted(order)
+    assert ran == [expected[step] for step in order]
+    assert lines == []
 
 
-async def test_migrations_run_before_the_bot_connects(tmp_path, monkeypatch):
-    """`main`, driven with the staged restore, the migrations, the builder and the bot's connection
-    each stubbed to record its call, swaps in a staged restore, then applies the migrations, then
-    builds the bot, and only then connects it to Discord (architecture.md, "Start-up runs once, in
-    one function", steps 2 to 4). The bot then reports itself ready: the handler `main` registered
-    runs the start-up, handed the builder's steps, the bot's change queue and its scheduler service,
-    and only after it syncs the slash commands."""
-    import logging
+class _Tree:
+    """The fake bot's command tree: its sync records itself, or raises *refusal* where given."""
+
+    def __init__(self, calls: list[str], refusal: BaseException | None = None) -> None:
+        self._calls = calls
+        self._refusal = refusal
+
+    async def sync(self) -> list:
+        self._calls.append("commands synced")
+        if self._refusal is not None:
+            raise self._refusal
+        return []
+
+
+async def _run_main(tmp_path, monkeypatch, calls: list[str], tree: _Tree):
+    """Drive `main` with the staged restore, the migrations, the builder, the queue's hold and the
+    bot's connection each stubbed to record its call in *calls*, then report the bot ready with
+    `start_up` stubbed to record itself and say it ran. Gives the fake bot, its log channel's lines
+    in `bot.lines`, and the `start_up` stub."""
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
@@ -985,7 +1037,6 @@ async def test_migrations_run_before_the_bot_connects(tmp_path, monkeypatch):
     from leaguebot.core.db import database
     from leaguebot.core.services.upkeep import backup_service
 
-    calls: list[str] = []
     settings = bot_module.Settings(token="not-a-real-token", db_path=str(tmp_path / "bot.db"),
                                    jobstore_path=str(tmp_path / "jobs.db"))
 
@@ -999,18 +1050,26 @@ async def test_migrations_run_before_the_bot_connects(tmp_path, monkeypatch):
     async def close_connections() -> None:
         pass
 
-    class _Tree:
-        async def sync(self) -> list:
-            calls.append("commands synced")
-            return []
+    class _Queue:
+        def hold(self) -> None:
+            calls.append("hold")
+
+    class _OutputRouter:
+        async def post_log(self, content: str, **_) -> None:
+            bot.lines.append(content)
 
     class _Bot:
         user = SimpleNamespace(id=1)
-        start_up_steps = (("hub", AsyncMock()),)
-        change_queue = object()
+        starting = object()
+        module_service = object()
+        change_queue = _Queue()
         scheduler_service = object()
-        tree = _Tree()
+        output_router = _OutputRouter()
         handlers: dict = {}
+
+        def __init__(self) -> None:
+            self.tree = tree
+            self.lines: list[str] = []
 
         def event(self, handler):
             self.handlers[handler.__name__] = handler
@@ -1047,18 +1106,60 @@ async def test_migrations_run_before_the_bot_connects(tmp_path, monkeypatch):
 
     await bot_module.main()
 
-    assert calls == ["restore", "migrations", "build", "connect"]
-
     from leaguebot.core.services.upkeep import start_up as start_up_module
 
     start_up = AsyncMock(side_effect=lambda **kwargs: calls.append("start-up") or True)
     monkeypatch.setattr(start_up_module, "start_up", start_up)
     monkeypatch.setattr(bot_module, "start_up", start_up, raising=False)
     await bot.handlers["on_ready"]()
+    return bot, start_up
 
-    start_up.assert_awaited_once_with(steps=bot.start_up_steps, change_queue=bot.change_queue,
-                                      scheduler=bot.scheduler_service)
-    assert calls[4:] == ["start-up", "commands synced"]
+
+async def test_migrations_run_before_the_bot_connects(tmp_path, monkeypatch):
+    """`main` swaps in a staged restore, then applies the migrations, then builds the bot, then
+    holds its change queue, so that an interaction arriving before the start-up's catch-up has
+    asked its own waits, and only then connects it to Discord (architecture.md, "Start-up runs
+    once, in one function", steps 2 to 4). The bot then reports itself ready: the handler `main`
+    registered runs the start-up, handed the bot's starting hook, its module service, its change
+    queue, its scheduler service and its log channel's `post_log`, and only after it syncs the slash
+    commands. Takes the place of the planned `test_main_holds_the_queue_before_the_bot_connects`."""
+    calls: list[str] = []
+
+    bot, start_up = await _run_main(tmp_path, monkeypatch, calls, _Tree(calls))
+
+    assert calls[:5] == ["restore", "migrations", "build", "hold", "connect"]
+    start_up.assert_awaited_once_with(
+        starting=bot.starting, modules=bot.module_service, change_queue=bot.change_queue,
+        scheduler=bot.scheduler_service, post_log=bot.output_router.post_log)
+    assert calls[5:] == ["start-up", "commands synced"]
+    assert bot.lines == []
+
+
+async def test_a_refused_command_sync_is_reported_to_the_log_channel(tmp_path, monkeypatch,
+                                                                      caplog):
+    """The bot reports itself ready, its start-up runs, and Discord refuses the slash command sync
+    (`discord.HTTPException`). The host's log has the error, as before, and one line goes to the log
+    channel naming the slash command sync and the kind of fault and saying the detail is in the
+    host's log (core specification, "When a command fails", the bot connecting), pinned word for
+    word, its ❌ mark included, in the shape of a failing start-up step's line."""
+    from types import SimpleNamespace
+
+    import discord
+
+    calls: list[str] = []
+    refusal = discord.HTTPException(SimpleNamespace(status=400, reason="Bad Request"),
+                                    "commands refused")
+
+    with caplog.at_level(logging.DEBUG, logger="leaguebot.__main__"):
+        bot, _ = await _run_main(tmp_path, monkeypatch, calls, _Tree(calls, refusal))
+
+    assert calls[-2:] == ["start-up", "commands synced"]
+    assert bot.lines == [
+        "❌ The bot's start-up step `slash command sync` failed — HTTPException. "
+        "The details are in the host's log."]
+    assert [r for r in caplog.records
+            if r.name == "leaguebot.__main__" and r.levelno >= logging.ERROR
+            and "commands refused" in r.getMessage()], "the host's log has no line for the refusal"
 
 
 #: Each module's section of a season review, as the module names it, and what the test calls it,
