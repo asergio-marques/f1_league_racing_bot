@@ -3325,27 +3325,38 @@ async def test_a_request_during_the_sweep_waits_until_the_sweep_has_asked_its_ow
 @pytest.mark.xfail(strict=True, reason=_NO_HOLD)
 async def test_a_held_member_s_interaction_is_deferred_while_it_waits(env):
     """The bot has restarted and holds its queue; a member presses a button before the catch-up
-    ends. Before it waits, their press is deferred, privately, so Discord shows them "thinking…"
-    and its three seconds do not lapse; nothing else is sent. Once the catch-up ends, the change is
-    acknowledged as under way through a follow-up, seen by them alone, never a first response."""
+    ends, then presses it again. Before each press waits, it is deferred, privately, so Discord
+    shows them "thinking…" and its three seconds do not lapse; nothing else is sent. Once the
+    catch-up ends, one press is acknowledged as under way and the other refused as a repeat, each
+    through a follow-up seen by them alone, never a first response, and only one change is saved."""
     queue = _queue(env, _type(steps=[_act("a", [])]))
     queue.hold()
-    interaction = member_interaction(env.bot)
+    presses = [member_interaction(env.bot), member_interaction(env.bot)]
 
-    waiting = asyncio.create_task(_ask(env, interaction=interaction))
+    waiting = [asyncio.create_task(_ask(env, interaction=press)) for press in presses]
     await _yield_to_the_loop()
 
-    assert not waiting.done()
-    [deferred] = interaction.response.defer.await_args_list
-    assert deferred.kwargs.get("ephemeral") is True
-    assert interaction.response.send_message.await_count == 0
-    assert interaction.followup.send.await_count == 0
+    assert not any(task.done() for task in waiting)
+    for press in presses:
+        [deferred] = press.response.defer.await_args_list
+        assert deferred.kwargs.get("ephemeral") is True
+        assert press.response.send_message.await_count == 0
+        assert press.followup.send.await_count == 0
 
     async with queue.sweeping():
         pass
-    await asyncio.wait_for(waiting, timeout=5)
+    await asyncio.wait_for(asyncio.gather(*waiting), timeout=5)
 
-    assert interaction.response.send_message.await_count == 0
-    [sent] = interaction.followup.send.await_args_list
-    assert _acknowledges(sent.args[0] if sent.args else sent.kwargs.get("content"))
-    assert sent.kwargs.get("ephemeral") is True
+    replies = []
+    for press in presses:
+        assert press.response.send_message.await_count == 0
+        [sent] = press.followup.send.await_args_list
+        assert sent.kwargs.get("ephemeral") is True
+        replies.append(sent.args[0] if sent.args else sent.kwargs.get("content"))
+    refusal = (
+        f"⚠️ {DOING} has already been asked for and has not started yet, "
+        "so it was not asked for again."
+    )
+    assert sorted(_acknowledges(reply) for reply in replies) == [False, True]
+    assert refusal in replies
+    assert len(await change_rows(env.db_path)) == 1
