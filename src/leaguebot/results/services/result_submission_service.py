@@ -799,7 +799,7 @@ async def _save_session_result_in_tx(
     A resubmission's swap writes every session of a round in the same transaction as the delete
     of the results they replace.
     """
-    from leaguebot.core.services.season_service import SeasonImmutableError
+    from leaguebot.core.services.seasons.season_service import SeasonImmutableError
     from leaguebot.core.services.driver_service import resolve_driver_profile_id
 
     submitted_at = datetime.now(timezone.utc).isoformat()
@@ -1703,7 +1703,7 @@ async def amend_round_results_on(
     from their session's corrected classification, and ``SeasonImmutableError`` for an archived
     season, with nothing written in either case, the caller's save being rolled back.
     """
-    from leaguebot.core.services.season_service import SeasonImmutableError
+    from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 
     submitted_at = (now or datetime.now(timezone.utc)).isoformat()
     # The round as it stands, before any of it is overwritten (#345). Stage one commits, so an

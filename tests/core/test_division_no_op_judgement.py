@@ -40,7 +40,7 @@ def _division(**overrides):
 )
 def test_a_division_amendment_to_the_values_that_stand_changes_nothing(asked):
     """`/division rename` to its own name is `new_name` alone; `/division amend` any of the three."""
-    from leaguebot.core.services.season_service import division_amendment_changes_nothing
+    from leaguebot.core.services.seasons.season_service import division_amendment_changes_nothing
 
     assert division_amendment_changes_nothing(_division(), **asked)
 
@@ -57,6 +57,6 @@ def test_a_division_amendment_to_the_values_that_stand_changes_nothing(asked):
 )
 def test_a_division_amendment_with_any_value_changed_changes_something(asked):
     """A change of case is a change: the name is shown as it is written."""
-    from leaguebot.core.services.season_service import division_amendment_changes_nothing
+    from leaguebot.core.services.seasons.season_service import division_amendment_changes_nothing
 
     assert not division_amendment_changes_nothing(_division(), **asked)

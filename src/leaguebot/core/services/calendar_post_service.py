@@ -49,7 +49,7 @@ from leaguebot.core.services.queue.change_types import (
     StepView,
 )
 from leaguebot.core.services.modules.image_drawing import CalendarPicture, ImageDrawing
-from leaguebot.core.services.season_end_changes import SEASON_CANCEL
+from leaguebot.core.services.seasons.season_end_changes import SEASON_CANCEL
 from leaguebot.core.services.posting.standing_post_handler import post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -58,7 +58,7 @@ from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 from leaguebot.core.utils.season_gate import stage_refusal
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
 
 log = logging.getLogger(__name__)
 

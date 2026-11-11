@@ -82,7 +82,7 @@ _POINTS_GATES = (
 def _gates_of(cog):
     """Each gate *cog* stands in for, patched on `approval_checks`, or on results' service for a
     points gate, for as long as it is held."""
-    from leaguebot.core.services import approval_checks
+    from leaguebot.core.services.seasons import approval_checks
     from leaguebot.results.services import season_points_service
 
     with ExitStack() as stack:
@@ -364,7 +364,7 @@ async def _review(cog, interaction):
     manager's interaction, and post nothing public itself; the request is kept on the cog, read
     by `_asked`.
     """
-    from leaguebot.core.services import season_fingerprint_service as sfs
+    from leaguebot.core.services.seasons import season_fingerprint_service as sfs
 
     async def _evidence(*_args, **_kwargs):
         return sfs.SeasonFingerprint({"the season": "as reported"})

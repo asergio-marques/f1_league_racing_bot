@@ -15,7 +15,7 @@ from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
 
 if TYPE_CHECKING:
     from leaguebot.core.services.queue.change_types import StepContext
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
 
 
 #: The amendment's job that judges it and keeps the windows the later jobs judge it by.

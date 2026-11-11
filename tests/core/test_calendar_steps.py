@@ -251,7 +251,7 @@ async def test_the_calendar_replaced_is_read_when_the_job_runs(tmp_path):
 async def test_a_first_calendar_plans_no_delete(tmp_path, monkeypatch):
     """A season approved with no calendar posted before: its calendar is posted and its id saved,
     and nothing is planned to delete."""
-    from leaguebot.core.services.season_approval_change import KIND
+    from leaguebot.core.services.seasons.season_approval_change import KIND
 
     league = await season_league(tmp_path, monkeypatch=monkeypatch)
     await press_approve(league)

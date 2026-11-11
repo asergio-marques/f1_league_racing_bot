@@ -17,7 +17,7 @@ from leaguebot.core.db.database import tuple_rows
 from leaguebot.weather.services.forecast_channel import forecast_channels_on
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
 
 
 async def fingerprint_areas(

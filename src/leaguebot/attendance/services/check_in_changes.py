@@ -98,7 +98,7 @@ from leaguebot.core.models.round import (
     RoundFormat,
     read_scheduled_at,
 )
-from leaguebot.core.services import season_service
+from leaguebot.core.services.seasons import season_service
 from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,

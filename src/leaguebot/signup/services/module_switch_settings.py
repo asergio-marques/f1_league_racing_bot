@@ -39,7 +39,7 @@ from typing import TYPE_CHECKING, Any
 from leaguebot.core.models.change import AuditRecord, PlannedStep, Verdict, module_on
 from leaguebot.core.services.queue.change_types import CheckContext
 from leaguebot.core.services.modules.hub_service import REFRESH_HUB, hub_refresh_after
-from leaguebot.core.services.season_lifecycle_service import (
+from leaguebot.core.services.seasons.season_lifecycle_service import (
     configuration_fixed,
     configuration_fixed_refusal,
 )

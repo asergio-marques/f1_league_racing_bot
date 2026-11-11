@@ -60,11 +60,11 @@ from leaguebot.core.services.division_edit_changes import (
     listing,
 )
 from leaguebot.core.services.round_add_changes import saved_result
-from leaguebot.core.services.season_service import validate_division_name, validate_division_tier
+from leaguebot.core.services.seasons.season_service import validate_division_name, validate_division_tier
 from leaguebot.core.utils.formatting import discord_ts, format_round_list
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.core.services.team_service import TeamService
 
 KIND = "core.division_duplicate"

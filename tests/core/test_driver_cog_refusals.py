@@ -21,7 +21,7 @@ import pytest
 from leaguebot.core.cogs.driver_cog import DriverCog
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services.season_service import SeasonImmutableError
+from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 from leaguebot.core.services.team_service import TeamReference
 from tests.support.teams import resolves_as_typed
 from tests.support.undecorate import undecorate

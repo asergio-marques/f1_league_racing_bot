@@ -362,7 +362,7 @@ async def compute_driver_standings_on(
     # Every seat in the division, reserves included. Two jobs, one query: the non-reserve
     # seats decide who joins the standings without having scored, and every seat supplies the
     # team the final tiebreak orders on — a reserve who raced is in the set already.
-    from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
+    from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
 
     # A driver whose placement is not yet confirmed is not in the standings (issue #220).
     cursor = await db.execute(
@@ -592,7 +592,7 @@ async def opening_driver_standings(
     """
     names = display_names or {}
 
-    from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
+    from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(

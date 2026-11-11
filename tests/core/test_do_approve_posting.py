@@ -209,7 +209,7 @@ def _attendance_config(*, rsvp=700, attendance=701):
 async def _approve(cog, interaction):
     """Press ✅ Approve: the approval's workflow, handed *cog*'s bot's services, with the gates
     *cog* stands in for patched on `approval_checks`."""
-    from leaguebot.core.services import approval_checks
+    from leaguebot.core.services.seasons import approval_checks
 
     with ExitStack() as stack:
         for gate in _GATES:
@@ -219,7 +219,7 @@ async def _approve(cog, interaction):
 
 def _assert_asked(cog) -> None:
     """The approval went through every gate and was asked of the change queue, once."""
-    from leaguebot.core.services.season_approval_change import KIND
+    from leaguebot.core.services.seasons.season_approval_change import KIND
 
     ask = cog.bot.change_queue.ask
     ask.assert_awaited_once()

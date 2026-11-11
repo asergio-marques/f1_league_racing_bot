@@ -53,7 +53,8 @@ from leaguebot.core.models.change import (
     Verdict,
     VerdictKind,
 )
-from leaguebot.core.services import approval_checks, lineup_posting
+from leaguebot.core.services import lineup_posting
+from leaguebot.core.services.seasons import approval_checks
 from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.queue.queue_records import (
     unfinished,
@@ -69,15 +70,15 @@ from leaguebot.core.services.queue.change_types import (
     StepView,
 )
 from leaguebot.core.services.posting.channel_tell_change import KIND as CHANNEL_TELL
-from leaguebot.core.services.season_approval_change import (
+from leaguebot.core.services.seasons.season_approval_change import (
     GRANT_ROLES,
     driver_roles_step,
     tell_channel,
     ungranted_line,
     unposted_lineup_line,
 )
-from leaguebot.core.services.season_fingerprint_service import SeasonFingerprint, take_fingerprint
-from leaguebot.core.services.season_lifecycle_service import confirm_placements_on
+from leaguebot.core.services.seasons.season_fingerprint_service import SeasonFingerprint, take_fingerprint
+from leaguebot.core.services.seasons.season_lifecycle_service import confirm_placements_on
 from leaguebot.core.services.placement_service import uncommitted_placements_on
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.league_server import league_guild

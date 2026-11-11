@@ -122,7 +122,7 @@ async def test_the_approval_judges_the_dates_on_the_queue_s_clock(tmp_path, monk
     dates gate's, nothing is asked of the queue, and every time the dates are judged, at the press
     and in the change's check alike, "now" is the queue's clock. Until now the press judged them
     on the host's clock, let the season through, and only the change's check refused it."""
-    from leaguebot.core.services import approval_checks
+    from leaguebot.core.services.seasons import approval_checks
 
     league = await season_league(tmp_path, monkeypatch=monkeypatch)
     league.clock.advance(days=31)

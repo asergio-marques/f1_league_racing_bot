@@ -28,7 +28,7 @@ from types import SimpleNamespace
 import pytest
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.services.season_fingerprint_service import (
+from leaguebot.core.services.seasons.season_fingerprint_service import (
     AREA_LABELS,
     SeasonFingerprint,
     _digest,
@@ -626,7 +626,7 @@ async def test_a_module_s_areas_not_read_leave_an_empty_fingerprint_logged(
     assert taken.areas == {}
     assert any(
         record.levelno == logging.ERROR
-        and record.name == "leaguebot.core.services.season_fingerprint_service"
+        and record.name == "leaguebot.core.services.seasons.season_fingerprint_service"
         for record in caplog.records
     )
 

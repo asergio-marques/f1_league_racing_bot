@@ -10,8 +10,8 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage, status_of_stage
-from leaguebot.core.services import season_lifecycle_service as lifecycle
-from leaguebot.core.services.season_service import SeasonService, refresh_division_status_on
+from leaguebot.core.services.seasons import season_lifecycle_service as lifecycle
+from leaguebot.core.services.seasons.season_service import SeasonService, refresh_division_status_on
 
 SERVER_ID = 22110
 SEASON_ID = 1

@@ -139,7 +139,7 @@ from leaguebot.core.services.queue.change_types import (
     StepView,
 )
 from leaguebot.core.services.modules.image_drawing import ImageDrawing
-from leaguebot.core.services.season_end_changes import (
+from leaguebot.core.services.seasons.season_end_changes import (
     END,
     SEASON_CANCEL,
     SEASON_ENDED_NOTICE,
@@ -150,7 +150,7 @@ from leaguebot.core.services.season_end_changes import (
     shared_not_done,
     test_mode_on,
 )
-from leaguebot.core.services.season_end_service import (
+from leaguebot.core.services.seasons.season_end_service import (
     DISCARD_PORTRAITS,
     FLUSH_FORECASTS,
     REVOKE_ROLES,
@@ -159,7 +159,7 @@ from leaguebot.core.services.season_end_service import (
     shared_steps,
     write_driver_history_entries_on,
 )
-from leaguebot.core.services.season_lifecycle_service import (
+from leaguebot.core.services.seasons.season_lifecycle_service import (
     SEASON_END_CAUSE,
     WIND_DOWN,
     advance_to_pending_completion_on,
@@ -168,7 +168,7 @@ from leaguebot.core.services.season_lifecycle_service import (
     run_driver_pass_on,
     steps_of_the_modules,
 )
-from leaguebot.core.services.season_service import (
+from leaguebot.core.services.seasons.season_service import (
     SeasonImmutableError,
     SeasonService,
     round_called,

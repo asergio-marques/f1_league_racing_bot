@@ -183,7 +183,7 @@ async def query_division_roster(db_path: str, division_id: int) -> list[dict]:
                          "test_display_name": str | None}, ...]
         }
     """
-    from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
+    from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
 
     # A driver whose placement is not yet confirmed is not called to check-in (issue #220),
     # and so holds no attendance row for the round either.

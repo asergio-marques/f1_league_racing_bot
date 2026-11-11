@@ -1,7 +1,7 @@
 """Running the season review's workflows as a review's button runs them.
 
 The approval, the mid-season placements confirmation and the configuration confirmation are
-functions of `leaguebot.core.services.season_review_workflows`: `approve_season`,
+functions of `leaguebot.core.services.seasons.season_review_workflows`: `approve_season`,
 `confirm_mid_season_placements` and `confirm_configuration`. Each takes the interaction pressed,
 then as keyword arguments the services it uses, each named as the bot carries it (`season_service`,
 `change_queue`, `db_path` and so on), the clock as `now`, the queue's (`change_queue.now`), and the
@@ -11,7 +11,7 @@ lists which services a workflow reads. The approval's backup question is
 `offer_backup_before_approving`, run the same way, and its view `BackupBeforeApprovalView`, built by
 `build_view` the same way, its `timeout` given.
 
-The gates the workflows run are functions of `leaguebot.core.services.approval_checks`, called
+The gates the workflows run are functions of `leaguebot.core.services.seasons.approval_checks`, called
 through the module, so that a test standing one in patches `approval_checks.<gate>`. A gate that
 reads several of the league's services, as `configuration_faults` does, takes them as keyword
 arguments named as the bot carries them, and `run_check` hands them over as `run_workflow` does.
@@ -127,7 +127,7 @@ def _services(target: Any, bot: Any, given: dict[str, Any]) -> dict[str, Any]:
 async def run_workflow(name: str, bot: Any, interaction: Any, **given: Any) -> Any:
     """Run the workflow *name* on *interaction*, handing it every service it asks for off *bot*
     by name, and *given* as the press's own particulars."""
-    from leaguebot.core.services import season_review_workflows
+    from leaguebot.core.services.seasons import season_review_workflows
 
     workflow = getattr(season_review_workflows, name)
     return await workflow(interaction, **_services(workflow, bot, given), **given)
@@ -136,7 +136,7 @@ async def run_workflow(name: str, bot: Any, interaction: Any, **given: Any) -> A
 def build_view(name: str, bot: Any, **given: Any) -> Any:
     """Build the view *name* of `season_review_workflows`, handing it every service it asks for
     off *bot* by name, and *given*."""
-    from leaguebot.core.services import season_review_workflows
+    from leaguebot.core.services.seasons import season_review_workflows
 
     view = getattr(season_review_workflows, name)
     return view(**_services(view, bot, given), **given)
@@ -147,7 +147,7 @@ async def take_season_fingerprint(bot: Any, db_path: str, season_id: int) -> Any
     takes it: handed the image module's drawing (`bot.image_drawing`), and every other service
     `take_fingerprint` asks for off *bot* by name, as `run_workflow` hands a workflow its own, so
     that a test never lists which readers the fingerprint asks."""
-    from leaguebot.core.services import season_fingerprint_service
+    from leaguebot.core.services.seasons import season_fingerprint_service
 
     take = season_fingerprint_service.take_fingerprint
     given = {"drawing": bot.image_drawing}
@@ -157,7 +157,7 @@ async def take_season_fingerprint(bot: Any, db_path: str, season_id: int) -> Any
 async def run_check(name: str, bot: Any, *args: Any, **given: Any) -> Any:
     """Run the gate *name* of `approval_checks` on *args*, handing it every service it asks for
     off *bot* by name, and *given*."""
-    from leaguebot.core.services import approval_checks
+    from leaguebot.core.services.seasons import approval_checks
 
     check = getattr(approval_checks, name)
     return await check(*args, **_services(check, bot, given), **given)

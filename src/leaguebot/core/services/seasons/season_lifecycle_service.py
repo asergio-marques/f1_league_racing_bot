@@ -45,7 +45,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
     StepView,
 )
-from leaguebot.core.services.season_service import commit_placements_on
+from leaguebot.core.services.seasons.season_service import commit_placements_on
 from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild

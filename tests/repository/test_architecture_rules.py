@@ -3202,26 +3202,26 @@ CATCH_ALLS_ALLOWED = {
         "left",
     ("core/services/amendment_service.py", "approval_faults"):
         "a stated exception: an attendance switch that cannot be read never refuses an amendment",
-    ("core/services/approval_checks.py", "channel_on_server"):
+    ("core/services/seasons/approval_checks.py", "channel_on_server"):
         "a stated exception: a channel check that cannot tell must not refuse a season",
-    ("core/services/season_fingerprint_service.py", "take_fingerprint"):
+    ("core/services/seasons/season_fingerprint_service.py", "take_fingerprint"):
         "a stated exception: a fingerprint that cannot be taken is empty, which refuses an approval",
     ("core/cogs/bot_cog.py", "_clean_up"):
         "a stated exception: a factory reset's clean-up that stops part-way says so, in its last "
         "report and its closing line",
-    ("core/services/season_review_changes.py", "season_review_post_change.draw_and_post"):
+    ("core/services/seasons/season_review_changes.py", "season_review_post_change.draw_and_post"):
         "place 5, a picture that cannot be drawn is withheld and its fault is a line of the job",
     ("core/services/template_capacity_service.py", "TemplateCapacityService._ask_drawing"):
         "a stated exception: a capacity guard that cannot run lets the placement through",
-    ("core/services/approval_checks.py", "ask_drawing"):
+    ("core/services/seasons/approval_checks.py", "ask_drawing"):
         "a stated exception: a capacity check that cannot run lets the season through",
-    ("core/services/approval_checks.py", "team_name_problems"):
+    ("core/services/seasons/approval_checks.py", "team_name_problems"):
         "a stated exception: a team-name check that cannot read the teams finds nothing wrong, and "
         "the review and the approval carry on with the names unchecked",
     ("core/services/round_add_changes.py", "calendar_round_refusal"):
         "a stated exception: a round guard that cannot run lets the round through, at the ask "
         "and as the change starts",
-    ("core/services/approval_checks.py", "image_configuration_faults"):
+    ("core/services/seasons/approval_checks.py", "image_configuration_faults"):
         "a stated exception: templates that cannot be read refuse the season, and a per-tier "
         "colour or portrait check that cannot be read stands aside",
     ("core/cogs/season_cog.py", "SeasonCog._build_image_review_section"):

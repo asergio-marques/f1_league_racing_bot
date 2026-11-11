@@ -76,7 +76,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.season_service import round_called, set_round_status_on
+from leaguebot.core.services.seasons.season_service import round_called, set_round_status_on
 from leaguebot.results.services import review_posting, review_verdicts
 from leaguebot.results.services.attendance_hook import AttendanceAfterReview
 from leaguebot.results.services.penalty_service import StagedPenalty, apply_penalties_on

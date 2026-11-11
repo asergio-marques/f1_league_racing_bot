@@ -39,7 +39,7 @@ from tests.support.review_workflows import build_view, run_workflow
 SERVER_ID = 13108
 
 #: The question's view, where the approval's workflow posts it from.
-_VIEW = "leaguebot.core.services.season_review_workflows.BackupBeforeApprovalView"
+_VIEW = "leaguebot.core.services.seasons.season_review_workflows.BackupBeforeApprovalView"
 
 
 # ---------------------------------------------------------------------------

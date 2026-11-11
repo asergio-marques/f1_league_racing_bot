@@ -23,7 +23,7 @@ the queue"; decision 19):
   told why, in their reply or, once that can no longer be updated, the log channel.
 
 The factories are `season_review_take_down_change()` and `season_review_post_change(drawing=...,
-approve_view=..., scheduler=..., now=...)` in `leaguebot.core.services.season_review_changes`; the
+approve_view=..., scheduler=..., now=...)` in `leaguebot.core.services.seasons.season_review_changes`; the
 builder registers them with the image module's drawing, its own view factory, the scheduler service,
 which `arm_expiry` arms its timer through, and the queue's clock, which stamps the question's
 posting (no step looks a service up on the bot).
@@ -263,7 +263,7 @@ async def test_forgetting_a_taken_down_review_cannot_be_discarded(standing):
     next restart would tell them it expired; the queue stays stopped there and the prompt's row
     stands. Once the fault is lifted, Retry forgets the review and the change is done."""
     with patch(
-        "leaguebot.core.services.season_review_changes.mark_press",
+        "leaguebot.core.services.seasons.season_review_changes.mark_press",
         side_effect=RuntimeError("the press register is locked"),
     ):
         await _take_down(standing, "confirmed")
@@ -402,7 +402,7 @@ def _attach(env: Any) -> None:
     """Register `season.review.post`, built by its factory with the test's drawing, a view
     factory recording each payload it makes the question's view for, the bot's scheduler
     service and the queue's clock, handed as the builder hands them."""
-    from leaguebot.core.services.season_review_changes import season_review_post_change
+    from leaguebot.core.services.seasons.season_review_changes import season_review_post_change
 
     def approve_view(payload: Any) -> Any:
         env.views.append(payload)
@@ -574,7 +574,7 @@ async def test_a_question_whose_posting_was_not_marked_arms_its_five_minutes_on_
     from datetime import timedelta
 
     from leaguebot.core.services.queue.change_types import StepContext, StepView
-    from leaguebot.core.services.season_review_changes import season_review_post_change
+    from leaguebot.core.services.seasons.season_review_changes import season_review_post_change
 
     change_type = season_review_post_change(
         drawing=posting.drawing, approve_view=lambda payload: APPROVE,
@@ -721,7 +721,7 @@ async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portrait
     confirming will post it (#374); a placements review's, without."""
     import asyncio
 
-    from leaguebot.core.services import season_review_changes
+    from leaguebot.core.services.seasons import season_review_changes
     from leaguebot.image.services import image_lineup_post
 
     handed: dict[str, Any] = {}
@@ -780,7 +780,7 @@ async def test_the_builder_s_drawing_of_a_review_lineup_that_will_not_draw_keeps
     placements under review")."""
     import asyncio
 
-    from leaguebot.core.services import season_review_changes
+    from leaguebot.core.services.seasons import season_review_changes
     from leaguebot.image.services import image_lineup_post
 
     handed: dict[str, Any] = {}
@@ -817,7 +817,7 @@ async def test_a_drawn_picture_s_render_directory_is_gone_once_its_job_completes
     import tempfile
     from pathlib import Path
 
-    from leaguebot.core.services.season_review_changes import season_review_post_change
+    from leaguebot.core.services.seasons.season_review_changes import season_review_post_change
     from leaguebot.image.services.image_render_service import discard_render
 
     made: list[Path] = []
@@ -846,7 +846,7 @@ async def test_the_builder_hands_the_review_the_image_module_s_discard_of_a_rend
     """The real change types are registered, as the builder registers them. The factory of
     `season.review.post` is handed the image module's `discard_render`, so that a picture's render
     directory goes with it."""
-    from leaguebot.core.services import season_review_changes
+    from leaguebot.core.services.seasons import season_review_changes
     from leaguebot.image.services.image_render_service import discard_render
 
     handed: dict[str, Any] = {}
@@ -877,7 +877,7 @@ async def test_a_restart_asks_the_take_down_of_each_review_standing_before_the_q
     of both is deleted, each review's notice says it expired while the bot was restarting and pings
     Alex, and both prompts' rows are gone."""
     from leaguebot.__main__ import _approve_view_for
-    from leaguebot.core.services.season_review_changes import recover_expired_review_prompts
+    from leaguebot.core.services.seasons.season_review_changes import recover_expired_review_prompts
 
     channel = standing.channel
     config_question = post_in(channel, BOT_USER)
@@ -911,7 +911,7 @@ async def test_a_review_whose_take_down_is_in_hand_is_not_asked_again_at_a_secon
     take-down, which stops at R1's delete. The bot starts again with it still stopped: the
     restart's step asks no second take-down, and the review's row still stands."""
     from leaguebot.__main__ import _approve_view_for
-    from leaguebot.core.services.season_review_changes import recover_expired_review_prompts
+    from leaguebot.core.services.seasons.season_review_changes import recover_expired_review_prompts
 
     standing.channel.r1.fails = http_error(discord.Forbidden, status=403,
                                            text="Missing Permissions")
@@ -944,7 +944,7 @@ def _approve_view(env: Any, monkeypatch: Any) -> tuple[Any, Any]:
     whose approval (`season_review_workflows.approve_season`) is stood in, recorded and goes
     through. Returns the view and the stand-in."""
     from leaguebot.__main__ import _approve_view_for
-    from leaguebot.core.services import season_review_workflows
+    from leaguebot.core.services.seasons import season_review_workflows
 
     approval = AsyncMock(return_value=True)
     monkeypatch.setattr(season_review_workflows, "approve_season", approval)
@@ -987,7 +987,7 @@ async def _evidence_of(env: Any, question_id: int, value: str) -> None:
 
 def _season_now(monkeypatch: Any, value: str) -> None:
     """The season as it stands now: Pro's rounds as *value*."""
-    from leaguebot.core.services import season_fingerprint_service as sfs
+    from leaguebot.core.services.seasons import season_fingerprint_service as sfs
 
     async def _now(*_args: Any, **_kwargs: Any) -> Any:
         return sfs.SeasonFingerprint({PRO_ROUNDS: value})
@@ -1040,7 +1040,7 @@ async def test_a_confirmation_asks_the_take_down_before_the_approval_and_the_rev
     the button deletes nothing itself. Run a job at a time, the queue takes the review down, its
     row with it, before any of the approval's jobs is done."""
     from leaguebot.__main__ import _approve_view_for
-    from leaguebot.core.services.season_approval_change import KIND as APPROVAL
+    from leaguebot.core.services.seasons.season_approval_change import KIND as APPROVAL
     from tests.support.review_workflows import take_season_fingerprint
     from tests.support.season_league import ADMIN_ID, SEASON_ID, Review, press_approve, season_league
     from tests.support.season_league import REVIEW_CHANNEL as CHANNEL_610
@@ -1142,7 +1142,7 @@ async def test_approve_refuses_where_the_season_changed_while_the_review_waited(
     the question appears: he is refused, privately, the reply naming Pro's rounds as changed and
     saying nothing was approved; one ⛔ line is in the log channel; the approval is never asked;
     and the review's take-down is asked, ending refused."""
-    from leaguebot.core.services.season_review_changes import season_review_take_down_change
+    from leaguebot.core.services.seasons.season_review_changes import season_review_take_down_change
     from tests.support.change_queue import register, retry_job
     from tests.support.review_league import block_queue
 
@@ -1218,7 +1218,7 @@ async def test_a_late_press_beside_one_under_way_leaves_the_review_to_it(
     timer has fired and waits for it). A second press is refused as expired, privately, and
     recorded, but asks no take-down: the first press settles how the review ends, so its approval
     cannot go through with the review taken down as an expired one."""
-    from leaguebot.core.services import season_review_changes
+    from leaguebot.core.services.seasons import season_review_changes
 
     season_review_changes.mark_press(standing.channel.q.id, getattr(season_review_changes, mark))
     view, approval = _approve_view(standing, monkeypatch)
@@ -1239,7 +1239,7 @@ async def test_a_press_refused_while_an_approval_is_in_hand_leaves_no_review_pas
     being approved already, and the review's take-down is then asked, ending expired, so the
     review does not stand past its five minutes (core: "Upon their passing its message shall be
     deleted")."""
-    from leaguebot.core.services.season_approval_change import ALREADY_BEING_APPROVED
+    from leaguebot.core.services.seasons.season_approval_change import ALREADY_BEING_APPROVED
 
     channel = standing.channel
     await _posted_a_moment_ago(standing, channel.q.id)
@@ -1269,7 +1269,7 @@ async def test_a_review_standing_after_a_restart_refuses_a_press_and_records_it(
     five minutes being up, the refusal is recorded in the log channel, and the button deletes
     nothing itself."""
     from leaguebot.__main__ import _approve_view_for
-    from leaguebot.core.services.season_review_changes import recover_expired_review_prompts
+    from leaguebot.core.services.seasons.season_review_changes import recover_expired_review_prompts
 
     approve_view = type(
         _approve_view_for(standing.bot)({"view": "approve", "reviewer_id": REVIEWER})
@@ -1302,7 +1302,7 @@ async def test_a_press_hands_the_approval_what_remains_of_the_review_s_five_minu
     the review's five minutes rather than taking five of its own (core :281)."""
     from datetime import timedelta
 
-    from leaguebot.core.services.season_review_changes import REVIEW_WINDOW
+    from leaguebot.core.services.seasons.season_review_changes import REVIEW_WINDOW
 
     posted = standing.clock.now - timedelta(minutes=4)
     async with get_connection(standing.db_path) as db:

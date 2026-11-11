@@ -2,7 +2,7 @@
 
 The approval is judged twice: at the press, by the cog, and again when it comes up to run on the
 change queue, by the change type, which may import no cog. So the two reads both make, the
-divisions' channels and the unsettled signups, live in `core/services/approval_checks.py`, and the
+divisions' channels and the unsettled signups, live in `core/services/seasons/approval_checks.py`, and the
 cog's methods call them. The cog's own tests (`test_placements_confirmation.py`) still pin every
 case through the cog; these pin that the service gives the same answers on its own.
 """
@@ -159,7 +159,7 @@ async def test_the_unsettled_signups_are_read_by_the_service(db_path):
     it; driver 3, with no signup, by their user id."""
     from types import SimpleNamespace
 
-    from leaguebot.core.services.approval_checks import unsettled_signups
+    from leaguebot.core.services.seasons.approval_checks import unsettled_signups
     from leaguebot.core.utils.hooks import AwaitedHook
     from leaguebot.signup.services.signup_module_service import SignupModuleService
     from leaguebot.signup.wiring import sign_up_to_driver_names_read
@@ -215,7 +215,7 @@ def test_the_divisions_with_no_rounds_are_named_in_order():
     order given, and none where every division holds a round."""
     from datetime import datetime, timezone
 
-    from leaguebot.core.services import approval_checks
+    from leaguebot.core.services.seasons import approval_checks
 
     at = datetime(2026, 11, 20, 19, tzinfo=timezone.utc)
     divisions = [_division(1, "Pro"), _division(2, "Am"), _division(3, "Academy")]
@@ -232,7 +232,7 @@ def test_a_division_holding_two_rounds_at_one_moment_is_named_once():
     repeated as Discord shows it, and Am not at all."""
     from datetime import datetime, timedelta, timezone
 
-    from leaguebot.core.services import approval_checks
+    from leaguebot.core.services.seasons import approval_checks
     from leaguebot.core.utils.formatting import discord_ts
 
     at = datetime(2026, 11, 20, 19, tzinfo=timezone.utc)
@@ -257,7 +257,7 @@ def test_a_division_holding_two_rounds_at_one_moment_is_named_once():
 async def test_the_signup_module_lacks_only_its_channel_while_it_is_on(enabled, config, problems):
     """While the signup module is on, a season is approved only once its signup channel is set;
     with signup off, or no signup configuration at all, nothing is lacking."""
-    from leaguebot.core.services import approval_checks
+    from leaguebot.core.services.seasons import approval_checks
 
     module_service = MagicMock(is_signup_enabled=AsyncMock(return_value=enabled))
     signup_module_service = MagicMock(get_config=AsyncMock(return_value=config))

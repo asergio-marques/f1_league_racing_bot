@@ -21,7 +21,7 @@ from discord.ext import commands
 
 from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services import approval_checks
+from leaguebot.core.services.seasons import approval_checks
 from leaguebot.core.services.cancellation_changes import SEASON_CANCEL
 from leaguebot.core.services.modules.image_drawing import Held
 from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
@@ -32,9 +32,9 @@ from leaguebot.core.services.modules.review_sections import (
     read_division_lines,
     read_review_sections,
 )
-from leaguebot.core.services.season_setup_change import KIND as SEASON_SETUP
-from leaguebot.core.services.season_review_changes import POST as SEASON_REVIEW_POST, REVIEW_WINDOW
-from leaguebot.core.services.season_end_changes import (
+from leaguebot.core.services.seasons.season_setup_change import KIND as SEASON_SETUP
+from leaguebot.core.services.seasons.season_review_changes import POST as SEASON_REVIEW_POST, REVIEW_WINDOW
+from leaguebot.core.services.seasons.season_end_changes import (
     ABORT_ONLY_BEFORE,
     PRE_CONFIRMATION,
     SEASON_ABORT,
@@ -42,7 +42,7 @@ from leaguebot.core.services.season_end_changes import (
     season_end_in_hand,
     season_end_refusal,
 )
-from leaguebot.core.services.season_service import SeasonCapacityCounts
+from leaguebot.core.services.seasons.season_service import SeasonCapacityCounts
 from leaguebot.core.utils.channel_guard import (
     league_admin_only,
     league_manager_only,
@@ -116,7 +116,7 @@ class SeasonCog(commands.Cog):
     ) -> None:
         """Begin season setup: ask the change queue for the season, which refuses a setup in
         progress or a season being raced at the ask and again as it starts
-        (`core/services/season_setup_change.py`)."""
+        (`core/services/seasons/season_setup_change.py`)."""
         await self.bot.change_queue.ask(
             SEASON_SETUP, {"game_edition": game_edition}, interaction=interaction,
             what=describe(interaction),
@@ -155,7 +155,7 @@ class SeasonCog(commands.Cog):
         was computed from is taken here, now that the report is complete, and kept with the
         question for the press to compare the season against.
         """
-        from leaguebot.core.services.season_fingerprint_service import take_fingerprint
+        from leaguebot.core.services.seasons.season_fingerprint_service import take_fingerprint
 
         evidence = None
         if offered:
@@ -621,7 +621,7 @@ class SeasonCog(commands.Cog):
             # by. Posted either way, on the roleless-team warning's reasoning below:
             # it is a review *finding*, and the form the calendar took does not
             # change whether the manager needs it.
-            from leaguebot.core.services.approval_window_service import calendar_faults
+            from leaguebot.core.services.seasons.approval_window_service import calendar_faults
 
             fault_lines = self._calendar_fault_lines(
                 calendar_faults(

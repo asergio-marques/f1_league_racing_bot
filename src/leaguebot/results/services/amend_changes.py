@@ -46,7 +46,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.season_service import live_season
+from leaguebot.core.services.seasons.season_service import live_season
 from leaguebot.core.utils.season_gate import LIVE_STAGES, stage_refusal
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.amend_views import AmendCancelView

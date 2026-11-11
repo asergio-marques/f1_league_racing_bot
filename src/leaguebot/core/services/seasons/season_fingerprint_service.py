@@ -209,7 +209,7 @@ async def take_fingerprint(
             # Every signup still unsettled on the server: the review names each, and
             # confirming placements waits on them, so a signup approved, rejected or sent back
             # after the report is a change to what would be confirmed.
-            from leaguebot.core.services.season_lifecycle_service import UNSETTLED_STATES
+            from leaguebot.core.services.seasons.season_lifecycle_service import UNSETTLED_STATES
 
             areas["unsettled signups"] = _digest(
                 await tuple_rows(

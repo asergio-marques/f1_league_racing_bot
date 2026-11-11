@@ -114,7 +114,7 @@ _GATES = (
 @contextmanager
 def _gates_of(cog):
     """Each gate *cog* stands in for, patched on `approval_checks` for as long as it is held."""
-    from leaguebot.core.services import approval_checks
+    from leaguebot.core.services.seasons import approval_checks
 
     with ExitStack() as stack:
         for gate in _GATES:
@@ -135,7 +135,7 @@ async def _confirm(cog, interaction, **given) -> bool:
 async def _mid_season_faults(cog) -> list[str]:
     """The configuration checks confirming mid-season placements repeats, handed the league's
     modules and its drawing."""
-    from leaguebot.core.services import approval_checks
+    from leaguebot.core.services.seasons import approval_checks
 
     with _gates_of(cog):
         return await approval_checks.mid_season_configuration_faults(
@@ -323,7 +323,7 @@ async def test_confirming_a_season_no_longer_placing_confirms_nothing(db_path):
 
 
 async def test_cancelling_discards_the_uncommitted_placements_and_frees_their_seats(db_path):
-    from leaguebot.core.services.season_service import discard_uncommitted_placements_on
+    from leaguebot.core.services.seasons.season_service import discard_uncommitted_placements_on
 
     async with get_connection(db_path) as db:
         assert await discard_uncommitted_placements_on(db, 1) == 1
@@ -410,7 +410,7 @@ async def _mid_season_report(cog, monkeypatch, interaction=None):
     cog.views_made = record_review_views(monkeypatch)
     # The review's database is `:memory:`, which holds no season to fingerprint: the evidence the
     # report was computed from is given, as `test_season_review_report.py` gives it.
-    from leaguebot.core.services import season_fingerprint_service as sfs
+    from leaguebot.core.services.seasons import season_fingerprint_service as sfs
 
     async def _evidence(*_args, **_kwargs):
         return sfs.SeasonFingerprint({"the season": "as reported"})
@@ -733,7 +733,7 @@ def _real_confirmation(env, monkeypatch, *, stage=SeasonStage.ONGOING_PLACEMENTS
     question, over the real confirmation, season 1 at *stage*, nothing unsettled and no fault: the
     gates it runs stood in on `approval_checks`."""
     from leaguebot.__main__ import _approve_view_for
-    from leaguebot.core.services import approval_checks
+    from leaguebot.core.services.seasons import approval_checks
     from tests.core.test_review_outcomes_recorded import REVIEWER
 
     env.bot.season_service.get_confirmed_season = AsyncMock(
@@ -828,7 +828,7 @@ async def test_the_reviewer_confirms_the_mid_season_placements(tmp_path, monkeyp
     name (which it records any refusal under) and the review's evidence, which the confirmation
     is judged against again when it runs. The button deletes nothing and asks no take-down
     itself: that is the confirmation's, asked of the queue with it."""
-    from leaguebot.core.services.season_review_workflows import review_button
+    from leaguebot.core.services.seasons.season_review_workflows import review_button
     from tests.core.test_review_outcomes_recorded import AREA, _season_since_the_review
 
     env = await _standing_mid_season(tmp_path)

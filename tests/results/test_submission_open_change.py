@@ -191,7 +191,7 @@ async def test_a_round_starting_while_the_queue_is_stopped_opens_when_it_clears_
 async def test_a_round_with_results_off_asks_the_wind_down(tmp_path):
     """The results module is off when round 3 starts. The queue makes round 3 FINAL, creates no
     channel, and asks for the season's wind-down, as the bot."""
-    from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
+    from leaguebot.core.services.seasons.season_lifecycle_service import WIND_DOWN
 
     league = await _league(tmp_path)
     await league.switch("results", False)

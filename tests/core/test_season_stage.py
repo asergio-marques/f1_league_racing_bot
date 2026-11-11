@@ -21,7 +21,7 @@ from leaguebot.core.models.season import (
     SeasonStatus,
     status_of_stage,
 )
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 
 SERVER_ID = 2200
 
@@ -192,7 +192,7 @@ async def test_confirming_the_configuration_on_moves_the_stage_on_the_save_s_con
     """A season being set up, in Configuration. `confirm_configuration_on`, handed a connection,
     the season and Waiting or Placements, moves the season to that stage on that connection, its
     status still SETUP, and commits nothing: rolled back, the season is in Configuration again."""
-    from leaguebot.core.services.season_lifecycle_service import confirm_configuration_on
+    from leaguebot.core.services.seasons.season_lifecycle_service import confirm_configuration_on
 
     season_id = await _insert(db_path, "SETUP", "CONFIGURATION")
 
@@ -225,7 +225,7 @@ async def test_confirming_the_configuration_on_from_another_stage_raises_and_wri
     exist, asked to move to Waiting; or a season in Configuration asked to move to Signups, which
     the lifecycle forbids from Configuration: `confirm_configuration_on` raises
     InvalidStageTransition, and the season, where there is one, is left where it stood."""
-    from leaguebot.core.services.season_lifecycle_service import confirm_configuration_on
+    from leaguebot.core.services.seasons.season_lifecycle_service import confirm_configuration_on
 
     season_id = await _insert(db_path, "SETUP", start) if start is not None else 9999
 

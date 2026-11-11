@@ -106,7 +106,7 @@ async def _states(db_path) -> dict[int, str]:
 async def _pass(db_path):
     """Run the pass with `run_driver_pass_on` on one connection, as the save that records a
     season's end does, and commit it, which the form does not. Gives its result."""
-    from leaguebot.core.services.season_lifecycle_service import run_driver_pass_on
+    from leaguebot.core.services.seasons.season_lifecycle_service import run_driver_pass_on
 
     async with get_connection(db_path) as db:
         result = await run_driver_pass_on(db, now=NOW, **delete_hooks(*DRIVER_HOOKS))
@@ -215,7 +215,7 @@ async def test_a_signup_in_review_has_its_channel_closed():
 async def test_the_driver_role_is_revoked_from_a_real_driver(db_path):
     """Max (1002) was Assigned when the season ended, and holds the league's driver role 555:
     his `take_driver_role` job takes it back."""
-    from leaguebot.core.services.season_lifecycle_service import take_driver_role
+    from leaguebot.core.services.seasons.season_lifecycle_service import take_driver_role
     from leaguebot.core.services.team_role_service import TeamRoleService
 
     guild, member, role = _member_holding(555, 1002)
@@ -236,7 +236,7 @@ async def test_the_driver_role_survives_disabling_signup_and_is_still_revoked(db
     role to revoke and every driver carried it into the next season. Here there is no signup
     configuration at all, as after `/module disable signup`, and the league's role 555 is still
     taken from Max (1002) by his `take_driver_role` job."""
-    from leaguebot.core.services.season_lifecycle_service import take_driver_role
+    from leaguebot.core.services.seasons.season_lifecycle_service import take_driver_role
     from leaguebot.core.services.team_role_service import TeamRoleService
 
     async with get_connection(db_path) as db:
@@ -480,7 +480,7 @@ async def test_the_pass_on_the_save_handed_commits_nothing_and_gives_the_account
     """The league of the pass above, run on a connection the season's end hands it and then
     let go uncommitted: every driver stands as before, and the result gives the five drivers
     returned, the four deleted, and the accounts whose portraits are to be discarded."""
-    from leaguebot.core.services.season_lifecycle_service import run_driver_pass_on
+    from leaguebot.core.services.seasons.season_lifecycle_service import run_driver_pass_on
 
     before = await _states(db_path)
     async with get_connection(db_path) as db:
@@ -498,7 +498,7 @@ async def test_the_pass_on_the_save_handed_names_each_driver_its_discord_side_re
     whether test mode created them, for the jobs after the save: Lewis (1001) and Max (1002)
     Assigned, 1003 Unassigned, 1004 in review, and the test driver flagged as one. Driver 1005,
     already at Not Signed Up, has nothing on Discord to close."""
-    from leaguebot.core.services.season_lifecycle_service import run_driver_pass_on
+    from leaguebot.core.services.seasons.season_lifecycle_service import run_driver_pass_on
 
     async with get_connection(db_path) as db:
         result = await run_driver_pass_on(db, now=NOW, **delete_hooks(*DRIVER_HOOKS))
@@ -556,7 +556,7 @@ async def test_a_driver_role_discord_will_not_take_back_raises(tmp_path):
     import discord
 
     from leaguebot.core.models.change import StepFailedOnDiscord
-    from leaguebot.core.services.season_lifecycle_service import take_driver_role
+    from leaguebot.core.services.seasons.season_lifecycle_service import take_driver_role
     from leaguebot.core.services.team_role_service import TeamRoleService
 
     role = MagicMock(id=555)

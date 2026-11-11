@@ -42,7 +42,7 @@ async def _uncommitted(db) -> int:
 
 async def test_confirming_on_commits_the_placements_and_returns_the_season_to_ongoing(db_path):
     """On the connection handed, and nothing of it outlasts a rollback."""
-    from leaguebot.core.services.season_lifecycle_service import confirm_placements_on
+    from leaguebot.core.services.seasons.season_lifecycle_service import confirm_placements_on
 
     async with get_connection(db_path) as db:
         confirmed = await confirm_placements_on(db, 1)
@@ -59,7 +59,7 @@ async def test_confirming_on_commits_the_placements_and_returns_the_season_to_on
 
 async def test_confirming_on_from_another_stage_raises_and_writes_nothing(db_path):
     from leaguebot.core.models.season import InvalidStageTransition
-    from leaguebot.core.services.season_lifecycle_service import confirm_placements_on
+    from leaguebot.core.services.seasons.season_lifecycle_service import confirm_placements_on
 
     async with get_connection(db_path) as db:
         await db.execute("UPDATE seasons SET stage = 'ONGOING' WHERE id = 1")
@@ -76,7 +76,7 @@ async def test_confirming_on_never_moves_the_season_on_to_pending_completion(db_
     """Pro is finished: the confirmation is refused before it gets here (owner, check 1), and
     `confirm_placements_on` itself returns the season to Ongoing only, saying nothing of a move
     on."""
-    from leaguebot.core.services.season_lifecycle_service import confirm_placements_on
+    from leaguebot.core.services.seasons.season_lifecycle_service import confirm_placements_on
 
     async with get_connection(db_path) as db:
         await db.execute("UPDATE divisions SET status = 'FINISHED' WHERE id = ?", (DIVISION_ID,))
@@ -115,7 +115,7 @@ async def test_the_uncommitted_placements_are_read_on_the_connection_handed(db_p
 
 def _granting(monkeypatch):
     """The step's team-role service double, and the league's server it reaches."""
-    from leaguebot.core.services import season_approval_change
+    from leaguebot.core.services.seasons import season_approval_change
 
     guild = MagicMock()
     monkeypatch.setattr(season_approval_change, "league_guild", AsyncMock(return_value=guild))
@@ -126,7 +126,7 @@ def _granting(monkeypatch):
 
 
 async def _grant(db_path, roles, payload):
-    from leaguebot.core.services.season_approval_change import driver_roles_step
+    from leaguebot.core.services.seasons.season_approval_change import driver_roles_step
 
     step = driver_roles_step(roles)
     ctx = SimpleNamespace(bot=MagicMock(), db_path=db_path, step_payload=payload,

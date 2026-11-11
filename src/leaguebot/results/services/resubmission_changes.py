@@ -54,7 +54,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services import season_service
+from leaguebot.core.services.seasons import season_service
 from leaguebot.results.services import result_submission_service as submissions
 from leaguebot.results.services import review_open_change
 from leaguebot.results.services.review_posting import DELETE_MESSAGE, posting_steps

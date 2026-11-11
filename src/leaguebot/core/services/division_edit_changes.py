@@ -52,7 +52,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.services.round_add_changes import saved_result
-from leaguebot.core.services.season_service import (
+from leaguebot.core.services.seasons.season_service import (
     division_amendment_changes_nothing,
     validate_division_name,
     validate_division_tier,
@@ -60,7 +60,7 @@ from leaguebot.core.services.season_service import (
 from leaguebot.core.utils.formatting import format_division_list
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
 
 DIVISION_RENAME = "core.division_rename"
 DIVISION_AMEND = "core.division_amend"

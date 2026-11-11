@@ -70,7 +70,7 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.models.season import ONGOING_STAGES, SeasonStage
 from leaguebot.core.models.season_end import COMPLETION
-from leaguebot.core.services import approval_checks
+from leaguebot.core.services.seasons import approval_checks
 from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.queue.queue_records import (
     in_hand,
@@ -83,7 +83,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
     StepView,
 )
-from leaguebot.core.services.season_end_service import (
+from leaguebot.core.services.seasons.season_end_service import (
     DISCARD_BACKUP,
     DELETE_FORECAST,
     DISCARD_PORTRAITS,
@@ -94,7 +94,7 @@ from leaguebot.core.services.season_end_service import (
     shared_steps,
     write_driver_history_entries_on,
 )
-from leaguebot.core.services.season_lifecycle_service import (
+from leaguebot.core.services.seasons.season_lifecycle_service import (
     ABORT_CAUSE,
     CLOSE_SIGNUP,
     NO_CHANNEL_LEFT,
@@ -113,7 +113,7 @@ from leaguebot.core.services.season_lifecycle_service import (
     wind_down_not_due_on,
     wind_down_steps,
 )
-from leaguebot.core.services.season_service import (
+from leaguebot.core.services.seasons.season_service import (
     SeasonService,
     complete_season_on,
     completion_refusal_on,

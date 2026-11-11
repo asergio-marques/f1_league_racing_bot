@@ -60,12 +60,12 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.services.modules.hub_service import HUB_REFRESH
-from leaguebot.core.services.season_lifecycle_service import (
+from leaguebot.core.services.seasons.season_lifecycle_service import (
     FROZEN_FOR_COMPLETION_REFUSAL,
     WIND_DOWN,
     modules_frozen_for_completion,
 )
-from leaguebot.core.services.season_service import end_rounds_awaiting_results_on
+from leaguebot.core.services.seasons.season_service import end_rounds_awaiting_results_on
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.results.services.module_switch_settings import results_enabled_on
 from leaguebot.results.services.results_purge_service import (

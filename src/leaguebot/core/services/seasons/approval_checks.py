@@ -24,12 +24,12 @@ import discord
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.division import Division
 from leaguebot.core.models.round import AttendanceWindows, Round, WeatherWindows
-from leaguebot.core.services.approval_window_service import calendar_faults
+from leaguebot.core.services.seasons.approval_window_service import calendar_faults
 from leaguebot.core.services.config_service import ConfigService
 from leaguebot.core.services.modules.confirmation_refusals import Confirmation, read_refusals
 from leaguebot.core.services.modules.image_drawing import DivisionTeams, ImageDrawing, TeamSeats
 from leaguebot.core.services.modules.module_service import ModuleService, SwitchNotSignedUp
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.core.services.team_service import TeamService, validate_team_name
 from leaguebot.core.utils.asset_slug import normalise
 from leaguebot.core.utils.channel_guard import league_role_faults
@@ -207,7 +207,7 @@ async def unsettled_signups(db_path: str, driver_names_read: AwaitedHook) -> lis
     Each driver is named by what *driver_names_read* hands back for them, the name signup holds
     from their signup, or by their account where it holds none.
     """
-    from leaguebot.core.services.season_lifecycle_service import UNSETTLED_STATES
+    from leaguebot.core.services.seasons.season_lifecycle_service import UNSETTLED_STATES
 
     placeholders = ",".join("?" for _ in UNSETTLED_STATES)
     async with get_connection(db_path) as db:

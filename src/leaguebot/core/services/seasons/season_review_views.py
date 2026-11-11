@@ -23,29 +23,29 @@ from datetime import datetime
 
 import discord
 
-from leaguebot.core.services import season_fingerprint_service, season_review_workflows
-from leaguebot.core.services.approval_checks import SignupModuleSettings
+from leaguebot.core.services.seasons import season_fingerprint_service, season_review_workflows
+from leaguebot.core.services.seasons.approval_checks import SignupModuleSettings
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.config_service import ConfigService
-from leaguebot.core.services.configuration_confirm_change import (
+from leaguebot.core.services.seasons.configuration_confirm_change import (
     ALREADY_BEING_CONFIRMED as ALREADY_CONFIGURATION_BEING_CONFIRMED,
 )
-from leaguebot.core.services.configuration_confirm_change import (
+from leaguebot.core.services.seasons.configuration_confirm_change import (
     confirmation_in_hand as configuration_confirmation_in_hand,
 )
 from leaguebot.core.services.modules.image_drawing import ImageDrawing
-from leaguebot.core.services.mid_season_confirm_change import (
+from leaguebot.core.services.seasons.mid_season_confirm_change import (
     ALREADY_BEING_CONFIRMED,
     confirmation_in_hand,
 )
 from leaguebot.core.services.modules.module_service import ModuleService
 from leaguebot.core.services.posting.output_router import OutputRouter
 from leaguebot.core.services.scheduler_service import SchedulerService
-from leaguebot.core.services.season_approval_change import (
+from leaguebot.core.services.seasons.season_approval_change import (
     ALREADY_BEING_APPROVED,
     approval_in_hand,
 )
-from leaguebot.core.services.season_review_changes import (
+from leaguebot.core.services.seasons.season_review_changes import (
     EXPIRED,
     FAILED,
     REFUSED,
@@ -57,8 +57,8 @@ from leaguebot.core.services.season_review_changes import (
     standing_review,
     take_review_down,
 )
-from leaguebot.core.services.season_review_workflows import review_button
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_review_workflows import review_button
+from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.core.services.team_service import TeamService
 from leaguebot.core.utils.channel_guard import is_league_admin
 from leaguebot.core.utils.hooks import AwaitedHook

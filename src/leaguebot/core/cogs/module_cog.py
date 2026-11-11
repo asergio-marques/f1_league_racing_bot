@@ -271,7 +271,7 @@ class ModuleCog(commands.Cog):
         True where the command was refused, having answered the interaction and, unless
         *record* is False, recorded the refusal in the log channel.
         """
-        from leaguebot.core.services.season_lifecycle_service import (
+        from leaguebot.core.services.seasons.season_lifecycle_service import (
             FROZEN_FOR_COMPLETION_REFUSAL,
             PLACEMENTS_CONFIRMED_REFUSAL,
             configuration_fixed,

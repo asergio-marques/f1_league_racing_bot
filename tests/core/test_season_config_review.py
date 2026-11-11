@@ -46,7 +46,7 @@ _POINTS_GATES = (
 def _gates_of(cog):
     """Each gate *cog* stands in for, patched on `approval_checks`, or on results' service for a
     points gate, for as long as it is held."""
-    from leaguebot.core.services import approval_checks
+    from leaguebot.core.services.seasons import approval_checks
     from leaguebot.results.services import season_points_service
 
     with ExitStack() as stack:
@@ -66,7 +66,7 @@ async def _faults(cog, guild=None) -> list[str]:
 
 async def _image_faults(cog) -> list[str]:
     """The image module's faults that need no division, read through *cog*'s bot's drawing."""
-    from leaguebot.core.services import approval_checks
+    from leaguebot.core.services.seasons import approval_checks
 
     return await approval_checks.image_configuration_faults(cog.bot.image_drawing)
 
@@ -363,7 +363,7 @@ async def _team_list_since_the_review(env, monkeypatch, now: str = "as reviewed"
     import json
 
     from leaguebot.core.db.database import get_connection
-    from leaguebot.core.services import season_fingerprint_service as sfs
+    from leaguebot.core.services.seasons import season_fingerprint_service as sfs
 
     async with get_connection(env.db_path) as db:
         await db.execute("UPDATE season_review_prompts SET evidence = ?",
@@ -461,7 +461,7 @@ async def test_a_confirmation_that_goes_through_takes_the_review_down(tmp_path, 
     posted in channel 610, and no lapse line is written."""
     import json
 
-    from leaguebot.core.services.season_review_changes import TAKE_DOWN
+    from leaguebot.core.services.seasons.season_review_changes import TAKE_DOWN
     from tests.support.change_queue import change_rows, run_queue
     from tests.support.season_league import (
         CONFIGURATION_CONFIRM_KIND,
@@ -586,7 +586,7 @@ async def _review_asked(cog, interaction, monkeypatch) -> dict:
     """Run `/season config-review` as the manager in channel 111, the season's evidence the team
     list "as reported", and return the review it asked the queue to post: one request, of
     `season.review.post`, carrying the manager's interaction."""
-    from leaguebot.core.services import season_fingerprint_service as sfs
+    from leaguebot.core.services.seasons import season_fingerprint_service as sfs
 
     async def _evidence(*_args, **_kwargs):
         return sfs.SeasonFingerprint({"the team list": "as reported"})
@@ -959,7 +959,7 @@ async def test_an_unchanged_configuration_is_handed_to_the_confirmation_with_its
     records any refusal under) and the review's evidence, which the confirmation is judged against
     again when it runs. The button deletes nothing and asks no take-down itself: that is the
     confirmation's, asked of the queue with it."""
-    from leaguebot.core.services.season_review_workflows import review_button
+    from leaguebot.core.services.seasons.season_review_workflows import review_button
 
     env = await _standing_review(tmp_path)
     await _team_list_since_the_review(env, monkeypatch)

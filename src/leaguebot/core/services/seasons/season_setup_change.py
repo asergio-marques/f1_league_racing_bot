@@ -42,7 +42,7 @@ from leaguebot.core.services.queue.change_types import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
 
 KIND = "core.season_setup"
 

@@ -68,8 +68,8 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
     StepView,
 )
-from leaguebot.core.services.season_end_changes import season_ending, season_ending_jobs
-from leaguebot.core.services.season_lifecycle_service import (
+from leaguebot.core.services.seasons.season_end_changes import season_ending, season_ending_jobs
+from leaguebot.core.services.seasons.season_lifecycle_service import (
     ABORT_CAUSE,
     WIND_DOWN_CAUSE,
     WINDOW_OPENS_FROM,

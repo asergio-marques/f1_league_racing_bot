@@ -38,8 +38,8 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.queue.audit_service import record_system_change_on
-from leaguebot.core.services.season_end_changes import season_ending_on
-from leaguebot.core.services.season_lifecycle_service import (
+from leaguebot.core.services.seasons.season_end_changes import season_ending_on
+from leaguebot.core.services.seasons.season_lifecycle_service import (
     NO_CHANNEL_LEFT,
     advance_on_window_close_on,
     require_guild,

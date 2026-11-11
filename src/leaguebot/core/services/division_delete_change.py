@@ -53,7 +53,7 @@ from leaguebot.core.services.division_edit_changes import (
     placed_division,
 )
 from leaguebot.core.services.round_add_changes import saved_result
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.core.utils.hooks import AwaitedHook
 
 DIVISION_DELETE = "core.division_delete"

@@ -62,7 +62,7 @@ CLEARED = {
     ("results/services/penalty_wizard.py", "_HELD_REVIEWS"),
     # What became of each standing review's button, by its question's id: the reviews go with the
     # database a pack or a reset replaces, so no mark may outlive them (#439, 6b, C97).
-    ("core/services/season_review_changes.py", "_PRESSES"),
+    ("core/services/seasons/season_review_changes.py", "_PRESSES"),
 }
 
 #: Stores the plan deletes, and the commit that deletes them: accounted for while they stand,
@@ -249,7 +249,7 @@ async def test_clearing_a_leagues_state_forgets_what_became_of_a_reviews_button(
     """A review's button was pressed and its press is under way; after the clear, with no module
     signed up to its hook, no review's mark is left, so a review of the same question id in the
     league that follows is untouched."""
-    from leaguebot.core.services.season_review_changes import UNDER_WAY, _PRESSES, mark_press
+    from leaguebot.core.services.seasons.season_review_changes import UNDER_WAY, _PRESSES, mark_press
     from leaguebot.core.utils.hooks import Hook
 
     mark_press(999, UNDER_WAY)

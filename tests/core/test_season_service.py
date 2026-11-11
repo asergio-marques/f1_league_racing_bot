@@ -10,7 +10,7 @@ import os
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundStatus
-from leaguebot.core.services.season_service import set_round_status_on
+from leaguebot.core.services.seasons.season_service import set_round_status_on
 
 SERVER_ID = 12608
 DIVISION_ID = 11

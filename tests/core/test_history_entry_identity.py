@@ -129,7 +129,7 @@ async def _seed_a_finished_season(db_path: str) -> None:
 
 async def test_a_re_keyed_driver_s_history_carries_their_final_standing(db_path):
     """Issue #222, as a league sees it: the season ends and the driver's history is right."""
-    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
+    from leaguebot.core.services.seasons.season_end_service import write_driver_history_entries_on
     from tests.support.driver_records_hooks import season_standing_read
 
     await _seed_a_finished_season(db_path)
@@ -158,7 +158,7 @@ async def test_with_no_module_answering_the_history_records_no_standing(db_path)
     module signed up to answer a driver's standing (results never built). The season's end
     writes our driver's entry as it would with no standings at all: no position, no points and no
     gap, rather than reading results' standings itself."""
-    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
+    from leaguebot.core.services.seasons.season_end_service import write_driver_history_entries_on
     from leaguebot.core.utils.hooks import AwaitedHook
 
     await _seed_a_finished_season(db_path)

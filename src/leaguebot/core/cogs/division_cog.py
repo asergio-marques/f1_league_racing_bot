@@ -24,8 +24,8 @@ from leaguebot.core.services.division_add_change import KIND as DIVISION_ADD
 from leaguebot.core.services.division_duplicate_change import KIND as DIVISION_DUPLICATE
 from leaguebot.core.services.division_delete_change import DIVISION_DELETE
 from leaguebot.core.services.division_edit_changes import DIVISION_AMEND, DIVISION_RENAME
-from leaguebot.core.services.season_end_changes import season_end_in_hand, season_end_refusal
-from leaguebot.core.services.season_service import SeasonImmutableError
+from leaguebot.core.services.seasons.season_end_changes import season_end_in_hand, season_end_refusal
+from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.interaction_errors import describe

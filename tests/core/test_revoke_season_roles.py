@@ -87,7 +87,7 @@ async def _make_db(tmp_path, *, name="revoke_roles", driver_role=DRIVER_ROLE, dr
 async def _targets(db_path, season_id=SEASON_ID) -> dict[int, set[int]]:
     """What a season's end reads in its save: each driver whose roles are taken back, by user
     id, with the role ids taken from them (`season_role_targets_on`, committing nothing)."""
-    from leaguebot.core.services.season_end_service import season_role_targets_on
+    from leaguebot.core.services.seasons.season_end_service import season_role_targets_on
 
     async with get_connection(db_path) as db:
         targets = await season_role_targets_on(db, season_id)

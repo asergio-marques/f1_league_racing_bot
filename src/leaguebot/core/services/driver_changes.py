@@ -97,7 +97,7 @@ from leaguebot.core.services.driver_service import DriverService, write_transiti
 from leaguebot.core.services.lineup_posting import LineupPoster
 from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.core.services.role_moves import MOVE_ROLES, PLACEMENT_REASON, role_move_step
-from leaguebot.core.services.season_approval_change import unposted_lineup_line
+from leaguebot.core.services.seasons.season_approval_change import unposted_lineup_line
 from leaguebot.core.services.team_role_service import TeamRoleService
 from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.utils.league_server import league_guild

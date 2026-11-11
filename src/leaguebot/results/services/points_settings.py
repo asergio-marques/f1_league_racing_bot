@@ -50,7 +50,7 @@ if TYPE_CHECKING:
     import aiosqlite
 
     from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
 
 CONFIG_ADD = "results.setting.config_add"
 CONFIG_REMOVE = "results.setting.config_remove"

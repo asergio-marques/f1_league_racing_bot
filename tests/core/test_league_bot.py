@@ -79,7 +79,7 @@ def test_the_season_approval_is_registered():
     """The builder registers the season's approval and the change that tells the review's channel
     of a refusal its member can no longer be told of (#439, slice 4a)."""
     from leaguebot.__main__ import register_change_types
-    from leaguebot.core.services.season_approval_change import KIND, TELL_KIND
+    from leaguebot.core.services.seasons.season_approval_change import KIND, TELL_KIND
 
     bot = MagicMock()
     register_change_types(bot)
@@ -152,8 +152,8 @@ def test_the_season_s_end_is_registered():
         assert kinds.count(kind) == 1, kind
 
     from leaguebot.core.services.cancellation_changes import SEASON_CANCEL
-    from leaguebot.core.services.season_end_changes import SEASON_ABORT, SEASON_COMPLETE
-    from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
+    from leaguebot.core.services.seasons.season_end_changes import SEASON_ABORT, SEASON_COMPLETE
+    from leaguebot.core.services.seasons.season_lifecycle_service import WIND_DOWN
 
     assert (SEASON_COMPLETE, SEASON_CANCEL, SEASON_ABORT, WIND_DOWN) == (
         "season.complete", "season.cancel", "season.abort", "season.wind_down")

@@ -24,7 +24,7 @@ from tests.support.setup_reads import hold_setup
 SRC = Path(__file__).resolve().parents[2] / "src"
 
 #: The approval, which the review's Approve button hands a press on to, is a core service.
-WORKFLOWS = SRC / "leaguebot" / "core" / "services" / "season_review_workflows.py"
+WORKFLOWS = SRC / "leaguebot" / "core" / "services" / "seasons" / "season_review_workflows.py"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
@@ -378,8 +378,8 @@ async def _gated_view(tmp_path, monkeypatch, *, round_in_days: float = 30.0,
     from leaguebot.core.models.round import Round, RoundFormat
     from leaguebot.core.models.season import SeasonStage
     from leaguebot.core.models.server_config import ServerConfig
-    from leaguebot.core.services import approval_checks
-    from leaguebot.core.services import season_fingerprint_service as sfs
+    from leaguebot.core.services.seasons import approval_checks
+    from leaguebot.core.services.seasons import season_fingerprint_service as sfs
     from tests.support.review_prompts import store_review_prompt
     from tests.support.review_workflows import sign_up_confirmation_refused
 
@@ -545,7 +545,7 @@ async def test_a_press_cancelled_at_the_backup_question_leaves_the_review_standi
     """Under test mode Alex presses Approve and cancels at the backup question: he is told
     nothing has been approved or saved, nothing is asked of the queue, and the review stands with
     its row, to be pressed again."""
-    from leaguebot.core.services.season_review_workflows import BackupBeforeApprovalView
+    from leaguebot.core.services.seasons.season_review_workflows import BackupBeforeApprovalView
 
     async def _cancelled(self):
         self.answer = "cancel"
@@ -573,7 +573,7 @@ async def test_a_review_lapsed_at_the_backup_question_is_still_taken_down(
     deleting and posting nothing itself."""
     from datetime import datetime, timedelta, timezone
 
-    from leaguebot.core.services.season_review_workflows import BackupBeforeApprovalView
+    from leaguebot.core.services.seasons.season_review_workflows import BackupBeforeApprovalView
     from leaguebot.core.db.database import get_connection
 
     holder = {}
@@ -646,7 +646,7 @@ async def _on_a_real_queue(tmp_path, monkeypatch, approval):
     from datetime import datetime, timezone
 
     from leaguebot.__main__ import _approve_view_for
-    from leaguebot.core.services.season_review_changes import season_review_take_down_change
+    from leaguebot.core.services.seasons.season_review_changes import season_review_take_down_change
     from tests.support.change_queue import attach_queue, league_double, seed_server
 
     _, cog, question = await _gated_view(tmp_path, monkeypatch)
@@ -720,7 +720,7 @@ async def test_a_press_the_queue_refuses_for_a_changed_season_ends_the_review_as
     itself."""
     import json
 
-    from leaguebot.core.services import season_fingerprint_service as sfs
+    from leaguebot.core.services.seasons import season_fingerprint_service as sfs
     from tests.support.change_queue import acknowledgement, change_rows
 
     changed = {"now": False}

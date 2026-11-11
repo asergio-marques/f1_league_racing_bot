@@ -43,7 +43,7 @@ from leaguebot.core.services.channel_registry_service import (
 from leaguebot.core.services.queue.setting_change import Saved, Setting
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
 
 NO_SEASON_REFUSAL = (
     "❌ No season is live. A division's channels belong to the season being built or raced — "

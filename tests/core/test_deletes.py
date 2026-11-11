@@ -41,8 +41,8 @@ from typing import Any
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_lifecycle_service import delete_driver_profiles
+from leaguebot.core.services.seasons.season_service import SeasonService
 from tests.support.delete_hooks import (
     DIVISION_HOOKS,
     DRIVER_HOOKS,

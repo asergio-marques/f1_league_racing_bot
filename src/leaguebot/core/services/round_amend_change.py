@@ -82,7 +82,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
     StepView,
 )
-from leaguebot.core.services.season_service import renumber_rounds_on, round_called
+from leaguebot.core.services.seasons.season_service import renumber_rounds_on, round_called
 from leaguebot.core.utils.formatting import format_round_list
 from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
@@ -90,7 +90,7 @@ from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.scheduler_service import SchedulerService
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
 
 __all__ = [
     "ROUND_AMEND",

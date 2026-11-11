@@ -1042,7 +1042,7 @@ async def _measure(config_service, module_service, colour):
     colour is saved: handed the real validity and render services, not a stand-in, since the
     per-tier contrast paints each division through the render's palette step, and a stub would
     test a copy of that step."""
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.image.services.image_render_service import ImageRenderService
     from leaguebot.image.services.image_setting_advice import measure_fastest_lap_contrast
     from leaguebot.image.services.image_validity_service import ImageValidityService
@@ -2308,7 +2308,7 @@ def test_the_season_approval_refusal_is_ephemeral():
     `refuse(`.
     """
     source = (
-        _SRC / "leaguebot" / "core" / "services" / "season_review_workflows.py"
+        _SRC / "leaguebot" / "core" / "services" / "seasons" / "season_review_workflows.py"
     ).read_text(encoding="utf-8")
     marker = "the `lineup` image aspect is on but"
     assert marker in source

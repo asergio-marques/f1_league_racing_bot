@@ -29,7 +29,7 @@ from leaguebot.core.models.round import (
     RoundStatus,
     WeatherWindows,
 )
-from leaguebot.core.services.approval_window_service import calendar_faults, overdue_windows
+from leaguebot.core.services.seasons.approval_window_service import calendar_faults, overdue_windows
 
 #: The moment every test judges against. Fixed, so the dates below mean the same thing on
 #: every host and in every year.

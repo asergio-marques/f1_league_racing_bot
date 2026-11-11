@@ -48,7 +48,7 @@ from leaguebot.core.models.change import AuditRecord, PlannedStep, Verdict, modu
 from leaguebot.core.models.module_dependencies import needs
 from leaguebot.core.services.queue.change_types import CheckContext
 from leaguebot.core.services.modules.hub_service import REFRESH_HUB, hub_refresh_after
-from leaguebot.core.services.season_lifecycle_service import (
+from leaguebot.core.services.seasons.season_lifecycle_service import (
     FROZEN_FOR_COMPLETION_REFUSAL,
     PLACEMENTS_CONFIRMED_REFUSAL,
     modules_frozen_for_completion,
@@ -60,7 +60,7 @@ if TYPE_CHECKING:
 
     from leaguebot.attendance.services.attendance_service import AttendanceService
     from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
 
 _ENABLE_COMMAND = "/module enable attendance"
 _DISABLE_COMMAND = "/module disable attendance"

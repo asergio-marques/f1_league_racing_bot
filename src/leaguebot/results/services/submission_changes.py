@@ -80,12 +80,12 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services import season_service
+from leaguebot.core.services.seasons import season_service
 from leaguebot.core.services.calendar_post_service import POST_CALENDAR, calendar_steps
 from leaguebot.core.services.cancellation_changes import not_notified
 from leaguebot.core.services.cancellation_notice_service import failure_log_lines
-from leaguebot.core.services.season_lifecycle_service import WIND_DOWN, kept_line
-from leaguebot.core.services.season_service import set_round_status_on
+from leaguebot.core.services.seasons.season_lifecycle_service import WIND_DOWN, kept_line
+from leaguebot.core.services.seasons.season_service import set_round_status_on
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.results.services import review_posting
@@ -126,7 +126,7 @@ from leaguebot.results.utils import results_formatter
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.image_drawing import ImageDrawing
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
 
 KIND = "results.submission.open"
 START_ROUND = "start_round"

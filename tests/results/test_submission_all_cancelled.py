@@ -402,7 +402,7 @@ async def test_the_round_s_ending_cannot_be_discarded(tmp_path):
     discarded. Once the fault is lifted, Retry ends the round cancelled (core :137)."""
     league = await _league(tmp_path)
 
-    with patch("leaguebot.core.services.season_service.refresh_division_status_on",
+    with patch("leaguebot.core.services.seasons.season_service.refresh_division_status_on",
                new=AsyncMock(side_effect=RuntimeError("disk I/O error"))):
         await _cancel_the_race(league)
         await run_queue(league.bot)

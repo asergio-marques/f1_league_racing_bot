@@ -34,7 +34,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.season_service import SeasonService, refresh_division_status_on
+from leaguebot.core.services.seasons.season_service import SeasonService, refresh_division_status_on
 
 SERVER_ID = 12608
 SEASON_ID = 1
@@ -321,7 +321,7 @@ async def test_rounds_closed_on_a_handed_connection_are_saved_only_when_the_call
     once, on the connection the closing was handed; round 1, final already, never is."""
     from datetime import datetime, timezone
 
-    from leaguebot.core.services.season_service import end_rounds_awaiting_results_on
+    from leaguebot.core.services.seasons.season_service import end_rounds_awaiting_results_on
     from tests.support.final_hook import recording_hook
 
     db_path = await _make_db(tmp_path)
@@ -366,7 +366,7 @@ async def test_a_division_finished_on_a_handed_connection_moves_its_season_on_in
 ):
     """The last division finishing moves an Ongoing season to Pending completion on the same
     connection: a rollback takes both back, a commit saves both."""
-    from leaguebot.core.services.season_service import refresh_division_status_on
+    from leaguebot.core.services.seasons.season_service import refresh_division_status_on
 
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:

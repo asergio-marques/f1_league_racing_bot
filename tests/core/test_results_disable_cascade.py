@@ -28,7 +28,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 from tests.support.change_queue import (
     INTERACTION_CHANNEL_ID,
     LOG_CHANNEL_ID,

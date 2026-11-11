@@ -183,7 +183,7 @@ async def _seed(path, server_teams, division_teams):
 async def _review_problems(tmp_path, server_teams, division_teams):
     path = tmp_path / "review.db"
     await _seed(path, server_teams, division_teams)
-    from leaguebot.core.services import approval_checks
+    from leaguebot.core.services.seasons import approval_checks
 
     return await approval_checks.team_name_problems(TeamService(str(path)), 1)
 
@@ -238,7 +238,7 @@ async def test_a_team_name_check_that_cannot_read_the_teams_stands_aside(tmp_pat
     a team name from becoming a bad artwork filename, so where the teams cannot be read it finds
     nothing wrong, and the review and the approval carry on with the names unchecked. The fault
     goes to the host's log and nowhere else."""
-    from leaguebot.core.services import approval_checks
+    from leaguebot.core.services.seasons import approval_checks
 
     unreadable = TeamService(str(tmp_path))  # a directory, which no connection can open
 

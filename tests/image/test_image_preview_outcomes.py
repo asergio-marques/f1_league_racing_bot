@@ -24,7 +24,7 @@ from leaguebot.image.services.image_preview_service import (
     build_weather_preview,
     resolve_context,
 )
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 
 SERVER_ID = 8383
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)

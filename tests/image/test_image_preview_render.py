@@ -32,7 +32,7 @@ from leaguebot.image.services.image_preview_service import (
     resolve_context,
 )
 from leaguebot.image.services.image_validity_service import ImageValidityService
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 
 SERVER_ID = 9494
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)

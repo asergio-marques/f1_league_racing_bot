@@ -18,7 +18,7 @@ from leaguebot.image.services.image_preview_service import (
     build_lineup_preview,
     resolve_context,
 )
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 from tests.support.saves import set_field
 
 SERVER_ID = 7272

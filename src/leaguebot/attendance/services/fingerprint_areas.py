@@ -16,7 +16,7 @@ import aiosqlite
 from leaguebot.core.db.database import tuple_rows, tuple_rows_in
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
 
 
 async def fingerprint_areas(

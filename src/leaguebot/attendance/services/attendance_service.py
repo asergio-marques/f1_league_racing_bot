@@ -14,7 +14,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.services.queue import audit_service
-from leaguebot.core.services.approval_checks import channel_fault
+from leaguebot.core.services.seasons.approval_checks import channel_fault
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
 from leaguebot.attendance.models.attendance import (
@@ -1535,7 +1535,7 @@ async def _sheet_rows(db, round_id: int, division_id: int) -> list:
     recorded for the driver in this division is the evidence. Each driver's total is the one
     recorded at their latest scored round up to this one, and nought where none is.
     """
-    from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
+    from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
 
     cursor = await db.execute(
         f"""
@@ -1585,7 +1585,7 @@ async def _opening_attendance_rows(db, division_id: int) -> list[dict]:
     round does — seated, non-reserve — and carries the team name besides, which is what the
     opening order is taken on.
     """
-    from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
+    from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
 
     cursor = await db.execute(
         f"""

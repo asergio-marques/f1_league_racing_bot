@@ -48,7 +48,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.season import Season, SeasonStatus
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.weather.cogs.weather_cog import WeatherCog
 from leaguebot.weather.models.weather_config import WeatherPipelineConfig
 from tests.support.change_queue import MEMBER_ID, acknowledgement, change_rows, run_queue

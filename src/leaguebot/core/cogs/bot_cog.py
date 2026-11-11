@@ -282,7 +282,7 @@ class BotCog(commands.Cog):
         replaces as it saves, so the payload carries no judgement of the ask's.
         """
         from leaguebot.core.services.bot_settings import season_fixed_refusal
-        from leaguebot.core.services.season_lifecycle_service import configuration_fixed
+        from leaguebot.core.services.seasons.season_lifecycle_service import configuration_fixed
 
         season_number = await configuration_fixed(self.bot.db_path)
         config = await self.bot.config_service.get_server_config()

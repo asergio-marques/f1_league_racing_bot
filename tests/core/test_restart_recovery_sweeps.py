@@ -153,7 +153,7 @@ async def test_an_amendment_cannot_outlive_its_round(tmp_path):
     """A round deleted while an amendment was open, as `/round delete` deletes it, takes the
     amendment's row with it: the results module deletes its own rows through the round's delete
     hook. The restart finds nothing, asks no lapse, and the log channel is told nothing."""
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
     from tests.support.change_queue import run_queue
     from tests.support.delete_hooks import ROUND_HOOKS, delete_hooks
 

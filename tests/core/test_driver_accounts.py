@@ -27,7 +27,7 @@ from leaguebot.core.services.driver_service import (
     current_account_of,
     resolve_driver_profile_id,
 )
-from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
+from leaguebot.core.services.seasons.season_lifecycle_service import delete_driver_profiles
 from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
 from tests.support.driver_transitions import transitioned
 

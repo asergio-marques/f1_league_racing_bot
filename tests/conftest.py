@@ -411,7 +411,7 @@ def _no_review_marks_carried_over():
     The marks are held in memory, by the id of the review's question (`season_review_changes.
     _PRESSES`), and the tests reuse the same ids against databases of their own: a press left
     under way by one test would otherwise refuse the next test's first press."""
-    from leaguebot.core.services.season_review_changes import forget_presses
+    from leaguebot.core.services.seasons.season_review_changes import forget_presses
 
     forget_presses()
     yield

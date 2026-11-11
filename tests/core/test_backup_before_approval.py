@@ -31,7 +31,7 @@ SERVER_ID = 9100
 
 def _view_class():
     """The question's view, `season_review_workflows.BackupBeforeApprovalView`."""
-    from leaguebot.core.services.season_review_workflows import BackupBeforeApprovalView
+    from leaguebot.core.services.seasons.season_review_workflows import BackupBeforeApprovalView
 
     return BackupBeforeApprovalView
 

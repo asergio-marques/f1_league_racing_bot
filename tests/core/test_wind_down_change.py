@@ -119,7 +119,7 @@ async def _stopped_at(league: Any) -> tuple[str, int | None] | None:
 async def test_the_turn_down_and_the_move_to_pending_completion_are_one_save(tmp_path):
     league = await _league(tmp_path)
     await _ask(league)
-    from leaguebot.core.services import season_lifecycle_service
+    from leaguebot.core.services.seasons import season_lifecycle_service
 
     with patch.object(season_lifecycle_service, "advance_to_pending_completion_on",
                       side_effect=RuntimeError("the move failed")):

@@ -522,7 +522,7 @@ async def _set_results_channel(league: _League, channel_id: int) -> Any:
     body and the real season service, with results on and results' channel setting registered on
     the queue as the builder registers it; the queue is not run. Gives Alex's interaction."""
     from leaguebot.__main__ import register_change_types
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.results.cogs.results_cog import ResultsCog
 
     await set_module_flag(league.db_path, "results", True)

@@ -33,7 +33,7 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.models.session import SESSIONS_BY_FORMAT, Session, SessionType
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 
 SERVER_ID = 10408
 SEASON_ID = 1
@@ -79,7 +79,7 @@ async def _make_db(tmp_path, *, name: str = "round_sessions") -> str:
 async def _create_sessions(db_path: str, round_id: int, fmt: RoundFormat) -> list[Session]:
     """A round's sessions made on a save of the test's own, as the approval's save makes them
     (#439, slice 4a): written on the connection handed, and committed here."""
-    from leaguebot.core.services.season_service import create_sessions_for_round_on
+    from leaguebot.core.services.seasons.season_service import create_sessions_for_round_on
 
     async with get_connection(db_path) as db:
         created = await create_sessions_for_round_on(db, round_id, fmt)

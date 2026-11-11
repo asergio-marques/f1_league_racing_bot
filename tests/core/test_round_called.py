@@ -53,7 +53,7 @@ async def test_a_round_is_called_by_its_number_and_division_or_as_no_longer_ther
 ):
     """Round 3 of Pro is named "round 3 in **Pro**"; a round id the database no longer holds is
     named "a round no longer there"."""
-    from leaguebot.core.services.season_service import round_called
+    from leaguebot.core.services.seasons.season_service import round_called
 
     db_path = await _make_db(tmp_path)
 

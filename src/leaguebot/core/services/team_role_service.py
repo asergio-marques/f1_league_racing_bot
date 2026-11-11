@@ -321,7 +321,7 @@ class TeamRoleService:
         The drivers already seated in a team follow its role when a league repoints it. A driver
         created by test mode holds no roles and is left out.
         """
-        from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
+        from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
 
         cursor = await db.execute(
             f"""

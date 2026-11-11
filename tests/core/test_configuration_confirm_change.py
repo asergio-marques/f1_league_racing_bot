@@ -312,7 +312,7 @@ async def test_a_second_press_while_the_confirmation_is_in_hand_is_refused_and_i
     second while the confirmation waits: it is refused at once, naming no job, nothing more is
     asked, and the second review stands. Once the queue runs, the first review's report and
     question are deleted, the second's are not, and the season is confirmed once."""
-    from leaguebot.core.services.season_review_changes import TAKE_DOWN
+    from leaguebot.core.services.seasons.season_review_changes import TAKE_DOWN
 
     from tests.support.season_league import REVIEW_CHANNEL
 
@@ -351,7 +351,7 @@ async def test_a_role_asked_ahead_of_the_confirmation_is_saved_before_the_season
     the review and is refused in the press's words, the season left in configuration with nothing
     kept or audited. Nothing lands between the role's check and its save (S13b's gap)."""
     from leaguebot.core.cogs.bot_cog import BotCog
-    from leaguebot.core.services.season_review_changes import TAKE_DOWN
+    from leaguebot.core.services.seasons.season_review_changes import TAKE_DOWN
     from tests.support.change_queue import tier_member
     from tests.support.settings_league import interaction, last_said, unruled
     from tests.support.undecorate import undecorate

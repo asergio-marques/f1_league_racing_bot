@@ -265,10 +265,10 @@ def _logged(text: str) -> str:
 def _modules() -> list[Any]:
     found = []
     for name in ("leaguebot.__main__",
-                 "leaguebot.core.services.season_service",
-                 "leaguebot.core.services.season_end_service",
-                 "leaguebot.core.services.season_lifecycle_service",
-                 "leaguebot.core.services.season_end_changes",
+                 "leaguebot.core.services.seasons.season_service",
+                 "leaguebot.core.services.seasons.season_end_service",
+                 "leaguebot.core.services.seasons.season_lifecycle_service",
+                 "leaguebot.core.services.seasons.season_end_changes",
                  "leaguebot.core.services.test_mode_service",
                  "leaguebot.core.services.test_roster_service",
                  "leaguebot.weather.services.forecast_cleanup_service"):
@@ -292,7 +292,7 @@ def _failing(name: str) -> ExitStack:
 
 def _deletion_failing() -> Any:
     """`SeasonService.delete_season` raises, as a fault of the database would."""
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
 
     return patch.object(SeasonService, "delete_season",
                         AsyncMock(side_effect=RuntimeError("disk I/O error")))

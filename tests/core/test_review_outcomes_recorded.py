@@ -165,7 +165,7 @@ def _view_on(env, kind: str, helper: str, monkeypatch):
     from types import SimpleNamespace
 
     from leaguebot.__main__ import _approve_view_for
-    from leaguebot.core.services import season_review_workflows
+    from leaguebot.core.services.seasons import season_review_workflows
 
     # A press that reaches the workflow goes through: for the approval, asked of the change queue.
     stand_in = AsyncMock(return_value=True)
@@ -178,7 +178,7 @@ def asking_the_take_down(env, workflows, helper: str, *, then=None) -> None:
     """Make the stood-in workflow *helper* ask the review's take-down, ending confirmed, as the
     real approval (or confirmation) does once its gates pass, ahead of its work; then run *then*,
     if given, and go through. The button asks none itself."""
-    from leaguebot.core.services.season_review_changes import CONFIRMED, take_review_down
+    from leaguebot.core.services.seasons.season_review_changes import CONFIRMED, take_review_down
 
     async def _worked(interaction, **_kwargs):
         await take_review_down(env.bot.change_queue, env.bot.db_path, interaction.message.id,
@@ -206,7 +206,7 @@ async def _season_since_the_review(env, monkeypatch, now: str = "as reviewed") -
     import json
 
     from leaguebot.core.db.database import get_connection
-    from leaguebot.core.services import season_fingerprint_service as sfs
+    from leaguebot.core.services.seasons import season_fingerprint_service as sfs
 
     async with get_connection(env.db_path) as db:
         await db.execute("UPDATE season_review_prompts SET evidence = ? WHERE message_id = ?",
@@ -382,7 +382,7 @@ async def test_a_review_whose_press_failed_says_so_when_it_lapses(
     running the review again, and does not claim that nothing was done (core :105, :118, :282).
     A fault after the take-down is asked, in the approval's own asking, is not this case: the
     review is then already coming down, ending confirmed."""
-    from leaguebot.core.services import season_fingerprint_service as sfs
+    from leaguebot.core.services.seasons import season_fingerprint_service as sfs
     from tests.support.change_queue import run_queue
 
     env = await _standing(tmp_path, review)
@@ -591,7 +591,7 @@ async def test_a_press_that_fails_after_the_timer_fired_leaves_the_review_to_exp
     posted, once. The log holds the press's failure line naming Alex, and one lapse line naming
     Alex that says an earlier press failed and may have been partly done: the lapse is told as
     the review stands when the take-down runs, not as it stood when the timer fired."""
-    from leaguebot.core.services import season_fingerprint_service as sfs
+    from leaguebot.core.services.seasons import season_fingerprint_service as sfs
     from tests.support.change_queue import run_queue
 
     env = await _standing(tmp_path, review)

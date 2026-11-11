@@ -75,8 +75,8 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.services.driver_service import current_account_map_for_division
-from leaguebot.core.services import season_lifecycle_service, season_service
-from leaguebot.core.services.season_service import set_round_status_on
+from leaguebot.core.services.seasons import season_lifecycle_service, season_service
+from leaguebot.core.services.seasons.season_service import set_round_status_on
 from leaguebot.results.services.review_confirm_change import STAGING_IN_HAND, staging_in_hand
 from leaguebot.results.services import review_posting, review_verdicts
 from leaguebot.results.services.attendance_hook import AttendanceAfterReview

@@ -60,7 +60,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.services.modules.hub_service import HUB_REFRESH
-from leaguebot.core.services.season_lifecycle_service import (
+from leaguebot.core.services.seasons.season_lifecycle_service import (
     advance_on_window_close_on,
     configuration_fixed,
     configuration_fixed_refusal,

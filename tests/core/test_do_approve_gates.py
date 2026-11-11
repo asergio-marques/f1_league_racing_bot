@@ -185,7 +185,7 @@ def _cog(db_path, **overrides):
 
 def _assert_asked(cog) -> None:
     """The approval went through every gate and was asked of the change queue, once."""
-    from leaguebot.core.services.season_approval_change import KIND
+    from leaguebot.core.services.seasons.season_approval_change import KIND
 
     ask = cog.bot.change_queue.ask
     ask.assert_awaited_once()
@@ -196,7 +196,7 @@ def _assert_asked(cog) -> None:
 async def _run(cog, interaction, **given):
     """Press ✅ Approve: the approval's workflow, handed *cog*'s bot's services, with every gate
     *cog* stands in for patched on `approval_checks`."""
-    from leaguebot.core.services import approval_checks
+    from leaguebot.core.services.seasons import approval_checks
 
     with ExitStack() as stack:
         for gate in _GATES:
@@ -246,7 +246,7 @@ async def test_the_withdrawn_template_gate_is_not_called_again(db_path):
     are judged again since #396, but through `approval_checks.image_configuration_faults` — the
     helper the review withholds its button on — and not through a second evaluation of the
     approval's own, which is what let the two disagree."""
-    from leaguebot.core.services import approval_checks, season_review_workflows
+    from leaguebot.core.services.seasons import approval_checks, season_review_workflows
 
     for module in (approval_checks, season_review_workflows):
         for name in ("image_template_problems", "_image_template_problems"):

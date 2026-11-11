@@ -19,7 +19,7 @@ from leaguebot.core.services import backup_service
 from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.services.queue.change_types import Step, StepContext
 from leaguebot.core.services.driver_service import accounts_of_profile
-from leaguebot.core.services.season_lifecycle_service import (
+from leaguebot.core.services.seasons.season_lifecycle_service import (
     close_signup_steps,
     require_guild,
 )

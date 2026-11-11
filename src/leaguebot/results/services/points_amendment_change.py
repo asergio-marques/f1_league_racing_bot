@@ -72,7 +72,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.season_service import live_season
+from leaguebot.core.services.seasons.season_service import live_season
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.services import review_posting, review_verdicts

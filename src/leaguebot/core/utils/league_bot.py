@@ -50,7 +50,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.modules.hub_service import HubOptions
     from leaguebot.core.services.start_up import StartUpStep
     from leaguebot.core.services.test_mode_service import AdvanceSteps
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
     from leaguebot.core.services.team_service import TeamService
     from leaguebot.signup.services.wizard_service import WizardService

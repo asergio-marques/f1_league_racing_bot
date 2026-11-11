@@ -39,7 +39,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.core.cogs.driver_cog import DriverCog
-from leaguebot.core.services.season_service import SeasonImmutableError
+from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 from tests.support.teams import resolves_as_typed
 from tests.support.undecorate import undecorate
 

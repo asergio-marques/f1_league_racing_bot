@@ -71,7 +71,7 @@ def _report(*files: tuple[str, int, int]) -> dict:
         ("src/leaguebot/results/services/standings_service.py", "results"),
         ("src/leaguebot/results/services/penalty_service.py", "results"),
         ("src/leaguebot/signup/services/wizard_service.py", "signup"),
-        ("src/leaguebot/core/services/season_service.py", "core"),
+        ("src/leaguebot/core/services/seasons/season_service.py", "core"),
     ],
 )
 def test_known_files_are_classified(path, expected):

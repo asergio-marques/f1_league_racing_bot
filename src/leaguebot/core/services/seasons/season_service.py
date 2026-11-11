@@ -463,7 +463,7 @@ class SeasonService:
             # The season's fake (test-mode) drivers go with it, by the deletion test mode
             # itself takes: it lets go of every row holding them, in this season or any
             # other, and keeps their history.
-            from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
+            from leaguebot.core.services.seasons.season_lifecycle_service import delete_driver_profiles
 
             cursor = await db.execute(
                 f"""
@@ -1184,7 +1184,7 @@ async def refresh_division_status_on(db: aiosqlite.Connection, division_id: int)
     cursor = await db.execute("SELECT season_id FROM divisions WHERE id = ?", (division_id,))
     season_row = await cursor.fetchone()
     if season_row is not None:
-        from leaguebot.core.services.season_lifecycle_service import (
+        from leaguebot.core.services.seasons.season_lifecycle_service import (
             advance_to_pending_completion_on,
         )
 

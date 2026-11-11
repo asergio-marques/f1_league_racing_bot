@@ -505,7 +505,7 @@ class TeamService:
         (FR-009). The **server's** default team list is a separate thing and stays sorted
         by name: it is a configuration listing and no ordinal is read from it.
         """
-        from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
+        from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
 
         async with get_connection(self._db_path) as db:
             instance_rows = await (

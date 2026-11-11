@@ -48,8 +48,8 @@ from leaguebot.core.models.change import (
     VerdictKind,
 )
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services import approval_checks
-from leaguebot.core.services.approval_checks import SignupModuleSettings
+from leaguebot.core.services.seasons import approval_checks
+from leaguebot.core.services.seasons.approval_checks import SignupModuleSettings
 from leaguebot.core.services.queue.queue_records import (
     unfinished,
 )
@@ -64,8 +64,8 @@ from leaguebot.core.services.queue.change_types import (
 from leaguebot.core.services.config_service import ConfigService
 from leaguebot.core.services.modules.image_drawing import ImageDrawing
 from leaguebot.core.services.modules.module_service import ModuleService
-from leaguebot.core.services.season_fingerprint_service import SeasonFingerprint, take_fingerprint
-from leaguebot.core.services.season_lifecycle_service import confirm_configuration_on
+from leaguebot.core.services.seasons.season_fingerprint_service import SeasonFingerprint, take_fingerprint
+from leaguebot.core.services.seasons.season_lifecycle_service import confirm_configuration_on
 from leaguebot.core.services.team_service import TeamService
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.league_server import league_guild

@@ -735,7 +735,7 @@ class SignupCog(commands.Cog):
         Returns True when the command replied and must stop, having recorded the refusal in
         the log channel unless *record* is False.
         """
-        from leaguebot.core.services.season_lifecycle_service import configuration_fixed
+        from leaguebot.core.services.seasons.season_lifecycle_service import configuration_fixed
 
         season_number = await configuration_fixed(self.bot.db_path)
         if season_number is None:

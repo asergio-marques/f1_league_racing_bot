@@ -33,14 +33,15 @@ import discord
 
 from leaguebot.core.models.refusal import Refused
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services import approval_checks, backup_service
-from leaguebot.core.services.approval_checks import SignupModuleSettings
+from leaguebot.core.services import backup_service
+from leaguebot.core.services.seasons import approval_checks
+from leaguebot.core.services.seasons.approval_checks import SignupModuleSettings
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.config_service import ConfigService
-from leaguebot.core.services.configuration_confirm_change import KIND as CONFIGURATION_CONFIRM_KIND
+from leaguebot.core.services.seasons.configuration_confirm_change import KIND as CONFIGURATION_CONFIRM_KIND
 from leaguebot.core.services.modules.confirmation_refusals import Confirmation, read_refusals
 from leaguebot.core.services.modules.image_drawing import ImageDrawing
-from leaguebot.core.services.mid_season_confirm_change import (
+from leaguebot.core.services.seasons.mid_season_confirm_change import (
     ALREADY_BEING_CONFIRMED,
     KIND as MID_SEASON_CONFIRM_KIND,
     STAGE_REFUSAL as CONFIRM_STAGE_REFUSAL,
@@ -52,14 +53,14 @@ from leaguebot.core.services.modules.module_service import ModuleService
 from leaguebot.core.services.posting.output_router import OutputRouter
 from leaguebot.core.services.round_moments import read_round_windows
 from leaguebot.core.services.scheduler_service import SchedulerService
-from leaguebot.core.services.season_approval_change import (
+from leaguebot.core.services.seasons.season_approval_change import (
     ALREADY_BEING_APPROVED,
     KIND as APPROVAL_KIND,
     approval_in_hand,
 )
-from leaguebot.core.services.season_fingerprint_service import take_fingerprint
-from leaguebot.core.services.season_review_changes import take_review_down_before
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_fingerprint_service import take_fingerprint
+from leaguebot.core.services.seasons.season_review_changes import take_review_down_before
+from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.core.services.team_service import TeamService
 from leaguebot.core.utils.formatting import discord_ts
 from leaguebot.core.utils.hooks import AwaitedHook

@@ -346,7 +346,7 @@ class TestModeCog(commands.Cog):
         which is where real drivers are placed too: test mode replicates the live flow rather
         than inventing one. Listing the roster is left free.
         """
-        from leaguebot.core.services.season_lifecycle_service import live_season_stage
+        from leaguebot.core.services.seasons.season_lifecycle_service import live_season_stage
 
         live = await live_season_stage(self.bot.db_path)
         if live is not None and live[1] is SeasonStage.PLACEMENTS:

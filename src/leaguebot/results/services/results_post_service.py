@@ -1190,7 +1190,7 @@ async def set_standings_message_id_on(
 
 async def _get_reserve_user_ids(db_path: str, division_id: int) -> set[int]:
     """Return discord_user_ids of all drivers seated in a reserve team for this division."""
-    from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
+    from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(

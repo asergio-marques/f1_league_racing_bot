@@ -26,7 +26,7 @@ from leaguebot.core.utils.input_validator import parse_user_id
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.log_lines import refuse
-from leaguebot.core.services.season_service import SeasonImmutableError
+from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 
 log = logging.getLogger(__name__)
 

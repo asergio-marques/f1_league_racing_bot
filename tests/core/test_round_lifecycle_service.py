@@ -38,7 +38,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 from tests.support.delete_hooks import ROUND_HOOKS, delete_hooks
 
 
@@ -120,7 +120,7 @@ NOT_RUN = RoundStatus.NOT_RUN.value
 async def _renumber(db_path: str) -> None:
     """Renumber the division with `renumber_rounds_on` on a connection of its own, and commit it,
     which `renumber_rounds_on` does not."""
-    from leaguebot.core.services.season_service import renumber_rounds_on
+    from leaguebot.core.services.seasons.season_service import renumber_rounds_on
 
     async with get_connection(db_path) as db:
         await renumber_rounds_on(db, DIVISION_ID)
@@ -141,7 +141,7 @@ async def _cancel(db_path: str, round_id: int) -> str | None:
     """Cancel *round_id* on one connection with `cancel_round_on`, as the round's cancellation
     does in its save, and commit it, which `cancel_round_on` does not. Gives what it gives: the
     round's old status, or `None` where it moved nothing."""
-    from leaguebot.core.services.season_service import cancel_round_on
+    from leaguebot.core.services.seasons.season_service import cancel_round_on
 
     async with get_connection(db_path) as db:
         old = await cancel_round_on(

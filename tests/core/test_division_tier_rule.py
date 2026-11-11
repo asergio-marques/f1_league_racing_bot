@@ -18,7 +18,7 @@ import pytest
 
 
 def _rule():
-    from leaguebot.core.services.season_service import validate_division_tier
+    from leaguebot.core.services.seasons.season_service import validate_division_tier
 
     return validate_division_tier
 

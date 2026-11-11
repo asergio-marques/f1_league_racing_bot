@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.season_service import SeasonService, refresh_division_status_on
+from leaguebot.core.services.seasons.season_service import SeasonService, refresh_division_status_on
 
 SERVER_ID = 7654
 ACTOR_ID = 999
@@ -108,7 +108,7 @@ async def _cancel_round(db_path, round_id):
     """Cancel *round_id* with `cancel_round_on` on one connection, as the round's cancellation on
     the change queue does in its save, and commit it, which `cancel_round_on` does not. Gives the
     round's old status, or `None` where it moved nothing."""
-    from leaguebot.core.services.season_service import cancel_round_on
+    from leaguebot.core.services.seasons.season_service import cancel_round_on
 
     async with get_connection(db_path) as db:
         old = await cancel_round_on(
@@ -122,7 +122,7 @@ async def _cancel_division(db_path, division_id):
     """Cancel *division_id* with `cancel_division_on` on one connection, as the division's
     cancellation on the change queue does in its save, and commit it. Moving the season on is
     the change's, not this form's."""
-    from leaguebot.core.services.season_service import cancel_division_on
+    from leaguebot.core.services.seasons.season_service import cancel_division_on
 
     async with get_connection(db_path) as db:
         called_off = await cancel_division_on(
@@ -157,7 +157,7 @@ async def _cancel_season(db_path, season_id):
     """Cancel *season_id* as the season's cancellation on the change queue records it, on one
     connection: every division not yet cancelled with its rounds (`cancel_season_divisions_on`),
     then the season's own row (`cancel_season_on`), last, committed once."""
-    from leaguebot.core.services.season_service import (
+    from leaguebot.core.services.seasons.season_service import (
         cancel_season_divisions_on,
         cancel_season_on,
     )
@@ -285,7 +285,7 @@ async def test_activating_a_season_activates_its_divisions(tmp_path) -> None:
         await db.execute("UPDATE divisions SET status = 'CANCELLED' WHERE id = ?", (div_b,))
         await db.commit()
 
-    from leaguebot.core.services.season_service import transition_to_active_on
+    from leaguebot.core.services.seasons.season_service import transition_to_active_on
 
     async with get_connection(db_path) as db:
         assert await transition_to_active_on(db, season_id) is True
@@ -538,7 +538,7 @@ async def _history(db_path):
 
 
 async def test_history_marks_a_cancelled_division_and_not_a_finished_one(tmp_path) -> None:
-    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
+    from leaguebot.core.services.seasons.season_end_service import write_driver_history_entries_on
     from tests.support.driver_records_hooks import season_standing_read
 
     db_path = str(tmp_path / "bot.db")
@@ -565,7 +565,7 @@ async def test_history_marks_a_cancelled_division_and_not_a_finished_one(tmp_pat
 
 async def test_a_test_driver_gets_a_history_entry_like_anybody_else(tmp_path) -> None:
     """Mock drivers are drivers, artificially injected — they are not filtered out."""
-    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
+    from leaguebot.core.services.seasons.season_end_service import write_driver_history_entries_on
     from tests.support.driver_records_hooks import season_standing_read
 
     db_path = str(tmp_path / "bot.db")
@@ -590,7 +590,7 @@ async def test_a_test_driver_gets_a_history_entry_like_anybody_else(tmp_path) ->
 
 async def test_cancelling_a_season_records_its_drivers_as_cancelled(tmp_path) -> None:
     """A cancelled season used to leave no trace in anybody's history at all."""
-    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
+    from leaguebot.core.services.seasons.season_end_service import write_driver_history_entries_on
     from tests.support.driver_records_hooks import season_standing_read
 
     db_path = str(tmp_path / "bot.db")
@@ -633,7 +633,7 @@ async def test_writing_the_history_twice_adds_nothing(tmp_path) -> None:
     a season's history from appending a set that nothing could tell apart from the first — this
     is the test the migration comment names.
     """
-    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
+    from leaguebot.core.services.seasons.season_end_service import write_driver_history_entries_on
     from tests.support.driver_records_hooks import season_standing_read
 
     db_path = str(tmp_path / "bot.db")
@@ -658,7 +658,7 @@ async def test_writing_the_history_twice_adds_nothing(tmp_path) -> None:
 
 async def test_a_driver_moved_between_divisions_keeps_an_entry_for_each(tmp_path) -> None:
     """The unique key includes the division, so two divisions in one season is not a duplicate."""
-    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
+    from leaguebot.core.services.seasons.season_end_service import write_driver_history_entries_on
     from tests.support.driver_records_hooks import season_standing_read
 
     db_path = str(tmp_path / "bot.db")
@@ -793,7 +793,7 @@ async def test_without_the_results_module_the_round_and_its_division_are_saved_t
     ACTIVE rather than final over a division never told. Every form of the refresh is made to
     raise, so the test reads the same whichever the save goes through.
     """
-    from leaguebot.core.services import season_service
+    from leaguebot.core.services.seasons import season_service
     from leaguebot.results.services import result_submission_service
 
     async def refused(*args, **kwargs):
@@ -822,7 +822,7 @@ async def test_without_the_results_module_the_wind_down_is_asked_of_the_queue(tm
     (#439, slice 5). The season's only round's moment arrives with results off while the season
     is at its ongoing placements: the queue makes the round FINAL and the season's wind-down is
     asked of it, as the bot."""
-    from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
+    from leaguebot.core.services.seasons.season_lifecycle_service import WIND_DOWN
     from tests.support.change_queue import change_rows
 
     db_path = str(tmp_path / "bot.db")

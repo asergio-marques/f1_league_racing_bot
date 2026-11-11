@@ -368,7 +368,7 @@ async def test_opening_signups_posts_the_button_and_records_the_window(tmp_path)
 
 async def test_opening_signups_moves_a_waiting_season_to_signups(tmp_path):
     """Issue #220: the window belongs to the season, and opening it moves the season on."""
-    from leaguebot.core.services.season_lifecycle_service import live_season_stage
+    from leaguebot.core.services.seasons.season_lifecycle_service import live_season_stage
 
     db_path = await _seed(tmp_path)
 
@@ -378,7 +378,7 @@ async def test_opening_signups_moves_a_waiting_season_to_signups(tmp_path):
 
 
 async def test_opening_mid_season_moves_the_season_to_ongoing_signups(tmp_path):
-    from leaguebot.core.services.season_lifecycle_service import live_season_stage
+    from leaguebot.core.services.seasons.season_lifecycle_service import live_season_stage
 
     db_path = await _seed(tmp_path, stage="ONGOING")
 

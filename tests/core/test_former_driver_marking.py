@@ -467,7 +467,7 @@ async def test_closing_rounds_with_the_module_off_marks_who_raced_them(tmp_path)
     """
     from datetime import datetime, timezone
 
-    from leaguebot.core.services.season_service import end_rounds_awaiting_results_on
+    from leaguebot.core.services.seasons.season_service import end_rounds_awaiting_results_on
 
     db_path = await _make_db(tmp_path, name="module_off")
     await _add_round(db_path, 21, status="AWAITING_APPEAL_VERDICTS")
@@ -503,7 +503,7 @@ async def _close_raced(db_path: str) -> list[int]:
     rounds it closed."""
     from datetime import datetime, timezone
 
-    from leaguebot.core.services.season_service import close_raced_rounds_on
+    from leaguebot.core.services.seasons.season_service import close_raced_rounds_on
 
     async with get_connection(db_path) as db:
         closed = await close_raced_rounds_on(
@@ -554,7 +554,7 @@ async def test_a_driver_of_a_closed_round_survives_the_driver_pass(tmp_path):
     by a cancellation, that is a result discarded — which "a cancellation shall never discard a
     result" forbids. Closing the round first is what keeps them.
     """
-    from leaguebot.core.services.season_lifecycle_service import run_driver_pass_on
+    from leaguebot.core.services.seasons.season_lifecycle_service import run_driver_pass_on
 
     db_path = await _make_db(tmp_path, name="cancel_pass")
     await _add_round(db_path, 21, status="AWAITING_REPORT_VERDICTS")

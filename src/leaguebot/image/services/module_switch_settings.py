@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING, Any
 from leaguebot.core.models.change import AuditRecord, PlannedStep, Verdict, module_off, module_on
 from leaguebot.core.services.queue.change_types import CheckContext
 from leaguebot.core.services.modules.hub_service import REFRESH_HUB, hub_refresh_after
-from leaguebot.core.services.season_lifecycle_service import (
+from leaguebot.core.services.seasons.season_lifecycle_service import (
     FROZEN_FOR_COMPLETION_REFUSAL,
     PLACEMENTS_CONFIRMED_REFUSAL,
     modules_frozen_for_completion,
@@ -48,7 +48,7 @@ if TYPE_CHECKING:
     import aiosqlite
 
     from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
 
 _ENABLE_COMMAND = "/module enable images"
 _DISABLE_COMMAND = "/module disable images"

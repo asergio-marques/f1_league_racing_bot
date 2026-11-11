@@ -292,7 +292,7 @@ def register_change_types(
     attendance's share of a round's review (`AttendanceAfterReview`), and *attendance_off_on* its
     switch-off, which results turned off carries out for it.
     """
-    from leaguebot.core.services.season_lifecycle_service import steps_of_the_modules
+    from leaguebot.core.services.seasons.season_lifecycle_service import steps_of_the_modules
     from leaguebot.core.services.queue.setting_change import setting_change
     from leaguebot.results.services.amend_changes import amend_open_change
     from leaguebot.results.services.amend_changes import TIMER as AMEND_TIMER

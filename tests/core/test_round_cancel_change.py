@@ -27,7 +27,7 @@ import discord
 import pytest
 
 from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.season_service import SeasonImmutableError
+from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
 from tests.support.change_queue import (
     acknowledgement,
@@ -214,7 +214,7 @@ def _not_notified(text: str) -> list[str]:
 def _everywhere(name: str, new: Any) -> ExitStack:
     """Patch season_service's *name* with *new*, and the change type's own reference to it."""
     stack = ExitStack()
-    for module_name in ("leaguebot.core.services.season_service",
+    for module_name in ("leaguebot.core.services.seasons.season_service",
                         "leaguebot.core.services.cancellation_changes"):
         try:
             module = importlib.import_module(module_name)
@@ -487,7 +487,7 @@ async def test_a_notice_stops_where_the_league_s_server_is_not_in_the_cache(
     from leaguebot.core.models.change import GuildUnavailable
     from leaguebot.core.services.queue.change_types import StepContext
     from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
     from tests.support.cancellation_notice import (
         DIVISION_ID, SEASON_ID, notice_bot, notice_db, pro,
     )
@@ -850,7 +850,7 @@ async def _renumbered(league: Any) -> None:
                        (league.clock.now + timedelta(days=200)).astimezone(timezone.utc).isoformat(),
                        round_id(PRO, 2))
     from leaguebot.core.db.database import get_connection
-    from leaguebot.core.services.season_service import renumber_rounds_on
+    from leaguebot.core.services.seasons.season_service import renumber_rounds_on
 
     async with get_connection(league.db_path) as db:
         await renumber_rounds_on(db, PRO)

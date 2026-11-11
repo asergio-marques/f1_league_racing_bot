@@ -152,7 +152,7 @@ async def _sweep(bot: Any) -> None:
     """The restart's take-down of the standing reviews, as the builder's start-up step runs it:
     core's season review handed the factory of the reviews' views the builder makes."""
     from leaguebot.__main__ import _approve_view_for
-    from leaguebot.core.services.season_review_changes import recover_expired_review_prompts
+    from leaguebot.core.services.seasons.season_review_changes import recover_expired_review_prompts
 
     await recover_expired_review_prompts(
         bot, approve_view=_approve_view_for(bot), queue=bot.change_queue)

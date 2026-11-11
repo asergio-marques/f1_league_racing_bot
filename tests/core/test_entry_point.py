@@ -141,7 +141,7 @@ async def test_the_builder_hands_the_approval_and_the_confirmation_the_drawing_s
     """A season's approval and a mid-season confirmation of placements each judge the host's
     drawing program again as they run. The builder hands both the image module's drawing's own
     check, the one the reviews ask, so the three ask it one way and cannot disagree."""
-    from leaguebot.core.services import mid_season_confirm_change, season_approval_change
+    from leaguebot.core.services.seasons import mid_season_confirm_change, season_approval_change
 
     handed = {}
 
@@ -290,7 +290,7 @@ async def test_every_kind_is_registered_before_the_scheduler_starts(tmp_path):
     one registry: the scheduler's own jobs (the three weather phases, the forecast clean-up, the
     result submission, the four check-in jobs, the signup close, the portrait refresh and the
     amendment sweep) and every one-off timer kind."""
-    from leaguebot.core.services import season_review_changes
+    from leaguebot.core.services.seasons import season_review_changes
     from leaguebot.results.services.amend_changes import TIMER as AMEND_TIMER
     from leaguebot.results.services.review_lock_change import TIMER as LOCK_TIMER
     from leaguebot.signup.services.closing_steps import DELETE_TIMER, INACTIVITY_TIMER
@@ -902,7 +902,7 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     import leaguebot.__main__ as bot_module
 
     from leaguebot.core.db.database import get_connection
-    from leaguebot.core.services import season_review_changes
+    from leaguebot.core.services.seasons import season_review_changes
     from leaguebot.core.services.modules import hub_service
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.signup.services.wizard_service import WizardService

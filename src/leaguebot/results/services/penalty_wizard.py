@@ -2044,7 +2044,7 @@ class ApprovalView(LeagueView):
         ):
             return
         # Immutability guard: reject finalize on archived season
-        from leaguebot.core.services.season_service import SeasonImmutableError
+        from leaguebot.core.services.seasons.season_service import SeasonImmutableError
         from leaguebot.core.db.database import get_connection as _gc
         try:
             async with _gc(self.state.db_path) as _db:

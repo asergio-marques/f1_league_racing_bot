@@ -38,10 +38,10 @@ from leaguebot.core.services.setup_round_amend_change import (
     ROUND_AMEND_SETUP,
     amend_payload as amend_setup_payload,
 )
-from leaguebot.core.services.season_end_changes import season_end_in_hand, season_end_refusal
+from leaguebot.core.services.seasons.season_end_changes import season_end_in_hand, season_end_refusal
 from leaguebot.core.services.amendment_rules_service import amendment_changes_nothing
 import leaguebot.core.services.track_service as track_service
-from leaguebot.core.services.season_service import SeasonImmutableError
+from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 from leaguebot.core.utils.autocomplete import bounded_autocomplete
 from leaguebot.core.utils.input_validator import parse_datetime
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only

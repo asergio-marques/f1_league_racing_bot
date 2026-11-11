@@ -26,7 +26,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.cancellation_changes import DIVISION_CANCEL, ROUND_CANCEL
 from leaguebot.core.services.queue.queue_records import in_hand, unfinished
 from leaguebot.core.services.round_amend_change import ROUND_AMEND
-from leaguebot.core.services.season_end_changes import (
+from leaguebot.core.services.seasons.season_end_changes import (
     SEASON_ABORT,
     SEASON_CANCEL,
     SEASON_COMPLETE,

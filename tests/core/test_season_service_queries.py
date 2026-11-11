@@ -36,7 +36,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStatus
-from leaguebot.core.services.season_service import SeasonImmutableError, SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonImmutableError, SeasonService
 from tests.support.delete_hooks import DIVISION_HOOKS, delete_hooks
 
 SERVER_ID = 9808
@@ -283,7 +283,7 @@ async def test_completed_seasons_are_counted(tmp_path):
 
 async def test_a_season_is_completed_in_place(tmp_path):
     """Archived, not removed — the championship's record."""
-    from leaguebot.core.services.season_service import complete_season_on
+    from leaguebot.core.services.seasons.season_service import complete_season_on
 
     db_path = await _make_db(tmp_path)
     await _seed_season(db_path, 1, "ACTIVE")

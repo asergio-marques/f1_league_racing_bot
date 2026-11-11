@@ -378,7 +378,7 @@ def _league_role_setting(
     is_base_role = column == "base_role_id"
 
     async def check(ctx: CheckContext) -> Verdict:
-        from leaguebot.core.services.season_lifecycle_service import configuration_fixed
+        from leaguebot.core.services.seasons.season_lifecycle_service import configuration_fixed
 
         config_now = await config.get_server_config()
         if config_now is None:

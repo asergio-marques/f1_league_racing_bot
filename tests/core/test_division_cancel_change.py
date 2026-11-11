@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
-from leaguebot.core.services.season_service import SeasonImmutableError
+from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 from tests.support.change_queue import (
     acknowledgement,
     change_rows,
@@ -207,8 +207,8 @@ def _refusal_lines(league: Any) -> list[str]:
 def _everywhere(name: str, new: Any) -> ExitStack:
     """Patch *name* wherever core keeps it, and the change type's own reference to it."""
     stack = ExitStack()
-    for module_name in ("leaguebot.core.services.season_service",
-                        "leaguebot.core.services.season_lifecycle_service",
+    for module_name in ("leaguebot.core.services.seasons.season_service",
+                        "leaguebot.core.services.seasons.season_lifecycle_service",
                         "leaguebot.core.services.cancellation_changes"):
         try:
             module = importlib.import_module(module_name)

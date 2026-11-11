@@ -715,7 +715,7 @@ async def delete_test_drivers_on(
     Deleted by ``delete_driver_profiles``, the route `roster clear` and switching test mode
     off take, so a table that comes to hold a driver is let go of here as well.
     """
-    from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
+    from leaguebot.core.services.seasons.season_lifecycle_service import delete_driver_profiles
 
     await delete_driver_profiles(
         db, profile_ids, keep_history=True, profiles_deleted=profiles_deleted
@@ -750,7 +750,7 @@ async def clear_all_test_drivers_on(
     Committing nothing: a season's end deletes them inside the save that records its end.
     Returns the count removed.
     """
-    from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
+    from leaguebot.core.services.seasons.season_lifecycle_service import delete_driver_profiles
 
     cursor = await db.execute(
         "SELECT id FROM driver_profiles WHERE is_test_driver = 1",

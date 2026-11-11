@@ -27,7 +27,7 @@ import discord
 import pytest
 
 from leaguebot.core.services.modules.module_service import ModuleService
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
 from tests.support.change_queue import (
     change_rows,
@@ -140,7 +140,7 @@ def _refuse_starting(league: Any, cid: int, start: str) -> None:
 
 def _everywhere(name: str, new: Any) -> ExitStack:
     """Patch season_service's *name* with *new*, and the change type's own reference to it."""
-    from leaguebot.core.services import season_approval_change, season_service
+    from leaguebot.core.services.seasons import season_approval_change, season_service
 
     stack = ExitStack()
     for module in (season_service, season_approval_change):
@@ -427,7 +427,7 @@ async def test_the_approval_s_check_takes_the_fingerprint_with_the_image_module_
     hook each module hands its own areas through, which the builder hands the approval, so the
     artwork on disk is judged as the image module signs it, which modules are on as each module's
     switch says, and each module's configuration as that module hands it."""
-    from leaguebot.core.services import season_approval_change
+    from leaguebot.core.services.seasons import season_approval_change
     from tests.support.season_league import fingerprints_taken
 
     league = await _league_for(tmp_path, monkeypatch)
@@ -447,7 +447,7 @@ async def test_the_approval_s_check_takes_the_fingerprint_with_the_image_module_
 async def test_the_press_runs_every_gate_before_asking_and_asks_nothing_when_one_refuses(
     tmp_path, monkeypatch,
 ):
-    from leaguebot.core.services import approval_checks
+    from leaguebot.core.services.seasons import approval_checks
 
     league = await _league_for(tmp_path, monkeypatch)
     monkeypatch.setattr(
@@ -491,8 +491,8 @@ async def test_a_refusal_found_when_the_approval_runs_updates_the_reply_and_the_
     assert await _committed(league) == 0
     assert league.armed == []
     assert await _stopped_at(league) is None
-    from leaguebot.core.services.season_approval_change import TELL_KIND
-    from leaguebot.core.services.season_review_changes import TAKE_DOWN
+    from leaguebot.core.services.seasons.season_approval_change import TELL_KIND
+    from leaguebot.core.services.seasons.season_review_changes import TAKE_DOWN
 
     # Past the 14 minutes, the approval asks the change that tells the review's channel (2.1b).
     told = [TELL_KIND] if change == "a date passed" else []
@@ -507,7 +507,7 @@ async def test_the_save_refuses_writing_nothing_where_the_season_left_placements
 ):
     """The season leaves Placements between the check and the save: the last thing the check
     reads, the channels, moves it as it is read."""
-    from leaguebot.core.services import approval_checks, season_approval_change
+    from leaguebot.core.services.seasons import approval_checks, season_approval_change
 
     league = await _league_for(tmp_path, monkeypatch)
     press = await _pressed(league)
@@ -542,7 +542,7 @@ async def test_the_backup_question_is_put_after_every_gate_and_before_the_approv
     """Earlier, the question saves a season that may prove unapprovable; later, one already
     committed. Each of the last gates refusing puts no question; none refusing puts it before the
     approval is asked of the change queue, which makes every write."""
-    from leaguebot.core.services import approval_checks
+    from leaguebot.core.services.seasons import approval_checks
 
     league = await _league_for(tmp_path, monkeypatch, test_mode=True, **modules)
     monkeypatch.setattr(
@@ -628,7 +628,7 @@ async def test_the_save_reads_nothing_but_its_own_connection(tmp_path, monkeypat
     ):
         for name in names:
             monkeypatch.setattr(cls, name, _guarded(getattr(cls, name)))
-    from leaguebot.core.services import season_service
+    from leaguebot.core.services.seasons import season_service
 
     real_sessions = season_service.create_sessions_for_round_on
 
@@ -650,7 +650,7 @@ async def test_each_round_gets_its_sessions_once_however_often_the_save_is_tried
 ):
     league = await _league_for(tmp_path, monkeypatch)
     await _pressed(league)
-    from leaguebot.core.services import season_service
+    from leaguebot.core.services.seasons import season_service
 
     real = season_service.commit_placements_on
     tries = {"n": 0}
@@ -1735,7 +1735,7 @@ async def test_a_stop_before_the_save_approves_once_on_restart(tmp_path, monkeyp
 def _save_fails_once() -> ExitStack:
     """The save's commitment of the placements raises the first time only, as a passing fault
     of the database would; every later save goes through."""
-    from leaguebot.core.services import season_service
+    from leaguebot.core.services.seasons import season_service
 
     real = season_service.commit_placements_on
     tries = {"n": 0}
@@ -1973,7 +1973,7 @@ async def test_a_channel_notice_discord_refuses_stops_the_queue_and_once_discard
 
 
 async def _tell_changes(league: Any) -> list[dict[str, Any]]:
-    from leaguebot.core.services.season_approval_change import TELL_KIND
+    from leaguebot.core.services.seasons.season_approval_change import TELL_KIND
 
     return [row for row in await change_rows(league.db_path) if row["kind"] == TELL_KIND]
 

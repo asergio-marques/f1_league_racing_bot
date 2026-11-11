@@ -182,10 +182,10 @@ def _told(league: Any, text: str) -> int:
 def _everywhere(name: str, new: Any) -> ExitStack:
     """Patch *name* in every module the confirmation may reach it through."""
     stack = ExitStack()
-    for path in ("leaguebot.core.services.season_service",
-                 "leaguebot.core.services.season_lifecycle_service",
-                 "leaguebot.core.services.season_fingerprint_service",
-                 "leaguebot.core.services.mid_season_confirm_change"):
+    for path in ("leaguebot.core.services.seasons.season_service",
+                 "leaguebot.core.services.seasons.season_lifecycle_service",
+                 "leaguebot.core.services.seasons.season_fingerprint_service",
+                 "leaguebot.core.services.seasons.mid_season_confirm_change"):
         try:
             module = importlib.import_module(path)
         except ImportError:
@@ -198,7 +198,7 @@ def _everywhere(name: str, new: Any) -> ExitStack:
 def _failing_save(*, times: int | None = None) -> ExitStack:
     """The save commits the placements and then raises, as a fault of the database would,
     every time or the first *times* times."""
-    from leaguebot.core.services import season_service
+    from leaguebot.core.services.seasons import season_service
 
     real = season_service.commit_placements_on
     tries = {"n": 0}
@@ -538,7 +538,7 @@ async def test_the_confirmation_s_check_takes_the_fingerprint_with_the_image_mod
     the confirmation, so the artwork on disk is judged as the image module signs it, which modules
     are on as each module's switch says, and each module's configuration as that module hands
     it."""
-    from leaguebot.core.services import mid_season_confirm_change
+    from leaguebot.core.services.seasons import mid_season_confirm_change
     from tests.support.season_league import fingerprints_taken
 
     league = await _league(tmp_path, monkeypatch)
@@ -774,7 +774,7 @@ async def test_the_review_is_taken_down_ahead_of_the_confirmation_and_stays_up_f
     """Admin's review is pressed: the take-down is asked before the confirmation and, run,
     deletes the report and the prompt and forgets the row. A second review pressed while the
     confirmation waits is refused at once and stays standing."""
-    from leaguebot.core.services.season_review_changes import TAKE_DOWN
+    from leaguebot.core.services.seasons.season_review_changes import TAKE_DOWN
 
     league = await _league(tmp_path, monkeypatch)
     review, other = await post_mid_season_review(league), await post_mid_season_review(league)

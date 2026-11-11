@@ -14,7 +14,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 
 from leaguebot.attendance import wiring as attendance_wiring
-from leaguebot.core.services.season_review_changes import recover_expired_review_prompts
+from leaguebot.core.services.seasons.season_review_changes import recover_expired_review_prompts
 from leaguebot.core.services.start_up import StartUpStep, start_up
 from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -197,7 +197,7 @@ def _make_configuration_faults(
     """The reader of a season configuration's faults the review is handed: the gate
     (`approval_checks.configuration_faults`) handed the bot's services by name, read as they
     stand when it is asked, so that core's review reads no module's service on the bot."""
-    from leaguebot.core.services import approval_checks
+    from leaguebot.core.services.seasons import approval_checks
 
     async def configuration_faults(season_id: int, guild: discord.Guild | None = None) -> list[str]:
         return await approval_checks.configuration_faults(
@@ -454,7 +454,7 @@ async def _draw_review_picture(bot: LeagueBot, picture: Mapping[str, Any]) -> "P
 def _review_drawing(bot: LeagueBot) -> "Callable[[Mapping[str, Any]], Path]":
     """The drawing `season.review.post` is handed: it draws a picture in the worker thread the
     change runs it in, its coroutine awaited on the bot's event loop (`await_from_worker`)."""
-    from leaguebot.core.services.season_review_changes import await_from_worker
+    from leaguebot.core.services.seasons.season_review_changes import await_from_worker
 
     def drawing(picture: Mapping[str, Any]) -> "Path":
         return await_from_worker(_draw_review_picture(bot, picture))
@@ -467,7 +467,7 @@ def _approve_view_for(bot: LeagueBot) -> "Callable[[dict[str, Any]], discord.ui.
     review the payload names (its ``view``: ``approve``, ``mid_season`` or ``configuration``),
     handed the services it reads as the bot carries them and the queue's clock. It finds and
     builds no cog, so a review's buttons are served whether or not the season cog is loaded."""
-    from leaguebot.core.services.season_review_views import (
+    from leaguebot.core.services.seasons.season_review_views import (
         ApproveView,
         ConfirmConfigurationView,
         ConfirmMidSeasonPlacementsView,
@@ -540,7 +540,7 @@ def register_change_types(bot: LeagueBot) -> None:
     )
     from leaguebot.core.services.round_add_changes import round_add_change, round_import_change
     from leaguebot.core.services.round_delete_change import round_delete_change
-    from leaguebot.core.services.season_setup_change import season_setup_change
+    from leaguebot.core.services.seasons.season_setup_change import season_setup_change
     from leaguebot.core.services.setup_round_amend_change import setup_round_amend_change
     from leaguebot.core.services.bot_settings import (
         admin_role_setting,
@@ -572,18 +572,18 @@ def register_change_types(bot: LeagueBot) -> None:
         round_amend_change,
         round_rearm_change,
     )
-    from leaguebot.core.services.configuration_confirm_change import (
+    from leaguebot.core.services.seasons.configuration_confirm_change import (
         configuration_confirm_change,
     )
-    from leaguebot.core.services.mid_season_confirm_change import mid_season_confirm_change
-    from leaguebot.core.services.season_approval_change import (
+    from leaguebot.core.services.seasons.mid_season_confirm_change import mid_season_confirm_change
+    from leaguebot.core.services.seasons.season_approval_change import (
         season_approval_change,
         season_approval_tell_change,
     )
-    from leaguebot.core.services import season_review_changes
-    from leaguebot.core.services.season_review_changes import season_review_take_down_change
-    from leaguebot.core.services.season_end_changes import season_abort_change, season_complete_change
-    from leaguebot.core.services.season_lifecycle_service import (
+    from leaguebot.core.services.seasons import season_review_changes
+    from leaguebot.core.services.seasons.season_review_changes import season_review_take_down_change
+    from leaguebot.core.services.seasons.season_end_changes import season_abort_change, season_complete_change
+    from leaguebot.core.services.seasons.season_lifecycle_service import (
         steps_of_the_modules,
         wind_down_change,
     )
@@ -970,7 +970,7 @@ async def build(settings: Settings) -> LeagueBot:
     settings are handed in (:func:`read_settings`).
     """
     from leaguebot.core.services.config_service import ConfigService
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.core.services.posting.output_router import OutputRouter
 

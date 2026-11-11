@@ -325,10 +325,10 @@ def _posted(league: Any) -> list[list[str]]:
 def _modules() -> list[Any]:
     found = []
     for name in ("leaguebot.__main__",
-                 "leaguebot.core.services.season_service",
-                 "leaguebot.core.services.season_end_service",
-                 "leaguebot.core.services.season_lifecycle_service",
-                 "leaguebot.core.services.season_end_changes",
+                 "leaguebot.core.services.seasons.season_service",
+                 "leaguebot.core.services.seasons.season_end_service",
+                 "leaguebot.core.services.seasons.season_lifecycle_service",
+                 "leaguebot.core.services.seasons.season_end_changes",
                  "leaguebot.core.services.cancellation_changes",
                  "leaguebot.core.services.test_mode_service",
                  "leaguebot.core.services.test_roster_service",

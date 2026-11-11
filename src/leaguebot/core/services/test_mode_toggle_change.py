@@ -62,7 +62,7 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.services.round_add_changes import saved_result
 from leaguebot.core.services.posting import standing_posts
-from leaguebot.core.services.season_end_changes import (
+from leaguebot.core.services.seasons.season_end_changes import (
     BACKUP_KEPT,
     anything_discarded,
     discarded,
@@ -70,13 +70,13 @@ from leaguebot.core.services.season_end_changes import (
     shared_not_done,
     view_of,
 )
-from leaguebot.core.services.season_end_service import (
+from leaguebot.core.services.seasons.season_end_service import (
     DISCARD_BACKUP,
     FLUSH_FORECASTS,
     discard_backup_step,
     flush_forecasts_step,
 )
-from leaguebot.core.services.season_lifecycle_service import (
+from leaguebot.core.services.seasons.season_lifecycle_service import (
     live_season_stage,
     live_season_stage_on,
     steps_of_the_modules,

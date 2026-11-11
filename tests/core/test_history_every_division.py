@@ -37,7 +37,7 @@ async def _memberships(db_path) -> list[tuple[int, int]]:
 async def _history(db_path, season_id=SEASON_ID, profile_id=PROFILE_ID) -> list[str]:
     """The season's history written on one connection and committed, as a season's end save
     does: the divisions it names for the driver *profile_id*."""
-    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
+    from leaguebot.core.services.seasons.season_end_service import write_driver_history_entries_on
     from tests.support.driver_records_hooks import season_standing_read
 
     async with get_connection(db_path) as db:
@@ -118,7 +118,7 @@ async def test_a_sacked_driver_keeps_the_history_of_the_divisions_they_raced_in(
 
 async def test_a_driver_deleted_takes_their_memberships_with_them(db_path):
     """The driver pass deletes a driver who never raced; the archive keeps nothing of them."""
-    from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
+    from leaguebot.core.services.seasons.season_lifecycle_service import delete_driver_profiles
 
     await _seat(db_path, PRO, "Alpha")
     async with get_connection(db_path) as db:
@@ -178,7 +178,7 @@ async def test_the_history_on_the_save_handed_commits_nothing(db_path):
     """A driver placed in Pro and moved to Am. A season's end writes their history inside the
     save that records its end: written on the connection it is handed, an entry for each
     division is there on that connection, and once the save is let go uncommitted none is."""
-    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
+    from leaguebot.core.services.seasons.season_end_service import write_driver_history_entries_on
     from tests.support.driver_records_hooks import season_standing_read
 
     await _seat(db_path, PRO, "Alpha")

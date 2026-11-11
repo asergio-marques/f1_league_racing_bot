@@ -416,7 +416,7 @@ class SeasonLeague:
         started afresh."""
         from leaguebot.__main__ import _approve_view_for
         from leaguebot.core.cogs.season_cog import SeasonCog
-        from leaguebot.core.services.season_review_changes import recover_expired_review_prompts
+        from leaguebot.core.services.seasons.season_review_changes import recover_expired_review_prompts
 
         await recover_expired_review_prompts(
             self.bot, approve_view=_approve_view_for(self.bot), queue=self.bot.change_queue)
@@ -651,7 +651,7 @@ def reply(press: Any) -> str:
 
 async def approval_changes(league: SeasonLeague) -> list[dict[str, Any]]:
     """Every season approval asked of the queue, in the order asked."""
-    from leaguebot.core.services.season_approval_change import KIND
+    from leaguebot.core.services.seasons.season_approval_change import KIND
 
     return [row for row in await change_rows(league.db_path) if row["kind"] == KIND]
 
@@ -660,7 +660,7 @@ def fingerprints_taken(monkeypatch: Any, change_module: Any) -> list[dict[str, A
     """Every fingerprint taken is of one fixed season, so a review's evidence always matches the
     season as its change finds it; each one *change_module*'s check takes is recorded, its
     arguments by name (`season_id`, `drawing` and the rest) and by place (`args`)."""
-    from leaguebot.core.services import season_fingerprint_service as sfs
+    from leaguebot.core.services.seasons import season_fingerprint_service as sfs
 
     taken: list[dict[str, Any]] = []
 

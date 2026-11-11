@@ -38,7 +38,7 @@ import discord
 
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.services.posting.notice_handler import send_notice
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 
 

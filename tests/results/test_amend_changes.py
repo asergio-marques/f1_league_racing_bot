@@ -40,7 +40,7 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.results.services import result_submission_service
 from leaguebot.results.services.result_submission_service import DivisionValidationData
 from tests.support.change_queue import (

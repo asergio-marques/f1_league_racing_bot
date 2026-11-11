@@ -49,7 +49,7 @@ if TYPE_CHECKING:
     import aiosqlite
 
     from leaguebot.core.services.modules.module_service import ModuleService
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
 
 DEADLINE = "weather.setting.deadline"
 FORECAST_CHANNEL = "weather.setting.forecast_channel"

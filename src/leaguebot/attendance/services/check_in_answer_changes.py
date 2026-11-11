@@ -72,7 +72,7 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.services.channel_registry_service import as_text_channel
 from leaguebot.core.services.driver_service import resolve_driver_profile_id
-from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
+from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
 from leaguebot.core.utils.log_lines import refusal_line, refuse, reply_reason
 
 log = logging.getLogger(__name__)

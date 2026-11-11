@@ -29,7 +29,7 @@ import pytest
 
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.core.services.team_service import TeamService
 from tests.support.review_workflows import run_check
 
