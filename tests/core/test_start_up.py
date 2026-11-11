@@ -19,6 +19,7 @@ built yet, so each test imports them inside itself.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import importlib
 import logging
 from contextlib import asynccontextmanager
@@ -106,8 +107,17 @@ class _Recorder:
             return self.switches.get(module, True)
 
     class _Queue:
+        """Held, as `main` leaves it before the bot connects. The hold is lifted on leaving
+        `sweeping()` or by `release()`; lifting it again is harmless and records nothing."""
+
         def __init__(self, calls: list[str]) -> None:
             self._calls = calls
+            self.held = True
+
+        def release(self) -> None:
+            if self.held:
+                self.held = False
+                self._calls.append("hold released")
 
         @asynccontextmanager
         async def sweeping(self) -> Any:
@@ -115,7 +125,7 @@ class _Recorder:
             try:
                 yield
             finally:
-                self._calls.append("hold released")
+                self.release()
 
         async def start(self) -> None:
             self._calls.append("queue started")
@@ -306,26 +316,40 @@ async def test_a_failing_sweep_step_is_reported_to_the_log_channel_and_the_rest_
 
 
 @pytest.mark.xfail(strict=True, reason=_NOT_YET)
-@pytest.mark.parametrize("fails", [False, True], ids=["every step done", "a step raised"])
+@pytest.mark.parametrize("fails", [None, "step", "scheduler"],
+                         ids=["every step done", "a step raised", "the scheduler's start raised"])
 async def test_the_sweep_releases_held_requests_before_the_queue_starts(fails):
     """Core's hub step and weather's missed phases run, the hub raising in the second case. Every
     step runs inside the queue's sweep, so the members' requests held meanwhile wait; the hold is
-    released after the last step and before the queue starts, also where a step raised."""
+    released once, after the last step and before the queue starts, also where a step raised. In the
+    third case the scheduler cannot even be started paused, so the catch-up never begins; the hold
+    is still released, once, so the members' requests are not left waiting for the rest of the
+    run."""
     module = _fresh_start_up()
     record = _Recorder()
     starting = _starting()
-    hub = (record.failing_step("hub", _Fault("hub panel unreadable")) if fails
+    hub = (record.failing_step("hub", _Fault("hub panel unreadable")) if fails == "step"
            else record.step("hub"))
     starting.subscribe(hub[1], name="hub")
     starting.subscribe(record.module_steps(record.step("missed phases")), module="weather")
+    if fails == "scheduler":
+        def cannot_start(paused: bool = False) -> None:
+            record.calls.append("scheduler start failed")
+            raise _Fault("the job store is unreadable")
 
-    await record.start_up(module, starting)
+        record.scheduler.start = cannot_start  # type: ignore[method-assign]
+
+    with contextlib.suppress(_Fault):
+        await record.start_up(module, starting)
 
     calls = record.calls
+    assert calls.count("hold released") == 1
+    if fails == "scheduler":
+        assert calls.index("scheduler start failed") < calls.index("hold released")
+        return
     assert calls.index("hold sweep began") < calls.index("hub")
     assert calls.index("missed phases") < calls.index("hold released") < calls.index(
         "queue started")
-    assert calls.count("hold released") == 1
 
 
 @pytest.mark.xfail(strict=True, reason=_NOT_YET)
