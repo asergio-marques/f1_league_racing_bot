@@ -2,7 +2,7 @@
 
 It signs signup up to the hooks core declares, registers signup's switch reader, change types and
 the handlers of its three timers of a signup, the handler of its kind of timed job with the signup
-close, clears what it holds in memory, and holds the recovery its start-up step runs and the
+close, clears what it holds in memory, and holds the recoveries its start-up steps run and the
 closure that cancels a driver's timers. It is under the entry point's rules, not a service's
 (architecture.md, "How the code is laid out"): it reads the bot as the builder does, so each
 function below is handed the bot and reads a service off it when it signs up or, where a lambda
@@ -424,3 +424,8 @@ async def recover_signup_close_timers(bot: "LeagueBot") -> None:
         if not bot.scheduler_service.has_job(SIGNUP_CLOSE_JOB_ID):
             log.info("start-up: re-arming the signup close timer at %s", _close_at_iso)
             bot.scheduler_service.schedule_signup_close_timer(_close_at_iso)
+
+
+async def recover_wizards(bot: "LeagueBot") -> None:
+    """Recover the signup wizards the last run left, as the bot's wizard service does."""
+    await bot.wizard_service.recover_wizards()

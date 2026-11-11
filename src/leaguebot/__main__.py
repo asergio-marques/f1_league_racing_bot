@@ -1234,27 +1234,14 @@ def _start_up_steps(bot: LeagueBot) -> "tuple[StartUpStep, ...]":
     other. The modules' recoveries stay steps as they stand.
     """
 
-    async def arm_the_amendment_sweep() -> None:
-        # The standing sweep that undoes an amendment nobody carried through, its callback
-        # registered by `build`. Armed unconditionally rather than behind a setting: the
-        # amendment's first stage commits, so a league running the results module at all can leave
-        # a round half-amended, and the sweep is what makes that recoverable without anybody
-        # noticing it happened.
-        bot.scheduler_service.schedule_amendment_sweep()
-
     async def recover_the_hub() -> None:
         # Route the hub's buttons again, and post its panel afresh where it was deleted.
         from leaguebot.core.services.hub_service import recover_hub
 
         await recover_hub(bot, queue=bot.change_queue, hub_options=bot.hub_options)
 
-    async def recover_the_wizards() -> None:
-        # Re-arm inactivity APScheduler jobs for any non-UNENGAGED wizard sessions that were
-        # active before the last restart.
-        await bot.wizard_service.recover_wizards()
-
     return (
-        ("amendment sweep", arm_the_amendment_sweep),
+        ("amendment sweep", lambda: results_wiring.arm_amendment_sweep(bot)),
         ("portrait refresh job", lambda: image_wiring.recover_portrait_refresh_job(bot)),
         # A signup close timer lost on restart; its callback is registered by `build`.
         ("signup close timer", lambda: signup_wiring.recover_signup_close_timers(bot)),
@@ -1282,7 +1269,7 @@ def _start_up_steps(bot: LeagueBot) -> "tuple[StartUpStep, ...]":
         # After the deadlines above, so a check-in is distributed before it goes.
         ("missed clean-ups", lambda: _recover_missed_cleanups(bot)),
         ("hub", recover_the_hub),
-        ("wizards", recover_the_wizards),
+        ("wizards", lambda: signup_wiring.recover_wizards(bot)),
     )
 
 

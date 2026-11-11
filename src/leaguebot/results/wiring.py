@@ -2,14 +2,14 @@
 
 It signs results up to the hooks core declares, registers results' switch reader, change types and
 settings, the handlers of its kinds of timed job with the steps `/test-mode advance` runs for them,
-and holds the recoveries its start-up steps run. It is under the entry point's rules, not a
-service's (architecture.md, "How the code is laid out"): it reads the bot as the builder does, so
-each function below is handed the bot (or what the builder hands results of another module) and
-reads a service off it when it signs up or, where a lambda reads it, when it runs, which the
-tests that replace a service on the bot after registering rely on. It holds no rule of results' and
-no database code of its own: the two recoveries that still read a table here are listed under
-results' pass in `test_architecture_rules.py`, to become handlers of the start-up sweep. Nothing
-imports it but the entry point.
+and holds the start-up steps it runs: the arming of the amendment sweep and the recoveries. It is
+under the entry point's rules, not a service's (architecture.md, "How the code is laid out"): it
+reads the bot as the builder does, so each function below is handed the bot (or what the builder
+hands results of another module) and reads a service off it when it signs up or, where a lambda
+reads it, when it runs, which the tests that replace a service on the bot after registering rely
+on. It holds no rule of results' and no database code of its own: the two recoveries that still
+read a table here are listed under results' pass in `test_architecture_rules.py`, to become
+handlers of the start-up sweep. Nothing imports it but the entry point.
 """
 from __future__ import annotations
 
@@ -502,6 +502,15 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
 
     scheduler.register_timer("amendment_sweep", _amendment_sweep_cb)
 
+
+
+async def arm_amendment_sweep(bot: "LeagueBot") -> None:
+    """Arm the standing sweep that undoes an amendment nobody carried through, its callback
+    registered by `register_scheduler_callbacks`. Armed unconditionally rather than behind a
+    setting: the amendment's first stage commits, so a league running the results module at all can
+    leave a round half-amended, and the sweep is what makes that recoverable without anybody
+    noticing it happened."""
+    bot.scheduler_service.schedule_amendment_sweep()
 
 
 async def recover_orphaned_submission_channels(bot: "LeagueBot") -> None:
