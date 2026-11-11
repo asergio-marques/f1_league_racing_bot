@@ -53,9 +53,9 @@ PostLog = Callable[[str], Awaitable[object]]
 _started = False
 
 
-async def _report(name: str, error: Exception, post_log: PostLog) -> None:
-    """Log *error* with its traceback, naming the part *name*, and tell the log channel."""
-    log.error("Start-up step %r failed", name, exc_info=error)
+async def _tell_the_log_channel(name: str, error: Exception, post_log: PostLog) -> None:
+    """Tell the log channel, by one line, that the part *name* failed with *error*. The handler
+    that calls this has logged the error and its traceback already, in its own body."""
     await post_log(start_up_failure_line(name, error))
 
 
@@ -84,12 +84,14 @@ async def start_up(
                     try:
                         await run()
                     except Exception as error:
-                        await _report(name, error, post_log)
+                        log.exception("Start-up step %r failed", name)
+                        await _tell_the_log_channel(name, error, post_log)
                 for key, steps_of in starting.modules():
                     try:
                         enabled = await modules.is_enabled(key)
                     except Exception as error:
-                        await _report(f"{key}' switch", error, post_log)
+                        log.exception("Start-up step %r failed", f"{key}' switch")
+                        await _tell_the_log_channel(f"{key}' switch", error, post_log)
                         continue
                     if not enabled:
                         log.info("Start-up passed over the %s module, which is off", key)
@@ -97,20 +99,23 @@ async def start_up(
                     try:
                         steps = steps_of()
                     except Exception as error:
-                        await _report(f"{key}' start-up steps", error, post_log)
+                        log.exception("Start-up step %r failed", f"{key}' start-up steps")
+                        await _tell_the_log_channel(f"{key}' start-up steps", error, post_log)
                         continue
                     for name, run in steps:
                         try:
                             await run()
                         except Exception as error:
-                            await _report(name, error, post_log)
+                            log.exception("Start-up step %r failed", name)
+                            await _tell_the_log_channel(name, error, post_log)
             # Carry on the changes a stop cut off, once the sweep has asked its own: a change a
             # member or Discord asked for meanwhile has waited, held, until here.
             for name, run in (("change queue start", change_queue.start),):
                 try:
                     await run()
                 except Exception as error:
-                    await _report(name, error, post_log)
+                    log.exception("Start-up step %r failed", name)
+                    await _tell_the_log_channel(name, error, post_log)
         finally:
             scheduler.resume()
     finally:
