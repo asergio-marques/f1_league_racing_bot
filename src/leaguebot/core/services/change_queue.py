@@ -4,7 +4,9 @@
 section of that name holds the rules a league sees. This module holds the engineering decisions,
 each pinned by a test in `tests/core/test_change_queue.py`. The decisions that govern the types a
 change is made of, a step's four kinds, its record and a fault's ending, are in `change_types`,
-which holds `Step` and `ChangeType`.
+which holds `Step` and `ChangeType`. What is read of the queue's tables by a function of its own,
+outside the class (what is in hand, what was ever asked, the job numbering and the emptying of a
+restored database), is in `queue_records`.
 
 **A change is a row, and so is each of its steps.** `queued_changes` and `queued_change_steps`
 are the queue's own record. A step's mark (`done_at`) is saved in the same transaction as the step's
@@ -68,7 +70,8 @@ separate connection per lane, which SQLite would not make a second writer. Pinne
 
 **Jobs are carried out strictly in order.** Each step of a change is a job with a number of its own,
 its `id` in `queued_change_steps`, never renumbered or reused (a restored state and a factory reset
-carry the numbering on: `highest_job_number`, `carry_job_numbering`) and shown wherever the job is
+carry the numbering on: `queue_records.highest_job_number` and
+`queue_records.carry_job_numbering`) and shown wherever the job is
 named. A member's
 request is acknowledged once and is made of jobs that run one after another: `_choose` takes, of
 each lane, the RUNNING change, or else the QUEUED change with the lowest id, and nothing on that
@@ -141,15 +144,6 @@ change stopped at its check before it started (`ChangeType.on_discarded`), saved
 a hook that raises is logged on the host and the Discard goes ahead without it, Discard being the
 queue's last way past a stop.
 
-**What is still in hand is read, not remembered** (`unfinished`). A module-level read gives the
-payloads of the changes of the kinds asked that are QUEUED or RUNNING, a stopped one included
-(its state stays as it was) and the one named in *excluding* left out, which a check handed its own
-`change_id` uses to leave itself out. A check uses it to refuse a press while the same approval is
-already in hand, and a restart's recovery and a sweep use it to leave alone what the queue is still
-carrying out. It gives what the repeat rule below does not: that refuses a repeat only while the
-first has not started, where a specification may ask for the refusal while the first is still being
-applied, whatever its position.
-
 **A request repeating a change is refused only while it could still be the same request:** where
 the last change asked for, whatever became of any other, has the same key and has not started.
 Asked again once anything else has been asked for after it, or once it has started, a change is
@@ -167,7 +161,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import sqlite3
 from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass, field
@@ -335,7 +328,7 @@ class ChangeQueue:
     Retry and a Discard alike. *Rejected:* mixins, which would split the file and leave one state
     machine whose lock order no single class states; and collaborator objects, which would reach
     into the queue's private state or be handed all of it. What reads none of that state is out: the
-    types (`change_types`) and the bookkeeping reads (`queue_records`).
+    types (`change_types`) and the bookkeeping in `queue_records`.
     """
 
     def __init__(
@@ -2619,157 +2612,3 @@ class ChangeQueue:
                 "could not update the reply to %s (change %s)",
                 change["what"], change["id"], exc_info=True,
             )
-
-
-def empty_queue_in(path: str | os.PathLike[str]) -> None:
-    """Delete every change, and its steps, from the league database at *path*.
-
-    Synchronous, for the restore: it runs at start-up before the swap, on the staged file, when no
-    event loop is running and nothing holds a connection. Where the tables are not there (a file
-    from before the queue) it does nothing.
-    """
-    db = sqlite3.connect(str(path))
-    try:
-        tables = {
-            row[0]
-            for row in db.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table' "
-                "AND name IN ('queued_changes', 'queued_change_steps')"
-            )
-        }
-        if "queued_change_steps" in tables:
-            db.execute("DELETE FROM queued_change_steps")
-        if "queued_changes" in tables:
-            db.execute("DELETE FROM queued_changes")
-        db.commit()
-    finally:
-        db.close()
-
-
-async def unfinished(
-    db_path: str, kinds: Collection[str], *, excluding: int | None = None,
-    before: int | None = None,
-) -> list[dict[str, Any]]:
-    """The payloads of the changes of *kinds* that are queued or running, a stopped one included,
-    oldest first, leaving out the change whose id is *excluding*, and, with *before*, those asked
-    at or after the change whose id that is: a check that holds only what was asked ahead of it.
-
-    A change done, refused, dropped or discarded is not in hand and is not given. Read on a
-    connection of its own, so a check may call it while the queue is between jobs.
-    """
-    kinds = list(kinds)
-    if not kinds:
-        return []
-    marks = ", ".join("?" for _ in kinds)
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            f"SELECT payload FROM queued_changes WHERE kind IN ({marks}) "  # noqa: S608 — marks only
-            "AND state IN ('QUEUED', 'RUNNING') AND (? IS NULL OR id != ?) "
-            "AND (? IS NULL OR id < ?) ORDER BY id",
-            (*kinds, excluding, excluding, before, before),
-        )
-        return [json.loads(row["payload"]) for row in await cursor.fetchall()]
-
-
-async def ever_asked(db_path: str, kinds: Collection[str]) -> list[dict[str, Any]]:
-    """The payloads of every change of *kinds* the queue has recorded, in whatever state, oldest
-    first.
-
-    Where :func:`unfinished` gives only what is in hand, this gives what was asked for at all: a
-    change done, discarded, dropped or refused at its start is still a record that it was asked
-    for. A change refused when it was asked is not saved, so is not given. Read on a connection of
-    its own.
-    """
-    kinds = list(kinds)
-    if not kinds:
-        return []
-    marks = ", ".join("?" for _ in kinds)
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            f"SELECT payload FROM queued_changes WHERE kind IN ({marks}) ORDER BY id",  # noqa: S608 — marks only
-            tuple(kinds),
-        )
-        return [json.loads(row["payload"]) for row in await cursor.fetchall()]
-
-
-async def in_hand(
-    db_path: str, kinds: Collection[str], *, excluding: int | None = None
-) -> list[tuple[dict[str, Any], int | None]]:
-    """Each change of *kinds* that is queued or running, a stopped one included, as its payload
-    and the number of the job it waits on, oldest first, leaving out the change whose id is
-    *excluding*.
-
-    *excluding* is how a check reads the queue for its own kind without finding itself, as
-    :func:`unfinished` does.
-
-    The job is the change's first job not yet done, which is the stopped one where the queue is
-    stopped at it, or `None` where every job is done and only the change's own close remains. It
-    is the number a manager sees on the notice, and so the one a refusal names. Read as
-    :func:`unfinished` is.
-    """
-    kinds = list(kinds)
-    if not kinds:
-        return []
-    marks = ", ".join("?" for _ in kinds)
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT c.payload, (SELECT s.id FROM queued_change_steps s WHERE s.change_id = c.id "
-            "AND s.done_at IS NULL ORDER BY s.position LIMIT 1) AS job "
-            f"FROM queued_changes c WHERE c.kind IN ({marks}) "  # noqa: S608 — marks only
-            "AND c.state IN ('QUEUED', 'RUNNING') AND (? IS NULL OR c.id != ?) ORDER BY c.id",
-            (*kinds, excluding, excluding),
-        )
-        return [(json.loads(row["payload"]), row["job"]) for row in await cursor.fetchall()]
-
-
-def highest_job_number(path: str | os.PathLike[str]) -> int:
-    """The highest job number the league database at *path* has ever issued, or 0.
-
-    Read from the database's own count of the numbers it has issued, which a deleted job does not
-    lower, and from the jobs it holds. Synchronous, for a restore and a factory reset, which run
-    where no connection is open. Where the table is not there, 0.
-    """
-    db = sqlite3.connect(str(path))
-    try:
-        counted = 0
-        try:
-            row = db.execute(
-                "SELECT seq FROM sqlite_sequence WHERE name = 'queued_change_steps'"
-            ).fetchone()
-            counted = int(row[0]) if row else 0
-            held = db.execute("SELECT COALESCE(MAX(id), 0) FROM queued_change_steps").fetchone()
-            return max(counted, int(held[0]))
-        except sqlite3.OperationalError:
-            return counted
-    finally:
-        db.close()
-
-
-def carry_job_numbering(path: str | os.PathLike[str], highest: int) -> None:
-    """Make the next job the league database at *path* numbers come after *highest*.
-
-    A database put in place of another (a restored state, a freshly migrated one at a factory
-    reset) would otherwise begin the numbering from its own count, and a number the log channel
-    already names would name a second job. Never lowers a count the database already has.
-    Synchronous, as `highest_job_number`.
-    """
-    if highest <= 0:
-        return
-    db = sqlite3.connect(str(path))
-    try:
-        row = db.execute(
-            "SELECT seq FROM sqlite_sequence WHERE name = 'queued_change_steps'"
-        ).fetchone()
-        if row is None:
-            db.execute(
-                "INSERT INTO sqlite_sequence (name, seq) VALUES ('queued_change_steps', ?)",
-                (highest,),
-            )
-        elif int(row[0]) < highest:
-            db.execute(
-                "UPDATE sqlite_sequence SET seq = ? WHERE name = 'queued_change_steps'",
-                (highest,),
-            )
-        db.commit()
-    finally:
-        db.close()

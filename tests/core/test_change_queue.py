@@ -2141,7 +2141,7 @@ async def test_unfinished_finds_the_changes_in_hand_and_not_those_ended(env):
     """`unfinished` gives the payloads of the changes of the kinds asked that are queued or
     running (a running one asking about its own kind finds itself), a stopped one included, and not those done, refused, dropped or discarded, nor
     those of other kinds; the change named in `excluding` is left out."""
-    from leaguebot.core.services.change_queue import unfinished
+    from leaguebot.core.services.queue_records import unfinished
 
     api = _api()
     armed = {"on": False}
@@ -2205,7 +2205,7 @@ async def test_in_hand_leaves_out_the_change_named_in_excluding(env):
     """`in_hand` leaves out the change whose id is *excluding*, as `unfinished` does, so a check
     reading the queue for its own kind does not find itself; with none named it gives every
     change in hand, each with the number of the job it waits on."""
-    from leaguebot.core.services.change_queue import in_hand
+    from leaguebot.core.services.queue_records import in_hand
 
     api = _api()
 
@@ -2235,7 +2235,7 @@ async def test_ever_asked_finds_the_changes_of_a_kind_in_any_state(env):
     """`ever_asked` gives the payloads of every change of the kinds asked that the queue saved,
     oldest first, whether done, dropped at its check, discarded or still queued, and none of
     another kind. A request its check refuses as it is asked is not saved, so is not given."""
-    from leaguebot.core.services.change_queue import ever_asked
+    from leaguebot.core.services.queue_records import ever_asked
 
     api = _api()
     armed = {"on": False}

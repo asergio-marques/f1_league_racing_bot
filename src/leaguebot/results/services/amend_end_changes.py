@@ -66,6 +66,8 @@ from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verd
 from leaguebot.core.models.change import ChangeOrigin
 from leaguebot.core.services.change_queue import (
     ChangeQueue,
+)
+from leaguebot.core.services.queue_records import (
     unfinished,
 )
 from leaguebot.core.services.change_types import (

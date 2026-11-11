@@ -331,9 +331,9 @@ def _renumbering_fails() -> ExitStack:
 def _blind_to_the_queue() -> ExitStack:
     """Every check reading the queue for a change in hand finds none, as two asks in the same
     instant leave each other unseen."""
-    from leaguebot.core.services import change_queue
+    from leaguebot.core.services import queue_records
 
-    real = change_queue.in_hand
+    real = queue_records.in_hand
 
     async def _nothing(*_args: Any, **_kwargs: Any) -> list[Any]:
         return []

@@ -25,7 +25,7 @@ from datetime import datetime
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection, tuple_rows_in
-from leaguebot.core.services.change_queue import unfinished
+from leaguebot.core.services.queue_records import unfinished
 from leaguebot.core.services.test_mode_service import (
     PHASE_KINDS,
     ActiveRound,

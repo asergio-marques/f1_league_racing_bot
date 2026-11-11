@@ -81,7 +81,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.services import standing_posts
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.services.queue_records import (
     unfinished,
 )
 from leaguebot.core.services.change_types import (

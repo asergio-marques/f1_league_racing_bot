@@ -50,7 +50,7 @@ from leaguebot.core.models.change import (
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.services import approval_checks
 from leaguebot.core.services.approval_checks import SignupModuleSettings
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.services.queue_records import (
     unfinished,
 )
 from leaguebot.core.services.change_types import (

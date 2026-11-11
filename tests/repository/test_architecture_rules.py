@@ -2101,25 +2101,9 @@ def test_the_write_check_counts_commits_and_scripts_but_not_a_handed_connection(
     })
 
 
-#: Why the queue's two bookkeeping saves are not yet found under their own file (#283).
-_QUEUE_RECORDS_NOT_YET_MOVED = (
-    "#283: empty_queue_in and carry_job_numbering are not yet out of change_queue.py"
-)
-
-
 @pytest.mark.parametrize(
     ("path", "function"),
-    [
-        pytest.param(
-            path,
-            function,
-            id=f"{path}:{function}",
-            marks=pytest.mark.xfail(strict=True, reason=_QUEUE_RECORDS_NOT_YET_MOVED)
-            if path == "core/services/queue_records.py"
-            else (),
-        )
-        for path, function in SAVES_ALLOWED
-    ],
+    [pytest.param(path, function, id=f"{path}:{function}") for path, function in SAVES_ALLOWED],
 )
 def test_every_save_allowed_for_good_still_exists(path, function):
     """Each function named in `SAVES_ALLOWED` still saves, and each file allowed whole still holds

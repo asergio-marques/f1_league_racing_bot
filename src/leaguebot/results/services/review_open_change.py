@@ -103,7 +103,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundStatus
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.services.queue_records import (
     unfinished,
 )
 from leaguebot.core.services.change_types import (

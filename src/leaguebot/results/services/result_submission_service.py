@@ -1571,7 +1571,7 @@ async def stage_in_hand(db_path: str, round_id: int, *, before: int | None = Non
     With *before*, only what was asked ahead of the change of that id counts: a Cancel asked
     before the last paste handed stage one over comes up first and ends the amendment, so stage one
     queued behind it is no stage "in hand" ahead of it."""
-    from leaguebot.core.services.change_queue import unfinished
+    from leaguebot.core.services.queue_records import unfinished
     from leaguebot.results.services.amend_turn_change import STAGE_ONE_KIND
     from leaguebot.results.services.amendment_stage_changes import (
         APPEALS_KIND,

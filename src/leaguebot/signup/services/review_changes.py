@@ -98,7 +98,7 @@ from leaguebot.core.models.change import (
 from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
 from leaguebot.core.services import standing_posts, track_service
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.services.queue_records import (
     unfinished,
 )
 from leaguebot.core.services.change_types import (

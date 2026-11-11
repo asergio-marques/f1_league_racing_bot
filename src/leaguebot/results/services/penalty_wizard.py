@@ -348,7 +348,7 @@ async def _review_moved_on(state: PenaltyReviewState) -> str | None:
             "❌ This amendment's reports are already approved, so neither they nor its pardons "
             "can be changed any more. Its appeals are reviewed below."
         )
-    from leaguebot.core.services.change_queue import unfinished
+    from leaguebot.core.services.queue_records import unfinished
     from leaguebot.results.services.report_approval_change import KIND
 
     if any(p.get("round_id") == state.round_id for p in await unfinished(state.db_path, [KIND])):
@@ -429,7 +429,7 @@ async def _appeals_review_moved_on(state: PenaltyReviewState) -> str | None:
     """
     if state.is_amendment:
         return None
-    from leaguebot.core.services.change_queue import unfinished
+    from leaguebot.core.services.queue_records import unfinished
     from leaguebot.results.services.appeals_approval_change import KIND
 
     if any(p.get("round_id") == state.round_id for p in await unfinished(state.db_path, [KIND])):

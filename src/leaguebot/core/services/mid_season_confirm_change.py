@@ -54,7 +54,7 @@ from leaguebot.core.models.change import (
     VerdictKind,
 )
 from leaguebot.core.services import approval_checks, lineup_posting, standing_posts
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.services.queue_records import (
     unfinished,
 )
 from leaguebot.core.services.change_types import (

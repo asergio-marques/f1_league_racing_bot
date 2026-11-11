@@ -59,6 +59,8 @@ from leaguebot.core.models.change import (
 from leaguebot.core.models.round import RoundStatus, read_scheduled_at
 from leaguebot.core.services.change_queue import (
     ChangeQueue,
+)
+from leaguebot.core.services.queue_records import (
     in_hand,
 )
 from leaguebot.core.services.change_types import (

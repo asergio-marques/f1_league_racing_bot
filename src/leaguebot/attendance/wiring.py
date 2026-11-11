@@ -478,7 +478,7 @@ async def recover_rsvp_views_and_deadlines(bot: LeagueBot) -> None:
     from leaguebot.attendance.services.rsvp_service import RsvpView
     from leaguebot.core.db.database import get_connection as _gc
     from leaguebot.core.models.change import ChangeOrigin
-    from leaguebot.core.services.change_queue import unfinished
+    from leaguebot.core.services.queue_records import unfinished
     from datetime import datetime as _dt, timezone as _tz
 
     # Re-arm all embed views by message_id so persistent buttons survive restarts
