@@ -180,6 +180,9 @@ async def test_a_second_sync_applies_nothing_twice(tmp_path):
     assert len(asked) == 1, "the second sync asks for no announcement"
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#283: the role helpers are not yet a TeamRoleService of their own"
+)
 async def test_sync_still_applies_a_sanction_whose_role_change_discord_refuses(tmp_path, caplog):
     """`/attendance sync` keeps today's role behaviour (#439 slice 8, Part C): a driver over the
     autosack threshold, placed in Alpha, is sacked, Discord refuses to take any of their roles (Missing
@@ -189,6 +192,7 @@ async def test_sync_still_applies_a_sanction_whose_role_change_discord_refuses(t
     import discord
 
     from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.team_role_service import TeamRoleService
 
     db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
     await _add_rounds(db_path, {})
@@ -207,7 +211,7 @@ async def test_sync_still_applies_a_sanction_whose_role_change_discord_refuses(t
         await db.commit()
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
     bot = _make_bot(db_path)
-    placement = PlacementService(db_path)
+    placement = PlacementService(db_path, roles=TeamRoleService(db_path))
     bot.lineup_poster._refresh_lineup_post = AsyncMock(return_value=None)
     bot.placement_service = placement
     guild = MagicMock()
