@@ -374,6 +374,72 @@ async def test_the_sweep_releases_held_requests_before_the_queue_starts(fails):
         "queue started")
 
 
+async def test_the_sweep_s_off_queue_commands_wait_for_the_catch_up():
+    """The bot has restarted and holds its real change queue, as `main` leaves it. Core's hub step
+    is mid-way when a league admin invokes a command answered off the queue (as `/bot pack` is),
+    worn with `after_the_catch_up`; weather's missed phases come after the hub. The command does
+    not act while the sweep runs: its interaction is deferred, privately and thinking, so Discord
+    shows "thinking…". Once the last step has run and start-up has released the hold, it acts, and
+    its reply goes as a follow-up, never a first response."""
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.core.utils.catch_up_gate import after_the_catch_up
+    from tests.support.change_queue import member_interaction, response_in_its_slot
+
+    module = _fresh_start_up()
+    record = _Recorder()
+    queue = ChangeQueue("unused.db", MagicMock(), MagicMock(), MagicMock())
+
+    async def start() -> None:
+        record.calls.append("queue started")
+
+    queue.start = start  # type: ignore[method-assign]
+    queue.hold()
+    record.queue = queue  # type: ignore[assignment]
+    mid_way, go_on = asyncio.Event(), asyncio.Event()
+
+    async def hub() -> None:
+        mid_way.set()
+        await go_on.wait()
+        record.calls.append("hub")
+
+    class _Cog:
+        bot = SimpleNamespace(change_queue=queue)
+
+        @after_the_catch_up(lambda cog: cog.bot.change_queue)
+        async def pack(self, interaction: Any) -> None:
+            record.calls.append("command acted")
+            await interaction.response.send_message("Packed.", ephemeral=True)
+
+    starting = _starting()
+    starting.subscribe(hub, name="hub")
+    starting.subscribe(record.module_steps(record.step("missed phases")), module="weather")
+
+    sweep = asyncio.create_task(record.start_up(module, starting))
+    await asyncio.wait_for(mid_way.wait(), timeout=5)
+    press = member_interaction(MagicMock())
+    command = asyncio.create_task(_Cog().pack(response_in_its_slot(press)))
+    for _ in range(20):
+        await asyncio.sleep(0)
+
+    assert not command.done()
+    assert "command acted" not in record.calls
+    [deferred] = press.response.defer.await_args_list
+    assert deferred.kwargs.get("ephemeral") is True
+    assert deferred.kwargs.get("thinking") is True
+
+    go_on.set()
+    await asyncio.wait_for(sweep, timeout=5)
+    await asyncio.wait_for(command, timeout=5)
+
+    assert record.calls.count("command acted") == 1
+    assert record.calls.index("command acted") > record.calls.index("missed phases")
+    press.followup.send.assert_awaited_once_with("Packed.", ephemeral=True)
+    assert press.response.send_message.await_count == 0
+
+
 async def test_no_job_runs_until_start_up_has_ended():
     """Two steps run at start-up. The scheduler is started paused before the first of them, so its
     job store is readable and no job runs, and it is resumed only once the queue has started, as
