@@ -290,7 +290,7 @@ Among them:
   that declares a `turn_channel` puts it in `_held_turns` while its ask waits, which
   `held_turn_channels()` returns, so `turn_waiting` counts a typed answer held there as waiting and
   a second message typed meanwhile is turned away. *Rejected:* the held channels in `_held`, which
-  holds the kept replies. A queue never held asks at once, as every test queue does.
+  holds the kept replies. A queue never held asks at once, as every test queue does. A command answered off the queue waits through `wait_out_the_hold` by the `after_the_catch_up` decorator (`core/utils/catch_up_gate.py`), worn below the tier guard, which hands the command a response that follows up in the place of the one the deferral used; each cog gives it the way to its own queue, a helper never reading the queue off the bot.
 - **A kept reply is the same entry held in memory**, let go once it can no longer be updated.
   *Rejected:* a second table of replies (`ChangeQueue.keep_reply`'s docstring;
   `test_a_kept_reply_no_later_change_takes_over_is_let_go_once_it_cannot_be_updated`).
