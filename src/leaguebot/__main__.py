@@ -17,6 +17,7 @@ from leaguebot.attendance import wiring as attendance_wiring
 from leaguebot.core.services.seasons.season_review_changes import recover_expired_review_prompts
 from leaguebot.core.services.upkeep.start_up import start_up
 from leaguebot.core.utils.hooks import AwaitedHook, Hook, StartingHook
+from leaguebot.core.utils.interaction_errors import start_up_failure_line
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import (
     league_guild,
@@ -1319,6 +1320,7 @@ async def main() -> None:
             log.info("Synced %d slash command(s)", len(synced))
         except discord.HTTPException as exc:
             log.error("Failed to sync slash commands: %s", exc)
+            await bot.output_router.post_log(start_up_failure_line("slash command sync", exc))
 
     log.info("Starting bot...")
 

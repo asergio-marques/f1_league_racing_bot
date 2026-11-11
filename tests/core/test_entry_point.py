@@ -835,12 +835,6 @@ async def test_login_starts_the_retry_loop_once(tmp_path, monkeypatch):
     assert starts == [()]
 
 
-#: Why the entry point's tests of the start-up fail until #440 is built.
-_NOT_YET = ("#440: the builder makes one fixed list of start-up steps rather than signing core's "
-            "and each module's up to bot.starting, main holds no queue, and a refused slash "
-            "command sync reaches the host's log alone")
-
-
 #: Core's own start-up steps by name, in the order the builder signs them up to `bot.starting`.
 _CORE_STEPS = ["expired review prompts", "hub"]
 
@@ -1141,7 +1135,6 @@ async def test_migrations_run_before_the_bot_connects(tmp_path, monkeypatch):
     assert bot.lines == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_refused_command_sync_is_reported_to_the_log_channel(tmp_path, monkeypatch,
                                                                       caplog):
     """The bot reports itself ready, its start-up runs, and Discord refuses the slash command sync
