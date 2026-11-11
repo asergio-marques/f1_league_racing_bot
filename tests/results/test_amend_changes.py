@@ -465,7 +465,7 @@ async def test_a_restart_leaves_a_refused_deletion_to_the_amendment_s_own_lane(
     due and the league lane is not stopped by a second try at the same refusal."""
     from leaguebot.results.wiring import recover_orphaned_amend_channels
 
-    
+
     league = await _league(tmp_path, monkeypatch)
     await _ask_open(league)
     league.channel(AMEND_CHANNEL).delete_fails = http_error(
@@ -1168,7 +1168,7 @@ async def test_a_restart_asks_the_lapse_of_each_abandoned_amendment_before_the_q
     runs, the channel is deleted and the row closed."""
     from leaguebot.results.wiring import recover_orphaned_amend_channels
 
-    
+
     league = await _league(tmp_path, monkeypatch)
     async with get_connection(league.db_path) as db:
         await db.execute(

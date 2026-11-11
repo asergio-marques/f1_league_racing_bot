@@ -105,6 +105,7 @@ async def test_the_portrait_refresh_is_re_armed_at_its_own_time(tmp_path):
 @pytest.mark.parametrize("use_pfp,pfp_daily", [(0, 1), (1, 0)])
 async def test_a_refresh_the_league_has_not_asked_for_is_not_armed(tmp_path, use_pfp, pfp_daily):
     from leaguebot.image.wiring import recover_portrait_refresh_job
+
     bot = await _portrait_bot(tmp_path, use_pfp=use_pfp, pfp_daily=pfp_daily)
 
     await recover_portrait_refresh_job(bot)
@@ -115,6 +116,7 @@ async def test_a_refresh_the_league_has_not_asked_for_is_not_armed(tmp_path, use
 @pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_a_refresh_that_cannot_be_armed_does_not_stop_the_start(tmp_path):
     from leaguebot.image.wiring import recover_portrait_refresh_job
+
     bot = await _portrait_bot(tmp_path, use_pfp=1, pfp_daily=1)
     bot.scheduler_service.schedule_portrait_refresh.side_effect = ValueError("bad time")
 

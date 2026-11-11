@@ -103,7 +103,7 @@ async def _restart(league: SeasonLeague, *, run: bool = True) -> None:
     still in hand, as soon as the recovery waits on the database, on a slow host."""
     from leaguebot.results.wiring import recover_orphaned_submission_channels
 
-    
+
     queue = await restart_queue(league.bot)
     if not run:
         await queue.stop()

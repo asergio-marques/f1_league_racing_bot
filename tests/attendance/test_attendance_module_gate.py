@@ -23,11 +23,12 @@ beside each, so the gate cannot be over-applied and quietly switch check-in off 
 """
 from __future__ import annotations
 
-import pytest
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services import rsvp_service

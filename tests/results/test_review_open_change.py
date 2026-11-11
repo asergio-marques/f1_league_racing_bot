@@ -294,7 +294,7 @@ async def _recover(league: ReviewLeague) -> None:
     """Restart: a fresh queue on the same database, then restart recovery, then the queue run."""
     from leaguebot.results.wiring import recover_orphaned_submission_channels
 
-    
+
     await restart_queue(league.bot)
     await recover_orphaned_submission_channels(league.bot)
     await run_queue(league.bot)
@@ -1153,12 +1153,13 @@ async def _ask_report_approval(league: ReviewLeague) -> None:
 @pytest.mark.xfail(strict=True, reason=_NOT_YET_IN_THE_WIRING)
 async def test_recovery_leaves_alone_a_round_whose_review_is_in_hand(tmp_path):
     from leaguebot.results.wiring import recover_orphaned_submission_channels
+
     league = await _league(tmp_path, name="recover_in_hand", in_review=True,
                            results_posted=True, prompt=PROMPT,
                            round_status=RoundStatus.AWAITING_REPORT_VERDICTS.value)
     await _ask_report_approval(league)
 
-    
+
     await restart_queue(league.bot)
     await recover_orphaned_submission_channels(league.bot)
 
@@ -1340,7 +1341,7 @@ async def test_recovery_leaves_alone_a_round_whose_appeals_approval_is_in_hand(t
     league.channel(SUBMISSION_CHANNEL).seed(OLD_APPEALS_PROMPT, "appeals review")
     await _ask_appeals_approval(league)
 
-    
+
     await restart_queue(league.bot)
     await recover_orphaned_submission_channels(league.bot)
 
