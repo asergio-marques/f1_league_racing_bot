@@ -89,10 +89,11 @@ and no database code of its own, it imports its own module, core and what the bu
 nothing imports it but the entry point. The builder calls one function of it for each phase of the
 build the module has a part in, and a module offers only the phases it has. A function of the
 wiring reads the bot, or its attribute, when it runs where a test replaces it after the sign-up,
-as the builder's did. The builder makes every hook before any module's wiring runs, so that a
-module's function signs up on a hook that exists, and keeps the order of each hook several modules
-join, by naming each module's function itself; no subscriber order depends on which module wires
-first.
+as the builder's did. The builder makes each hook before any module signs up on it, so that a
+module's function signs up on a hook that exists: a hook one module joins before any module's
+function runs, a hook several modules join in the step that calls their functions. It keeps the
+order of each hook several modules join, by naming each module's function itself; no subscriber
+order depends on which module wires first.
 
 *Rejected:* a module's wiring as a service, which would make it a service that looks services and
 the queue up on the bot, the very thing the services' rules refuse. *Rejected:* the wiring beside
