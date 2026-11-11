@@ -71,7 +71,8 @@ def _sources() -> tuple[tuple[str, ast.Module], ...]:
 
 def _kind(path: str) -> str:
     """The kind of code a file of the package holds: the folder inside its module's folder
-    (``cogs``, ``services``, ``utils``, ``models`` or ``db``), or ``""`` for the entry point."""
+    (``cogs``, ``services``, ``utils``, ``models`` or ``db``), or ``""`` for the entry point and a
+    module's wiring (``<module>/wiring.py``), which keeps the entry point's rules."""
     parts = path.split("/")
     return parts[1] if len(parts) > 2 else ""
 
@@ -3466,3 +3467,142 @@ def test_a_listed_catch_all_that_is_gone_fails_the_check():
             _catch_alls_outside_the_places_among(nodes),
             {(path, "handler"): (1, PASS["core"])},
         )
+
+
+# ── 18. A hook one module joins is signed up in that module's wiring ────────────────────────
+
+#: The entry point: it makes every hook, and signs up in their order the modules of each hook that
+#: several join (architecture.md, "How the code is laid out").
+ENTRY_POINT = "__main__.py"
+#: Why the entry point still signs up a hook one module joins, until the build moves it.
+SIGN_UPS_IN_THE_WIRING = "#283: the entry point still signs up hooks one module joins"
+
+
+def _root_of_the_subscriber(expr: ast.expr) -> tuple[str, str] | None:
+    """What a subscriber is reached through: ``("bot", attribute)`` for one of the bot's services,
+    ``("name", name)`` for a name, or None. A `partial` and a call are followed to the function
+    they wrap, an attribute to what it is read on."""
+    while True:
+        if isinstance(expr, ast.Call):
+            if _call_name(expr) == "partial" and expr.args:
+                expr = expr.args[0]
+            else:
+                expr = expr.func
+        elif isinstance(expr, ast.Attribute):
+            if isinstance(expr.value, ast.Name) and expr.value.id == "bot":
+                return ("bot", expr.attr)
+            expr = expr.value
+        elif isinstance(expr, ast.Name):
+            return ("name", expr.id)
+        else:
+            return None
+
+
+def _sign_ups_among(nodes, bot: dict[str, str]) -> dict[str, set[str]]:
+    """Each hook signed up among *nodes* of the entry point, by how its subscription reads it
+    (``bot.round_windows_read``), to the modules whose functions it signs up. A subscriber's module
+    is the package it is imported from, the module of the bot's attribute it is read on (*bot*,
+    attribute to module), or, for a loop's name, the modules of everything the loop runs over; a
+    subscriber of core's, or one no module can be told for, names none."""
+    nodes = [(path, function, node) for path, function, node in nodes if path == ENTRY_POINT]
+    imported: dict[tuple[str, str], dict[str, str]] = {}
+    #: Each node inside a loop over a written-out sequence, to the loop's name and what it runs over.
+    looped: dict[int, tuple[str, list[ast.expr]]] = {}
+    for _path, function, node in nodes:
+        if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("leaguebot."):
+            for alias in node.names:
+                imported.setdefault((ENTRY_POINT, function), {})[alias.asname or alias.name] = (
+                    node.module.split(".")[1]
+                )
+        elif isinstance(node, ast.For) and isinstance(node.target, ast.Name) \
+                and isinstance(node.iter, (ast.Tuple, ast.List)):
+            for statement in node.body:
+                for inner in ast.walk(statement):
+                    looped[id(inner)] = (node.target.id, list(node.iter.elts))
+
+    def modules_of(expr: ast.expr, function: str, call: ast.Call) -> set[str]:
+        root = _root_of_the_subscriber(expr)
+        if root is None:
+            return set()
+        how, name = root
+        if how == "bot":
+            return {bot[name]} - {"core"} if name in bot else set()
+        loop_name, over = looped.get(id(call), ("", []))
+        if name == loop_name:
+            return {module for each in over for module in modules_of(each, function, call)}
+        module = {
+            imported_name: package
+            for (_file, scope), names in imported.items()
+            if scope in ("<module>", function) or function.startswith(f"{scope}.")
+            for imported_name, package in names.items()
+        }.get(name)
+        return {module} - {"core"} if module else set()
+
+    joined: dict[str, set[str]] = {}
+    for _path, function, node in nodes:
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
+                and node.func.attr == "subscribe" and node.args:
+            joined.setdefault(ast.unparse(node.func.value), set()).update(
+                modules_of(node.args[0], function, node)
+            )
+    return joined
+
+
+def _modules_of_the_bot_s_attributes() -> dict[str, str]:
+    """Each attribute `LeagueBot` declares, to the module (or core) whose type it holds."""
+    return {
+        name: dotted.split(".")[1]
+        for name, (dotted, _cls) in _bot_attributes(_sources(), _files_by_module_name()).items()
+    }
+
+
+@pytest.mark.xfail(strict=True, reason=SIGN_UPS_IN_THE_WIRING)
+def test_the_entry_point_signs_up_no_hook_one_module_joins():
+    """A hook one module joins is signed up in that module's wiring (`<module>/wiring.py`); the
+    entry point signs up only the hooks several modules join, each in the order its subscribers
+    are called (architecture.md, "How the code is laid out")."""
+    joined = _sign_ups_among(_nodes(), _modules_of_the_bot_s_attributes())
+
+    assert sorted(hook for hook, modules in joined.items() if len(modules) == 1) == []
+
+
+def test_the_sign_up_check_tells_the_module_of_each_subscriber():
+    """The check tells a subscriber's module through a `partial`, an import made in the function
+    or at the top of the file, a loop over modules, and a service read on the bot; a hook several
+    modules join names them all, and a subscriber of core's names none."""
+    source = (
+        "from leaguebot.core.services import season_service\n"
+        "def wire(bot):\n"
+        "    from leaguebot.results.services import purge as results_purge\n"
+        "    from leaguebot.weather.services import steps as weather_steps\n"
+        "    bot.one.subscribe(partial(results_purge.deleted_on, bot.db_path))\n"
+        "    bot.two.subscribe(bot.signup_module_service.moved)\n"
+        "    for steps in (weather_steps,):\n"
+        "        bot.several.subscribe(partial(steps.pending, bot.db_path))\n"
+        "    for steps in (results_purge,):\n"
+        "        bot.several.subscribe(steps.pending)\n"
+        "    bot.core_only.subscribe(season_service.read)\n"
+    )
+    bot = {"signup_module_service": "signup", "db_path": "core"}
+
+    assert _sign_ups_among(_sample(source, ENTRY_POINT), bot) == {
+        "bot.one": {"results"},
+        "bot.two": {"signup"},
+        "bot.several": {"weather", "results"},
+        "bot.core_only": set(),
+    }
+
+
+@pytest.mark.parametrize(
+    "path", [ENTRY_POINT, "results/wiring.py"], ids=["the entry point", "a module's wiring"]
+)
+def test_a_module_s_wiring_keeps_the_entry_point_s_rules(path):
+    """A module's wiring is held to the rules the entry point is: it reads the bot as the builder
+    does, so its lookups of services and of the queue on the bot and its reads of the wall clock are
+    not counted, and it holds no database code, so its SQL is counted as code outside services."""
+    assert _kind(path) not in ("services", "db")
+    assert _service_lookups_among(_sample(_LOOKUP_SAMPLE, path)) == Counter()
+    assert _queue_reached_through_the_bot_among(
+        _sample("async def handler(bot):\n    await bot.change_queue.ask('kind', {})\n", path)
+    ) == Counter()
+    assert _wall_clock_reads_among(_sample("def handler():\n    datetime.now()\n", path)) == Counter()

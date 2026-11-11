@@ -51,6 +51,14 @@ PACKAGE = CONTRACTS.parent / "src" / "leaguebot"
 #: The kinds of code a module's folder holds, each in a folder of its own (architecture.md, "How
 #: the code is laid out"). The contracts name code by these folders.
 KINDS = frozenset({"cogs", "services", "models", "utils"})
+#: A module's part of the builder, one file beside its kind folders and under the entry point's
+#: rules, imported by the entry point alone (architecture.md, "How the code is laid out"). Core has
+#: none: its part is the builder's own.
+WIRING = "wiring.py"
+#: The contract that keeps every module's wiring to the entry point.
+WIRING_CONTRACT = "nothing-imports-a-module-s-wiring-but-the-entry-point"
+#: Why the contract and the files are not there yet.
+NO_WIRING_YET = "#283: no module has its wiring, and no contract keeps it to the entry point"
 
 
 def _contracts() -> configparser.ConfigParser:
@@ -130,8 +138,38 @@ def _placed(parts: tuple[str, ...]) -> bool:
     if len(parts) == 1:
         return parts[0] in ("__init__.py", "__main__.py")
     if len(parts) == 2:
-        return parts[1] == "__init__.py"
+        return parts[1] == "__init__.py" or (parts[1] == WIRING and parts[0] != "core")
     return parts[1] in KINDS or parts[:2] == ("core", "db")
+
+
+@pytest.mark.parametrize(
+    ("parts", "placed"),
+    [
+        pytest.param(("results", "wiring.py"), True, id="a module's wiring"),
+        pytest.param(("core", "wiring.py"), False, id="core's"),
+        pytest.param(("results", "helpers.py"), False, id="another file beside the kinds"),
+    ],
+)
+def test_a_module_s_wiring_sits_beside_its_kind_folders(parts, placed):
+    """A module's wiring is the one file a module keeps outside its kind folders; core keeps none,
+    and any other file there is out of place."""
+    assert _placed(parts) is placed
+
+
+@pytest.mark.xfail(strict=True, reason=NO_WIRING_YET)
+def test_every_module_has_its_wiring_and_only_the_entry_point_imports_it():
+    """Each module's wiring signs it up as the builder asks, and nothing but the entry point
+    imports one: not a module's own services, cogs, models or utilities, not core, and not another
+    module's wiring. A source module the contract names is a kind folder, not the module, as
+    import-linter passes over an import between a module and what lies within it."""
+    modules = _modules()
+
+    assert sorted(module for module in modules if not (PACKAGE / module / WIRING).is_file()) == []
+    assert _named(WIRING_CONTRACT, "forbidden_modules") == {"*.wiring"}
+    assert _named(WIRING_CONTRACT, "source_modules") == {f"*.{kind}" for kind in KINDS} | {
+        "*.wiring",
+        "core.db",
+    }
 
 
 def test_every_file_sits_in_a_folder_the_contracts_name():
