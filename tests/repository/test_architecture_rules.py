@@ -2101,6 +2101,42 @@ def test_the_write_check_counts_commits_and_scripts_but_not_a_handed_connection(
     })
 
 
+#: Why the queue's two bookkeeping saves are not yet found under their own file (#283).
+_QUEUE_RECORDS_NOT_YET_MOVED = (
+    "#283: empty_queue_in and carry_job_numbering are not yet out of change_queue.py"
+)
+
+
+@pytest.mark.parametrize(
+    ("path", "function"),
+    [
+        pytest.param(
+            path,
+            function,
+            id=f"{path}:{function}",
+            marks=pytest.mark.xfail(strict=True, reason=_QUEUE_RECORDS_NOT_YET_MOVED)
+            if path == "core/services/queue_records.py"
+            else (),
+        )
+        for path, function in SAVES_ALLOWED
+    ],
+)
+def test_every_save_allowed_for_good_still_exists(path, function):
+    """Each function named in `SAVES_ALLOWED` still saves, and each file allowed whole still holds
+    a save, with its reason: a rename or a move cannot leave the exception pointing at nothing."""
+    saving = {
+        (where, owner)
+        for where, owner, node in _nodes()
+        if isinstance(node, ast.Call) and _call_name(node) in _SAVING_CALLS
+    }
+
+    if function == "*":
+        assert any(where == path for where, _owner in saving)
+    else:
+        assert (path, function) in saving
+    assert SAVES_ALLOWED[(path, function)]
+
+
 # ── 13. A lent connection carries only what the database code sets on it ───────────────────
 
 #: The calls that leave something on a connection for whoever is lent it next.
