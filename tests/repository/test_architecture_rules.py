@@ -3589,10 +3589,17 @@ def test_the_entry_point_signs_up_no_hook_one_module_joins():
 def test_the_sign_up_check_tells_the_module_of_each_subscriber():
     """The check tells a subscriber's module through a `partial`, an import made in the function
     or at the top of the file, a loop over modules, and a service read on the bot; a hook several
-    modules join names them all, and a subscriber of core's names none."""
+    modules join names them all, and a subscriber of core's names none. The starting hook, core's
+    step signed up by name and a module's wiring function bound to the bot by `module=`, names the
+    modules whose wirings it binds, by package, not by the switch key it is signed up under."""
     source = (
         "from leaguebot.core.services import season_service\n"
+        "from leaguebot.image import wiring as image_wiring\n"
+        "from leaguebot.results import wiring as results_wiring\n"
         "def wire(bot):\n"
+        "    bot.starting.subscribe(recover_the_hub, name='hub')\n"
+        "    bot.starting.subscribe(partial(results_wiring.start_up_steps, bot), module='results')\n"
+        "    bot.starting.subscribe(partial(image_wiring.start_up_steps, bot), module='images')\n"
         "    from leaguebot.results.services import purge as results_purge\n"
         "    from leaguebot.weather.services import steps as weather_steps\n"
         "    bot.one.subscribe(partial(results_purge.deleted_on, bot.db_path))\n"
@@ -3610,6 +3617,7 @@ def test_the_sign_up_check_tells_the_module_of_each_subscriber():
         "bot.two": {"signup"},
         "bot.several": {"weather", "results"},
         "bot.core_only": set(),
+        "bot.starting": {"results", "image"},
     }
 
 
