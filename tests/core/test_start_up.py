@@ -29,10 +29,6 @@ import pytest
 
 _MODULE = "leaguebot.core.services.upkeep.start_up"
 
-#: Why the tests of the sweep fail until #440 is built.
-_NOT_YET = ("#440: start_up takes no StartingHook yet; it runs one fixed list of steps, whatever "
-            "module is off, and reports no failure to the log channel")
-
 
 def _fresh_start_up() -> Any:
     """The start-up module, reloaded so that its run-once guard has not yet been spent."""
@@ -378,7 +374,6 @@ async def test_no_job_runs_until_start_up_has_ended():
     assert record.calls.count("scheduler resumed") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_YET)
 async def test_a_review_prompt_recovery_that_cannot_read_the_database_fails_its_step(
     tmp_path, caplog, monkeypatch
 ):

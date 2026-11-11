@@ -27,7 +27,7 @@ the check in turn.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import TYPE_CHECKING, cast
 
@@ -48,7 +48,6 @@ if TYPE_CHECKING:
     from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService
     from leaguebot.core.services.scheduler_service import SchedulerService
     from leaguebot.core.services.modules.hub_service import HubOptions
-    from leaguebot.core.utils.hooks import StartUpStep
     from leaguebot.core.services.test_mode.test_mode_service import AdvanceSteps
     from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
@@ -58,7 +57,7 @@ if TYPE_CHECKING:
     from leaguebot.core.services.modules.image_drawing import ImageDrawing
     from leaguebot.results.services.attendance_hook import AttendanceAfterReview
     from leaguebot.core.services.posting.output_router import OutputRouter
-    from leaguebot.core.utils.hooks import AwaitedHook, Hook
+    from leaguebot.core.utils.hooks import AwaitedHook, Hook, StartingHook
 
 
 class LeagueBot(commands.Bot):
@@ -349,10 +348,10 @@ class LeagueBot(commands.Bot):
     #: Starts the retry cog's loop. The builder sets it, so that `setup_hook` reaches the loop
     #: without importing the cog, which nothing below the cogs may do.
     start_retry_loop: Callable[[], None]
-    #: The start-up's steps, each a name for the log and what it runs, in the order they run. The
-    #: builder sets it; `start_up` runs them once (architecture.md, "Start-up runs once, in one
-    #: function").
-    start_up_steps: Sequence[StartUpStep]
+    #: The start-up's steps: core's own, then each module's, signed up by the builder, which
+    #: `start_up` sweeps once, each module in its turn if it is enabled (architecture.md,
+    #: "Start-up runs once, in one function").
+    starting: StartingHook
 
     async def setup_hook(self) -> None:
         """Start the retry loop: discord.py runs this once per run, at login, before connecting.

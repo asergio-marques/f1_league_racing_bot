@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 from leaguebot.attendance import wiring as attendance_wiring
 from leaguebot.core.services.seasons.season_review_changes import recover_expired_review_prompts
 from leaguebot.core.services.upkeep.start_up import start_up
-from leaguebot.core.utils.hooks import AwaitedHook, Hook, StartUpStep
+from leaguebot.core.utils.hooks import AwaitedHook, Hook, StartingHook
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import (
     league_guild,
@@ -1220,19 +1220,29 @@ async def build(settings: Settings) -> LeagueBot:
             delete_after=15,
         )
 
-    bot.start_up_steps = _start_up_steps(bot)
+    _sign_up_to_starting(bot)
 
     return bot
 
 
-def _start_up_steps(bot: LeagueBot) -> "tuple[StartUpStep, ...]":
-    """The bot's start-up steps, named and in order: what `start_up` runs once, each contained.
+def _sign_up_to_starting(bot: LeagueBot) -> None:
+    """Make the hook the start-up declares, and sign core's steps and each module's up to it: what
+    `start_up` sweeps once, each step contained (architecture.md, "Timed work and restarts").
 
-    The order is today's and is load-bearing where a comment says so. The scheduler is started
-    paused before the first step and resumed after the last, so no scheduled job runs while these
-    do; each recovery is looked up when its step runs, so a step stands for that function and no
-    other. The modules' recoveries stay steps as they stand.
+    Core's own steps come first, in the order they run: the season-review prompts a previous run
+    left standing, then the hub. Then each module's steps, the modules in the order the core
+    specification lists them (signup, results, attendance, weather, image), each under its switch
+    key, the name its switch reader is signed up under (`images` for the image module); a module
+    that is off is passed over in its turn. The order of a module's own steps is the module's. The
+    scheduler is started paused before the first and resumed after the last, so no scheduled job
+    runs while these do; each recovery is looked up when its step runs, so a step stands for that
+    function and no other.
     """
+
+    async def recover_the_review_prompts() -> None:
+        # Any season-review approve button left standing by a previous run.
+        await recover_expired_review_prompts(
+            bot, approve_view=_approve_view_for(bot), queue=bot.change_queue)
 
     async def recover_the_hub() -> None:
         # Route the hub's buttons again, and post its panel afresh where it was deleted.
@@ -1240,37 +1250,14 @@ def _start_up_steps(bot: LeagueBot) -> "tuple[StartUpStep, ...]":
 
         await recover_hub(bot, queue=bot.change_queue, hub_options=bot.hub_options)
 
-    return (
-        ("amendment sweep", lambda: results_wiring.arm_amendment_sweep(bot)),
-        ("portrait refresh job", lambda: image_wiring.recover_portrait_refresh_job(bot)),
-        # A signup close timer lost on restart; its callback is registered by `build`.
-        ("signup close timer", lambda: signup_wiring.recover_signup_close_timers(bot)),
-        # Results-amend channels left open by a previous run. **Before the submission channels,
-        # not after**. An amendment open at the restart has its corrections in the
-        # database, unapproved; recovering a submission channel whose results were saved but never
-        # posted posts its standings from that database. Reverting the amendments first means
-        # those standings are built from the round as it raced, wherever the revert succeeds.
-        ("orphaned amend channels", lambda: results_wiring.recover_orphaned_amend_channels(bot)),
-        # Submission channels left open by a previous run. The paste they were waiting for died
-        # with the process, so they are reset so /test-mode advance can re-trigger submission.
-        ("orphaned submission channels", lambda: results_wiring.recover_orphaned_submission_channels(bot)),
-        # Any season-review approve button left standing by a previous run.
-        ("expired review prompts",
-         lambda: recover_expired_review_prompts(
-             bot, approve_view=_approve_view_for(bot), queue=bot.change_queue)),
-        ("missed phases", lambda: weather_wiring.recover_missed_phases(bot)),
-        # The check-in calls that fell due while the bot was down, their deadline still ahead,
-        # posted late. Before the deadlines below, as a call comes before its deadline.
-        ("missed check-in calls", lambda: attendance_wiring.recover_missed_check_in_calls(bot)),
-        # Persistent RSVP embed views re-armed for all stored embed messages, and missed RSVP
-        # deadline jobs run for rounds whose deadline already passed.
-        ("RSVP views and deadlines", lambda: attendance_wiring.recover_rsvp_views_and_deadlines(bot)),
-        # The forecasts and check-in messages due to come down while the bot was stopped.
-        # After the deadlines above, so a check-in is distributed before it goes.
-        ("missed clean-ups", lambda: _recover_missed_cleanups(bot)),
-        ("hub", recover_the_hub),
-        ("wizards", lambda: signup_wiring.recover_wizards(bot)),
-    )
+    bot.starting = StartingHook()
+    bot.starting.subscribe(recover_the_review_prompts, name="expired review prompts")
+    bot.starting.subscribe(recover_the_hub, name="hub")
+    bot.starting.subscribe(partial(signup_wiring.start_up_steps, bot), module="signup")
+    bot.starting.subscribe(partial(results_wiring.start_up_steps, bot), module="results")
+    bot.starting.subscribe(partial(attendance_wiring.start_up_steps, bot), module="attendance")
+    bot.starting.subscribe(partial(weather_wiring.start_up_steps, bot), module="weather")
+    bot.starting.subscribe(partial(image_wiring.start_up_steps, bot), module="images")
 
 
 async def main() -> None:
@@ -1309,13 +1296,15 @@ async def main() -> None:
         assert bot.user is not None
         log.info("Logged in as %s (id=%s)", bot.user, bot.user.id)
 
-        # Start-up runs once per process, the steps `build` made; a second ready, after a network
+        # Start-up runs once per process, the sweep over the steps `build` signed up; a second ready, after a network
         # drop, runs nothing again and syncs nothing (architecture.md, "Start-up runs once, in
         # one function").
         if not await start_up(
-            steps=bot.start_up_steps,
+            starting=bot.starting,
+            modules=bot.module_service,
             change_queue=bot.change_queue,
             scheduler=bot.scheduler_service,
+            post_log=bot.output_router.post_log,
         ):
             return
 
