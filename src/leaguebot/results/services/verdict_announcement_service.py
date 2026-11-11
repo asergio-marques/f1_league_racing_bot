@@ -477,39 +477,22 @@ async def _send_verdict(
     return await target_channel.send(content, allowed_mentions=_VERDICT_MENTIONS)
 
 
-def _sanction_texts(sanction_type: str, driver_ref: str, threshold: int) -> tuple[str, str, str]:
-    """The label, description and justification of an attendance sanction's card."""
-    if sanction_type == "AUTOSACK":
-        return (
-            "Sacked",
-            "Sacked due to accumulation of attendance points.",
-            f"{driver_ref} has reached the {threshold} attendance point limit in order to be "
-            "removed from their full-time seat. Therefore, they have been removed from all "
-            "driving seats effective immediately, and their current full-time seat will be "
-            "offered to another driver.",
-        )
-    return (
-        "Moved to Reserve",
-        "Moved to Reserve due to accumulation of attendance points.",
-        f"{driver_ref} has reached the {threshold} attendance point limit in order to be "
-        "removed from their full-time seat. Therefore, they have been demoted to a reserve "
-        "driver effective immediately, and their current full-time seat will be offered to "
-        "another driver.",
-    )
-
-
 async def announce_sanction(
     bot: LeagueBot,
     db_path: str,
     round_id: int,
     driver_discord_id: int,
     driver_display_name: str | None,
-    sanction_type: str,  # "AUTOSACK" or "AUTORESERVE"
-    threshold: int,
+    penalty_label: str,
+    description_text: str,
+    justification_text: str,
     *,
     as_text: bool = False,
 ) -> None:
     """Post a sanction's card in the round's verdicts channel, raising where it cannot.
+
+    The card's three texts are handed in: the sanction is attendance's, and so is its wording,
+    which attendance's implementation of the hook composes and hands to this.
 
     What a queued sanction announcement is (#439): it raises where it cannot post, for the queue
     to stop on and try again. The card goes beneath the heading the round's verdicts already
@@ -535,12 +518,6 @@ async def announce_sanction(
             "the server"
         )
 
-    driver_ref = f"<@{driver_discord_id}>"
-    if driver_display_name:
-        driver_ref += f" ({driver_display_name})"
-    penalty_label, description_text, justification_text = _sanction_texts(
-        sanction_type, driver_ref, threshold
-    )
     try:
         await _send_verdict(
             bot,

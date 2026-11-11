@@ -26,6 +26,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from leaguebot.attendance.services.attendance_after_review import sanction_card_texts
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.results.models.points_config import SessionType
@@ -724,7 +725,9 @@ async def test_an_approval_whose_cascade_reaches_a_later_round_heads_its_sanctio
         await recorded(round_id, division_id, owed, as_text=as_text)
         await verdict_announcement_service.announce_sanction(
             league.bot, league.db_path, round_id, owed["driver_user_id"], "Max",
-            owed["sanction"], 10, as_text=as_text,
+            *sanction_card_texts(
+                owed["sanction"], f"<@{owed['driver_user_id']}> (Max)", 10
+            ), as_text=as_text,
         )
 
     league.attendance.announce_sanction = _announce
@@ -769,7 +772,9 @@ def _cards_posted_for_real(league: ReviewLeague) -> None:
             return
         await verdict_announcement_service.announce_sanction(
             league.bot, league.db_path, round_id, owed["driver_user_id"], None,
-            owed["sanction"], 10, as_text=as_text,
+            *sanction_card_texts(
+                owed["sanction"], f"<@{owed['driver_user_id']}>", 10
+            ), as_text=as_text,
         )
 
     league.attendance.announce_sanction = _announce

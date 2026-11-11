@@ -44,6 +44,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from leaguebot.attendance.services.attendance_after_review import sanction_card_texts
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.services.penalty_wizard import StagedPardon
 from tests.support.change_queue import http_error, in_a_job
@@ -928,3 +929,24 @@ async def test_the_sheet_s_record_writes_nothing_while_attendance_is_off(tmp_pat
     written, saved = await _recorded()
     assert written == 1
     assert str(saved) == "7402"
+
+
+@pytest.mark.parametrize(
+    ("sanction", "label", "outcome"),
+    [
+        ("AUTOSACK", "Sacked", "they have been removed from all driving seats"),
+        ("AUTORESERVE", "Moved to Reserve", "they have been demoted to a reserve driver"),
+    ],
+)
+def test_a_sanction_card_names_the_driver_the_limit_and_what_became_of_them(
+    sanction, label, outcome
+):
+    """Attendance writes the sanction card's wording: a sacking and a move to the reserve each
+    carry their label, say the driver reached the limit of 20 points, and say what became of
+    the driver's seat."""
+    got_label, description, justification = sanction_card_texts(sanction, "<@101> (Lewis)", 20)
+
+    assert got_label == label
+    assert description == f"{label} due to accumulation of attendance points."
+    assert justification.startswith("<@101> (Lewis) has reached the 20 attendance point limit")
+    assert outcome in justification

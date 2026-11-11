@@ -49,6 +49,33 @@ from leaguebot.core.utils.league_server import league_guild
 _Pardon = TypeVar("_Pardon")
 
 
+def sanction_card_texts(sanction_type: str, driver_ref: str, threshold: int) -> tuple[str, str, str]:
+    """The label, description and justification of an attendance sanction's card.
+
+    The wording is attendance's (its specification states it), so it is composed here and handed
+    to results' `announce_sanction`, which posts it and composes none. *sanction_type* is
+    ``AUTOSACK`` or ``AUTORESERVE``, *driver_ref* how the card names the driver and *threshold*
+    the point limit the driver reached.
+    """
+    if sanction_type == "AUTOSACK":
+        return (
+            "Sacked",
+            "Sacked due to accumulation of attendance points.",
+            f"{driver_ref} has reached the {threshold} attendance point limit in order to be "
+            "removed from their full-time seat. Therefore, they have been removed from all "
+            "driving seats effective immediately, and their current full-time seat will be "
+            "offered to another driver.",
+        )
+    return (
+        "Moved to Reserve",
+        "Moved to Reserve due to accumulation of attendance points.",
+        f"{driver_ref} has reached the {threshold} attendance point limit in order to be "
+        "removed from their full-time seat. Therefore, they have been demoted to a reserve "
+        "driver effective immediately, and their current full-time seat will be offered to "
+        "another driver.",
+    )
+
+
 class AttendanceAfterReview:
     """See the module docstring. Constructed as ``AttendanceAfterReview(bot, placement,
     roles=roles, lineups=lineups)``: *roles* is the team-role service that gives and takes a
@@ -211,11 +238,17 @@ class AttendanceAfterReview:
 
         autoreserve, autosack = await _att._thresholds(self._db_path)
         sanction = candidate["sanction"]
+        driver_discord_id = int(candidate["driver_user_id"])
+        display_name = await _att._display_name_of(self._db_path, candidate["driver_profile_id"])
+        driver_ref = f"<@{driver_discord_id}>"
+        if display_name:
+            driver_ref += f" ({display_name})"
+        label, description, justification = sanction_card_texts(
+            sanction, driver_ref, (autosack if sanction == "AUTOSACK" else autoreserve) or 0
+        )
         await vas.announce_sanction(
-            self._bot, self._db_path, round_id, int(candidate["driver_user_id"]),
-            await _att._display_name_of(self._db_path, candidate["driver_profile_id"]),
-            sanction, (autosack if sanction == "AUTOSACK" else autoreserve) or 0,
-            as_text=as_text,
+            self._bot, self._db_path, round_id, driver_discord_id, display_name,
+            label, description, justification, as_text=as_text,
         )
 
     async def refresh_lineup(

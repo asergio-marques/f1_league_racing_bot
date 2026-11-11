@@ -38,6 +38,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from leaguebot.attendance.services.attendance_after_review import sanction_card_texts
 from leaguebot.core.db.database import get_connection
 from tests.support.change_queue import (
     acknowledgement,
@@ -1121,7 +1122,9 @@ async def test_an_amendment_that_sanctions_keeps_the_banner_its_card_stands_unde
         await recorded(round_id, division_id, owed, as_text=as_text)
         await verdict_announcement_service.announce_sanction(
             league.bot, league.db_path, round_id, owed["driver_user_id"], "Max",
-            owed["sanction"], 10, as_text=as_text,
+            *sanction_card_texts(
+                owed["sanction"], f"<@{owed['driver_user_id']}> (Max)", 10
+            ), as_text=as_text,
         )
 
     league.attendance.announce_sanction = _announce
