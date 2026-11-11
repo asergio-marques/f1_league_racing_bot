@@ -1727,11 +1727,13 @@ class ResultsCog(commands.Cog):
         **An amendment that ends before stage one lets the division go** (#345). From the moment
         its record is in, an amendment holds its division — no other amendment, paste, approval
         or sync — and until stage one writes, it carries no deadline for the sweep to act on.
-        Nothing has been written by then, so each way it ends puts nothing back but the
-        drafts. A refused paste ends it through `end_amendment`, which closes the row and
+        Nothing has been written by then, so no ending has anything to put back: each drops
+        the drafts and closes the row. A refused paste does so through `end_amendment` and
         asks `results.amend.close` to delete the channel. The league's cancel and the lapse
-        are `results.amend.cancel` and `results.amend.lapse`, whose jobs are `revert` and
-        `delete_channel`. The row stays, closed, until a restart deletes a channel left behind.
+        are `results.amend.cancel` and `results.amend.lapse`, which resolve the names, revert
+        and delete the channel. The closed row stays until the round's next amendment
+        replaces it, or until a restart deletes a channel whose deletion failed and forgets
+        the row.
         """
         from leaguebot.core.models.change import VerdictKind
         from leaguebot.core.utils.season_gate import LIVE_STAGES, season_for_command
