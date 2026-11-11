@@ -1715,10 +1715,11 @@ class ResultsCog(commands.Cog):
         """Amend the results of a round that has reached FINAL.
 
         **A league admin's**, unlike `/results rounds sync` beside it, and unlike what a
-        reading of the name suggests. Approving an amendment supersedes what the league raced:
-        `amend_round_results_on` snapshots the chosen sessions, then writes their corrected
-        classifications over them, re-points their verdicts and rescores the standings. It sits
-        with the other commands that rewrite what a league is built from.
+        reading of the name suggests. Once the last corrected paste is in, `results.amend.stage_one`
+        supersedes what the league raced: `amend_round_results_on` snapshots the chosen sessions,
+        then writes their corrected classifications over them, re-points their verdicts and
+        rescores the standings. It sits with the other commands that rewrite what a league is
+        built from.
 
         Adding, amending and importing rounds stay a league manager's; cancelling and
         deleting one are a league admin's for the same reason this is.
@@ -1726,9 +1727,11 @@ class ResultsCog(commands.Cog):
         **An amendment that ends before stage one lets the division go** (#345). From the moment
         its record is in, an amendment holds its division — no other amendment, paste, approval
         or sync — and until stage one writes, it carries no deadline for the sweep to act on.
-        Nothing has been written by then, so a refused paste, or the league cancelling or
-        lapsing it, ends the amendment (`end_amendment`) and asks `results.amend.close`: the
-        record stays, closed, and the channel is deleted.
+        Nothing has been written by then, so each way it ends puts nothing back but the
+        drafts. A refused paste ends it through `end_amendment`, which closes the row and
+        asks `results.amend.close` to delete the channel. The league's cancel and the lapse
+        are `results.amend.cancel` and `results.amend.lapse`, whose jobs are `revert` and
+        `delete_channel`. The row stays, closed, until a restart deletes a channel left behind.
         """
         from leaguebot.core.models.change import VerdictKind
         from leaguebot.core.utils.season_gate import LIVE_STAGES, season_for_command
