@@ -44,6 +44,7 @@ from tests.support.change_queue import (
     stopped_job,
     text_channel,
     tier_member,
+    turn_payload,
     typed_message,
     typed_message_deleted,
 )
@@ -438,3 +439,44 @@ async def test_a_league_change_a_turn_handed_over_still_makes_its_channel_wait(e
     assert await _waiting(env)
     assert await ask_turn(env.bot, "handing", _typed(env, "second")) is None
     assert len(env.channel.sent) == 1
+
+
+@pytest.mark.xfail(strict=True, reason="#440: the change queue has no hold, and turn_waiting "
+                                       "takes no held channels")
+async def test_a_second_message_typed_while_the_first_is_held_is_turned_away(env):
+    """The bot has restarted and holds its queue while it catches up. A driver types an answer
+    into their channel: it is marked and its turn asked, and the ask waits, nothing saved. While it
+    waits, their channel counts as waiting a turn, read with the queue's held turn channels, so a
+    second message there would be turned away; another driver's channel is not waiting. Once the
+    catch-up ends the turn is saved and the channel no longer held; once it has been answered the
+    channel is no longer waiting."""
+    import asyncio
+
+    from leaguebot.core.services.queue import typed_turns
+
+    _queue(env, _turn())
+    queue = env.bot.change_queue
+    queue.hold()
+    first = _typed(env, "first")
+
+    await typed_turns.mark(first)
+    waiting = asyncio.create_task(queue.ask("turn", turn_payload(first),
+                                            actor=first.author, what="a typed answer"))
+    for _ in range(20):
+        await asyncio.sleep(0)
+
+    assert not waiting.done() and await change_rows(env.db_path) == []
+    assert await typed_turns.turn_waiting(env.db_path, env.types, CHANNEL,
+                                          held=queue.held_turn_channels())
+    assert not await typed_turns.turn_waiting(env.db_path, env.types, OTHER_CHANNEL,
+                                              held=queue.held_turn_channels())
+
+    async with queue.sweeping():
+        pass
+    assert await asyncio.wait_for(waiting, timeout=5) is not None
+    assert CHANNEL not in queue.held_turn_channels()
+
+    await run_queue(env.bot)
+
+    assert not await typed_turns.turn_waiting(env.db_path, env.types, CHANNEL,
+                                              held=queue.held_turn_channels())

@@ -117,6 +117,10 @@ ARRIVING_EXEMPT = {
     # A hook's subscribers, signed up by the builder before the bot connects: the bot's wiring,
     # not the league's data (#283 S8a).
     ("core/utils/hooks.py", "_subscribers"): "#283 S8a",
+    # The turn channels of the asks waiting out the catch-up after a restart, each dropped once its
+    # ask is saved or refused: it dies with the waiting ask, as `_trying`'s entries do with their
+    # job, and holds no league state (#440, C4).
+    ("core/services/queue/change_queue.py", "_held_turns"): "#440 C4",
 }
 
 #: Stores that hold no league state, and why.

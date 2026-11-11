@@ -3253,3 +3253,81 @@ async def test_a_step_cannot_both_end_on_a_fault_and_be_undiscardable(env):
 
     with pytest.raises(ValueError):
         queue.register(_type(steps=[step]))
+
+
+# ---------------------------------------------------------------------------
+# The catch-up after a restart: what is asked meanwhile waits (#440)
+# ---------------------------------------------------------------------------
+
+#: Why the hold's tests fail until #440 is built.
+_NO_HOLD = "#440: the change queue has no hold, so a request during the catch-up is saved at once"
+
+
+async def _yield_to_the_loop(times: int = 20) -> None:
+    for _ in range(times):
+        await asyncio.sleep(0)
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_HOLD)
+@pytest.mark.parametrize("by_member", [True, False], ids=["a member's request", "a Discord event"])
+async def test_a_request_during_the_sweep_waits_until_the_sweep_has_asked_its_own(env, by_member):
+    """The bot has restarted and holds its queue. The catch-up asks a first change, then, while it
+    is mid-way, a member presses a button (or Discord reports a member leaving, the bot's own
+    change) from outside the catch-up; the catch-up then asks a second change. Nothing of the
+    member's (or the event's) is saved while the catch-up runs; once it ends, it is saved after
+    both the catch-up's changes on the lane, and its call returns its id."""
+    import contextvars
+
+    queue = _queue(env, _type(steps=[_act("a", [])]))
+    queue.hold()
+    outside = contextvars.copy_context()
+
+    async with queue.sweeping():
+        first = await _ask(env, payload={"asked": "catch-up 1"}, origin=_api().ChangeOrigin.BOT)
+        if by_member:
+            pressed = _ask(env, payload={"asked": "press"})
+        else:
+            pressed = _ask(env, payload={"asked": "press"}, origin=_api().ChangeOrigin.BOT)
+        waiting = asyncio.create_task(pressed, context=outside)
+        await _yield_to_the_loop()
+        assert not waiting.done()
+        second = await _ask(env, payload={"asked": "catch-up 2"}, origin=_api().ChangeOrigin.BOT)
+        await _yield_to_the_loop()
+        assert not waiting.done()
+        assert [row["id"] for row in await change_rows(env.db_path)] == [first, second]
+
+    asked = await asyncio.wait_for(waiting, timeout=5)
+
+    rows = await change_rows(env.db_path)
+    assert [row["id"] for row in rows] == [first, second, asked]
+    assert [json.loads(row["payload"])["asked"] for row in rows] == [
+        "catch-up 1", "catch-up 2", "press"]
+
+
+@pytest.mark.xfail(strict=True, reason=_NO_HOLD)
+async def test_a_held_member_s_interaction_is_deferred_while_it_waits(env):
+    """The bot has restarted and holds its queue; a member presses a button before the catch-up
+    ends. Before it waits, their press is deferred, privately, so Discord shows them "thinking…"
+    and its three seconds do not lapse; nothing else is sent. Once the catch-up ends, the change is
+    acknowledged as under way through a follow-up, seen by them alone, never a first response."""
+    queue = _queue(env, _type(steps=[_act("a", [])]))
+    queue.hold()
+    interaction = member_interaction(env.bot)
+
+    waiting = asyncio.create_task(_ask(env, interaction=interaction))
+    await _yield_to_the_loop()
+
+    assert not waiting.done()
+    [deferred] = interaction.response.defer.await_args_list
+    assert deferred.kwargs.get("ephemeral") is True
+    assert interaction.response.send_message.await_count == 0
+    assert interaction.followup.send.await_count == 0
+
+    async with queue.sweeping():
+        pass
+    await asyncio.wait_for(waiting, timeout=5)
+
+    assert interaction.response.send_message.await_count == 0
+    [sent] = interaction.followup.send.await_args_list
+    assert _acknowledges(sent.args[0] if sent.args else sent.kwargs.get("content"))
+    assert sent.kwargs.get("ephemeral") is True
