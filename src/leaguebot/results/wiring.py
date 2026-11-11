@@ -466,7 +466,13 @@ def register_change_types(
     bot.change_queue.register(rounds_sync_change(bot.season_service, bot.module_service))
     bot.change_queue.register(standings_sync_change(bot.season_service, bot.module_service))
     bot.change_queue.register(
-        setting_change(module_on_results(modules=bot.module_service, seasons=bot.season_service))
+        setting_change(
+            module_on_results(
+                modules=bot.module_service,
+                seasons=bot.season_service,
+                scheduler=bot.scheduler_service,
+            )
+        )
     )
     for setting in (
         *points_settings(modules=bot.module_service, seasons=bot.season_service),
@@ -525,8 +531,9 @@ def start_up_steps(bot: "LeagueBot") -> "tuple[StartUpStep, ...]":
 
 async def arm_amendment_sweep(bot: "LeagueBot") -> None:
     """Arm the standing sweep that undoes an amendment nobody carried through, its callback
-    registered by `register_scheduler_callbacks`. Armed unconditionally rather than behind a
-    setting: the amendment's first stage commits, so a league running the results module at all can
+    registered by `register_scheduler_callbacks`. Run in results' turn of the start-up sweep, so
+    only while results is on, and also when results is turned on (`module_on_results`). Armed
+    without a setting of its own: the amendment's first stage commits, so a league running the results module at all can
     leave a round half-amended, and the sweep is what makes that recoverable without anybody
     noticing it happened."""
     bot.scheduler_service.schedule_amendment_sweep()
