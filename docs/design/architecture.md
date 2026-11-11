@@ -875,8 +875,8 @@ amendment's five minutes running out, a signup left unanswered for a day, a held
 after the one whose record saved the row the timer is keyed to, arms a one-off timer through the
 scheduler service (`SchedulerService.arm_once`, named from its kind and its row, so that arming it
 again replaces it). It is armed with no lateness limit, so one missed while the bot was down fires
-when it starts. The module's wiring registers each kind's callback before the scheduler starts
-(`register_timer`). When the timer fires, its callback reads the row again and asks its
+when it starts. The builder, or the module's wiring it calls, registers each kind's callback before the scheduler
+starts (`register_timer`). When the timer fires, its callback reads the row again and asks its
 change of the queue, as the bot's, or asks nothing where the work is no longer due; a callback that
 raises goes to the failure path of scheduled jobs, the job runner (see "Errors and failures").
 
@@ -932,7 +932,7 @@ next is called, and none runs beside another. Before any of them, it calls whoev
 bot starting, one at a time as well, so a module's start step's change is queued, and carried out,
 ahead of any change its missed events ask for. A handler asks for its change on the queue; what an
 earlier event changed is seen by a later one's change when the queue runs it, not by the later one's
-handler. The sweep holds no module's logic. The module's wiring signs each handler up with its kind of job,
+handler. The sweep holds no module's logic. The builder, or the module's wiring it calls, signs each handler up with its kind of job,
 together with the kind's own way of telling which of its events came due, as it registers the kind
 with the scheduler service; that is the hook core offers for a timed event falling due. The handler
 holds its module's logic, what becomes of a missed event included; core holds none of it. Each
