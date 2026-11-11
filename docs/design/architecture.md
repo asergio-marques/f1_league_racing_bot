@@ -71,9 +71,10 @@ standing posts, the channel notice) and `modules/` (the module service, the draw
 hooks' readers, the hub). The league rules are `seasons/`, `cancellations/`, `rounds/` (divisions,
 rounds, tracks and the calendar post), `drivers/` (drivers, teams, placements, the lineup and the
 changes to them), `settings/`, `test_mode/` and `upkeep/` (backup, pack, factory reset, clean-up and
-start-up). No folder holds both, so that a later decision on what core should hold can move a whole
-folder rather than sort its files again. One file stays loose in `core/services/`:
-`scheduler_service.py`, because the job store saves its path (`leaguebot.core.services.scheduler_service`)
+start-up). No plumbing folder holds a league rule, so that a later decision on what core should hold
+can move a whole folder rather than sort its files again; a file that serves both sits in the
+league-rule folder it serves, as `start_up.py` does in `upkeep/`, and is moved with it. One file
+stays loose in `core/services/`: `scheduler_service.py`, because the job store saves its path (`leaguebot.core.services.scheduler_service`)
 for every timed job, and a move would leave a saved job store, or the state test mode keeps,
 unloadable. A folder is not a kind: every check reads a file's kind from the first folder below its
 part, so `core/services/seasons/season_service.py` is a service of core. Only core's services are
