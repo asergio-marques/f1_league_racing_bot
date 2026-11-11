@@ -180,6 +180,34 @@ def test_every_file_sits_in_a_folder_the_contracts_name():
     assert misplaced == []
 
 
+#: Core's services that are plumbing every module uses: the change queue, posting to Discord, and
+#: what core asks of the modules through its hooks and protocols.
+CORE_PLUMBING_FOLDERS = frozenset({"queue", "posting", "modules"})
+#: Core's services that hold a league rule of core's own.
+CORE_LEAGUE_RULE_FOLDERS = frozenset(
+    {"seasons", "cancellations", "rounds", "drivers", "settings", "test_mode", "upkeep"}
+)
+#: The files that sit directly in `core/services/`: the package's own, and the scheduler, whose
+#: path every saved job names (`test_every_stored_job_names_the_runner_by_its_pinned_module_path`).
+CORE_SERVICES_LOOSE = frozenset({"__init__.py", "scheduler_service.py"})
+
+
+@pytest.mark.xfail(strict=True, reason="#283: core's services are not yet in topic folders")
+def test_core_s_services_sit_in_topic_folders_plumbing_apart_from_league_rules():
+    """Core's services are grouped by topic into packages, and no folder holds both plumbing and a
+    league rule, so that a later review of what core holds can move a whole folder rather than
+    sort its files again (architecture.md, "How the code is laid out"). Every file of core's
+    services is in one of the named folders but the two that stay loose, and every named folder
+    is there."""
+    services = PACKAGE / "core" / "services"
+    loose = sorted(path.name for path in services.glob("*.py") if path.name not in CORE_SERVICES_LOOSE)
+    folders = {path.name for path in services.iterdir() if (path / "__init__.py").is_file()}
+
+    assert loose == []
+    assert folders == CORE_PLUMBING_FOLDERS | CORE_LEAGUE_RULE_FOLDERS
+    assert not CORE_PLUMBING_FOLDERS & CORE_LEAGUE_RULE_FOLDERS
+
+
 def test_the_bot_s_type_names_the_services_for_the_type_checker_only():
     """The one permanent exception in `.importlinter` lets the bot's type import every service,
     the modules' among them, because it does so under `TYPE_CHECKING` and nothing runs because of
