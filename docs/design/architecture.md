@@ -62,6 +62,29 @@ a cog) is written once for every module, and the checks tell a service from a co
 *Rejected:* a module's files side by side in its folder, where a file's kind is known only from
 its name, and several files are named for neither.
 
+**Core's services are grouped by topic into packages** (`core/services/queue/`, `seasons/` and so
+on), because core holds so many that a flat folder cannot be read, and the grouping puts the
+plumbing every module uses apart from core's own league rules. The plumbing is `queue/` (the change
+queue, its types and records, the stop view, the typed turns, the setting change, the audit
+writers), `posting/` (the four handlers for a kind of post, the log writer, the retry queue, the
+standing posts, the channel notice) and `modules/` (the module service, the drawing protocol, the
+hooks' readers, the hub). The league rules are `seasons/`, `cancellations/`, `rounds/` (divisions,
+rounds, tracks and the calendar post), `drivers/` (drivers, teams, placements, the lineup and the
+changes to them), `settings/`, `test_mode/` and `upkeep/` (backup, pack, factory reset, clean-up and
+start-up). No folder holds both, so that a later decision on what core should hold can move a whole
+folder rather than sort its files again. One file stays loose in `core/services/`:
+`scheduler_service.py`, because the job store saves its path (`leaguebot.core.services.scheduler_service`)
+for every timed job, and a move would leave a saved job store, or the state test mode keeps,
+unloadable. A folder is not a kind: every check reads a file's kind from the first folder below its
+part, so `core/services/seasons/season_service.py` is a service of core. Only core's services are
+grouped; a module's own, if it needs grouping, is its own pass's to decide.
+`tests/repository/test_import_contracts.py` holds it: no core service sits outside a topic folder
+but the scheduler's.
+
+*Rejected:* keeping the services flat, which leaves the line between plumbing and league rules to
+a list nobody can read at a glance. *Rejected:* moving the scheduler's file with the rest and
+repointing the saved jobs, which would leave a job store written before the move unloadable.
+
 Beside its kind folders, a module's folder holds one file: its **wiring** (`<module>/wiring.py`),
 the module's part of the builder (below). Core has none: its part is the builder's own.
 
@@ -1388,7 +1411,9 @@ later on its own.
 - **`.importlinter`**, run by `tests/repository/test_import_contracts.py`, checks which code may
   import which: the rules for each kind of code, that core uses no module, that a module uses
   another only where the dependency table allows, that nothing imports the entry point, and that
-  nothing but the entry point imports a module's wiring.
+  nothing but the entry point imports a module's wiring. The same test checks that core's services
+  sit in their topic folders, plumbing apart from league rules, with the scheduler's file alone
+  loose.
 - **`tests/repository/test_architecture_rules.py`** checks the rest: database code outside services,
   awaiting anything but the connection mid-save, cogs handling their own errors, catch-all handlers
   that lose the error details, background tasks nobody keeps, code reaching past the scheduler

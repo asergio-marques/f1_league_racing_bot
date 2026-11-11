@@ -15,7 +15,8 @@
 #
 # The code is one package with a folder for core and one for each module, and inside each a
 # folder per kind of code (architecture.md, "How the code is laid out"). A `*` stands for any
-# one of those folders, so `leaguebot.*.services` is every module's services and core's.
+# one of those folders, so `leaguebot.*.services` is every module's services and core's. A `**`
+# also takes the topic folders below core's services (`leaguebot.core.services.queue.x`).
 
 [importlinter]
 root_packages =
@@ -73,7 +74,7 @@ allow_indirect_imports = True
 ignore_imports =
     # Permanent: the bot's type names every service it carries, for the type checker only
     # (under TYPE_CHECKING). Services stay typed attributes on the bot (architecture.md).
-    leaguebot.core.utils.league_bot -> leaguebot.*.services.*
+    leaguebot.core.utils.league_bot -> leaguebot.*.services.**
 
 [importlinter:contract:core-uses-no-module]
 name = Core uses no module
@@ -91,7 +92,7 @@ ignore_imports =
     # Permanent: the bot's type names every service it carries, the modules' among them, for the
     # type checker only (under TYPE_CHECKING). Services stay typed attributes on the bot
     # (architecture.md, "How the code is laid out").
-    leaguebot.core.utils.league_bot -> leaguebot.*.services.*
+    leaguebot.core.utils.league_bot -> leaguebot.*.services.**
     # #284: the amendment's approval faults in the amendment service ask results and attendance.
     leaguebot.core.services.amendment_service -> leaguebot.attendance.services.attendance_service
     leaguebot.core.services.amendment_service -> leaguebot.results.services.results_post_service
