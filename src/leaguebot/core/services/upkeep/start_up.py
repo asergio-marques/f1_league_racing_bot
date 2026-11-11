@@ -53,6 +53,12 @@ PostLog = Callable[[str], Awaitable[object]]
 _started = False
 
 
+def _possessive(key: str) -> str:
+    """*key* as a possessive: a bare apostrophe after an "s" (results', images'), "'s" otherwise
+    (signup's, attendance's, weather's)."""
+    return f"{key}'" if key.endswith("s") else f"{key}'s"
+
+
 async def _tell_the_log_channel(name: str, error: Exception, post_log: PostLog) -> None:
     """Tell the log channel, by one line, that the part *name* failed with *error*. The handler
     that calls this has logged the error and its traceback already, in its own body."""
@@ -87,11 +93,12 @@ async def start_up(
                         log.exception("Start-up step %r failed", name)
                         await _tell_the_log_channel(name, error, post_log)
                 for key, steps_of in starting.modules():
+                    owner = _possessive(key)
                     try:
                         enabled = await modules.is_enabled(key)
                     except Exception as error:
-                        log.exception("Start-up step %r failed", f"{key}' switch")
-                        await _tell_the_log_channel(f"{key}' switch", error, post_log)
+                        log.exception("Start-up step %r failed", f"{owner} switch")
+                        await _tell_the_log_channel(f"{owner} switch", error, post_log)
                         continue
                     if not enabled:
                         log.info("Start-up passed over the %s module, which is off", key)
@@ -99,8 +106,8 @@ async def start_up(
                     try:
                         steps = steps_of()
                     except Exception as error:
-                        log.exception("Start-up step %r failed", f"{key}' start-up steps")
-                        await _tell_the_log_channel(f"{key}' start-up steps", error, post_log)
+                        log.exception("Start-up step %r failed", f"{owner} start-up steps")
+                        await _tell_the_log_channel(f"{owner} start-up steps", error, post_log)
                         continue
                     for name, run in steps:
                         try:
