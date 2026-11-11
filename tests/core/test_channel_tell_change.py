@@ -4,7 +4,7 @@ A job or a start-up step needing a one-line notice in a channel asks it, as the 
 job, `tell`, posts the payload's `text` in the channel `channel_id`, stopping the queue where
 Discord refuses it or the channel is gone. It mentions nobody but the member its payload names
 (`mention`, a member's id). The mid-season confirmation's fallback and the review take-down's
-restart notice use it. `channel_tell_change()` (`leaguebot.core.services.channel_tell_change`) is
+restart notice use it. `channel_tell_change()` (`leaguebot.core.services.posting.channel_tell_change`) is
 the factory the builder registers.
 
 These tests use the real change type on a database built by the migrations, with "now" pinned.
@@ -68,7 +68,7 @@ async def env(tmp_path):
 async def _tell(env, *, mention: int | None = None) -> None:
     """Register `channel.tell` alone and ask it, as the bot's, to tell channel 707 `TEXT`."""
     from leaguebot.core.models.change import ChangeOrigin
-    from leaguebot.core.services.channel_tell_change import channel_tell_change
+    from leaguebot.core.services.posting.channel_tell_change import channel_tell_change
 
     attach_queue(env.bot, env.db_path, now=env.clock, types=(channel_tell_change(),))
     payload: dict[str, Any] = {"channel_id": CHANNEL, "text": TEXT}

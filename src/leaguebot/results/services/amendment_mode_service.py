@@ -3,8 +3,10 @@
 Results owns the mode's tables (`season_amendment_state`, `season_modification_entries`,
 `season_modification_fl`), so it holds the readers of them here. A season in the mode edits a
 modification store rather than the configurations it scores on. The readers say whether the
-mode is on and whether it is modified, and whether a staged table reads out of order. The writers (`set_amendment_mode_on`,
-`revert_on`, `stage_points_on`, `stage_fastest_lap_on`) write on the connection a settings change
+mode is on and whether it is modified, whether a staged table reads out of order
+(`validate_modification_ordering`) and how it differs from the table in force
+(`get_modification_store_diff`). The writers (`set_amendment_mode_on`, `revert_on`,
+`stage_points_on`, `stage_fastest_lap_on`) write on the connection a settings change
 hands them, commit nothing, and answer what they did as a `Saved`: whether anything changed and
 the audit entries the queue saves with it. A request for what the store already holds changes
 nothing, leaves the modified flag as it stood and records nothing. That the mode is on, that the
@@ -13,13 +15,15 @@ writers'.
 """
 from __future__ import annotations
 
+from itertools import groupby
+
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import AuditRecord
-from leaguebot.core.services.setting_change import Saved
+from leaguebot.core.services.queue.setting_change import Saved
 from leaguebot.results.models.amendment_state import SeasonAmendmentState
-from leaguebot.results.utils.points_ordering import ordering_violations
+from leaguebot.results.utils.points_ordering import ordering_message, ordering_violations
 
 
 async def get_amendment_state(db_path: str, season_id: int) -> SeasonAmendmentState | None:
@@ -79,6 +83,74 @@ _COPY_FL = """
     SELECT season_id, config_name, session_type, fl_points, fl_position_limit
     FROM season_points_fl WHERE season_id = ?
 """
+
+
+async def validate_modification_ordering(db_path: str, season_id: int) -> list[str]:
+    """Return ordering errors in the modification store, in approval's own words.
+
+    The mid-season counterpart to the season approval's ordering gate. Both guard the
+    same thing — the table a championship is scored on — and a rule that held only at
+    approval would be a rule a league could step around by amending afterwards, with
+    every round rescored against the bad table on the spot.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT config_name, session_type, position, points "
+            "FROM season_modification_entries WHERE season_id = ? "
+            "ORDER BY config_name, session_type, position",
+            (season_id,),
+        )
+        rows = await cursor.fetchall()
+
+    errors: list[str] = []
+    for (config_name, session_type), group in groupby(
+        rows, key=lambda r: (r["config_name"], r["session_type"])
+    ):
+        pairs = [(r["position"], r["points"]) for r in group]
+        errors.extend(
+            ordering_message(config_name, session_type, violation)
+            for violation in ordering_violations(pairs)
+        )
+    return errors
+
+
+async def get_modification_store_diff(db_path: str, season_id: int) -> str:
+    """Return a human-readable diff of season_points_entries vs modification store."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT config_name, session_type, position, points FROM season_points_entries WHERE season_id = ?",
+            (season_id,),
+        )
+        current_rows = {
+            (r["config_name"], r["session_type"], r["position"]): r["points"]
+            for r in await cursor.fetchall()
+        }
+        cursor = await db.execute(
+            "SELECT config_name, session_type, position, points FROM season_modification_entries WHERE season_id = ?",
+            (season_id,),
+        )
+        mod_rows = {
+            (r["config_name"], r["session_type"], r["position"]): r["points"]
+            for r in await cursor.fetchall()
+        }
+
+    all_keys = sorted(set(current_rows) | set(mod_rows))
+    lines = []
+    changed = 0
+    for key in all_keys:
+        old_pts = current_rows.get(key)
+        new_pts = mod_rows.get(key)
+        if old_pts != new_pts:
+            config, session, pos = key
+            lines.append(
+                f"{config}/{session}/P{pos}: {old_pts if old_pts is not None else '?'} → {new_pts if new_pts is not None else '(removed)'}"
+            )
+            changed += 1
+
+    if not lines:
+        return "No changes in modification store."
+    header = f"**{changed} change{'s' if changed != 1 else ''} staged:**"
+    return header + "\n" + "\n".join(lines)
 
 
 async def _state_on(db: aiosqlite.Connection, season_id: int) -> tuple[bool, bool]:

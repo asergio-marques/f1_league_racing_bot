@@ -1,0 +1,289 @@
+"""pack_service — ready the bot to serve its league from another Discord server.
+
+**What is the league's travels; what is the server's stays behind.** A Discord user id is the
+same on every server, so a driver's profile, accounts, history and portrait mean the same
+thing on the next one, as do completed and cancelled seasons, which stay whole, their divisions,
+rounds and results with the channel and role ids those rows carry (history, which nothing acts
+on), the team list, the points configurations and every module setting that is not a channel
+or a role. What is cleared is what the bot acts on and edits by: the claim and the four
+settings, the league's two roles, the hub, the team roles and the signup channel, the record of
+the messages the bot posted (those of past seasons' rows too), and the scheduled work that would
+post into them.
+
+**Each module clears its own rows.** The pack calls the bot's hook (*bot_packed*) on its one
+connection, and signup, weather, attendance and results each clear what is theirs, in that order
+(`__main__._sign_up_to_pack`). Signup hands back what the reply and the audit entry report: the
+signup wizards it cleared and the signup channel's id as it stood. The pack itself clears
+only core's own: the team roles, the queued messages, the review prompts, the server's roles,
+hub and claim, and the divisions' lineup and calendar message ids.
+
+**Refused while the league has a current season**: a season in any stage short of completed or
+cancelled, which is read off the lifecycle `stage` rather than the coarser `status`. A current
+season's divisions are built on this server's roles and channels, and a league does not pack up and
+leave with one under way.
+
+**Refused while the queue holds a job**: a change in the queue (`change_queue`) that has not
+finished, queued, running or stopped on a failed job, would go on changing Discord on a server the
+bot no longer serves. A pack does not drop it: it is refused, naming the job it would wait on, so
+that the admin lets the queue empty, or presses Retry or Discard on a stopped job's notice, and
+packs again. A pack therefore finds only finished changes, which are history and stay with their
+jobs, and has none to delete.
+
+**One transaction.** The checks and every write share one `BEGIN IMMEDIATE`, so a season or a
+change set up between the checks and the release cannot be stranded on a server the bot has
+left, nor go on changing a server it has. The audit entry shares it too: every pack that takes
+effect is recorded, and a refused one records nothing.
+
+The Discord side is left as it is: the old server keeps the bot's messages and buttons, which
+refuse from then on (see `leaguebot.core.utils.league_server.LeagueView`). Pack touches only the database.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import dataclass
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
+
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.change import LEAGUE_LANE
+from leaguebot.core.models.season import SeasonStage
+from leaguebot.core.services.queue.change_queue import ChangeQueue
+from leaguebot.core.services.settings.config_service import RELEASE_CLAIM_SQL
+from leaguebot.core.services.upkeep.in_memory_state import clear_in_memory_state
+from leaguebot.core.services.scheduler_service import PORTRAIT_REFRESH_JOB_ID
+from leaguebot.core.utils.hooks import AwaitedHook, Hook
+
+if TYPE_CHECKING:
+    from leaguebot.core.services.scheduler_service import SchedulerService
+
+log = logging.getLogger(__name__)
+
+#: The stages that end a season. Any other stage — or none yet — is a current season.
+_FINISHED_STAGES: tuple[str, ...] = (SeasonStage.COMPLETED.value, SeasonStage.CANCELLED.value)
+
+#: What a module's part of the pack hands back, as a mapping, for the reply and the audit entry:
+#: the number of signup wizards cleared, and the signup channel's id as it stood (None where the
+#: league has none). A part that has neither hands back nothing.
+CLEARED_WIZARDS = "wizards"
+CLEARED_SIGNUP_CHANNEL_ID = "signup_channel_id"
+
+#: Scheduled work pack leaves armed. The daily portrait refresh is a standing instruction from
+#: an image setting pack keeps, and does nothing while no server is claimed.
+KEPT_JOBS: frozenset[str] = frozenset({PORTRAIT_REFRESH_JOB_ID})
+
+
+class PackRefused(Exception):
+    """The pack is refused, for one of two reasons the command words for the admin.
+
+    The league has a current season: *season_number* and *stage* say which. Or the queue
+    holds a job: *job_id* is the job the pack would wait on, *lane* the lane it is on, and
+    *stopped* says it failed and holds that lane until Retry or Discard. The other pair is then
+    None (or False).
+    """
+
+    def __init__(
+        self,
+        season_number: int | None = None,
+        stage: str | None = None,
+        *,
+        job_id: int | None = None,
+        stopped: bool = False,
+        lane: str = LEAGUE_LANE,
+    ) -> None:
+        self.season_number = season_number
+        self.stage = stage
+        self.job_id = job_id
+        self.stopped = stopped
+        self.lane = lane
+        if job_id is not None:
+            super().__init__(f"the queue holds job #{job_id}" + (" (stopped)" if stopped else ""))
+        else:
+            super().__init__(f"season {season_number} is current (stage {stage})")
+
+
+@dataclass(frozen=True)
+class PackResult:
+    """What pack cleared, for the reply and the log."""
+
+    team_roles: int
+    wizards: int
+    queued_messages: int
+    scheduled_jobs: int
+
+
+async def pending_job(db) -> tuple[int, bool, str] | None:
+    """The job a pack would wait on as (number, stopped, lane), or None where no lane holds one.
+
+    Every lane is read, the league's and each conversation's, since a pack would otherwise
+    clear a server a lane still changes. A job *stopped* (failed, holding its lane until Retry
+    or Discard) comes first, as the one an admin has to act on; else the first job not yet done
+    of the oldest change still open, which is the one its lane's worker runs next.
+    """
+    row = await (
+        await db.execute(
+            "SELECT s.id, s.failing_since IS NOT NULL, c.lane FROM queued_change_steps s "
+            "JOIN queued_changes c ON c.id = s.change_id "
+            "WHERE c.state IN ('QUEUED', 'RUNNING') AND s.done_at IS NULL "
+            "ORDER BY s.failing_since IS NULL, c.id, s.position LIMIT 1"
+        )
+    ).fetchone()
+    return None if row is None else (int(row[0]), bool(row[1]), str(row[2]))
+
+
+async def current_season(db) -> tuple[int, str | None] | None:
+    """The league's current season as (number, stage), or None where it has none."""
+    placeholders = ",".join("?" for _ in _FINISHED_STAGES)
+    cursor = await db.execute(
+        f"SELECT season_number, stage FROM seasons "
+        f"WHERE stage IS NULL OR stage NOT IN ({placeholders}) "
+        f"ORDER BY id DESC LIMIT 1",
+        _FINISHED_STAGES,
+    )
+    row = await cursor.fetchone()
+    return None if row is None else (int(row["season_number"]), row["stage"])
+
+
+async def what_stops_a_pack(
+    db_path: str,
+) -> tuple[tuple[int, str | None] | None, tuple[int, bool, str] | None]:
+    """The refusals a pack would meet, read-only, on a connection of its own: the current
+    season as (number, stage) and the job it would wait on as (number, stopped, lane), each
+    None where nothing stops it.
+
+    `/bot pack` asks these before it writes its log line, which the pack would clear. The pack
+    asks again inside its own transaction.
+    """
+    async with get_connection(db_path) as db:
+        return await current_season(db), await pending_job(db)
+
+
+#: The settings a league set that pack clears from `server_configs`, as the audit names them.
+#: The hub's panel is left out: a message id is the bot's record of its own post.
+_AUDITED_SETTINGS: tuple[str, ...] = (
+    "server_id",
+    "interaction_role_id",
+    "interaction_channel_id",
+    "log_channel_id",
+    "league_admin_role_id",
+    "base_role_id",
+    "driver_role_id",
+    "hub_channel_id",
+)
+
+
+async def _cleared_configuration(db, signup_channel_id: int | None) -> dict[str, Any]:
+    """The configuration pack is about to clear, for its audit entry.
+
+    Every setting and role a league set upon this server: the four settings and the claim,
+    the two league roles, the hub, the signup channel (*signup_channel_id*, as the signup module
+    handed it back) and each team's role. The next server's `/bot init` is audited as replacing
+    nothing, so this entry is the only place in the database the values survive.
+    """
+    cursor = await db.execute(f"SELECT {', '.join(_AUDITED_SETTINGS)} FROM server_configs")
+    row = await cursor.fetchone()
+    cleared: dict[str, Any] = {
+        column: None if row is None else row[column] for column in _AUDITED_SETTINGS
+    }
+    cleared["signup_channel_id"] = signup_channel_id
+    cursor = await db.execute(
+        "SELECT team_name, role_id FROM team_role_configs ORDER BY team_name"
+    )
+    cleared["team_roles"] = {r["team_name"]: r["role_id"] for r in await cursor.fetchall()}
+    return cleared
+
+
+async def pack(
+    db_path: str,
+    scheduler_service: "SchedulerService",
+    in_memory_state_cleared: Hook | None = None,
+    queue: ChangeQueue | None = None,
+    *,
+    bot_packed: AwaitedHook,
+    actor_id: int,
+    actor_name: str,
+    now: datetime,
+) -> PackResult:
+    """Clear everything tied to this server and free the claim. Raises `PackRefused`.
+
+    The refusals are judged in the transaction that clears the server, so that no change can
+    start between the judging and the clear. *bot_packed* is the bot's hook for the modules' own
+    clear, called once on the pack's connection, after the refusals and before the claim is
+    released; the command's catch of `PackRefused` holds that hook, which is harmless because
+    `PackRefused` is raised by this module alone, so no hook's fault can be taken for it.
+
+    *in_memory_state_cleared*, the bot's hook for the clear, where given with *queue*, has its
+    in-memory league state dropped too; the command passes both, the queue being handed on to
+    the clear, and a test of the database alone need not. The two travel together: given one
+    without the other, the memory is left alone. *actor_id* and *actor_name* are the member
+    who packed, and have no default: nothing but a member's command packs the bot. *now* stamps
+    the audit entry.
+    """
+    async with get_connection(db_path) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            season = await current_season(db)
+            if season is not None:
+                raise PackRefused(*season)
+            job = await pending_job(db)
+            if job is not None:
+                raise PackRefused(job_id=job[0], stopped=job[1], lane=job[2])
+
+            # Each module clears its own rows, on this connection, in this transaction.
+            handed_back: dict[str, Any] = {}
+            for answer in await bot_packed.call(db):
+                handed_back.update(answer or {})
+            wizards = int(handed_back.get(CLEARED_WIZARDS, 0))
+
+            cleared = await _cleared_configuration(db, handed_back.get(CLEARED_SIGNUP_CHANNEL_ID))
+
+            team_roles = (await db.execute("DELETE FROM team_role_configs")).rowcount
+            queued = (await db.execute("DELETE FROM pending_messages")).rowcount
+            await db.execute("DELETE FROM season_review_prompts")
+            # No change is open (refused above), so the queue holds only history, which stays.
+
+            # The league's two roles are core's, but a role belongs to its server: the next server's
+            # `/bot init` finds none, as it finds no team role.
+            await db.execute(
+                "UPDATE server_configs SET base_role_id = NULL, driver_role_id = NULL"
+            )
+            # The hub is a channel of this server, and its panel a message in it. The
+            # panel stays where it is, its buttons refused while no server is claimed.
+            await db.execute(
+                "UPDATE server_configs SET hub_channel_id = NULL, hub_message_id = NULL"
+            )
+
+            # The message ids the bot keeps to edit its own posts.
+            await db.execute(
+                "UPDATE divisions SET lineup_message_id = NULL, calendar_message_id = NULL"
+            )
+
+            await db.execute(RELEASE_CLAIM_SQL)
+
+            await db.execute(
+                "INSERT INTO audit_entries "
+                "(actor_id, actor_name, division_id, change_type, old_value, new_value, "
+                "timestamp) VALUES (?, ?, NULL, 'BOT_PACKED', ?, ?, ?)",
+                (
+                    actor_id,
+                    actor_name,
+                    json.dumps(cleared),
+                    json.dumps({**dict.fromkeys(cleared), "team_roles": {}}),
+                    now.isoformat(),
+                ),
+            )
+        except BaseException:
+            await db.rollback()
+            raise
+        await db.commit()
+
+    jobs = scheduler_service.cancel_all(keep=KEPT_JOBS)
+    if in_memory_state_cleared is not None and queue is not None:
+        clear_in_memory_state(in_memory_state_cleared, queue=queue)
+
+    result = PackResult(
+        team_roles=team_roles, wizards=wizards, queued_messages=queued, scheduled_jobs=jobs
+    )
+    log.info("Packed: %s", result)
+    return result

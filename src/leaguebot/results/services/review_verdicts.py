@@ -79,9 +79,10 @@ from leaguebot.core.models.change import (
     StepKind,
     StepResult,
 )
-from leaguebot.core.services import lineup_posting, standing_posts
-from leaguebot.core.services.change_queue import OutcomeContext, Step, StepContext
-from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services.drivers import lineup_posting
+from leaguebot.core.services.posting import standing_posts
+from leaguebot.core.services.queue.change_types import OutcomeContext, Step, StepContext
+from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.image.services import image_verdict_banner_post
 from leaguebot.results.services import verdict_announcement_service as vas
 from leaguebot.results.services.attendance_hook import AttendanceAfterReview
@@ -116,8 +117,8 @@ def verdict_steps(
     now: Callable[[], datetime], attendance: AttendanceAfterReview
 ) -> dict[str, Step]:
     """The jobs of this module, keyed by their names, for a change type's `steps`. *now* is the
-    queue's clock, which stamps the heading's record; *attendance* the hook the builder handed
-    the change type, which the jobs use and never look up on the bot."""
+    queue's clock, which stamps the heading's record and the lineup's audit; *attendance* the hook
+    the builder handed the change type, which the jobs use and never look up on the bot."""
 
     def bound(fn: Any) -> Any:
         async def run(ctx: StepContext) -> Any:
@@ -144,6 +145,9 @@ def verdict_steps(
             db, payload["table"], int(payload["record"]["id"]),
             int(result.result["message_id"]), result.result["channel_id"],
         )
+
+    async def record_lineup(db: Any, ctx: StepContext, result: StepResult) -> None:
+        await lineup_posting.record_lineup_on(db, ctx, result, now=now())
 
     async def record_card(db: Any, ctx: StepContext, result: StepResult) -> None:
         # The banner the card stands beneath is noted as heading a sanction card, in the save that
@@ -195,7 +199,7 @@ def verdict_steps(
         ),
         REFRESH_LINEUP: Step(
             REFRESH_LINEUP, StepKind.ACT, bound(_refresh_lineup), still_due=_after_a_sanction,
-            describe=_describe_lineup, record=lineup_posting.record_lineup_on,
+            describe=_describe_lineup, record=record_lineup,
         ),
     }
 
@@ -914,7 +918,9 @@ async def _refresh_lineup(ctx: StepContext, hook: AttendanceAfterReview) -> Step
         _deletes(int(result["channel_id"]), [int(old)], "lineup")
         if old is not None and int(old) != int(result["new"]) else ()
     )
-    return StepResult(result=result, then=then)
+    return StepResult(
+        result=result, lines=lineup_posting.fallen_back_to_text_line(ctx, result), then=then,
+    )
 
 
 __all__ = [

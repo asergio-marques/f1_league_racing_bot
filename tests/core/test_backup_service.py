@@ -18,7 +18,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from leaguebot.core.services import backup_service as bs
+from leaguebot.core.services.upkeep import backup_service as bs
+
+#: The time a lock is handed, as the command hands it the change queue's clock.
+NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
 
 
 def _database(path: Path, *, wal: bool = True, rows: int = 3) -> None:
@@ -339,7 +342,7 @@ def test_a_copy_or_write_that_fails_is_a_fault(tmp_path, monkeypatch, fault):
 def _locked(tmp_path: Path) -> None:
     live = tmp_path / "bot.db"
     _database(live)
-    bs.set_lock(live, who="Manager")
+    bs.set_lock(live, who="Manager", now=NOW)
     bs.save(live, tmp_path / "scheduler.db")
 
 
@@ -390,7 +393,7 @@ def test_a_locked_backup_refuses_a_save(tmp_path):
     _database(live, rows=1)
     bs.save(live, tmp_path / "scheduler.db")
     before = _rows(bs.backup_path(live))
-    bs.set_lock(live, who="Manager")
+    bs.set_lock(live, who="Manager", now=NOW)
 
     _add_round(live, "should not reach the backup")
     with pytest.raises(bs.BackupError, match="locked"):
@@ -404,9 +407,9 @@ def test_the_lock_toggles(tmp_path):
     locked one by accident."""
     live = tmp_path / "bot.db"
 
-    assert bs.set_lock(live, who="Manager") is True
+    assert bs.set_lock(live, who="Manager", now=NOW) is True
     assert bs.is_locked(live)
-    assert bs.set_lock(live, who="Manager") is False
+    assert bs.set_lock(live, who="Manager", now=NOW) is False
     assert not bs.is_locked(live)
 
 
@@ -693,7 +696,7 @@ def test_status_reports_the_lock(tmp_path):
     live = tmp_path / "bot.db"
     _database(live)
     bs.save(live, tmp_path / "scheduler.db")
-    bs.set_lock(live, who="Manager")
+    bs.set_lock(live, who="Manager", now=NOW)
 
     reported = bs.state(live)
 
@@ -752,7 +755,7 @@ def test_discard_deletes_both_backups_and_the_lock(tmp_path):
     _database(live)
     _database(jobs, wal=False, rows=1)
     bs.save(live, jobs)
-    bs.set_lock(live, who="Manager")
+    bs.set_lock(live, who="Manager", now=NOW)
 
     assert bs.discard(live, jobs) is True
 
@@ -762,16 +765,13 @@ def test_discard_deletes_both_backups_and_the_lock(tmp_path):
     assert live.is_file(), "the live database is untouched"
 
 
-@pytest.mark.parametrize(
-    "raise_on_failure", [False, True], ids=["told", "asked to raise"]
-)
-def test_discard_with_nothing_saved_says_so(tmp_path, raise_on_failure):
-    """Nothing was saved: the discard says there was nothing. Asked to raise, it still raises
-    nothing, so a Retry after a part-done discard finishes quietly."""
+def test_discard_with_nothing_saved_says_so(tmp_path):
+    """Nothing was saved: the discard says there was nothing, and raises nothing, so a Retry
+    after a part-done discard finishes quietly."""
     live, jobs = tmp_path / "bot.db", tmp_path / "scheduler.db"
     _database(live)
 
-    assert bs.discard(live, jobs, raise_on_failure=raise_on_failure) is False
+    assert bs.discard(live, jobs) is False
 
 
 def test_discard_leaves_a_pre_restore_copy_alone(tmp_path):
@@ -786,9 +786,8 @@ def test_discard_leaves_a_pre_restore_copy_alone(tmp_path):
     assert bs.prerestore_path(live).read_bytes() == b"kept"
 
 
-# A season's completion deletes the saved state as a job of its own on the change queue (#439,
-# slice 5), and a job that fails must say so: asked to raise, the discard still tries every file,
-# then raises the fault it met, so the queue stops at it and a Retry finishes what is left.
+# The discard is a job on the change queue, and a job that fails must say so: it still tries every
+# file, then raises the fault it met, so the queue stops at it and a Retry finishes what is left.
 
 
 def test_a_raising_discard_raises_after_trying_every_file(tmp_path, monkeypatch):
@@ -798,7 +797,7 @@ def test_a_raising_discard_raises_after_trying_every_file(tmp_path, monkeypatch)
     _database(live)
     _database(jobs, wal=False, rows=1)
     bs.save(live, jobs)
-    bs.set_lock(live, who="Manager")
+    bs.set_lock(live, who="Manager", now=NOW)
     stuck = bs.backup_path(live)
     unlink = Path.unlink
 
@@ -810,7 +809,7 @@ def test_a_raising_discard_raises_after_trying_every_file(tmp_path, monkeypatch)
     monkeypatch.setattr(Path, "unlink", _refusing)
 
     with pytest.raises(OSError, match="in use"):
-        bs.discard(live, jobs, raise_on_failure=True)
+        bs.discard(live, jobs)
 
     assert Path(stuck).exists()
     assert not bs.backup_path(jobs).exists()

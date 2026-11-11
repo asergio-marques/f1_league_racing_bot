@@ -1,8 +1,9 @@
 """The season-review approve button, swept away by a restart.
 
-The button expires five minutes after `/season placements-review` posts it. A bot restarted inside
-that window leaves a public review offering a button whose five minutes nothing is counting, and
-nothing else would ever clear it.
+The button expires five minutes after `/season placements-review` posts it, by a persistent
+one-off `review_expiry` timer with no lateness limit. The scheduler is held paused until start-up
+has ended, so after a restart the take-down below is always asked first, and a timer that fires
+late finds the row gone or already being taken down.
 
 Every row surviving to startup is expired by definition: the bot was down, so the five minutes
 cannot have been served. Since #439 (slice 6b, C98) the restart's sweep deletes and posts nothing
@@ -12,7 +13,7 @@ reviewer, record the lapse and drop the row. A message or a channel already gone
 a deletion Discord refuses stops the queue, the row standing until Retry or Discard, rather than
 being lost quietly.
 
-The league: `league_double`'s, its review channel 700 found on the league's server, Alex (4242) the
+The league: `league_bot`'s, its review channel 700 found on the league's server, Alex (4242) the
 reviewer of season 1's placements.
 """
 from __future__ import annotations
@@ -25,25 +26,22 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-
-# `__main__.py` reads the token at import time and raises without it; `tests/conftest.py` gives it
-# a placeholder before collection, so every file importing `bot` can do so at module level.
-from leaguebot.__main__ import _recover_expired_review_prompts
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.change import ChangeOrigin
 from tests.support.change_queue import (
+    Clock,
     INTERACTION_CHANNEL_ID,
     LOG_CHANNEL_ID,
     SERVER_ID,
-    Clock,
-    attach_queue,
     change_rows,
     history_channel,
     http_error,
-    league_double,
+    league_bot,
+    league_queue,
     post_in,
     run_queue,
     seed_server,
+    set_user,
     stopped_job,
 )
 from tests.support.review_prompts import store_review_prompt
@@ -109,11 +107,11 @@ async def league(tmp_path):
     db_path = str(tmp_path / "prompts.db")
     await run_migrations(db_path)
     await seed_server(db_path)
-    bot = league_double(db_path)
-    bot.user = BOT_USER
+    bot = await league_bot(db_path)
+    set_user(bot, BOT_USER)
     channel = _review_channel()
     _server(bot, channel)
-    attach_queue(bot, db_path, now=Clock(NOW))
+    league_queue(bot, db_path, now=Clock(NOW))
     return SimpleNamespace(db_path=db_path, bot=bot, channel=channel)
 
 
@@ -150,13 +148,23 @@ async def _take_downs(env: Any) -> list[dict[str, Any]]:
     return [row for row in await change_rows(env.db_path) if row["kind"] == TAKE_DOWN]
 
 
+async def _sweep(bot: Any) -> None:
+    """The restart's take-down of the standing reviews, as the builder's start-up step runs it:
+    core's season review handed the factory of the reviews' views the builder makes."""
+    from leaguebot.__main__ import _approve_view_for
+    from leaguebot.core.services.seasons.season_review_changes import recover_expired_review_prompts
+
+    await recover_expired_review_prompts(
+        bot, approve_view=_approve_view_for(bot), queue=bot.change_queue)
+
+
 async def _restart(env: Any) -> None:
     """The bot starts: the sweep runs, deleting and posting nothing itself and asking one
     take-down of the queue for each review standing; then the queue runs."""
     standing = len(await _rows(env.db_path))
     asked = len(await _take_downs(env))
     deleted, sent = len(env.channel.deleted), len(env.channel.sent)
-    await _recover_expired_review_prompts(env.bot)
+    await _sweep(env.bot)
     assert (len(env.channel.deleted), len(env.channel.sent)) == (deleted, sent)
     assert len(await _take_downs(env)) - asked == standing
     await run_queue(env.bot)
@@ -281,13 +289,6 @@ async def test_nothing_standing_does_nothing(league):
     assert league.channel.sent == []
 
 
-async def test_an_unreadable_database_is_survived():
-    """A sweep that raises would stop the bot finishing its startup."""
-    bot = MagicMock()
-    bot.db_path = "/nonexistent/nowhere.db"
-    await _recover_expired_review_prompts(bot)
-
-
 # ── #482: what the sweep records, and one row per standing prompt ─────────────────────────
 
 
@@ -400,7 +401,7 @@ async def test_each_standing_review_is_routed_under_its_own_button(league, revie
     await _store(league, question.id, review=review, verb=verb)
     league.bot.add_view = MagicMock()
 
-    await _recover_expired_review_prompts(league.bot)
+    await _sweep(league.bot)
 
     league.bot.add_view.assert_called_once()
     routed = league.bot.add_view.call_args.args[0]
@@ -411,3 +412,28 @@ async def test_each_standing_review_is_routed_under_its_own_button(league, revie
         assert "season_review:confirm_placements" not in ids
     else:
         assert ids == [custom_id]
+
+
+@pytest.mark.parametrize(("kind", "custom_id"), [
+    pytest.param("approve", "season_review:approve", id="approval"),
+    pytest.param("mid_season", "season_review:confirm_placements", id="mid-season placements"),
+    pytest.param("configuration", "season_review:confirm_configuration", id="configuration"),
+])
+async def test_the_view_factory_makes_each_review_s_view_with_no_season_cog(
+    league, monkeypatch, kind, custom_id,
+):
+    """No season cog is loaded on the bot, and the season cog's module cannot be imported. The
+    builder's factory of the reviews' views is asked for a view of each kind, for Alex's review:
+    it makes one, carrying the review's own button and no other, without importing or finding
+    the season cog."""
+    import sys
+
+    from leaguebot.__main__ import _approve_view_for
+
+    league.bot.get_cog = MagicMock(return_value=None)
+    monkeypatch.setitem(sys.modules, "leaguebot.core.cogs.season_cog", None)
+
+    view = _approve_view_for(league.bot)({"view": kind, "reviewer_id": REVIEWER_ID})
+
+    assert [item.custom_id for item in view.children] == [custom_id]
+    league.bot.get_cog.assert_not_called()

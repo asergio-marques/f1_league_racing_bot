@@ -23,7 +23,7 @@ class ServerConfig:
     #: nationality without disturbing the setting real signups run on. On by default, as
     #: the setting it parallels is.
     test_mode_nationality_required: bool = field(default=True)
-    #: The league's two roles (issue #276). The **base role** is held by the league's
+    #: The league's two roles. The **base role** is held by the league's
     #: members, and the **driver role** by its drivers — granted when a signup is approved and
     #: revoked when the driver returns to Not Signed Up. Both are the league's rather than
     #: the signup module's, so disabling signup keeps them; neither is part of the claim, and
@@ -31,7 +31,7 @@ class ServerConfig:
     #: sets one: they are required only while the signup module is enabled.
     base_role_id: int | None = None
     driver_role_id: int | None = None
-    #: The hub (issue #279): the channel every member may use, set by `/bot hub-channel`, and
+    #: The hub: the channel every member may use, set by `/bot hub-channel`, and
     #: the panel the bot keeps there. ``None`` until set; a pack clears both.
     hub_channel_id: int | None = None
     hub_message_id: int | None = None

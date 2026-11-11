@@ -21,11 +21,13 @@ async def db_path(tmp_path):
     return path
 
 
-async def _add_default_team(db_path: str, name: str, is_reserve: int = 0) -> None:
+async def _add_default_team(db_path: str, name: str) -> None:
+    """Team *name* on the server's list: the Reserve team is the new database's own."""
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) VALUES (?, ?, 2, ?)",
-            (name, name, is_reserve),
+            "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
+            "VALUES (?, ?, 2, 0)",
+            (name, name),
         )
         await db.commit()
 
@@ -33,7 +35,7 @@ async def _add_default_team(db_path: str, name: str, is_reserve: int = 0) -> Non
 async def _add_role_config(db_path: str, team_name: str, role_id: int) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)",
+            "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES (?, ?, '2031-03-04T05:06:07+00:00')",
             (team_name, role_id),
         )
         await db.commit()
@@ -72,8 +74,8 @@ async def _add_team_instance(db_path: str, season_id: int, team_name: str, is_re
 
 class TestGetTeamsWithRoles:
     async def test_an_empty_list_reads_as_the_reserve_team_alone(self, db_path):
-        """The Reserve team always exists, so a read restores it (issue #146)."""
-        from leaguebot.core.services.team_service import TeamService
+        """The Reserve team always exists: a new database holds it (issue #146)."""
+        from leaguebot.core.services.drivers.team_service import TeamService
         svc = TeamService(db_path)
         result = await svc.get_teams_with_roles()
         assert [r["name"] for r in result] == ["Reserve"]
@@ -81,7 +83,7 @@ class TestGetTeamsWithRoles:
     async def test_teams_without_roles_have_none_role_id(self, db_path):
         await _add_default_team(db_path, "Alpine")
         await _add_default_team(db_path, "Ferrari")
-        from leaguebot.core.services.team_service import TeamService
+        from leaguebot.core.services.drivers.team_service import TeamService
         svc = TeamService(db_path)
         result = await svc.get_teams_with_roles()
         names = [r["name"] for r in result]
@@ -92,7 +94,7 @@ class TestGetTeamsWithRoles:
     async def test_teams_with_roles_have_correct_role_id(self, db_path):
         await _add_default_team(db_path, "Mercedes")
         await _add_role_config(db_path, "Mercedes", 999)
-        from leaguebot.core.services.team_service import TeamService
+        from leaguebot.core.services.drivers.team_service import TeamService
         svc = TeamService(db_path)
         result = await svc.get_teams_with_roles()
         assert [r["name"] for r in result] == ["Mercedes", "Reserve"]
@@ -102,7 +104,7 @@ class TestGetTeamsWithRoles:
         await _add_default_team(db_path, "Alpine")
         await _add_default_team(db_path, "Ferrari")
         await _add_role_config(db_path, "Ferrari", 777)
-        from leaguebot.core.services.team_service import TeamService
+        from leaguebot.core.services.drivers.team_service import TeamService
         svc = TeamService(db_path)
         result = await svc.get_teams_with_roles()
         by_name = {r["name"]: r for r in result}
@@ -111,8 +113,7 @@ class TestGetTeamsWithRoles:
 
     async def test_reserve_team_included_last(self, db_path):
         await _add_default_team(db_path, "Alpine")
-        await _add_default_team(db_path, "Reserve", is_reserve=1)
-        from leaguebot.core.services.team_service import TeamService
+        from leaguebot.core.services.drivers.team_service import TeamService
         svc = TeamService(db_path)
         result = await svc.get_teams_with_roles()
         assert result[-1]["name"] == "Reserve"
@@ -126,7 +127,7 @@ class TestGetTeamsWithRoles:
 class TestGetSetupSeasonTeamNames:
     async def test_empty_season_returns_empty_set(self, db_path):
         season_id = await _add_season_with_divisions(db_path)
-        from leaguebot.core.services.team_service import TeamService
+        from leaguebot.core.services.drivers.team_service import TeamService
         svc = TeamService(db_path)
         result = await svc.get_setup_season_team_names(season_id)
         assert result == set()
@@ -135,7 +136,7 @@ class TestGetSetupSeasonTeamNames:
         season_id = await _add_season_with_divisions(db_path)
         await _add_team_instance(db_path, season_id, "Ferrari")
         await _add_team_instance(db_path, season_id, "Alpine")
-        from leaguebot.core.services.team_service import TeamService
+        from leaguebot.core.services.drivers.team_service import TeamService
         svc = TeamService(db_path)
         result = await svc.get_setup_season_team_names(season_id)
         assert result == {"Ferrari", "Alpine"}
@@ -144,7 +145,7 @@ class TestGetSetupSeasonTeamNames:
         season_id = await _add_season_with_divisions(db_path)
         await _add_team_instance(db_path, season_id, "Ferrari")
         await _add_team_instance(db_path, season_id, "Reserve", is_reserve=1)
-        from leaguebot.core.services.team_service import TeamService
+        from leaguebot.core.services.drivers.team_service import TeamService
         svc = TeamService(db_path)
         result = await svc.get_setup_season_team_names(season_id)
         assert "Reserve" not in result
@@ -153,7 +154,7 @@ class TestGetSetupSeasonTeamNames:
     async def test_deduplicates_across_multiple_divisions(self, db_path):
         season_id = await _add_season_with_divisions(db_path, div_count=2)
         await _add_team_instance(db_path, season_id, "Ferrari")
-        from leaguebot.core.services.team_service import TeamService
+        from leaguebot.core.services.drivers.team_service import TeamService
         svc = TeamService(db_path)
         result = await svc.get_setup_season_team_names(season_id)
         # Ferrari appears in both divisions but should only appear once in set

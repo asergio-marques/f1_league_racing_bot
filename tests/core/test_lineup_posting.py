@@ -1,11 +1,14 @@
 """A lineup asked of the change queue (#439, slice 6): a command that changes the drivers makes
 its own change, then asks the queue, as the bot's and repeatably, to post each lineup it touched
-(`lineup.post`); its reply is unchanged and the post follows on the queue.
+(`lineup.post`); its reply is unchanged and the post follows on the queue. `/driver move`,
+`release` and `sack` ask no lineup: each is a change on the queue that posts its lineups as steps
+of its own (#283), pinned in `test_driver_move.py`, `test_driver_release.py` and
+`test_sack_driver.py`. `/driver assign` and `unassign` ask none either: each is a change on the
+queue whose placement is never confirmed, so no lineup is owed (`test_driver_assign.py`,
+`test_driver_unassign.py`).
 
 The league is `ongoing_league`'s: season 3 being raced, Pro (21) with its lineup channel 600 and Am
-(22) with 700, images off. Where a command is run, its cog stands on a bot whose services are
-stubbed to say which divisions' lineups the change touched, and whose queue and database are the
-league's, so the asks are real and the queue run posts the lineups.
+(22) with 700, images off.
 """
 from __future__ import annotations
 
@@ -18,6 +21,7 @@ import pytest
 
 from leaguebot.core.models.change import ChangeOrigin
 from tests.support.change_queue import (
+    acknowledgement,
     change_rows,
     discard_job,
     http_error,
@@ -27,18 +31,19 @@ from tests.support.change_queue import (
     run_queue,
     step_rows,
     stopped_job,
+    updated_reply,
 )
-from tests.support.season_league import AM, DIVISIONS, PRO, ongoing_league
+from tests.support.season_league import (
+    AM,
+    DIVISIONS,
+    PRO,
+    ongoing_league,
+    run_division_channel_command,
+)
 
 
 KIND = "lineup.post"
 LINEUP = {PRO: DIVISIONS[PRO][3].lineup, AM: DIVISIONS[AM][3].lineup}
-
-
-async def _lineup_asks(league: Any) -> list[tuple[int, str]]:
-    """Each `lineup.post` asked, in order: its division and its origin."""
-    return [(json.loads(row["payload"])["division_id"], row["origin"])
-            for row in await change_rows(league.db_path) if row["kind"] == KIND]
 
 
 async def _said(league: Any) -> str:
@@ -47,7 +52,7 @@ async def _said(league: Any) -> str:
 
 
 async def _ask(league: Any, *divisions: int) -> None:
-    from leaguebot.core.services.lineup_posting import ask_lineup_posts
+    from leaguebot.core.services.drivers.lineup_posting import ask_lineup_posts
 
     await ask_lineup_posts(league.bot.change_queue, league.db_path, list(divisions))
 
@@ -65,7 +70,7 @@ async def _stop_the_queue(league: Any) -> None:
     """A change of the bot's, asked before anything else, whose job Discord refuses: the queue
     stops at it, and whatever is asked after it waits."""
     from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord, StepKind, Verdict
-    from leaguebot.core.services.change_queue import ChangeType, Step
+    from leaguebot.core.services.queue.change_types import ChangeType, Step
 
     async def _refused(_ctx: Any) -> Any:
         raise StepFailedOnDiscord("Missing Access")
@@ -82,89 +87,6 @@ async def _stop_the_queue(league: Any) -> None:
     await league.bot.change_queue.ask("blocker", {}, what="the blocker", origin=ChangeOrigin.BOT)
     await run_queue(league.bot)
     assert (await stopped_job(league.db_path))["name"] == "block"
-
-
-# ── The commands ask ───────────────────────────────────────────────────────────────
-
-
-async def _assign(league: Any, lineups: list[int]) -> Any:
-    from tests.core.test_driver_cog import _assign, _interaction, _make_cog, _season
-
-    cog = _make_cog(season=_season())
-    cog.bot.placement_service.assign_driver.return_value = {
-        "team_name": "Alpha", "division_name": "Pro", "lineups": lineups,
-    }
-    return cog, _interaction(), _assign
-
-
-async def _unassign(league: Any, lineups: list[int]) -> Any:
-    from tests.core.test_driver_cog import _interaction, _make_cog, _season, _unassign
-
-    cog = _make_cog(season=_season())
-    cog.bot.placement_service.unassign_driver.return_value = {
-        "team_name": "Alpha", "division_name": "Pro", "lineups": lineups,
-    }
-    return cog, _interaction(), _unassign
-
-
-async def _sack(league: Any, lineups: list[int]) -> Any:
-    from tests.core.test_driver_cog import _interaction, _make_cog, _sack, _season
-
-    cog = _make_cog(season=_season())
-    cog.bot.placement_service.sack_driver.return_value = lineups
-    return cog, _interaction(), _sack
-
-
-async def _move(league: Any, lineups: list[int]) -> Any:
-    from tests.core.test_driver_ongoing_commands import _cog, _interaction, _move
-
-    cog = _cog()
-    cog.bot.placement_service.move_driver.return_value = {
-        "from_division": "Am", "to_division": "Pro", "from_team": "Alpha", "to_team": "Reserve",
-        "lineups": lineups,
-    }
-    return cog, _interaction(), lambda c, i: _move(c, i, from_division="Pro",
-                                                   to_division="Academy")
-
-
-async def _release(league: Any, lineups: list[int]) -> Any:
-    from tests.core.test_driver_ongoing_commands import _cog, _interaction, _release
-
-    cog = _cog()
-    cog.bot.placement_service.release_driver.return_value = {
-        "division_name": "Pro", "lineups": lineups,
-    }
-    return cog, _interaction(), _release
-
-
-@pytest.mark.parametrize("command, lineups", [
-    pytest.param(_assign, [PRO], id="assign"),
-    pytest.param(_unassign, [PRO], id="unassign"),
-    pytest.param(_move, [AM, PRO], id="move to another division"),
-    pytest.param(_release, [PRO], id="release"),
-    pytest.param(_sack, [PRO], id="sack"),
-])
-async def test_a_driver_command_asks_the_queue_for_each_lineup_it_touched(tmp_path, command,
-                                                                         lineups):
-    league = await ongoing_league(tmp_path)
-    cog, interaction, run = await command(league, lineups)
-    cog.bot.db_path = league.db_path
-    cog.bot.change_queue = league.bot.change_queue
-    before = {division: len(league.texts(LINEUP[division])) for division in lineups}
-
-    await run(cog, interaction)
-
-    assert await _lineup_asks(league) == [(division, "BOT") for division in lineups]
-    assert interaction.followup.send.await_count + interaction.response.send_message.await_count
-    cog.bot.output_router.post_log.assert_awaited_once()
-    for division in lineups:
-        assert len(league.texts(LINEUP[division])) == before[division]
-
-    await run_queue(league.bot)
-
-    assert await stopped_job(league.db_path) is None
-    for division in lineups:
-        assert len(league.texts(LINEUP[division])) == before[division] + 1
 
 
 # ── What the queue does with the ask ───────────────────────────────────────────────
@@ -197,6 +119,44 @@ async def test_two_commands_in_a_row_each_ask_for_the_lineup(tmp_path):
 
     rows = [row for row in await change_rows(league.db_path) if row["kind"] == KIND]
     assert [row["state"] for row in rows] == ["QUEUED", "QUEUED"]
+
+
+async def test_a_stopped_lineup_lands_once_the_lineup_channel_is_set_and_retried(tmp_path):
+    """Set the channel, then Retry: the remedy the stop notice leads a manager to, end to end.
+
+    Pro's lineup channel is unset, and Pro's lineup stops the queue at its post, its notice
+    naming `/division lineup-channel`. Alex runs `/division lineup-channel` for Pro with channel
+    600 and is acknowledged; the queue runs. The setting does not wait behind the stopped
+    lineup: it runs past it, saves 600 as Pro's lineup channel and tells Alex the channel was
+    set, while the lineup still stops the league's lane. Alex presses Retry: the lineup lands
+    once in 600, and nothing stops the queue."""
+    from leaguebot.core.cogs.division_cog import DivisionCog
+
+    league = await ongoing_league(tmp_path)
+    await league.write("UPDATE divisions SET lineup_channel_id = NULL WHERE id = ?", PRO)
+    before = len(league.texts(LINEUP[PRO]))
+    await _ask(league, PRO)
+    await run_queue(league.bot)
+    assert (await stopped_job(league.db_path))["name"] == "post_lineup"
+    assert "`/division lineup-channel`" in await _said(league)
+
+    manager = await run_division_channel_command(
+        league, DivisionCog, DivisionCog.division_lineup_channel, "division lineup-channel",
+        LINEUP[PRO],
+    )
+    assert acknowledgement(manager).startswith("⏳ ")
+    await run_queue(league.bot)
+
+    assert updated_reply(manager) == f"✅ Lineup channel for **Pro** set to <#{LINEUP[PRO]}>."
+    [row] = await league.rows("SELECT lineup_channel_id FROM divisions WHERE id = ?", PRO)
+    assert int(row["lineup_channel_id"]) == LINEUP[PRO]
+    assert (await stopped_job(league.db_path))["name"] == "post_lineup", (
+        "setting the channel ran the job"
+    )
+    await retry_job(league.bot)
+
+    assert len(league.texts(LINEUP[PRO])) == before + 1
+    assert await stopped_job(league.db_path) is None
 
 
 async def test_a_lineup_for_a_division_with_no_lineup_channel_stops_the_queue_naming_the_command(
@@ -276,25 +236,19 @@ async def _lineup_id(league: Any) -> Any:
 
 async def _lineup_audits(league: Any) -> list[dict[str, Any]]:
     return await league.rows(
-        "SELECT actor_name, new_value FROM audit_entries "
+        "SELECT actor_name, new_value, timestamp FROM audit_entries "
         "WHERE change_type = 'SIGNUP_LINEUP_POSTED' AND division_id = ?", PRO,
     )
 
 
-def _pictures_on(monkeypatch: Any, tmp_path: Any) -> None:
-    """The lineup is drawn as a picture: the image module's lineup aspect on, and its render
-    giving a PNG."""
-    from types import SimpleNamespace
+def _pictures_on(league: Any, monkeypatch: Any, tmp_path: Any) -> Any:
+    """The lineup is drawn as a picture: the drawing the builder handed placement answers that the
+    league draws its lineup, and draws it as a PNG. Gives the stand-in drawing."""
+    from tests.support.lineup_drawing import LineupDrawingStub, draw_lineups_with
 
     png = tmp_path / "lineup.png"
     png.write_bytes(b"\x89PNG\r\n\x1a\n")
-    monkeypatch.setattr("leaguebot.image.services.image_lineup_post.lineup_enabled",
-                        AsyncMock(return_value=True))
-    monkeypatch.setattr(
-        "leaguebot.image.services.image_lineup_post.render_png",
-        AsyncMock(return_value=SimpleNamespace(rejects=False, posts_image=True,
-                                               png_paths=[png], notices=[], problem=None)),
-    )
+    return draw_lineups_with(league.bot, monkeypatch, LineupDrawingStub(picture=png))
 
 
 async def test_the_text_lineup_is_posted_before_the_old_one_is_deleted(tmp_path):
@@ -315,6 +269,7 @@ async def test_the_text_lineup_is_posted_before_the_old_one_is_deleted(tmp_path)
     names = [job["name"] for job in await _lineup_jobs(league)]
     assert names == ["post_lineup", "delete_replaced"]
     assert await _lineup_id(league) == new
+    assert "Lineup posted as text" not in await _said(league), "the text is no fallback here"
 
 
 async def test_a_refused_text_lineup_leaves_the_old_lineup_standing(tmp_path):
@@ -338,7 +293,7 @@ async def test_a_lineup_picture_is_posted_before_the_old_lineup_is_deleted_by_a_
 ):
     league = await ongoing_league(tmp_path)
     await _old_lineup_standing(league)
-    _pictures_on(monkeypatch, tmp_path)
+    _pictures_on(league, monkeypatch, tmp_path)
 
     await _ask(league, PRO)
     await _run_lineup_through(league, "post_lineup")
@@ -356,15 +311,223 @@ async def test_a_lineup_picture_is_posted_before_the_old_lineup_is_deleted_by_a_
     ]
 
 
+async def test_a_refused_lineup_picture_is_posted_as_text_and_stops_nothing(
+    tmp_path, monkeypatch,
+):
+    """Pro's lineup stands as 6100, and the drawing the builder handed draws Pro's lineup as a
+    PNG; Pro's lineup channel refuses every send carrying a picture and takes the text. The
+    lineup asked for is posted as text in the same try: the post job is done at its first try,
+    the queue does not stop, no picture stands in the channel, the old lineup is deleted by the
+    job after it, nothing records the refusal in the log channel, and the PNG is released."""
+    from tests.support.lineup_drawing import LineupDrawingStub, draw_lineups_with
+    from tests.support.season_league import refuses_pictures
+
+    league = await ongoing_league(tmp_path)
+    await _old_lineup_standing(league)
+    png = tmp_path / "lineup.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    drawing = draw_lineups_with(league.bot, monkeypatch, LineupDrawingStub(picture=png))
+    channel = league.channel(LINEUP[PRO])
+    channel.fail_when = refuses_pictures
+
+    await _ask(league, PRO)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert any(call.kwargs.get("file") for call in channel.send.await_args_list), \
+        "no picture was sent to be refused"
+    assert all(not files for files in channel.files), "a picture was posted"
+    [(sent, new)] = [event for event in _lineup_events(league) if event[0] == "send"]
+    assert ("delete", OLD_LINEUP) in _lineup_events(league)
+    assert await _lineup_id(league) == new
+    post = [job for job in await _lineup_jobs(league) if job["name"] == "post_lineup"]
+    assert [(bool(job["done_at"]), job["tries"]) for job in post] == [(True, 0)]
+    assert "Lineup posted as text" not in await _said(league)
+    assert drawing.discarded == [png]
+
+
+#: Why Pro's lineup could not be drawn, where its drawing fails.
+PROBLEM = "the template has no rows"
+#: The posting job's own line where the lineup it posted fell back to text, after the member and
+#: the change it ran for: the division, the problem, and what puts it right (the owner's decision
+#: on #283).
+POSTED_AS_TEXT = (
+    "{change} | Lineup posted as text\n"
+    "  division: {division}\n"
+    "  problem: {problem}\n"
+    "  to put it right: fix the lineup template; the picture is posted with the next change to "
+    "the division's drivers"
+)
+
+
+async def _lineup_asked(tmp_path: Any, monkeypatch: Any, drawing: Any) -> tuple[Any, None]:
+    """Pro's lineup asked of the queue, as a driver command asks it, with *drawing* the one the
+    builder handed placement. Returns the league, and no reply, the bot's change having none."""
+    from tests.support.lineup_drawing import draw_lineups_with
+
+    league = await ongoing_league(tmp_path)
+    draw_lineups_with(league.bot, monkeypatch, drawing)
+    await _ask(league, PRO)
+    return league, None
+
+
+async def _review_approved(tmp_path: Any, monkeypatch: Any, drawing: Any) -> tuple[Any, Any]:
+    """Round 3's penalty review in Pro, attendance on with its real hook, the real placement
+    service and the real lineup poster handed *drawing* (roles granted and revoked by doubles on
+    the real team-role service), Pro's lineup channel and attendance channel set. Pro sets an
+    autoreserve threshold of one point and has a Reserve team with a free seat; Lewis, raced round
+    4 without an RSVP, is on the threshold. Alex approves round 3's reports with a penalty for
+    Lewis: he is moved to the Reserve team, and the review's own job posts Pro's lineup. Returns
+    the league and Alex's interaction."""
+    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.core.services.drivers.lineup_posting import LineupPoster
+    from leaguebot.core.services.drivers.placement_service import PlacementService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
+    from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService
+    from tests.results.test_report_approval_change import _approve, _lewis_owed_an_autoreserve
+    from tests.support.change_queue import set_user
+    from tests.support.review_league import DIVISION_ID, LEWIS, channel, penalty, review_league
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    # The drawing the capacity guards and the lineup poster are handed: the guards finding room,
+    # and the lineup *drawing*'s.
+    handed = SimpleNamespace(
+        reserve_capacity_problem=AsyncMock(return_value=None),
+        sheet_capacity_problem=AsyncMock(return_value=None),
+        standings_capacity_problem=AsyncMock(return_value=None),
+        declared_capacity_problem=AsyncMock(return_value=None),
+        lineup_wanted=drawing.lineup_wanted,
+        draw_lineup=drawing.draw_lineup,
+        discard_picture=drawing.discard_picture,
+    )
+
+    def _hook(bot: Any, db_path: str) -> Any:
+        roles = TeamRoleService(db_path)
+        roles._grant_roles = AsyncMock()
+        roles._revoke_roles = AsyncMock()
+        roles.grant_roles = AsyncMock()
+        roles.revoke_roles = AsyncMock()
+        placement = PlacementService(
+            db_path, capacity=TemplateCapacityService(db_path, drawing=handed), roles=roles
+        )
+        return AttendanceAfterReview(
+            bot, placement, roles=roles, lineups=LineupPoster(db_path, drawing=handed)
+        )
+
+    league = await review_league(tmp_path, attendance=True, attendance_hook=_hook)
+    await _lewis_owed_an_autoreserve(league)
+    for channel_id in (REVIEW_ATTENDANCE, REVIEW_LINEUP):
+        league.channels[channel_id] = channel(channel_id, league.events)
+        league.channels[channel_id].guild = league.guild
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, attendance_channel_id) "
+            "VALUES (?, ?)",
+            (DIVISION_ID, str(REVIEW_ATTENDANCE)),
+        )
+        await db.execute(
+            "UPDATE divisions SET lineup_channel_id = ? WHERE id = ?", (REVIEW_LINEUP, DIVISION_ID)
+        )
+        await db.commit()
+    set_user(league.bot, MagicMock(id=9000))
+    league.bot.user.__str__.return_value = "LeagueBot"
+    return league, await _approve(league, staged=[penalty(LEWIS)])
+
+
+#: Pro's attendance and lineup channels in the review's league.
+REVIEW_ATTENDANCE, REVIEW_LINEUP = 707, 708
+
+
+async def _placements_approved(tmp_path: Any, monkeypatch: Any, drawing: Any) -> tuple[Any, Any]:
+    """Season 3's placements approved with ✅ Approve on `/season placements-review` by the admin
+    (77), with *drawing* the one the builder handed placement: the approval's own job posts Pro's
+    and Am's lineups. Returns the league and the admin's press."""
+    from tests.support.lineup_drawing import draw_lineups_with
+    from tests.support.season_league import press_approve, season_league
+
+    league = await season_league(tmp_path, monkeypatch=monkeypatch)
+    draw_lineups_with(league.bot, monkeypatch, drawing)
+    press = await press_approve(league)
+    assert not league.errors, league.errors
+    return league, press
+
+
+async def _placements_confirmed(tmp_path: Any, monkeypatch: Any, drawing: Any) -> tuple[Any, Any]:
+    """Season 3 ongoing and placing drivers mid-season, Max (Pro) and Charles (Am) placed and not
+    yet committed, with *drawing* the one the builder handed placement; the admin (77) presses ✅
+    Confirm placements on a mid-season `/season placements-review`: the confirmation's own job
+    posts Pro's and Am's lineups. Returns the league and the admin's press."""
+    from tests.support.lineup_drawing import draw_lineups_with
+    from tests.support.season_league import placing_league, post_mid_season_review, press_approve
+
+    league = await placing_league(tmp_path, monkeypatch=monkeypatch)
+    draw_lineups_with(league.bot, monkeypatch, drawing)
+    press = await press_approve(league, await post_mid_season_review(league))
+    assert not league.errors, league.errors
+    return league, press
+
+
+@pytest.mark.parametrize(("start", "member", "change", "divisions"), [
+    pytest.param(_lineup_asked, "the bot", "posting the lineup of **Pro**", ("Pro",),
+                 id="a lineup asked"),
+    pytest.param(_review_approved, "Alex (`<@{member_id}>`)",
+                 "✅ Approve on round 3's penalty review", ("Pro",), id="a review's sanction"),
+    pytest.param(_placements_approved, "Admin (`<@{admin_id}>`)",
+                 "the ✅ Approve button of `/season placements-review`", ("Pro", "Am"),
+                 id="the placements approved"),
+    pytest.param(_placements_confirmed, "Admin (`<@{admin_id}>`)",
+                 "the ✅ Confirm placements button of `/season placements-review`",
+                 ("Pro", "Am"), id="the placements confirmed mid-season"),
+])
+async def test_a_lineup_fallen_back_to_text_is_recorded_by_every_change_that_posts_it(
+    tmp_path, monkeypatch, start, member, change, divisions,
+):
+    """Each change that posts a lineup, where the drawing the builder handed hands back the
+    problem "the template has no rows" and the text stands in: each lineup it posts is posted as
+    text, the queue does not stop, and the log channel names the problem once for each division,
+    in that lineup's posting job's own "Lineup posted as text" line, opening with the member and
+    the change it ran for, as every line does, naming the division and saying what puts it right. No reply names the problem or a
+    lineup posted as text."""
+    from tests.support.change_queue import MEMBER_ID
+    from tests.support.lineup_drawing import LineupDrawingStub
+    from tests.support.season_league import ADMIN_ID
+
+    drawing = LineupDrawingStub(problem=PROBLEM)
+    league, asked = await start(tmp_path, monkeypatch, drawing)
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert len(drawing.drawn) == len(divisions), drawing.drawn
+    logged = list(league.bot.log_channel.sent)
+    named = [line for line in logged if PROBLEM in line]
+    assert len(named) == len(divisions), named
+    for division in divisions:
+        line = member.format(member_id=MEMBER_ID, admin_id=ADMIN_ID) + " | " + (
+            POSTED_AS_TEXT.format(change=change, division=division, problem=PROBLEM)
+        )
+        assert sum(each.startswith(line) for each in named) == 1, named
+    if asked is not None:
+        from tests.support.season_league import reply
+
+        told = reply(asked)
+        for words in (PROBLEM, "posted as text"):
+            assert words not in told, told
+
+
 @pytest.mark.parametrize("form", ["text", "image"])
 async def test_the_lineup_s_id_and_audit_are_saved_with_its_post(tmp_path, monkeypatch, form):
     """Once the post job is done, and before the deletion after it runs, the division records
     the new lineup and one `SIGNUP_LINEUP_POSTED` audit stands, written by the system, saying
-    "image" where the lineup was a picture."""
+    "image" where the lineup was a picture, and stamped at the queue's clock, moved an hour on
+    from the host's."""
     league = await ongoing_league(tmp_path)
     await _old_lineup_standing(league)
     if form == "image":
-        _pictures_on(monkeypatch, tmp_path)
+        _pictures_on(league, monkeypatch, tmp_path)
+    league.clock.advance(hours=1)
 
     await _ask(league, PRO)
     await _run_lineup_through(league, "post_lineup")
@@ -374,6 +537,7 @@ async def test_the_lineup_s_id_and_audit_are_saved_with_its_post(tmp_path, monke
     assert OLD_LINEUP in league.channel(LINEUP[PRO]).messages, "the old lineup went too soon"
     [audit] = await _lineup_audits(league)
     assert audit["actor_name"] == "system"
+    assert audit["timestamp"] == league.clock.now.isoformat()
     value = json.loads(audit["new_value"])
     assert value["division"] == "Pro"
     assert value.get("form") == ("image" if form == "image" else None)
@@ -426,24 +590,53 @@ async def test_a_stop_between_the_lineup_post_and_its_delete_deletes_the_old_one
 
 async def test_a_lineup_step_with_no_channel_raises(tmp_path):
     """Pro's lineup channel was never set. The lineup job a review or an approval runs for Pro
-    (`lineup_step`, through the real placement service) raises, naming the command that sets the
+    (`lineup_step`, through the real lineup poster) raises, naming the command that sets the
     channel, for the queue to stop on; nothing is posted."""
     from types import SimpleNamespace
 
     from leaguebot.core.models.change import StepFailedOnDiscord
-    from leaguebot.core.services.lineup_posting import lineup_step
+    from leaguebot.core.services.drivers.lineup_posting import lineup_step
     from tests.support.change_queue import in_a_job
 
     league = await ongoing_league(tmp_path)
     await league.write("UPDATE divisions SET lineup_channel_id = NULL WHERE id = ?", PRO)
     before = len(league.texts(LINEUP[PRO]))
-    step = lineup_step(league.bot.placement_service)
+    step = lineup_step(league.bot.lineup_poster, now=lambda: league.clock.now)
     ctx = SimpleNamespace(
         bot=league.bot, kept=[], step_payload={"division_id": PRO, "division_name": "Pro"},
         payload={}, tries=0,
     )
 
     with in_a_job(), pytest.raises(StepFailedOnDiscord, match="/division lineup-channel"):
+        await step.run(ctx)
+
+    assert len(league.texts(LINEUP[PRO])) == before
+
+
+async def test_a_lineup_step_whose_images_switch_nobody_signed_up_for_raises(tmp_path):
+    """The images module's switch reader was never signed up, so asking whether the lineup is drawn
+    raises `SwitchNotSignedUp`. The lineup job for Pro (`lineup_step`, through the real lineup
+    poster) raises it as a fault in the bot's assembly, rather than taking it for a picture that
+    could not be drawn and posting the lineup as text."""
+    from types import SimpleNamespace
+
+    from leaguebot.core.services.drivers.lineup_posting import lineup_step
+    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
+    from tests.support.change_queue import in_a_job
+
+    league = await ongoing_league(tmp_path)
+    before = len(league.texts(LINEUP[PRO]))
+    poster = league.bot.lineup_poster
+    poster._drawing = SimpleNamespace(
+        lineup_wanted=AsyncMock(side_effect=SwitchNotSignedUp("images")),
+    )
+    step = lineup_step(poster, now=lambda: league.clock.now)
+    ctx = SimpleNamespace(
+        bot=league.bot, kept=[], step_payload={"division_id": PRO, "division_name": "Pro"},
+        payload={}, tries=0,
+    )
+
+    with in_a_job(), pytest.raises(SwitchNotSignedUp, match="images"):
         await step.run(ctx)
 
     assert len(league.texts(LINEUP[PRO])) == before

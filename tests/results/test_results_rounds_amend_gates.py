@@ -48,7 +48,7 @@ import pytest
 from leaguebot.core.models.season import SeasonStage
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.results.cogs.results_cog import ResultsCog
 from leaguebot.results.models.points_config import SessionType
 from tests.support.change_queue import (

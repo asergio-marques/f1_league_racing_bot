@@ -10,7 +10,9 @@ carries no error handler to turn that into a reply.
 The approval now refuses on it, which makes it a blocker — and a blocker the review does not
 mention is the failure #131 already taught: a season that reviews clean and is then refused
 for something the report had just said nothing about. So both surfaces read
-`_missing_points_config_problems`, and the drift between them is what these pin.
+results' `season_points_service.missing_points_config_problems`, through results' section of the
+placements review and results' refusals of a season's confirmation, and the drift between them is
+what these pin.
 """
 from __future__ import annotations
 
@@ -19,7 +21,6 @@ from pathlib import Path
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from tests.support import saves
@@ -48,17 +49,13 @@ async def db_path(tmp_path):
     return path
 
 
-def _cog(db_path):
-    from unittest.mock import MagicMock
+async def _problems(db_path) -> list[str]:
+    """The attached points configurations of the season that no longer exist, the gate handed
+    the database alone (issue #240: a reader that grew a second dependency could not be given
+    one here)."""
+    from leaguebot.results.services import season_points_service
 
-    cog = SeasonCog.__new__(SeasonCog)
-    # ``MagicMock``, not ``AsyncMock`` (issue #240). The helper below reads nothing but
-    # ``db_path``, and this keeps it that way: on a whole-bot ``AsyncMock`` a reader that
-    # grew a second dependency would be answered with a truthy mock and go on passing,
-    # where here the unpinned ``await`` raises and says so.
-    cog.bot = MagicMock()
-    cog.bot.db_path = db_path
-    return cog
+    return await season_points_service.missing_points_config_problems(db_path, SEASON_ID)
 
 
 async def _attach_real(db_path, config_name: str) -> None:
@@ -81,8 +78,16 @@ async def _attach_phantom(db_path, config_name: str) -> None:
         await db.commit()
 
 
+#: Where each surface lives: results' section of the placements review, and results' refusals of a
+#: season's confirmation, which the approval and the configuration's gate read through core's hook.
+_FILES = {
+    "review_section": "results/services/season_points_service.py",
+    "confirmation_refusals": "results/services/season_points_service.py",
+}
+
+
 def _function_source(name: str) -> str:
-    text = (SRC / "leaguebot" / "core" / "cogs" / "season_cog.py").read_text(encoding="utf-8")
+    text = (SRC / "leaguebot" / _FILES[name]).read_text(encoding="utf-8")
     tree = ast.parse(text)
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
@@ -98,7 +103,7 @@ def _function_source(name: str) -> str:
 async def test_a_season_whose_configs_all_exist_raises_nothing(db_path):
     await _attach_real(db_path, "Standard")
 
-    assert await _cog(db_path)._missing_points_config_problems(SEASON_ID) == []
+    assert await _problems(db_path) == []
 
 
 @pytest.mark.asyncio
@@ -107,7 +112,7 @@ async def test_a_mistyped_name_is_found(db_path):
     await _attach_real(db_path, "Standard")
     await _attach_phantom(db_path, "Standrad")
 
-    assert await _cog(db_path)._missing_points_config_problems(SEASON_ID) == [
+    assert await _problems(db_path) == [
         "Standrad"
     ]
 
@@ -122,7 +127,7 @@ async def test_a_config_removed_from_under_the_season_is_found(db_path):
         )
         await db.commit()
 
-    assert await _cog(db_path)._missing_points_config_problems(SEASON_ID) == [
+    assert await _problems(db_path) == [
         "Standard"
     ]
 
@@ -130,36 +135,27 @@ async def test_a_config_removed_from_under_the_season_is_found(db_path):
 @pytest.mark.asyncio
 async def test_a_season_with_nothing_attached_raises_nothing_here(db_path):
     """"Nothing attached" is the prerequisite gate's complaint, not this one's."""
-    assert await _cog(db_path)._missing_points_config_problems(SEASON_ID) == []
+    assert await _problems(db_path) == []
 
 
 # ── The two surfaces read the same helper ─────────────────────────────────
 
 
 def test_the_review_asks_the_helper_rather_than_the_service_itself():
-    source = _function_source("season_review")
+    source = _function_source("review_section")
 
-    assert "_missing_points_config_problems" in source
+    assert "missing_points_config_problems(" in source
     assert "missing_attached_configs" not in source, (
-        "season_review calls missing_attached_configs directly — a second copy of the rule, "
-        "free to drift from the one the approval refuses on"
+        "results' review section calls missing_attached_configs directly — a second copy of the "
+        "rule, free to drift from the one the approval refuses on"
     )
 
 
 def test_the_approval_gate_asks_the_same_helper():
-    source = _function_source("_do_approve")
+    source = _function_source("confirmation_refusals")
 
-    assert "_missing_points_config_problems" in source
+    assert "missing_points_config_problems(" in source
     assert "missing_attached_configs" not in source, (
-        "_do_approve calls missing_attached_configs directly — the report and the refusal "
+        "results' refusals call missing_attached_configs directly — the report and the refusal "
         "can now disagree about the same season"
-    )
-
-
-def test_the_review_withholds_the_approve_button_on_a_phantom_config():
-    """Naming it and offering the button anyway is the half-measure #131 already cost us."""
-    source = _function_source("season_review")
-
-    assert "not phantom_configs" in source, (
-        "the approval prompt is posted without consulting the phantom configs"
     )

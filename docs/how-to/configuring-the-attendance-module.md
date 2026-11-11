@@ -68,11 +68,11 @@ That dependency runs both ways. **Turning results & standings off turns attendan
 /module enable attendance
 ```
 
-It is refused once a season's placements are confirmed, so this belongs alongside your other setup — with no season, or before you confirm placements. The reply is immediate but nothing happens yet: the bot needs channels to post in and an approved season to work through, which are the next steps.
+It is refused once a season's placements are confirmed, so this belongs alongside your other setup — with no season, or before you confirm placements. It answers at once that it is turning the module on and updates that reply once it has, but nothing happens yet: the bot needs channels to post in and an approved season to work through, which are the next steps.
 
 Switching it on gives you a starting configuration you can leave alone if it suits you — a call five days out, a reminder a day out, check-in closing two hours before the race, one point for each of the three ways of missing it, and no automatic sanctions at all. Step 4 onwards is about changing those.
 
-> **Turning attendance off forgets your channels.** The timings, the penalties and the thresholds all survive being switched off and come back as you left them. The per-division check-in and attendance channels do not — they are deleted, and you will be setting all of them again. That includes the case where the module goes off because you turned results & standings off — which, if a season is running, also deletes that season's results; see [Setting up the results & standings module](configuring-the-results-module.md).
+> **Turning attendance off forgets your channels, and turning it back on resets the rest.** The timings, the penalties and the thresholds are kept while the module is off, but switching it on again puts the starting configuration back in their place, so set them again afterwards. The per-division check-in and attendance channels are not kept at all — they are deleted, and you will be setting all of them again. That includes the case where the module goes off because you turned results & standings off — which, if a season is running, also deletes that season's results; see [Setting up the results & standings module](configuring-the-results-module.md).
 
 > **Turning it off mid-season stops check-in for the rest of that season, and you cannot undo it.** Every call, reminder and deadline still to come stops at once — no more check-ins posted, no reserves distributed into seats, no attendance points charged. A call already posted stays in the channel, but its buttons stop recording answers. Because the module cannot be switched on once placements are confirmed, you will not get check-in back before the season ends. Turn it off mid-season only if you mean to run the rest of that season without it.
 
@@ -86,6 +86,8 @@ Switching it on gives you a starting configuration you can leave alone if it sui
 ```
 
 Both are set **per division**, so a league with three divisions sets six channels. The first carries the check-in calls, the reminders and the reserve distribution result; the second carries the attendance sheet and nothing else. **Each needs a channel of its own.** The bot refuses a channel already doing another job (the other of the two, the same kind of channel in another division, or anything else it posts to) and names what holds it; see [Setting up the bot for your league](configuring-the-core-bot.md#step-9--point-each-division-at-its-channels). That suits these two anyway: one is a conversation before the race, the other a table that is replaced after it.
+
+Each answers at once ("⏳ Setting the RSVP channel for **Division One** to #div1-check-in. …") and updates that reply once it has run. The same request asked again while the first is still waiting is refused as a repeat. It is judged again as it starts: the module switched off, the division deleted, the season ended or the channel taken for another job meanwhile refuses it then. Both run even while the change queue is stopped at a job, which stays stopped — so a check-in call or an attendance sheet stopped for want of its channel is put right by setting the channel and then pressing Retry on its notice (see [When a job stops the queue](configuring-the-core-bot.md#when-a-job-stops-the-queue)).
 
 **This is the thing that blocks a season.** While attendance is on, a season cannot be approved until every division has both, and the bot names each division that is missing one along with the command that fixes it.
 

@@ -26,7 +26,7 @@ def _channel():
 
 
 async def test_send_notice_sends_the_text_with_the_mentions_given_and_gives_the_message():
-    from leaguebot.core.services.notice_handler import send_notice
+    from leaguebot.core.services.posting.notice_handler import send_notice
 
     channel, message = _channel()
     mentions = discord.AllowedMentions.none()
@@ -38,7 +38,7 @@ async def test_send_notice_sends_the_text_with_the_mentions_given_and_gives_the_
 
 
 async def test_send_notice_passes_on_a_file_a_view_and_silent():
-    from leaguebot.core.services.notice_handler import send_notice
+    from leaguebot.core.services.posting.notice_handler import send_notice
 
     channel, _message = _channel()
     mentions = discord.AllowedMentions.none()
@@ -53,7 +53,7 @@ async def test_send_notice_passes_on_a_file_a_view_and_silent():
 
 
 async def test_send_notice_cannot_be_called_without_saying_who_it_may_notify():
-    from leaguebot.core.services.notice_handler import send_notice
+    from leaguebot.core.services.posting.notice_handler import send_notice
 
     channel, _message = _channel()
     with in_a_job(), pytest.raises(TypeError):
@@ -62,7 +62,7 @@ async def test_send_notice_cannot_be_called_without_saying_who_it_may_notify():
 
 
 async def test_edit_notice_edits_the_message_with_the_mentions_given():
-    from leaguebot.core.services.notice_handler import edit_notice
+    from leaguebot.core.services.posting.notice_handler import edit_notice
 
     _channel_, message = _channel()
     mentions = discord.AllowedMentions(roles=[MagicMock(id=555)], users=False, everyone=False)
@@ -76,7 +76,7 @@ async def test_edit_notice_edits_the_message_with_the_mentions_given():
 @pytest.mark.parametrize("error", [http_error(), http_error(discord.NotFound, status=404)],
                          ids=["refused", "gone"])
 async def test_a_notice_handler_raises_what_discord_raises(error):
-    from leaguebot.core.services.notice_handler import delete_notice, edit_notice, send_notice
+    from leaguebot.core.services.posting.notice_handler import delete_notice, edit_notice, send_notice
 
     channel, message = _channel()
     channel.send.side_effect = error
@@ -95,7 +95,7 @@ async def test_a_notice_handler_raises_what_discord_raises(error):
 
 
 async def test_a_notice_outside_a_job_is_refused_before_it_is_sent():
-    from leaguebot.core.services.notice_handler import delete_notice, edit_notice, send_notice
+    from leaguebot.core.services.posting.notice_handler import delete_notice, edit_notice, send_notice
     from leaguebot.core.utils.in_a_job import PostedOutsideAJob
 
     channel, message = _channel()

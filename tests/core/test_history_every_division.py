@@ -18,12 +18,12 @@ from tests.core.test_driver_move import (
     PROFILE_ID,
     SEASON_ID,
     SERVER_ID,
-    _guild,
     _move,
     _seat,
     _service,
     db_path,  # noqa: F401 — the fixture
 )
+from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
 
 
 async def _memberships(db_path) -> list[tuple[int, int]]:
@@ -34,18 +34,23 @@ async def _memberships(db_path) -> list[tuple[int, int]]:
         return [tuple(row) for row in await cursor.fetchall()]
 
 
-async def _history(db_path) -> list[str]:
-    """The season's history written on one connection and committed, as a season's end save does."""
-    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
+async def _history(db_path, season_id=SEASON_ID, profile_id=PROFILE_ID) -> list[str]:
+    """The season's history written on one connection and committed, as a season's end save
+    does: the divisions it names for the driver *profile_id*."""
+    from leaguebot.core.services.seasons.season_end_service import write_driver_history_entries_on
+    from tests.support.driver_records_hooks import season_standing_read
 
     async with get_connection(db_path) as db:
-        await write_driver_history_entries_on(db, SEASON_ID, 1)
+        await write_driver_history_entries_on(
+            db, season_id, 1,
+            season_standing_read=season_standing_read(),
+        )
         await db.commit()
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT division_name FROM driver_history_entries WHERE driver_profile_id = ? "
             "ORDER BY division_name",
-            (PROFILE_ID,),
+            (profile_id,),
         )
         return [row[0] for row in await cursor.fetchall()]
 
@@ -80,19 +85,22 @@ async def test_a_driver_moved_to_another_division_has_history_in_both(db_path):
     assert await _history(db_path) == ["Am", "Pro"]
 
 
-async def test_a_driver_released_from_a_division_keeps_its_history(db_path):
-    await _seat(db_path, PRO, "Alpha")
-    await _seat(db_path, AM, "Bravo")
-    service = _service(db_path)
-    service.get_team_role_config = AsyncMock(return_value=None)
+async def test_a_driver_released_from_a_division_keeps_its_history(tmp_path):
+    """`ongoing_league`'s season: Lewis sits, confirmed, at Ferrari in Pro and at McLaren in Am.
+    The league admin runs `/driver release` of Lewis from Am and the queue runs: he sits at
+    Ferrari in Pro alone, and the season's history still names both Am and Pro for him."""
+    from tests.core.test_driver_release import _ask_release, _lewis_seats, _twice_seated
+    from tests.support.change_queue import run_queue
+    from tests.support.season_league import LEWIS
+    from tests.support.season_league import SEASON_ID as LEAGUE_SEASON_ID
 
-    await service.release_driver(
-        driver_profile_id=PROFILE_ID, division_id=AM,
-        season_id=SEASON_ID, acting_user_id=1, acting_user_name="Manager", guild=_guild(),
-        discord_user_id="4242",
-    )
+    league = await _twice_seated(tmp_path)
 
-    assert await _history(db_path) == ["Am", "Pro"]
+    await _ask_release(league, LEWIS)
+    await run_queue(league.bot)
+
+    assert await _lewis_seats(league) == [("Pro", "Ferrari", True)]
+    assert await _history(league.db_path, LEAGUE_SEASON_ID, profile_id=41) == ["Am", "Pro"]
 
 
 async def test_a_sacked_driver_keeps_the_history_of_the_divisions_they_raced_in(db_path):
@@ -110,11 +118,13 @@ async def test_a_sacked_driver_keeps_the_history_of_the_divisions_they_raced_in(
 
 async def test_a_driver_deleted_takes_their_memberships_with_them(db_path):
     """The driver pass deletes a driver who never raced; the archive keeps nothing of them."""
-    from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
+    from leaguebot.core.services.seasons.season_lifecycle_service import delete_driver_profiles
 
     await _seat(db_path, PRO, "Alpha")
     async with get_connection(db_path) as db:
-        await delete_driver_profiles(db, [PROFILE_ID], keep_history=False)
+        await delete_driver_profiles(
+            db, [PROFILE_ID], keep_history=False, **delete_hooks(*DRIVER_HOOKS)
+        )
         await db.commit()
 
     assert await _memberships(db_path) == []
@@ -133,7 +143,7 @@ async def test_a_driver_who_changed_account_after_the_last_round_keeps_their_sta
         past = (await cursor.fetchone())[0]
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
-            "VALUES (?, 1, 'NORMAL', '2026-01-01T18:00:00')",
+            "VALUES (?, 1, 'NORMAL', '2026-01-01T18:00:00+00:00')",
             (PRO,),
         )
         await db.execute(
@@ -168,13 +178,17 @@ async def test_the_history_on_the_save_handed_commits_nothing(db_path):
     """A driver placed in Pro and moved to Am. A season's end writes their history inside the
     save that records its end: written on the connection it is handed, an entry for each
     division is there on that connection, and once the save is let go uncommitted none is."""
-    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
+    from leaguebot.core.services.seasons.season_end_service import write_driver_history_entries_on
+    from tests.support.driver_records_hooks import season_standing_read
 
     await _seat(db_path, PRO, "Alpha")
     await _move(_service(db_path), AM, "Bravo")
 
     async with get_connection(db_path) as db:
-        await write_driver_history_entries_on(db, SEASON_ID, 1)
+        await write_driver_history_entries_on(
+            db, SEASON_ID, 1,
+            season_standing_read=season_standing_read(),
+        )
         assert await _entries_on(db) == ["Am", "Pro"]
         await db.rollback()
 

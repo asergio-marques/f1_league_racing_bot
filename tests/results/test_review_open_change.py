@@ -187,6 +187,7 @@ async def _make_db(
 async def _league(tmp_path, **kwargs: Any) -> ReviewLeague:
     """The league of `_make_db`, its bot with a real queue and the real change types."""
     league = ReviewLeague(await _make_db(tmp_path, **kwargs), attendance=False)
+    await league.build()
     league.bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     league.bot.add_view = MagicMock()
     return league
@@ -287,10 +288,11 @@ async def _round_status(db_path) -> str:
 
 async def _recover(league: ReviewLeague) -> None:
     """Restart: a fresh queue on the same database, then restart recovery, then the queue run."""
-    import leaguebot.__main__ as bot_module
+    from leaguebot.results.wiring import recover_orphaned_submission_channels
+
 
     await restart_queue(league.bot)
-    await bot_module._recover_orphaned_submission_channels(league.bot)
+    await recover_orphaned_submission_channels(league.bot)
     await run_queue(league.bot)
 
 
@@ -651,8 +653,8 @@ async def test_the_state_carries_the_round_and_division_it_describes(tmp_path):
     [
         "reports-approve",
         "reports-approve-bare",
-        "recovery",
-        "appeals-recovery",
+        pytest.param("recovery"),
+        pytest.param("appeals-recovery"),
     ],
 )
 async def test_the_change_names_its_round_and_division(tmp_path, caplog, route):
@@ -672,7 +674,7 @@ async def test_the_change_names_its_round_and_division(tmp_path, caplog, route):
         review_open_change,
     )
 
-    caplog.set_level(logging.INFO, logger="leaguebot.core.services.change_queue")
+    caplog.set_level(logging.INFO, logger="leaguebot.core.services.queue.change_queue")
     appeals = route == "appeals-recovery"
     league = await _league(
         tmp_path, name=f"names_{route}", in_review=True, results_posted=True,
@@ -1143,15 +1145,16 @@ async def _ask_report_approval(league: ReviewLeague) -> None:
 
 
 async def test_recovery_leaves_alone_a_round_whose_review_is_in_hand(tmp_path):
+    from leaguebot.results.wiring import recover_orphaned_submission_channels
+
     league = await _league(tmp_path, name="recover_in_hand", in_review=True,
                            results_posted=True, prompt=PROMPT,
                            round_status=RoundStatus.AWAITING_REPORT_VERDICTS.value)
     await _ask_report_approval(league)
 
-    import leaguebot.__main__ as bot_module
 
     await restart_queue(league.bot)
-    await bot_module._recover_orphaned_submission_channels(league.bot)
+    await recover_orphaned_submission_channels(league.bot)
 
     assert await changes_of(league.db_path, KIND) == []
     assert PROMPT in league.channel(SUBMISSION_CHANNEL).messages
@@ -1317,16 +1320,17 @@ async def test_recovery_leaves_alone_a_round_whose_appeals_approval_is_in_hand(t
     """Round 3 awaits its appeal verdicts, its appeals prompt standing, and Approve on it waits
     on the queue when the bot restarts. Restart recovery asks no reopening of the appeals review,
     and the old prompt stands for the approval to take down."""
+    from leaguebot.results.wiring import recover_orphaned_submission_channels
+
     league = await _league(tmp_path, name="recover_appeals_in_hand", in_review=True,
                            results_posted=True, appeals_prompt=OLD_APPEALS_PROMPT,
                            round_status=RoundStatus.AWAITING_APPEAL_VERDICTS.value)
     league.channel(SUBMISSION_CHANNEL).seed(OLD_APPEALS_PROMPT, "appeals review")
     await _ask_appeals_approval(league)
 
-    import leaguebot.__main__ as bot_module
 
     await restart_queue(league.bot)
-    await bot_module._recover_orphaned_submission_channels(league.bot)
+    await recover_orphaned_submission_channels(league.bot)
 
     assert await changes_of(league.db_path, APPEALS_OPEN) == []
     assert OLD_APPEALS_PROMPT in league.channel(SUBMISSION_CHANNEL).messages

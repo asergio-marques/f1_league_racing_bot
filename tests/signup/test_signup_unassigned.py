@@ -98,17 +98,18 @@ def _slot(sequence: int, label: str, slot_id: str | None = None):
     )
 
 
+
+
 def _make_cog(*, listed=None, exportable=None, slots=None) -> SignupCog:
     bot = MagicMock()
     bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
-    bot.placement_service = MagicMock()
-    bot.placement_service.get_unassigned_drivers_seeded = AsyncMock(
+    bot.signup_module_service = MagicMock()
+    bot.signup_module_service.get_unassigned_drivers_seeded = AsyncMock(
         return_value=listed if listed is not None else []
     )
-    bot.placement_service.get_unassigned_drivers_for_export = AsyncMock(
+    bot.signup_module_service.get_unassigned_drivers_for_export = AsyncMock(
         return_value=exportable if exportable is not None else []
     )
-    bot.signup_module_service = MagicMock()
     bot.signup_module_service.get_slots = AsyncMock(
         return_value=slots
         if slots is not None

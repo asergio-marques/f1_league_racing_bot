@@ -1,11 +1,11 @@
-"""The scheduler's job identifiers, and the module-level callables APScheduler fires.
+"""The scheduler's job identifiers, and the readers that find a round's jobs by them.
 
 Issue #208. `scheduler_service.py` was at 50.7%. Every timed thing the bot does — forecasts,
 check-in calls, deadlines, result submission — is a row in a job store keyed by one of these
 identifiers, so the identifier scheme is load-bearing in a way nothing else in the bot is.
 
 **The round id in the suffix prevents a silent catastrophe**, and the function's own docstring
-records it. `renumber_rounds` rewrites the numbers of a whole division whenever an amendment
+records it. `renumber_rounds_on` rewrites the numbers of a whole division whenever an amendment
 changes the order of its rounds, and nothing re-arms the jobs of the rounds that merely
 shifted — so a round that became number 4 kept jobs saying `r5`, and the next amendment of the
 round that became number 5 scheduled `..._r5` on top of them. Every `add_job` passes
@@ -17,12 +17,10 @@ that, and it is the reason this file exists. The season, tier and number stay in
 only to make it readable in an admin view — they are decoration, and a number left stale by a
 renumbering is cosmetic.
 
-**The module-level job callables are the other half.** They have to be module-level and
-picklable because `SQLAlchemyJobStore` stores them, which means they cannot close over the
-service and must reach it through a global. Every one of them therefore guards against that
-global being unset and against its callback being unregistered — a job firing during startup,
-or for a module since switched off, must log and return rather than raise inside APScheduler's
-executor where nothing would catch it.
+The one runner every job is stored with, and what it does when the service or a kind's handler
+is missing, is pinned in `test_scheduler_job_callables.py`. A round job is stored with its kind
+and the round id as its key, as a one-off timer is, and the readers find a round's jobs by that
+key.
 
 `get_pending_advance_jobs` parses the identifier back apart, which is the other reason the
 scheme matters: a change to the suffix format breaks the reader as well as the writer, and
@@ -30,6 +28,7 @@ these tests hold both ends against each other.
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -37,12 +36,7 @@ from unittest.mock import MagicMock
 import pytest
 
 import leaguebot.core.services.scheduler_service as ss
-from leaguebot.core.services.scheduler_service import (
-    SchedulerService,
-    _portrait_refresh_job,
-    _round_job_suffix,
-    _signup_close_timer_job,
-)
+from leaguebot.core.services.scheduler_service import SchedulerService, _round_job_suffix
 
 SERVER_ID = 10408
 
@@ -133,9 +127,12 @@ def test_the_reader_undoes_the_writer(event_type):
 
 
 def _job(job_id: str, round_id: int | None, *, minutes: int = 5, paused: bool = False):
+    """A job as the store holds it: its kind (its id less any round suffix) and, for a round's
+    job, the round id as its key, as the one runner is handed them."""
+    kind = re.sub(r"_s\d+_d\d+_r\d+(_id\d+)?$", "", job_id)
     job = MagicMock()
     job.id = job_id
-    job.kwargs = {"round_id": round_id} if round_id is not None else {}
+    job.kwargs = {"kind": kind, "key": round_id} if round_id is not None else {"kind": kind}
     job.next_run_time = (
         None if paused else datetime.now(timezone.utc) + timedelta(minutes=minutes)
     )
@@ -299,56 +296,3 @@ def test_a_job_whose_id_does_not_parse_is_not_listed():
     jobs = [_job("something_odd", 42), _job("portrait_refresh", None)]
 
     assert _service(jobs).get_queued_events_for_rounds({42}) == set()
-
-
-# ---------------------------------------------------------------------------
-# The module-level callables
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def no_global(monkeypatch):
-    """The state during startup, before `start()` sets the global."""
-    monkeypatch.setattr(ss, "_GLOBAL_SERVICE", None)
-
-
-@pytest.fixture
-def service_with(monkeypatch):
-    """Hand back a setter installing a global service with no callback registered."""
-
-    def _install():
-        service = SchedulerService.__new__(SchedulerService)
-        service._signup_close_callback = None
-        service._portrait_refresh_callback = None
-        monkeypatch.setattr(ss, "_GLOBAL_SERVICE", service)
-        return service
-
-    return _install
-
-
-@pytest.mark.parametrize(
-    "job,args", [(_signup_close_timer_job, ()), (_portrait_refresh_job, ())],
-    ids=["signup-close", "portrait-refresh"],
-)
-async def test_a_job_firing_before_the_service_exists_is_survived(no_global, job, args, caplog):
-    """A persisted job can fire during startup, before `start()` sets the global. Raising
-    inside APScheduler's executor would surface nowhere."""
-    with caplog.at_level("WARNING"):
-        await job(*args)
-
-    assert "_GLOBAL_SERVICE is None" in caplog.text
-
-
-@pytest.mark.parametrize(
-    "job,args", [(_signup_close_timer_job, ()), (_portrait_refresh_job, ())],
-    ids=["signup-close", "portrait-refresh"],
-)
-async def test_a_job_with_no_callback_registered_is_survived(service_with, job, args, caplog):
-    """A job persisted for a module since switched off. It must log and return rather
-    than raise — the module-output rule in the direction nobody thinks about."""
-    service_with()
-
-    with caplog.at_level("WARNING"):
-        await job(*args)
-
-    assert "no callback registered" in caplog.text

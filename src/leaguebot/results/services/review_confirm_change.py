@@ -30,13 +30,15 @@ from typing import Any
 import aiosqlite
 
 from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.services.queue.queue_records import (
+    unfinished,
+)
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
-    unfinished,
 )
 from leaguebot.results.services import penalty_wizard
 from leaguebot.results.services.penalty_wizard import (

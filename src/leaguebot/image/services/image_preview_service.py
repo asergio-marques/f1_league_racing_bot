@@ -457,7 +457,7 @@ async def _load_teams_and_drivers(bot: LeagueBot, context: PreviewContext, *, gu
     from leaguebot.image.services.driver_portrait_service import refresh_before_render
 
     await refresh_before_render(
-        bot,
+        bot.db_path,
         list(members.values()),
         directory=context.asset_directories.get("driver"),
     )
@@ -644,7 +644,7 @@ async def build_calendar_preview(bot: LeagueBot, context: PreviewContext):
     Fabricates nothing: the rounds, their tracks, their formats and their dates are the
     league's own, and the crop falls where its own round count puts it.
     """
-    from leaguebot.core.services.calendar_post_service import tracks_by_name
+    from leaguebot.core.services.rounds.calendar_post_service import tracks_by_name
     from leaguebot.image.services.image_calendar_service import build_fill_spec, resolve_drawing
 
     config = await bot.image_config_service.get_config()
@@ -805,7 +805,7 @@ async def _race_name(bot: LeagueBot, context: PreviewContext) -> str:
     nothing: ``race_name`` is mandatory on the check-in call, and a preview is not the
     place to empty it.
     """
-    from leaguebot.core.services.calendar_post_service import tracks_by_name
+    from leaguebot.core.services.rounds.calendar_post_service import tracks_by_name
     from leaguebot.image.services.image_rsvp_service import MYSTERY_RACE_NAME
 
     round_obj = context.round
@@ -876,7 +876,7 @@ async def _country_of(bot: LeagueBot, round_obj) -> str | None:
     """The country the round is run in — the datum its flag resolves by."""
     if round_obj is None or _format_of(round_obj) == "MYSTERY":
         return None
-    from leaguebot.core.services.calendar_post_service import tracks_by_name
+    from leaguebot.core.services.rounds.calendar_post_service import tracks_by_name
 
     tracks = await tracks_by_name(bot.db_path)
     record = tracks.get(getattr(round_obj, "track_name", None))
@@ -1324,7 +1324,7 @@ async def build_attendance_preview(bot: LeagueBot, context: PreviewContext):
 
 
 async def _tracks(bot: LeagueBot):
-    from leaguebot.core.services.calendar_post_service import tracks_by_name
+    from leaguebot.core.services.rounds.calendar_post_service import tracks_by_name
 
     return await tracks_by_name(bot.db_path)
 

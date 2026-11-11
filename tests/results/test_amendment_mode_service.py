@@ -178,3 +178,76 @@ async def test_the_mode_writers_commit_nothing(tmp_path):
 
     for path in (off, on):
         assert (await _rows(path, MODE), await _rows(path, STAGED)) == before[path]
+
+
+async def test_validate_modification_ordering_passes_a_table_running_down(tmp_path):
+    """Season 1 in amendment mode with the Feature Race's P1 staged at 30 over P2's 18: the
+    staged table still runs down, so the approval's ordering check finds nothing."""
+    from leaguebot.results.services.amendment_mode_service import validate_modification_ordering
+
+    db_path = await _season(tmp_path, amend=True)
+    await _save(db_path, "stage_points_on", SEASON_ID, CONFIG, "FEATURE_RACE", [(1, 30)])
+
+    assert await validate_modification_ordering(db_path, SEASON_ID) == []
+
+
+async def test_validate_modification_ordering_names_a_staged_inversion(tmp_path):
+    """Season 1 in amendment mode with the Feature Race's P2 staged at 30, above P1's 25: one
+    ordering error, naming the configuration and the session."""
+    from leaguebot.results.services.amendment_mode_service import validate_modification_ordering
+
+    db_path = await _season(tmp_path, amend=True)
+    await _save(db_path, "stage_points_on", SEASON_ID, CONFIG, "FEATURE_RACE", [(2, 30)])
+
+    errors = await validate_modification_ordering(db_path, SEASON_ID)
+
+    assert len(errors) == 1
+    assert CONFIG in errors[0]
+    assert "FEATURE_RACE" in errors[0]
+
+
+async def test_validate_modification_ordering_judges_each_session_on_its_own(tmp_path):
+    """A qualifying table staged worth 1 for P1 and 3 for P2 is wrong; it does not make the
+    race table, still 25 and 18, wrong: one error, naming the qualifying session."""
+    from leaguebot.results.services.amendment_mode_service import validate_modification_ordering
+
+    db_path = await _season(tmp_path, amend=True)
+    await _save(db_path, "stage_points_on", SEASON_ID, CONFIG, "FEATURE_QUALIFYING", [(1, 1), (2, 3)])
+
+    errors = await validate_modification_ordering(db_path, SEASON_ID)
+
+    assert len(errors) == 1
+    assert "FEATURE_QUALIFYING" in errors[0]
+
+
+async def _stage_a_removal_and_an_addition(db_path: str) -> None:
+    """P2 taken out of the store and P3 staged at 5."""
+    async with get_connection(db_path) as db:
+        await db.execute("DELETE FROM season_modification_entries WHERE position = 2")
+        await db.commit()
+    await _save(db_path, "stage_points_on", SEASON_ID, CONFIG, "FEATURE_RACE", [(3, 5)])
+
+
+@pytest.mark.parametrize(
+    ("staged", "expected"),
+    [
+        (False, "No changes in modification store."),
+        (True, "**1 change staged:**\nStandard/FEATURE_RACE/P1: 25 → 26"),
+        ("removal and addition",
+         "**2 changes staged:**\n"
+         "Standard/FEATURE_RACE/P2: 18 → (removed)\n"
+         "Standard/FEATURE_RACE/P3: ? → 5"),
+    ],
+)
+async def test_the_modification_store_diff_lists_each_staged_change(tmp_path, staged, expected):
+    """What `/results amend review` shows of season 1's staged table against the points it
+    scores on (P1 25, P2 18): nothing staged says so; P1 staged at 26 is one change, counted in
+    the singular; P2 taken out and P3 staged at 5 are two, in position order, a position the
+    season lacks shown as "?" and one the store lacks as "(removed)"."""
+    from leaguebot.results.services.amendment_mode_service import get_modification_store_diff
+
+    db_path = await _season(tmp_path, amend=True, staged=staged is True)
+    if staged == "removal and addition":
+        await _stage_a_removal_and_an_addition(db_path)
+
+    assert await get_modification_store_diff(db_path, SEASON_ID) == expected

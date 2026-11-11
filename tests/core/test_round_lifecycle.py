@@ -44,7 +44,7 @@ async def _bootstrap(db_path: str) -> tuple[int, int, int]:
         await seed_team_instances(db, division_id, 100, 200)
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
-            "VALUES (?, 1, 'STANDARD', 'AWAITING_RESULTS', '2026-01-01T18:00:00')",
+            "VALUES (?, 1, 'STANDARD', 'AWAITING_RESULTS', '2026-01-01T18:00:00+00:00')",
             (division_id,),
         )
         round_id = cursor.lastrowid

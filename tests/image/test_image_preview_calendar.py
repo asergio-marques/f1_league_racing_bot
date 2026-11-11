@@ -19,7 +19,7 @@ from leaguebot.image.services.image_preview_service import (
     build_calendar_preview,
     resolve_context,
 )
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 from tests.support.saves import set_field
 
 SERVER_ID = 6161
@@ -133,7 +133,7 @@ class TestCalendarPreview:
         )
         context = await resolve_context(bot, "Premier", require_rounds=True)
 
-        from leaguebot.core.services.calendar_post_service import tracks_by_name
+        from leaguebot.core.services.rounds.calendar_post_service import tracks_by_name
 
         rounds = await bot.season_service.get_division_rounds(context.division_id)
         drawing = resolve_drawing(
@@ -149,7 +149,7 @@ class TestCalendarPreview:
 
     async def test_a_division_of_one_round_draws_one_round(self, bot, db_path):
         """The crop falls at the league's own count, however short (SC-005)."""
-        from leaguebot.core.services.calendar_post_service import tracks_by_name
+        from leaguebot.core.services.rounds.calendar_post_service import tracks_by_name
         from leaguebot.image.services.image_calendar_service import resolve_drawing
 
         await _seed(db_path, [(1, "NORMAL", TRACK_A)])

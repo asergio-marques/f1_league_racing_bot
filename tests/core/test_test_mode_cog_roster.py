@@ -1,15 +1,17 @@
 """The test-mode command surface for driver nationality.
 
 `/test-mode nationality` is the test-mode counterpart of `/signup nationality`, and
-`/test-mode roster add` takes a nationality the way the signup wizard takes one. These
-tests run the callbacks against a migrated database with Discord stubbed — no gateway, no
-server, no running bot.
+`/test-mode roster list` prints the nationality each fake driver holds; `/test-mode roster add`
+takes one on the change queue, in test_test_mode_roster_add. These tests run the callbacks
+against a migrated database with Discord stubbed — no gateway, no server, no running bot.
 
 The guards are unwrapped as the other cog suites unwrap them: the tier guards have their
 own cover, and a stubbed interaction is not a `discord.Member`.
 """
 from __future__ import annotations
 
+import sqlite3
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -20,8 +22,21 @@ import pytest
 # Imported as a module: pytest tries to collect a bare `TestModeCog` name as a test class.
 from leaguebot.core.cogs import test_mode_cog
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.config_service import ConfigService
-from leaguebot.core.services.placement_service import PlacementService
+from leaguebot.core.services.settings.config_service import ConfigService
+from tests.support.change_queue import (
+    Clock,
+    acknowledgement,
+    change_rows,
+    league_bot,
+    league_queue,
+    member,
+    run_queue,
+    seed_server,
+    step_rows,
+    stopped_job,
+)
+from tests.support.settings_league import audit_rows, last_said, said, unruled
+from tests.support.settings_league import interaction as member_asks
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 6161
@@ -129,35 +144,95 @@ def cog(db_path):
             db_path=db_path,
             config_service=ConfigService(db_path),
             output_router=SimpleNamespace(post_log=AsyncMock()),
-            # No bot behind it, so the template capacity guards (#150) stand aside here;
-            # they have tests of their own in test_test_roster_capacity_guards.
-            placement_service=PlacementService(db_path),
         )
     )
 
 
-async def _switch_off(db_path):
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE server_configs SET test_mode_nationality_required = 0 "
-            "WHERE server_id = ?",
-            (SERVER_ID,),
+async def _add(cog, *, name="Mock Alpha", nationality=None, team="Redline"):
+    """Mock driver *name* seated at *team* in Division 1 by the roster's writer: the listing's
+    tests need fake drivers seated, not the command that seats them."""
+    from leaguebot.core.services.test_mode.test_roster_service import add_test_driver_on
+
+    async with get_connection(cog.bot.db_path) as db:
+        result = await add_test_driver_on(
+            db, driver_name=name, team_name=team, division_name=DIVISION,
+            nationality=nationality,
         )
         await db.commit()
-
-
-async def _add(cog, *, name="Mock Alpha", nationality=None):
-    interaction = _Interaction()
-    await _unwrap(test_mode_cog.TestModeCog.roster_add)(
-        cog, interaction, name, "Redline", DIVISION, nationality
-    )
-    return interaction
+    assert not isinstance(result, str), result
 
 
 # ── /test-mode nationality ────────────────────────────────────────────────
 
 
+#: The switch the command flips, as its audit entry names it, and that entry's change type.
+_FLAG = "test_mode_nationality_required"
+_AUDIT_TYPE = "TEST_MODE_NATIONALITY_SET"
+
+#: The league admin who runs the command, as a log line names them, the mention wrapped so it
+#: notifies nobody; and the queue's "now".
+ACTOR_ID = 77
+_NAMED = f"Admin (`<@{ACTOR_ID}>`)"
+NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
+
+#: The command's refusal outside test mode, at the ask and as the change starts.
+_REFUSAL = "⛔ This command is only available when test mode is enabled."
+
+
+@pytest.fixture
+async def league(tmp_path):
+    """The league's server set up and in test mode, nationality on (its default), on the bot the
+    entry point builds, its configuration read from the database and its real change queue's
+    "now" pinned to `NOW`; `cog` is the test-mode cog on it."""
+    db_path = str(tmp_path / "nationality.db")
+    await run_migrations(db_path)
+    await seed_server(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE server_configs SET test_mode_active = 1")
+        await db.commit()
+    bot = await league_bot(db_path, real_config=True)
+    league_queue(bot, db_path, now=Clock(NOW))
+    cog = test_mode_cog.TestModeCog.__new__(test_mode_cog.TestModeCog)
+    cog.bot = bot
+    return SimpleNamespace(bot=bot, cog=cog, db_path=db_path)
+
+
+def _asks(league):
+    """Admin's (77) interaction for `/test-mode nationality`, recording every word they are told."""
+    return member_asks(
+        league.bot, "test-mode nationality", user=member(ACTOR_ID, "Admin", "Admin#0001")
+    )
+
+
+async def _ask_nationality(league, interaction) -> None:
+    """Admin runs the command, and nothing more: the queue is not run."""
+    await _unwrap(test_mode_cog.TestModeCog.nationality)(league.cog, interaction)
+
+
+async def _flags(db_path):
+    """The nationality switch and test mode as the server's configuration holds them, None where
+    it holds none."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            f"SELECT {_FLAG}, test_mode_active FROM server_configs"
+        )
+        row = await cursor.fetchone()
+    return None if row is None else dict(row)
+
+
+def _lines(league) -> list[str]:
+    """Every line the log channel took, without the rule drawn beneath each."""
+    return [unruled(str(line)) for line in league.bot.log_channel.sent]
+
+
 class TestTheNationalityCommand:
+    """`/test-mode nationality` is a core `Setting` on the change queue (#283): the command
+    answers with the queue's acknowledgement, and the queue flips the switch and writes its audit
+    entry in one save, stamped with the queue's clock, then updates the acknowledgement to the
+    reply and writes the line, both in the words the command used before the queue. Test mode is
+    judged at the ask and again as the change starts. These run on the bot the entry point
+    builds, its configuration read from the database, with the real queue and "now" pinned."""
+
     def test_it_sits_on_the_test_mode_group(self):
         assert "nationality" in {c.name for c in test_mode_cog.TestModeCog.test_mode.commands}
 
@@ -167,110 +242,217 @@ class TestTheNationalityCommand:
 
         assert config.test_mode_nationality_required is True
 
-    async def test_it_toggles_off_and_back_on(self, cog):
-        first = _Interaction()
-        await _unwrap(test_mode_cog.TestModeCog.nationality)(cog, first)
-        second = _Interaction()
-        await _unwrap(test_mode_cog.TestModeCog.nationality)(cog, second)
+    async def test_it_toggles_off_and_back_on(self, league):
+        """The server is in test mode with nationality on. Admin (77) runs the command, and runs
+        it again before the queue has run the first: the first is acknowledged as turning it off,
+        the second asks the same thing and is refused as a repeat, seen by Admin alone, in the
+        queue's words, the log channel taking that refusal as a line, and only the one change is
+        queued. The queue runs it: the switch is saved off, with one audit entry recording
+        on → off. Admin runs the command once more: it is acknowledged as turning it back on, and
+        once the queue has run it the switch is on again, a second audit entry recording
+        off → on; the replies read "OFF" and then "ON", and the lines "disabled" and then
+        "enabled", word for word."""
+        first, repeat, again = _asks(league), _asks(league), _asks(league)
 
-        assert "**OFF**" in first.reply
-        assert "**ON**" in second.reply
+        await _ask_nationality(league, first)
+        await _ask_nationality(league, repeat)
 
-    async def test_the_flip_is_persisted(self, cog):
-        await _unwrap(test_mode_cog.TestModeCog.nationality)(cog, _Interaction())
+        assert acknowledgement(first).startswith("⏳ Turning test-mode nationality off. ")
+        [refusal] = repeat.response.send_message.await_args_list
+        assert refusal.args[0] == (
+            "⚠️ Turning test-mode nationality off has already been asked for and has not "
+            "started yet, so it was not asked for again."
+        )
+        assert refusal.kwargs.get("ephemeral") is True
+        assert len(await change_rows(league.db_path)) == 1
+        await run_queue(league.bot)
 
-        config = await cog.bot.config_service.get_server_config()
-        assert config.test_mode_nationality_required is False
+        await _ask_nationality(league, again)
+        assert acknowledgement(again).startswith("⏳ Turning test-mode nationality on. ")
+        await run_queue(league.bot)
 
-    async def test_it_is_logged(self, cog):
-        await _unwrap(test_mode_cog.TestModeCog.nationality)(cog, _Interaction())
+        rows = await audit_rows(league.db_path)
+        assert [
+            (row["change_type"], row["old_value"], row["new_value"])
+            for row in rows
+        ] == [
+            (_AUDIT_TYPE, {_FLAG: True}, {_FLAG: False}),
+            (_AUDIT_TYPE, {_FLAG: False}, {_FLAG: True}),
+        ]
+        assert await _flags(league.db_path) == {_FLAG: 1, "test_mode_active": 1}
+        assert last_said(first) == (
+            "✅ Test-mode nationality: **OFF**.\n"
+            "Mock drivers already holding one keep it, and graphics draw no flag at all."
+        )
+        assert last_said(again) == (
+            "✅ Test-mode nationality: **ON**.\n"
+            "Mock drivers may be given one with `/test-mode roster add`."
+        )
+        assert _lines(league) == [
+            f"⛔ `/test-mode nationality` refused for {_NAMED} — Turning test-mode nationality "
+            "off has already been asked for and has not started yet, so it was not asked for "
+            "again.",
+            f"{_NAMED} | /test-mode nationality | Success\n  test_mode_nationality: disabled",
+            f"{_NAMED} | /test-mode nationality | Success\n  test_mode_nationality: enabled",
+        ]
 
-        logged = cog.bot.output_router.post_log.await_args.args[0]
-        assert "/test-mode nationality" in logged
-        assert "disabled" in logged
+    async def test_a_switch_already_where_it_was_asked_to_go_is_answered_nothing_changed(
+        self, league
+    ):
+        """The server is in test mode with nationality on. Admin (77) runs the command, and is
+        acknowledged as turning it off; before the queue runs it, the switch is already turned
+        off, as a change of the same asked earlier would leave it. When the queue runs it, nothing
+        is saved and nothing audited: Admin's reply becomes "Nothing changed", word for word, and
+        the log channel takes a "Nothing changed" line in the place of a success line."""
+        interaction = _asks(league)
 
-    async def test_it_is_refused_while_test_mode_is_off(self, cog, db_path):
-        async with get_connection(db_path) as db:
-            await db.execute(
-                "UPDATE server_configs SET test_mode_active = 0 WHERE server_id = ?",
-                (SERVER_ID,),
-            )
+        await _ask_nationality(league, interaction)
+        assert acknowledgement(interaction).startswith("⏳ Turning test-mode nationality off. ")
+        async with get_connection(league.db_path) as db:
+            await db.execute(f"UPDATE server_configs SET {_FLAG} = 0")
             await db.commit()
+        await run_queue(league.bot)
 
-        interaction = _Interaction()
-        await _unwrap(test_mode_cog.TestModeCog.nationality)(cog, interaction)
+        assert last_said(interaction) == (
+            "ℹ️ Nothing changed: test-mode nationality is already **OFF**."
+        )
+        assert await _flags(league.db_path) == {_FLAG: 0, "test_mode_active": 1}
+        assert await audit_rows(league.db_path) == []
+        assert _lines(league) == [
+            f"{_NAMED} | /test-mode nationality | Nothing changed\n"
+            "  test_mode_nationality: disabled"
+        ]
+        assert await stopped_job(league.db_path) is None
 
-        assert "only available when test mode is enabled" in interaction.reply
-        config = await cog.bot.config_service.get_server_config()
-        assert config.test_mode_nationality_required is True
+    async def test_the_flip_is_persisted(self, league):
+        """The server is in test mode with nationality on. Admin (77) runs the command and the
+        queue runs it: the switch is saved off, with one audit entry beside it recording on →
+        off, naming Admin and no division, stamped with the queue's clock; test mode itself is
+        still on."""
+        await _ask_nationality(league, _asks(league))
+        await run_queue(league.bot)
 
+        assert await _flags(league.db_path) == {_FLAG: 0, "test_mode_active": 1}
+        rows = await audit_rows(league.db_path)
+        assert [
+            (row["change_type"], row["old_value"], row["new_value"],
+             row["actor_id"], row["division_id"], row["timestamp"])
+            for row in rows
+        ] == [(_AUDIT_TYPE, {_FLAG: True}, {_FLAG: False}, ACTOR_ID, None, NOW.isoformat())]
 
-# ── /test-mode roster add ─────────────────────────────────────────────────
+    async def test_it_is_logged(self, league):
+        """The server is in test mode with nationality on. Admin (77) runs the command: they are
+        answered at once with the queue's acknowledgement, naming the change's first job, and
+        nothing is written until the queue runs it. Once it has, the acknowledgement reads the
+        reply word for word, and the log channel takes the one line, word for word."""
+        interaction = _asks(league)
 
+        await _ask_nationality(league, interaction)
 
-class TestRosterAddTakesANationality:
-    async def test_the_reply_names_the_canonical_nationality(self, cog):
-        interaction = await _add(cog, nationality="united kingdom")
+        first_job = (await step_rows(league.db_path))[0]["id"]
+        assert acknowledgement(interaction) == (
+            "⏳ Turning test-mode nationality off. This message will be updated when it is done; "
+            "if it takes longer, the log channel will say so. "
+            f"It begins with job #{first_job}."
+        )
+        assert await _flags(league.db_path) == {_FLAG: 1, "test_mode_active": 1}
+        assert await audit_rows(league.db_path) == []
 
-        assert "Nationality: **British**" in interaction.reply
+        await run_queue(league.bot)
 
-    async def test_an_invalid_one_is_refused(self, cog):
-        interaction = await _add(cog, nationality="Martian")
+        assert last_said(interaction) == (
+            "✅ Test-mode nationality: **OFF**.\n"
+            "Mock drivers already holding one keep it, and graphics draw no flag at all."
+        )
+        assert _lines(league) == [
+            f"{_NAMED} | /test-mode nationality | Success\n  test_mode_nationality: disabled"
+        ]
 
-        assert "Invalid nationality" in interaction.reply
+    @pytest.mark.parametrize("configured", [True, False], ids=["test_mode_off", "unconfigured"])
+    async def test_it_is_refused_while_test_mode_is_off(self, league, configured):
+        """Admin (77) runs the command with test mode off, or on a server with no configuration
+        at all. They are refused at once, in one reply seen by them alone, in the words the
+        command has always used; nothing is queued, the switch is not touched and nothing is
+        audited; where the server is configured its log channel takes the standard refusal line,
+        and where it is not there is no log channel to take one."""
+        async with get_connection(league.db_path) as db:
+            if configured:
+                await db.execute("UPDATE server_configs SET test_mode_active = 0")
+            else:
+                await db.execute("DELETE FROM server_configs")
+            await db.commit()
+        interaction = _asks(league)
 
-    async def test_it_is_optional(self, cog):
-        interaction = await _add(cog)
+        await _ask_nationality(league, interaction)
 
-        assert "Added fake driver" in interaction.reply
-        assert "Nationality:" not in interaction.reply
+        assert said(interaction) == [_REFUSAL]
+        [reply] = interaction.response.send_message.await_args_list
+        assert reply.kwargs.get("ephemeral") is True
+        assert await change_rows(league.db_path) == []
+        assert await audit_rows(league.db_path) == []
+        if configured:
+            assert await _flags(league.db_path) == {_FLAG: 1, "test_mode_active": 0}
+            assert _lines(league) == [
+                f"⛔ `/test-mode nationality` refused for {_NAMED} — {_REFUSAL[2:]}"
+            ]
+        else:
+            assert await _flags(league.db_path) is None
+            assert _lines(league) == []
 
-    async def test_the_reply_names_the_division_the_driver_landed_in(self, cog):
-        """Every division is seeded from the same server team list, so a team name
-        repeats across all of them. The team alone therefore does not say where the
-        driver went, which is the one thing the command is choosing — and it matters
-        more to a manager building a roster than the nationality does."""
-        interaction = await _add(cog, name="Mock Alpha", nationality="Dutch")
+    async def test_it_is_refused_as_it_starts_where_test_mode_was_turned_off(self, league):
+        """The server is in test mode with nationality on. Admin (77) runs the command and is
+        acknowledged; before the queue runs it, test mode is switched off. The change judges again
+        as it starts and is refused: the switch stays on, nothing is audited, Admin's reply
+        becomes the refusal the command gives at the ask, word for word, the log channel takes
+        that refusal as its only line, and the queue is not stopped."""
+        interaction = _asks(league)
 
-        assert DIVISION in interaction.reply
-        assert "Redline" in interaction.reply
-        assert interaction.reply.index("Redline") < interaction.reply.index(DIVISION)
+        await _ask_nationality(league, interaction)
+        assert acknowledgement(interaction).startswith("⏳ ")
+        async with get_connection(league.db_path) as db:
+            await db.execute("UPDATE server_configs SET test_mode_active = 0")
+            await db.commit()
+        await run_queue(league.bot)
 
-    async def test_it_reaches_the_log(self, cog):
-        await _add(cog, nationality="Dutch")
+        assert last_said(interaction) == _REFUSAL
+        assert await _flags(league.db_path) == {_FLAG: 1, "test_mode_active": 0}
+        assert await audit_rows(league.db_path) == []
+        assert _lines(league) == [
+            f"⛔ `/test-mode nationality` refused for {_NAMED} — {_REFUSAL[2:]}"
+        ]
+        assert await stopped_job(league.db_path) is None
 
-        assert "nationality: Dutch" in cog.bot.output_router.post_log.await_args.args[0]
+    async def test_a_fault_in_the_save_saves_neither_the_flag_nor_its_audit(
+        self, league, monkeypatch
+    ):
+        """The server is in test mode with nationality on. Admin (77) runs the command, and the
+        audit entry's write fails on the database as the queue runs the change. The switch is not
+        saved either: it is still on and no audit entry stands. Admin is told in
+        `setting_change`'s words that nothing was saved and to run it again; the log channel
+        gets the one failure line and no success line; the queue is not stopped."""
+        from leaguebot.core.services.queue import change_queue
 
+        monkeypatch.setattr(
+            change_queue, "record_change_on",
+            AsyncMock(side_effect=sqlite3.OperationalError("disk I/O error")),
+        )
+        interaction = _asks(league)
 
-class TestRosterAddWhileTheSwitchIsOff:
-    """The signup wizard drops the question rather than collecting an unkept answer."""
+        await _ask_nationality(league, interaction)
+        await run_queue(league.bot)
 
-    async def test_giving_one_is_refused(self, cog, db_path):
-        await _switch_off(db_path)
-
-        interaction = await _add(cog, nationality="British")
-
-        assert "Nationality is switched off for test mode" in interaction.reply
-
-    async def test_no_driver_is_created_by_the_refused_command(self, cog, db_path):
-        await _switch_off(db_path)
-
-        await _add(cog, nationality="British")
-
-        async with get_connection(db_path) as db:
-            row = await (
-                await db.execute(
-                    "SELECT COUNT(*) AS n FROM driver_profiles WHERE is_test_driver = 1"
-                )
-            ).fetchone()
-        assert row["n"] == 0
-
-    async def test_a_driver_may_still_be_added_without_one(self, cog, db_path):
-        await _switch_off(db_path)
-
-        interaction = await _add(cog)
-
-        assert "Added fake driver" in interaction.reply
+        assert await _flags(league.db_path) == {_FLAG: 1, "test_mode_active": 1}
+        assert await audit_rows(league.db_path) == []
+        assert last_said(interaction) == (
+            "❌ `/test-mode nationality` stopped on a fault in the bot, not on anything you "
+            "entered, and did not finish. Nothing was saved. Run `/test-mode nationality` again "
+            "to retry. The fault is recorded in the log channel."
+        )
+        assert _lines(league) == [
+            f"❌ `/test-mode nationality` failed for {_NAMED} — OperationalError. The details "
+            f"are in the host's log."
+        ]
+        assert await stopped_job(league.db_path) is None
 
 
 # ── /test-mode roster list ────────────────────────────────────────────────
@@ -334,10 +516,7 @@ class TestRosterListShowsIt:
             await db.commit()
 
         for i in range(25):
-            interaction = _Interaction()
-            await _unwrap(test_mode_cog.TestModeCog.roster_add)(
-                cog, interaction, f"Mock Driver {i:02d}", "Reserve", DIVISION, "Dutch"
-            )
+            await _add(cog, name=f"Mock Driver {i:02d}", nationality="Dutch", team="Reserve")
 
         interaction = _Interaction()
         await _unwrap(test_mode_cog.TestModeCog.roster_list)(
@@ -351,31 +530,3 @@ class TestRosterListShowsIt:
         whole = "\n".join(interaction.sent)
         for i in range(25):
             assert f"Mock Driver {i:02d}" in whole
-
-
-# ── A driver that cannot be written (#442) ────────────────────────────────
-
-
-async def test_a_roster_add_that_cannot_be_written_says_the_driver_was_not_added(cog):
-    """The service raises on a database fault. The command answers with the standard failure
-    reply, saying the test driver was not added and how to retry, with no error text, and one
-    failure line is logged."""
-    import sqlite3
-    from unittest.mock import patch
-
-    interaction = _Interaction()
-    with patch(
-        "leaguebot.core.services.test_roster_service.add_test_driver",
-        new=AsyncMock(side_effect=sqlite3.OperationalError("database is locked")),
-    ):
-        await _unwrap(test_mode_cog.TestModeCog.roster_add)(
-            cog, interaction, "Mock Alpha", "Redline", DIVISION, None
-        )
-
-    reply = interaction.reply
-    assert "stopped on a fault in the bot, not on anything you entered" in reply
-    assert "The test driver was not added." in reply
-    assert "Run `/test-mode roster add` again to retry." in reply
-    assert "database is locked" not in reply
-    [line] = [str(c.args[0]) for c in interaction.client.output_router.post_log.await_args_list]
-    assert "failed for Tester (<@1>)" in line

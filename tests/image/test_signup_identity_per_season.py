@@ -39,7 +39,7 @@ async def db_path(tmp_path):
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
             "scheduled_at) VALUES (111, 11, 1, 'NORMAL', 'Silverstone Circuit', "
-            "'2025-06-01T14:00:00')"
+            "'2025-06-01T14:00:00+00:00')"
         )
         await db.execute(
             "INSERT INTO driver_profiles (discord_user_id, current_state) "

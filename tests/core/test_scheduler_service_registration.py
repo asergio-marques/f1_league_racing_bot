@@ -1,14 +1,9 @@
 """The scheduler service's registration, its result-only scheduling and its signup timer.
 
-Issue #208. The callback registrations, `schedule_all_rounds`, `schedule_result_submission_jobs`,
-the signup close timer and the season-end cancellation were uncovered. They are thin, and each
-has one property that matters more than its size suggests.
-
-**Every callback registers under the attribute its job function reads.** The module-level job
-functions reach the service through a global and read one attribute each; a registration that
-wrote a different name would leave the job skipping silently for ever, logging only that no
-callback was registered. The pairing is tested for all of them together, because that is the
-shape the mistake would take.
+Issue #208. `schedule_all_rounds`, `schedule_result_submission_jobs`, the signup close timer and
+the season-end cancellation were uncovered. They are thin, and each has one property that matters
+more than its size suggests. What every job is stored with, and that each kind's handler is reached
+through the one runner, is pinned in `test_scheduler_one_off.py`.
 
 **The service registers itself as the global only when it starts.** Constructing a second
 service — a test, a reset — must not redirect jobs already firing at the running one.
@@ -35,6 +30,7 @@ from unittest.mock import MagicMock
 import pytest
 
 import leaguebot.core.services.scheduler_service as scheduler_module
+from leaguebot.core.services.rounds.round_moments import POST_RACE_CLEANUP_DELAY
 from leaguebot.core.services.scheduler_service import SchedulerService
 
 
@@ -51,29 +47,15 @@ def _service():
     service._jobstore_path = "/tmp/not-read-jobs.db"
     service._scheduler = MagicMock()
     service._scheduler.running = False
-    service._phase_callbacks = {}
-    for attr in (
-        "_signup_close_callback",
-        "_portrait_refresh_callback",
-        "_mystery_notice_callback",
-        "_forecast_cleanup_callback",
-        "_result_submission_callback",
-        "_rsvp_notice_callback",
-        "_rsvp_last_notice_callback",
-        "_rsvp_deadline_callback",
-        "_rsvp_cleanup_callback",
-    ):
-        setattr(service, attr, None)
     return service
 
 
-def _round(round_id=21, division_id=11, number=3, *, naive=False):
-    at = datetime(2026, 3, 1, 18, tzinfo=timezone.utc)
+def _round(round_id=21, division_id=11, number=3):
     return SimpleNamespace(
         id=round_id,
         division_id=division_id,
         round_number=number,
-        scheduled_at=at.replace(tzinfo=None) if naive else at,
+        scheduled_at=datetime(2026, 3, 1, 18, tzinfo=timezone.utc),
     )
 
 
@@ -82,41 +64,8 @@ def _added(service) -> list:
 
 
 # ---------------------------------------------------------------------------
-# Registration
+# Starting
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "register,attribute",
-    [
-        ("register_mystery_notice_callback", "_mystery_notice_callback"),
-        ("register_forecast_cleanup_callback", "_forecast_cleanup_callback"),
-        ("register_result_submission_callback", "_result_submission_callback"),
-        ("register_rsvp_notice_callback", "_rsvp_notice_callback"),
-        ("register_rsvp_last_notice_callback", "_rsvp_last_notice_callback"),
-        ("register_rsvp_deadline_callback", "_rsvp_deadline_callback"),
-        ("register_rsvp_cleanup_callback", "_rsvp_cleanup_callback"),
-        ("register_signup_close_callback", "_signup_close_callback"),
-        ("register_portrait_refresh_callback", "_portrait_refresh_callback"),
-    ],
-)
-def test_each_callback_registers_where_its_job_reads_it(register, attribute):
-    """A registration writing a different name leaves the job skipping silently for ever."""
-    service = _service()
-    callback = MagicMock()
-
-    getattr(service, register)(callback)
-
-    assert getattr(service, attribute) is callback
-
-
-def test_the_three_phase_callbacks_are_keyed_by_phase():
-    service = _service()
-    p1, p2, p3 = MagicMock(), MagicMock(), MagicMock()
-
-    service.register_callbacks(p1, p2, p3)
-
-    assert service._phase_callbacks == {1: p1, 2: p2, 3: p3}
 
 
 def test_starting_makes_the_service_the_one_jobs_reach():
@@ -140,6 +89,35 @@ def test_constructing_a_service_does_not_redirect_running_jobs(tmp_path):
     finally:
         # Released explicitly: Windows will not remove a SQLite file an engine still holds.
         second._scheduler._jobstores["default"].engine.dispose()
+
+
+def test_paused_pauses_and_resumes_the_scheduler():
+    """A running scheduler is paused for the block and resumed after it, and resumed too where
+    the block raises, the error going on to the caller."""
+    service = _service()
+    service._scheduler.running = True
+
+    with service.paused():
+        service._scheduler.pause.assert_called_once_with()
+        service._scheduler.resume.assert_not_called()
+    service._scheduler.resume.assert_called_once_with()
+
+    with pytest.raises(OSError, match="the disk is full"):
+        with service.paused():
+            raise OSError("the disk is full")
+    assert service._scheduler.pause.call_count == 2
+    assert service._scheduler.resume.call_count == 2
+
+
+def test_a_stopped_scheduler_is_neither_paused_nor_resumed():
+    """Resuming a scheduler nobody paused would start one the bot deliberately left down."""
+    service = _service()
+
+    with service.paused():
+        pass
+
+    service._scheduler.pause.assert_not_called()
+    service._scheduler.resume.assert_not_called()
 
 
 def test_starting_a_running_scheduler_does_not_start_it_again():
@@ -197,10 +175,9 @@ def test_a_results_only_league_gets_a_submission_job_per_round():
         [_round(21), _round(22, number=4)], division_meta={11: (7, 1)}
     )
 
-    assert len(_added(service)) == 2
-    assert all(
-        c.args[0] is scheduler_module._result_submission_job_wrapper for c in _added(service)
-    )
+    assert [c.kwargs["id"] for c in _added(service)] == [
+        "results_s7_d1_r3_id21", "results_s7_d1_r4_id22",
+    ]
 
 
 def test_the_submission_job_fires_at_the_round_start():
@@ -221,15 +198,6 @@ def test_the_submission_job_id_carries_the_round_id():
     job = _added(service)[0].kwargs
     assert job["id"] == "results_s7_d1_r3_id21"
     assert job["replace_existing"] is True
-    assert job["kwargs"] == {"round_id": 21}
-
-
-def test_a_naive_round_time_is_read_as_utc():
-    service = _service()
-
-    service.schedule_result_submission_jobs([_round(naive=True)], division_meta={11: (7, 1)})
-
-    assert _added(service)[0].kwargs["trigger"].run_date.utcoffset() == timedelta(0)
 
 
 def test_a_submission_run_at_once_replaces_the_round_s_job_and_runs_however_late():
@@ -241,12 +209,10 @@ def test_a_submission_run_at_once_replaces_the_round_s_job_and_runs_however_late
     service.run_result_submission_now(_round(21, number=3), season_number=7, division_tier=1)
 
     [added] = _added(service)
-    assert added.args[0] is scheduler_module._result_submission_job_wrapper
     assert added.kwargs.get("trigger") is None
     assert added.kwargs["id"] == "results_s7_d1_r3_id21"
     assert added.kwargs["replace_existing"] is True
     assert added.kwargs["misfire_grace_time"] is None
-    assert added.kwargs["kwargs"] == {"round_id": 21}
 
 
 def test_a_phase_left_out_is_not_armed_and_the_rest_of_the_round_is():
@@ -268,15 +234,15 @@ def test_a_phase_left_out_is_not_armed_and_the_rest_of_the_round_is():
 # The check-in cleanup (#425)
 # ---------------------------------------------------------------------------
 #
-# `schedule_attendance_round` skips any job whose moment has passed against the wall clock, so
-# these place the round relative to it rather than on a pinned date.
-
+# `schedule_attendance_round` skips any job whose moment is not after the `now` it is handed, and
+# reads no clock of its own: each test hands a `now` the wall clock is nowhere near, so that a read
+# of the wall clock would arm, or skip, what the test says it does not.
 
 def _round_starting(start: datetime) -> SimpleNamespace:
     return SimpleNamespace(id=21, division_id=11, round_number=3, scheduled_at=start)
 
 
-def _attendance_jobs(service, rnd) -> dict:
+def _attendance_jobs(service, rnd, *, now: datetime) -> dict:
     service.schedule_attendance_round(
         rnd,
         season_number=7,
@@ -284,47 +250,53 @@ def _attendance_jobs(service, rnd) -> dict:
         notice_days=5,
         last_notice_hours=24,
         deadline_hours=2,
+        now=now,
     )
     return {c.kwargs["id"]: c for c in _added(service)}
 
 
-def _a_month_out() -> datetime:
-    return datetime.now(timezone.utc).replace(microsecond=0) + timedelta(days=30)
-
-
 def test_the_check_in_cleanup_is_armed_a_day_after_the_round():
+    """A round on 1 March 2020 at 18:00, long past by the wall clock, armed with `now` a month
+    before it: its check-in clean-up is armed a day after its start, as are its call, last
+    notice and deadline."""
     service = _service()
-    start = _a_month_out()
+    start = datetime(2020, 3, 1, 18, tzinfo=timezone.utc)
 
-    cleanup = _attendance_jobs(service, _round_starting(start))["rsvp_cleanup_s7_d1_r3_id21"]
+    jobs = _attendance_jobs(service, _round_starting(start), now=start - timedelta(days=30))
 
-    assert cleanup.args[0] is scheduler_module._rsvp_cleanup_job
+    cleanup = jobs["rsvp_cleanup_s7_d1_r3_id21"]
     assert cleanup.kwargs["trigger"].run_date == start + timedelta(hours=24)
     assert cleanup.kwargs["replace_existing"] is True
-    assert cleanup.kwargs["kwargs"] == {"round_id": 21}
+    assert sorted(jobs) == [
+        "rsvp_cleanup_s7_d1_r3_id21", "rsvp_deadline_s7_d1_r3_id21",
+        "rsvp_last_notice_s7_d1_r3_id21", "rsvp_notice_s7_d1_r3_id21",
+    ]
 
 
 def test_a_check_in_cleanup_already_due_is_not_armed():
-    """The same rule as the attendance module's other three jobs: a moment gone by is skipped."""
+    """The same rule as the attendance module's other three jobs: a moment gone by is skipped. A
+    round on 1 March 2099 at 18:00, still to come by the wall clock, armed with `now` two days
+    after it: none of its four check-in jobs is armed."""
     service = _service()
-    started = datetime.now(timezone.utc) - timedelta(days=2)
+    start = datetime(2099, 3, 1, 18, tzinfo=timezone.utc)
 
-    jobs = _attendance_jobs(service, _round_starting(started))
+    jobs = _attendance_jobs(service, _round_starting(start), now=start + timedelta(days=2))
 
-    assert not [job_id for job_id in jobs if job_id.startswith("rsvp_cleanup")]
+    assert not [job_id for job_id in jobs if job_id.startswith("rsvp_")]
 
 
 def test_a_round_s_forecast_and_check_in_come_down_together():
     """One figure for both modules, so a round's channels clear at the same moment."""
     service = _service()
-    rnd = _round_starting(_a_month_out())
+    start = datetime(2026, 3, 1, 18, tzinfo=timezone.utc)
+    rnd = _round_starting(start)
 
     service.schedule_round(rnd, season_number=7, division_tier=1)
-    jobs = _attendance_jobs(service, rnd)
+    jobs = _attendance_jobs(service, rnd, now=start - timedelta(days=30))
 
     forecast = jobs["cleanup_s7_d1_r3_id21"].kwargs["trigger"].run_date
     check_in = jobs["rsvp_cleanup_s7_d1_r3_id21"].kwargs["trigger"].run_date
-    assert forecast == check_in == rnd.scheduled_at + scheduler_module.POST_RACE_CLEANUP_DELAY
+    assert forecast == check_in == rnd.scheduled_at + POST_RACE_CLEANUP_DELAY
 
 
 # ---------------------------------------------------------------------------
@@ -338,9 +310,7 @@ def test_the_signup_timer_is_armed_for_the_league():
     service.schedule_signup_close_timer("2026-03-01T20:00:00")
 
     job = _added(service)[0]
-    assert job.args[0] is scheduler_module._signup_close_timer_job
     assert job.kwargs["id"] == "signup_close"
-    assert "kwargs" not in job.kwargs
     assert job.kwargs["trigger"].run_date == datetime(2026, 3, 1, 20, tzinfo=timezone.utc)
 
 

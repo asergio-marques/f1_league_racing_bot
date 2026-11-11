@@ -46,7 +46,7 @@ async def _add_rounds(db_path: str, statuses: dict[int, str]) -> None:
             await db.execute(
                 "INSERT INTO rounds "
                 "(id, division_id, round_number, format, track_name, scheduled_at, status) "
-                "VALUES (?, ?, ?, 'NORMAL', 'Monza', '2026-06-01T18:00:00', ?)",
+                "VALUES (?, ?, ?, 'NORMAL', 'Monza', '2026-06-01T18:00:00+00:00', ?)",
                 (number, DIVISION_ID, number, status),
             )
         await db.commit()
@@ -134,7 +134,7 @@ async def test_a_second_sync_applies_nothing_twice(tmp_path):
     """The recovery is to run it again, so running it again must be harmless: the driver
     sacked by the first run is not attempted by the second. The first asks the change queue,
     once, for the sack's announcement, and the second asks for none."""
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.drivers.placement_service import PlacementService
 
     db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
     await _add_rounds(db_path, {})
@@ -147,7 +147,7 @@ async def test_a_second_sync_applies_nothing_twice(tmp_path):
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
     bot = _make_bot(db_path)
     placement = PlacementService(db_path)
-    placement._refresh_lineup_post = AsyncMock(return_value=None)
+    bot.lineup_poster._refresh_lineup_post = AsyncMock(return_value=None)
     bot.placement_service = placement
 
     with patch.object(
@@ -188,7 +188,8 @@ async def test_sync_still_applies_a_sanction_whose_role_change_discord_refuses(t
 
     import discord
 
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.drivers.placement_service import PlacementService
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 
     db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
     await _add_rounds(db_path, {})
@@ -207,8 +208,8 @@ async def test_sync_still_applies_a_sanction_whose_role_change_discord_refuses(t
         await db.commit()
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
     bot = _make_bot(db_path)
-    placement = PlacementService(db_path)
-    placement._refresh_lineup_post = AsyncMock(return_value=None)
+    placement = PlacementService(db_path, roles=TeamRoleService(db_path))
+    bot.lineup_poster._refresh_lineup_post = AsyncMock(return_value=None)
     bot.placement_service = placement
     guild = MagicMock()
     guild.get_role = MagicMock(side_effect=lambda role_id: MagicMock(id=role_id))

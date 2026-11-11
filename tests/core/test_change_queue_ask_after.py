@@ -14,8 +14,8 @@ import pytest
 from leaguebot.core.db.database import run_migrations
 from leaguebot.core.models import change
 from leaguebot.core.models.change import ChangeOrigin
-from leaguebot.core.services import change_queue
-from leaguebot.core.services.change_queue import Ahead
+from leaguebot.core.services.queue import change_queue, change_types
+from leaguebot.core.services.queue.change_types import Ahead
 from tests.support.change_queue import (
     acknowledgement,
     attach_queue,
@@ -29,7 +29,7 @@ from tests.support.change_queue import (
 MAIN, AHEAD = "test.main", "test.ahead"
 
 
-def _type(kind: str, *, verdict=None, ran: list[str] | None = None) -> change_queue.ChangeType:
+def _type(kind: str, *, verdict=None, ran: list[str] | None = None) -> change_types.ChangeType:
     async def _check(_ctx):
         return verdict if verdict is not None else change.Verdict.go()
 
@@ -38,10 +38,10 @@ def _type(kind: str, *, verdict=None, ran: list[str] | None = None) -> change_qu
             ran.append(kind)
         return change.StepResult()
 
-    return change_queue.ChangeType(
+    return change_types.ChangeType(
         kind=kind,
         opening=(change.PlannedStep("act", {}),),
-        steps={"act": change_queue.Step("act", change.StepKind.ACT, _act)},
+        steps={"act": change_types.Step("act", change.StepKind.ACT, _act)},
         check=_check,
         key=lambda payload: f"{kind}|{payload.get('n')}",
         doing=lambda _payload: f"doing {kind}",

@@ -49,6 +49,7 @@ from tests.support.change_queue import (
 from tests.support.season_league import (
     ADMIN_ID,
     AM,
+    RENAMED_JOB,
     CALL_MESSAGES,
     DIVISIONS,
     PRO,
@@ -58,8 +59,10 @@ from tests.support.season_league import (
     SeasonLeague,
     accept_session,
     complete_season,
+    notices_handed,
     ongoing_league,
     open_submission,
+    rename_module_job,
     reply,
     round_id,
 )
@@ -89,8 +92,6 @@ FORECAST = DIVISIONS[PRO][3].forecast
 CHECKIN_NOTICE = "There is no check-in to answer for it, and nobody is charged for it."
 FORECAST_NOTE = "No weather forecast will be posted for it."
 RESULTS_NOTE = "No results will be posted for it."
-#: The heading every one of round 3's notices opens with.
-NOTICE_HEADING = "**Round 3 Cancelled: Pro**"
 
 QUALIFYING, RACE = (
     results_formatter.format_session_label(session, is_sprint=False)
@@ -401,7 +402,7 @@ async def test_the_round_s_ending_cannot_be_discarded(tmp_path):
     discarded. Once the fault is lifted, Retry ends the round cancelled (core :137)."""
     league = await _league(tmp_path)
 
-    with patch("leaguebot.core.services.season_service.refresh_division_status_on",
+    with patch("leaguebot.core.services.seasons.season_service.refresh_division_status_on",
                new=AsyncMock(side_effect=RuntimeError("disk I/O error"))):
         await _cancel_the_race(league)
         await run_queue(league.bot)
@@ -500,10 +501,11 @@ def _sends(league: SeasonLeague, channel_id: int, phrase: str) -> list[Any]:
 async def test_a_round_ending_cancelled_posts_the_round_cancelled_notices_in_check_in_forecast_and_results(
     tmp_path, weather, attendance,
 ):
-    """Round 3 ends cancelled when the admin types CANCELLED for its race. Each module that is on
-    posts its "round cancelled" notice once, in `/round cancel`'s words: Pro's check-in channel a
-    notice opening with Pro's role and pinging it, Pro's forecast and results channels a silent
-    note. A module that is off posts nothing (owner, check 1, "Post the notices"; Q-E5)."""
+    """Round 3 (Silverstone) ends cancelled when the admin types CANCELLED for its race. Each
+    module that is on posts its "round cancelled" notice once, in `/round cancel`'s words, word
+    for word: Pro's check-in channel a notice opening with Pro's role and pinging it, Pro's
+    forecast and results channels a silent note, each naming the round and its track. A module
+    that is off posts nothing (owner, check 1, "Post the notices"; Q-E5)."""
     league = await _league(tmp_path, weather=weather, attendance=attendance)
 
     await _cancel_the_race(league)
@@ -511,18 +513,47 @@ async def test_a_round_ending_cancelled_posts_the_round_cancelled_notices_in_che
 
     assert await stopped_job(league.db_path) is None
     [results] = _sends(league, RESULTS, RESULTS_NOTE)
-    assert NOTICE_HEADING in str(results.args[0]) and results.kwargs.get("silent") is True
+    assert str(results.args[0]) == (
+        "📢 **Round 3 Cancelled: Pro**\nRound 3 (Silverstone) has been cancelled. No results will "
+        "be posted for it."
+    )
+    assert results.kwargs.get("silent") is True
     forecasts = _sends(league, FORECAST, FORECAST_NOTE)
     checkins = _sends(league, CHECKIN, CHECKIN_NOTICE)
     if not weather:
         assert forecasts == [] and checkins == []
         return
     [forecast] = forecasts
-    assert NOTICE_HEADING in str(forecast.args[0]) and forecast.kwargs.get("silent") is True
+    assert str(forecast.args[0]) == (
+        "📢 **Round 3 Cancelled: Pro**\nRound 3 (Silverstone) has been cancelled. No weather "
+        "forecast will be posted for it."
+    )
+    assert forecast.kwargs.get("silent") is True
     [checkin] = checkins
-    assert str(checkin.args[0]).startswith(f"<@&{PRO_ROLE}>")
-    assert NOTICE_HEADING in str(checkin.args[0])
+    assert str(checkin.args[0]) == (
+        f"<@&{PRO_ROLE}>\n📢 **Round 3 Cancelled: Pro**\nRound 3 (Silverstone) has been cancelled. "
+        "There is no check-in to answer for it, and nobody is charged for it."
+    )
     assert not checkin.kwargs.get("silent")
+
+
+async def test_a_round_ending_cancelled_hands_its_division_to_the_notices_hook(tmp_path):
+    """Round 3 ends cancelled when the admin types CANCELLED for its race. Inside the save that
+    ends it, on that save's own connection, the hook the modules' notices are planned through is
+    called once, handed the round scope and Pro's round 3: Pro's id, name and season, and the
+    round's number and track."""
+    league = await _league(tmp_path)
+    handed = notices_handed(league)
+
+    await _cancel_the_race(league)
+    await run_queue(league.bot)
+
+    assert [
+        (scope, {key: target[key] for key in ("division_id", "division_name", "season_id",
+                                               "round_number", "track_name")}, in_save)
+        for scope, target, in_save in handed
+    ] == [("round", {"division_id": PRO, "division_name": "Pro", "season_id": SEASON_ID,
+                     "round_number": 3, "track_name": "Silverstone"}, True)]
 
 
 async def test_a_round_ending_cancelled_leaves_its_call_and_forecast_until_the_day_after(
@@ -578,15 +609,38 @@ async def test_a_discarded_notice_is_named_in_the_round_s_log_line(tmp_path):
 #: The heading of round 3's check-in record in the log channel.
 RECORD_HEADING = "\n  check-in, Pro, Round 3 (Silverstone):"
 
+#: The job that reads round 3's check-in, as attendance names it.
+READ_CHECK_IN = "read_check_in"
+#: The case of attendance's job reading the check-in run under a name of the test's own.
+_RENAMED = pytest.param(True, id="under another name")
 
-async def test_a_round_ending_cancelled_writes_its_check_in_record_beneath_its_line(tmp_path):
+
+def _read_check_in_renamed(monkeypatch: Any) -> str:
+    """Attendance's job reading a round's check-in runs under a name of the test's own
+    (`rename_module_job`), which neither results nor core knows; give that name."""
+    check_in_record = importlib.import_module("leaguebot.attendance.services.check_in_record")
+    rename_module_job(
+        monkeypatch, steps=(check_in_record, "read_check_in_steps"),
+        planner=(check_in_record, "read_check_in_on"), old=READ_CHECK_IN,
+    )
+    return RENAMED_JOB
+
+
+@pytest.mark.parametrize("renamed", [pytest.param(False, id="as attendance names it"), _RENAMED])
+async def test_a_round_ending_cancelled_writes_its_check_in_record_beneath_its_line(
+    tmp_path, monkeypatch, renamed,
+):
     """Attendance is on. Round 3's check-in recorded Lewis as accepted and Max as giving no
     answer, and the reserves were distributed, Lewis sent to Scuderia Ferrari. Round 3 ends
     cancelled when the admin types CANCELLED for its race: beneath its `ROUND_CANCELLED` line,
     after the reason, the log channel shows the round's check-in, every driver grouped by their
-    answer and Lewis to Scuderia Ferrari, as `/round cancel` writes it (attendance :130-131)."""
+    answer and Lewis to Scuderia Ferrari, as `/round cancel` writes it (attendance :130-131). It
+    does so word for word with attendance's job reading it run under a name of the test's own:
+    the line reads the record from the job's own result, never by its name."""
     from tests.support.season_league import FERRARI, LEWIS, profile_id
 
+    if renamed:
+        _read_check_in_renamed(monkeypatch)
     league = await _league(tmp_path, attendance=True)
     await league.write(
         "UPDATE driver_round_attendance SET assigned_team_id = ? "
@@ -615,12 +669,15 @@ CHECK_IN_DISCARDED = "the check-in record of round 3 in **Pro** was not written"
 
 
 def _check_in_read_failing() -> ExitStack:
-    """Core's `checkin_record` raises, as a fault of the database would: in its own module, and
-    in each module that holds its own reference to it."""
+    """The check-in record's `checkin_record` raises, as a fault of the database would: in
+    attendance's own module, and in each module that holds its own reference to it, core's among
+    them for as long as the record is read there."""
     stack = ExitStack()
     failing = AsyncMock(side_effect=RuntimeError("disk I/O error"))
-    for module_name in ("leaguebot.core.services.cancellation_notice_service",
-                        "leaguebot.core.services.cancellation_changes",
+    for module_name in ("leaguebot.attendance.services.check_in_record",
+                        "leaguebot.attendance.services.check_in_changes",
+                        "leaguebot.core.services.cancellations.cancellation_notice_service",
+                        "leaguebot.core.services.cancellations.cancellation_changes",
                         "leaguebot.results.services.submission_changes"):
         try:
             module = importlib.import_module(module_name)
@@ -631,19 +688,25 @@ def _check_in_read_failing() -> ExitStack:
     return stack
 
 
-async def test_a_discarded_check_in_record_is_named_and_the_round_still_ends_cancelled(tmp_path):
+@pytest.mark.parametrize("renamed", [pytest.param(False, id="as attendance names it"), _RENAMED])
+async def test_a_discarded_check_in_record_is_named_and_the_round_still_ends_cancelled(
+    tmp_path, monkeypatch, renamed,
+):
     """Attendance is on and round 3's check-in call was posted. Round 3 ends cancelled when the
     admin types CANCELLED for its race, but reading its check-in fails on a fault of the
     database, and the queue stops at `read_check_in`. A league admin discards it. Round 3 is
     CANCELLED, the queue runs on with nothing left stopped, and the round's one
     `ROUND_CANCELLED` line carries no check-in record and names the record, under what was not
-    done, as not written (attendance :130; owner, check 2, "Write the record")."""
+    done, as not written (attendance :130; owner, check 2, "Write the record"). It does so word
+    for word with the job run under a name of the test's own: the line takes the job's own words
+    for its discard, never naming it."""
+    job = _read_check_in_renamed(monkeypatch) if renamed else READ_CHECK_IN
     league = await _league(tmp_path, attendance=True)
 
     with _check_in_read_failing():
         await _cancel_the_race(league)
         await run_queue(league.bot)
-        assert await _stopped_at(league) == "read_check_in"
+        assert await _stopped_at(league) == job
         await discard_job(league.bot)
 
     assert await stopped_job(league.db_path) is None

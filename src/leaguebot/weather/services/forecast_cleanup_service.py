@@ -27,7 +27,7 @@ import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord
-from leaguebot.core.services.standing_post_handler import post_standing
+from leaguebot.core.services.posting.standing_post_handler import post_standing
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.messages import chunk_message
 
@@ -110,6 +110,34 @@ async def forget_forecast_on(
         "WHERE round_id = ? AND division_id = ? AND phase_number = ? AND message_id = ?",
         (round_id, division_id, phase_number, message_id),
     )
+
+
+async def rounds_deleted_on(db: aiosqlite.Connection, round_ids: list[int]) -> None:
+    """Delete weather's rows of *round_ids* on *db*, committing nothing: the round's drawn phases
+    and the record of each forecast posted for it.
+
+    Core hands it the round ids as it deletes the rounds, in the delete's own save, so that the
+    module's rows go with the round or not at all (architecture.md, "The database"). Only the rows
+    go: a forecast already posted is not taken down here.
+    """
+    marks = ",".join("?" * len(round_ids))
+    await db.execute(
+        f"DELETE FROM forecast_messages WHERE round_id IN ({marks})", round_ids  # noqa: S608
+    )
+    await db.execute(
+        f"DELETE FROM phase_results WHERE round_id IN ({marks})", round_ids  # noqa: S608
+    )
+
+
+async def bot_packed_on(db: aiosqlite.Connection) -> None:
+    """Clear weather's rows tied to the server the bot leaves, on *db*, committing nothing: the
+    record of each forecast posted, by which it is edited or deleted.
+
+    Core hands it the pack's connection, so that weather's rows go with the rest of the pack or
+    not at all (architecture.md, "The database"). Only the rows go: a forecast already posted
+    stays where it is, and the drawn phases stay with their rounds.
+    """
+    await db.execute("DELETE FROM forecast_messages")
 
 
 # ---------------------------------------------------------------------------

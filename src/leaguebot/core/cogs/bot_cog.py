@@ -1,8 +1,7 @@
 """BotCog — the `/bot` group: the bot upon its server.
 
-`/bot init` and the four settings beside it configure the bot upon the league's server.
-They were five top-level `/bot-…` commands, and were gathered into one group with the
-commands that release the server (decided 2026-09-19, issue #247).
+`/bot init` and the four settings beside it configure the bot upon the league's server, and
+share one group with the commands that release the server.
 
 Every setup command here is exempt from the interaction-channel rule, and each accepts Discord's
 Administrator permission as well as the league admin role. For `/bot init` that is the
@@ -13,14 +12,15 @@ settings they exist to repair would lock a league out of the exact failure they 
 deleted interaction channel, or a league admin role removed from the server, would otherwise
 be unrecoverable short of wiping the configuration.
 
-`/bot base-role` and `/bot driver-role` set the league's two roles (issue #276), which were the
-signup module's until a second module needed the base role. They are a league manager's, as
-they were under `/signup`, and are given in the interaction channel like any other: they
-repair nothing the guards read. Confirming a season's configuration fixes both until the
+`/bot base-role` and `/bot driver-role` set the league's two roles, which are core's rather than
+the signup module's because a module besides signup needs the base role. They are a league
+manager's, and are given in the interaction channel like any other: they repair nothing the
+guards read. Confirming a season's configuration fixes both until the
 season ends.
 
-`/bot hub-channel` sets the hub (issue #279): the one channel every member may use, holding the
-panel `leaguebot.core.services.hub_service` keeps. It is a league manager's, like every other channel command.
+`/bot hub-channel` sets the hub: the one channel every member may use, holding the panel
+`leaguebot.core.services.modules.hub_service` keeps. It is a league manager's, like every other channel
+command.
 
 `/bot pack` is a league admin's command and is given in the interaction channel like any
 other: it releases the settings rather than repairing them. `/bot factory-reset` is the server
@@ -30,18 +30,18 @@ owner's alone, from any channel; see `leaguebot.core.utils.channel_guard.server_
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
+from typing import Any
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import LEAGUE_LANE, ChangeOrigin
-from leaguebot.core.models.server_config import ServerConfig
-from leaguebot.core.services import backup_service, factory_reset_service, pack_service
+from leaguebot.core.models.change import LEAGUE_LANE
+from leaguebot.core.services.upkeep import backup_service, factory_reset_service, pack_service
+from leaguebot.core.services.settings.bot_init_change import ANOTHER_SERVER as _ANOTHER_SERVER
+from leaguebot.core.services.settings.bot_init_change import KIND as BOT_INIT
 from leaguebot.core.utils.channel_guard import (
     DRIVER_ROLE_STANDS_FOR,
     bot_setup_only,
@@ -57,21 +57,8 @@ from leaguebot.core.utils.log_lines import lane_name, refuse
 
 log = logging.getLogger(__name__)
 
-#: Named in every refusal, so an administrator meeting one is told where to go next.
-_SETTINGS_COMMANDS = (
-    "`/bot log-channel`, `/bot interaction-channel`, `/bot interaction-role` "
-    "and `/bot admin-role`"
-)
-
-#: The word `/bot pack` asks to be typed, as the reset it replaced did.
+#: The word `/bot pack` asks to be typed.
 _CONFIRM_WORD = "CONFIRM"
-
-#: One bot serves one league (issue #244). The tree refuses a command from another server
-#: before it gets here; this is the clearer message for the one command a second server is
-#: likeliest to try, and the answer to a lost race between two.
-_ANOTHER_SERVER = (
-    "⛔ This bot already serves the league on another server. One bot serves one league."
-)
 
 
 async def _refuse_on_host(interaction: discord.Interaction, reply: str) -> None:
@@ -79,7 +66,7 @@ async def _refuse_on_host(interaction: discord.Interaction, reply: str) -> None:
     log alone.
 
     For a refusal made on another server, or before the bot is set up: there is no log channel
-    of the league's to write to (owner, #482: "Host log only").
+    of the league's to write to.
     """
     log.info(
         "%s refused for %s (%s): %s",
@@ -156,7 +143,10 @@ class BotCog(commands.Cog):
 
         if self._clean_up is not None and not self._clean_up.done():
             # A new claim would be made while the last reset is still deleting the bot's
-            # messages and roles here. Nothing is configured, so the host's log alone.
+            # messages and roles here. Nothing is configured, so the host's log alone. Judged
+            # only here: `BotCog._clean_up` is kept in memory on the cog, never in the
+            # database the queue reads, so the change type's check cannot ask it again as the
+            # change starts.
             await _refuse_on_host(
                 interaction,
                 "⛔ A factory reset is still cleaning up Discord. Run `/bot init` again once "
@@ -164,143 +154,46 @@ class BotCog(commands.Cog):
             )
             return
 
-        existing = await self.bot.config_service.get_server_config()
-        if existing:
-            await refuse(
-                interaction,
-                "⚠️ This server is already configured, and `/bot init` runs once.\n"
-                f"To change a setting use {_SETTINGS_COMMANDS}.\n"
-                "To move the league to another server, use `/bot pack` first.",
-                what=describe(interaction),
-            )
-            return
-
-        claimed = {
+        payload = {
             "server_id": server_id,
             "interaction_role_id": interaction_role.id,
+            "interaction_role_name": interaction_role.name,
             "league_admin_role_id": league_admin_role.id,
+            "league_admin_role_name": league_admin_role.name,
             "interaction_channel_id": interaction_channel.id,
             "log_channel_id": log_channel.id,
         }
-        created = await self.bot.config_service.save_server_config(
-            ServerConfig(
-                server_id=server_id,
-                interaction_role_id=interaction_role.id,
-                league_admin_role_id=league_admin_role.id,
-                interaction_channel_id=interaction_channel.id,
-                log_channel_id=log_channel.id,
-            )
+        await self.bot.change_queue.ask(
+            BOT_INIT, payload, interaction=interaction, what=describe(interaction),
         )
-        if not created:
-            # Lost a race with a concurrent /bot init. Report the refusal that fits whoever
-            # won rather than claiming a success that wrote nothing.
-            if await self.bot.config_service.get_league_server_id() != server_id:
-                await _refuse_on_host(interaction, _ANOTHER_SERVER)
-                return
-            await refuse(
-                interaction,
-                "⚠️ This server is already configured, and `/bot init` runs once.\n"
-                f"To change a setting use {_SETTINGS_COMMANDS}.",
-                what=describe(interaction),
-            )
-            return
-
-        # Audited as replacing nothing (issue #371): the claim is taken only where no server
-        # holds it, so a first run finds no row and a run after a pack finds all five cleared.
-        await _audit(
-            self.bot, interaction.user, "BOT_INITIALISED", dict.fromkeys(claimed), claimed
-        )
-
-        await interaction.response.send_message(
-            f"✅ Bot configuration saved!\n"
-            f"**League admin role**: {league_admin_role.mention}\n"
-            f"**Interaction role**: {interaction_role.mention}\n"
-            f"**Interaction channel**: {interaction_channel.mention}\n"
-            f"**Log channel**: {log_channel.mention}",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot init | Success\n"
-            f"  league_admin_role: {league_admin_role.name} (<@&{league_admin_role.id}>)\n"
-            f"  interaction_role: {interaction_role.name} (<@&{interaction_role.id}>)\n"
-            f"  interaction_channel: <#{interaction_channel.id}>\n"
-            f"  log_channel: <#{log_channel.id}>",
-        )
-        log.info("Bot configured by %s", interaction.user)
 
     # ------------------------------------------------------------------
-    # The four settings, each written on its own
+    # The four settings, each a core `Setting` on the change queue
     # ------------------------------------------------------------------
 
-    async def _set_one(
-        self,
-        interaction: discord.Interaction,
-        *,
-        column: str,
-        value: int,
-        command: str,
-        label: str,
-        mention: str,
-        change_type: str,
+    async def _ask_setting(
+        self, interaction: discord.Interaction, kind: str, value: int
     ) -> None:
-        """Shared body of the four setting commands.
+        """Ask the queue for one of the four `/bot` repair settings (`core/services/settings/bot_settings.py`).
 
-        Writes a single column, so nothing else in the row — test mode, the module flags,
-        the other three settings — can be carried over stale from a half-built model.
-
-        Audited with the value it replaced (issue #371): these decide who may command and
-        govern the bot, and once a setting is overwritten nothing else keeps what it was.
+        An unconfigured server is refused here, to the host's log alone, before the change is
+        even asked for: there is no log channel of the league's to record a refusal in, and
+        there being none is not itself a member's command to refuse through the queue. Every
+        other refusal — a channel already doing another job, or already this setting — is
+        `Setting.check`'s, run at the ask and again as the change starts, and recorded in the
+        league's log channel as any other refusal is. The write, the audit entry and the line
+        once it has run are `setting_change`'s and `bot_settings`'s: the change overtakes a stop
+        elsewhere on the league's lane, so a stopped job there cannot lock a league out of
+        repairing these.
         """
-
-        # A channel does one job (decided 2026-09-06). Keyed on the column, because this
-        # body also carries the interaction *role*, which no channel rule governs.
-        _setting = {
-            "interaction_channel_id": "interaction",
-            "log_channel_id": "log",
-        }.get(column)
-        if _setting is not None:
-            from leaguebot.core.services.channel_registry_service import (
-                ChannelUse,
-                find_channel_use,
-                refusal,
-            )
-
-            use = await find_channel_use(self.bot.db_path, value)
-            if use is not None:
-                await refuse(
-                    interaction,
-                    refusal(mention, use, same_setting=(use == ChannelUse(_setting))),
-                    what=describe(interaction),
-                )
-                return
-
-        config = await self.bot.config_service.get_server_config()
-        old_value = None if config is None else getattr(config, column)
-
-        changed = await self.bot.config_service.set_core_setting(column, value)
-        if not changed:
+        if await self.bot.config_service.get_server_config() is None:
             await _refuse_on_host(
                 interaction, "⛔ This server is not configured yet — run `/bot init` first."
             )
             return
-
-        key = "channel_id" if _setting is not None else "role_id"
-        await _audit(
-            self.bot, interaction.user, change_type, {key: old_value}, {key: value}
+        await self.bot.change_queue.ask(
+            kind, {"value": value}, interaction=interaction, what=describe(interaction),
         )
-
-        await interaction.response.send_message(
-            f"✅ **{label}** set to {mention}.", ephemeral=True
-        )
-        # Posted after the write, so a new log channel is told about itself and an
-        # administrator sees at once that the repair took.
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | {command} | Success\n"
-            f"  {column}: {mention}",
-        )
-        log.info("%s set %s", interaction.user, column)
-        if column in ("interaction_role_id", "league_admin_role_id"):
-            await _reapply_hub_permissions(self.bot, interaction)
 
     @group.command(
         name="log-channel",
@@ -311,15 +204,7 @@ class BotCog(commands.Cog):
     async def handle_log_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
-        await self._set_one(
-            interaction,
-            column="log_channel_id",
-            value=channel.id,
-            command="/bot log-channel",
-            label="Log channel",
-            mention=f"<#{channel.id}>",
-            change_type="LOG_CHANNEL_SET",
-        )
+        await self._ask_setting(interaction, "core.setting.log_channel", channel.id)
 
     @group.command(
         name="interaction-channel",
@@ -330,15 +215,7 @@ class BotCog(commands.Cog):
     async def handle_interaction_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
-        await self._set_one(
-            interaction,
-            column="interaction_channel_id",
-            value=channel.id,
-            command="/bot interaction-channel",
-            label="Interaction channel",
-            mention=f"<#{channel.id}>",
-            change_type="INTERACTION_CHANNEL_SET",
-        )
+        await self._ask_setting(interaction, "core.setting.interaction_channel", channel.id)
 
     @group.command(
         name="interaction-role",
@@ -349,15 +226,7 @@ class BotCog(commands.Cog):
     async def handle_interaction_role(
         self, interaction: discord.Interaction, role: discord.Role
     ) -> None:
-        await self._set_one(
-            interaction,
-            column="interaction_role_id",
-            value=role.id,
-            command="/bot interaction-role",
-            label="Interaction role",
-            mention=f"<@&{role.id}>",
-            change_type="INTERACTION_ROLE_SET",
-        )
+        await self._ask_setting(interaction, "core.setting.interaction_role", role.id)
 
     @group.command(
         name="admin-role",
@@ -375,18 +244,10 @@ class BotCog(commands.Cog):
         so it is gated on Discord's Administrator permission alongside the role, as its four
         siblings are, and runs from any channel for the same reason they do.
         """
-        await self._set_one(
-            interaction,
-            column="league_admin_role_id",
-            value=role.id,
-            command="/bot admin-role",
-            label="League admin role",
-            mention=f"<@&{role.id}>",
-            change_type="LEAGUE_ADMIN_ROLE_SET",
-        )
+        await self._ask_setting(interaction, "core.setting.admin_role", role.id)
 
     # ------------------------------------------------------------------
-    # The league's two roles (issue #276)
+    # The league's two roles
     # ------------------------------------------------------------------
 
     async def _set_league_role(
@@ -396,27 +257,32 @@ class BotCog(commands.Cog):
         column: str,
         role: discord.Role,
         command: str,
-        label: str,
-        change_type: str,
+        kind: str,
     ) -> None:
-        """Shared body of `/bot base-role` and `/bot driver-role`.
+        """Shared body of `/bot base-role` and `/bot driver-role`: ask the change queue for one
+        of `bot_settings`'s two league role `Setting`s.
 
         Not `_set_one`, whose commands repair the settings the guards read and so run from
         any channel on the Administrator permission. These are ordinary league manager
-        commands, refused once a season's configuration is confirmed. Like `_set_one`'s,
-        each is audited with the role it replaced: a league that finds its members locked
-        out needs to know which role used to hold the access, and nothing else keeps it
-        once it is overwritten.
+        commands, refused once a season's configuration is confirmed.
 
-        **A role gone from the server may be replaced while it is fixed** (decided 2026-09-22,
-        #374). The roles are fixed so that no driver is left holding one the season's end will
-        not revoke; nobody holds a deleted role, so that reason is spent, and refusing would
-        leave a season unable to open a window until it ended. The replacement is granted to
-        every driver, who lost the old one with it — the base role too, the one time the bot
-        grants it: it knows its drivers, and the reply tells the league its other members need
-        the role by hand.
+        The refusals judged here have nothing to do with a value already held, so they are
+        judged before the change is even asked for, as `_ask_setting`'s unconfigured-server
+        refusal is: the season's configuration being fixed without a gone role to replace
+        (`configuration_fixed`), the server not yet configured, and, for the driver role, one
+        Discord will not let the bot grant (`role_grant_refusal`). What *is* the queue's —
+        the write, the audit entry, the line, and a role already held answered "Nothing
+        changed" — is `setting_change`'s and `bot_settings`'s.
+
+        **A role gone from the server may be replaced while it is fixed.** The roles are fixed
+        so that no driver is left holding one the season's end will not revoke; nobody holds a
+        deleted role, so that reason is spent, and refusing would leave a season unable to open
+        a window until it ended. The ask judges this against the server only for its own
+        refusal; the setting judges it again as the change starts, and reads the role it
+        replaces as it saves, so the payload carries no judgement of the ask's.
         """
-        from leaguebot.core.services.season_lifecycle_service import configuration_fixed
+        from leaguebot.core.services.settings.bot_settings import season_fixed_refusal
+        from leaguebot.core.services.seasons.season_lifecycle_service import configuration_fixed
 
         season_number = await configuration_fixed(self.bot.db_path)
         config = await self.bot.config_service.get_server_config()
@@ -430,10 +296,7 @@ class BotCog(commands.Cog):
         if season_number is not None and not replacing_gone:
             await refuse(
                 interaction,
-                f"❌ The league's roles are fixed for Season {season_number} now that its "
-                f"configuration has been confirmed. `{command}` is available again once the "
-                "season has ended, or while a new season is in configuration — or at once, "
-                "should the role be deleted from the server.",
+                season_fixed_refusal(command, season_number),
                 what=describe(interaction),
             )
             return
@@ -445,7 +308,7 @@ class BotCog(commands.Cog):
             return
 
         # The driver role is granted at every approval, and the `signup.approve` change
-        # only logs a grant Discord refuses (#374). The base role is granted by the league.
+        # only logs a grant Discord refuses. The base role is granted by the league.
         if column == "driver_role_id":
             refusal = role_grant_refusal(
                 role,
@@ -456,80 +319,19 @@ class BotCog(commands.Cog):
                 await refuse(interaction, f"❌ {refusal}", what=describe(interaction))
                 return
 
-        # Two permission edits on the signup channel outrun Discord's three seconds.
-        await interaction.response.defer(ephemeral=True)
-
-        if not await self.bot.config_service.set_core_setting(column, role.id):
-            await _refuse_on_host(
-                interaction, "⛔ This server is not configured yet — run `/bot init` first."
-            )
-            return
-
-        if column == "base_role_id" and interaction.guild is not None:
-            await self.bot.signup_module_service.move_base_role_overwrite(
-                interaction.guild, old_role_id, role
-            )
-            # The hub is seen by the base role, or by everyone where there is none (#279).
-            await _reapply_hub_permissions(self.bot, interaction)
-
-        await _audit(
-            self.bot,
-            interaction.user,
-            change_type,
-            {"role_id": old_role_id},
-            {"role_id": role.id},
+        # The raw id, not `guild_of(interaction).id`: the payload is JSON-encoded for the
+        # queue's key, and `interaction.guild_id` is already the plain int discord.py gives.
+        # The setting's own check reads it to judge the fixed season again, against the
+        # server's state as the change starts rather than as it was asked.
+        payload: dict[str, Any] = {
+            "value": role.id,
+            "role_name": role.name,
+            "role_mention": role.mention,
+            "guild_id": interaction.guild_id,
+        }
+        await self.bot.change_queue.ask(
+            kind, payload, interaction=interaction, what=describe(interaction),
         )
-
-        reply = f"✅ **{label}** set to {role.mention}."
-        log_line = (
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | {command} | Success\n"
-            f"  role: {role.name} (<@&{role.id}>)"
-        )
-        if replacing_gone:
-            given, given_log = await self._give_replaced_role_to_every_driver(
-                guild_of(interaction), role, column
-            )
-            reply += (
-                f"\nThe role it replaces is no longer on the server, so it could be replaced "
-                f"although Season {season_number}'s configuration is fixed.\n{given}"
-            )
-            log_line += f"\n  replaced: a role no longer on the server\n{given_log}"
-
-        await interaction.followup.send(reply, ephemeral=True)
-        await self.bot.output_router.post_log(log_line)
-        log.info("%s set %s", interaction.user, column)
-
-    async def _give_replaced_role_to_every_driver(
-        self, guild: discord.Guild, role: discord.Role, column: str
-    ) -> tuple[str, str]:
-        """Grant a replaced league role to every driver: what to tell the manager and the log.
-
-        `@everyone` is held by everybody already, so a base role set to it is granted to
-        nobody. Otherwise every driver who could not be given it is named, for the league to
-        give it by hand, and a replaced base role reminds the league that the bot knows only
-        its drivers.
-        """
-        if role.is_default():
-            return "Everybody holds it already.", "  given to: everybody, as @everyone"
-        outcome = await self.bot.placement_service.grant_to_every_driver(
-            guild, role.id
-        )
-        told = f"It has been given to {outcome.granted} driver(s)."
-        if outcome.not_granted:
-            told += (
-                " It could not be given to "
-                + ", ".join(f"<@{uid}>" for uid in outcome.not_granted)
-                + " — give it to them by hand."
-            )
-        if column == "base_role_id":
-            told += (
-                " The league's other members need it too: give it to them by hand, the bot "
-                "knowing only its drivers."
-            )
-        logged = f"  given to: {outcome.granted} driver(s)" + "".join(
-            f"\n  not given to: <@{uid}>" for uid in outcome.not_granted
-        )
-        return told, logged
 
     @group.command(
         name="base-role",
@@ -550,8 +352,7 @@ class BotCog(commands.Cog):
             column="base_role_id",
             role=role,
             command="/bot base-role",
-            label="Base role",
-            change_type="BASE_ROLE_SET",
+            kind="core.setting.base_role_id",
         )
 
     @group.command(
@@ -576,12 +377,11 @@ class BotCog(commands.Cog):
             column="driver_role_id",
             role=role,
             command="/bot driver-role",
-            label="Driver role",
-            change_type="DRIVER_ROLE_SET",
+            kind="core.setting.driver_role_id",
         )
 
     # ------------------------------------------------------------------
-    # /bot hub-channel — the hub (issue #279)
+    # /bot hub-channel — the hub
     # ------------------------------------------------------------------
 
     @group.command(
@@ -593,18 +393,23 @@ class BotCog(commands.Cog):
     async def handle_hub_channel(
         self, interaction: discord.Interaction, channel: discord.TextChannel
     ) -> None:
-        """Point the hub at *channel*: set who may see it, and post its panel there.
+        """Point the hub at *channel*: ask the change queue for `bot_settings.hub_channel_setting`.
 
-        Moving the hub deletes the panel from the old channel and clears the permissions the
-        bot set on it, as moving the signup channel does. Everything that fails after the
-        write — a permission Discord refuses, a panel it will not post — is reported in the
-        reply and the log rather than undoing the setting: the channel is the right one, and
-        the repair is in Discord's settings.
+        The channel already doing another job, or already the hub, is judged here first, so a
+        manager re-running it for the hub's own value still reads "Nothing was changed" rather
+        than a permission refusal that happens to be true as well. The missing-permission refusal
+        has nothing to do with a value already held, so it is judged next, before the change is
+        even asked for, as a driver role Discord will not let the bot grant is judged before
+        `/bot driver-role` asks for its own. The channel-in-use and the unconfigured-server
+        refusals are the setting's own `check` as well, run again as the change starts, since a
+        change queued ahead of this one might have claimed the channel for something else since
+        it was asked; what follows the save is `setting_change`'s and `bot_settings`'s.
         """
-        from leaguebot.core.services import hub_service
-        from leaguebot.core.services.channel_registry_service import ChannelUse, find_channel_use, refusal
+        from leaguebot.core.services.settings.channel_registry_service import ChannelUse, find_channel_use, refusal
 
-        use = await find_channel_use(self.bot.db_path, channel.id)
+        use = await find_channel_use(
+            self.bot.db_path, channel.id, channel_uses_read=self.bot.channel_uses_read
+        )
         if use is not None:
             await refuse(
                 interaction,
@@ -632,59 +437,17 @@ class BotCog(commands.Cog):
             )
             return
 
-        config = await self.bot.config_service.get_server_config()
-        if config is None:
+        if await self.bot.config_service.get_server_config() is None:
             await _refuse_on_host(
                 interaction, "⛔ This server is not configured yet — run `/bot init` first."
             )
             return
-        old_channel_id, old_message_id = config.hub_channel_id, config.hub_message_id
 
-        # Permission edits and a post on two channels outrun Discord's three seconds.
-        await interaction.response.defer(ephemeral=True)
-
-        await self.bot.config_service.set_core_setting("hub_channel_id", channel.id)
-        await self.bot.config_service.set_core_setting("hub_message_id", None)
-
-        faults: list[str] = []
-        moved = old_channel_id is not None and old_channel_id != channel.id
-        if old_channel_id is not None and moved:
-            faults += await _stand_down_old_hub(guild, old_channel_id)
-        fault = await hub_service.apply_hub_permissions(self.bot, guild, channel)
-        if fault is not None:
-            faults.append(fault)
-        # The panel is posted by the change queue, which stops for a refusal.
         await self.bot.change_queue.ask(
-            hub_service.HUB_REFRESH,
-            {"command": describe(interaction)}
-            | (
-                {"old_channel_id": old_channel_id, "old_message_id": old_message_id}
-                if moved and old_message_id is not None else {}
-            ),
-            actor=interaction.user,
-            what="posting the hub panel",
-            origin=ChangeOrigin.BOT,
+            "core.setting.hub_channel_id",
+            {"value": channel.id, "guild_id": interaction.guild_id},
+            interaction=interaction, what=describe(interaction),
         )
-
-        await _audit(
-            self.bot,
-            interaction.user,
-            "HUB_CHANNEL_SET",
-            {"channel_id": old_channel_id},
-            {"channel_id": channel.id},
-        )
-
-        reply = f"✅ **Hub channel** set to {channel.mention}. Its panel follows on the change queue."
-        if faults:
-            reply += "\n⚠️ " + "\n⚠️ ".join(faults)
-        await interaction.followup.send(reply, ephemeral=True)
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /bot hub-channel | "
-            f"{'Success' if not faults else 'Success, with faults'}\n"
-            f"  channel: <#{channel.id}>"
-            + "".join(f"\n  {fault}" for fault in faults),
-        )
-        log.info("%s set the hub channel", interaction.user)
 
     # ------------------------------------------------------------------
     # /bot pack — ready the bot for another server
@@ -723,9 +486,7 @@ class BotCog(commands.Cog):
             )
             return
 
-        async with get_connection(self.bot.db_path) as db:
-            season = await pack_service.current_season(db)
-            job = await pack_service.pending_job(db)
+        season, job = await pack_service.what_stops_a_pack(self.bot.db_path)
         if season is not None:
             await refuse(
                 interaction, _current_season_refusal(*season), what=describe(interaction)
@@ -747,10 +508,12 @@ class BotCog(commands.Cog):
             result = await pack_service.pack(
                 self.bot.db_path,
                 self.bot.scheduler_service,
-                self.bot,
+                self.bot.in_memory_state_cleared,
                 self.bot.change_queue,
+                bot_packed=self.bot.bot_packed,
                 actor_id=interaction.user.id,
                 actor_name=str(interaction.user),
+                now=self.bot.change_queue.now(),
             )
         except pack_service.PackRefused as refused:
             if refused.job_id is not None:
@@ -804,7 +567,7 @@ class BotCog(commands.Cog):
         self, interaction: discord.Interaction, confirm: str
     ) -> None:
         """Back up, wipe, and clean Discord — in that order, and never the second without the
-        first. See `leaguebot.core.services.factory_reset_service`.
+        first. See `leaguebot.core.services.upkeep.factory_reset_service`.
 
         Only the server the command is given in is cleaned. A bot that was packed and not
         yet claimed may still hold the ids of another server's channels, and the owner of
@@ -828,15 +591,11 @@ class BotCog(commands.Cog):
         db_path = self.bot.db_path
         scheduler = self.bot.scheduler_service
 
-        paused = False
         try:
-            inner = getattr(scheduler, "_scheduler", None)
-            if inner is not None and inner.running:
-                inner.pause()
-                paused = True
-            backup = factory_reset_service.take_backup(
-                db_path, backup_service.jobstore_path_of(self.bot)
-            )
+            with scheduler.paused():
+                backup = factory_reset_service.take_backup(
+                    db_path, scheduler.jobstore_path, now=self.bot.change_queue.now()
+                )
         except backup_service.BackupFault as exc:
             # A copy, a write or a check that failed is a fault in the bot, not a refusal, and
             # nothing has been erased: the reply says so without naming the error.
@@ -847,16 +606,15 @@ class BotCog(commands.Cog):
                 outcome="Nothing was erased: the backup could not be taken.",
             )
             return
-        finally:
-            if paused:
-                scheduler._scheduler.resume()
 
-        targets = await factory_reset_service.gather_targets(db_path)
+        targets = await factory_reset_service.gather_targets(
+            db_path, setting_channels_read=self.bot.setting_channels_read
+        )
         # The wipe takes the configuration and with it any way to find the log channel, so
         # where the closing line goes is learned now.
         log_channel = await self.bot.output_router.log_destination()
         await factory_reset_service.wipe(
-            db_path, scheduler, self.bot, self.bot.change_queue
+            db_path, scheduler, self.bot.in_memory_state_cleared, self.bot.change_queue
         )
         log.warning(
             "/bot factory-reset by %s (id=%s): the league was erased; backup at %s",
@@ -892,7 +650,14 @@ class BotCog(commands.Cog):
             await self._post_closing_line(log_channel, who, ending, detail)
 
         self._clean_up = asyncio.create_task(
-            _clean_up(interaction.guild, bot_user_id, targets, report, close)
+            _clean_up(
+                interaction.guild,
+                bot_user_id,
+                targets,
+                report,
+                close,
+                now=self.bot.change_queue.now(),
+            )
         )
 
     async def _post_closing_line(
@@ -917,79 +682,20 @@ class BotCog(commands.Cog):
         log.warning("factory reset: the closing line could not be posted:\n%s", line)
 
 
-async def _audit(bot: LeagueBot, user, change_type: str, old: dict, new: dict) -> None:
-    """Write the audit entry for a change to the bot's configuration upon its server.
-
-    The other half of the log line each command posts: a configuration change is recorded
-    in both (issue #371). None of these belongs to a division.
-    """
-    async with get_connection(bot.db_path) as db:
-        await db.execute(
-            "INSERT INTO audit_entries "
-            "(actor_id, actor_name, division_id, change_type, old_value, new_value, "
-            "timestamp) VALUES (?, ?, NULL, ?, ?, ?, ?)",
-            (
-                user.id,
-                str(user),
-                change_type,
-                json.dumps(old),
-                json.dumps(new),
-                datetime.now(timezone.utc).isoformat(),
-            ),
-        )
-        await db.commit()
-
-
-async def _reapply_hub_permissions(
-    bot: LeagueBot, interaction: discord.Interaction | None = None
-) -> None:
-    """Set the hub's permissions again after a role they name has changed (issue #279).
-
-    Logged where it fails, and never failing the role command that asked for it: the role is
-    set either way, and the hub is repaired in Discord. The line it posts where the permissions
-    could not be set names the member and the command that changed the role, from *interaction*.
-    """
-    from leaguebot.core.services.hub_service import reapply_hub_permissions
-
-    try:
-        fault = await reapply_hub_permissions(bot)
-    except Exception:  # noqa: BLE001 — see the docstring
-        log.exception("the hub's permissions could not be applied again")
-        return
-    if fault is not None:
-        who = (
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
-            f"{describe(interaction)} | "
-            if interaction is not None
-            else ""
-        )
-        await bot.output_router.post_log(f"{who}Hub permissions not updated: {fault}")
-
-
-async def _stand_down_old_hub(guild: discord.Guild, channel_id: int) -> list[str]:
-    """Clear what the bot set on the hub's old channel: its permission overwrites.
-
-    The old panel is not deleted here: the refresh deletes it as a job of its own, once the new one
-    is up. A channel already gone is not a fault: there is nothing left to stand down.
-    """
-    old = guild.get_channel(channel_id)
-    if not isinstance(old, discord.TextChannel):
-        return []
-    try:
-        await old.edit(overwrites={})
-    except discord.HTTPException as exc:
-        return [f"The permissions on the old hub <#{channel_id}> could not be cleared: {exc}"]
-    return []
-
-
-async def _clean_up(guild, bot_user_id: int, targets, report, close) -> None:
+async def _clean_up(guild, bot_user_id: int, targets, report, close, *, now: datetime) -> None:
     """Run the clean-up, and say so where something it did not expect stops it.
 
     However it ends, *close(ending, detail)* is then awaited once, to leave the reset's closing
-    line: after the clean-up, so that its deletions leave the line standing.
+    line: after the clean-up, so that its deletions leave the line standing. *now* is the
+    moment the clean-up judges a message's age by.
+
+    A clean-up that stops part-way is caught whatever the fault, logged on the host in full, and
+    said so in the last report and the closing line, which a reset that ends in silence would not.
     """
     try:
-        outcome = await factory_reset_service.clean_discord(guild, bot_user_id, targets, report)
+        outcome = await factory_reset_service.clean_discord(
+            guild, bot_user_id, targets, report, now=now
+        )
     except Exception as exc:  # noqa: BLE001 — the last report must say it stopped
         log.exception("factory reset: the Discord clean-up stopped")
         # The owner's private progress message keeps the text (a test pins it); the log

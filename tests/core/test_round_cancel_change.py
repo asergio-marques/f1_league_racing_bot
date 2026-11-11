@@ -19,8 +19,7 @@ import importlib
 import json
 import sqlite3
 from contextlib import ExitStack
-from datetime import datetime, timedelta
-from types import SimpleNamespace
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -28,7 +27,8 @@ import discord
 import pytest
 
 from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.season_service import SeasonImmutableError
+from leaguebot.core.services.seasons.season_service import SeasonImmutableError
+from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
 from tests.support.change_queue import (
     acknowledgement,
     change_rows,
@@ -59,9 +59,12 @@ from tests.support.season_league import (
     cancel_division,
     cancel_round,
     cancellation_changes,
+    notices_handed,
     ongoing_league,
     open_submission,
+    RENAMED_JOB,
     removed_jobs,
+    rename_module_job,
     reply,
     round_id,
     seed_season_end,
@@ -100,6 +103,8 @@ CALENDAR_DISCARDED = (
 ALL_JOBS = ["unarm", "apply", "notify_checkin", "take_down_call", "notify_forecast",
             "notify_results", "post_calendar", "delete_replaced", "close"]
 WIND_DOWN = "season.wind_down"
+#: The case of a job discarded under a name of the test's own (`rename_module_job`).
+_RENAMED = pytest.param("discarded under another name")
 #: Every channel a cancellation in Pro posts in: its check-in, forecast, results and calendar.
 _PRO_POSTS = (PRO_CH.checkin, PRO_CH.forecast, PRO_CH.results, PRO_CH.calendar)
 
@@ -170,7 +175,7 @@ async def _awaiting_results(league: Any, rid: int = R3) -> None:
     """Round *rid*'s race time has passed and it waits for its results."""
     await league.write(
         "UPDATE rounds SET status = 'AWAITING_RESULTS', scheduled_at = ? WHERE id = ?",
-        (league.clock.now - timedelta(hours=2)).replace(tzinfo=None).isoformat(), rid,
+        (league.clock.now - timedelta(hours=2)).astimezone(timezone.utc).isoformat(), rid,
     )
 
 
@@ -209,8 +214,8 @@ def _not_notified(text: str) -> list[str]:
 def _everywhere(name: str, new: Any) -> ExitStack:
     """Patch season_service's *name* with *new*, and the change type's own reference to it."""
     stack = ExitStack()
-    for module_name in ("leaguebot.core.services.season_service",
-                        "leaguebot.core.services.cancellation_changes"):
+    for module_name in ("leaguebot.core.services.seasons.season_service",
+                        "leaguebot.core.services.cancellations.cancellation_changes"):
         try:
             module = importlib.import_module(module_name)
         except ImportError:
@@ -259,12 +264,21 @@ async def test_a_stop_after_the_round_is_cancelled_still_tells_the_modules_takes
     await league.restart()
     await run_queue(league.bot)
 
-    checkin = league.texts(PRO_CH.checkin)
-    assert len(checkin) == 1 and checkin[0].startswith("<@&801>\n📢 **Round 3 Cancelled: Pro**")
+    assert league.texts(PRO_CH.checkin) == [
+        "<@&801>\n📢 **Round 3 Cancelled: Pro**\nRound 3 (Silverstone) has been cancelled. There "
+        "is no check-in to answer for it, and nobody is charged for it."
+    ]
     assert not set(CALL_MESSAGES) & set(league.channel(PRO_CH.checkin).messages)
     assert await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", R3) == []
+    assert league.texts(PRO_CH.forecast) == [
+        "📢 **Round 3 Cancelled: Pro**\nRound 3 (Silverstone) has been cancelled. No weather "
+        "forecast will be posted for it."
+    ]
+    assert league.texts(PRO_CH.results) == [
+        "📢 **Round 3 Cancelled: Pro**\nRound 3 (Silverstone) has been cancelled. No results will "
+        "be posted for it."
+    ]
     for cid in (PRO_CH.forecast, PRO_CH.results):
-        assert len(league.texts(cid)) == 1
         assert league.channel(cid).send.await_args.kwargs.get("silent") is True
     calendar = league.texts(PRO_CH.calendar)
     assert len(calendar) == 1 and calendar[0].count("— Cancelled") == 1
@@ -326,28 +340,40 @@ async def test_the_round_s_audit_records_the_status_it_was_cancelled_from(tmp_pa
     assert await _round_audits(league) == [{"old_value": status, "new_value": "CANCELLED"}]
 
 
+@pytest.mark.parametrize("refused, job, note, target, other", [
+    pytest.param(PRO_CH.forecast, "notify_forecast", "forecast note", "forecast channel",
+                 PRO_CH.results, id="forecast"),
+    pytest.param(PRO_CH.results, "notify_results", "results note", "results channel",
+                 PRO_CH.forecast, id="results"),
+])
 async def test_a_notice_discord_refuses_stops_the_queue_and_once_discarded_is_named_not_notified(
-    tmp_path,
+    tmp_path, refused, job, note, target, other,
 ):
+    """Weather and results are on. Discord refuses Pro's forecast note, or its results note, for
+    round 3's cancellation: the queue stops at it before the calendar, and the log channel's stop
+    line names it as "posting the forecast note for **Pro**" or "posting the results note for
+    **Pro**". A league admin discards it: the reply's "Not notified" section and the success line
+    name the forecast channel, or the results channel, and the other note and the calendar are
+    still posted."""
     league = await ongoing_league(tmp_path, weather=True)
-    _refused(league, PRO_CH.forecast)
+    _refused(league, refused)
     interaction = await _asked(league)
 
     await run_queue(league.bot)
-    assert await _stopped_at(league) == "notify_forecast"
+    assert await _stopped_at(league) == job
     assert league.texts(PRO_CH.calendar) == []
     [stop] = [line for line in _log_lines(league) if "The queue is stopped at job #" in line]
-    assert "posting the forecast note for **Pro**" in stop
+    assert f"posting the {note} for **Pro**" in stop
     assert "`/round cancel`" in stop
     assert "Admin (`<@77>`)" in stop
     assert "failed (Discord refused or failed a request from the bot)" in stop
 
     await discard_job(league.bot)
 
-    named = "**Pro** — forecast channel: the notice could not be posted, and a league admin discarded it"
+    named = f"**Pro** — {target}: the notice could not be posted, and a league admin discarded it"
     assert CANCELLED in reply(interaction)
     assert named in _not_notified(reply(interaction))
-    assert len(league.texts(PRO_CH.results)) == 1
+    assert len(league.texts(other)) == 1
     assert len(league.texts(PRO_CH.calendar)) == 1
     lines = _success_lines(league)
     assert len(lines) == 1 and f"\n  not notified: {named}" in lines[0]
@@ -372,16 +398,32 @@ async def test_a_notice_channel_deleted_stops_the_queue_and_goes_through_once_it
     assert "not notified" not in _success_lines(league)[0]
 
 
-@pytest.mark.parametrize("cleared", ["retried", "discarded"])
+@pytest.mark.parametrize("cleared", ["retried", "discarded", _RENAMED])
 async def test_a_call_message_discord_will_not_delete_stops_the_queue_keeping_the_call_s_record(
-    tmp_path, cleared,
+    tmp_path, monkeypatch, cleared,
 ):
+    """Attendance on, and Discord refuses to delete round 3's check-in call (message 7002) as the
+    cancellation takes it down: the queue stops at the take-down, the call's record kept.
+    Retried once Discord allows it, the call comes down and nothing is named; discarded, the
+    reply's Not notified section and the success line name the message to delete by hand. Either
+    way the success line carries round 3's check-in. Discarded under a name of the test's own,
+    which core does not know, it is named, and the check-in written, in the same words: core
+    reads them from the job's own result, never by its name."""
+    job = "take_down_call"
+    if cleared == "discarded under another name":
+        from leaguebot.attendance.services import check_in_changes
+
+        rename_module_job(
+            monkeypatch, steps=(check_in_changes, "take_down_steps"),
+            planner=(check_in_changes, "take_down_called_off_on"), old=job,
+        )
+        job = RENAMED_JOB
     league = await ongoing_league(tmp_path, attendance=True)
     league.undeletable.add(CALL_MESSAGES[1])
     interaction = await _asked(league)
 
     await run_queue(league.bot)
-    assert await _stopped_at(league) == "take_down_call"
+    assert await _stopped_at(league) == job
     assert len(await league.rows("SELECT * FROM rsvp_embed_messages WHERE round_id = ?", R3)) == 1
 
     if cleared == "retried":
@@ -399,9 +441,84 @@ async def test_a_call_message_discord_will_not_delete_stops_the_queue_keeping_th
     assert CHECKIN_LOGGED in _success_lines(league)[0]
 
 
+async def test_a_take_down_stopped_by_a_fault_not_discord_s_still_names_the_call_once_discarded(
+    tmp_path, monkeypatch,
+):
+    """Attendance on, and round 3's take-down of its check-in call stops on a fault of the bot's
+    own, not Discord's, before it deletes anything, so its job keeps no list of messages left
+    standing. A league admin discards it: the call still stands, so the reply's Not notified
+    section and the success line still name the check-in call, word for word as a take-down
+    discarded with nothing recorded is named."""
+    from leaguebot.attendance.services import check_in_changes
+
+    async def broken(*_args, **_kwargs):
+        raise RuntimeError("the check-in could not be read")
+
+    monkeypatch.setattr(check_in_changes, "checkin_record", broken)
+    league = await ongoing_league(tmp_path, attendance=True)
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == "take_down_call"
+    await discard_job(league.bot)
+
+    named = ("**Pro** — check-in call: 0 message(s) could not be deleted and must be removed "
+             "by hand (ids )")
+    assert named in _not_notified(reply(interaction))
+    assert f"\n  not notified: {named}" in _success_lines(league)[0]
+
+
+@pytest.mark.parametrize(
+    ("module", "steps_of", "job"),
+    [
+        ("attendance", "notify_checkin_steps", "notify_checkin"),
+        ("weather", "notify_forecast_steps", "notify_forecast"),
+        ("results", "notify_results_steps", "notify_results"),
+    ],
+    ids=["check-in notice", "forecast note", "results note"],
+)
+async def test_a_notice_stops_where_the_league_s_server_is_not_in_the_cache(
+    module: str, steps_of: str, job: str, tmp_path: Any
+) -> None:
+    """Round 3 (Monza) of Pro is cancelled, and each module's notice job runs while the league's
+    server is set up but not in the bot's cache, as just after a restart. The job raises
+    GuildUnavailable, so the queue stops on the server and Retry runs it again: it never reports a
+    channel that is still there as gone, nor ends as "no channel is set" without having looked."""
+    from leaguebot.core.models.change import GuildUnavailable
+    from leaguebot.core.services.queue.change_types import StepContext
+    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.core.services.seasons.season_service import SeasonService
+    from tests.support.cancellation_notice import (
+        DIVISION_ID, SEASON_ID, notice_bot, notice_db, pro,
+    )
+    from tests.support.change_queue import in_a_job
+
+    db_path = await notice_db(tmp_path)
+    notices = importlib.import_module(f"leaguebot.{module}.services.cancellation_notice")
+    seasons = MagicMock(spec=SeasonService)
+    seasons.get_divisions = AsyncMock(return_value=[pro()])
+    steps = getattr(notices, steps_of)(modules=MagicMock(spec=ModuleService), seasons=seasons)
+    bot = notice_bot(db_path)
+    bot.config_service.get_league_server_id = AsyncMock(return_value=1)
+    bot.get_guild = MagicMock(return_value=None)
+    ctx = StepContext(
+        bot=bot, db_path=db_path, change_id=1, kind="round.cancel", payload={},
+        what="cancelling round 3", actor_id=None, actor_name=None, named="Tester", steps=(),
+        step_name=job,
+        step_payload={
+            "division_id": DIVISION_ID, "division_name": "Pro", "season_id": SEASON_ID,
+            "round_number": 3, "track_name": "Monza", "scope": "round",
+        },
+    )
+
+    with in_a_job(), pytest.raises(GuildUnavailable):
+        await steps[job].run(ctx)
+
+
 async def test_a_discarded_check_in_notice_still_has_the_call_taken_down(tmp_path):
     """Discord refuses the check-in notice for Pro's round 3, so the queue stops at it, and a
-    league admin discards it. The call still comes down whether or not the notice could be posted
+    league admin discards it. The log channel's stop line names it as "posting the check-in notice
+    for **Pro**". The call still comes down whether or not the notice could be posted
     (attendance spec, Cancellation): messages 7001-7003 are deleted and the call's record is gone,
     its check-in is still written beneath the success line, and the discarded notice is named."""
     league = await ongoing_league(tmp_path, attendance=True)
@@ -410,6 +527,8 @@ async def test_a_discarded_check_in_notice_still_has_the_call_taken_down(tmp_pat
 
     await run_queue(league.bot)
     assert await _stopped_at(league) == "notify_checkin"
+    [stop] = [line for line in _log_lines(league) if "The queue is stopped at job #" in line]
+    assert "posting the check-in notice for **Pro**" in stop
     await discard_job(league.bot)
 
     assert not set(CALL_MESSAGES) & set(league.channel(PRO_CH.checkin).messages)
@@ -707,7 +826,7 @@ async def test_a_cancel_waiting_behind_its_division_s_cancellation_is_refused_as
     league = await ongoing_league(tmp_path, attendance=True)
     await _stopped_blocker(league)
     await cancel_division(league, "Pro")
-    from leaguebot.core.services import cancellation_changes as module
+    from leaguebot.core.services.cancellations import cancellation_changes as module
 
     # Asked as though the in-hand refusal had not seen the division's cancellation.
     with monkeypatch.context() as patched:
@@ -728,9 +847,14 @@ async def _renumbered(league: Any) -> None:
     """Pro's round 2's date moved past round 4's, and the division renumbered by date, as an
     amended date renumbers it: the round asked for as round 3 is now round 2."""
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       (league.clock.now + timedelta(days=200)).replace(tzinfo=None).isoformat(),
+                       (league.clock.now + timedelta(days=200)).astimezone(timezone.utc).isoformat(),
                        round_id(PRO, 2))
-    await league.bot.season_service.renumber_rounds(PRO)
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.core.services.seasons.season_service import renumber_rounds_on
+
+    async with get_connection(league.db_path) as db:
+        await renumber_rounds_on(db, PRO)
+        await db.commit()
     assert (await league.rows("SELECT round_number FROM rounds WHERE id = ?", R3)) == [
         {"round_number": 2}
     ]
@@ -854,7 +978,7 @@ async def test_a_round_number_that_cannot_be_read_stops_the_job_before_its_timed
     stops the job with the timed work still in place, and a league admin who discards the job is
     told truly that the round stands as it was. Read after the removal, the same failure would
     leave the round without its timed work and the reply saying it stands."""
-    from leaguebot.core.services import cancellation_changes as module
+    from leaguebot.core.services.cancellations import cancellation_changes as module
 
     league = await ongoing_league(tmp_path, attendance=True)
     interaction = await _asked(league)
@@ -919,15 +1043,43 @@ async def test_each_enabled_module_says_its_piece_in_its_own_channel_as_a_job_of
     assert sent == told
 
 
-async def test_a_channel_never_set_is_named_not_notified_and_stops_nothing(tmp_path):
+async def test_the_save_hands_the_round_s_division_to_the_notices_hook(tmp_path):
+    """Round 3 (Silverstone) in Pro is cancelled. Inside the save, on the save's own connection,
+    the hook the modules' notices are planned through is called once, handed the round scope and
+    Pro as the save finds it: its id, name and season, and the round's number and track."""
+    league = await ongoing_league(tmp_path)
+    handed = notices_handed(league)
+    await _asked(league)
+
+    await _done(league)
+
+    assert handed == [("round", {
+        "division_id": PRO, "division_name": "Pro", "season_id": SEASON_ID,
+        "round_number": 3, "track_name": "Silverstone",
+    }, True)]
+
+
+@pytest.mark.parametrize("unset, job, target", [
+    pytest.param("UPDATE divisions SET forecast_channel_id = NULL WHERE id = ?",
+                 "notify_forecast", "forecast channel", id="forecast"),
+    pytest.param("UPDATE division_results_config SET results_channel_id = NULL "
+                 "WHERE division_id = ?", "notify_results", "results channel", id="results"),
+])
+async def test_a_channel_never_set_is_named_not_notified_and_stops_nothing(
+    tmp_path, unset, job, target,
+):
+    """Weather and results are on, and Pro has no forecast channel set, or no results channel.
+    Round 3 is cancelled: the note is not posted, the reply's "Not notified" section and the
+    success line name "**Pro** — forecast channel: no channel is set", or the results channel,
+    and the calendar is still posted."""
     league = await ongoing_league(tmp_path, weather=True)
-    await league.write("UPDATE divisions SET forecast_channel_id = NULL WHERE id = ?", PRO)
+    await league.write(unset, PRO)
     interaction = await _asked(league)
 
     await _done(league)
 
-    named = "**Pro** — forecast channel: no channel is set"
-    assert (await _job(league, "notify_forecast"))["result"] == {"unset": True}
+    named = f"**Pro** — {target}: no channel is set"
+    assert (await _job(league, job))["result"] == {"unset": True}
     assert named in _not_notified(reply(interaction))
     assert f"\n  not notified: {named}" in _success_lines(league)[0]
     assert len(league.texts(PRO_CH.calendar)) == 1
@@ -962,19 +1114,6 @@ async def test_the_check_in_is_written_beneath_the_success_line(tmp_path):
     assert len(lines) == 1
     entry = lines[0].split("\n――", 1)[0]
     assert entry == SUCCESS + "\n  division: Pro\n  round: 3" + CHECKIN_LOGGED
-
-
-async def test_checkin_record_gives_what_round_cancel_writes(tmp_path):
-    """Round 3's check-in recorded Lewis as accepted and Max as giving no answer. Core's public
-    `checkin_record`, read for Pro's round 3, gives the record `/round cancel` writes beneath its
-    line, which a round ending with every session not held writes too (attendance :130)."""
-    from leaguebot.core.services.cancellation_notice_service import checkin_record
-
-    league = await ongoing_league(tmp_path, attendance=True)
-
-    record = await checkin_record(league.db_path, SimpleNamespace(id=PRO, name="Pro"), R3)
-
-    assert record == CHECKIN_AUDIT
 
 
 async def test_a_calendar_never_posted_is_left_alone(tmp_path):
@@ -1012,47 +1151,25 @@ async def test_the_calendar_is_posted_again_with_the_round_shown_cancelled(tmp_p
 
 
 async def test_a_retried_calendar_is_posted_as_text(tmp_path, monkeypatch):
-    from leaguebot.core.services import calendar_post_service
-
     league = await ongoing_league(tmp_path, images=True)
-    league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
     league.channel(PRO_CH.calendar).send_fails = http_error(status=503,
                                                             text="Service Unavailable")
-    draw = AsyncMock(return_value=SimpleNamespace(problem=None, notices=[], png_paths=[]))
-    monkeypatch.setattr(calendar_post_service, "render_calendar_image", draw)
+    drawing = draw_calendars_with(league.bot, monkeypatch, CalendarDrawingStub())
     await _asked(league)
 
     await run_queue(league.bot)
     assert await _stopped_at(league) == "post_calendar"
-    assert draw.await_count == 1
+    assert drawing.drawn == ["Pro"]
 
     league.channel(PRO_CH.calendar).send_fails = None
     await retry_job(league.bot)
 
     assert len(league.texts(PRO_CH.calendar)) == 1
     assert league.channel(PRO_CH.calendar).files[-1] is None
-    assert draw.await_count == 1, "the retry reached for the picture"
-
-
-async def test_a_calendar_that_falls_back_to_text_is_named(tmp_path, monkeypatch):
-    from leaguebot.core.services import calendar_post_service
-
-    league = await ongoing_league(tmp_path, images=True)
-    league.bot.image_config_service.is_aspect_enabled = AsyncMock(
-        side_effect=lambda aspect: aspect == "calendar"
+    assert drawing.drawn == ["Pro"], "the retry reached for the picture"
+    assert not any("posted as text" in line for line in _log_lines(league)), (
+        "a retry posted as text is no fallback (Constitution XIV, rule 8)"
     )
-    monkeypatch.setattr(calendar_post_service, "render_calendar_image",
-                        AsyncMock(side_effect=RuntimeError("the template has no rows")))
-    interaction = await _asked(league)
-
-    await _done(league)
-
-    named = ("**Pro** — calendar: posted as text, as the picture could not be drawn (the "
-             "template has no rows)")
-    assert named in _not_notified(reply(interaction))
-    assert f"\n  not notified: {named}" in _success_lines(league)[0]
-    result = (await _job(league, "post_calendar"))["result"]
-    assert result["fell_back"] and result["problem"] == "the template has no rows"
 
 
 async def test_a_discarded_calendar_repost_names_calendar_sync_while_the_season_is_raced(tmp_path):
@@ -1156,22 +1273,23 @@ async def test_the_wind_down_is_asked_only_where_the_round_finished_its_division
 async def test_a_wind_down_that_stops_stops_at_its_own_job_and_the_cancellation_reports_success(
     tmp_path,
 ):
-    from leaguebot.core.services import season_lifecycle_service
-
     league = await ongoing_league(tmp_path)
     await league.write("UPDATE seasons SET stage = 'ONGOING_PLACEMENTS' WHERE id = ?", SEASON_ID)
     for number in (2, 4):
         await _set_status(league, "FINAL", round_id(PRO, number))
     await league.write("UPDATE rounds SET status = 'FINAL' WHERE division_id = ?", AM)
     await league.write("UPDATE divisions SET status = 'FINISHED' WHERE id = ?", AM)
+    # The database refuses to move the season on to Pending completion.
+    await league.write(
+        "CREATE TRIGGER refuse_wind_down BEFORE UPDATE OF stage ON seasons "
+        "WHEN NEW.stage = 'PENDING_COMPLETION' BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
+    )
     interaction = await _asked(league)
 
-    with patch.object(season_lifecycle_service, "close_window_for_wind_down",
-                      AsyncMock(side_effect=RuntimeError("the signup window would not close"))):
-        await run_queue(league.bot)
+    await run_queue(league.bot)
 
     stopped = await stopped_job(league.db_path)
-    assert stopped is not None and stopped["name"] == "wind_down"
+    assert stopped is not None and stopped["name"] == "turn_down"
     assert stopped["change_id"] != (await _change(league))["id"]
     assert (await _change(league))["state"] == "DONE"
     assert CANCELLED in reply(interaction)
@@ -1348,14 +1466,25 @@ async def test_a_round_whose_submission_has_accepted_a_session_is_refused(
     assert not _channel_deleted(league)
 
 
-@pytest.mark.parametrize("cleared", ["retried", "discarded"])
+@pytest.mark.parametrize("cleared", ["retried", "discarded", _RENAMED])
 async def test_a_submission_channel_discord_will_not_delete_stops_the_queue_and_once_discarded_is_named(
-    tmp_path, cleared,
+    tmp_path, monkeypatch, cleared,
 ):
     """Round 3's open, empty submission is closed with the round, but Discord refuses to delete
     its channel: the queue stops at that job, the round already cancelled. Retried once Discord
     allows it, the channel is deleted and nothing is named; discarded, the reply's Not notified
-    section and the success line name the channel to delete by hand."""
+    section and the success line name the channel to delete by hand. Discarded under a name of
+    the test's own, which core does not know, it is named in the same words: core reads them from
+    the job itself, never by its name."""
+    job = "delete_channel"
+    if cleared == "discarded under another name":
+        from leaguebot.results.services import result_submission_service, review_posting
+
+        rename_module_job(
+            monkeypatch, steps=(review_posting, "cancellation_steps"),
+            planner=(result_submission_service, "close_called_off_on"), old=job,
+        )
+        job = RENAMED_JOB
     league = await ongoing_league(tmp_path)
     await _empty_submission(league)
     league.channel(SUBMISSION_CHANNEL).delete_fails = http_error(
@@ -1364,7 +1493,7 @@ async def test_a_submission_channel_discord_will_not_delete_stops_the_queue_and_
     interaction = await _asked(league)
 
     await run_queue(league.bot)
-    assert await _stopped_at(league) == "delete_channel"
+    assert await _stopped_at(league) == job
     assert await _status(league) == "CANCELLED"
     assert await _submission_closed(league) == 1
 
@@ -1434,6 +1563,61 @@ async def test_a_session_accepted_after_the_check_is_refused_by_the_save_and_its
     assert [row["state"] for row in await _rearmings(league)] == ["DONE"]
     assert ("results", [R3]) in league.armed
     assert len([line for line in _log_lines(league) if ARMED_AGAIN in line]) == 1
+
+
+#: What a module of the test's own, signed up to stand in a cancellation's way, refuses in.
+_STOOD_IN_THE_WAY = "❌ Cannot cancel Round 3 — a module of the test's own stands in the way."
+
+
+@pytest.mark.parametrize("where", ["asked", "in the save"])
+async def test_a_subscriber_s_refusal_stops_the_cancellation_in_the_check_and_the_save_writing_nothing(
+    tmp_path, where,
+):
+    """A module of the test's own signs up to what stands in the way of a cancellation of rounds,
+    and is handed the save's rounds: round 3 of Pro. Asked, where it refuses from the first, `/round
+    cancel` is refused at once in its words and nothing is queued or removed. In the save, where it
+    refuses only once the removal of the timed work has stopped and been retried, the save refuses
+    in its words as the backstop: the reply says so and that the timed work is being armed again,
+    by a change that runs. Either way one refusal line is written, every round keeps its status,
+    no round's cancellation is audited and no channel is posted in."""
+    league = await ongoing_league(tmp_path)
+    seen: list[tuple[str, list[tuple[int, int, str]]]] = []
+    refusing = {"now": where == "asked"}
+
+    async def stands_in_the_way(_db, scope, rounds):
+        seen.append((scope, [(each.round_id, each.round_number, each.division_name)
+                             for each in rounds]))
+        return _STOOD_IN_THE_WAY if refusing["now"] else None
+
+    league.bot.cancellation_refused.subscribe(stands_in_the_way)
+    before = await league.rows("SELECT id, status FROM rounds ORDER BY id")
+
+    interaction = await _asked(league)
+    if where == "asked":
+        assert reply(interaction) == _STOOD_IN_THE_WAY
+        assert await cancellation_changes(league) == []
+        await run_queue(league.bot)
+        assert league.unarmed == []
+    else:
+        unarming = league.bot.scheduler_service.cancel_round
+        league.bot.scheduler_service.cancel_round = MagicMock(
+            side_effect=RuntimeError("the job store is locked")
+        )
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "unarm"
+        refusing["now"] = True
+        league.bot.scheduler_service.cancel_round = unarming
+        await retry_job(league.bot)
+        assert _STOOD_IN_THE_WAY in reply(interaction)
+        assert REARMING in reply(interaction)
+        assert (await _change(league))["state"] == "DONE"
+        assert [row["state"] for row in await _rearmings(league)] == ["DONE"]
+
+    assert seen[0] == ("round", [(R3, 3, "Pro")])
+    assert len(_refusal_lines(league)) == 1
+    assert await league.rows("SELECT id, status FROM rounds ORDER BY id") == before
+    assert await _round_audits(league) == []
+    assert [league.texts(cid) for cid in _PRO_POSTS] == [[], [], [], []]
 
 
 async def test_a_re_arming_queued_behind_a_cancellation_that_then_calls_the_round_off_is_dropped(

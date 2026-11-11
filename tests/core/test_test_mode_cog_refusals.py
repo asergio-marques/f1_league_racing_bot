@@ -5,8 +5,17 @@ line naming the member, what was refused and why, and only a view, a list, a pre
 About record nothing. Each case below turns a league admin away at one of the test-mode cog's own
 checks, and expects today's reply, seen by them alone, and exactly one standard refusal line; a
 refusal on the roster import form names the form. The refusal to change the roster outside
-placements is recorded already and is not a case; the restore confirmation is tested in
-`test_test_mode_backup.py`.
+placements is recorded already and is not a case, and neither is a refusal
+`/test-mode set-former-driver` makes, nor one `/test-mode roster remove`, `clear` or the import
+form makes of what the database holds: each is judged as the change is asked of the queue (#283),
+and is tested with its command in `test_test_mode_former_driver.py`,
+`test_test_mode_roster_remove.py`, `test_test_mode_roster_clear.py` and
+`test_test_mode_roster_add_bulk.py`. The restore
+confirmation is tested in `test_test_mode_backup.py`. `/test-mode nationality` is refused by its
+setting's check, which the change queue makes (#283), and is tested with the command in
+`test_test_mode_cog_roster.py`;
+`/test-mode toggle`'s refusals, judged at the ask and again as its change starts, are tested with
+the command in `test_test_mode_toggle_guard.py`.
 
 `/test-mode backup status` is a view, so its refusal outside test mode records nothing.
 """
@@ -21,24 +30,19 @@ import pytest
 from leaguebot.core.cogs import test_mode_cog as cog_module
 from leaguebot.core.cogs.test_mode_cog import TestModeCog as _Cog
 from leaguebot.core.cogs.test_mode_cog import _RosterImportModal
-from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services import backup_service
-from leaguebot.core.services import season_lifecycle_service
-from leaguebot.core.services import test_mode_service
-from leaguebot.core.services import test_roster_service
+from leaguebot.core.services.upkeep import backup_service
+from leaguebot.core.services.test_mode import test_mode_service
 from leaguebot.core.utils import roster_import
 from leaguebot.results.services import result_submission_service
 from tests.support.undecorate import undecorate
 
 ADMIN_ID = 4242
-DRIVER_ID = 5151
 
 #: The marks a reply may open with, which a refusal's log line leaves out of its reason.
 _REPLY_MARKS = ("❌", "⛔", "⚠️", "⚠", "ℹ️", "ℹ", "⏳", "⛓", "⏸️", "⏸")
 
 #: How the log names the roster import form.
 _IMPORT_FORM = "the “Import a test roster” form"
-
 
 def _reason(reply: str) -> str:
     """The reason a refusal line gives: the reply's first line, without its opening mark."""
@@ -89,13 +93,6 @@ def _interaction(cog: _Cog, command: str | None) -> MagicMock:
     return interaction
 
 
-def _member() -> MagicMock:
-    member = MagicMock()
-    member.id = DRIVER_ID
-    member.display_name = "Racer"
-    return member
-
-
 # ── How a case makes the cog refuse ───────────────────────────────────────────
 
 
@@ -105,60 +102,66 @@ def _not_in_test_mode(cog, monkeypatch):
     )
 
 
-def _no_season_in_configuration(cog, monkeypatch):
-    monkeypatch.setattr(season_lifecycle_service, "live_season_stage", AsyncMock(return_value=None))
-
-
-def _real_drivers(cog, monkeypatch):
-    monkeypatch.setattr(
-        season_lifecycle_service,
-        "live_season_stage",
-        AsyncMock(return_value=(3, SeasonStage.CONFIGURATION)),
-    )
-    _not_in_test_mode(cog, monkeypatch)
-    monkeypatch.setattr(cog_module, "count_live_real_drivers", AsyncMock(return_value=2))
-
-
-def _nothing_passed_over(monkeypatch) -> None:
-    """No raced round's weather step for advance to name as passed over; the cog's database is
-    none to read it from."""
-    monkeypatch.setattr(cog_module, "get_passed_over_steps", AsyncMock(return_value=[]))
+def _next_step(monkeypatch, entry) -> None:
+    """Advance's next step is *entry*, and no raced round's weather step is passed over, wherever
+    advance reads them: the cog while it picks the step, `test_mode_service` once the one service
+    function does. The cog's database is none to read them from."""
+    reads = {
+        "get_next_pending_phase": AsyncMock(return_value=entry),
+        "get_passed_over_steps": AsyncMock(return_value=[]),
+    }
+    for module in (cog_module, test_mode_service):
+        for name, read in reads.items():
+            if hasattr(module, name):
+                monkeypatch.setattr(module, name, read)
 
 
 def _nothing_left(cog, monkeypatch):
-    monkeypatch.setattr(cog_module, "get_next_pending_phase", AsyncMock(return_value=None))
-    _nothing_passed_over(monkeypatch)
+    _next_step(monkeypatch, None)
 
 
 def _submission_open(status: str):
-    """Round 2 of Pro waiting on its results, its submission channel open, in *status*."""
+    """Round 2 of Pro waiting on its results, its submission channel open, in *status*.
+
+    Results' own step refuses it, read from the round's state; the cog has no database, so once
+    advance runs the step signed up for the kind, a stand-in signed up for `results` refuses as
+    results' step does, and the case holds the cog to sending a refused step's reply as a
+    refusal, recorded in the log channel."""
     def setup(cog, monkeypatch):
         entry = {
             "phase_number": 4,
+            "kind": "results",
             "round_number": 2,
             "round_id": 12,
             "division_name": "Pro",
             "track_name": "Monza",
+            "job_id": None,
         }
-        monkeypatch.setattr(cog_module, "get_next_pending_phase", AsyncMock(return_value=entry))
-        _nothing_passed_over(monkeypatch)
+        _next_step(monkeypatch, entry)
         monkeypatch.setattr(
             result_submission_service, "is_submission_open", AsyncMock(return_value=True)
         )
         monkeypatch.setattr(
             test_mode_service, "round_result_status", AsyncMock(return_value=status)
         )
+        from leaguebot.core.services.test_mode.test_mode_service import AdvanceOutcome, AdvanceSteps
+
+        where = "**Pro** — **Round 2**"
+        reply = (
+            f"⏸️ Result submission for {where} is already in progress. Please submit "
+            f"results in the submission channel before advancing."
+            if status == "FINAL" else
+            f"⏸️ {where} is awaiting penalty review approval. Please complete the penalty "
+            f"review in the submission channel before advancing."
+        )
+        cog.bot.advance_steps = AdvanceSteps()
+        cog.bot.advance_steps.register_step(
+            "results", AsyncMock(return_value=AdvanceOutcome.refused(reply))
+        )
     return setup
 
 
-def _former_driver_refused(cog, monkeypatch):
-    cog.bot.driver_service.set_former_driver = AsyncMock(
-        side_effect=ValueError("No driver profile found for that user.")
-    )
-
-
 def _locked(cog, monkeypatch):
-    monkeypatch.setattr(cog_module, "_jobstore_path", lambda bot: "/tmp/does-not-matter.jobs.db")
     monkeypatch.setattr(
         backup_service,
         "save",
@@ -186,28 +189,11 @@ def _backup(*, exists: bool, readable: bool = True):
     return setup
 
 
-def _roster_service_refuses(name: str, reason: str):
-    def setup(cog, monkeypatch):
-        monkeypatch.setattr(test_roster_service, name, AsyncMock(return_value=reason))
-    return setup
-
-
 def _paste_unreadable(cog, monkeypatch):
     monkeypatch.setattr(
         roster_import,
         "parse_roster_csv",
         MagicMock(return_value=([], ["Row 2: no team is named `XYZ`."])),
-    )
-
-
-def _paste_refused_by_the_service(cog, monkeypatch):
-    monkeypatch.setattr(
-        roster_import, "parse_roster_csv", MagicMock(return_value=([MagicMock()], []))
-    )
-    monkeypatch.setattr(
-        test_roster_service,
-        "add_test_drivers_in_bulk",
-        AsyncMock(return_value=(0, ["Pro already holds drivers."])),
     )
 
 
@@ -227,24 +213,6 @@ async def _submit_import_form(cog, interaction):
 # case id → (the command, or None for the form; how it runs; how the cog refuses; a phrase of
 # today's reply)
 _CASES = {
-    "toggle outside configuration": (
-        "test-mode toggle",
-        _command("toggle"),
-        _no_season_in_configuration,
-        "can only be switched while a season is in configuration",
-    ),
-    "toggle with real drivers": (
-        "test-mode toggle",
-        _command("toggle"),
-        _real_drivers,
-        "cannot be enabled while this server has **2** real driver(s)",
-    ),
-    "nationality outside test mode": (
-        "test-mode nationality",
-        _command("nationality"),
-        _not_in_test_mode,
-        "only available when test mode is enabled",
-    ),
     "advance outside test mode": (
         "test-mode advance",
         _command("advance"),
@@ -268,18 +236,6 @@ _CASES = {
         _command("advance"),
         _submission_open("FINAL"),
         "is already in progress",
-    ),
-    "set-former-driver outside test mode": (
-        "test-mode set-former-driver",
-        _command("set_former_driver", _member(), True),
-        _not_in_test_mode,
-        "only available when test mode is enabled",
-    ),
-    "set-former-driver refused by the service": (
-        "test-mode set-former-driver",
-        _command("set_former_driver", _member(), True),
-        _former_driver_refused,
-        "No driver profile found for that user.",
     ),
     "backup save outside test mode": (
         "test-mode backup save",
@@ -329,46 +285,16 @@ _CASES = {
         _not_in_test_mode,
         "only available when test mode is enabled",
     ),
-    "roster remove outside test mode": (
-        "test-mode roster remove",
-        _command("roster_remove", "900001"),
-        _not_in_test_mode,
-        "only available when test mode is enabled",
-    ),
     "roster remove of an id that is not a number": (
         "test-mode roster remove",
         _command("roster_remove", "not-a-number"),
         None,
         "`user_id` must be a numeric Discord user ID",
     ),
-    "roster remove refused by the service": (
-        "test-mode roster remove",
-        _command("roster_remove", "900001"),
-        _roster_service_refuses("remove_test_driver", "No fake driver has that ID."),
-        "No fake driver has that ID.",
-    ),
-    "roster clear outside test mode": (
-        "test-mode roster clear",
-        _command("roster_clear", "Pro"),
-        _not_in_test_mode,
-        "only available when test mode is enabled",
-    ),
-    "roster clear refused by the service": (
-        "test-mode roster clear",
-        _command("roster_clear", "Nowhere"),
-        _roster_service_refuses("clear_test_drivers", "No division named **Nowhere**."),
-        "No division named **Nowhere**.",
-    ),
     "import form with an unreadable paste": (
         None,
         _submit_import_form,
         _paste_unreadable,
-        "The roster was not imported — 1 problem(s)",
-    ),
-    "import form refused by the service": (
-        None,
-        _submit_import_form,
-        _paste_refused_by_the_service,
         "The roster was not imported — 1 problem(s)",
     ),
 }

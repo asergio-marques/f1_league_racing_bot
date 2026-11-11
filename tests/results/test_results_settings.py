@@ -634,7 +634,7 @@ async def test_a_results_setting_whose_audit_entry_fails_saves_nothing_and_the_l
     league = await _league(tmp_path)
 
     asked = await _slash("config_add", "results config add", name="Sprint")(league)
-    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot, steps=1)
     behind = await _slash("config_add", "results config add", name="Other")(league)
     await run_queue(league.bot)
@@ -890,7 +890,7 @@ async def test_a_fault_in_a_paste_s_save_saves_none_of_it_says_paste_it_again_an
     table = POINTS if kind == "config" else STAGED
 
     asked = await _form(kind, "1, 30\n2, 20")(league)
-    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot, steps=1)
     behind = await _slash("config_add", "results config add", name="Other")(league)
     await run_queue(league.bot)
@@ -911,7 +911,7 @@ async def test_a_fault_in_an_import_s_save_says_run_the_import_again_and_the_lan
     league = await _league(tmp_path)
 
     asked = await _form("xml", XML_30_20)(league)
-    with fault_in("leaguebot.core.services.change_queue.record_change_on"):
+    with fault_in("leaguebot.core.services.queue.change_queue.record_change_on"):
         await run_queue(league.bot, steps=1)
     behind = await _slash("config_add", "results config add", name="Other")(league)
     await run_queue(league.bot)

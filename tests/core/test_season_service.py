@@ -10,7 +10,7 @@ import os
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundStatus
-from leaguebot.core.services.season_service import set_round_status_on
+from leaguebot.core.services.seasons.season_service import set_round_status_on
 
 SERVER_ID = 12608
 DIVISION_ID = 11
@@ -45,7 +45,7 @@ async def _make_db(tmp_path) -> str:
             await db.execute(
                 "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
                 "scheduled_at, status) VALUES (?, ?, ?, 'NORMAL', 'Silverstone', "
-                "'2026-06-01', ?)",
+                "'2026-06-01T00:00:00+00:00', ?)",
                 (round_id, DIVISION_ID, number, status),
             )
         await db.commit()

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from tests.support.driver_transitions import transitioned
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -21,11 +22,6 @@ async def db_path(tmp_path):
         await db.execute("INSERT INTO server_configs (server_id) VALUES (1)")
         await db.commit()
     return path
-
-
-def _make_svc(db_path):
-    from leaguebot.core.services.driver_service import DriverService
-    return DriverService(db_path)
 
 
 async def _seed_driver(db_path, user_id: str, state: str) -> None:
@@ -80,8 +76,7 @@ async def test_an_allowed_transition_lands_on_its_target(db_path, from_state, to
                 "UPDATE driver_profiles SET former_driver = 1 WHERE discord_user_id = 'u1'"
             )
             await db.commit()
-    svc = _make_svc(db_path)
-    result = await svc.transition("u1", DriverState(to_state))
+    result = await transitioned(db_path, "u1", DriverState(to_state))
     assert result is not None
     assert result.current_state == DriverState(to_state)
 
@@ -97,12 +92,15 @@ async def test_an_allowed_transition_lands_on_its_target(db_path, from_state, to
 async def test_a_transition_the_table_does_not_allow_raises(db_path, from_state, to_state):
     """The awaiting-correction-parameter state is reachable only from pending admin approval,
     not from pending signup completion, and a driver awaiting their correction cannot go
-    straight to Assigned."""
-    from leaguebot.core.models.driver_profile import DriverState
+    straight to Assigned. The state machine refuses by a name of its own, which is not a
+    refusal a member reads: a caller judges the move first, and catches this by name only where
+    a move raced past its judgement."""
+    from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
+    from leaguebot.core.models.refusal import Refused
     await _seed_driver(db_path, "u1", from_state)
-    svc = _make_svc(db_path)
-    with pytest.raises(ValueError):
-        await svc.transition("u1", DriverState(to_state))
+    with pytest.raises(InvalidDriverTransition) as refused:
+        await transitioned(db_path, "u1", DriverState(to_state))
+    assert not isinstance(refused.value, Refused)
 
 
 # ---------------------------------------------------------------------------
@@ -135,8 +133,7 @@ class TestSignupDataClearing:
         import aiosqlite
         from leaguebot.core.models.driver_profile import DriverState
         await self._seed_former_driver_with_record(db_path, "fd1")
-        svc = _make_svc(db_path)
-        result = await svc.transition("fd1", DriverState.NOT_SIGNED_UP)
+        result = await transitioned(db_path, "fd1", DriverState.NOT_SIGNED_UP)
         assert result is not None  # former driver profile retained
         assert result.current_state == DriverState.NOT_SIGNED_UP
         # The signup is kept whole
@@ -158,7 +155,8 @@ async def test_a_state_written_within_a_transaction_obeys_the_table(tmp_path):
     write, and it refuses what the table refuses, writing nothing."""
     from leaguebot.core.db.database import get_connection, run_migrations
     from leaguebot.core.models.driver_profile import DriverState
-    from leaguebot.core.services.driver_service import write_transition
+    from leaguebot.core.models.driver_profile import InvalidDriverTransition
+    from leaguebot.core.services.drivers.driver_service import write_transition
 
     path = str(tmp_path / "write_transition.db")
     await run_migrations(path)
@@ -173,7 +171,7 @@ async def test_a_state_written_within_a_transaction_obeys_the_table(tmp_path):
         )
         await db.commit()
 
-        with pytest.raises(ValueError, match="not allowed"):
+        with pytest.raises(InvalidDriverTransition, match="not allowed"):
             await write_transition(
                 db, 9, DriverState.PENDING_SIGNUP_COMPLETION, DriverState.ASSIGNED
             )
@@ -183,80 +181,3 @@ async def test_a_state_written_within_a_transaction_obeys_the_table(tmp_path):
         await db.commit()
         cursor = await db.execute("SELECT current_state FROM driver_profiles WHERE id = 9")
         assert (await cursor.fetchone())[0] == "NOT_SIGNED_UP"
-
-
-# ---------------------------------------------------------------------------
-# What a caller adds to a transition's save (#439, slice 5)
-# ---------------------------------------------------------------------------
-
-
-async def _handed_rows(db_path) -> list[str]:
-    from leaguebot.core.db.database import get_connection
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT account FROM handed_writes ORDER BY account")
-        return [row[0] for row in await cursor.fetchall()]
-
-
-async def _state(db_path, user_id: str) -> str | None:
-    from leaguebot.core.db.database import get_connection
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?", (user_id,)
-        )
-        row = await cursor.fetchone()
-    return row[0] if row else None
-
-
-@pytest.mark.parametrize("fails", [False, True], ids=["saved together", "rolled back together"])
-async def test_a_transition_saves_what_it_is_handed_in_the_same_save(db_path, fails):
-    """Driver u1 is returned from Pending Signup Completion to Not Signed Up, the caller handing
-    a write of its own (`also_on`), which writes a row of the test's own table on the connection
-    it is handed. The write is saved with the driver's state, once. Where the handed write
-    raises after writing, the transition raises it and neither the row nor the state is saved."""
-    from leaguebot.core.db.database import get_connection
-    from leaguebot.core.models.driver_profile import DriverState
-
-    async with get_connection(db_path) as db:
-        await db.execute("CREATE TABLE handed_writes (account TEXT NOT NULL)")
-        await db.commit()
-    await _seed_driver(db_path, "u1", "PENDING_SIGNUP_COMPLETION")
-    handed: list[object] = []
-
-    async def _also_on(db) -> None:
-        handed.append(db)
-        await db.execute("INSERT INTO handed_writes (account) VALUES ('u1')")
-        if fails:
-            raise RuntimeError("the handed write failed")
-
-    svc = _make_svc(db_path)
-    if fails:
-        with pytest.raises(RuntimeError, match="the handed write failed"):
-            await svc.transition("u1", DriverState.NOT_SIGNED_UP, also_on=_also_on)
-        assert await _state(db_path, "u1") == "PENDING_SIGNUP_COMPLETION"
-        assert await _handed_rows(db_path) == []
-    else:
-        await svc.transition("u1", DriverState.NOT_SIGNED_UP, also_on=_also_on)
-        assert await _state(db_path, "u1") == "NOT_SIGNED_UP"
-        assert await _handed_rows(db_path) == ["u1"]
-    assert len(handed) == 1
-
-
-async def test_a_transition_creating_a_profile_refuses_also_on_and_writes_nothing(db_path):
-    """A transition from no profile creates one on a save of its own, so a write handed to it
-    could not be saved with it: it is refused (`ValueError`) before anything is written, no
-    profile is created and the handed write is never called."""
-    from leaguebot.core.models.driver_profile import DriverState
-
-    called: list[object] = []
-
-    async def _also_on(db) -> None:
-        called.append(db)
-
-    svc = _make_svc(db_path)
-    with pytest.raises(ValueError, match="takes no also_on"):
-        await svc.transition("nobody", DriverState.PENDING_SIGNUP_COMPLETION, also_on=_also_on)
-
-    assert await _state(db_path, "nobody") is None
-    assert called == []

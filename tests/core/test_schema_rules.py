@@ -1,4 +1,6 @@
-"""The rules the schema itself holds: keys, cascades and uniqueness.
+"""The rules the schema itself holds: keys, cascades and uniqueness, an owning module for every
+table, every column a module keeps on another's table, and no column stamping its own time from
+SQLite's clock but those `KNOWN_CLOCK_DEFAULTS` lists.
 
 Issue #254 squashed the migration chain into one baseline and removed the tests that proved
 each historic migration carried data across. Several of those tests also pinned a rule of the
@@ -14,11 +16,19 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
+from collections import Counter
 from pathlib import Path
 
 import pytest
 
 from leaguebot.core.db.database import run_migrations
+from tests.repository.test_architecture_rules import (
+    KNOWN_CLOCK_DEFAULTS,
+    OWN_COLUMNS,
+    TABLE_OWNER,
+    _SQL_CLOCK,
+    _check,
+)
 
 LEAGUE = 2540
 
@@ -151,16 +161,24 @@ async def test_every_table_the_baseline_creates_is_named_in_src(db_path):
 # ── Cascades ──────────────────────────────────────────────────────────────────
 
 
-async def test_a_division_s_attendance_channels_go_with_the_division(db_path):
-    db = _connect(db_path)
-    db.execute(
-        "INSERT INTO attendance_division_config (division_id, rsvp_channel_id) VALUES (10, '71')"
-    )
-    db.execute("DELETE FROM divisions WHERE id = 10")
-    db.commit()
-    db.close()
-
-    assert _query(db_path, "SELECT * FROM attendance_division_config") == []
+async def test_no_module_table_cascades_from_a_core_table(db_path):
+    """A module deletes its own rows when core deletes a season, division or round, on the hook
+    core calls (architecture.md, "The database"): a key from a module's table to a core table
+    takes no action of its own, neither deleting the module's row nor setting its column to NULL.
+    A cascade stays within one owner's tables. Each breach is named as ``table.column -> table``.
+    """
+    db = sqlite3.connect(db_path)
+    try:
+        acting = sorted(
+            f"{table}.{key[3]} -> {key[2]} ON DELETE {key[6]}"
+            for table in _built_tables(db)
+            if TABLE_OWNER[table] != "core"
+            for key in db.execute(f'PRAGMA foreign_key_list("{table}")').fetchall()
+            if TABLE_OWNER[key[2]] == "core" and key[6] != "NO ACTION"
+        )
+    finally:
+        db.close()
+    assert acting == []
 
 
 async def test_a_points_configuration_takes_its_points_with_it(db_path):
@@ -221,11 +239,31 @@ async def test_an_account_holds_one_signup_wizard(db_path):
 async def test_a_team_name_is_unique_in_the_league(db_path):
     db = _connect(db_path)
     db.execute("INSERT INTO default_teams (name, full_name) VALUES ('Alpha', 'Alpha')")
-    db.execute("INSERT INTO team_role_configs (team_name, role_id) VALUES ('Alpha', 1)")
+    db.execute("INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES ('Alpha', 1, '2031-03-04T05:06:07+00:00')")
     with pytest.raises(sqlite3.IntegrityError):
         db.execute("INSERT INTO default_teams (name, full_name) VALUES ('Alpha', 'Alpha')")
     with pytest.raises(sqlite3.IntegrityError):
-        db.execute("INSERT INTO team_role_configs (team_name, role_id) VALUES ('Alpha', 2)")
+        db.execute("INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES ('Alpha', 2, '2031-03-04T05:06:07+00:00')")
+    db.close()
+
+
+async def test_a_second_division_of_the_same_name_is_refused_by_the_schema(db_path):
+    """The core specification's divisions: a division's name is unique within its season, without
+    regard to case. Season 1 holds Pro. An insert of a second Pro into season 1, or of PRO, is
+    refused by the schema itself, whatever a command checked first; Pro in season 2 is accepted.
+    SQLite folds the case of ASCII letters alone: a name differing in an accented letter's case is
+    the command's check to refuse (`test_division_add_duplicate.py`)."""
+    db = _connect(db_path)
+    for name in ("Pro", "PRO"):
+        with pytest.raises(sqlite3.IntegrityError):
+            db.execute(
+                "INSERT INTO divisions (season_id, name, mention_role_id) VALUES (1, ?, 6)", (name,)
+            )
+    db.execute(
+        "INSERT INTO seasons (id, start_date, status, season_number) "
+        "VALUES (2, '2027-01-01', 'COMPLETED', 2)"
+    )
+    db.execute("INSERT INTO divisions (season_id, name, mention_role_id) VALUES (2, 'Pro', 6)")
     db.close()
 
 
@@ -333,6 +371,15 @@ async def test_a_change_s_origins_match_the_enum(db_path):
     assert _check_list(db_path, "queued_changes", "origin") == {o.value for o in ChangeOrigin}
 
 
+async def test_a_division_s_and_a_round_s_statuses_match_their_enums(db_path):
+    """Each written twice, in the CHECK list and in its enum, and must not drift."""
+    from leaguebot.core.models.division import DivisionStatus
+    from leaguebot.core.models.round import RoundStatus
+
+    assert _check_list(db_path, "divisions", "status") == {s.value for s in DivisionStatus}
+    assert _check_list(db_path, "rounds", "status") == {s.value for s in RoundStatus}
+
+
 async def test_the_queue_holds_one_running_change(db_path):
     """One change runs at a time on a lane: an identity rule, so the schema holds it, not the
     worker. Here every change is on the league lane, which a change naming no lane is on."""
@@ -376,3 +423,110 @@ async def test_a_change_s_steps_go_with_it(db_path):
     db.commit()
     assert db.execute("SELECT COUNT(*) FROM queued_change_steps").fetchone() == (0,)
     db.close()
+
+
+# ── Which module owns each table, and the clock in the schema ─────────────────
+#
+# These read the schema `run_migrations` builds, never a migration file's text, so a table or a
+# column a later migration adds, renames or drops is seen as it stands (architecture.md, "The
+# database"). The maps they hold the schema to are the rules file's, which reads source and
+# imports no bot code.
+
+
+def _built_tables(db: sqlite3.Connection) -> list[str]:
+    """The tables of the built schema, in name order, SQLite's own and the versions' table aside."""
+    return [
+        row[0]
+        for row in db.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' "
+            "AND name != 'schema_migrations' ORDER BY name"
+        )
+    ]
+
+
+def _columns(db: sqlite3.Connection, table: str) -> list[tuple]:
+    """``PRAGMA table_info`` of *table*: each column as (cid, name, type, notnull, default, pk)."""
+    return db.execute(f'PRAGMA table_info("{table}")').fetchall()
+
+
+def _clock_defaults(db: sqlite3.Connection) -> list[str]:
+    """Each ``table.column`` of the schema in *db* whose default is SQLite's clock, tables in name
+    order and columns in the order they are declared. SQLite gives each default as its own text
+    (``CURRENT_TIMESTAMP``, ``datetime('now')``), which is read as a statement's would be."""
+    return [
+        f"{table}.{column[1]}"
+        for table in _built_tables(db)
+        for column in _columns(db, table)
+        if column[4] is not None and _SQL_CLOCK.search(column[4])
+    ]
+
+
+async def test_every_table_has_an_owner(db_path):
+    """A table added to the schema is given its owner in `TABLE_OWNER`, so the rule on writes in
+    `test_architecture_rules.py` covers it."""
+    db = sqlite3.connect(db_path)
+    try:
+        assert set(TABLE_OWNER) == set(_built_tables(db))
+    finally:
+        db.close()
+
+
+async def test_every_module_column_is_in_the_schema(db_path):
+    """A module's own column that the schema renamed or dropped would drop out of the rule on
+    writes without a word."""
+    db = sqlite3.connect(db_path)
+    try:
+        missing = sorted(
+            f"{table}.{column}"
+            for columns_of in OWN_COLUMNS.values()
+            for table, columns in columns_of.items()
+            for column in columns
+            if column not in {row[1] for row in _columns(db, table)}
+        )
+    finally:
+        db.close()
+    assert missing == []
+
+
+async def test_no_column_defaults_to_sqlites_clock(db_path):
+    """A stored time is written from the `now` handed in (architecture.md, "The time is always
+    passed in"), and a column defaulting to SQLite's clock stamps one as `datetime('now')` in a
+    statement does. A breach is keyed by ``("schema", "table.column")`` and listed in the rules
+    file's `KNOWN_CLOCK_DEFAULTS` with the issue that will fix it."""
+    db = sqlite3.connect(db_path)
+    try:
+        found = Counter(("schema", column) for column in _clock_defaults(db))
+    finally:
+        db.close()
+    _check("no statement reads SQLite's clock", found, KNOWN_CLOCK_DEFAULTS)
+
+
+def test_the_clock_default_scan_reads_each_column_that_defaults_to_the_clock():
+    """A column defaulting to the clock is named by its table and column, in either spelling and
+    wherever it sits in the text (its own line, after a leading comma, a one-line table); a default
+    that is not the clock is not."""
+    schema = (
+        'CREATE TABLE "a" (\n'
+        "    id INTEGER PRIMARY KEY,\n"
+        "    made TEXT NOT NULL DEFAULT (datetime('now')),\n"
+        "    kept TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,\n"
+        "    zero INTEGER NOT NULL DEFAULT 0\n"
+        ");\n"
+        "CREATE TABLE b (\n"
+        "    stamped TEXT DEFAULT (date('now'))\n"
+        ");\n"
+        "CREATE TABLE c (id INTEGER, made_at TEXT DEFAULT CURRENT_TIMESTAMP);\n"
+        "CREATE TABLE d (\n"
+        "    id INTEGER PRIMARY KEY, -- the key, used for joins\n"
+        "    note TEXT\n"
+        ", stamped_at TEXT NOT NULL DEFAULT (datetime('now')), n INTEGER NOT NULL DEFAULT 0\n"
+        ");\n"
+    )
+    db = sqlite3.connect(":memory:")
+    try:
+        db.executescript(schema)
+        found = _clock_defaults(db)
+    finally:
+        db.close()
+
+    assert found == ["a.made", "a.kept", "b.stamped", "c.made_at", "d.stamped_at"]

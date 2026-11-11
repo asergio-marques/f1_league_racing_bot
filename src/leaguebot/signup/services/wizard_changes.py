@@ -30,10 +30,9 @@ Correction, an unsettled signup that refuses the season's placements, so a Disca
 and only a Retry moves it.
 
 A held channel's deletion asks `signup.channel.delete` (`channel_delete_change`): the hold's
-24-hour timer's own, on the driver's lane, and `/driver reassign`'s for the replaced account's channel, on
-the league's. The one job `delete_channel` deletes the channel, a channel already gone being
-nothing to do, and its record deletes the wizard's row; Discord's refusal stops the lane that
-asked.
+24-hour timer's own, on the driver's lane. The one job `delete_channel` deletes the channel, a
+channel already gone being nothing to do, and its record deletes the wizard's row; Discord's
+refusal stops the lane that asked.
 
 The reason a manager types after Reject asks `signup.end` the same way, through the manager's
 stored press: the message is not deleted at once, but by the first job of the `signup.closing` it
@@ -54,7 +53,6 @@ import aiosqlite
 import discord
 
 from leaguebot.core.models.change import (
-    LEAGUE_LANE,
     ChangeOrigin,
     FollowOn,
     PlannedStep,
@@ -63,18 +61,20 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
+from leaguebot.core.services.queue.queue_records import (
+    unfinished,
+)
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
-    unfinished,
 )
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.services import track_service
-from leaguebot.core.services.driver_service import ALLOWED_TRANSITIONS
+from leaguebot.core.services.rounds import track_service
+from leaguebot.core.services.drivers.driver_service import ALLOWED_TRANSITIONS
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import abandoned_line, name_of_member
@@ -106,11 +106,11 @@ from leaguebot.signup.services.wizard_answers import (
 from leaguebot.signup.services.wizard_service import WizardService, build_step_view
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.change_queue import ChangeQueue
-    from leaguebot.core.services.config_service import ConfigService
-    from leaguebot.core.services.driver_service import DriverService
-    from leaguebot.core.services.module_service import ModuleService
-    from leaguebot.core.services.team_service import TeamService
+    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.core.services.settings.config_service import ConfigService
+    from leaguebot.core.services.drivers.driver_service import DriverService
+    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.core.services.drivers.team_service import TeamService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 log = logging.getLogger(__name__)
@@ -163,7 +163,7 @@ _GONE_SENTENCE = {
 __all__ = [
     "ANSWER", "Accepted", "Refused", "judge_answer",
     "ARM_INACTIVITY", "CHANNEL_GONE", "CREATE_CHANNEL", "DELETE_CHANNEL", "DELETE_KIND", "DELETE_OLD_CHANNEL", "DELETED", "END",
-    "END_JOB", "EXPIRED", "INACTIVITY", "NAME_JOB",
+    "END_JOB", "EXPIRED", "INACTIVITY", "NAME_JOB", "delete_signup_channel",
     "PANEL", "POST_WELCOME", "REJECTED", "REJECT_MOVED_ON", "RESTART", "SIGNUP_ENDED", "START", "START_JOB", "WITHDRAWN",
     "WITHDRAWN_NOTICE",
     "LEAVE_JOB", "MEMBER_LEFT",
@@ -358,7 +358,7 @@ def start_change(
             db, discord_user_id=str(ctx.step_payload["user_id"]), wizard_state=made["state"],
             signup_channel_id=int(made["channel_id"]), snapshot_json=made["snapshot"],
             draft_answers=made["draft"], current_lap_track_index=0,
-            last_activity_at=made["at"], starting=True,
+            last_activity_at=made["at"],
         )
 
     async def start(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
@@ -778,7 +778,7 @@ def end_change(
 
 
 @posts_in_a_job
-async def _delete_signup_channel(ctx: StepContext, reason: str) -> StepResult:
+async def delete_signup_channel(ctx: StepContext, reason: str) -> StepResult:
     """Delete the signup channel the step's payload names, for *reason*: a channel already gone is
     nothing to do (``gone``), and one Discord refuses fails the job, which stops the queue."""
     guild = await league_guild(ctx.bot)
@@ -800,12 +800,11 @@ def channel_delete_change(*, signup: Callable[[], "SignupModuleService"]) -> Cha
     """The `signup.channel.delete` change type, for the builder to register.
 
     The payload is ``user_id`` (the account whose wizard holds the channel), ``channel_id`` (the
-    channel held) and ``own_lane``. A hold's 24-hour timer asks it on the driver's own lane
-    (``channel:<id>``, `own_lane` true), where Discord's refusal stops that lane alone; the
-    channel of the account `/driver reassign` replaced is deleted on the league's, as the
-    command's change. It is not due, and is dropped, where the driver's wizard no longer names the
-    channel: a new signup, or a move to another account, has taken it over. Its one job
-    `delete_channel` deletes the channel, one already gone being nothing to do, and its record
+    channel held). A hold's 24-hour timer asks it on the driver's own lane (``channel:<id>``),
+    where Discord's refusal stops that lane alone. It is not due, and is dropped, where the
+    driver's wizard no longer names the channel: a new signup, or a move to another account, has
+    taken it over. Its one job `delete_channel` deletes the channel, one already gone being
+    nothing to do, and its record
     deletes the wizard's row in the save that marks the job done, so the row names a channel only
     while the channel may stand. *signup* is a getter, so that the service is the one the bot
     holds when the job runs.
@@ -822,7 +821,7 @@ def channel_delete_change(*, signup: Callable[[], "SignupModuleService"]) -> Cha
         return row is not None and row.signup_channel_id == int(ctx.step_payload["channel_id"])
 
     async def delete(ctx: StepContext) -> StepResult:
-        return await _delete_signup_channel(ctx, "Signup wizard channel hold expired")
+        return await delete_signup_channel(ctx, "Signup wizard channel hold expired")
 
     async def forget(db: aiosqlite.Connection, ctx: StepContext, _result: StepResult) -> None:
         await signup().delete_wizard_on(db, str(ctx.step_payload["user_id"]))
@@ -852,9 +851,7 @@ def channel_delete_change(*, signup: Callable[[], "SignupModuleService"]) -> Cha
         key=lambda payload: f"{DELETE_KIND}:{payload['user_id']}",
         doing=lambda payload: "Deleting a signup channel",
         outcome=outcome,
-        lane=lambda payload: (
-            f"channel:{int(payload['channel_id'])}" if payload.get("own_lane") else LEAGUE_LANE
-        ),
+        lane=lambda payload: f"channel:{int(payload['channel_id'])}",
         writes=("signup_wizard_records",),
     )
 
@@ -1005,7 +1002,7 @@ def member_left_change(
         # swallowed (#457).
         try:
             await drivers().transition_on(db, user_id, DriverState.NOT_SIGNED_UP)
-        except ValueError:
+        except InvalidDriverTransition:
             pass
         if ctx.step_payload.get("channel_id") is None:
             await signup().delete_wizard_on(db, user_id)
@@ -1031,7 +1028,7 @@ def member_left_change(
         )
 
     async def delete(ctx: StepContext) -> StepResult:
-        return await _delete_signup_channel(ctx, "Driver left the server")
+        return await delete_signup_channel(ctx, "Driver left the server")
 
     async def forget(db: aiosqlite.Connection, ctx: StepContext, _result: StepResult) -> None:
         await signup().delete_wizard_on(db, str(ctx.step_payload["user_id"]))

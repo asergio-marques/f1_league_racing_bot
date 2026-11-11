@@ -68,8 +68,8 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services.attendance_service import AttendanceService
 from tests.support.change_queue import (
     acknowledgement,
-    attach_queue,
-    league_double,
+    league_bot,
+    league_queue,
     run_queue,
     updated_reply,
 )
@@ -267,7 +267,7 @@ async def _accepted_at(db_path: str, profile_id: int) -> str | None:
     return row["accepted_at"] if row else None
 
 
-def _make_interaction(db_path: str, profile_id: int) -> MagicMock:
+async def _make_interaction(db_path: str, profile_id: int) -> MagicMock:
     """A pressed button, from *profile_id*, on a bot wired to *db_path*, made now.
 
     The driver's Discord id and their profile id are the same number in this fixture, which
@@ -276,12 +276,11 @@ def _make_interaction(db_path: str, profile_id: int) -> MagicMock:
     real present; its log lines are recorded by the router's `post_log`.
     """
     now = datetime.now(timezone.utc)
-    bot = league_double(db_path)
-    bot.attendance_service = AttendanceService(db_path)
+    bot = await league_bot(db_path)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     bot.get_channel = MagicMock(return_value=None)
     bot.output_router.post_log = AsyncMock(return_value=None)
-    attach_queue(bot, db_path, now=now)
+    league_queue(bot, db_path, now=now)
     # The lines the queue writes reach the log channel the database names (300), whose sends are
     # the router's `post_log` record, where `_logged` reads them with the refusals' (#439), as the
     # direct posts wrote them.
@@ -346,7 +345,7 @@ async def _ignore_answers(db_path: str) -> None:
 async def test_an_unparseable_button_id_says_so_rather_than_raising(tmp_path):
     """The id is round-tripped through Discord and comes back as whatever is on the button.
     A malformed one must not take the interaction down with an unhandled exception."""
-    interaction = _make_interaction(await _make_db(tmp_path, starts_in=timedelta(days=3)), 1)
+    interaction = await _make_interaction(await _make_db(tmp_path, starts_in=timedelta(days=3)), 1)
 
     await _press(interaction, "nonsense")
 
@@ -356,7 +355,7 @@ async def test_an_unparseable_button_id_says_so_rather_than_raising(tmp_path):
 async def test_an_unknown_action_says_so(tmp_path):
     """Parseable, but not one of the three buttons — a button from an older version of the
     bot still sitting on a message in the channel."""
-    interaction = _make_interaction(await _make_db(tmp_path, starts_in=timedelta(days=3)), 1)
+    interaction = await _make_interaction(await _make_db(tmp_path, starts_in=timedelta(days=3)), 1)
 
     await _press(interaction, f"rsvp_maybe_r{ROUND_ID}")
 
@@ -376,7 +375,7 @@ async def test_a_call_no_longer_standing_records_no_answer(tmp_path):
     async with get_connection(db_path) as db:
         await db.execute("DELETE FROM rsvp_embed_messages WHERE round_id = ?", (ROUND_ID,))
         await db.commit()
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction = await _make_interaction(db_path, FULL_TIME_PROFILE)
 
     await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
@@ -403,7 +402,7 @@ async def test_a_driver_whose_placement_is_not_confirmed_is_turned_away(tmp_path
     this bot does not touch."""
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3), call_posted=False)
     await _uncommit_placement(db_path, FULL_TIME_PROFILE)
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction = await _make_interaction(db_path, FULL_TIME_PROFILE)
 
     await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
@@ -424,7 +423,7 @@ async def test_each_button_records_its_own_status(tmp_path, action, expected):
     """The answer is the thing that matters: the call's channel is not found here, and a call
     deleted by hand must not cost a driver their check-in."""
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction = await _make_interaction(db_path, FULL_TIME_PROFILE)
 
     await _press(interaction, f"rsvp_{action}_r{ROUND_ID}")
 
@@ -435,7 +434,7 @@ async def test_each_button_records_its_own_status(tmp_path, action, expected):
 async def test_a_driver_may_change_their_answer_before_the_deadline(tmp_path):
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     await _set_status(db_path, FULL_TIME_PROFILE, "ACCEPTED")
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction = await _make_interaction(db_path, FULL_TIME_PROFILE)
 
     await _press(interaction, f"rsvp_decline_r{ROUND_ID}")
 
@@ -449,7 +448,7 @@ async def test_pressing_the_button_already_pressed_is_a_no_op(tmp_path):
     having changed anything, and with it their place in the distribution order."""
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     await _set_status(db_path, FULL_TIME_PROFILE, "ACCEPTED")
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction = await _make_interaction(db_path, FULL_TIME_PROFILE)
 
     await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
@@ -463,7 +462,7 @@ async def test_pressing_the_button_already_pressed_is_a_no_op(tmp_path):
 
 async def test_a_full_time_driver_may_answer_before_the_deadline(tmp_path):
     db_path = await _make_db(tmp_path, starts_in=timedelta(hours=DEADLINE_HOURS + 2))
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction = await _make_interaction(db_path, FULL_TIME_PROFILE)
 
     await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
@@ -474,7 +473,7 @@ async def test_a_full_time_driver_is_locked_out_after_the_deadline(tmp_path):
     """Sits an hour the other side of the deadline from the test above. The round has not
     started — only the deadline has gone by — which is exactly the case the rule governs."""
     db_path = await _make_db(tmp_path, starts_in=timedelta(hours=DEADLINE_HOURS - 1))
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction = await _make_interaction(db_path, FULL_TIME_PROFILE)
 
     await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
@@ -485,7 +484,7 @@ async def test_a_full_time_driver_is_locked_out_after_the_deadline(tmp_path):
 async def test_with_no_deadline_configured_a_full_time_driver_locks_at_the_start(tmp_path):
     """A deadline of zero is not "no lock" — the spec makes the round start the lock."""
     db_path = await _make_db(tmp_path, starts_in=timedelta(hours=-1), deadline_hours=0)
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction = await _make_interaction(db_path, FULL_TIME_PROFILE)
 
     await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
@@ -494,7 +493,7 @@ async def test_with_no_deadline_configured_a_full_time_driver_locks_at_the_start
 
 async def test_with_no_deadline_configured_answers_stay_open_until_the_start(tmp_path):
     db_path = await _make_db(tmp_path, starts_in=timedelta(hours=1), deadline_hours=0)
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction = await _make_interaction(db_path, FULL_TIME_PROFILE)
 
     await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
@@ -518,7 +517,7 @@ async def test_a_reserve_who_has_not_accepted_may_still_step_in_after_the_deadli
     for."""
     db_path = await _make_db(tmp_path, starts_in=timedelta(hours=DEADLINE_HOURS - 1))
     await _set_status(db_path, RESERVE_PROFILE, "NO_RSVP")
-    interaction = _make_interaction(db_path, RESERVE_PROFILE)
+    interaction = await _make_interaction(db_path, RESERVE_PROFILE)
 
     await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
@@ -535,7 +534,7 @@ async def test_a_reserve_with_no_answer_at_all_may_step_in_after_the_deadline(tm
     db_path = await _make_db(
         tmp_path, starts_in=timedelta(hours=DEADLINE_HOURS - 1), call_posted=False
     )
-    interaction = _make_interaction(db_path, RESERVE_PROFILE)
+    interaction = await _make_interaction(db_path, RESERVE_PROFILE)
 
     await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
@@ -553,7 +552,7 @@ async def test_a_reserve_who_has_accepted_may_change_their_answer_before_the_dea
     an hour still to go, the new answer is recorded and nothing refuses it."""
     db_path = await _make_db(tmp_path, starts_in=timedelta(hours=DEADLINE_HOURS + 1))
     await _set_status(db_path, RESERVE_PROFILE, "ACCEPTED")
-    interaction = _make_interaction(db_path, RESERVE_PROFILE)
+    interaction = await _make_interaction(db_path, RESERVE_PROFILE)
 
     await _press(interaction, f"rsvp_{action}_r{ROUND_ID}")
 
@@ -565,7 +564,7 @@ async def test_a_reserve_who_has_accepted_may_change_their_answer_before_the_dea
 # A driver placed into the division after the call went out — issue #209
 #
 # `run_rsvp_notice` opens a `driver_round_attendance` row per driver of the division *at that
-# moment*, and nothing else in the bot opens one: not `assign_driver`, not `move_driver`, not
+# moment*, and nothing else in the bot opens one: not `/driver assign`, not `move_driver`, not
 # the mid-season confirmation of placements. So a driver who arrives while the call is standing has none
 # — and they are asked anyway, because the embed is rebuilt from the current roster on every
 # press and lists them with an empty bracket.
@@ -579,7 +578,7 @@ async def test_a_driver_placed_after_the_call_has_their_answer_recorded(tmp_path
     """The defect itself. The answer was discarded in silence and the driver thanked for it,
     leaving the call showing them as never having replied."""
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3), call_posted=False)
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction = await _make_interaction(db_path, FULL_TIME_PROFILE)
 
     await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
@@ -595,7 +594,7 @@ async def test_an_answer_recorded_for_a_late_joiner_leaves_accepted_at_null_when
     case of it. The reserve distribution orders by that column, so a row born carrying a
     timestamp it never earned would jump a queue it should be at the back of."""
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3), call_posted=False)
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction = await _make_interaction(db_path, FULL_TIME_PROFILE)
 
     await _press(interaction, f"rsvp_decline_r{ROUND_ID}")
 
@@ -609,7 +608,7 @@ async def test_a_driver_placed_after_the_deadline_is_locked_out_and_gets_no_row(
     round's attendance record alone — a row saying ACCEPTED for an answer the bot would not
     take is worse than the silence it replaced."""
     db_path = await _make_db(tmp_path, starts_in=timedelta(hours=1), call_posted=False)
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction = await _make_interaction(db_path, FULL_TIME_PROFILE)
 
     await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
@@ -627,7 +626,7 @@ async def test_an_answer_that_writes_nothing_is_not_reported_as_recorded(tmp_pat
     stubbed service keep the test true whichever service method writes the answer (#482)."""
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     await _ignore_answers(db_path)
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction = await _make_interaction(db_path, FULL_TIME_PROFILE)
 
     await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
@@ -663,7 +662,7 @@ async def test_the_call_is_edited_in_place_when_an_answer_changes(tmp_path):
     channel = MagicMock()
     channel.fetch_message = AsyncMock(return_value=message)
 
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction = await _make_interaction(db_path, FULL_TIME_PROFILE)
     interaction.client.get_channel = MagicMock(return_value=channel)
 
     with patch(
@@ -691,7 +690,7 @@ async def test_a_press_from_a_drivers_past_account_answers_for_the_driver(tmp_pa
             (str(new_account), FULL_TIME_PROFILE),
         )
         await db.commit()
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction = await _make_interaction(db_path, FULL_TIME_PROFILE)
 
     await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
@@ -773,7 +772,7 @@ async def test_every_refused_press_is_recorded(
     """A14: each refusal keeps its reply, leaves the presser's answer as it was, and writes one
     line naming the button and, once the round is read, the call it sits on."""
     db_path = await _make_db(tmp_path, starts_in=starts_in)
-    interaction = _make_interaction(db_path, profile)
+    interaction = await _make_interaction(db_path, profile)
     if arrange is not None:
         await arrange(db_path, interaction)
     before = await _status(db_path, profile)
@@ -793,7 +792,7 @@ async def test_an_answer_given_is_recorded_with_the_one_it_replaced(tmp_path):
     """A15: one success line, giving the answer and the one before it."""
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     await _set_status(db_path, FULL_TIME_PROFILE, "TENTATIVE")
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction = await _make_interaction(db_path, FULL_TIME_PROFILE)
     # The call's channel alone is found, a text channel as Discord gives one: the log channel's
     # lines are delivered through the bot's own record of it (`_make_interaction`), and a stub
     # answering for every id would be sent them.
@@ -820,7 +819,7 @@ async def test_an_answer_given_is_recorded_with_the_one_it_replaced(tmp_path):
 async def test_a_first_answer_was_no_answer(tmp_path):
     """A15: a driver answering for the first time replaced no answer."""
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction = await _make_interaction(db_path, FULL_TIME_PROFILE)
 
     await _press(interaction, f"rsvp_decline_r{ROUND_ID}")
 
@@ -833,7 +832,7 @@ async def test_the_answer_already_held_records_that_nothing_changed(tmp_path):
     """A16: a press for the answer already held changes nothing, and records so."""
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     await _set_status(db_path, FULL_TIME_PROFILE, "ACCEPTED")
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction = await _make_interaction(db_path, FULL_TIME_PROFILE)
 
     await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
@@ -847,7 +846,7 @@ async def test_an_answer_not_recorded_is_recorded_as_failed(tmp_path):
     """A17: the driver is told it was not recorded, and the log says the same."""
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     await _ignore_answers(db_path)
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction = await _make_interaction(db_path, FULL_TIME_PROFILE)
 
     await _press(interaction, f"rsvp_accept_r{ROUND_ID}")
 
@@ -881,7 +880,7 @@ async def test_a_call_not_redrawn_is_named_in_the_line(tmp_path, channel):
     from tests.support.change_queue import stopped_job
 
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction = await _make_interaction(db_path, FULL_TIME_PROFILE)
     # The call's channel alone is found: the log channel's lines are delivered through the bot's
     # own record of it (`_make_interaction`), so that the lines checked are the lines written.
     interaction.client.get_channel = MagicMock(
@@ -911,7 +910,7 @@ async def test_a_failed_line_that_cannot_be_posted_does_not_raise(tmp_path):
     and the driver has already been told their answer was not recorded."""
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
     await _ignore_answers(db_path)
-    interaction = _make_interaction(db_path, FULL_TIME_PROFILE)
+    interaction = await _make_interaction(db_path, FULL_TIME_PROFILE)
     interaction.client.output_router.post_log = AsyncMock(
         side_effect=RuntimeError("log channel down")
     )
@@ -931,8 +930,8 @@ async def test_two_quick_presses_of_the_same_button_record_one_answer(tmp_path):
     the presses in turn, so the second sees the first's answer: the first is told the answer is
     updated and logged as a success, the second is not told so, and one answer stands."""
     db_path = await _make_db(tmp_path, starts_in=timedelta(days=3))
-    first = _make_interaction(db_path, FULL_TIME_PROFILE)
-    second = _make_interaction(db_path, FULL_TIME_PROFILE)
+    first = await _make_interaction(db_path, FULL_TIME_PROFILE)
+    second = await _make_interaction(db_path, FULL_TIME_PROFILE)
     second.client = first.client
     press = f"rsvp_accept_r{ROUND_ID}"
 

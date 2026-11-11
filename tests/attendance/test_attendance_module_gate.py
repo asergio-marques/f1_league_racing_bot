@@ -25,7 +25,10 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.attendance.services import rsvp_service
@@ -239,7 +242,7 @@ async def test_no_check_in_call_is_posted_while_attendance_is_disabled(tmp_path)
     from tests.support.change_queue import stopped_job
 
     db_path = await _make_db(tmp_path, attendance_enabled=False)
-    bot = _queue_bot(db_path, attendance_enabled=False)
+    bot = await _queue_bot(db_path, attendance_enabled=False)
 
     assert await _ask(bot, "call") == []
     attendance_rows, embed_rows, _ = await _counts(db_path)
@@ -252,7 +255,7 @@ async def test_the_check_in_call_is_posted_while_attendance_is_enabled(tmp_path)
     """Attendance is on: the queue posts the call in the check-in channel, recording it and an
     attendance row for each of the two drivers."""
     db_path = await _make_db(tmp_path, attendance_enabled=True)
-    bot = _queue_bot(db_path, attendance_enabled=True)
+    bot = await _queue_bot(db_path, attendance_enabled=True)
 
     assert len(await _ask(bot, "call")) == 1
     attendance_rows, embed_rows, _ = await _counts(db_path)
@@ -271,16 +274,15 @@ async def test_the_check_in_call_is_posted_while_attendance_is_enabled(tmp_path)
 
 
 
-def _queue_bot(db_path: str, *, attendance_enabled: bool) -> MagicMock:
-    """The league's bot double with its change queue, the module answering from the flag under
-    test, the check-in channel (880011) recording its sends in `bot.events`."""
-    from tests.support.change_queue import attach_queue, league_double
+async def _queue_bot(db_path: str, *, attendance_enabled: bool) -> Any:
+    """The league's bot (`league_bot`) with its change queue, the module answering from the flag
+    under test, the check-in channel (880011) recording its sends in `bot.events`."""
+    from tests.support.change_queue import league_bot, league_queue
     from tests.support.review_league import channel as recording_channel
 
-    bot = league_double(db_path)
+    bot = await league_bot(db_path)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
     bot.module_service.is_images_enabled = AsyncMock(return_value=False)
-    bot.attendance_service = AttendanceService(db_path)
     bot.events = []
     rsvp = recording_channel(RSVP_CHANNEL_ID, bot.events)
     rsvp.seed(900900, "the call")
@@ -288,7 +290,7 @@ def _queue_bot(db_path: str, *, attendance_enabled: bool) -> MagicMock:
              bot.interaction_channel.id: bot.interaction_channel, RSVP_CHANNEL_ID: rsvp}
     bot.get_channel = MagicMock(side_effect=lambda cid: known.get(int(cid)))
     bot.fetch_channel = AsyncMock(side_effect=lambda cid: known[int(cid)])
-    attach_queue(bot, db_path, now=datetime.now(timezone.utc))
+    league_queue(bot, db_path, now=datetime.now(timezone.utc))
     return bot
 
 
@@ -311,7 +313,7 @@ async def test_no_reminder_is_posted_while_attendance_is_disabled(tmp_path):
     db_path = await _make_db(tmp_path, attendance_enabled=False)
     await _seed_rsvp_rows(db_path, reserve_accepted=False)
     await _seed_embed_message(db_path)
-    bot = _queue_bot(db_path, attendance_enabled=False)
+    bot = await _queue_bot(db_path, attendance_enabled=False)
 
     assert await _ask_last_notice(bot) == []
     assert await stopped_job(db_path) is None
@@ -321,7 +323,7 @@ async def test_the_reminder_is_posted_while_attendance_is_enabled(tmp_path):
     db_path = await _make_db(tmp_path, attendance_enabled=True)
     await _seed_rsvp_rows(db_path, reserve_accepted=False)
     await _seed_embed_message(db_path)
-    bot = _queue_bot(db_path, attendance_enabled=True)
+    bot = await _queue_bot(db_path, attendance_enabled=True)
 
     assert len(await _ask_last_notice(bot)) == 1
 
@@ -340,7 +342,7 @@ async def test_the_deadline_distributes_nobody_while_attendance_is_disabled(tmp_
     db_path = await _make_db(tmp_path, attendance_enabled=False, scheduled_at=_an_hour_off())
     await _seed_rsvp_rows(db_path)
     await _seed_embed_message(db_path)
-    bot = _queue_bot(db_path, attendance_enabled=False)
+    bot = await _queue_bot(db_path, attendance_enabled=False)
 
     assert await _ask(bot, "deadline") == []
     _, _, distributed = await _counts(db_path)
@@ -353,7 +355,7 @@ async def test_the_deadline_distributes_reserves_while_attendance_is_enabled(tmp
     db_path = await _make_db(tmp_path, attendance_enabled=True, scheduled_at=_an_hour_off())
     await _seed_rsvp_rows(db_path)
     await _seed_embed_message(db_path)
-    bot = _queue_bot(db_path, attendance_enabled=True)
+    bot = await _queue_bot(db_path, attendance_enabled=True)
 
     await _ask(bot, "deadline")
 
@@ -373,16 +375,16 @@ async def test_a_restart_re_arms_no_buttons_while_attendance_is_disabled(tmp_pat
     """Attendance is off and the round's deadline passed while the bot was down: the restart
     re-arms no button and asks nothing of the queue, and once the queue runs no reserve is
     placed."""
-    from leaguebot.__main__ import _recover_rsvp_views_and_deadlines
+    from leaguebot.attendance.wiring import recover_rsvp_views_and_deadlines
     from tests.support.change_queue import change_rows, run_queue
 
     # A deadline already in the past, so the catch-up would fire were it not gated.
     db_path = await _make_db(tmp_path, attendance_enabled=False, scheduled_at=_an_hour_off())
     await _seed_rsvp_rows(db_path)
     await _seed_embed_message(db_path)
-    bot = _queue_bot(db_path, attendance_enabled=False)
+    bot = await _queue_bot(db_path, attendance_enabled=False)
 
-    await _recover_rsvp_views_and_deadlines(bot)
+    await recover_rsvp_views_and_deadlines(bot)
     assert await change_rows(db_path) == [], "a restart asked the queue for a disabled module"
     await run_queue(bot)
 
@@ -395,15 +397,15 @@ async def test_a_restart_re_arms_the_buttons_while_attendance_is_enabled(tmp_pat
     """Attendance is on and the round's deadline passed while the bot was down: the restart
     re-arms the call's buttons and asks the queue for the deadline, placing no reserve itself;
     once the queue runs, the reserve who accepted is placed."""
-    from leaguebot.__main__ import _recover_rsvp_views_and_deadlines
+    from leaguebot.attendance.wiring import recover_rsvp_views_and_deadlines
     from tests.support.change_queue import run_queue
 
     db_path = await _make_db(tmp_path, attendance_enabled=True, scheduled_at=_an_hour_off())
     await _seed_rsvp_rows(db_path)
     await _seed_embed_message(db_path)
-    bot = _queue_bot(db_path, attendance_enabled=True)
+    bot = await _queue_bot(db_path, attendance_enabled=True)
 
-    await _recover_rsvp_views_and_deadlines(bot)
+    await recover_rsvp_views_and_deadlines(bot)
 
     bot.add_view.assert_called()
     _, _, distributed = await _counts(db_path)
@@ -512,7 +514,7 @@ async def test_no_check_in_call_is_posted_for_a_cancelled_round(tmp_path):
     recorded."""
     db_path = await _make_db(tmp_path, attendance_enabled=True)
     await _cancel_the_round(db_path)
-    bot = _queue_bot(db_path, attendance_enabled=True)
+    bot = await _queue_bot(db_path, attendance_enabled=True)
 
     assert await _ask(bot, "call") == []
     attendance_rows, embed_rows, _ = await _counts(db_path)
@@ -527,7 +529,7 @@ async def test_no_reminder_is_posted_for_a_cancelled_round(tmp_path):
     await _seed_rsvp_rows(db_path, reserve_accepted=False)
     await _seed_embed_message(db_path)
     await _cancel_the_round(db_path)
-    bot = _queue_bot(db_path, attendance_enabled=True)
+    bot = await _queue_bot(db_path, attendance_enabled=True)
 
     assert await _ask_last_notice(bot) == []
     assert await stopped_job(db_path) is None
@@ -540,7 +542,7 @@ async def test_the_deadline_distributes_nobody_for_a_cancelled_round(tmp_path):
     await _seed_rsvp_rows(db_path)
     await _seed_embed_message(db_path)
     await _cancel_the_round(db_path)
-    bot = _queue_bot(db_path, attendance_enabled=True)
+    bot = await _queue_bot(db_path, attendance_enabled=True)
 
     assert await _ask(bot, "deadline") == []
     _, _, distributed = await _counts(db_path)

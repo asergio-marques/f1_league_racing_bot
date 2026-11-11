@@ -81,11 +81,6 @@ ONLY_BEFORE = (
     "ongoing season is cancelled with `/season cancel`."
 )
 END_DISCARDED = "Nothing was aborted: the season stands as it was. Run `/season abort` again."
-CANNOT_DISCARD_FORGET = (
-    "⛔ This job can't be discarded: without it the bot would go on holding the aborted season's "
-    "setup, and no new season could be set up until the bot restarts. Fix what stopped it and "
-    "press **Retry**."
-)
 NOTICE_DISCARDED = f"<@{SIGNING_UP}> — their signup channel was closed without its notice"
 WINDOW_OPEN = (
     "The signup window could not be closed. Close it with `/signup close`. "
@@ -270,12 +265,12 @@ def _logged(text: str) -> str:
 def _modules() -> list[Any]:
     found = []
     for name in ("leaguebot.__main__",
-                 "leaguebot.core.services.season_service",
-                 "leaguebot.core.services.season_end_service",
-                 "leaguebot.core.services.season_lifecycle_service",
-                 "leaguebot.core.services.season_end_changes",
-                 "leaguebot.core.services.test_mode_service",
-                 "leaguebot.core.services.test_roster_service",
+                 "leaguebot.core.services.seasons.season_service",
+                 "leaguebot.core.services.seasons.season_end_service",
+                 "leaguebot.core.services.seasons.season_lifecycle_service",
+                 "leaguebot.core.services.seasons.season_end_changes",
+                 "leaguebot.core.services.test_mode.test_mode_service",
+                 "leaguebot.core.services.test_mode.test_roster_service",
                  "leaguebot.weather.services.forecast_cleanup_service"):
         try:
             found.append(importlib.import_module(name))
@@ -297,7 +292,7 @@ def _failing(name: str) -> ExitStack:
 
 def _deletion_failing() -> Any:
     """`SeasonService.delete_season` raises, as a fault of the database would."""
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
 
     return patch.object(SeasonService, "delete_season",
                         AsyncMock(side_effect=RuntimeError("disk I/O error")))
@@ -462,7 +457,8 @@ async def test_a_signup_channel_the_driver_pass_cannot_close_stops_the_queue(tmp
 
     del league.hold_fails[SIGNING_UP]
     await retry_job(league.bot)
-    assert [uid for uid, _notice in league.notices] == [SIGNING_UP]
+    assert league.notices == [(SIGNING_UP, "🔒 This season has ended. This channel will be "
+                                           "automatically deleted in 24 hours.")]
     assert league.locked == [SIGNING_UP]
     assert len(_success_lines(league)) == 1
 
@@ -651,9 +647,9 @@ async def test_the_jobs_run_in_order(tmp_path):
     # read apart: where they fall beside `close_window` is the close's to say.
     names = [name for name in await _names(league) if name not in WINDOW_JOBS]
     assert names[:3] == ["close_window", "flush_forecasts", "end"]
-    assert names[-3:] == ["discard_portraits", "forget_setup", "close"]
-    assert "signup_notice" in names[3:-3]
-    assert set(names[3:-3]) <= {"signup_notice", "close_signup", "take_driver_role"}
+    assert names[-2:] == ["discard_portraits", "close"]
+    assert "signup_notice" in names[3:-2]
+    assert set(names[3:-2]) <= {"signup_notice", "close_signup", "take_driver_role"}
     assert "discard_backup" not in names
     assert not await _season_stands(league)
 
@@ -722,20 +718,6 @@ async def test_test_mode_is_switched_off_and_its_saved_state_kept(tmp_path):
     assert not await _season_stands(league)
 
 
-async def test_the_setup_held_in_memory_is_let_go_after_the_save(tmp_path):
-    league = await setup_league(tmp_path)
-    await _asked(league)
-
-    await _run_through(league, "end")
-    assert not await _season_stands(league)
-    assert league.cog._get_pending() is not None
-
-    await run_queue(league.bot)
-    assert league.cog._get_pending() is None
-    names = await _names(league)
-    assert names.index("end") < names.index("forget_setup")
-
-
 async def test_a_discarded_save_aborts_nothing(tmp_path):
     league = await setup_league(tmp_path, test_mode=True)
     interaction = await _asked(league)
@@ -752,7 +734,6 @@ async def test_a_discarded_save_aborts_nothing(tmp_path):
     assert await driver_state(league, LEWIS) == "ASSIGNED"
     assert await driver_state(league, TEST_DRIVER) == "ASSIGNED"
     assert await _test_mode(league) == 1
-    assert league.cog._get_pending() is not None
 
 
 async def test_one_success_line_records_the_drivers_returned_and_deleted(tmp_path):
@@ -770,36 +751,6 @@ async def test_one_success_line_records_the_drivers_returned_and_deleted(tmp_pat
     assert "not done:" not in line
     jobs = await _jobs(league)
     assert jobs[-1]["name"] == "close" and all(job["done_at"] for job in jobs)
-
-
-async def test_letting_go_of_the_setup_cannot_be_discarded_on_an_abort(tmp_path):
-    """Letting go of the setup the bot holds in memory fails once the season is deleted and stops
-    the queue. A league admin's Discard on it is refused, saying the bot would go on holding the
-    aborted season's setup and no new season could be set up until it restarts; the queue stays
-    stopped there. Once the fault is lifted, Retry lets the setup go and the abort reports
-    nothing left undone."""
-    league = await setup_league(tmp_path)
-    league.cog.clear_pending = MagicMock(side_effect=RuntimeError("the cog is reloading"))
-    interaction = await _asked(league)
-
-    await run_queue(league.bot)
-    assert await _stopped_at(league) == ("forget_setup", None)
-    assert not await _season_stands(league)
-
-    discarding = await discard_job(league.bot)
-
-    assert CANNOT_DISCARD_FORGET in reply(discarding)
-    assert await _stopped_at(league) == ("forget_setup", None)
-    assert _success_lines(league) == []
-
-    del league.cog.clear_pending
-    await retry_job(league.bot)
-
-    assert await _stopped_at(league) is None
-    assert league.cog._get_pending() is None
-    assert ABORTED in reply(interaction)
-    [line] = _success_lines(league)
-    assert "not done:" not in line
 
 
 async def _window_refused(tmp_path: Any, _monkeypatch: Any) -> Any:
@@ -899,8 +850,8 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     writes the window closed, fails, and a league admin discards it. Only that post is dropped
     (b15-2): 105 is still told, then their channel locked, by their own jobs; the reply and the
     closing line say the window was not closed, to be closed with `/signup close`, and never
-    name 105 as returned but not told; the window is still recorded open, the season aborted,
-    and 105 is owed nothing more."""
+    name 105 as returned but not told; the window is still recorded open, and the season
+    aborted."""
     league = await setup_league(tmp_path, stage="SIGNUPS", signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     league.close_fails = RuntimeError("the window could not be recorded closed")
@@ -925,7 +876,6 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     assert _logged(RETURNED_NOT_TOLD) not in line
     assert await window_open(league)
     assert not await _season_stands(league)
-    assert await league.bot.signup_module_service.owed_closing_notices() == []
 
 
 async def test_the_end_save_marks_an_in_progress_signup_over(tmp_path):

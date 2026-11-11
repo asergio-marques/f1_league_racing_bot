@@ -10,10 +10,10 @@ class DriverState(str, Enum):
 
     There are no ban states. ``SEASON_BANNED`` and ``LEAGUE_BANNED`` were defined and wired
     into the transition table, but no command was ever built to impose or lift a ban, so a
-    league could never see either (issue #221). Sanctions belong to the stewarding module,
-    which will bring whatever shape of ban it needs rather than inherit one designed against
-    commands that were never written — so do not re-add them here ahead of it.
-    ``tests/core/test_driver_states.py`` pins this set.
+    league could never see either. Sanctions belong to the stewarding module, which will bring
+    whatever shape of ban it needs rather than inherit one designed against commands that were never
+    written — so do not re-add them here ahead of it. ``tests/core/test_driver_states.py`` pins this
+    set.
     """
 
     NOT_SIGNED_UP                  = "NOT_SIGNED_UP"
@@ -25,33 +25,28 @@ class DriverState(str, Enum):
     ASSIGNED                       = "ASSIGNED"
 
 
+class InvalidDriverTransition(ValueError):
+    """The state machine's refusal of a transition its table does not allow.
+
+    A fault, not a `Refused`: a caller judges a move before it writes one, so a transition that
+    reaches the table and is refused there is one that raced past the judgement. A caller that
+    expects the race catches this by name.
+    """
+
+
 @dataclass
 class DriverProfile:
     """A driver, as the league holds them.
 
-    Carries no ban counters. ``race_ban_count``, ``season_ban_count``, ``league_ban_count``
-    and ``ban_races_remaining`` were only ever written as zero and went with the ban states
-    in issue #221; a qualifying ban never had a counter at all. The bot issues the four
-    sanctions in ``leaguebot.image.services.image_preview_data.VERDICT_SANCTIONS`` and no others; the fifth
-    entry there, no further action, is no sanction at all (#138).
+    Carries no ban counters, as there are no ban states to count towards. The bot issues the
+    four sanctions in ``leaguebot.image.services.image_preview_data.VERDICT_SANCTIONS`` and no
+    others; the fifth entry there, no further action, is no sanction at all.
     """
 
     id: int
     discord_user_id: str
     current_state: DriverState
     former_driver: bool
-
-
-@dataclass
-class DriverSeasonAssignment:
-    id: int
-    driver_profile_id: int
-    season_id: int
-    division_id: int
-    team_seat_id: int | None  # FK → team_seats(id); nullable for legacy rows
-    current_position: int
-    current_points: int
-    points_gap_to_first: int
 
 
 @dataclass

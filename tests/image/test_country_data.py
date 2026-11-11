@@ -18,7 +18,7 @@ import pytest
 
 from leaguebot.image.utils.asset_resolver import normalise
 from leaguebot.image.utils.country_data import NATIONALITY_COUNTRIES
-from leaguebot.image.utils.nationality_data import NATIONALITY_LOOKUP
+from leaguebot.core.utils.nationality_data import NATIONALITY_LOOKUP
 
 #: Recorded for a driver who stated no nationality. Not a country.
 NATIONALITY_OTHER = "Other"

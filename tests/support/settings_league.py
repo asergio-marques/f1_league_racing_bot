@@ -1,13 +1,13 @@
 """A league whose settings commands run on the change queue (#439, slice 7).
 
 `settings_league(tmp_path)` builds a database by the migrations, seeds the league's server, and
-gives `league_double`'s bot the services the settings of results, weather and images are handed
-by the builder: a real `ModuleService`, `SeasonService`, `ImageConfigService`,
-`ImageValidityService` and `ImageRenderService`, and a scheduler double whose
-`schedule_portrait_refresh` and `cancel_portrait_refresh` record their calls. The modules named in
-*modules* are on (results, weather and images by default), the image module holding its default
-configuration where it is on, and the real queue is attached with "now" pinned, every change type
-the builder registers registered.
+gives it `league_bot`'s bot: the one the entry point's `build` makes, with the services the
+settings of results, weather and images are handed by the builder: a real `ModuleService`,
+`SeasonService`, `ImageConfigService`, `ImageValidityService` and `ImageRenderService`. Its scheduler is a double whose
+`schedule_portrait_refresh`, `cancel_portrait_refresh` and `cancel_all_weather` record their
+calls. The modules named in *modules* are on (results, weather and images by default), the image
+module holding its default configuration where it is on, and the real queue is attached with "now"
+pinned, every change type the builder registers registered.
 
 `interaction(bot, command)` is a member's interaction for `/<command>`, as `member_interaction`
 gives one, whose follow-up returns a message that records its edits, so that `said` reads every
@@ -28,8 +28,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
-    attach_queue,
-    league_double,
+    league_bot,
+    league_queue,
     member_interaction,
     queued_log_lines,
     seed_server,
@@ -50,19 +50,22 @@ class SettingsLeague:
 
 
 def scheduler_double(*, fails: bool = False) -> MagicMock:
-    """A scheduler service whose portrait job calls are recorded; with *fails*, each raises."""
+    """A scheduler service whose portrait job calls are recorded; with *fails*, each raises.
+    Its removal of every weather job (`cancel_all_weather`) is recorded too, and never raises
+    unless a test sets it to."""
     double = MagicMock()
     error = RuntimeError("scheduler unavailable") if fails else None
     double.schedule_portrait_refresh = MagicMock(side_effect=error)
     double.cancel_portrait_refresh = MagicMock(side_effect=error)
+    double.cancel_all_weather = AsyncMock(return_value=None)
     return double
 
 
 async def settings_league(tmp_path: Any, *, modules: tuple[str, ...] = MODULES,
                           now: datetime = NOW) -> SettingsLeague:
     """The league of the module docstring, with *modules* on."""
-    from leaguebot.core.services.module_service import ModuleService
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.image.services.image_config_service import ImageConfigService
     from leaguebot.image.services.image_render_service import ImageRenderService
     from leaguebot.image.services.image_validity_service import ImageValidityService
@@ -70,42 +73,21 @@ async def settings_league(tmp_path: Any, *, modules: tuple[str, ...] = MODULES,
     db_path = os.path.join(str(tmp_path), "settings.db")
     await run_migrations(db_path)
     await seed_server(db_path)
-    bot = league_double(db_path)
-    bot.module_service = ModuleService(db_path)
-    bot.season_service = SeasonService(db_path)
-    bot.image_config_service = ImageConfigService(db_path)
-    bot.image_validity_service = ImageValidityService(bot.image_config_service, bot.module_service)
-    bot.image_render_service = ImageRenderService(
-        bot.image_config_service, bot.image_validity_service
-    )
-    bot.scheduler_service = scheduler_double()
+    bot = await league_bot(db_path, scheduler=scheduler_double())
     await switch(bot, modules, on=True)
     if "images" in modules:
         await bot.image_config_service.create_with_defaults()
-    attach_queue(bot, db_path, now=now)
+    league_queue(bot, db_path, now=now)
     return SettingsLeague(bot, db_path, bot.scheduler_service)
 
 
-async def _set_results_flag(db_path: str, on: bool) -> None:
-    """Results' flag written as `/module enable|disable results` leaves it, the change's own
-    save being what writes it in the bot."""
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT OR REPLACE INTO results_module_config (id, module_enabled) VALUES (1, ?)",
-            (int(on),),
-        )
-        await db.commit()
-
-
 async def switch(bot: Any, modules: tuple[str, ...], *, on: bool) -> None:
-    """Turn each of *modules* on or off, as `/module enable|disable` leaves its flag."""
-    setters = {
-        "results": lambda value: _set_results_flag(bot.db_path, value),
-        "weather": bot.module_service.set_weather_enabled,
-        "images": bot.module_service.set_images_enabled,
-    }
+    """Turn each of *modules* on or off, as `/module enable|disable` leaves its flag
+    (`set_module_flag`)."""
+    from tests.support.season_league import set_module_flag
+
     for module in modules:
-        await setters[module](on)
+        await set_module_flag(bot.db_path, module, on)
 
 
 def interaction(bot: Any, command: str | None = None, *, user: Any = None) -> Any:

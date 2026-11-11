@@ -14,11 +14,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from leaguebot.core.models.refusal import Refused
+
 #: Repository root — five levels up from src/leaguebot/core/utils/paths.py.
 PROJECT_ROOT: Path = Path(__file__).resolve().parents[4]
 
 
-class PathContainmentError(ValueError):
+class PathContainmentError(Refused):
     """Raised when a configured path resolves outside the project root."""
 
     def __init__(self, given: str, resolved: Path) -> None:
@@ -33,10 +35,10 @@ def resolve_within_project_root(candidate: str | None, *, root: Path | None = No
     """Resolve *candidate* against the project root, rejecting anything that escapes.
 
     Returns the resolved absolute path. Raises :class:`PathContainmentError` if the
-    result falls outside the root, and ``ValueError`` if *candidate* is empty.
+    result falls outside the root, and :class:`Refused` if *candidate* is empty.
     """
     if candidate is None or not candidate.strip():
-        raise ValueError("Directory cannot be empty.")
+        raise Refused("Directory cannot be empty.")
 
     base = (root or PROJECT_ROOT).resolve()
     raw = candidate.strip().replace("\\", "/")

@@ -16,11 +16,9 @@ import aiosqlite
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.test_roster_service import (
-    add_test_driver,
-    list_test_drivers,
-    remove_test_driver,
-)
+from leaguebot.core.services.test_mode.test_roster_service import list_test_drivers
+from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
+
 
 SERVER_ID = 7373
 DIVISION = "Division 1"
@@ -71,7 +69,27 @@ async def _seed_season(db_path):
 
 
 async def _add(db_path, name="Mock Alpha", team="Redline", **kwargs):
-    return await add_test_driver(name, team, DIVISION, db_path, **kwargs)
+    """Seat *name* at *team* in Division 1 through the roster's writer, on a connection of the
+    test's own, committed as a change's save commits it."""
+    from leaguebot.core.services.test_mode.test_roster_service import add_test_driver_on
+
+    async with get_connection(db_path) as db:
+        result = await add_test_driver_on(db, name, team, DIVISION, **kwargs)
+        await db.commit()
+    return result
+
+
+async def _remove(db_path, discord_user_id: int):
+    """Remove the fake driver *discord_user_id* through the roster's writer, on a connection of
+    the test's own, committed as a change's save commits it."""
+    from leaguebot.core.services.test_mode.test_roster_service import remove_test_driver_on
+
+    async with get_connection(db_path) as db:
+        result = await remove_test_driver_on(
+            db, discord_user_id, **delete_hooks(*DRIVER_HOOKS)
+        )
+        await db.commit()
+    return result
 
 
 async def _stored_nationality(db_path, profile_id: int):
@@ -178,7 +196,7 @@ class TestTheRosterListCarriesIt:
     async def test_a_removed_driver_takes_its_nationality_with_it(self, db_path):
         result = await _add(db_path, nationality="Dutch")
 
-        await remove_test_driver(result["discord_user_id"], db_path)
+        await _remove(db_path, result["discord_user_id"])
 
         assert await list_test_drivers(DIVISION, db_path) == []
 
@@ -269,7 +287,7 @@ class TestRemovingOneDriver:
             division_id = (await cursor.fetchone())["id"]
             cursor = await db.execute(
                 "INSERT INTO rounds (division_id, round_number, format, track_name, scheduled_at) "
-                "VALUES (?, 1, 'NORMAL', 'Silverstone Circuit', '2026-06-01T14:00:00')",
+                "VALUES (?, 1, 'NORMAL', 'Silverstone Circuit', '2026-06-01T14:00:00+00:00')",
                 (division_id,),
             )
             round_id = cursor.lastrowid
@@ -285,7 +303,7 @@ class TestRemovingOneDriver:
             )
             await db.commit()
 
-        removed = await remove_test_driver(uid, db_path)
+        removed = await _remove(db_path, uid)
 
         assert removed == {"display_name": "Mock Alpha", "team_name": "Redline"}
         async with get_connection(db_path) as db:
@@ -311,7 +329,7 @@ class TestRemovingOneDriver:
             )
             await db.commit()
 
-        await remove_test_driver(result["discord_user_id"], db_path)
+        await _remove(db_path, result["discord_user_id"])
 
         async with get_connection(db_path) as db:
             cursor = await db.execute(

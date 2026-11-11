@@ -1,13 +1,13 @@
-"""Core's record of what changed, written for a module's command (#462).
+"""Core's record of what changed, written for a module's command (#462) on the save's connection.
 
 `audit_entries` is core's table. A module's channel command sets a channel its own module reads,
 and the change is recorded all the same — so the record is written by core's service rather
 than by the module's cog, which would put database code in a cog and have a module write a
 table it does not own.
 
-**The row is the one the channel commands wrote themselves**: the same columns, the old and new
-values as JSON, and the time as a UTC ISO timestamp. A reader querying the audit for a channel's
-history must not have to know which command, or which release, wrote the row.
+**The row is the one the channel commands once wrote themselves**: the same columns, the old and
+new values as JSON, and the time as a UTC ISO timestamp. A reader querying the audit for a
+channel's history must not have to know which command, or which release, wrote the row.
 
 **The time is handed in** (`docs/design/architecture.md`, "The time is always passed in"), so
 the test pins the moment it records rather than reading the wall clock.
@@ -21,49 +21,7 @@ from datetime import datetime, timezone
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.audit_service import record_change
-
-
-async def test_record_change_writes_one_row_as_the_commands_did(tmp_path):
-    db_path = str(tmp_path / "audit.db")
-    await run_migrations(db_path)
-    now = datetime(2026, 9, 26, 18, 30, 5, tzinfo=timezone.utc)
-
-    await record_change(
-        db_path,
-        actor_id=77,
-        actor_name="Manager#0001",
-        change_type="DIVISION_CHANNEL_SET",
-        old_value={"channel_type": "weather", "channel_id": None},
-        new_value={"channel_type": "weather", "channel_id": 770001},
-        now=now,
-        division_id=11,
-    )
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT actor_id, actor_name, division_id, change_type, old_value, new_value, "
-            "timestamp FROM audit_entries"
-        )
-        rows = [dict(row) for row in await cursor.fetchall()]
-    assert rows == [
-        {
-            "actor_id": 77,
-            "actor_name": "Manager#0001",
-            "division_id": 11,
-            "change_type": "DIVISION_CHANNEL_SET",
-            "old_value": json.dumps({"channel_type": "weather", "channel_id": None}),
-            "new_value": json.dumps({"channel_type": "weather", "channel_id": 770001}),
-            "timestamp": "2026-09-26T18:30:05+00:00",
-        }
-    ]
-
-
-def test_record_change_is_always_handed_the_time():
-    """Keyword-only and with no default, so no caller can leave it to read the clock."""
-    now = inspect.signature(record_change).parameters["now"]
-    assert now.kind is inspect.Parameter.KEYWORD_ONLY
-    assert now.default is inspect.Parameter.empty
+from leaguebot.core.services.queue.audit_service import record_change_on
 
 
 # ── Recording on a connection already open (#442) ─────────────────────────────
@@ -81,9 +39,9 @@ async def _audit_count(db_path: str) -> int:
 async def test_record_change_on_writes_on_the_connection_it_is_given(tmp_path):
     """A change and its record land together: the row is written on the caller's connection,
     inside the caller's transaction, and is not committed by the record — so it goes if the
-    caller rolls back, and stays once the caller commits."""
-    from leaguebot.core.services.audit_service import record_change_on
-
+    caller rolls back, and stays once the caller commits. Once committed it is the row the
+    channel commands wrote: every column, the old and new values as JSON, the division it
+    belongs to, and the time as a UTC ISO timestamp."""
     db_path = str(tmp_path / "audit_on.db")
     await run_migrations(db_path)
     change = dict(
@@ -93,6 +51,7 @@ async def test_record_change_on_writes_on_the_connection_it_is_given(tmp_path):
         old_value={"position": 1, "points": 20},
         new_value={"position": 1, "points": 25},
         now=NOW,
+        division_id=11,
     )
 
     async with get_connection(db_path) as db:
@@ -107,18 +66,28 @@ async def test_record_change_on_writes_on_the_connection_it_is_given(tmp_path):
         await db.commit()
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT actor_id, change_type, old_value, new_value, timestamp FROM audit_entries"
+            "SELECT actor_id, actor_name, division_id, change_type, old_value, new_value, "
+            "timestamp FROM audit_entries"
         )
         rows = [dict(r) for r in await cursor.fetchall()]
     assert rows == [
         {
             "actor_id": 77,
+            "actor_name": "Manager#0001",
+            "division_id": 11,
             "change_type": "POINTS_CONFIG_SESSION_SET",
             "old_value": json.dumps({"position": 1, "points": 20}),
             "new_value": json.dumps({"position": 1, "points": 25}),
-            "timestamp": NOW.isoformat(),
+            "timestamp": "2026-09-28T12:00:00+00:00",
         }
     ]
+
+
+def test_record_change_on_is_always_handed_the_time():
+    """Keyword-only and with no default, so no caller can leave it to read the clock."""
+    now = inspect.signature(record_change_on).parameters["now"]
+    assert now.kind is inspect.Parameter.KEYWORD_ONLY
+    assert now.default is inspect.Parameter.empty
 
 
 async def _writer_db(tmp_path) -> str:
@@ -185,7 +154,6 @@ async def test_a_fault_after_the_audit_write_undoes_both_the_entries_and_the_poi
     left: no points, and no record of points that were never saved."""
     import sqlite3
 
-    from leaguebot.core.services.audit_service import record_change_on
     from leaguebot.results.models.points_config import SessionType
 
     db_path = await _writer_db(tmp_path)

@@ -31,19 +31,21 @@ holds it.
 from __future__ import annotations
 
 import os
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
+from tests.support.delete_hooks import ROUND_HOOKS, delete_hooks
+
 
 SERVER_ID = 12808
 SEASON_ID = 1
 DIVISION_ID = 11
 ACTOR_ID = 77
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -114,6 +116,23 @@ async def _division_status(db_path: str) -> str:
 
 NOT_RUN = RoundStatus.NOT_RUN.value
 
+
+async def _renumber(db_path: str) -> None:
+    """Renumber the division with `renumber_rounds_on` on a connection of its own, and commit it,
+    which `renumber_rounds_on` does not."""
+    from leaguebot.core.services.seasons.season_service import renumber_rounds_on
+
+    async with get_connection(db_path) as db:
+        await renumber_rounds_on(db, DIVISION_ID)
+        await db.commit()
+
+
+#: A fault in the renumbering: a trigger that refuses any write of a round's number.
+FAIL_RENUMBERING = (
+    "CREATE TRIGGER fail_renumbering BEFORE UPDATE OF round_number ON rounds "
+    "BEGIN SELECT RAISE(ABORT, 'renumbering failed'); END"
+)
+
 # The moment the cancellation is recorded at, pinned.
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
 
@@ -122,7 +141,7 @@ async def _cancel(db_path: str, round_id: int) -> str | None:
     """Cancel *round_id* on one connection with `cancel_round_on`, as the round's cancellation
     does in its save, and commit it, which `cancel_round_on` does not. Gives what it gives: the
     round's old status, or `None` where it moved nothing."""
-    from leaguebot.core.services.season_service import cancel_round_on
+    from leaguebot.core.services.seasons.season_service import cancel_round_on
 
     async with get_connection(db_path) as db:
         old = await cancel_round_on(
@@ -135,6 +154,14 @@ async def _cancel(db_path: str, round_id: int) -> str | None:
 # ---------------------------------------------------------------------------
 # Deleting and renumbering
 # ---------------------------------------------------------------------------
+
+
+async def _delete_round(db_path: str, round_id: int) -> None:
+    """Delete *round_id* as `/round delete`'s save deletes it: on one connection, with the
+    builder's delete hook, committed once it is done and rolled back where it raises."""
+    async with get_connection(db_path) as db:
+        await SeasonService.delete_round_on(db, round_id, **delete_hooks(*ROUND_HOOKS))
+        await db.commit()
 
 
 @pytest.mark.parametrize(
@@ -155,7 +182,7 @@ async def test_deleting_a_round_renumbers_the_rest(tmp_path, rounds, expected):
     the others untouched."""
     db_path = await _make_db(tmp_path, rounds=rounds)
 
-    await SeasonService(db_path).delete_round(2)
+    await _delete_round(db_path, 2)
 
     assert await _numbers(db_path) == expected
 
@@ -168,7 +195,7 @@ async def test_renumbering_follows_the_calendar_not_the_old_numbers(tmp_path):
         rounds=((1, 1, 7, NOT_RUN), (2, 2, 21, NOT_RUN), (3, 3, 14, NOT_RUN)),
     )
 
-    await SeasonService(db_path).renumber_rounds(DIVISION_ID)
+    await _renumber(db_path)
 
     assert await _numbers(db_path) == [(1, 1), (3, 2), (2, 3)]
 
@@ -178,32 +205,44 @@ async def test_deleting_a_round_that_does_not_exist_is_a_no_op(tmp_path):
     the strength of a round that has already gone."""
     db_path = await _make_db(tmp_path, rounds=((1, 1, 7, NOT_RUN),))
 
-    await SeasonService(db_path).delete_round(999)
+    await _delete_round(db_path, 999)
 
     assert await _numbers(db_path) == [(1, 1)]
 
 
-async def test_deleting_a_round_takes_its_children_with_it(tmp_path):
-    """Forecast messages, phase results and sessions all key on the round; left behind
-    they would point at nothing."""
-    db_path = await _make_db(tmp_path, rounds=((1, 1, 7, NOT_RUN),))
+async def test_a_round_delete_that_fails_part_way_leaves_everything_as_it_was(tmp_path):
+    """Rounds 1, 2 and 3; round 2 has a session and a drawn weather phase. Deleting round 2
+    fails in the renumbering. It is one save, so nothing of it is kept: every round is there
+    with its number, and round 2's session and weather phase are there too."""
+    db_path = await _make_db(
+        tmp_path,
+        rounds=((1, 1, 7, NOT_RUN), (2, 2, 14, NOT_RUN), (3, 3, 21, NOT_RUN)),
+    )
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO sessions (round_id, session_type) VALUES (1, 'FULL_RACE')"
+            "INSERT INTO sessions (round_id, session_type) VALUES (2, 'FULL_RACE')"
         )
+        await db.execute(
+            "INSERT INTO phase_results (round_id, phase_number, payload, created_at) "
+            "VALUES (2, 1, '{}', '2026-01-01T00:00:00+00:00')"
+        )
+        await db.execute(FAIL_RENUMBERING)
         await db.commit()
 
-    await SeasonService(db_path).delete_round(1)
+    with pytest.raises(sqlite3.IntegrityError, match="renumbering failed"):
+        await _delete_round(db_path, 2)
 
+    assert await _numbers(db_path) == [(1, 1), (2, 2), (3, 3)]
     async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT COUNT(*) AS n FROM sessions WHERE round_id = 1")
-        assert (await cursor.fetchone())["n"] == 0
+        for table in ("sessions", "phase_results"):
+            cursor = await db.execute(f"SELECT COUNT(*) FROM {table} WHERE round_id = 2")
+            assert (await cursor.fetchone())[0] == 1, table
 
 
 async def test_renumbering_an_empty_division_is_not_an_error(tmp_path):
     db_path = await _make_db(tmp_path)
 
-    await SeasonService(db_path).renumber_rounds(DIVISION_ID)
+    await _renumber(db_path)
 
     assert await _numbers(db_path) == []
 

@@ -2,10 +2,10 @@
 
 Issue #208. `__main__.py` was the worst-covered file in core at 26.7%. Most of it is `main()`, which
 needs a real gateway connection and is out of scope for this suite (`CLAUDE.md`: no test may
-require a live bot). The recovery helpers beneath it are not — they take a bot and a database
-and put the world back the way it should be, and none was executed.
+require a live bot). The recovery helpers it ran are not, now each in its module's wiring — they
+take a bot and a database and put the world back the way it should be, and none was executed.
 
-This file takes `_recover_orphaned_amend_channels` and `_recover_portrait_refresh_job`, which
+This file takes `recover_orphaned_amend_channels` and `recover_portrait_refresh_job`, which
 re-arms the daily portrait refresh.
 
 **An abandoned amendment's lapse is asked of the change queue** (#439, slice 6b, C64). The sweep
@@ -26,7 +26,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from leaguebot.__main__ import _recover_orphaned_amend_channels, _recover_portrait_refresh_job
 from leaguebot.core.db.database import get_connection, run_migrations
 
 # ---------------------------------------------------------------------------
@@ -39,6 +38,8 @@ async def test_each_orphan_is_reported_separately(tmp_path):
     manager guessing which. Rounds 3 and 4 of Pro were each being amended when the bot stopped:
     the restart asks one lapse for each, as the bot, and once the queue has run them each writes
     its own line in the log channel."""
+    from leaguebot.results.wiring import recover_orphaned_amend_channels
+
     from tests.support import review_league as league_of
     from tests.support.change_queue import change_rows, run_queue
 
@@ -53,7 +54,7 @@ async def test_each_orphan_is_reported_separately(tmp_path):
             )
         await db.commit()
 
-    await _recover_orphaned_amend_channels(league.bot)
+    await recover_orphaned_amend_channels(league.bot)
     lapses = [row for row in await change_rows(league.db_path)
               if row["kind"] == "results.amend.lapse"]
     await run_queue(league.bot)
@@ -85,33 +86,41 @@ async def _portrait_bot(tmp_path, *, use_pfp: int, pfp_daily: int):
 
 async def test_the_portrait_refresh_is_re_armed_at_its_own_time(tmp_path):
     """The job is recurring and in memory only, so a restart loses it until this re-adds it."""
+    from leaguebot.image.wiring import recover_portrait_refresh_job
+
     bot = await _portrait_bot(tmp_path, use_pfp=1, pfp_daily=1)
 
-    await _recover_portrait_refresh_job(bot)
+    await recover_portrait_refresh_job(bot)
 
     bot.scheduler_service.schedule_portrait_refresh.assert_called_once_with("04:30")
 
 
 @pytest.mark.parametrize("use_pfp,pfp_daily", [(0, 1), (1, 0)])
 async def test_a_refresh_the_league_has_not_asked_for_is_not_armed(tmp_path, use_pfp, pfp_daily):
+    from leaguebot.image.wiring import recover_portrait_refresh_job
+
     bot = await _portrait_bot(tmp_path, use_pfp=use_pfp, pfp_daily=pfp_daily)
 
-    await _recover_portrait_refresh_job(bot)
+    await recover_portrait_refresh_job(bot)
 
     bot.scheduler_service.schedule_portrait_refresh.assert_not_called()
 
 
 async def test_a_refresh_that_cannot_be_armed_does_not_stop_the_start(tmp_path):
+    from leaguebot.image.wiring import recover_portrait_refresh_job
+
     bot = await _portrait_bot(tmp_path, use_pfp=1, pfp_daily=1)
     bot.scheduler_service.schedule_portrait_refresh.side_effect = ValueError("bad time")
 
-    await _recover_portrait_refresh_job(bot)
+    await recover_portrait_refresh_job(bot)
 
 
 async def test_an_amendment_whose_stage_is_queued_is_not_reverted_on_restart(tmp_path):
     """**A restart with an approval in hand finishes it** (#439). An amendment whose report stage
     was asked for and not yet carried out when the bot stopped is left by recovery: its row and
     channel stand, and the queue, brought back up, approves the stage."""
+    from leaguebot.results.wiring import recover_orphaned_amend_channels
+
     from tests.support import review_league as league_of
     from tests.support.change_queue import member_interaction, restart_queue, run_queue
 
@@ -135,7 +144,7 @@ async def test_an_amendment_whose_stage_is_queued_is_not_reverted_on_restart(tmp
     )
 
     await restart_queue(league.bot)
-    await _recover_orphaned_amend_channels(league.bot)
+    await recover_orphaned_amend_channels(league.bot)
 
     assert ("delete_channel", league_of.AMEND_CHANNEL, league_of.AMEND_CHANNEL) not in league.events
     assert await league_of.one(

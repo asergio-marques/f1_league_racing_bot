@@ -2,7 +2,8 @@
 (#439, slice 2, plan 2.6).
 
 `AttendanceAfterReview`, in `leaguebot.attendance.services.attendance_after_review`, is built once
-by the entry point and handed the placement service. Results' change types call it; it calls
+by the entry point and handed the placement service, the team-role service and the lineup
+poster. Results' change types call it; it calls
 attendance's own functions. These tests run the real hook against a database built by the
 migrations, where the queued tests of the approvals (`tests/results/test_report_approval_change.py`,
 `test_amendment_stage_changes.py`) drive a double of it.
@@ -22,8 +23,8 @@ not "fix" this to the upgrade-only recording.
 **A sanction is one driver's, and one that does not apply raises** ("Each sanction is a job"):
 autosack supersedes autoreserve (FR-025), a driver already signed off or already in the reserve
 team is not owed one (attendance spec), and a division with no reserve team is a failure of the
-autoreserve, not a sanction passed over. The placement service is the one handed in, never the
-bot's.
+autoreserve, not a sanction passed over. The placement service, the team-role service and the
+lineup poster are the ones handed in, never the bot's.
 
 **A sheet Discord refuses raises**, for the queue to stop on and retry, rather than being put on
 the old retry queue (defect 4).
@@ -46,6 +47,7 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.services.penalty_wizard import StagedPardon
 from tests.support.change_queue import http_error, in_a_job
+
 
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
 SEASON_ID = 51
@@ -131,7 +133,7 @@ async def _db(tmp_path, *, attendance: bool = True, autoreserve: int | None = 10
             )
         for team, role in (("Alpha", ALPHA_ROLE), ("Reserve", RESERVE_ROLE)):
             await db.execute(
-                "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)", (team, role)
+                "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES (?, ?, '2031-03-04T05:06:07+00:00')", (team, role)
             )
         session = await db.execute(
             "INSERT INTO session_results (round_id, division_id, session_type, status, "
@@ -170,8 +172,9 @@ def _sheet_channel() -> Any:
 
 def _bot(db_path: str, *, attendance: bool = True, channel: Any = None,
          guild: Any = None) -> Any:
-    """A bot double whose own placement service refuses every call: the hook is to use the one
-    it is handed. Every channel it reaches is *channel*; the league's server is *guild*."""
+    """A bot double whose own placement service, team-role service and lineup poster refuse every
+    call: the hook is to use the ones it is handed. Every channel it reaches is *channel*; the
+    league's server is *guild*."""
     channel = channel or _sheet_channel()
     guild = guild or MagicMock()
     guild.get_channel = MagicMock(return_value=channel)
@@ -187,25 +190,47 @@ def _bot(db_path: str, *, attendance: bool = True, channel: Any = None,
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
     bot.module_service.is_images_enabled = AsyncMock(return_value=False)
     bot.placement_service = MagicMock(side_effect=AssertionError("the bot's placement service"))
-    for name in ("sack_driver", "move_driver", "refresh_lineup", "_refresh_lineup_post",
-                 "sack_on", "move_on", "guard_move", "grant_roles", "revoke_roles"):
+    for name in ("sack_driver", "move_driver", "sack_on", "move_on", "guard_move",
+                 "driver_role_ids"):
         setattr(bot.placement_service, name,
                 AsyncMock(side_effect=AssertionError("the bot's placement service")))
+    bot.team_role_service = MagicMock(side_effect=AssertionError("the bot's team-role service"))
+    for name in ("grant_roles", "revoke_roles"):
+        setattr(bot.team_role_service, name,
+                AsyncMock(side_effect=AssertionError("the bot's team-role service")))
+    bot.lineup_poster = MagicMock(side_effect=AssertionError("the bot's lineup poster"))
+    for name in ("refresh_lineup", "_refresh_lineup_post"):
+        setattr(bot.lineup_poster, name,
+                AsyncMock(side_effect=AssertionError("the bot's lineup poster")))
     return bot
 
 
 def _placement() -> Any:
     placement = MagicMock()
-    for name in ("sack_driver", "move_driver", "refresh_lineup"):
+    for name in ("sack_driver", "move_driver"):
         setattr(placement, name, AsyncMock(return_value=None))
     return placement
 
 
+def _lineups() -> Any:
+    """A lineup poster double whose posting does nothing."""
+    lineups = MagicMock()
+    lineups.refresh_lineup = AsyncMock(return_value=None)
+    return lineups
+
+
 def _real_placement(db_path: str) -> Any:
     """The placement service the entry point builds, on the test's database."""
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.drivers.placement_service import PlacementService
 
     return PlacementService(db_path)
+
+
+def _real_roles(db_path: str) -> Any:
+    """The team-role service the entry point builds, on the test's database."""
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
+
+    return TeamRoleService(db_path)
 
 
 def _role_guild(held: tuple[int, ...] = (), *, gone: tuple[int, ...] = (),
@@ -281,10 +306,12 @@ async def _state(db_path: str, profile: int) -> tuple[str, int]:
     return row["current_state"], placed[0]
 
 
-def _hook(bot: Any, placement: Any) -> Any:
+def _hook(bot: Any, placement: Any, **handed: Any) -> Any:
+    """Attendance's hook for *bot*, handed *placement* and, where given, the team-role service
+    (``roles``) and the lineup poster (``lineups``)."""
     from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
 
-    return AttendanceAfterReview(bot, placement)
+    return AttendanceAfterReview(bot, placement, **handed)
 
 
 def _by_profile(candidates: list[dict[str, Any]]) -> dict[int, str]:
@@ -495,7 +522,8 @@ async def test_change_sanction_roles_raises_where_discord_refuses(tmp_path):
     await _sacked(db_path, LEWIS)
     guild = _role_guild((PRO_ROLE, ALPHA_ROLE),
                         refuses=http_error(status=403, text="Missing Permissions"))
-    hook = _hook(_bot(db_path, guild=guild), _real_placement(db_path))
+    hook = _hook(_bot(db_path, guild=guild), _real_placement(db_path),
+                 roles=_real_roles(db_path))
 
     with pytest.raises(StepFailedOnDiscord):
         await hook.change_sanction_roles(LEWIS, LEWIS, revoke=[PRO_ROLE, ALPHA_ROLE], grant=[])
@@ -511,7 +539,8 @@ async def test_change_sanction_roles_passes_over_a_member_who_left(tmp_path):
     await _sacked(db_path, LEWIS)
     guild = _role_guild(fetch_fails=http_error(discord.NotFound, status=404,
                                                text="Unknown Member"))
-    hook = _hook(_bot(db_path, guild=guild), _real_placement(db_path))
+    hook = _hook(_bot(db_path, guild=guild), _real_placement(db_path),
+                 roles=_real_roles(db_path))
 
     changed = await hook.change_sanction_roles(LEWIS, LEWIS, revoke=[PRO_ROLE, ALPHA_ROLE],
                                                grant=[])
@@ -529,7 +558,8 @@ async def test_change_sanction_roles_stops_where_the_member_cannot_be_fetched(tm
     db_path = await _db(tmp_path)
     await _sacked(db_path, LEWIS)
     guild = _role_guild(fetch_fails=http_error(status=500, text="Internal Server Error"))
-    hook = _hook(_bot(db_path, guild=guild), _real_placement(db_path))
+    hook = _hook(_bot(db_path, guild=guild), _real_placement(db_path),
+                 roles=_real_roles(db_path))
 
     with pytest.raises(StepFailedOnDiscord):
         await hook.change_sanction_roles(LEWIS, LEWIS, revoke=[PRO_ROLE, ALPHA_ROLE], grant=[])
@@ -544,7 +574,8 @@ async def test_change_sanction_roles_stops_where_a_role_to_grant_is_gone(tmp_pat
     db_path = await _db(tmp_path)
     await _moved_to_reserve(db_path, MAX)
     guild = _role_guild((PRO_ROLE, ALPHA_ROLE), gone=(RESERVE_ROLE,))
-    hook = _hook(_bot(db_path, guild=guild), _real_placement(db_path))
+    hook = _hook(_bot(db_path, guild=guild), _real_placement(db_path),
+                 roles=_real_roles(db_path))
 
     with pytest.raises(StepFailedOnDiscord):
         await hook.change_sanction_roles(MAX, MAX, revoke=[ALPHA_ROLE], grant=[RESERVE_ROLE])
@@ -559,7 +590,8 @@ async def test_change_sanction_roles_leaves_a_role_the_driver_is_entitled_to_aga
     manager has since undone, is not given, Max being back in Alpha."""
     db_path = await _db(tmp_path)
     guild = _role_guild((PRO_ROLE, ALPHA_ROLE))
-    hook = _hook(_bot(db_path, guild=guild), _real_placement(db_path))
+    hook = _hook(_bot(db_path, guild=guild), _real_placement(db_path),
+                 roles=_real_roles(db_path))
 
     await hook.change_sanction_roles(LEWIS, LEWIS, revoke=[PRO_ROLE, ALPHA_ROLE], grant=[])
     await hook.change_sanction_roles(MAX, MAX, revoke=[], grant=[RESERVE_ROLE])
@@ -578,7 +610,8 @@ async def test_a_sanction_s_roles_are_changed_even_once_attendance_is_off(tmp_pa
     db_path = await _db(tmp_path, attendance=False)
     await _sacked(db_path, LEWIS)
     guild = _role_guild((PRO_ROLE, ALPHA_ROLE))
-    hook = _hook(_bot(db_path, attendance=False, guild=guild), _real_placement(db_path))
+    hook = _hook(_bot(db_path, attendance=False, guild=guild), _real_placement(db_path),
+                 roles=_real_roles(db_path))
 
     await hook.change_sanction_roles(LEWIS, LEWIS, revoke=[PRO_ROLE, ALPHA_ROLE], grant=[])
 
@@ -592,11 +625,12 @@ async def test_check_sanction_refuses_a_full_reserve_block(tmp_path):
     sanction is saved raises `StepFailedOnDiscord` carrying the guard's refusal, for the queue
     to stop on, and nothing is moved."""
     from leaguebot.core.models.change import StepFailedOnDiscord
+    from leaguebot.core.models.refusal import Refused
 
     db_path = await _db(tmp_path, autosack=None)
     await _totals(db_path, LATEST_ROUND, {MAX: 12})
     placement = _real_placement(db_path)
-    placement.guard_move = AsyncMock(side_effect=ValueError("The Reserve block of Pro is full."))
+    placement.guard_move = AsyncMock(side_effect=Refused("The Reserve block of Pro is full."))
     hook = _hook(_bot(db_path), placement)
     [owed] = await hook.sanction_candidates(LATEST_ROUND, DIVISION_ID)
 
@@ -604,6 +638,26 @@ async def test_check_sanction_refuses_a_full_reserve_block(tmp_path):
         await hook.check_sanction(LATEST_ROUND, DIVISION_ID, owed)
 
     placement.guard_move.assert_awaited_once()
+    assert await _state(db_path, MAX) == ("ASSIGNED", 1)
+
+
+async def test_an_unexpected_value_error_is_a_failure_not_a_refusal(tmp_path):
+    """Max is owed an autoreserve, and the placement service's guard raises a bug's `ValueError`
+    rather than a refusal. The check made before the sanction is saved lets it go on as a fault,
+    in its own words, rather than wording it as a failure on Discord's side; nothing is moved."""
+    db_path = await _db(tmp_path, autosack=None)
+    await _totals(db_path, LATEST_ROUND, {MAX: 12})
+    placement = _real_placement(db_path)
+    placement.guard_move = AsyncMock(
+        side_effect=ValueError("invalid literal for int() with base 10: 'x'")
+    )
+    hook = _hook(_bot(db_path), placement)
+    [owed] = await hook.sanction_candidates(LATEST_ROUND, DIVISION_ID)
+
+    with pytest.raises(ValueError, match="invalid literal") as raised:
+        await hook.check_sanction(LATEST_ROUND, DIVISION_ID, owed)
+
+    assert type(raised.value) is ValueError
     assert await _state(db_path, MAX) == ("ASSIGNED", 1)
 
 
@@ -619,7 +673,7 @@ async def test_a_sheet_discord_refuses_raises_and_is_not_put_on_the_retry_queue(
     channel.send = AsyncMock(side_effect=http_error(status=403, text="Missing Access"))
     hook = _hook(_bot(db_path, channel=channel), _placement())
 
-    with patch("leaguebot.core.services.retry_service.enqueue", new=AsyncMock()) as enqueue:
+    with patch("leaguebot.core.services.posting.retry_service.enqueue", new=AsyncMock()) as enqueue:
         with pytest.raises(StepFailedOnDiscord):
             with in_a_job():
                 await hook.post_sheet(LATEST_ROUND, DIVISION_ID, sanctioned=set(), as_text=False)
@@ -646,7 +700,8 @@ async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
     await _totals(db_path, LATEST_ROUND, {LEWIS: 25})
     channel = _sheet_channel()
     placement = _placement()
-    hook = _hook(_bot(db_path, attendance=False, channel=channel), placement)
+    lineups = _lineups()
+    hook = _hook(_bot(db_path, attendance=False, channel=channel), placement, lineups=lineups)
     owed = {"driver_profile_id": LEWIS, "driver_user_id": LEWIS, "sanction": "AUTOSACK",
             "other_divisions": []}
 
@@ -668,6 +723,7 @@ async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
     assert await hook.pardons_to_review([object()]) == []
 
     assert placement.method_calls == []
+    assert lineups.method_calls == []
     channel.send.assert_not_awaited()
 
 

@@ -37,11 +37,13 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
+    acknowledgement,
     attach_queue,
     discard_job,
     http_error,
     league_double,
     member_interaction,
+    register,
     restart_queue,
     retry_job,
     run_queue,
@@ -50,7 +52,10 @@ from tests.support.change_queue import (
     stopped_job,
     updated_reply,
 )
+from tests.support.channel_uses import sign_up_channel_uses_read
 from tests.support.mentions import NOBODY, notified
+from tests.support.season_league import set_module_flag
+from tests.support.undecorate import undecorate
 
 NOW = datetime(2026, 10, 5, 12, 0, tzinfo=timezone.utc)
 SEASON_ID = 1
@@ -272,7 +277,7 @@ def _posting_type(
     """A change whose one opening job plans the round's republication through the module, under
     *label*."""
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
-    from leaguebot.core.services.change_queue import ChangeType, Step
+    from leaguebot.core.services.queue.change_types import ChangeType, Step
     from leaguebot.results.services import review_posting
 
     async def plan(db: Any, ctx: Any) -> Any:
@@ -514,21 +519,52 @@ async def test_a_post_repointed_to_a_new_channel_lands_there_on_retry(tmp_path):
 
 async def _set_results_channel(league: _League, channel_id: int) -> Any:
     """Run `/results channel results` for Pro as the league manager Alex, through the command's
-    own body and the real season service. Gives Alex's interaction."""
-    from leaguebot.core.services.season_service import SeasonService
+    body and the real season service, with results on and results' channel setting registered on
+    the queue as the builder registers it; the queue is not run. Gives Alex's interaction."""
+    from leaguebot.__main__ import register_change_types
+    from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.results.cogs.results_cog import ResultsCog
 
+    await set_module_flag(league.db_path, "results", True)
+    league.bot.module_service.is_results_enabled = AsyncMock(return_value=True)
     league.bot.season_service = SeasonService(league.db_path)
+    builder = MagicMock()
+    builder.module_service = league.bot.module_service
+    builder.season_service = league.bot.season_service
+    builder.get_channel = league.bot.get_channel
+    register_change_types(builder)
+    built = {call.args[0].kind: call.args[0]
+             for call in builder.change_queue.register.call_args_list}
+    register(league.bot, built["results.setting.results_channel"])
+    # The registry asks each module for the channels it holds, through the bot's own hook.
+    sign_up_channel_uses_read(league.bot)
     cog = ResultsCog.__new__(ResultsCog)
     cog.bot = league.bot
     interaction = member_interaction(league.bot)
     interaction.user.display_name = "Alex"
-    await cog._set_division_channel(interaction, "Pro", league.channel(channel_id), "results")
+    await undecorate(ResultsCog.channel_results)(cog, interaction, "Pro",
+                                                 league.channel(channel_id))
     return interaction
 
 
+async def _results_channel(db_path: str) -> int | None:
+    async with get_connection(db_path) as db:
+        row = await (await db.execute(
+            "SELECT results_channel_id FROM division_results_config WHERE division_id = ?",
+            (DIVISION_ID,),
+        )).fetchone()
+    return None if row is None or row[0] is None else int(row[0])
+
+
 async def test_a_stopped_post_lands_once_the_channel_is_set_and_retried(tmp_path):
-    """Set the channel, then Retry: the remedy the stop notice leads a manager to, end to end."""
+    """Set the channel, then Retry: the remedy the stop notice leads a manager to, end to end.
+
+    Pro's round 3 results are republished, and the post stops at `post_session_results`, its
+    results channel gone. Alex runs `/results channel results` for Pro with channel 703 and is
+    acknowledged; the queue runs. The setting does not wait behind the stopped post: it runs past
+    it, saves 703 as Pro's results channel and tells Alex the channel was updated, while the post
+    still stops the league's lane. Alex presses Retry: the results land once in 703, the session
+    records that message, and nothing stops the queue."""
     league = await _league(tmp_path, results_message_id=None)
     league.gone.add(RESULTS_CHANNEL)
     await _ask(league)
@@ -537,8 +573,13 @@ async def test_a_stopped_post_lands_once_the_channel_is_set_and_retried(tmp_path
     assert job is not None and job["name"] == "post_session_results"
 
     manager = await _set_results_channel(league, NEW_RESULTS_CHANNEL)
-    assert "updated to" in str(manager.response.send_message.await_args.args[0])
-    assert await stopped_job(league.db_path) is not None, "setting the channel ran the job"
+    assert acknowledgement(manager).startswith("⏳ ")
+    await run_queue(league.bot)
+
+    assert "updated to" in updated_reply(manager)
+    assert await _results_channel(league.db_path) == NEW_RESULTS_CHANNEL
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "post_session_results", "setting the channel ran the job"
     await retry_job(league.bot)
 
     new = league.sent_to(NEW_RESULTS_CHANNEL)
@@ -1266,7 +1307,7 @@ async def test_names_go_unresolved_where_the_server_is_not_in_the_cache(tmp_path
     """The names only order a full tie, so a server the bot cannot see leaves them unresolved
     rather than stopping the queue: a post after the job stops it on the same fault."""
     from leaguebot.core.models.change import PlannedStep, Verdict
-    from leaguebot.core.services.change_queue import ChangeType
+    from leaguebot.core.services.queue.change_types import ChangeType
     from leaguebot.results.services import review_posting
 
     league = await _league(tmp_path)
@@ -1307,7 +1348,7 @@ async def test_names_go_unresolved_where_the_server_is_not_in_the_cache(tmp_path
 # ---------------------------------------------------------------------------
 
 def _outcome_context(*steps: Any) -> Any:
-    from leaguebot.core.services.change_queue import OutcomeContext
+    from leaguebot.core.services.queue.change_types import OutcomeContext
 
     return OutcomeContext(
         bot=MagicMock(), db_path="unused.db", change_id=1, kind=KIND, payload={},
@@ -1320,7 +1361,7 @@ async def test_names_are_read_back_by_division():
     """Pro's (11) and Am's (12) `names` jobs both done, Beta's (13) not yet: asked for a division,
     the names of that division's job; for one whose job is not done, none; asked for no division,
     the first done, as slice 2's callers read it."""
-    from leaguebot.core.services.change_queue import StepView
+    from leaguebot.core.services.queue.change_types import StepView
     from leaguebot.results.services import review_posting
 
     ctx = _outcome_context(
@@ -1340,7 +1381,7 @@ async def test_a_post_planned_with_its_division_names_it_when_discarded(tmp_path
     one a league admin discards is named with the division ("Round 3's Feature Race results in
     Pro were not posted."), the sync commands last. Planned with no name, as slice 2's rebuild
     plans them, the lines are today's."""
-    from leaguebot.core.services.change_queue import StepView
+    from leaguebot.core.services.queue.change_types import StepView
     from leaguebot.results.services import review_posting
 
     db_path = await _make_db(tmp_path)

@@ -10,10 +10,18 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services.team_service import FULL_NAME_MAX, SHORTHAND_MAX
-from leaguebot.image.utils.asset_resolver import normalise
+from leaguebot.core.services.drivers.team_changes import (
+    TEAM_ADD,
+    TEAM_MODIFY,
+    TEAM_REMOVE,
+    TEAM_RESERVE_ROLE,
+    gone_reply,
+    list_lock_reply,
+    season_done_reply,
+)
+from leaguebot.core.services.drivers.team_service import FULL_NAME_MAX, SHORTHAND_MAX
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
-from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only, role_grant_refusal, changes_nothing
+from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only, changes_nothing
 from leaguebot.core.utils.interaction_errors import describe, describe_form
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import LeagueModal
@@ -32,7 +40,7 @@ class TeamCog(commands.Cog):
         """Whether the team list may still be changed: no live season, or one in Configuration.
 
         The question apart from the refusal, because `/team modify` asks it to decide which
-        fields its form offers, and asks it again when the form comes back (#381).
+        fields its form offers, and asks it again when the form comes back.
         """
         season = await self.bot.season_service.get_setup_or_active_season()
         return season is None or season.stage is SeasonStage.CONFIGURATION
@@ -47,20 +55,15 @@ class TeamCog(commands.Cog):
         the signup wizard offers it as the preferred teams, and every division is created
         from it. With no active season the list is free. Returns True where the command was
         refused, having answered the interaction and recorded the refusal of *what* — the
-        command, or the form it was submitted on.
+        command, or the form it was submitted on. The refusal is the change's own
+        (`team_changes.list_lock_reply`), which the queue judges again as the change starts.
         """
-        season = await self.bot.season_service.get_setup_or_active_season(
-
+        reply = list_lock_reply(
+            await self.bot.season_service.get_setup_or_active_season(), command
         )
-        if season is None or season.stage is SeasonStage.CONFIGURATION:
+        if reply is None:
             return False
-        await refuse(
-            interaction,
-            f"⛔ The team list is fixed for Season {season.season_number} now that its "
-            f"configuration has been confirmed. `/team {command}` is available again once "
-            "the season has ended, or while a new season is in configuration.",
-            what=what,
-        )
+        await refuse(interaction, reply, what=what)
         return True
 
     async def _refuse_once_the_season_is_done(
@@ -68,29 +71,22 @@ class TeamCog(commands.Cog):
     ) -> bool:
         """Refuse a role mapping once every division of the season is finished or cancelled.
 
-        A team's role may be repaired in every stage of a live season but Pending completion
-        (issue #224), and with no live season at all the mapping is the server's own and free
-        to change — the team list itself is settled on the same terms. So this refuses only
-        where a season is live and has run its course, and lets the no-season case through,
-        which the shared gate would otherwise turn away.
+        A team's role may be repaired in every stage of a live season but Pending completion,
+        and with no live season at all the mapping is the server's own and free to change — the
+        team list itself is settled on the same terms. So this refuses only where a season is live
+        and has run its course, and lets the no-season case through, which the shared gate would
+        otherwise turn away.
 
         Returns True where the command was refused, having answered the interaction and
-        recorded the refusal of *what*.
+        recorded the refusal of *what*. The refusal is the change's own
+        (`team_changes.season_done_reply`), which the queue judges again as the change starts.
         """
-        from leaguebot.core.models.season import SeasonStage
-
-        season = await self.bot.season_service.get_setup_or_active_season(
-
+        reply = season_done_reply(
+            await self.bot.season_service.get_setup_or_active_season(), command
         )
-        if season is None or season.stage is not SeasonStage.PENDING_COMPLETION:
+        if reply is None:
             return False
-        await refuse(
-            interaction,
-            f"⛔ Every division of Season {season.season_number} is done, so `/team "
-            f"{command}` no longer has anything to act on — completing the season "
-            "revokes the team roles. Repair the mapping once the season has ended.",
-            what=what,
-        )
+        await refuse(interaction, reply, what=what)
         return True
 
     team = app_commands.Group(
@@ -110,7 +106,7 @@ class TeamCog(commands.Cog):
     )
     @league_manager_only
     async def team_add(self, interaction: discord.Interaction) -> None:
-        """Open the form a team is added on (#381).
+        """Open the form a team is added on.
 
         A team carries three things, and the form takes all three at once: the shorthand a
         league types, the full name every post shows, and the role its drivers are granted.
@@ -134,64 +130,26 @@ class TeamCog(commands.Cog):
         role: discord.Role,
         what: str | None = None,
     ) -> None:
-        """Add the team the form describes, or say why not. Every check runs here.
+        """Ask for the team the form describes to be added, or say why not.
 
-        *what* names what a refusal is recorded against: the form the team was submitted on,
-        which the form passes; a call without one names the command.
+        The team's addition is a change on the queue (`core/services/drivers/team_changes.py`), which
+        refuses at once, and again as the change starts, whatever the list, the role or the
+        team's names do not allow. *what* names what a refusal is recorded against: the form the
+        team was submitted on, which the form passes; a call without one names the command.
         """
-        what = what or describe(interaction)
-        if await self._team_list_lock(interaction, "add", what=what):
-            return
-        # A team's role is granted to its drivers, so one the bot cannot grant is refused here,
-        # where a league can still choose another (#381).
-        refusal = role_grant_refusal(role)
-        if refusal is not None:
-            await refuse(interaction, f"⛔ {refusal}", what=what)
-            return
-        # A role belongs to one team only, and the team is not added where its role is taken.
-        holder = await self.bot.placement_service.team_holding_role(
-            role.id
-        )
-        if holder is not None:
-            await refuse(
-                interaction,
-                f'⛔ {role.mention} is already the role of "{holder}". A role belongs to one '
-                "team only.",
-                what=what,
-            )
-            return
-        try:
-            await self.bot.team_service.add_default_team(
-                shorthand, full_name=full_name
-            )
-        except ValueError as exc:
-            await refuse(interaction, f"⛔ {exc}", what=what)
-            return
-
-        try:
-            await self.bot.placement_service.set_team_role_config(
-                shorthand, role.id,
-                actor_id=interaction.user.id, actor_name=str(interaction.user),
-            )
-        except ValueError as exc:
-            # Taken between the check and the write: the team goes again, so nothing stands.
-            await self.bot.team_service.remove_default_team(shorthand)
-            await refuse(interaction, f"⛔ {exc}", what=what)
-            return
-
-        await interaction.response.send_message(
-            f'✅ Team "{full_name}" added as `{shorthand}`, with role {role.mention}.',
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team add | Success\n"
-            f"  team: {full_name}\n"
-            f"  shorthand: {shorthand}\n"
-            f"  role: {role.name} (<@&{role.id}>)",
+        await self.bot.change_queue.ask(
+            TEAM_ADD,
+            {
+                "shorthand": shorthand,
+                "full_name": full_name,
+                "role_id": role.id,
+                "role_name": role.name,
+            },
+            interaction=interaction, what=what or describe(interaction),
         )
 
     # ------------------------------------------------------------------
-    # /team modify  (#381) — replaces /team rename and /team role
+    # /team modify
     # ------------------------------------------------------------------
 
     @team.command(
@@ -201,7 +159,7 @@ class TeamCog(commands.Cog):
     @app_commands.describe(team="The team's shorthand.")
     @league_manager_only
     async def team_modify(self, interaction: discord.Interaction, team: str) -> None:
-        """Open the form a team is changed on (#381).
+        """Open the form a team is changed on.
 
         The form offers what may change **now**: the two names only while the team list is
         open, and the role at every stage but Pending completion, where nothing may change at
@@ -242,12 +200,13 @@ class TeamCog(commands.Cog):
         role: discord.Role | None,
         what: str | None = None,
     ) -> None:
-        """Apply what the form changed, or refuse the whole submission (#381).
+        """Ask for what the form changed, or refuse the whole submission.
 
         *was* is the team as the form opened on it. Only a field whose value **changed**
-        counts, so a form submitted untouched changes nothing and says so. Each changed field
-        is held to its own window, checked again here because the season may have moved on
-        while the form stood open: a change that no longer stands refuses the submission as a
+        counts, so a form submitted untouched changes nothing and says so. The change is one on
+        the queue (`core/services/drivers/team_changes.py`), which holds each changed field to its own
+        window at the ask, because the season may have moved on while the form stood open, and
+        again as the change starts: a change that no longer stands refuses the submission as a
         whole, naming the field, and nothing at all is written. *what* names what a refusal is
         recorded against: the form, which passes it; a call without one names the command.
         """
@@ -255,21 +214,16 @@ class TeamCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         reference = await self.bot.team_service.resolve_server_team(was["name"])
         if reference.team is None:
-            await refuse(
-                interaction,
-                f'⛔ "{was["full_name"]}" is no longer in the server\'s team list.',
-                what=what,
-            )
+            await refuse(interaction, gone_reply(was["full_name"]), what=what)
             return
         current = reference.team
 
         new_shorthand = (shorthand or "").strip() or current["name"]
         new_full_name = (full_name or "").strip() or current["full_name"]
         names_changed = (new_shorthand, new_full_name) != (current["name"], current["full_name"])
-        role_changed = role is not None and role.id != current["role_id"]
-        new_role = role if role_changed else None
+        new_role = role if role is not None and role.id != current["role_id"] else None
 
-        if not names_changed and not role_changed:
+        if not names_changed and new_role is None:
             await interaction.followup.send(
                 f'Nothing changed: "{current["full_name"]}" stands as it was.', ephemeral=True
             )
@@ -281,79 +235,17 @@ class TeamCog(commands.Cog):
             )
             return
 
-        if names_changed and not await self._team_list_is_open():
-            await refuse(
-                interaction,
-                "⛔ The team list is fixed now that the season's configuration is confirmed, "
-                "so a team's shorthand and full name cannot change. Only its role can, and "
-                "nothing was written.",
-                what=what,
-            )
-            return
-
-        if new_role is not None:
-            refusal = role_grant_refusal(new_role)
-            if refusal is not None:
-                await refuse(interaction, f"⛔ {refusal} Nothing was written.", what=what)
-                return
-            try:
-                await self.bot.placement_service.set_team_role_config(
-                    current["name"], new_role.id,
-                    actor_id=interaction.user.id, actor_name=str(interaction.user),
-                )
-            except ValueError as exc:
-                # Another team holds the role (#375): nothing is changed and no driver moves.
-                await refuse(interaction, f"⛔ {exc} Nothing was written.", what=what)
-                return
-
-        moved = 0
-        if new_role is not None:
-            # The drivers already seated in the team follow its role (issue #220).
-            moved = await self.bot.placement_service.swap_team_role(
-                current["name"], current["role_id"], new_role.id, interaction.guild,
-            )
-
-        named = dict(current)
-        if names_changed:
-            try:
-                named = await self.bot.team_service.modify_default_team(
-                    current["name"],
-                    shorthand=new_shorthand,
-                    full_name=new_full_name,
-                    actor_id=interaction.user.id,
-                    actor_name=str(interaction.user),
-                )
-            except ValueError as exc:
-                await refuse(interaction, f"⛔ {exc}", what=what)
-                return
-            if new_shorthand != current["name"]:
-                await self.bot.placement_service.rename_team_role_config(
-                    current["name"], new_shorthand,
-                    actor_id=interaction.user.id, actor_name=str(interaction.user),
-                )
-
-        lines = [f'✅ Team "{named["full_name"]}" updated.']
-        if new_full_name != current["full_name"]:
-            lines.append(f'  Full name: "{current["full_name"]}" → "{new_full_name}"')
-        if new_shorthand != current["name"]:
-            lines.append(f"  Shorthand: `{current['name']}` → `{new_shorthand}`")
-            old_file, new_file = normalise(current["name"]), normalise(new_shorthand)
-            if old_file != new_file:
-                lines.append(
-                    f"  Its artwork is now looked for as `{new_file}`, not `{old_file}` — "
-                    "rename the file in the team image directory."
-                )
-        if new_role is not None:
-            lines.append(f"  Role: {new_role.mention}")
-            if moved:
-                lines.append(f"  {moved} seated driver(s) moved to the new role.")
-        await interaction.followup.send("\n".join(lines), ephemeral=True)
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team modify | Success\n"
-            f"  team: {named['full_name']}\n"
-            f"  shorthand: {named['name']}\n"
-            + (f"  role: {new_role.name} (<@&{new_role.id}>)\n" if new_role is not None else "")
-            + f"  seated drivers moved: {moved}",
+        await self.bot.change_queue.ask(
+            TEAM_MODIFY,
+            {
+                "was_shorthand": current["name"],
+                "was_full_name": current["full_name"],
+                "shorthand": new_shorthand,
+                "full_name": new_full_name,
+                "role_id": None if new_role is None else new_role.id,
+                "role_name": None if new_role is None else new_role.name,
+            },
+            interaction=interaction, what=what,
         )
 
     @team_modify.autocomplete("team")
@@ -381,32 +273,15 @@ class TeamCog(commands.Cog):
     ) -> None:
         if await self._team_list_lock(interaction, "remove", what=describe(interaction)):
             return
-        # A team is named by its shorthand (#381), offered by the autocomplete below.
+        # A team is named by its shorthand, offered by the autocomplete below.
         reference = await self.bot.team_service.resolve_server_team(name)
         if reference.team is None:
             await refuse(interaction, f"⛔ {reference.refusal}", what=describe(interaction))
             return
-        shorthand, full_name = reference.team["name"], reference.team["full_name"]
-        try:
-            await self.bot.team_service.remove_default_team(
-                shorthand
-            )
-        except ValueError as exc:
-            await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
-            return
-
-        await self.bot.placement_service.delete_team_role_config(
-            shorthand,
-            actor_id=interaction.user.id, actor_name=str(interaction.user),
-        )
-
-        await interaction.response.send_message(
-            f'✅ Team "{full_name}" removed from the server list.', ephemeral=True
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team remove | Success\n"
-            f"  team: {full_name}\n"
-            f"  shorthand: {shorthand}",
+        await self.bot.change_queue.ask(
+            TEAM_REMOVE,
+            {"shorthand": reference.team["name"], "full_name": reference.team["full_name"]},
+            interaction=interaction, what=describe(interaction),
         )
 
     @team_remove.autocomplete("name")
@@ -445,8 +320,8 @@ class TeamCog(commands.Cog):
             return
 
         def _fmt_team(t: dict) -> str:
-            # All three names a team carries (#381): what is shown, what is typed, and the
-            # role its drivers are given.
+            # All three names a team carries: what is shown, what is typed, and the role its drivers
+            # are given.
             role_part = f"<@&{t['role_id']}>" if t["role_id"] else "no role"
             return f"  {t['full_name']} — `{t['name']}` → {role_part}"
 
@@ -531,52 +406,55 @@ class TeamCog(commands.Cog):
 
         # ── The graphic replaces the textual output where configured (FR-026) ──
         #
-        # One image per division, honouring `public`. These are command output and **not**
-        # the lineup of record: nothing is written to `lineup_message_id` and the lineup
-        # channel is untouched (FR-028). A fatal error rejects rather than falling back —
-        # the caller is the one person able to fix the template (Constitution XIV.7).
-        from leaguebot.image.services.image_lineup_post import lineup_enabled, render_for_command
-
-        if await lineup_enabled(self.bot):
-            from leaguebot.image.services.image_render_service import discard_attachment
-
-            files: list[discord.File] = []
-            notices: list = []
-            # One `finally` around the whole batch, because a rejection part way through
-            # abandons every picture drawn before it — the divisions already rendered are
-            # never sent, and without this their files would be the one leak no posting
-            # path accounts for.
+        # One image per division, honouring `public`, drawn through core's drawing protocol
+        # as a command's output. These are command output and **not** the lineup of record:
+        # nothing is written to `lineup_message_id` and the lineup channel is untouched
+        # (FR-028). A fatal error rejects rather than falling back — the caller is the one
+        # person able to fix the template (Constitution XIV.7). The drawing has already
+        # reported any notices to the log channel, headed with the division, so this command
+        # never posts them a second time.
+        if await self.bot.image_drawing.lineup_wanted():
+            drawn_paths: list = []
+            # One `finally` around the whole batch, because a rejection part way through, or
+            # a fault that leaves the command, abandons every picture drawn before it — the
+            # divisions already rendered are never sent, and without this their files would
+            # be the one leak no posting path accounts for. `discord.File` is opened only once
+            # every division has drawn clean, and closed again before this hands the paths to
+            # `discard_picture`, so no render is unlinked while its handle is still open — the
+            # model `calendar_post_service.replace_calendar_message` and
+            # `LineupPoster._refresh_lineup_post` both set.
             try:
                 for div in all_divisions:
-                    outcome = await render_for_command(self.bot, interaction.guild, div.id)
-                    if outcome.action == "REJECTED":
+                    picture = await self.bot.image_drawing.draw_lineup_for_command(
+                        interaction.guild, div.id
+                    )
+                    if picture.path is not None:
+                        drawn_paths.append(picture.path)
+                    if picture.problem is not None:
                         await interaction.followup.send(
-                            f"{outcome.message}\n_Lineup for **{div.name}** was not drawn._",
+                            f"❌ {picture.problem}\n"
+                            f"_Lineup for **{div.name}** was not drawn._",
                             ephemeral=True,
                         )
                         return
-                    if outcome.png_path is not None:
-                        files.append(
-                            discord.File(
-                                str(outcome.png_path), filename=outcome.png_path.name
-                            )
-                        )
-                    notices.extend(outcome.notices)
 
-                if files:
-                    text = "\n".join(f"**{div.name}**" for div in all_divisions)
-                    if notices:
-                        from leaguebot.image.services.image_render_service import ImageRenderService
-
-                        await ImageRenderService.report_notices(
-                            self.bot, notices
+                if drawn_paths:
+                    files = [
+                        discord.File(str(path), filename=path.name)
+                        for path in drawn_paths
+                    ]
+                    try:
+                        text = "\n".join(f"**{div.name}**" for div in all_divisions)
+                        await interaction.followup.send(
+                            text, files=files, ephemeral=not public
                         )
-                    await interaction.followup.send(
-                        text, files=files, ephemeral=not public
-                    )
-                    return
+                        return
+                    finally:
+                        for attachment in files:
+                            attachment.close()
             finally:
-                discard_attachment(*files)
+                for path in drawn_paths:
+                    self.bot.image_drawing.discard_picture(path)
 
         lines: list[str] = []
         for div in all_divisions:
@@ -623,52 +501,20 @@ class TeamCog(commands.Cog):
         interaction: discord.Interaction,
         role: discord.Role | None = None,
     ) -> None:
-        """Set or clear the Reserve team's role, on the same terms `/team modify` sets a team's.
+        """Ask for the Reserve team's role to be set or cleared, on the same terms `/team modify`
+        sets a team's.
 
-        Refused once the season is pending completion, for the reason given there, and refuses
-        a role the bot cannot grant as every team command does (#381).
+        The change is one on the queue (`core/services/drivers/team_changes.py`), which refuses at once,
+        and again as the change starts, once the season is pending completion, and a role the bot
+        cannot grant or another team holds, as every team command does.
         """
-        if await self._refuse_once_the_season_is_done(
-            interaction, "reserve-role", what=describe(interaction)
-        ):
-            return
-        if role is not None:
-            refusal = role_grant_refusal(role)
-            if refusal is not None:
-                await refuse(interaction, f"⛔ {refusal}", what=describe(interaction))
-                return
-        await interaction.response.defer(ephemeral=True)
-        teams = await self.bot.team_service.get_teams_with_roles()
-        old_role_id = next((t["role_id"] for t in teams if t["is_reserve"]), None)
-        if role is not None:
-            try:
-                await self.bot.placement_service.set_team_role_config(
-                    "Reserve", role.id,
-                    actor_id=interaction.user.id, actor_name=str(interaction.user),
-                )
-            except ValueError as exc:
-                # Another team holds the role (#375): nothing is changed and no driver moves.
-                await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
-                return
-            msg = f"✅ Reserve team role set to {role.mention}."
-        else:
-            await self.bot.placement_service.delete_team_role_config(
-                "Reserve",
-                actor_id=interaction.user.id, actor_name=str(interaction.user),
-            )
-            msg = "✅ Reserve team role cleared."
-
-        # The drivers already seated in Reserve follow its role (issue #220).
-        moved = await self.bot.placement_service.swap_team_role(
-            "Reserve", old_role_id, role.id if role else None,
-            interaction.guild,
-        )
-        if moved:
-            msg += f" {moved} seated driver(s) moved to the new role."
-        await interaction.followup.send(msg, ephemeral=True)
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /team reserve-role | Success\n"
-            + (f"  role: {role.name} (<@&{role.id}>)" if role else "  role: cleared"),
+        await self.bot.change_queue.ask(
+            TEAM_RESERVE_ROLE,
+            {
+                "role_id": None if role is None else role.id,
+                "role_name": None if role is None else role.name,
+            },
+            interaction=interaction, what=describe(interaction),
         )
 
 
@@ -690,7 +536,7 @@ async def _send_long(interaction: discord.Interaction, text: str, *, ephemeral: 
 
 
 # ---------------------------------------------------------------------------
-# The forms a team is added and changed on (#381)
+# The forms a team is added and changed on
 # ---------------------------------------------------------------------------
 
 
@@ -741,7 +587,7 @@ class _TeamAddModal(LeagueModal, title="Add a team"):
 
 
 class _TeamModifyModal(LeagueModal, title="Modify a team"):
-    """A team's fields, pre-filled, and only those that may change now (#381).
+    """A team's fields, pre-filled, and only those that may change now.
 
     While the team list is open the form holds all three; once it is fixed it holds the role
     alone, because that is the only thing a league may still change. The windows are checked

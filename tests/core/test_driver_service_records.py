@@ -2,7 +2,7 @@
 
 Issue #208. `tests/core/test_driver_service_transitions.py` covers which transitions the state
 machine allows. What it does not cover is what the allowed ones actually *do* to the database,
-nor `reassign_user_id` and `set_former_driver` at all.
+nor the re-key (`reassign_user_id_on`, through `reassigned`) at all.
 
 **Reaching `NOT_SIGNED_UP` destroys nothing** (issue #220, which reversed the deletion this
 file was first written against). A driver without the former-driver flag is *pending
@@ -18,9 +18,9 @@ the driver's list of accounts, and every record keeps the account it was written
 `test_driver_reassign.py` pins what refuses it and what merges; the refusals kept here are
 the ones about records, and each leaves everything as it was.
 
-**Both write audit entries carrying the old and the new value.** They are the league's only
-record of a manager re-keying or re-flagging a driver, which are the two commands that can
-quietly rewrite who somebody is.
+The re-key's audit entry is written by its change on the queue, and `test_driver_reassign.py`
+pins it there; the former-driver flag set by hand is pinned with its own change in
+`test_test_mode_former_driver.py`.
 
 Everything runs against a real migrated database: the refusals reach the results through their
 division, and the audit inserts are raw SQL — none of which a double would check.
@@ -33,17 +33,20 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.core.services.driver_service import DriverService
+from leaguebot.core.services.drivers.driver_service import DriverService
 from tests.support.teams import seed_team_instances
+from tests.support.driver_transitions import reassigned, transitioned
+
+
 
 SERVER_ID = 9108
 OLD_USER = "4242"
 NEW_USER = "5353"
-ACTOR_ID = 77
 
 #: The league's season, division, round and session are all seeded under this id, so that
 #: one number names the whole of its racing.
 LEAGUE = 1
+
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +92,7 @@ async def _seed_league(db_path: str, server_id: int, league: int) -> None:
         )
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at, status) "
-            "VALUES (?, ?, 1, 'NORMAL', '2026-09-20T18:00:00', 'FINAL')",
+            "VALUES (?, ?, 1, 'NORMAL', '2026-09-20T18:00:00+00:00', 'FINAL')",
             (league, league),
         )
         await db.execute(
@@ -231,9 +234,7 @@ async def test_an_ordinary_driver_is_kept_pending_deletion(tmp_path):
     pending deletion, and the season's end deletes them."""
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, state="UNASSIGNED", former=False)
-    service = DriverService(db_path)
-
-    result = await service.transition(OLD_USER, DriverState.NOT_SIGNED_UP)
+    result = await transitioned(db_path, OLD_USER, DriverState.NOT_SIGNED_UP)
 
     assert result is not None
     assert result.current_state is DriverState.NOT_SIGNED_UP
@@ -246,9 +247,7 @@ async def test_a_former_driver_is_kept_with_their_signup(tmp_path):
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, state="UNASSIGNED", former=True)
     await _seed_signup_record(db_path)
-    service = DriverService(db_path)
-
-    result = await service.transition(OLD_USER, DriverState.NOT_SIGNED_UP)
+    result = await transitioned(db_path, OLD_USER, DriverState.NOT_SIGNED_UP)
 
     assert result is not None
     assert await _profile_count(db_path) == 1
@@ -265,10 +264,8 @@ async def test_a_transition_from_no_profile_creates_one(tmp_path):
     """An absent profile is NOT_SIGNED_UP, so a driver starting a signup has one made for
     them rather than being refused."""
     db_path = await _make_db(tmp_path)
-    service = DriverService(db_path)
-
-    profile = await service.transition(
-        OLD_USER, DriverState.PENDING_SIGNUP_COMPLETION
+    profile = await transitioned(
+        db_path, OLD_USER, DriverState.PENDING_SIGNUP_COMPLETION
     )
 
     assert profile is not None
@@ -277,12 +274,12 @@ async def test_a_transition_from_no_profile_creates_one(tmp_path):
 
 
 async def test_a_disallowed_transition_from_no_profile_names_what_is_allowed(tmp_path):
-    """The caller is usually a command, and the message reaches a manager."""
+    """A driver with no profile is given one only where the table allows the move from Not
+    Signed Up; otherwise the state machine refuses by its own name, saying what is allowed."""
+    from leaguebot.core.models.driver_profile import InvalidDriverTransition
     db_path = await _make_db(tmp_path)
-    service = DriverService(db_path)
-
-    with pytest.raises(ValueError, match="Allowed targets"):
-        await service.transition(OLD_USER, DriverState.ASSIGNED)
+    with pytest.raises(InvalidDriverTransition, match="Allowed targets"):
+        await transitioned(db_path, OLD_USER, DriverState.ASSIGNED)
 
 
 # ---------------------------------------------------------------------------
@@ -296,9 +293,7 @@ async def test_a_profile_is_re_keyed_to_the_new_account(tmp_path):
     await _seed_profile(db_path)
     service = DriverService(db_path)
 
-    outcome = await service.reassign_user_id(
-        OLD_USER, NEW_USER, ACTOR_ID, "Manager"
-    )
+    outcome = await reassigned(db_path, OLD_USER, NEW_USER)
 
     assert outcome.profile.discord_user_id == NEW_USER
     assert await service.get_profile(NEW_USER) is not None
@@ -306,13 +301,12 @@ async def test_a_profile_is_re_keyed_to_the_new_account(tmp_path):
 
 
 async def test_re_keying_a_user_with_no_profile_is_refused(tmp_path):
+    from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
     service = DriverService(db_path)
 
-    with pytest.raises(ValueError, match="No driver profile"):
-        await service.reassign_user_id(
-            OLD_USER, NEW_USER, ACTOR_ID, "Manager"
-        )
+    with pytest.raises(Refused, match="No driver profile"):
+        await reassigned(db_path, OLD_USER, NEW_USER)
 
 
 async def test_two_drivers_both_in_the_live_season_are_not_merged(tmp_path):
@@ -320,15 +314,14 @@ async def test_two_drivers_both_in_the_live_season_are_not_merged(tmp_path):
     Merging them is the one thing an account holding a profile could mean (issue #243), and
     two live signups cannot be one driver. The refusal changes nothing: the old profile stands
     and nothing is audited."""
+    from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, user_id=OLD_USER)
     await _seed_profile(db_path, user_id=NEW_USER)
     service = DriverService(db_path)
 
-    with pytest.raises(ValueError, match="both hold a seat or a signup"):
-        await service.reassign_user_id(
-            OLD_USER, NEW_USER, ACTOR_ID, "Manager"
-        )
+    with pytest.raises(Refused, match="both hold a seat or a signup"):
+        await reassigned(db_path, OLD_USER, NEW_USER)
 
     assert await service.get_profile(OLD_USER) is not None
     assert await _audit(db_path) == []
@@ -338,16 +331,15 @@ async def test_an_account_whose_leftover_results_share_a_division_is_refused(tmp
     """The new account holds no profile but results of its own — a driver deleted for never
     having raced a round in full — in the very division the driver raced. Joined, one person
     would stand twice in that season's standings (issue #243)."""
+    from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, user_id=OLD_USER)
     await _seed_results(db_path, user_id=OLD_USER)
     await _seed_results(db_path, user_id=NEW_USER)
     service = DriverService(db_path)
 
-    with pytest.raises(ValueError, match="both took part in Season 1 Pro"):
-        await service.reassign_user_id(
-            OLD_USER, NEW_USER, ACTOR_ID, "Manager"
-        )
+    with pytest.raises(Refused, match="both took part in Season 1 Pro"):
+        await reassigned(db_path, OLD_USER, NEW_USER)
 
 
 async def test_an_account_holding_only_history_of_its_own_is_accepted(tmp_path):
@@ -358,24 +350,21 @@ async def test_an_account_holding_only_history_of_its_own_is_accepted(tmp_path):
     await _seed_history(db_path, NEW_USER)
     service = DriverService(db_path)
 
-    outcome = await service.reassign_user_id(
-        OLD_USER, NEW_USER, ACTOR_ID, "Manager"
-    )
+    outcome = await reassigned(db_path, OLD_USER, NEW_USER)
 
     assert outcome.profile.discord_user_id == NEW_USER
 
 
 async def test_a_refused_re_key_over_racing_records_changes_nothing(tmp_path):
+    from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
     await _seed_profile(db_path, user_id=OLD_USER)
     await _seed_snapshot(db_path, user_id=NEW_USER)
     await _seed_snapshot(db_path)
     service = DriverService(db_path)
 
-    with pytest.raises(ValueError):
-        await service.reassign_user_id(
-            OLD_USER, NEW_USER, ACTOR_ID, "Manager"
-        )
+    with pytest.raises(Refused):
+        await reassigned(db_path, OLD_USER, NEW_USER)
 
     assert await service.get_profile(OLD_USER) is not None
     assert await _standings_users(db_path) == [
@@ -385,99 +374,27 @@ async def test_a_refused_re_key_over_racing_records_changes_nothing(tmp_path):
     assert await _audit(db_path) == []
 
 
-async def test_a_re_key_is_audited_with_both_accounts(tmp_path):
-    """The league's only record that a driver's history was moved between accounts."""
-    db_path = await _make_db(tmp_path)
-    await _seed_profile(db_path)
-
-    await DriverService(db_path).reassign_user_id(
-        OLD_USER, NEW_USER, ACTOR_ID, "Manager"
-    )
-
-    entry = (await _audit(db_path))[0]
-    assert entry["change_type"] == "DRIVER_USER_ID_REASSIGN"
-    assert entry["old_value"] == OLD_USER
-    assert entry["new_value"] == NEW_USER
-    assert entry["actor_id"] == ACTOR_ID
-
-
 # ---------------------------------------------------------------------------
 # The former-driver flag
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "former, value, reported",
-    [
-        pytest.param(False, True, (False, True), id="set"),
-        pytest.param(True, False, (True, False), id="cleared"),
-    ],
-)
-async def test_the_former_driver_flag_is_set_or_cleared_and_reports_both_values(
-    tmp_path, former, value, reported
-):
-    """The return value is what the command echoes back, so a manager can see it changed
-    rather than merely that the command ran. It can be cleared again: set by mistake, it would
-    otherwise keep a profile alive through every departure."""
-    db_path = await _make_db(tmp_path)
-    await _seed_profile(db_path, former=former)
-    service = DriverService(db_path)
-
-    old, new = await service.set_former_driver(
-        OLD_USER, value, ACTOR_ID, "Manager"
-    )
-
-    assert (old, new) == reported
-    profile = await service.get_profile(OLD_USER)
-    assert profile.former_driver is value
-
-
-async def test_setting_the_flag_for_a_user_with_no_profile_is_refused(tmp_path):
-    db_path = await _make_db(tmp_path)
-    service = DriverService(db_path)
-
-    with pytest.raises(ValueError, match="No driver profile"):
-        await service.set_former_driver(
-            OLD_USER, True, ACTOR_ID, "Manager"
-        )
-
-
-async def test_setting_the_flag_is_audited(tmp_path):
-    db_path = await _make_db(tmp_path)
-    await _seed_profile(db_path, former=False)
-
-    await DriverService(db_path).set_former_driver(
-        OLD_USER, True, ACTOR_ID, "Manager"
-    )
-
-    entry = (await _audit(db_path))[0]
-    assert entry["change_type"] == "TEST_FORMER_DRIVER_FLAG_SET"
-    assert entry["old_value"] != entry["new_value"]
-
-
 async def test_the_flag_decides_whether_a_departure_destroys_the_profile(tmp_path):
     """The two halves of this file meeting: setting the flag changes what the destructive
-    transition does to the same driver."""
-    db_path = await _make_db(tmp_path)
-    await _seed_profile(db_path, state="UNASSIGNED", former=False)
-    service = DriverService(db_path)
-    await service.set_former_driver(OLD_USER, True, ACTOR_ID, "Manager")
+    transition does to the same driver. The flag is set through `set_former_drivers_on`, the
+    one writer of it a change's save calls; `/test-mode set-former-driver`, which sets it by
+    hand on the change queue, is pinned in `test_test_mode_former_driver.py`."""
+    from leaguebot.core.services.drivers.driver_service import set_former_drivers_on
 
-    await service.transition(OLD_USER, DriverState.NOT_SIGNED_UP)
+    db_path = await _make_db(tmp_path)
+    profile_id = await _seed_profile(db_path, state="UNASSIGNED", former=False)
+    async with get_connection(db_path) as db:
+        await set_former_drivers_on(db, {profile_id: True})
+        await db.commit()
+
+    await transitioned(db_path, OLD_USER, DriverState.NOT_SIGNED_UP)
 
     assert await _profile_count(db_path) == 1
-
-
-async def test_the_flag_is_set_through_a_past_account(tmp_path):
-    """Any account names the driver (issue #243), the test-mode command included."""
-    db_path = await _make_db(tmp_path)
-    await _seed_profile(db_path)
-    service = DriverService(db_path)
-    await service.reassign_user_id(OLD_USER, NEW_USER, ACTOR_ID, "Manager")
-
-    assert await service.set_former_driver(
-        OLD_USER, True, ACTOR_ID, "Manager"
-    ) == (False, True)
 
 
 # ---------------------------------------------------------------------------
@@ -531,9 +448,7 @@ async def test_a_re_key_rewrites_no_record_of_the_driver(tmp_path):
         await db.commit()
     before = await _every_other_row(db_path)
 
-    await DriverService(db_path).reassign_user_id(
-        OLD_USER, NEW_USER, ACTOR_ID, "Manager"
-    )
+    await reassigned(db_path, OLD_USER, NEW_USER)
 
     assert await _every_other_row(db_path) == before
 
@@ -542,9 +457,7 @@ async def test_a_re_key_keeps_the_old_account_listed(tmp_path):
     db_path = await _make_db(tmp_path)
     profile_id = await _seed_profile(db_path)
 
-    await DriverService(db_path).reassign_user_id(
-        OLD_USER, NEW_USER, ACTOR_ID, "Manager"
-    )
+    await reassigned(db_path, OLD_USER, NEW_USER)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -555,3 +468,32 @@ async def test_a_re_key_keeps_the_old_account_listed(tmp_path):
             (profile_id, OLD_USER),
             (profile_id, NEW_USER),
         ]
+
+
+async def test_drivers_are_listed_by_state_oldest_profile_first(tmp_path):
+    """Four drivers, two Unassigned, one Pending Signup Completion and one Assigned: asked for the
+    first two states, the three in them come back oldest profile first, each with its account and
+    state; asked for no state, none come back."""
+    from leaguebot.core.services.drivers.driver_service import drivers_in_states
+
+    path = str(tmp_path / "states.db")
+    await run_migrations(path)
+    async with get_connection(path) as db:
+        for pid, user, state in [
+            (1, "11", "UNASSIGNED"), (2, "22", "ASSIGNED"),
+            (3, "33", "PENDING_SIGNUP_COMPLETION"), (4, "44", "UNASSIGNED"),
+        ]:
+            await db.execute(
+                "INSERT INTO driver_profiles (id, discord_user_id, current_state) VALUES (?, ?, ?)",
+                (pid, user, state),
+            )
+        await db.commit()
+        listed = await drivers_in_states(db, ("UNASSIGNED", "PENDING_SIGNUP_COMPLETION"))
+        none = await drivers_in_states(db, ())
+
+    assert listed == [
+        {"id": 1, "discord_user_id": "11", "current_state": "UNASSIGNED"},
+        {"id": 3, "discord_user_id": "33", "current_state": "PENDING_SIGNUP_COMPLETION"},
+        {"id": 4, "discord_user_id": "44", "current_state": "UNASSIGNED"},
+    ]
+    assert none == []

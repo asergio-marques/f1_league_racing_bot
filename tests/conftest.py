@@ -21,17 +21,6 @@ drops each *passing* test's directory as it finishes — the count alone acts on
 end, and one run's accumulated scratch reached 817 MB and filled the tmpfs before it could.
 The template scratch below is the one thing pytest does not own, so `_sweep_stale_templates`
 sweeps it to the same schedule.
-
-**`BOT_TOKEN` is given a placeholder before any test module is collected.** The entry point,
-`src/leaguebot/__main__.py`, reads it with `os.environ["BOT_TOKEN"]` at import time, after
-`load_dotenv()`, so importing the module to reach one of its recovery sweeps raises without it. A
-development host has a gitignored `.env` that supplies a real one and hides the problem; a CI runner
-has neither, and every test file importing the entry point at module level then fails at
-collection, which aborts the whole run. It is set
-here, once, rather than in the test files, because a per-file default only helps files collected
-after it — which is how the suite passed locally and failed on both runners. `setdefault`, so a
-real token in the environment is left alone; nothing in the suite connects to Discord with it.
-Pinned by `tests/repository/test_suite_needs_no_dotenv.py`.
 """
 from __future__ import annotations
 
@@ -49,9 +38,6 @@ import pytest
 import pytest_asyncio
 
 from tests.support.connections import close_lent_connections
-
-# Before any test module is imported — see the module docstring.
-os.environ.setdefault("BOT_TOKEN", "not-a-real-token")
 
 
 def _refuse_another_checkouts_bot() -> None:
@@ -88,12 +74,13 @@ _TEMPLATE_SCRATCH: Path | None = None
 def _install_template_migrations() -> None:
     """Build the schema once and copy it, instead of migrating for every test.
 
-    `run_migrations` applies each of the migration files in turn and commits after every
-    one, so raising a schema costs upwards of forty flushes to disk. Nearly every fixture
-    in this suite raises one per test. Linux absorbs that — its flushes are nearly free —
-    and a Windows runner does not: the same suite took three minutes on `ubuntu-latest`
-    and was still at a third of the way after twenty on `windows-latest`, because there
-    every flush is a durable write past a virus scanner.
+    `run_migrations` applies each migration file, the baseline included, as one transaction
+    committed with its recorded version, after switching the file to WAL and making the table that
+    records the versions: a handful of flushes to disk for every schema raised, and nearly every
+    fixture in this suite raises one per test. Linux absorbs the flushes — they are nearly free
+    there — and a Windows runner does not, since every flush is a durable write past a virus
+    scanner. When the chain was forty-odd files, each committed apart, the suite took three minutes
+    on `ubuntu-latest` and was still a third of the way after twenty on `windows-latest`.
 
     So the migrations run once and the finished file is copied thereafter. Two cases must
     still migrate in earnest, and both are recognised rather than listed by name:
@@ -424,7 +411,7 @@ def _no_review_marks_carried_over():
     The marks are held in memory, by the id of the review's question (`season_review_changes.
     _PRESSES`), and the tests reuse the same ids against databases of their own: a press left
     under way by one test would otherwise refuse the next test's first press."""
-    from leaguebot.core.services.season_review_changes import forget_presses
+    from leaguebot.core.services.seasons.season_review_changes import forget_presses
 
     forget_presses()
     yield

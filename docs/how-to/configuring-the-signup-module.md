@@ -60,7 +60,7 @@ A driver's status lives on the driver, not on their signup form. "Reserve" is an
 
 The signup module can be switched on or off only while no season is live, or while the season is in configuration. Confirming the season's configuration fixes it, on or off, until that season ends — so decide before then.
 
-Nothing is configured yet. The bot creates an empty configuration record and tells you what to run next: `/signup channel`, which is step 2, and `/bot base-role` or `/bot driver-role` if either role is not set yet. The question settings are not written at this point at all — until you change one, the bot simply falls back to its defaults.
+It answers at once that it is turning the signup module on, and updates that reply once it has. Nothing is configured yet. The bot creates an empty configuration record and tells you what to run next: `/signup channel`, which is step 2, and `/bot base-role` or `/bot driver-role` if either role is not set yet. The question settings are not written at this point at all — until you change one, the bot simply falls back to its defaults.
 
 Turning the module off force-closes an open window, hands back the permissions it applied to your signup channel, and forgets your channel.
 
@@ -296,7 +296,7 @@ Then settle every one of them:
 
 `division` takes either the tier number or the division name; `team` takes the team's **shorthand**, which the command suggests as you type. These work only while the season is **in placements**, or mid-season while the drivers of a closed window are placed — the divisions have to exist first, and building them is core setup; see [Setting up the bot for your league](configuring-the-core-bot.md#step-8--build-the-season).
 
-**Every signup must be settled before placements are confirmed.** Place each Unassigned driver with `/driver assign`, or turn them down with `/driver reject`, which returns them to Not Signed Up and takes the driver role back; their signup stays with the season. A signup still in review is settled from its review panel. `/season placements-review` names anyone left, and withholds its button until nobody is.
+**Every signup must be settled before placements are confirmed.** Place each Unassigned driver with `/driver assign`, or turn them down with `/driver reject`, which returns them to Not Signed Up, takes the driver role back and withdraws the approval of their signup; the signup itself stays with the season. A signup still in review is settled from its review panel. `/season placements-review` names anyone left, and withholds its button until nobody is.
 
 A driver can hold one seat per division, and a team runs out of seats. The Reserve team is the exception: it has room for everyone.
 

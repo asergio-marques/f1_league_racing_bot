@@ -1,9 +1,11 @@
 """The hub's panel: the options modules register, and what a press on one does (issue #279).
 
-**The hub service names no option.** A module registers one, saying when it is offered and
-what a press does; core's one, About, is registered by `core/services/about_service.py` (#258) and
-tested there. A panel offering nothing says so. The tests register their own options against a
-registry emptied for each.
+**The hub service names no option.** The builder makes the bot's hub options and signs each
+module's up on them, saying when it is offered and what a press does; core's one, About, is
+defined by `core/services/modules/about_service.py` (#258) and tested there. A panel offering nothing says
+so. The tests sign their own options up on hub options of their own, made as the builder makes
+them, and hand them in where the builder and the start-up hand the bot's: to the panel, its view,
+a press, the refresh change and the restart. Nothing reads them off the bot.
 
 **A press is judged when it is made.** A panel can outlive the module that filled it — posted,
 then the module disabled — so the option is asked again at the press, and refused where it is
@@ -22,9 +24,9 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services import hub_service
-from leaguebot.core.services.config_service import ConfigService
-from leaguebot.core.services.hub_service import (
+from leaguebot.core.services.modules import hub_service
+from leaguebot.core.services.settings.config_service import ConfigService
+from leaguebot.core.services.modules.hub_service import (
     CUSTOM_ID_PREFIX,
     HubOption,
     HubPanelView,
@@ -32,19 +34,18 @@ from leaguebot.core.services.hub_service import (
     offered_options,
     reapply_hub_permissions,
     recover_hub,
-    register_option,
-    registered_options,
     render_panel,
 )
 from leaguebot.core.utils.league_server import LeagueView
 from tests.support.change_queue import (
     SERVER_ID as LEAGUE_SERVER_ID,
     Clock,
-    attach_queue,
     change_rows,
     http_error,
-    league_double,
+    league_bot,
+    league_queue,
     member_interaction,
+    register,
     retry_job,
     run_queue,
     seed_server,
@@ -55,10 +56,15 @@ from tests.support.change_queue import (
 from tests.support.mentions import NOBODY, notified
 
 
-@pytest.fixture(autouse=True)
-def empty_registry(monkeypatch):
-    """Each test starts from the registry as it ships: empty."""
-    monkeypatch.setattr(hub_service, "_OPTIONS", {})
+
+def _options(*options):
+    """The hub's options as the builder makes them, each of *options* signed up on them."""
+    from leaguebot.core.services.modules.hub_service import HubOptions
+
+    hub_options = HubOptions()
+    for option in options:
+        hub_options.register_option(option)
+    return hub_options
 
 
 def _option(key="licence", *, label="View licence", order=10, offered=None, respond=None):
@@ -91,66 +97,93 @@ def _interaction(client=None):
     return interaction
 
 
-# ── The registry ──────────────────────────────────────────────────────────
+# ── The options ───────────────────────────────────────────────────────────
 
 
 def test_the_hub_service_registers_no_option_itself():
-    """The service names no option. Core's one, About (#258), is registered by
-    `core/services/about_service.py`; every other is a module's. The fixture above clears the
-    registry, so this sees what `hub_service` alone would hold."""
-    assert registered_options() == []
+    """Neither the hub service nor About's module holds options at module level: neither has an
+    `_OPTIONS` or a `register_option` of its own, and no value either keeps at module level is hub
+    options, or a dict, list, tuple or set holding an option. Hub options newly made hold no
+    option. That the builder signs About up, and nothing else, is pinned in
+    `test_about_service.py`."""
+    from leaguebot.core.services.modules import about_service
+    from leaguebot.core.services.modules.hub_service import HubOptions
+
+    def holds_options(value):
+        if isinstance(value, HubOptions):
+            return True
+        if isinstance(value, dict):
+            value = list(value.values())
+        return isinstance(value, (list, tuple, set)) and any(
+            isinstance(item, HubOption) for item in value
+        )
+
+    for module in (hub_service, about_service):
+        assert not hasattr(module, "_OPTIONS"), module.__name__
+        assert not hasattr(module, "register_option"), module.__name__
+        assert [name for name, value in vars(module).items() if holds_options(value)] == []
+    assert HubOptions().registered_options() == []
 
 
 def test_options_are_ordered_by_their_order_then_their_key():
-    """Registration order is where a module happens to be imported; the panel should not
-    move because an import did."""
+    """The order options are signed up in is where the builder happens to sign each module up;
+    the panel should not move because that did."""
     late, early, tied = _option("zeta", order=20), _option("beta", order=5), _option("alpha", order=20)
-    for option in (late, early, tied):
-        register_option(option)
 
-    assert [o.key for o in registered_options()] == ["beta", "alpha", "zeta"]
+    hub_options = _options(late, early, tied)
+
+    assert [o.key for o in hub_options.registered_options()] == ["beta", "alpha", "zeta"]
 
 
 def test_two_options_may_not_share_a_key():
-    """The key routes the press: a second option under it would answer for the first."""
-    register_option(_option("licence"))
+    """The key routes the press: a second option under it, signed up on the same hub options,
+    would answer for the first, and is refused."""
+    hub_options = _options(_option("licence"))
 
     with pytest.raises(ValueError):
-        register_option(_option("licence", label="Something else"))
+        hub_options.register_option(_option("licence", label="Something else"))
 
 
 def test_registering_the_same_option_again_is_harmless():
-    """A module imported twice registers the same option twice, which the registry allows."""
+    """Signing the same option up twice on one hub options is allowed: only a second option
+    under one key is refused."""
     option = _option()
-    register_option(option)
-    register_option(option)
+    hub_options = _options(option)
+    hub_options.register_option(option)
 
-    assert registered_options() == [option]
+    assert hub_options.registered_options() == [option]
 
 
 async def test_only_the_options_offered_are_on_the_panel():
-    register_option(_option("on", offered=_offered(True)))
-    register_option(_option("off", offered=_offered(False)))
-    register_option(_option("always"))
+    """The panel carries the options of the hub options handed to it that are offered now."""
+    hub_options = _options(
+        _option("on", offered=_offered(True)),
+        _option("off", offered=_offered(False)),
+        _option("always"),
+    )
 
-    assert [o.key for o in await offered_options(MagicMock())] == ["always", "on"]
+    assert [o.key for o in await offered_options(MagicMock(), hub_options=hub_options)] == [
+        "always", "on"
+    ]
 
 
 # ── The panel ─────────────────────────────────────────────────────────────
 
 
 async def test_an_empty_panel_says_so_and_carries_no_buttons():
-    text, view = render_panel([])
+    """Hub options holding no option: the panel says nothing is offered, and has no view."""
+    text, view = render_panel([], hub_options=_options())
 
     assert "Nothing is offered here yet." in text
     assert view is None
 
 
 async def test_each_option_is_a_button_keyed_by_its_custom_id():
-    """The custom id is what survives a restart, so it is the key and nothing else."""
+    """The custom id is what survives a restart, so it is the key and nothing else. The panel is
+    drawn from two options, handed the hub options they are signed up on."""
     options = [_option("licence", label="View licence"), _option("about", label="About")]
 
-    text, view = render_panel(options)
+    text, view = render_panel(options, hub_options=_options(*options))
 
     assert "Press an option below." in text
     assert [(b.label, b.custom_id) for b in view.children] == [
@@ -161,8 +194,9 @@ async def test_each_option_is_a_button_keyed_by_its_custom_id():
 
 async def test_the_panel_is_persistent_and_refuses_other_servers():
     """No timeout, a custom id on every button, and the league-server check every view the
-    bot posts carries."""
-    view = HubPanelView([_option()])
+    bot posts carries. The view is built from one option, handed the hub options it is on."""
+    option = _option()
+    view = HubPanelView([option], hub_options=_options(option))
 
     assert view.timeout is None
     assert view.is_persistent()
@@ -173,9 +207,11 @@ async def test_the_panel_is_persistent_and_refuses_other_servers():
 
 
 async def test_a_press_is_answered_by_its_option():
+    """The option pressed is found on the hub options the view was handed, and answers the
+    press."""
     respond = AsyncMock()
-    register_option(_option("licence", respond=respond, offered=_offered(True)))
-    view = HubPanelView(registered_options())
+    option = _option("licence", respond=respond, offered=_offered(True))
+    view = HubPanelView([option], hub_options=_options(option))
     interaction = _interaction()
 
     await view.children[0].callback(interaction)
@@ -205,12 +241,10 @@ async def test_a_stale_press_is_recorded_in_the_log_channel(registered, named):
     label, or by its key where no module registers it any more; the member is answered exactly
     as before, and the option does not run. The first case is a panel posted while the module
     was on and disabled since; the second, a button left on a panel by a version of the bot
-    that offered it."""
+    that offered it, the hub options the view was handed holding no option under its key."""
     respond = AsyncMock()
     option = _option("licence", label="View licence", offered=_offered(False), respond=respond)
-    if registered:
-        register_option(option)
-    view = HubPanelView([option])
+    view = HubPanelView([option], hub_options=_options(option) if registered else _options())
     interaction = _interaction()
 
     await view.children[0].callback(interaction)
@@ -301,7 +335,7 @@ def _bot(db_path, guild):
 # reported in a line; the panel's id is saved by the job's record, with its mark; a hub not set
 # is not due. A stale press and the start-up ask for the refresh rather than making it.
 #
-# The league: `league_double`'s, its configuration read from the database, with the hub set to
+# The league: `league_bot`'s, its configuration read from the database, with the hub set to
 # channel 7900, which the league's server finds. Nothing of the change that is not built yet is
 # imported at the head of the file.
 
@@ -316,19 +350,25 @@ async def league(tmp_path):
     await run_migrations(path)
     await seed_server(path)
     await _configure(path, hub_channel_id=HUB)
-    bot = league_double(path)
-    bot.config_service = ConfigService(path)
-    from leaguebot.core.services.output_router import OutputRouter
-
-    bot.output_router = OutputRouter(bot, bot.config_service, retry_db_path=path)
+    bot = await league_bot(path, real_config=True)
     hub = text_channel(HUB)
     guild = MagicMock(spec=discord.Guild)
     guild.id = LEAGUE_SERVER_ID
     guild.get_channel = MagicMock(side_effect={HUB: hub}.get)
     bot.get_guild = MagicMock(return_value=guild)
-    bot.add_view = MagicMock()
-    attach_queue(bot, path, now=Clock(NOW))
+    league_queue(bot, path, now=Clock(NOW))
     return SimpleNamespace(db_path=path, bot=bot, hub=hub, guild=guild)
+
+
+def _offer(league, *options):
+    """Hub options with *options* alone signed up on them, and the league's `hub.refresh` built on
+    them in place of the builder's, which is built on the bot's (holding About): the panel the
+    queue posts carries these, and its buttons are handed them. Gives the hub options back."""
+    hub_options = _options(*options)
+    register(league.bot, hub_service.hub_refresh_change(
+        league.bot.change_queue, league.bot.config_service, hub_options=hub_options,
+    ))
+    return hub_options
 
 
 async def _ask_refresh(league, command="/module enable weather"):
@@ -355,11 +395,11 @@ def _log(league) -> str:
 
 
 async def test_a_standing_panel_is_edited_in_place(league):
-    """The panel stands in the hub; a refresh asked once an option is registered edits it in
-    place, with the option's button, and posts nothing new."""
+    """The panel stands in the hub; a refresh asked once an option is signed up on the hub options
+    the refresh is built on edits it in place, with the option's button, and posts nothing new."""
     standing = await league.hub.send("old panel")
     await _configure(league.db_path, hub_message_id=standing.id)
-    register_option(_option("licence"))
+    _offer(league, _option("licence"))
 
     await _ask_refresh(league)
     await run_queue(league.bot)
@@ -382,13 +422,14 @@ async def test_a_deleted_panel_is_posted_again(league):
 
 
 async def test_the_hub_panel_posted_or_edited_notifies_nobody(league):
-    """The hub is set and no panel stands: a refresh posts it. An option is registered and the
-    panel refreshed again: it is edited in place. Neither the post nor the edit notifies
-    anybody."""
+    """The hub is set, no panel stands and nothing is offered: a refresh posts it. An option is
+    signed up on the hub options the refresh is built on and the panel refreshed again: it is
+    edited in place. Neither the post nor the edit notifies anybody."""
+    hub_options = _offer(league)
     await _ask_refresh(league)
     await run_queue(league.bot)
     panel = league.hub.posted[0]
-    register_option(_option("licence"))
+    hub_options.register_option(_option("licence"))
     await _ask_refresh(league)
     await run_queue(league.bot)
 
@@ -398,11 +439,11 @@ async def test_the_hub_panel_posted_or_edited_notifies_nobody(league):
 
 
 async def test_a_hub_panel_emptied_of_options_loses_its_buttons(league):
-    """An option is registered and the panel posted with its button; the option then stops
-    being offered and the panel is refreshed through the queue. The panel says nothing is
-    offered and carries no view, so no old button is left under it."""
+    """The hub options the refresh is built on hold one option, and the panel is posted with
+    its button; the option then stops being offered and the panel is refreshed through the queue.
+    The panel says nothing is offered and carries no view, so no old button is left under it."""
     offered = _offered(True)
-    register_option(_option("licence", offered=offered))
+    _offer(league, _option("licence", offered=offered))
     await _ask_refresh(league)
     await run_queue(league.bot)
     panel = league.hub.posted[0]
@@ -446,24 +487,15 @@ async def test_a_hub_channel_gone_stops_the_queue_naming_the_command(league):
     assert league.hub.sent == []
 
 
-async def test_the_panel_s_id_is_saved_with_its_mark(league, monkeypatch):
-    """The hub is set and no panel stands; the refresh is asked and the queue run. The panel is
-    posted; its id is kept, so that the next refresh edits it in place rather than posting a
-    second, and is written in the refresh job's own save, with its mark, never by a commit of
-    the configuration service's own."""
-    written = []
-    own_commit = league.bot.config_service.set_core_setting
-
-    async def _spy(column, value):
-        written.append(column)
-        return await own_commit(column, value)
-
-    monkeypatch.setattr(league.bot.config_service, "set_core_setting", _spy)
-
+async def test_the_panel_s_id_is_saved_with_its_mark(league):
+    """The hub is set, no panel stands and the hub options the refresh is built on hold no
+    option; the refresh is asked and the queue run. The panel is posted; its id is kept, so that
+    the next refresh edits it in place rather than posting a second, and is written in the refresh
+    job's own save, with its mark."""
+    _offer(league)
     await _ask_refresh(league)
     await run_queue(league.bot)
 
-    assert "hub_message_id" not in written
     assert "Nothing is offered here yet." in league.hub.sent[0]
     assert await _stored_panel(league) == league.hub.posted[0].id
     [change] = await _refreshes(league)
@@ -483,8 +515,9 @@ async def test_a_hub_not_set_is_not_due(league):
 
 
 async def _panel_with(league, option):
-    """The panel posted through the queue with *option* offered; its view, as Discord holds it."""
-    register_option(option)
+    """The panel posted through the queue with *option* alone on the hub options the refresh is
+    built on, and offered; its view, as Discord holds it, handed those hub options."""
+    _offer(league, option)
     await _ask_refresh(league)
     await run_queue(league.bot)
     return league.hub.posted[0].view
@@ -534,7 +567,7 @@ async def test_with_no_base_role_every_member_sees_the_hub_and_none_posts(db_pat
     channel = _hub_channel()
     guild = _guild(channel)
 
-    assert await apply_hub_permissions(_bot(db_path, guild), guild, channel) is None
+    assert await apply_hub_permissions(ConfigService(db_path), guild, channel) is None
 
     everyone = _overwrites(channel)[guild.default_role]
     assert (everyone.view_channel, everyone.send_messages) == (True, False)
@@ -545,7 +578,7 @@ async def test_with_a_base_role_only_its_holders_see_the_hub(db_path):
     channel = _hub_channel()
     guild = _guild(channel)
 
-    await apply_hub_permissions(_bot(db_path, guild), guild, channel)
+    await apply_hub_permissions(ConfigService(db_path), guild, channel)
 
     overwrites = _overwrites(channel)
     assert overwrites[guild.default_role].view_channel is False
@@ -559,7 +592,7 @@ async def test_both_tier_roles_see_the_hub_and_neither_posts(db_path):
     channel = _hub_channel()
     guild = _guild(channel)
 
-    await apply_hub_permissions(_bot(db_path, guild), guild, channel)
+    await apply_hub_permissions(ConfigService(db_path), guild, channel)
 
     for role_id in (MANAGER_ROLE, ADMIN_ROLE):
         tier = _overwrites(channel)[guild._roles[role_id]]
@@ -574,7 +607,7 @@ async def test_a_deleted_base_role_keeps_the_hub_closed_and_says_so(db_path):
     channel = _hub_channel()
     guild = _guild(channel, roles=(MANAGER_ROLE, ADMIN_ROLE))
 
-    fault = await apply_hub_permissions(_bot(db_path, guild), guild, channel)
+    fault = await apply_hub_permissions(ConfigService(db_path), guild, channel)
 
     assert _overwrites(channel)[guild.default_role].view_channel is False
     assert f"id {BASE_ROLE}" in fault and "/bot base-role" in fault
@@ -583,16 +616,18 @@ async def test_a_deleted_base_role_keeps_the_hub_closed_and_says_so(db_path):
 async def test_permissions_are_applied_again_to_the_hub_set(db_path):
     await _configure(db_path, hub_channel_id=HUB)
     channel = _hub_channel()
+    bot = _bot(db_path, _guild(channel))
 
-    assert await reapply_hub_permissions(_bot(db_path, _guild(channel))) is None
+    assert await reapply_hub_permissions(bot, bot.config_service) is None
 
     channel.edit.assert_awaited_once()
 
 
 async def test_permissions_are_left_alone_while_no_hub_is_set(db_path):
     channel = _hub_channel()
+    bot = _bot(db_path, _guild(channel))
 
-    assert await reapply_hub_permissions(_bot(db_path, _guild(channel))) is None
+    assert await reapply_hub_permissions(bot, bot.config_service) is None
 
     channel.edit.assert_not_awaited()
 
@@ -602,14 +637,16 @@ async def test_permissions_are_left_alone_while_no_hub_is_set(db_path):
 
 async def test_a_restart_routes_every_registered_option_and_refreshes(league):
     """Every option, offered or not: a stale press is refused in words, not in silence. The
-    panel stands in the hub; after a restart every registered option's button is routed again,
-    and the panel's refresh is asked of the queue rather than made at once."""
+    panel stands in the hub; after a restart every option on the hub options handed to the
+    recovery has its button routed again, and the panel's refresh is asked of the queue rather
+    than made at once."""
     standing = await league.hub.send("old panel")
     await _configure(league.db_path, hub_message_id=standing.id)
-    register_option(_option("on", offered=_offered(True)))
-    register_option(_option("off", offered=_offered(False)))
+    hub_options = _offer(
+        league, _option("on", offered=_offered(True)), _option("off", offered=_offered(False))
+    )
 
-    await recover_hub(league.bot, queue=league.bot.change_queue)
+    await recover_hub(league.bot, queue=league.bot.change_queue, hub_options=hub_options)
 
     (view,), _ = league.bot.add_view.call_args
     assert sorted(b.custom_id for b in view.children) == ["hub:off", "hub:on"]
@@ -618,9 +655,11 @@ async def test_a_restart_routes_every_registered_option_and_refreshes(league):
 
 
 async def test_the_start_up_asks_for_the_panel_before_the_queue_starts(league):
-    """The hub is set and no panel stands. The start-up asks the queue for the panel, as the
-    bot's, and posts nothing itself; the panel is posted, and its id kept, once the queue runs."""
-    await recover_hub(league.bot, queue=league.bot.change_queue)
+    """The hub is set, no panel stands and the hub options handed to the start-up hold no option.
+    The start-up asks the queue for the panel, as the bot's, and posts nothing itself; the panel
+    is posted, and its id kept, once the queue runs."""
+    hub_options = _offer(league)
+    await recover_hub(league.bot, queue=league.bot.change_queue, hub_options=hub_options)
 
     assert league.hub.sent == []
     [change] = await _refreshes(league)
@@ -631,6 +670,8 @@ async def test_the_start_up_asks_for_the_panel_before_the_queue_starts(league):
 
 
 async def test_a_restart_with_no_option_registered_adds_no_view(league):
-    await recover_hub(league.bot, queue=league.bot.change_queue)
+    """The hub options handed to the start-up hold no option: a restart routes no view."""
+    hub_options = _offer(league)
+    await recover_hub(league.bot, queue=league.bot.change_queue, hub_options=hub_options)
 
     league.bot.add_view.assert_not_called()

@@ -5,8 +5,10 @@ It collected every other blocker and not this one — which was harmless only wh
 was dead (#131), and stopped being harmless the moment the gate started refusing: a season
 could review clean and then be refused for a fault the report had just said nothing about.
 
-Both surfaces read `_points_ordering_problems`, and the drift is what these pin. A copy of
-the logic in each would pass every test in this file on the day it was written and diverge
+Both surfaces read results' `season_points_service.points_ordering_problems`, through results'
+section of the placements review and results' refusals of a season's confirmation, and the drift
+is what these pin. A
+copy of the logic in each would pass every test in this file on the day it was written and diverge
 the first time either was touched.
 """
 from __future__ import annotations
@@ -16,7 +18,6 @@ from pathlib import Path
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from tests.support import saves
@@ -46,17 +47,13 @@ async def db_path(tmp_path):
     return path
 
 
-def _cog(db_path):
-    from unittest.mock import MagicMock
+async def _problems(db_path) -> list[str]:
+    """Every place the season's points would score a lower position above a higher one, the
+    gate handed the database alone (issue #240: a reader that grew a second dependency could not
+    be given one here)."""
+    from leaguebot.results.services import season_points_service
 
-    cog = SeasonCog.__new__(SeasonCog)
-    # ``MagicMock``, not ``AsyncMock`` (issue #240). The helper below reads nothing but
-    # ``db_path``, and this keeps it that way: on a whole-bot ``AsyncMock`` a reader that
-    # grew a second dependency would be answered with a truthy mock and go on passing,
-    # where here the unpinned ``await`` raises and says so.
-    cog.bot = MagicMock()
-    cog.bot.db_path = db_path
-    return cog
+    return await season_points_service.points_ordering_problems(db_path, SEASON_ID)
 
 
 async def _attach(db_path, config_name: str, points: list[tuple[int, int]]) -> None:
@@ -70,8 +67,16 @@ async def _attach(db_path, config_name: str, points: list[tuple[int, int]]) -> N
     )
 
 
+#: Where each surface lives: results' section of the placements review, and results' refusals of a
+#: season's confirmation, which the approval and the configuration's gate read through core's hook.
+_FILES = {
+    "review_section": "results/services/season_points_service.py",
+    "confirmation_refusals": "results/services/season_points_service.py",
+}
+
+
 def _function_source(name: str) -> str:
-    text = (SRC / "leaguebot" / "core" / "cogs" / "season_cog.py").read_text(encoding="utf-8")
+    text = (SRC / "leaguebot" / _FILES[name]).read_text(encoding="utf-8")
     tree = ast.parse(text)
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
@@ -87,7 +92,7 @@ def _function_source(name: str) -> str:
 async def test_a_well_built_table_raises_nothing(db_path):
     await _attach(db_path, "GOOD", [(1, 25), (2, 18), (3, 15)])
 
-    assert await _cog(db_path)._points_ordering_problems(SEASON_ID) == []
+    assert await _problems(db_path) == []
 
 
 @pytest.mark.asyncio
@@ -95,7 +100,7 @@ async def test_a_table_the_season_has_not_copied_yet_is_still_found(db_path):
     """The whole of #131: the season's own table is empty until approval copies into it."""
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
 
-    faults = await _cog(db_path)._points_ordering_problems(SEASON_ID)
+    faults = await _problems(db_path)
 
     assert len(faults) == 1
     assert "BROKEN" in faults[0]
@@ -115,7 +120,7 @@ async def test_entries_left_by_an_earlier_approval_are_found_too(db_path):
             )
         await db.commit()
 
-    faults = await _cog(db_path)._points_ordering_problems(SEASON_ID)
+    faults = await _problems(db_path)
 
     assert any("GONE" in fault for fault in faults)
 
@@ -125,7 +130,7 @@ async def test_a_fault_visible_from_both_sides_is_named_once(db_path):
     await _attach(db_path, "BROKEN", [(1, 10), (2, 25)])
     await snapshot_points(db_path, SEASON_ID)
 
-    faults = await _cog(db_path)._points_ordering_problems(SEASON_ID)
+    faults = await _problems(db_path)
 
     assert len(faults) == 1
 
@@ -134,44 +139,22 @@ async def test_a_fault_visible_from_both_sides_is_named_once(db_path):
 
 
 def test_the_review_asks_the_helper_rather_than_the_services_itself():
-    source = _function_source("season_review")
+    source = _function_source("review_section")
 
-    assert "_points_ordering_problems" in source
+    assert "points_ordering_problems(" in source
     for own_check in ("validate_attached_config_ordering", "validate_monotonic_ordering"):
         assert own_check not in source, (
-            f"season_review calls {own_check} directly — a second copy of the rule, free "
+            f"results' review section calls {own_check} directly — a second copy of the rule, free "
             f"to drift from the one the approval refuses on"
         )
 
 
 def test_the_approval_gate_asks_the_same_helper():
-    source = _function_source("_do_approve")
+    source = _function_source("confirmation_refusals")
 
-    assert "_points_ordering_problems" in source
+    assert "points_ordering_problems(" in source
     for own_check in ("validate_attached_config_ordering", "validate_monotonic_ordering"):
         assert own_check not in source, (
-            f"_do_approve calls {own_check} directly — the report and the refusal can "
+            f"results' refusals call {own_check} directly — the report and the refusal can "
             f"now disagree about the same season"
         )
-
-
-def test_the_review_withholds_the_approve_button_on_a_points_fault():
-    """Reporting it and then offering the button anyway would be the worse half-measure."""
-    source = _function_source("season_review")
-
-    assert "not points_faults" in source, (
-        "the approval prompt is posted without consulting the points faults"
-    )
-
-
-def test_the_points_faults_get_their_own_refusal_rather_than_the_image_one():
-    """`approval_blockers` is reported as "the image module is not correctly configured".
-
-    Folding a points fault into that list would name the wrong thing to fix, and send a
-    manager looking at templates and artwork over a points table.
-    """
-    source = _function_source("season_review")
-
-    assert "This season's points tables are out of order" in source
-    assert "The image module is not correctly configured" in source
-    assert "Points tables out of order" in source, "and it is shown in the report, not only on refusal"

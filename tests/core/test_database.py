@@ -1,4 +1,5 @@
-"""Integration tests for database.py — migration runner and connection helper."""
+"""Integration tests for database.py: the migration runner, each file applied whole with its keys
+checked and its version recorded in the same save, and the connections it lends."""
 
 from __future__ import annotations
 
@@ -6,6 +7,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import shutil
 import sqlite3
 
 import aiosqlite
@@ -115,15 +117,152 @@ async def test_a_database_from_before_the_baseline_is_refused_untouched(tmp_path
 
 
 def test_the_baseline_is_the_only_migration() -> None:
-    """#254 squashed the chain into one file. Until go-live a schema change edits it; from
-    go-live on this test is updated to admit each new, numbered migration after it."""
+    """#254 squashed the chain into one file, and until go-live a schema change edits it. What
+    this test becomes at go-live is listed under "At go-live" in `run_migrations`' docstring."""
     from leaguebot.core.db import database
 
     files = sorted(
         f for f in os.listdir(database._MIGRATIONS_DIR)
         if f.endswith(".sql") and not f.startswith("__")
     )
-    assert files == ["001_baseline.sql"]
+    assert files == ["001_baseline.sql"], (
+        "a migration beside the baseline: see \"At go-live\" in run_migrations' docstring"
+    )
+
+
+async def _migrated_with(tmp_path, monkeypatch, files: dict[str, str]) -> str:
+    """A database holding the baseline, with the migrations pointed at a directory holding the
+    baseline beside *files* (name to text), so the next `run_migrations` applies those alone.
+
+    The target holds the baseline already, so `tests/conftest.py`'s substitute hands it to the
+    real runner rather than copying its template over it.
+    """
+    from leaguebot.core.db import database
+
+    db_path = str(tmp_path / "bot.db")
+    await run_migrations(db_path)
+    migrations = tmp_path / "migrations"
+    migrations.mkdir()
+    shutil.copyfile(
+        os.path.join(database._MIGRATIONS_DIR, "001_baseline.sql"), migrations / "001_baseline.sql"
+    )
+    for name, sql in files.items():
+        (migrations / name).write_text(sql, encoding="utf-8")
+    monkeypatch.setattr(database, "_MIGRATIONS_DIR", str(migrations))
+    return db_path
+
+
+def _tables_and_versions(db_path: str) -> tuple[set[str], set[str]]:
+    """The test's own tables (named ``s4_...``) in *db_path*, and the versions it records."""
+    db = sqlite3.connect(db_path)
+    try:
+        tables = {
+            row[0] for row in db.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name GLOB 's4_*'"
+            )
+        }
+        versions = {row[0] for row in db.execute("SELECT version FROM schema_migrations")}
+    finally:
+        db.close()
+    return tables, versions
+
+
+_TWO_TABLES = [
+    "CREATE TABLE s4_first (id INTEGER PRIMARY KEY);",
+    "CREATE TABLE s4_second (id INTEGER PRIMARY KEY);",
+    "INSERT INTO s4_first (id) VALUES (1);",
+]
+_FAILS = "INSERT INTO s4_nowhere (id) VALUES (1);"
+
+
+@pytest.mark.parametrize(
+    "failing",
+    [
+        pytest.param(0, id="at its first statement"),
+        pytest.param(-1, id="at its last statement"),
+    ],
+)
+async def test_a_migration_failing_part_way_leaves_nothing_and_no_record(
+    tmp_path, monkeypatch, failing
+) -> None:
+    """A migration file is applied whole or not at all (architecture.md, "A database update is
+    applied whole, or not at all"): a file failing at any statement leaves none of its tables and
+    no record of itself, so the file corrected applies cleanly on the next start."""
+    broken = list(_TWO_TABLES)
+    broken[failing] = _FAILS
+    db_path = await _migrated_with(tmp_path, monkeypatch, {"002_s4.sql": "\n".join(broken)})
+
+    with pytest.raises(sqlite3.OperationalError, match="s4_nowhere"):
+        await run_migrations(db_path)
+
+    tables, versions = _tables_and_versions(db_path)
+    assert tables == set()
+    assert "002_s4.sql" not in versions
+
+    (tmp_path / "migrations" / "002_s4.sql").write_text("\n".join(_TWO_TABLES), encoding="utf-8")
+    await run_migrations(db_path)
+
+    tables, versions = _tables_and_versions(db_path)
+    assert tables == {"s4_first", "s4_second"}
+    assert "002_s4.sql" in versions
+
+
+async def test_a_migration_leaving_a_dangling_key_is_refused(tmp_path, monkeypatch) -> None:
+    """A migration that leaves a row pointing at a parent that does not exist is refused by name,
+    naming the table, and leaves nothing of itself applied or recorded. A file runs with the keys
+    off, so the database itself takes the dangling insert; the runner's check before the commit
+    is what refuses it."""
+    from leaguebot.core.db.database import MigrationBreaksForeignKeys
+
+    db_path = await _migrated_with(tmp_path, monkeypatch, {"002_s4.sql": """
+        CREATE TABLE s4_parent (id INTEGER PRIMARY KEY);
+        CREATE TABLE s4_child (
+            id        INTEGER PRIMARY KEY,
+            parent_id INTEGER NOT NULL REFERENCES s4_parent(id)
+        );
+        INSERT INTO s4_child (id, parent_id) VALUES (1, 7);
+    """})
+
+    with pytest.raises(MigrationBreaksForeignKeys, match="s4_child"):
+        await run_migrations(db_path)
+
+    tables, versions = _tables_and_versions(db_path)
+    assert tables == set()
+    assert "002_s4.sql" not in versions
+
+
+async def test_rebuilding_a_parent_table_keeps_its_cascaded_children(tmp_path, monkeypatch) -> None:
+    """A table rebuilt by SQLite's procedure (create the new table, copy the rows, drop the old,
+    rename the new into place) keeps the rows of a table linked to it ``ON DELETE CASCADE``: the
+    drop must not delete them."""
+    db_path = await _migrated_with(tmp_path, monkeypatch, {"002_s4.sql": """
+        CREATE TABLE s4_parent (id INTEGER PRIMARY KEY);
+        CREATE TABLE s4_child (
+            id        INTEGER PRIMARY KEY,
+            parent_id INTEGER NOT NULL REFERENCES s4_parent(id) ON DELETE CASCADE
+        );
+        INSERT INTO s4_parent (id) VALUES (1), (2);
+        INSERT INTO s4_child (id, parent_id) VALUES (10, 1), (11, 1), (20, 2);
+    """})
+    await run_migrations(db_path)
+    (tmp_path / "migrations" / "003_s4_rebuild.sql").write_text("""
+        CREATE TABLE s4_parent_new (id INTEGER PRIMARY KEY, name TEXT NOT NULL DEFAULT '');
+        INSERT INTO s4_parent_new (id) SELECT id FROM s4_parent;
+        DROP TABLE s4_parent;
+        ALTER TABLE s4_parent_new RENAME TO s4_parent;
+    """, encoding="utf-8")
+
+    await run_migrations(db_path)
+
+    db = sqlite3.connect(db_path)
+    try:
+        children = db.execute("SELECT id, parent_id FROM s4_child ORDER BY id").fetchall()
+        parents = {row[2] for row in db.execute("PRAGMA foreign_key_list(s4_child)")}
+    finally:
+        db.close()
+    assert children == [(10, 1), (11, 1), (20, 2)]
+    assert parents == {"s4_parent"}
+    assert "003_s4_rebuild.sql" in _tables_and_versions(db_path)[1]
 
 
 @pytest.mark.asyncio

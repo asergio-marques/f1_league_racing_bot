@@ -137,11 +137,11 @@ async def _invoke(command, cog: AttendanceCog, interaction, *args) -> None:
 
 @pytest.fixture(autouse=True)
 def audit(monkeypatch) -> AsyncMock:
-    """Any audit entry the cog writes itself, caught rather than written: these tests have no
-    database. The setters' entry is `set_setting`'s to write, beside the value (#482), so a
-    setter that writes one of its own here writes it twice."""
+    """Any audit entry written through core's audit service, caught rather than written: these
+    tests have no database. The setters' entry is `set_setting`'s to write, beside the value
+    (#482), so a setter that writes one of its own here writes it twice."""
     record = AsyncMock(return_value=None)
-    monkeypatch.setattr("leaguebot.core.services.audit_service.record_change", record)
+    monkeypatch.setattr("leaguebot.core.services.queue.audit_service.record_change_on", record)
     return record
 
 

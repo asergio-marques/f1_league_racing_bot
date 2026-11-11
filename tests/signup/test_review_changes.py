@@ -630,17 +630,16 @@ async def test_a_restart_asks_the_lapse_of_each_driver_awaiting_a_choice(tmp_pat
     `signup.correction.lapse` of each, as the bot on the league lane, before the queue starts,
     posting nothing; a restart releases every driver awaiting a choice. When the queue runs both
     are back awaiting approval."""
-    from leaguebot.signup.services.wizard_service import WizardService
+    from tests.support.season_league import wizard_service
 
     league = await _league(tmp_path, state="AWAITING_CORRECTION_PARAMETER",
                            offered_ago=timedelta(minutes=10))
     await _signed_up(league, OTHER, state="AWAITING_CORRECTION_PARAMETER",
                      offered_ago=timedelta(minutes=1))
-    wizards = WizardService(
-        league.db_path, league.bot.scheduler_service, league.bot.output_router,
+    wizards = wizard_service(
+        league.bot, league.db_path, league.bot.scheduler_service, league.bot.output_router,
         change_queue=league.bot.change_queue,
     )
-    wizards.set_bot(league.bot)
 
     await wizards.recover_correction_timeouts()
 

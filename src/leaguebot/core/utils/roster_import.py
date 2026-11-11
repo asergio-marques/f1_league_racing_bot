@@ -11,7 +11,7 @@ when the import lands on a clean season. That is a fragile thing for the sibling
 depend on, and they depend on it entirely: a results file naming driver
 9000000000000000007 means nothing if the bot seated that driver as 9000000000000000009.
 So the import writes the IDs the file states, and the CSV is authoritative rather than
-hopeful (decided 2026-09-07).
+hopeful.
 
 Pure and synchronous — no `discord`, no database. The division, the team and the
 nationality are carried through as written and resolved by the caller, which is what lets
@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from leaguebot.core.utils.input_validator import NAME, parse_user_id
 
 #: The floor for a synthetic driver ID, mirroring `_SYNTHETIC_ID_BASE` in
-#: `core/services/test_roster_service.py`. An ID below it is a real Discord snowflake — or a
+#: `core/services/test_mode/test_roster_service.py`. An ID below it is a real Discord snowflake — or a
 #: mistyped one — and seating a real user's id as a mock driver is the one mistake this
 #: import must not make quietly.
 SYNTHETIC_ID_BASE = 9_000_000_000_000_000_000
@@ -152,3 +152,21 @@ def divisions_named(drivers: list[ParsedDriver]) -> list[str]:
         if driver.division_name not in ordered:
             ordered.append(driver.division_name)
     return ordered
+
+
+def format_roster_errors(errors: list[str]) -> str:
+    """One shape for every refusal, capped so a systematically wrong file still replies.
+
+    A file whose every row is wrong produces one fault per row, and fifty-one of them
+    exceed Discord's 2000-character limit — which refuses the whole message rather than
+    truncating it, leaving the manager with no reply at all.
+    """
+    shown = errors[:15]
+    lines = [
+        f"⛔ The roster was not imported — {len(errors)} problem(s). "
+        f"**No drivers were added.**"
+    ]
+    lines += [f"• {problem}" for problem in shown]
+    if len(errors) > len(shown):
+        lines.append(f"…and {len(errors) - len(shown)} more.")
+    return "\n".join(lines)

@@ -1,7 +1,8 @@
 """Winding a season down on the change queue (#439, slice 5).
 
 A season in an ongoing stage whose every division is done is wound down by a change of its own:
-`wind_down` closes the signup window first; `turn_down` then turns the season's pending
+signup's `close_window` closes the signup window first, where signup is on and its window open,
+and is dropped otherwise; `turn_down` then turns the season's pending
 placements down, moves the season on to Pending completion and writes its line, all in one save;
 then each driver turned down has a job of their own: a signup in review is told (`signup_notice`)
 before their channel is locked (`close_signup`), and an approved driver loses the driver role
@@ -17,7 +18,7 @@ from __future__ import annotations
 import json
 import re
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import discord
 import pytest
@@ -41,7 +42,9 @@ from tests.support.season_league import (
     SEASON_ID,
     SIGNING_UP,
     SIGNUP_CHANNEL_BASE,
+    UNASSIGNED,
     WIND_DOWN_KIND,
+    approved_unplaced,
     driver_state,
     pending_completion_league,
     signing_up,
@@ -116,7 +119,7 @@ async def _stopped_at(league: Any) -> tuple[str, int | None] | None:
 async def test_the_turn_down_and_the_move_to_pending_completion_are_one_save(tmp_path):
     league = await _league(tmp_path)
     await _ask(league)
-    from leaguebot.core.services import season_lifecycle_service
+    from leaguebot.core.services.seasons import season_lifecycle_service
 
     with patch.object(season_lifecycle_service, "advance_to_pending_completion_on",
                       side_effect=RuntimeError("the move failed")):
@@ -171,40 +174,96 @@ async def test_the_turned_down_line_is_written_with_the_save(tmp_path):
 
 async def test_each_turned_down_driver_has_a_job_of_their_own(tmp_path):
     """Every division is done with Max's and Charles's placements pending, a driver (105) in
-    review, and signups already shut: the driver in review is told and has their channel locked,
-    the two approved drivers turned down lose the driver role while Lewis keeps it, and the line
-    says only that the pending placements were turned down, with no claim that signups
-    closed."""
+    review, Valtteri (106) approved and never placed, and signups already shut: signup's close of
+    the window comes first and finds nothing to close, then the season is moved on; the driver in
+    review is told and has their channel locked, the three approved drivers turned down lose the
+    driver role while Lewis keeps it, each driver's jobs together and the drivers in the order
+    the save returns them (Max, Charles, 105, Valtteri), and the line says only that the pending
+    placements were turned down, with no claim that signups closed."""
     league = await _league(tmp_path)
     await signing_up(league)
+    await approved_unplaced(league)
     await _ask(league)
     await run_queue(league.bot)
     jobs = await _jobs(league)
-    assert jobs[:2] == [("wind_down", None), ("turn_down", None)]
-    assert sorted(jobs[2:]) == sorted([
-        ("signup_notice", SIGNING_UP), ("close_signup", SIGNING_UP),
+    assert jobs[:2] == [("close_window", None), ("turn_down", None)]
+    assert jobs[2:] == [
         ("take_driver_role", MAX), ("take_driver_role", CHARLES),
-    ])
-    assert jobs.index(("signup_notice", SIGNING_UP)) < jobs.index(("close_signup", SIGNING_UP))
-    assert [uid for uid, _notice in league.notices] == [SIGNING_UP]
+        ("signup_notice", SIGNING_UP), ("close_signup", SIGNING_UP),
+        ("take_driver_role", UNASSIGNED),
+    ]
+    assert league.notices == [(SIGNING_UP, "🔒 Every division of this season is done, so its "
+                                           "signups are closed. This channel will be "
+                                           "automatically deleted in 24 hours.")]
     assert league.locked == [SIGNING_UP]
-    assert league.revoked == {MAX: [DRIVER_ROLE], CHARLES: [DRIVER_ROLE]}
+    assert league.revoked == {MAX: [DRIVER_ROLE], CHARLES: [DRIVER_ROLE],
+                              UNASSIGNED: [DRIVER_ROLE]}
     assert LEWIS not in league.revoked
-    for user_id in (SIGNING_UP, MAX, CHARLES):
+    for user_id in (SIGNING_UP, MAX, CHARLES, UNASSIGNED):
         assert await driver_state(league, user_id) == "NOT_SIGNED_UP"
     assert await _stage(league) == "PENDING_COMPLETION"
     assert not league.errors, league.errors
     lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
-    assert any("System | Every division is done | Pending placements turned down: 3" in line
+    assert any("System | Every division is done | Pending placements turned down: 4" in line
                for line in lines), lines
     assert not any("Signups closed" in line for line in lines)
 
 
+async def _approved(league: Any, user_id: int) -> int:
+    """How many of driver *user_id*'s signups are approved."""
+    rows = await league.rows(
+        "SELECT COUNT(*) AS n FROM signup_records WHERE discord_user_id = ? AND approved = 1",
+        str(user_id),
+    )
+    return rows[0]["n"]
+
+
+async def test_the_wind_down_withdraws_the_approval_of_each_approved_driver_it_turns_down(tmp_path):
+    """The core specification: the wind-down turns each pending placement down as the reject
+    command would; and the signup specification: a signup ceases to be approved when the approved
+    driver is turned down. The signup module is on; every division is done with Max's and
+    Charles's placements pending (Assigned, uncommitted), Lewis's committed, Valtteri (106)
+    approved and never placed, and Kimi (105) in review, his signup for an earlier season (2)
+    approved. Lewis's, Max's and Valtteri's signups for this season are approved. The wind-down
+    runs. Max and Valtteri, approved drivers turned down, no longer have an approved signup, each
+    withdrawn through core's driver-turned-down hook in the wind-down's save; Kimi, turned down
+    while his signup was still in review, keeps his earlier season's approval; and Lewis, whose
+    placement stands, keeps his."""
+    league = await _league(tmp_path)
+    await league.switch("signup", True)
+    await signing_up(league)
+    await approved_unplaced(league)
+    await league.write(
+        "INSERT INTO seasons (id, season_number, start_date, status) "
+        "VALUES (6, 2, '2026-01-01', 'COMPLETED')"
+    )
+    await league.write(
+        "INSERT INTO signup_records (season_id, discord_user_id, server_display_name, approved) "
+        "VALUES (6, ?, 'Kimi', 1)",
+        str(SIGNING_UP),
+    )
+    await league.write(
+        "UPDATE signup_records SET approved = 1 WHERE season_id = ? AND discord_user_id IN "
+        "(?, ?, ?)",
+        SEASON_ID, str(LEWIS), str(MAX), str(UNASSIGNED),
+    )
+    await _ask(league)
+    await run_queue(league.bot)
+
+    assert await _stage(league) == "PENDING_COMPLETION"
+    for user_id in (MAX, UNASSIGNED, SIGNING_UP):
+        assert await driver_state(league, user_id) == "NOT_SIGNED_UP"
+    assert [await _approved(league, user_id) for user_id in (MAX, UNASSIGNED, SIGNING_UP, LEWIS)] \
+        == [0, 0, 1, 1]
+
+
 async def test_a_plain_ongoing_season_is_moved_on_with_no_driver_job(tmp_path):
+    """A season Ongoing, every division done and signups shut: signup's close of the window finds
+    nothing to close, the season is moved on to Pending completion, and no driver has a job."""
     league = await pending_completion_league(tmp_path, stage="ONGOING")
     await _ask(league)
     await run_queue(league.bot)
-    assert [name for name, _user in await _jobs(league)] == ["wind_down", "turn_down"]
+    assert [name for name, _user in await _jobs(league)] == ["close_window", "turn_down"]
     assert await _stage(league) == "PENDING_COMPLETION"
     assert league.revoked == {}
 
@@ -439,11 +498,6 @@ def _logged(text: str) -> str:
     return re.sub(r"(<@&?\d+>)", r"`\1`", text)
 
 
-async def _owed(league: Any) -> list[str]:
-    """The accounts still owed their closing notice, as signup keeps them."""
-    return await league.bot.signup_module_service.owed_closing_notices()
-
-
 def _killed_after_the_window_is_recorded_closed(league: Any) -> None:
     """The process is killed straight after the window's close has recorded the window closed:
     once, before the close's audit is written and before the job's mark or any result of its is
@@ -469,7 +523,7 @@ async def test_a_window_close_cut_off_by_a_kill_after_the_window_is_recorded_clo
     """The bot is killed in `post_closed`'s record straight after it writes the window closed,
     before its save commits: the window is still open. When the bot starts again, driver 105,
     whom the wind-down's close had returned, is told once, then their channel locked; the season
-    is moved on to Pending completion, and 105 is owed nothing more."""
+    is moved on to Pending completion."""
     league = await _league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     _killed_after_the_window_is_recorded_closed(league)
@@ -491,7 +545,6 @@ async def test_a_window_close_cut_off_by_a_kill_after_the_window_is_recorded_clo
         ("notice", SIGNING_UP), ("lock", SIGNING_UP),
     ]
     assert await _stage(league) == "PENDING_COMPLETION"
-    assert await _owed(league) == []
 
 
 async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_wind_down_returned(
@@ -503,7 +556,7 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     locked, by their own jobs, and no line names them as returned but not told. One log line
     says the signup window could not be closed and to close it with `/signup close`, and none
     that signups closed, nor is the window's close audited; the window is still recorded open,
-    the season moved on to Pending completion, and 105 is owed nothing more."""
+    and the season moved on to Pending completion."""
     league = await _league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     league.close_fails = RuntimeError("the window could not be recorded closed")
@@ -528,20 +581,13 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
                    for line in league.bot.log_channel.sent + await queued_log_lines(league.db_path))
     assert await window_open(league)
     assert await _stage(league) == "PENDING_COMPLETION"
-    assert await _owed(league) == []
 
 
 async def test_the_turn_down_marks_a_turned_down_signup_over_in_its_save(tmp_path):
     """Driver 105 is correcting their signup (Pending Driver Correction, their wizard in a
-    correction step) when the wind-down turns the season's pending placements down. Without
-    the hooks the builder hands it, `turn_down` refuses to turn a signup down
-    (`RuntimeError`) before it writes anything: what it wrote is committed, and the database,
-    read afresh, holds no turn-down. With them, 105's wizard is unengaged in `turn_down`'s own
-    save, before any job of theirs runs, and a restart then arms no inactivity job for them and
-    expires nothing."""
-    from leaguebot.core.db.database import get_connection
-    from leaguebot.core.services.season_lifecycle_service import TURN_DOWN_STEP, wind_down_steps
-
+    correction step) when the wind-down turns the season's pending placements down. 105's wizard
+    is unengaged in `turn_down`'s own save, before any job of theirs runs, and a restart then arms
+    no inactivity job for them and expires nothing."""
     league = await _league(tmp_path)
     await signing_up(league, state="PENDING_DRIVER_CORRECTION")
     await league.write(
@@ -549,19 +595,6 @@ async def test_the_turn_down_marks_a_turned_down_signup_over_in_its_save(tmp_pat
         "WHERE discord_user_id = ?",
         str(SIGNING_UP),
     )
-
-    unhooked = wind_down_steps(None)[TURN_DOWN_STEP]
-    async with get_connection(league.db_path) as db:
-        with pytest.raises(RuntimeError, match="a wind-down is run with the hooks the builder"):
-            try:
-                await unhooked.run(db, MagicMock())
-            finally:
-                # Whatever the step wrote before it refused is saved, so that the reads below,
-                # each on a connection of its own, would see it.
-                await db.commit()
-    assert await _pending(league) == 2
-    assert await driver_state(league, SIGNING_UP) == "PENDING_DRIVER_CORRECTION"
-    assert await wizard_state(league, SIGNING_UP) == "COLLECTING_NATIONALITY"
 
     await _ask(league)
     for _ in range(50):
@@ -575,6 +608,55 @@ async def test_the_turn_down_marks_a_turned_down_signup_over_in_its_save(tmp_pat
 
     await run_queue(league.bot)
     assert await wizards_recovered(league) == {"armed": [], "expired": []}
+
+
+async def test_a_module_s_part_of_the_turn_down_s_save_runs_on_that_save_s_connection(tmp_path):
+    """Driver 105 (Kimi) in review when the wind-down turns the season's pending placements down.
+    A further module signs up to the drivers a season's end returns. Its part is called once, in
+    `turn_down`'s one save, with that save's own connection, `turn_down` not yet done: what it
+    writes on it is unseen elsewhere while the save stands open, and is saved with it. It is
+    handed the drivers turned down, 105 among them, already Not Signed Up on that
+    connection while another connection still reads them in review."""
+    from leaguebot.core.db.database import get_connection
+
+    league = await _league(tmp_path)
+    await signing_up(league)
+    await league.write("CREATE TABLE written_by_a_module (part TEXT)")
+    seen: list[tuple[Any, ...]] = []
+
+    async def _written(db: Any, part: str) -> tuple[bool, bool]:
+        """Write *part* on *db*; whether another connection sees nothing written yet, and
+        whether `turn_down` reads as done there."""
+        await db.execute("INSERT INTO written_by_a_module (part) VALUES (?)", (part,))
+        async with get_connection(league.db_path) as other:
+            cursor = await other.execute("SELECT COUNT(*) FROM written_by_a_module")
+            [elsewhere] = await cursor.fetchone()
+        done = any(row["name"] == "turn_down" and row["done_at"]
+                   for row in await step_rows(league.db_path))
+        return elsewhere == 0, done
+
+    async def _returned(db: Any, drivers: Any, *_rest: Any) -> None:
+        cursor = await db.execute(
+            "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?",
+            (str(SIGNING_UP),),
+        )
+        found = await cursor.fetchone()
+        unseen, done = await _written(db, "returned")
+        seen.append(("returned", str(SIGNING_UP) in repr(drivers),
+                     found is not None and found[0] == "NOT_SIGNED_UP",
+                     await driver_state(league, SIGNING_UP) == "PENDING_ADMIN_APPROVAL",
+                     unseen, done))
+
+    league.bot.drivers_returned.subscribe(_returned)
+    await _ask(league)
+
+    await run_queue(league.bot)
+
+    assert seen == [
+        ("returned", True, True, True, True, False),
+    ]
+    rows = await league.rows("SELECT part FROM written_by_a_module ORDER BY rowid")
+    assert [row["part"] for row in rows] == ["returned"]
 
 
 def _channel_gone(league: Any, user_id: int = SIGNING_UP) -> None:

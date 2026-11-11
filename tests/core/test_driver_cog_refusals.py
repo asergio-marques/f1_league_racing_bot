@@ -4,7 +4,11 @@ The rule is the core specification's "The record of what changed": a refusal is 
 line naming the member, what was refused and why. Each case below turns a league manager away at
 one of the driver cog's own checks, and expects today's reply, seen by them alone, and exactly one
 standard refusal line. `/driver reassign`'s stage refusal goes through the shared season gate,
-which already records it, and is not a case here.
+which already records it, and is not a case here. `/driver assign`, `unassign`, `move`, `release`,
+`sack` and `reassign` are changes on the queue (#283), whose refusals beyond the cog's own are the
+change's, pinned with their lines against a real database in `test_driver_assign.py`,
+`test_driver_unassign.py`, `test_driver_move.py`, `test_driver_release.py`, `test_sack_driver.py`
+and `test_driver_reassign.py`.
 """
 from __future__ import annotations
 
@@ -17,8 +21,8 @@ import pytest
 from leaguebot.core.cogs.driver_cog import DriverCog
 from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services.season_service import SeasonImmutableError
-from leaguebot.core.services.team_service import TeamReference
+from leaguebot.core.services.seasons.season_service import SeasonImmutableError
+from leaguebot.core.services.drivers.team_service import TeamReference
 from tests.support.teams import resolves_as_typed
 from tests.support.undecorate import undecorate
 
@@ -125,13 +129,6 @@ def _placed(bot):
     )
 
 
-def _service_refuses(name: str, reason: str):
-    def setup(bot):
-        service = bot.driver_service if name == "reassign_user_id" else bot.placement_service
-        setattr(service, name, AsyncMock(side_effect=ValueError(reason)))
-    return setup
-
-
 def _past_account_gone(bot):
     """Racer's account is a past one, and the driver's current account has left the server."""
     bot.driver_service.current_account = AsyncMock(return_value="9999")
@@ -154,12 +151,6 @@ _CASES = {
         lambda cog, i: undecorate(DriverCog.reassign)(cog, i, _driver(), None, None),
         None,
         "You must supply either `old_user`",
-    ),
-    "reassign refused by the service": (
-        "driver reassign",
-        lambda cog, i: undecorate(DriverCog.reassign)(cog, i, _driver(), _driver(), None),
-        _service_refuses("reassign_user_id", "That account is already a driver's."),
-        "That account is already a driver's.",
     ),
     "assign past account gone": (
         "driver assign",
@@ -197,12 +188,6 @@ _CASES = {
         _no_profile,
         "No driver profile found for **Racer**",
     ),
-    "assign refused by the service": (
-        "driver assign",
-        lambda cog, i: undecorate(DriverCog.assign)(cog, i, _driver(), "Pro", "Reserve"),
-        _service_refuses("assign_driver", "**Reserve** has no available seats."),
-        "**Reserve** has no available seats.",
-    ),
     "unassign not placing": (
         "driver unassign",
         lambda cog, i: undecorate(DriverCog.unassign)(cog, i, _driver(), "Pro"),
@@ -226,12 +211,6 @@ _CASES = {
         lambda cog, i: undecorate(DriverCog.unassign)(cog, i, _driver(), "Pro"),
         _no_profile,
         "No driver profile found for **Racer**",
-    ),
-    "unassign refused by the service": (
-        "driver unassign",
-        lambda cog, i: undecorate(DriverCog.unassign)(cog, i, _driver(), "Pro"),
-        _service_refuses("unassign_driver", "Racer holds no seat in Pro."),
-        "Racer holds no seat in Pro.",
     ),
     "move not ongoing": (
         "driver move",
@@ -263,12 +242,6 @@ _CASES = {
         _no_profile,
         "No driver profile found for **Racer**",
     ),
-    "move refused by the service": (
-        "driver move",
-        lambda cog, i: undecorate(DriverCog.move)(cog, i, _driver(), "Pro", "Reserve", None),
-        _service_refuses("move_driver", "**Reserve** in this division has no available seats."),
-        "**Reserve** in this division has no available seats.",
-    ),
     "release not ongoing": (
         "driver release",
         lambda cog, i: undecorate(DriverCog.release)(cog, i, _driver(), "Pro"),
@@ -286,12 +259,6 @@ _CASES = {
         lambda cog, i: undecorate(DriverCog.release)(cog, i, _driver(), "Pro"),
         _no_profile,
         "No driver profile found for **Racer**",
-    ),
-    "release refused by the service": (
-        "driver release",
-        lambda cog, i: undecorate(DriverCog.release)(cog, i, _driver(), "Pro"),
-        _service_refuses("release_driver", "That is the driver's only seat."),
-        "That is the driver's only seat.",
     ),
     "reject not placing": (
         "driver reject",
@@ -317,18 +284,6 @@ _CASES = {
         _no_profile,
         "No driver profile found for **Racer**",
     ),
-    "sack refused by the service": (
-        "driver sack",
-        lambda cog, i: undecorate(DriverCog.sack)(cog, i, _driver()),
-        _service_refuses("sack_driver", "Racer has no seat to sack them from."),
-        "Racer has no seat to sack them from.",
-    ),
-}
-
-#: The whole of today's reply, where a case pins it word for word, mark included.
-_EXACT_REPLIES = {
-    "move refused by the service": "⛔ **Reserve** in this division has no available seats.",
-    "release refused by the service": "⛔ That is the driver's only seat.",
 }
 
 
@@ -351,7 +306,5 @@ async def test_a_refusal_of_the_driver_cog_is_recorded_in_the_log_channel(case):
     assert len(sent) == 1 and sent[0].kwargs.get("ephemeral") is True
     reply = sent[0].args[0]
     assert phrase in reply
-    if case in _EXACT_REPLIES:
-        assert reply == _EXACT_REPLIES[case]
     lines = [call.args[0] for call in cog.bot.output_router.post_log.await_args_list]
     assert lines == [f"⛔ `/{command}` refused for Alex (<@{MANAGER_ID}>) — {_reason(reply)}"]

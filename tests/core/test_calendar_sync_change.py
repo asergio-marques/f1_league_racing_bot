@@ -19,6 +19,7 @@ import pytest
 
 from leaguebot.core.models.change import ChangeOrigin
 from leaguebot.core.models.season import SeasonStage, status_of_stage
+from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
 from tests.support.change_queue import (
     change_rows,
     discard_job,
@@ -48,7 +49,7 @@ PRO_CALENDAR = DIVISIONS[PRO][3].calendar
 async def _sync(league: Any, name: str = "Pro") -> Any:
     """Run `/division calendar-sync` for *name* as admin 77; the queue is not run. Gives the
     interaction, its acknowledgement's message able to be edited."""
-    from leaguebot.core.cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.division_cog import DivisionCog
 
     interaction = member_interaction(
         league.bot, user=tier_member("admin", member_id=ADMIN_ID, display_name="Admin"),
@@ -56,7 +57,7 @@ async def _sync(league: Any, name: str = "Pro") -> Any:
     interaction.guild = league.guild
     interaction.command = SimpleNamespace(qualified_name="division calendar-sync")
     interaction.followup.send.return_value = MagicMock(edit=AsyncMock())
-    await undecorate(SeasonCog.division_calendar_sync)(league.cog, interaction, name)
+    await undecorate(DivisionCog.division_calendar_sync)(league.division_cog, interaction, name)
     return interaction
 
 
@@ -92,7 +93,7 @@ async def _retried_posts(league: Any) -> list[dict[str, Any]]:
 
 
 def _calendar_texts(league: Any) -> list[str]:
-    from leaguebot.core.services.calendar_post_service import calendar_heading
+    from leaguebot.core.services.rounds.calendar_post_service import calendar_heading
 
     return [text for text in league.texts(PRO_CALENDAR) if calendar_heading("Pro") in text]
 
@@ -101,7 +102,7 @@ async def _queue_stopped_ahead(league: Any) -> None:
     """A change of the bot's, asked before anything else, whose job Discord refuses: the queue
     stops at it, and whatever is asked after it waits."""
     from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord, StepKind, Verdict
-    from leaguebot.core.services.change_queue import ChangeType, Step
+    from leaguebot.core.services.queue.change_types import ChangeType, Step
 
     async def _refused(_ctx: Any) -> Any:
         raise StepFailedOnDiscord("Missing Access")
@@ -121,23 +122,11 @@ async def _queue_stopped_ahead(league: Any) -> None:
 
 
 def _pictures_on(league: Any, monkeypatch: Any, tmp_path: Any) -> list[str]:
-    """Images on with the calendar aspect, the calendar drawn as a PNG; gives the divisions
-    drawn, one entry per drawing."""
-    from leaguebot.core.services import calendar_post_service
-
-    league.bot.image_config_service.is_aspect_enabled = AsyncMock(
-        side_effect=lambda aspect: aspect == "calendar"
-    )
-    drawn: list[str] = []
-
-    async def _draw(_bot: Any, division: Any, *_args: Any, **_kwargs: Any) -> Any:
-        drawn.append(division.name)
-        png = tmp_path / f"calendar-{len(drawn)}.png"
-        png.write_bytes(b"\x89PNG")
-        return SimpleNamespace(problem=None, notices=[], png_paths=[png])
-
-    monkeypatch.setattr(calendar_post_service, "render_calendar_image", _draw)
-    return drawn
+    """The league draws its calendar, as a PNG, through the drawing the builder handed the
+    calendar job; gives the divisions drawn, one entry per drawing."""
+    png = tmp_path / "calendar.png"
+    png.write_bytes(b"\x89PNG")
+    return draw_calendars_with(league.bot, monkeypatch, CalendarDrawingStub(picture=png)).drawn
 
 
 async def test_a_calendar_sync_is_acknowledged_and_updated_with_its_outcome(tmp_path):
@@ -220,16 +209,9 @@ async def test_a_calendar_sync_whose_render_fails_posts_nothing_and_says_the_old
     tmp_path, monkeypatch,
 ):
     """A commanded posting: the render failing posts nothing and deletes nothing (XIV.7)."""
-    from leaguebot.core.services import calendar_post_service
-
     league = await ongoing_league(tmp_path, images=True)
-    league.bot.image_config_service.is_aspect_enabled = AsyncMock(
-        side_effect=lambda aspect: aspect == "calendar"
-    )
-    monkeypatch.setattr(
-        calendar_post_service, "render_calendar_image",
-        AsyncMock(side_effect=RuntimeError("the template has no rows")),
-    )
+    draw_calendars_with(league.bot, monkeypatch,
+                        CalendarDrawingStub(fault=RuntimeError("the template has no rows")))
 
     interaction = await _sync(league)
     await run_queue(league.bot)

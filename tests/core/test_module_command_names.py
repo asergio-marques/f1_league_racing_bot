@@ -29,7 +29,7 @@ from discord import app_commands
 from discord.ext import commands as discord_commands
 
 from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
-from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.cogs.division_cog import DivisionCog
 from leaguebot.results.cogs.results_cog import ResultsCog
 from leaguebot.weather.cogs.weather_cog import WeatherCog
 
@@ -218,10 +218,20 @@ def test_no_old_name_is_left(old):
     assert old not in DECLARED, f"/{old} is still declared, by {DECLARED[old][0].__name__}"
 
 
-@pytest.mark.parametrize("name", CORE_CHANNEL_COMMANDS)
-def test_core_keeps_its_own_two_channel_commands(name):
-    """The lineup and calendar channels are every season's, so they stay core's."""
+@pytest.mark.parametrize(
+    "name,description",
+    [
+        ("division lineup-channel", "Set the lineup posting channel for a division."),
+        ("division calendar-channel", "Set the calendar posting channel for a division."),
+    ],
+    ids=CORE_CHANNEL_COMMANDS,
+)
+def test_core_keeps_its_own_two_channel_commands(name, description):
+    """The lineup and calendar channels are every season's, so they stay core's, and a league
+    reading Discord's command list is told so: neither names a module, since no module gates
+    either."""
     assert name in DECLARED, f"no cog declares /{name}"
     cog, command = DECLARED[name]
-    assert cog is SeasonCog
+    assert cog is DivisionCog
     assert isinstance(command, app_commands.Command)
+    assert command.description == description

@@ -21,29 +21,32 @@ moment somebody turned the module back on, against a season that had moved on.
 off is `ATTENDANCE_MODULE_DISABLED`; attendance going off because Results & Standings did is
 `ATTENDANCE_MODULE_CASCADE_DISABLED`. The distinction matters because the second was nobody's
 decision, and a league reading its log needs to see that. Both go through
-`AttendanceService.switch_off_on`, on a connection the caller hands it: the plain disable commits
-it with its own audit, and the cascade is a part of turning Results & Standings off, saved with the
-switch-off on the change queue (#439), where it has no interaction of its own to answer.
+`AttendanceService.switch_off_on`, on a connection the caller hands it: the plain disable is
+attendance's own change on the change queue (#283), saved with its audit, and the cascade is a part
+of turning Results & Standings off, saved with the switch-off on the change queue (#439), where it
+has no interaction of its own to answer.
 
-**Enabling signup writes a bare configuration row and then names the three commands that fill
-it in.** A module enabled with nothing configured does nothing at all, and the next steps are
-the difference between a league proceeding and a league wondering what happened.
+**Enabling signup writes a bare configuration row where none stands and then names the commands
+that fill it in:** `/signup channel`, and whichever of `/bot base-role` and `/bot driver-role` the
+league has not yet set. A module enabled with nothing configured does nothing at all, and the next
+steps are the difference between a league proceeding and a league wondering what happened.
 """
 from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
 from leaguebot.attendance.services.attendance_service import AttendanceService
 from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.config_service import ConfigService
+from leaguebot.core.services.settings.config_service import ConfigService
 from tests.support.change_queue import (
-    attach_queue,
-    league_double,
+    MEMBER_ID,
+    league_bot,
+    league_queue,
     member,
     member_interaction,
     queued_log_lines,
@@ -93,57 +96,6 @@ async def _make_db(tmp_path, *, attendance_divisions: int = 0) -> str:
     return db_path
 
 
-def _make_cog(
-    db_path: str,
-    *,
-    images_enabled: bool = True,
-    attendance_enabled: bool = True,
-    signup_enabled: bool = True,
-) -> ModuleCog:
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.config_service = ConfigService(db_path)
-    bot.module_service = MagicMock()
-    bot.module_service.is_images_enabled = AsyncMock(return_value=images_enabled)
-    bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
-    bot.module_service.is_signup_enabled = AsyncMock(return_value=signup_enabled)
-    bot.module_service.set_images_enabled = AsyncMock(return_value=None)
-    bot.module_service.set_signup_enabled = AsyncMock(return_value=None)
-    bot.signup_module_service = MagicMock()
-    bot.signup_module_service.save_config = AsyncMock(return_value=None)
-    bot.attendance_service = AttendanceService(db_path)
-    bot.output_router = MagicMock()
-    bot.output_router.post_log = AsyncMock(return_value=None)
-
-    cog = ModuleCog.__new__(ModuleCog)
-    cog.bot = bot
-    return cog
-
-
-def _interaction():
-    interaction = MagicMock()
-    interaction.guild_id = SERVER_ID
-    interaction.user = MagicMock()
-    interaction.user.id = ACTOR_ID
-    interaction.user.display_name = "Admin"
-    interaction.user.__str__ = lambda self: "Admin#0001"  # type: ignore[assignment]
-    interaction.response = MagicMock()
-    interaction.response.send_message = AsyncMock()
-    interaction.response.defer = AsyncMock()
-    interaction.followup = MagicMock()
-    interaction.followup.send = AsyncMock()
-    return interaction
-
-
-def _replied(interaction) -> str:
-    return "\n".join(
-        str(call.args[0])
-        for call in interaction.response.send_message.await_args_list
-        + interaction.followup.send.await_args_list
-        if call.args
-    )
-
-
 async def _audit_types(db_path: str) -> list[str]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -162,22 +114,17 @@ async def _division_configs(db_path: str) -> int:
 
 async def _turn_results_off_with_the_cascade(db_path: str):
     """Results & Standings on, attendance on: the admin confirms turning results off with the
-    cascade, on the bot as the builder makes it, and the change queue runs to the end. No hub is
+    cascade, on the league's bot (`league_bot`), and the change queue runs to the end. No hub is
     set, so the refresh the switch-off asks finds nothing to post."""
-    from leaguebot.core.services.module_service import ModuleService
-    from leaguebot.core.services.season_service import SeasonService
 
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT OR REPLACE INTO results_module_config (id, module_enabled) VALUES (1, 1)"
         )
         await db.commit()
-    bot = league_double(db_path)
+    bot = await league_bot(db_path)
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-    bot.module_service = ModuleService(db_path)
-    bot.season_service = SeasonService(db_path)
-    bot.attendance_service = AttendanceService(db_path)
-    attach_queue(bot, db_path, now=NOW)
+    league_queue(bot, db_path, now=NOW)
     cog = ModuleCog.__new__(ModuleCog)
     cog.bot = bot
     view = _ConfirmDisableResultsView(cog, ACTOR_ID, cascade_attendance=True)
@@ -201,60 +148,108 @@ async def _attendance_flag(db_path: str) -> int:
 # ---------------------------------------------------------------------------
 
 
+# Images' switch is image's own change on the change queue (#283, S11c): `/module disable images`
+# asks `module.off:images`, the member is acknowledged at once, and the queue carries it out.
+# Each test drives the command's handler on the bot the entry point builds, with the real queue
+# and "now" pinned, and runs the queue.
+
+
+async def _images_league(tmp_path, *, on: bool = True):
+    """A league whose settings run on the queue, the image module *on* (with its default
+    configuration) or off, the module cog over its bot, and `/module disable` as Admin."""
+    from tests.support.settings_league import interaction, settings_league
+
+    league = await settings_league(tmp_path, modules=("images",) if on else ())
+    return league, ModuleCog(league.bot), interaction(league.bot, "module disable")
+
+
 async def test_disabling_images_clears_the_flag(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    """The member is acknowledged at once, and once the change has run the module is off."""
+    from tests.support.change_queue import acknowledgement
 
-    await cog._disable_images(interaction)
+    league, cog, asked = await _images_league(tmp_path)
 
-    cog.bot.module_service.set_images_enabled.assert_awaited_once_with(False)
+    await cog._disable_images(asked)
+    assert acknowledgement(asked).startswith("⏳ Turning the image module off. ")
+    await run_queue(league.bot)
+
+    assert await league.bot.module_service.is_images_enabled() is False
 
 
 async def test_disabling_images_keeps_the_configuration(tmp_path):
     """The Principle X.6 exception, and the reason no `--preserve-config` flag exists. No
     image config value names a channel, role, message or job, so none can go stale — a
     reader making the three disables uniform would clear a league's whole image setup for
-    no reason."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
-    interaction = _interaction()
+    no reason. The reply says the configuration is kept and that every aspect reverts to text,
+    which is what a league will actually notice, and it and the Success line keep today's
+    words; `tests/image/test_image_module_flow.py` pins the configuration surviving."""
+    from tests.support.settings_league import last_said, log_lines
 
-    await cog._disable_images(interaction)
+    league, cog, asked = await _images_league(tmp_path)
 
-    replied = _replied(interaction)
-    assert "configuration is kept" in replied
-    assert "re-enabling restores it exactly" in replied
+    await cog._disable_images(asked)
+    await run_queue(league.bot)
 
-
-async def test_disabling_images_says_what_happens_to_the_output(tmp_path):
-    """Every aspect reverts to text, which is what a league will actually notice."""
-    db_path = await _make_db(tmp_path)
-    interaction = _interaction()
-
-    await _make_cog(db_path)._disable_images(interaction)
-
-    assert "reverts to text output" in _replied(interaction)
+    assert last_said(asked) == (
+        "✅ Image module disabled. Every aspect reverts to text output.\n"
+        "Your configuration is kept — re-enabling restores it exactly."
+    )
+    assert await log_lines(league) == [
+        f"Admin (`<@{MEMBER_ID}>`) | /module disable images | Success"
+    ]
 
 
 async def test_disabling_images_twice_does_no_work(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, images_enabled=False)
-    interaction = _interaction()
+    """Refused at once: nothing is queued and nothing audited."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import last_said
 
-    await cog._disable_images(interaction)
+    league, cog, asked = await _images_league(tmp_path, on=False)
 
-    assert "already disabled" in _replied(interaction)
-    cog.bot.module_service.set_images_enabled.assert_not_awaited()
-    assert await _audit_types(db_path) == []
+    await cog._disable_images(asked)
+
+    assert "already disabled" in last_said(asked)
+    assert await change_rows(league.db_path) == []
+    assert await _audit_types(league.db_path) == []
+
+
+async def test_an_image_disable_that_cannot_be_written_leaves_the_module_on(tmp_path):
+    """The flag and the audit entry are one save, so a fault at the audit leaves the module on.
+    The member gets the standard failure reply, saying nothing was saved and what to run again,
+    in place of today's 'It may have been partly done'; the log channel gets the one failure
+    line, and never a success."""
+    from tests.support.settings_league import last_said, log_lines
+
+    league, cog, asked = await _images_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "CREATE TRIGGER refuse_the_audit BEFORE INSERT ON audit_entries "
+            "BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
+        )
+        await db.commit()
+
+    await cog._disable_images(asked)
+    await run_queue(league.bot)
+
+    assert await league.bot.module_service.is_images_enabled() is True
+    assert last_said(asked) == (
+        "❌ `/module disable` stopped on a fault in the bot, not on anything you entered, and "
+        "did not finish. Nothing was saved. Run `/module disable images` again to retry. The "
+        "fault is recorded in the log channel."
+    )
+    assert await log_lines(league) == [
+        f"❌ `/module disable` failed for Admin (`<@{MEMBER_ID}>`) — IntegrityError. "
+        "The details are in the host's log."
+    ]
 
 
 async def test_disabling_images_is_audited(tmp_path):
-    db_path = await _make_db(tmp_path)
+    league, cog, asked = await _images_league(tmp_path)
 
-    await _make_cog(db_path)._disable_images(_interaction())
+    await cog._disable_images(asked)
+    await run_queue(league.bot)
 
-    assert await _audit_types(db_path) == ["IMAGE_MODULE_DISABLED"]
+    assert await _audit_types(league.db_path) == ["IMAGE_MODULE_DISABLED"]
 
 
 # ---------------------------------------------------------------------------
@@ -262,45 +257,127 @@ async def test_disabling_images_is_audited(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+# Attendance's switch-off is attendance's own change on the change queue (#283, S11d): `/module
+# disable attendance` asks `module.off:attendance`, the member is acknowledged at once, and the
+# queue carries it out. Each test drives the command's handler on the bot the entry point builds,
+# with the real queue and "now" pinned, and runs the queue.
+
+#: Admin as the league's log lines name them.
+NAMED = f"Admin (`<@{MEMBER_ID}>`)"
+
+
+async def _attendance_league(tmp_path, *, on: bool = True, divisions: int = 0):
+    """A league whose settings run on the queue, Results & Standings on and attendance *on* or
+    off, *divisions* divisions of an active season each with its own RSVP channel bound, the
+    module cog over its bot, and `/module disable` as Admin."""
+    from tests.support.settings_league import interaction, settings_league
+
+    league = await settings_league(
+        tmp_path, modules=("results", "attendance") if on else ("results",)
+    )
+    if divisions:
+        async with get_connection(league.db_path) as db:
+            await db.execute(
+                "INSERT INTO seasons (id, season_number, start_date, status) "
+                "VALUES (1, 1, '2026-01-01', 'ACTIVE')"
+            )
+            for index in range(1, divisions + 1):
+                await db.execute(
+                    "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
+                    "VALUES (?, 1, ?, ?, ?)",
+                    (index, f"Division {index}", index, 500 + index),
+                )
+                await db.execute(
+                    "INSERT INTO attendance_division_config "
+                    "(division_id, rsvp_channel_id) VALUES (?, ?)",
+                    (index, str(700000 + index)),
+                )
+            await db.commit()
+    return league, ModuleCog(league.bot), interaction(league.bot, "module disable")
+
+
 async def test_disabling_attendance_clears_the_flag(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path)
+    """The member is acknowledged at once, and once the change has run the module is off, and
+    the reply and the Success line keep today's words."""
+    from tests.support.change_queue import acknowledgement
+    from tests.support.settings_league import last_said, log_lines
 
-    await cog._disable_attendance(_interaction())
+    league, cog, asked = await _attendance_league(tmp_path)
 
-    assert await _attendance_flag(db_path) == 0
+    await cog._disable_attendance(asked)
+    assert acknowledgement(asked).startswith("⏳ Turning the attendance module off. ")
+    await run_queue(league.bot)
+
+    assert await _attendance_flag(league.db_path) == 0
+    assert last_said(asked) == "✅ Attendance module disabled."
+    assert await log_lines(league) == [f"{NAMED} | /module disable attendance | Success"]
 
 
 async def test_disabling_attendance_clears_its_division_channels(tmp_path):
     """Those are stale bindings: a channel recorded against a division for a module that
     is off would have the bot posting into it the moment it came back on, against a season
     that had moved along."""
-    db_path = await _make_db(tmp_path, attendance_divisions=2)
-    cog = _make_cog(db_path)
-    assert await _division_configs(db_path) == 2
+    league, cog, asked = await _attendance_league(tmp_path, divisions=2)
+    assert await _division_configs(league.db_path) == 2
 
-    await cog._disable_attendance(_interaction())
+    await cog._disable_attendance(asked)
+    await run_queue(league.bot)
 
-    assert await _division_configs(db_path) == 0
+    assert await _division_configs(league.db_path) == 0
 
 
 async def test_disabling_attendance_twice_does_no_work(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, attendance_enabled=False)
-    interaction = _interaction()
+    """Refused at once: nothing is queued and nothing audited."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import last_said
 
-    await cog._disable_attendance(interaction)
+    league, cog, asked = await _attendance_league(tmp_path, on=False)
 
-    assert "already disabled" in _replied(interaction)
-    assert await _audit_types(db_path) == []
+    await cog._disable_attendance(asked)
+
+    assert "already disabled" in last_said(asked)
+    assert await change_rows(league.db_path) == []
+    assert await _audit_types(league.db_path) == []
 
 
 async def test_a_manager_s_disable_is_audited_as_their_decision(tmp_path):
-    db_path = await _make_db(tmp_path)
+    league, cog, asked = await _attendance_league(tmp_path)
 
-    await _make_cog(db_path)._disable_attendance(_interaction())
+    await cog._disable_attendance(asked)
+    await run_queue(league.bot)
 
-    assert await _audit_types(db_path) == ["ATTENDANCE_MODULE_DISABLED"]
+    assert await _audit_types(league.db_path) == ["ATTENDANCE_MODULE_DISABLED"]
+
+
+async def test_an_attendance_disable_that_cannot_be_written_leaves_the_module_on(tmp_path):
+    """The switch-off and its audit entry are one save, so a fault at the audit leaves the module
+    on and its division channels bound. The member gets the standard failure reply, saying
+    nothing was saved and what to run again, and the log channel gets the one failure line, and
+    never a success."""
+    from tests.support.settings_league import last_said, log_lines
+
+    league, cog, asked = await _attendance_league(tmp_path, divisions=1)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "CREATE TRIGGER refuse_the_audit BEFORE INSERT ON audit_entries "
+            "BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
+        )
+        await db.commit()
+
+    await cog._disable_attendance(asked)
+    await run_queue(league.bot)
+
+    assert await _attendance_flag(league.db_path) == 1
+    assert await _division_configs(league.db_path) == 1
+    assert last_said(asked) == (
+        "❌ `/module disable` stopped on a fault in the bot, not on anything you entered, and "
+        "did not finish. Nothing was saved. Run `/module disable attendance` again to retry. The "
+        "fault is recorded in the log channel."
+    )
+    assert await log_lines(league) == [
+        f"❌ `/module disable` failed for {NAMED} — IntegrityError. "
+        "The details are in the host's log."
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -366,71 +443,163 @@ async def test_a_cascade_is_still_logged_to_the_league(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+# Signup's switch-on is signup's own change on the change queue (#283, S11e): `/module enable
+# signup` asks `module.on:signup`, the member is acknowledged at once, and the queue carries it out;
+# its switch-off is `module.off:signup` already. Each test drives the command's handler on the bot
+# the entry point builds, with the real queue and "now" pinned, and runs the queue.
+
+#: The fault reply of a signup switch-on that could not be saved, word for word.
+SIGNUP_STILL_OFF = (
+    "❌ `/module enable` stopped on a fault in the bot, not on anything you entered, and did not "
+    "finish. The module is still off. Run `/module enable signup` again once the fault is "
+    "cleared. The fault is recorded in the log channel."
+)
+
+
+async def _signup_league(tmp_path, verb: str = "enable", *, on: bool = False):
+    """A league whose settings run on the queue, the signup module *on* or off with no
+    configuration row, core's server configuration read from the database (no base role or
+    driver role set), the module cog over its bot, and `/module <verb>` as Admin."""
+    from tests.support.settings_league import interaction, settings_league
+
+    league = await settings_league(tmp_path, modules=("signup",) if on else ())
+    league.bot.config_service.get_server_config = ConfigService(league.db_path).get_server_config
+    return league, ModuleCog(league.bot), interaction(league.bot, f"module {verb}")
+
+
+async def _signup_config(db_path: str) -> dict | None:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT * FROM signup_module_config")
+        row = await cursor.fetchone()
+    return None if row is None else dict(row)
+
+
 async def test_enabling_signup_writes_a_bare_configuration(tmp_path):
-    """So the `/signup …` commands have a row to update. Without it every one of them
-    would be a silent no-op against nothing."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, signup_enabled=False)
+    """So the `/signup …` commands have a row to update. Without it every one of them would be a
+    silent no-op against nothing. The member is acknowledged at once; once the change has run the
+    module is on, its configuration names no channel and holds the window closed, and the log
+    channel has the one Success line."""
+    from tests.support.change_queue import acknowledgement
+    from tests.support.settings_league import log_lines
 
-    await cog._enable_signup(_interaction())
+    league, cog, asked = await _signup_league(tmp_path)
 
-    cog.bot.signup_module_service.save_config.assert_awaited_once()
-    saved = cog.bot.signup_module_service.save_config.await_args.args[0]
-    assert saved.signup_channel_id is None
-    assert saved.signups_open is False
+    await cog._enable_signup(asked)
+    assert acknowledgement(asked).startswith("⏳ Turning the signup module on. ")
+    await run_queue(league.bot)
+
+    assert await league.bot.module_service.is_signup_enabled() is True
+    config = await _signup_config(league.db_path)
+    assert config is not None
+    assert config["signup_channel_id"] is None
+    assert not config["signups_open"]
+    assert config["signup_button_message_id"] is None
+    assert await _audit_types(league.db_path) == ["MODULE_ENABLE"]
+    assert await log_lines(league) == [f"{NAMED} | /module enable signup | Success"]
+
+
+async def test_re_enabling_signup_keeps_a_standing_row(tmp_path):
+    """A configuration row standing while the module is off (a restored database could hold one)
+    is kept, not replaced by a bare one: the switch-on creates only what is missing. The signup
+    channel it names is still named once the module is on again."""
+    league, cog, asked = await _signup_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO signup_module_config (id, signup_channel_id, signups_open) "
+            "VALUES (1, 620, 0)"
+        )
+        await db.commit()
+
+    await cog._enable_signup(asked)
+    await run_queue(league.bot)
+
+    assert await league.bot.module_service.is_signup_enabled() is True
+    config = await _signup_config(league.db_path)
+    assert config is not None and str(config["signup_channel_id"]) == "620"
 
 
 async def test_enabling_signup_names_the_three_commands_that_follow(tmp_path):
     """A module enabled with nothing configured does nothing at all, and these are the
-    difference between a league proceeding and a league wondering what happened."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, signup_enabled=False)
-    interaction = _interaction()
+    difference between a league proceeding and a league wondering what happened. With neither
+    role set, the reply names all three, word for word."""
+    from tests.support.settings_league import last_said
 
-    await cog._enable_signup(interaction)
+    league, cog, asked = await _signup_league(tmp_path)
 
-    replied = _replied(interaction)
-    for command in ("/signup channel", "/bot base-role", "/bot driver-role"):
-        assert command in replied
+    await cog._enable_signup(asked)
+    await run_queue(league.bot)
+
+    assert last_said(asked) == (
+        "✅ Signup module enabled.\n"
+        "Next steps — configure with:\n"
+        "  • `/signup channel <channel>`\n"
+        "  • `/bot base-role <role>`\n"
+        "  • `/bot driver-role <role>`"
+    )
 
 
 async def test_enabling_signup_does_not_ask_for_roles_the_league_already_set(tmp_path):
     """The two roles are the league's (issue #276) and outlive the module, so a league
     re-enabling signup has them already; naming them would send it to redo work."""
-    db_path = await _make_db(tmp_path)
-    async with get_connection(db_path) as db:
+    from tests.support.settings_league import last_said
+
+    league, cog, asked = await _signup_league(tmp_path)
+    async with get_connection(league.db_path) as db:
         await db.execute("UPDATE server_configs SET base_role_id = 1, driver_role_id = 2")
         await db.commit()
-    cog = _make_cog(db_path, signup_enabled=False)
-    interaction = _interaction()
 
-    await cog._enable_signup(interaction)
+    await cog._enable_signup(asked)
+    await run_queue(league.bot)
 
-    replied = _replied(interaction)
-    assert "/signup channel" in replied
-    assert "/bot base-role" not in replied
-    assert "/bot driver-role" not in replied
+    assert last_said(asked) == (
+        "✅ Signup module enabled.\n"
+        "Next steps — configure with:\n"
+        "  • `/signup channel <channel>`"
+    )
 
 
 async def test_enabling_signup_twice_does_no_work(tmp_path):
-    """A second enable would overwrite the configuration with a bare one, losing the
-    channel and roles the league had already set."""
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, signup_enabled=True)
-    interaction = _interaction()
+    """A second enable would do the switch-on's work again: a second audit entry for a module
+    already on. Refused at once: nothing is queued, nothing audited, the configuration is left as
+    it stands, and the refusal reaches the log channel."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import last_said, log_lines
 
-    await cog._enable_signup(interaction)
+    league, cog, asked = await _signup_league(tmp_path, on=True)
 
-    assert "already enabled" in _replied(interaction)
-    cog.bot.signup_module_service.save_config.assert_not_awaited()
-    assert await _audit_types(db_path) == []
+    await cog._enable_signup(asked)
+
+    assert last_said(asked) == "⚠️ Signup module is already enabled."
+    assert await change_rows(league.db_path) == []
+    assert await _audit_types(league.db_path) == []
+    assert await _signup_config(league.db_path) is None
+    assert await log_lines(league) == [
+        f"⛔ `/module enable` refused for {NAMED} — Signup module is already enabled."
+    ]
 
 
-async def test_disabling_signup_twice_does_no_work(tmp_path):
-    db_path = await _make_db(tmp_path)
-    cog = _make_cog(db_path, signup_enabled=False)
-    interaction = _interaction()
+async def test_a_signup_enable_that_cannot_be_written_says_the_module_is_still_off(tmp_path):
+    """The flag, the configuration row and the audit entry are one save, so a fault at the audit
+    leaves the module off with no row created. The member gets the standard failure reply, saying
+    the module is still off and what to run again, in place of today's 'It may have been partly
+    done'; the log channel gets the one failure line, and never a success."""
+    from tests.support.settings_league import last_said, log_lines
 
-    await cog._disable_signup(interaction)
+    league, cog, asked = await _signup_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "CREATE TRIGGER refuse_the_audit BEFORE INSERT ON audit_entries "
+            "BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
+        )
+        await db.commit()
 
-    assert "already disabled" in _replied(interaction)
+    await cog._enable_signup(asked)
+    await run_queue(league.bot)
+
+    assert await league.bot.module_service.is_signup_enabled() is False
+    assert await _signup_config(league.db_path) is None
+    assert last_said(asked) == SIGNUP_STILL_OFF
+    assert await log_lines(league) == [
+        f"❌ `/module enable` failed for {NAMED} — IntegrityError. "
+        "The details are in the host's log."
+    ]

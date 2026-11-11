@@ -2,15 +2,17 @@
 queue (#439, slice 2).
 
 `review_league(tmp_path, ...)` builds division 11 (Pro) of season 1 on a database built by the
-migrations, its round 3 at Silverstone with Lewis (101) and Max (102) in its Feature Race, and a bot
-double with a real change queue and the real change types (`register_change_types`), "now" pinned.
+migrations, its round 3 at Silverstone with Lewis (101) and Max (102) in its Feature Race, and its
+bot (`league_bot`): the one the entry point's `build` makes, its change queue and change types the
+builder's, "now" pinned.
 
 The Discord side is a fake channel per channel id (`channel`), recording every send, delete and
 channel deletion in one list of events, in order, each carrying the league's server as its `guild`;
 image generation is off. Attendance is reached
 through the hook the builder hands the change types, `bot.attendance_after_review`, here an
 `AttendanceDouble` that checks the switch as the real hook does, records each call, and writes its
-record on the save it is handed into a table of the test's own (`attendance_recorded`).
+record on the save it is handed into a table of the test's own (`attendance_recorded`); or, where
+the league is given `attendance_hook`, the hook it makes from the bot, the real one among them.
 """
 from __future__ import annotations
 
@@ -29,14 +31,15 @@ from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.penalty_service import StagedPenalty
 from leaguebot.results.services.penalty_wizard import StagedPardon
 from tests.support.change_queue import (
-    attach_queue,
     change_rows,
     http_error,
-    league_double,
+    league_bot,
+    league_queue,
     member_interaction,
     register,
     run_queue,
     seed_server,
+    set_guilds,
     step_rows,
     stopped_job,
 )
@@ -348,13 +351,25 @@ def candidate(profile: int, driver: int, sanction: str = "AUTORESERVE",
 
 
 class ReviewLeague:
-    """The bot double with its queue and attendance hook, its channels, and what they saw."""
+    """The bot with its queue and attendance hook, its channels, and what they saw; the bot is
+    there once `build` has run."""
 
-    def __init__(self, db_path: str, *, attendance: bool) -> None:
+    def __init__(self, db_path: str, *, attendance: bool, attendance_hook: Any = None) -> None:
         self.db_path = db_path
         self.attendance_on = attendance
         self.events: list[tuple[str, int, int]] = []
-        self.bot = league_double(db_path)
+        self.attendance = AttendanceDouble(self)
+        self.attendance_hook = attendance_hook
+
+    async def build(self) -> None:
+        """The league's bot (`league_bot`), its attendance hook `attendance`, or the one
+        `attendance_hook` makes where the league was given it, with its channels, server and
+        queue."""
+        db_path = self.db_path
+        if self.attendance_hook is None:
+            self.bot = await league_bot(db_path, attendance_hook=self.attendance)
+        else:
+            self.bot = await league_bot(db_path, attendance_hook_of=self.attendance_hook)
         self.channels = {
             cid: channel(cid, self.events)
             for cid in (RESULTS_CHANNEL, STANDINGS_CHANNEL, SUBMISSION_CHANNEL, VERDICTS_CHANNEL,
@@ -398,7 +413,7 @@ class ReviewLeague:
         self.bot.get_channel = MagicMock(side_effect=_get)
         self.bot.fetch_channel = AsyncMock(side_effect=_fetch)
         self.bot.get_guild = MagicMock(return_value=guild)
-        self.bot.guilds = [guild]
+        set_guilds(self.bot, [guild])
         # A round ending cancelled asks for its division's calendar again, only where one was
         # posted: this league posts none, so the division is not found and the job drops out.
         self.bot.season_service.get_divisions = AsyncMock(return_value=[])
@@ -410,9 +425,7 @@ class ReviewLeague:
         self.bot.module_service.is_attendance_enabled = AsyncMock(
             side_effect=lambda: self.attendance_on
         )
-        self.attendance = AttendanceDouble(self)
-        self.bot.attendance_after_review = self.attendance
-        attach_queue(self.bot, db_path, now=NOW)
+        league_queue(self.bot, db_path, now=NOW)
 
     def channel(self, cid: int) -> Any:
         return self.channels[cid]
@@ -534,14 +547,21 @@ async def review_league(
     tmp_path: Any, *, attendance: bool = False, config_name: str | None = "Standard",
     round_status: str = "AWAITING_REPORT_VERDICTS", verdicts_channel: bool = True,
     other_division: bool = True, appeals_prompt: int | None = None,
+    attendance_hook: Any = None,
 ) -> ReviewLeague:
-    """The league of `make_db`, its bot built with a real queue and the real change types."""
+    """The league of `make_db`, its bot built with a real queue and the real change types.
+
+    *attendance_hook*, where given, makes attendance's hook from the bot and the database path
+    (`league_bot`'s *attendance_hook_of*), so that the change types are registered holding it,
+    in place of `AttendanceDouble`."""
     db_path = await make_db(
         tmp_path, attendance=attendance, config_name=config_name, round_status=round_status,
         verdicts_channel=verdicts_channel, other_division=other_division,
         appeals_prompt=appeals_prompt,
     )
-    return ReviewLeague(db_path, attendance=attendance)
+    league = ReviewLeague(db_path, attendance=attendance, attendance_hook=attendance_hook)
+    await league.build()
+    return league
 
 
 def penalty(driver: int, seconds: int = 5) -> StagedPenalty:
@@ -590,7 +610,7 @@ async def block_queue(league: ReviewLeague, *, lane: str | None = None) -> dict[
     It stops the league lane, or with *lane* a conversation's (`"channel:<id>"`); `"league"` names
     the league's own."""
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
-    from leaguebot.core.services.change_queue import ChangeType, Step
+    from leaguebot.core.services.queue.change_types import ChangeType, Step
 
     holder: dict[str, Any] = {"fail": True}
 

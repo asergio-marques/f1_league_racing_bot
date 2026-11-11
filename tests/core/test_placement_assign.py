@@ -1,9 +1,9 @@
-"""`PlacementService.assign_driver` — putting a driver in a seat.
+"""`PlacementService.assign_on` — putting a driver in a seat.
 
-Issue #208. `placement_service.py` was at 50.4%. This method is the **single choke point
-through which a driver enters a division**: the signup wizard, `/driver assign`, the bulk
-roster import and attendance's autoreserve all arrive here. Its own comments say so, which is
-why the capacity and test-mode guards sit at the top of it rather than at each caller.
+Issue #208. `/driver assign` is a change on the league's lane (#283), and this is its save: the
+seat, the assignment and the driver's state written on the connection handed, committed by no one
+here, the audit entry left to the change. The capacity and test-mode guards read templates and
+the server's flag off the loop, so they run in the change's check rather than here.
 
 **A race team's seats are finite; the reserve team's are not.** An ordinary team has a fixed
 number of seats created when the division was seeded, and filling the last one means the next
@@ -27,13 +27,13 @@ so a manager can see which.
 from __future__ import annotations
 
 import os
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.core.services.placement_service import PlacementService
+from leaguebot.core.services.drivers.placement_service import PlacementService
+
 
 SERVER_ID = 11008
 SEASON_ID = 1
@@ -106,36 +106,22 @@ async def _make_db(
 
 
 def _service(db_path: str) -> PlacementService:
-    service = PlacementService.__new__(PlacementService)
-    service._db_path = db_path
-    service._bot = None  # the capacity guards return early without a bot
-    return service
+    return PlacementService(db_path)  # handed no drawing, it asks no capacity guard
 
 
 async def _assign(service, *, team: str = "Alpha", profile_id: int = PROFILE_ID) -> dict:
-    """Place a driver, with the Discord side stubbed out.
-
-    The method falls through to `guild.fetch_member` when the member is not cached, and
-    then refreshes the lineup post — both awaited, and neither the subject here. Role
-    granting has its own cover in `test_placement_role_configs.py`.
-    """
-    guild = MagicMock()
-    guild.get_member = MagicMock(return_value=None)
-    guild.fetch_member = AsyncMock(return_value=None)
-    service._refresh_lineup_post = AsyncMock(return_value=None)
-    with patch.object(
-        PlacementService, "_guard_test_mode", new=AsyncMock(return_value=None)
-    ):
-        return await service.assign_driver(
+    """Place a driver through `assign_on` on a connection of its own, committed once it returns:
+    `/driver assign`'s save without the change around it."""
+    async with get_connection(service._db_path) as db:
+        placed = await service.assign_on(
+            db,
             driver_profile_id=profile_id,
             division_id=DIVISION_ID,
             team_name=team,
             season_id=SEASON_ID,
-            acting_user_id=ACTOR_ID,
-            acting_user_name="Manager",
-            guild=guild,
-            discord_user_id="4242",
         )
+        await db.commit()
+    return placed
 
 
 async def _seat_of(db_path: str, profile_id: int = PROFILE_ID):
@@ -198,27 +184,30 @@ async def test_an_already_assigned_driver_may_take_a_second_division(tmp_path):
 async def test_a_driver_not_yet_through_signup_cannot_be_placed(tmp_path, state):
     """A seat would contradict the state, and the refusal quotes it back so a manager can
     see which."""
+    from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path, state=state)
 
-    with pytest.raises(ValueError, match="Unassigned or Assigned"):
+    with pytest.raises(Refused, match="Unassigned or Assigned"):
         await _assign(_service(db_path))
 
 
 async def test_a_driver_who_does_not_exist_is_refused(tmp_path):
+    from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
 
-    with pytest.raises(ValueError, match="not found"):
+    with pytest.raises(Refused, match="not found"):
         await _assign(_service(db_path), profile_id=9999)
 
 
 async def test_a_driver_may_hold_only_one_seat_per_division(tmp_path):
     """The refusal names the division rather than the team, because a manager placing
     somebody twice has usually forgotten *where* they already are."""
+    from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
     service = _service(db_path)
     await _assign(service)
 
-    with pytest.raises(ValueError, match="Division 1"):
+    with pytest.raises(Refused, match="Division 1"):
         await _assign(service)
 
 
@@ -250,14 +239,15 @@ async def test_the_next_driver_takes_the_next_seat(tmp_path):
 
 async def test_a_full_race_team_refuses_the_next_driver(tmp_path):
     """The seats are finite and were created when the division was seeded; there is no
-    seat to make. The guards run before anything is written, so a refusal has to leave the
+    seat to make. The save refuses before it writes anything, so a refusal has to leave the
     division exactly as it stood — a half-placed driver has no command to finish or undo it."""
+    from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path, team_seats=1)
     service = _service(db_path)
     await _add_driver(db_path, 102)
     await _assign(service, profile_id=PROFILE_ID)
 
-    with pytest.raises(ValueError, match="no available seats"):
+    with pytest.raises(Refused, match="no available seats"):
         await _assign(service, profile_id=102)
 
     async with get_connection(db_path) as db:
@@ -268,9 +258,10 @@ async def test_a_full_race_team_refuses_the_next_driver(tmp_path):
 
 
 async def test_a_team_that_does_not_exist_is_refused_by_name(tmp_path):
+    from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
 
-    with pytest.raises(ValueError, match="Ferrari"):
+    with pytest.raises(Refused, match="Ferrari"):
         await _assign(_service(db_path), team="Ferrari")
 
 

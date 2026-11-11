@@ -23,9 +23,10 @@ the queue"; decision 19):
   told why, in their reply or, once that can no longer be updated, the log channel.
 
 The factories are `season_review_take_down_change()` and `season_review_post_change(drawing=...,
-approve_view=..., scheduler=...)` in `leaguebot.core.services.season_review_changes`; the builder
-registers them with the image module's drawing, the season cog's view factory and the scheduler
-service, which `arm_expiry` arms its timer through (no step looks a service up on the bot).
+approve_view=..., scheduler=..., now=...)` in `leaguebot.core.services.seasons.season_review_changes`; the
+builder registers them with the image module's drawing, its own view factory, the scheduler service,
+which `arm_expiry` arms its timer through, and the queue's clock, which stamps the question's
+posting (no step looks a service up on the bot).
 
 The league: `league_double`'s, its review channel 700 found on the league's server, Alex (4242)
 the reviewer of season 1's placements.
@@ -33,6 +34,7 @@ the reviewer of season 1's placements.
 from __future__ import annotations
 
 import json
+import sys
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
@@ -65,6 +67,7 @@ from tests.support.change_queue import (
     updated_reply,
 )
 from tests.support.review_prompts import store_review_prompt
+
 
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 REVIEW_CHANNEL = 700
@@ -260,7 +263,7 @@ async def test_forgetting_a_taken_down_review_cannot_be_discarded(standing):
     next restart would tell them it expired; the queue stays stopped there and the prompt's row
     stands. Once the fault is lifted, Retry forgets the review and the change is done."""
     with patch(
-        "leaguebot.core.services.season_review_changes.mark_press",
+        "leaguebot.core.services.seasons.season_review_changes.mark_press",
         side_effect=RuntimeError("the press register is locked"),
     ):
         await _take_down(standing, "confirmed")
@@ -316,7 +319,7 @@ PICTURES = [
 REPORT = ["**Season 1 placements**", "Pro: Kimi to Ferrari, Lewis to Mercedes"]
 QUESTION = "Approve these placements?"
 EVIDENCE = {"season_id": 1, "fingerprint": "f00d"}
-#: The view the builder's factory makes for the question: the season cog's `_ApproveView`.
+#: The view the builder's factory makes for the question, stood in.
 APPROVE = SimpleNamespace(name="the Approve button")
 
 
@@ -397,9 +400,9 @@ async def posting(tmp_path):
 
 def _attach(env: Any) -> None:
     """Register `season.review.post`, built by its factory with the test's drawing, a view
-    factory recording each payload it makes the question's view for, and the bot's scheduler
-    service, handed as the builder hands it."""
-    from leaguebot.core.services.season_review_changes import season_review_post_change
+    factory recording each payload it makes the question's view for, the bot's scheduler
+    service and the queue's clock, handed as the builder hands them."""
+    from leaguebot.core.services.seasons.season_review_changes import season_review_post_change
 
     def approve_view(payload: Any) -> Any:
         env.views.append(payload)
@@ -407,7 +410,7 @@ def _attach(env: Any) -> None:
 
     attach_queue(env.bot, env.db_path, now=env.clock, types=(
         season_review_post_change(drawing=env.drawing, approve_view=approve_view,
-                                  scheduler=env.bot.scheduler_service),
+                                  scheduler=env.bot.scheduler_service, now=env.clock),
     ))
 
 
@@ -535,8 +538,9 @@ async def test_a_posted_review_writes_one_line_naming_who_ran_it(posting):
 
 async def test_the_question_s_five_minutes_start_when_it_is_posted(posting):
     """The queue is stopped at 12:00 when Alex runs his review; it clears at 12:03. The question is
-    posted at 12:03, and a job after it arms the review's expiry timer for its question at 12:08,
-    five minutes from its posting, not from the command."""
+    posted at 12:03 and its row records it posted at 12:03 by the queue's clock, and a job after it
+    arms the review's expiry timer for its question at 12:08, five minutes from its posting, not
+    from the command."""
     from datetime import timedelta
 
     from tests.support.change_queue import retry_job
@@ -554,9 +558,41 @@ async def test_the_question_s_five_minutes_start_when_it_is_posted(posting):
     armed = [call.args for call in posting.bot.scheduler_service.arm_once.call_args_list
              if call.args and call.args[0] == TIMER]
     assert armed == [(TIMER, question.id, NOW + timedelta(minutes=8))]
+    [row] = await _prompts(posting.db_path)
+    assert datetime.fromisoformat(row["posted_at"]) == NOW + timedelta(minutes=3)
     [change] = await _changes(posting, POST)
     names = [job["name"] for job in await step_rows(posting.db_path, change["id"])]
     assert names.index("arm_expiry") > names.index("post_question")
+
+
+async def test_a_question_whose_posting_was_not_marked_arms_its_five_minutes_on_the_queue_s_clock(
+        posting):
+    """Alex's question 9001 is posted, but the queue holds no mark of when its job was done. The
+    queue's clock reads 12:00 on 1 October; the host's is left alone. The review's `arm_expiry`
+    job arms the expiry timer for question 9001 at 12:05 on 1 October by the queue's clock, and
+    says so in its result."""
+    from datetime import timedelta
+
+    from leaguebot.core.services.queue.change_types import StepContext, StepView
+    from leaguebot.core.services.seasons.season_review_changes import season_review_post_change
+
+    change_type = season_review_post_change(
+        drawing=posting.drawing, approve_view=lambda payload: APPROVE,
+        scheduler=posting.bot.scheduler_service, now=posting.clock,
+    )
+    ctx = StepContext(
+        bot=posting.bot, db_path=posting.db_path, change_id=1, kind=POST, payload=_payload(),
+        what="posting the placements review", actor_id=REVIEWER, actor_name="Alex",
+        named="Alex", step_name="arm_expiry",
+        steps=(StepView("post_question", {}, {"new": 9001}, True),),
+    )
+
+    result = await change_type.steps["arm_expiry"].run(ctx)
+
+    posting.bot.scheduler_service.arm_once.assert_called_once_with(
+        TIMER, 9001, NOW + timedelta(minutes=5)
+    )
+    assert result.result == {"armed": (NOW + timedelta(minutes=5)).isoformat()}
 
 
 async def test_a_review_while_the_queue_is_stopped_is_acknowledged_and_posted_when_it_clears(
@@ -660,19 +696,32 @@ async def test_the_review_s_drawing_runs_through_the_callable_the_builder_hands_
     assert all(thread is not threading.current_thread() for thread in posting.drawing.threads)
 
 
+def _with_image_s_drawing(bot: Any) -> None:
+    """Attach to *bot* the image module's drawing, built over the bot's services as the builder
+    builds it, so that a review's lineup drawn through it reaches image's own code."""
+    from leaguebot.image.services.image_drawing import ImageDrawing
+
+    bot.image_drawing = ImageDrawing(
+        bot.module_service, bot.image_config_service, bot.image_validity_service,
+        renderer=bot.image_render_service, post_log=bot.output_router.post_log,
+        db_path=bot.db_path, bot=bot,
+    )
+
+
 @pytest.mark.parametrize("uncommitted", [False, True], ids=["placements", "mid_season"])
 async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portraits(
         posting, monkeypatch, uncommitted):
     """The real change types are registered, as the builder registers them, and the drawing it
-    hands `season.review.post` is kept. Asked, off the event loop, to draw Pro's lineup for
-    Alex's review, it has the image module draw the lineup obtaining each seated driver's
+    hands `season.review.post` is kept, and the bot carries the image module's drawing as the
+    builder attaches it. Asked, off the event loop, to draw Pro's lineup for Alex's review, it
+    has the image module draw the lineup obtaining each seated driver's
     missing portrait (#407), so the review is not judged on a placeholder the league will not
     see (image specification, "The drawing of placements under review"). A mid-season review's
     lineup, asked with `include_uncommitted`, is drawn with its uncommitted drivers in it, as
     confirming will post it (#374); a placements review's, without."""
     import asyncio
 
-    from leaguebot.core.services import season_review_changes
+    from leaguebot.core.services.seasons import season_review_changes
     from leaguebot.image.services import image_lineup_post
 
     handed: dict[str, Any] = {}
@@ -689,6 +738,7 @@ async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portrait
                                                     notices=[]))
     monkeypatch.setattr(image_lineup_post, "render_png", render)
     monkeypatch.setattr(image_lineup_post, "lineup_enabled", AsyncMock(return_value=True))
+    _with_image_s_drawing(posting.bot)
     attach_queue(posting.bot, posting.db_path, now=posting.clock)
 
     picture = dict(PICTURES[1])
@@ -702,6 +752,62 @@ async def test_the_builder_s_drawing_of_a_review_lineup_obtains_missing_portrait
     assert bool(render.await_args.kwargs.get("include_uncommitted")) is uncommitted
 
 
+def _lineup_will_not_post() -> Any:
+    """The image module's decision not to post Pro's lineup: its template has no rows."""
+    from leaguebot.image.models.image_module import PROBLEM_MISSING_MANDATORY_FIELD, Problem
+    from leaguebot.image.services.image_render_service import REJECT_COMMAND, PostingDecision
+
+    return PostingDecision(action=REJECT_COMMAND, problem=Problem(
+        kind=PROBLEM_MISSING_MANDATORY_FIELD, detail="the template has no rows"))
+
+
+@pytest.mark.parametrize(("failing", "fault"), [
+    ("render_raises", "❌ the template's font could not be loaded"),
+    ("will_not_post", "❌ the lineup: the template has no rows"),
+    ("switched_off", "the lineup could not be drawn"),
+    ("no_server", "the lineup could not be drawn"),
+])
+async def test_the_builder_s_drawing_of_a_review_lineup_that_will_not_draw_keeps_today_s_words(
+        posting, monkeypatch, failing, fault):
+    """The real change types are registered, as the builder registers them, and the bot carries
+    the image module's drawing as the builder attaches it. Asked to draw Pro's lineup for Alex's
+    review, the image module cannot: its renderer fails because the template's font cannot be
+    loaded, or it will not post the lineup because the template has no rows, or the lineup is
+    switched off, or the league's server is not found. The drawing raises, and the fault the
+    review keeps, tells Alex and writes to the log channel reads as it does today: the renderer's
+    words after "❌", the image module's reason after "❌ the lineup:", or "the lineup could not
+    be drawn" (core specification, season review; image specification, "The drawing of
+    placements under review")."""
+    import asyncio
+
+    from leaguebot.core.services.seasons import season_review_changes
+    from leaguebot.image.services import image_lineup_post
+
+    handed: dict[str, Any] = {}
+    built = season_review_changes.season_review_post_change
+
+    def _capture(**kwargs: Any) -> Any:
+        handed.update(kwargs)
+        return built(**kwargs)
+
+    monkeypatch.setattr(season_review_changes, "season_review_post_change", _capture)
+    render = AsyncMock(return_value=_lineup_will_not_post())
+    if failing == "render_raises":
+        render = AsyncMock(side_effect=RuntimeError("the template's font could not be loaded"))
+    monkeypatch.setattr(image_lineup_post, "render_png", render)
+    monkeypatch.setattr(image_lineup_post, "lineup_enabled",
+                        AsyncMock(return_value=failing != "switched_off"))
+    if failing == "no_server":
+        posting.bot.get_guild = MagicMock(return_value=None)
+    _with_image_s_drawing(posting.bot)
+    attach_queue(posting.bot, posting.db_path, now=posting.clock)
+
+    with pytest.raises(Exception) as raised:
+        await asyncio.to_thread(handed["drawing"], dict(PICTURES[1]))
+
+    assert str(raised.value) == fault
+
+
 async def test_a_drawn_picture_s_render_directory_is_gone_once_its_job_completes(
         posting, tmp_path):
     """Alex's review carries two pictures, each drawn by the image module into a directory of its
@@ -711,7 +817,7 @@ async def test_a_drawn_picture_s_render_directory_is_gone_once_its_job_completes
     import tempfile
     from pathlib import Path
 
-    from leaguebot.core.services.season_review_changes import season_review_post_change
+    from leaguebot.core.services.seasons.season_review_changes import season_review_post_change
     from leaguebot.image.services.image_render_service import discard_render
 
     made: list[Path] = []
@@ -726,7 +832,7 @@ async def test_a_drawn_picture_s_render_directory_is_gone_once_its_job_completes
     attach_queue(posting.bot, posting.db_path, now=posting.clock, types=(
         season_review_post_change(drawing=drawing, approve_view=lambda payload: APPROVE,
                                   scheduler=posting.bot.scheduler_service,
-                                  discard=discard_render),
+                                  discard=discard_render, now=posting.clock),
     ))
     await _review(posting)
     await run_queue(posting.bot)
@@ -740,7 +846,7 @@ async def test_the_builder_hands_the_review_the_image_module_s_discard_of_a_rend
     """The real change types are registered, as the builder registers them. The factory of
     `season.review.post` is handed the image module's `discard_render`, so that a picture's render
     directory goes with it."""
-    from leaguebot.core.services import season_review_changes
+    from leaguebot.core.services.seasons import season_review_changes
     from leaguebot.image.services.image_render_service import discard_render
 
     handed: dict[str, Any] = {}
@@ -770,7 +876,8 @@ async def test_a_restart_asks_the_take_down_of_each_review_standing_before_the_q
     posts nothing itself, and asks two take-downs of the queue. Once the queue runs, every message
     of both is deleted, each review's notice says it expired while the bot was restarting and pings
     Alex, and both prompts' rows are gone."""
-    from leaguebot.__main__ import _recover_expired_review_prompts
+    from leaguebot.__main__ import _approve_view_for
+    from leaguebot.core.services.seasons.season_review_changes import recover_expired_review_prompts
 
     channel = standing.channel
     config_question = post_in(channel, BOT_USER)
@@ -780,7 +887,9 @@ async def test_a_restart_asks_the_take_down_of_each_review_standing_before_the_q
                                   review=CONFIG)
         await db.commit()
 
-    await _recover_expired_review_prompts(standing.bot)
+    await recover_expired_review_prompts(standing.bot,
+                                          approve_view=_approve_view_for(standing.bot),
+                                          queue=standing.bot.change_queue)
 
     assert channel.deleted == [] and channel.sent == []
     assert len(await _changes(standing, TAKE_DOWN)) == 2
@@ -801,16 +910,21 @@ async def test_a_review_whose_take_down_is_in_hand_is_not_asked_again_at_a_secon
     """Discord refuses to delete Alex's report message R1. The bot starts and asks the review's
     take-down, which stops at R1's delete. The bot starts again with it still stopped: the
     restart's step asks no second take-down, and the review's row still stands."""
-    from leaguebot.__main__ import _recover_expired_review_prompts
+    from leaguebot.__main__ import _approve_view_for
+    from leaguebot.core.services.seasons.season_review_changes import recover_expired_review_prompts
 
     standing.channel.r1.fails = http_error(discord.Forbidden, status=403,
                                            text="Missing Permissions")
 
-    await _recover_expired_review_prompts(standing.bot)
+    await recover_expired_review_prompts(standing.bot,
+                                          approve_view=_approve_view_for(standing.bot),
+                                          queue=standing.bot.change_queue)
     await run_queue(standing.bot)
     assert (await stopped_job(standing.db_path))["name"] == "delete_message"
 
-    await _recover_expired_review_prompts(standing.bot)
+    await recover_expired_review_prompts(standing.bot,
+                                          approve_view=_approve_view_for(standing.bot),
+                                          queue=standing.bot.change_queue)
 
     assert len(await _changes(standing, TAKE_DOWN)) == 1
     assert len(await _prompts(standing.db_path)) == 1
@@ -824,15 +938,17 @@ async def test_a_review_whose_take_down_is_in_hand_is_not_asked_again_at_a_secon
 PRO_ROUNDS = "Division Pro's rounds"
 
 
-def _approve_view(env: Any) -> tuple[Any, Any]:
-    """An Approve view for Alex's review, built as the question's view is, on a cog whose approval
-    (`_do_approve`) is recorded and goes through."""
-    from leaguebot.core.cogs.season_cog import _ApproveView
 
-    cog = MagicMock()
-    cog.bot = env.bot
-    cog._do_approve = AsyncMock(return_value=True)
-    return _ApproveView(cog, REVIEWER), cog
+def _approve_view(env: Any, monkeypatch: Any) -> tuple[Any, Any]:
+    """An Approve view for Alex's review, the view the builder's factory makes for the question,
+    whose approval (`season_review_workflows.approve_season`) is stood in, recorded and goes
+    through. Returns the view and the stand-in."""
+    from leaguebot.__main__ import _approve_view_for
+    from leaguebot.core.services.seasons import season_review_workflows
+
+    approval = AsyncMock(return_value=True)
+    monkeypatch.setattr(season_review_workflows, "approve_season", approval)
+    return _approve_view_for(env.bot)({"view": "approve", "reviewer_id": REVIEWER}), approval
 
 
 def _press_on(env: Any, question: Any) -> Any:
@@ -848,11 +964,12 @@ async def _press_approve(view: Any, interaction: Any) -> None:
 
 
 async def _posted_a_moment_ago(env: Any, question_id: int) -> None:
-    """The question's row says it was posted just now, so its five minutes are still running."""
+    """The question's row says it was posted just now by the queue's clock, so its five minutes
+    are still running."""
     async with get_connection(env.db_path) as db:
         await db.execute(
             "UPDATE season_review_prompts SET posted_at = ? WHERE message_id = ?",
-            (datetime.now(timezone.utc).isoformat(), question_id),
+            (env.clock.now.isoformat(), question_id),
         )
         await db.commit()
 
@@ -870,7 +987,7 @@ async def _evidence_of(env: Any, question_id: int, value: str) -> None:
 
 def _season_now(monkeypatch: Any, value: str) -> None:
     """The season as it stands now: Pro's rounds as *value*."""
-    from leaguebot.core.services import season_fingerprint_service as sfs
+    from leaguebot.core.services.seasons import season_fingerprint_service as sfs
 
     async def _now(*_args: Any, **_kwargs: Any) -> Any:
         return sfs.SeasonFingerprint({PRO_ROUNDS: value})
@@ -922,9 +1039,9 @@ async def test_a_confirmation_asks_the_take_down_before_the_approval_and_the_rev
     and naming Q, R1 and R2 in channel 610, so it runs on the queue ahead of the approval's jobs;
     the button deletes nothing itself. Run a job at a time, the queue takes the review down, its
     row with it, before any of the approval's jobs is done."""
-    from leaguebot.core.cogs.season_cog import _ApproveView
-    from leaguebot.core.services.season_approval_change import KIND as APPROVAL
-    from leaguebot.core.services.season_fingerprint_service import take_fingerprint
+    from leaguebot.__main__ import _approve_view_for
+    from leaguebot.core.services.seasons.season_approval_change import KIND as APPROVAL
+    from tests.support.review_workflows import take_season_fingerprint
     from tests.support.season_league import ADMIN_ID, SEASON_ID, Review, press_approve, season_league
     from tests.support.season_league import REVIEW_CHANNEL as CHANNEL_610
 
@@ -934,17 +1051,20 @@ async def test_a_confirmation_asks_the_take_down_before_the_approval_and_the_rev
     league.channels[CHANNEL_610] = channel
     me = SimpleNamespace(id=league.bot.user.id, name="LeagueBot")
     r1, r2, q = (post_in(channel, me) for _ in range(3))
-    evidence = (await take_fingerprint(league.bot, SEASON_ID)).areas
+    evidence = (
+        await take_season_fingerprint(league.bot, league.db_path, SEASON_ID)
+    ).areas
     async with get_connection(league.db_path) as db:
         await store_review_prompt(
             db, season_id=SEASON_ID, channel_id=CHANNEL_610, message_id=q.id,
             reviewer_id=ADMIN_ID, review=PLACEMENTS,
-            posted_at=datetime.now(timezone.utc).isoformat(), report_message_ids=(r1.id, r2.id),
+            posted_at=league.clock.now.isoformat(), report_message_ids=(r1.id, r2.id),
         )
         await db.execute("UPDATE season_review_prompts SET evidence = ? WHERE message_id = ?",
                          (json.dumps(evidence), q.id))
         await db.commit()
-    review = Review(view=_ApproveView(league.cog, ADMIN_ID), prompt=q, report=[r1, r2])
+    view = _approve_view_for(league.bot)({"view": "approve", "reviewer_id": ADMIN_ID})
+    review = Review(view=view, prompt=q, report=[r1, r2])
 
     await press_approve(league, review)
 
@@ -980,12 +1100,15 @@ async def test_a_confirmation_asks_the_take_down_before_the_approval_and_the_rev
     pytest.param("expired", id="five_minutes"),
     pytest.param("refused", id="refused_press"),
 ])
-async def test_the_five_minutes_and_a_refused_press_ask_the_take_down(standing, monkeypatch, ending):
+async def test_the_five_minutes_and_a_refused_press_ask_the_take_down(
+    standing, monkeypatch, ending,
+):
     """Alex's review stands in channel 700. Either its five minutes run out (the review's expiry
-    timer fires for Q), or Alex presses Approve a moment after it was posted but the season has
-    changed since the report (Pro's rounds), so the press is refused. Either way nothing is
-    deleted or posted at once: the review's take-down is asked of the queue as the bot's, naming
-    channel 700, Q, R1, R2, Alex and `/season placements-review`, ending expired or refused."""
+    timer fires for Q), or Alex presses Approve a moment after it was posted, by the queue's
+    clock, but the season has changed since the report (Pro's rounds), so the press is refused,
+    the reply naming Pro's rounds as changed. Either way nothing is deleted or posted at once: the
+    review's take-down is asked of the queue as the bot's, naming channel 700, Q, R1, R2, Alex and
+    `/season placements-review`, ending expired or refused."""
     channel = standing.channel
     if ending == "expired":
         await _expiry_callback(standing)(channel.q.id)
@@ -993,9 +1116,12 @@ async def test_the_five_minutes_and_a_refused_press_ask_the_take_down(standing, 
         await _posted_a_moment_ago(standing, channel.q.id)
         await _evidence_of(standing, channel.q.id, "before")
         _season_now(monkeypatch, "after")
-        view, cog = _approve_view(standing)
-        await _press_approve(view, _press_on(standing, channel.q))
-        cog._do_approve.assert_not_awaited()
+        view, approval = _approve_view(standing, monkeypatch)
+        press = _press_on(standing, channel.q)
+        await _press_approve(view, press)
+        approval.assert_not_awaited()
+        reply = acknowledgement(press)
+        assert "has changed since this review" in reply and PRO_ROUNDS in reply
 
     assert channel.deleted == [] and channel.sent == []
     [payload] = await _take_downs(standing)
@@ -1007,14 +1133,16 @@ async def test_the_five_minutes_and_a_refused_press_ask_the_take_down(standing, 
     assert change["origin"] == "BOT"
 
 
-async def test_approve_refuses_where_the_season_changed_while_the_review_waited(posting, monkeypatch):
+async def test_approve_refuses_where_the_season_changed_while_the_review_waited(
+    posting, monkeypatch,
+):
     """The queue is stopped when Alex runs his review of season 1; its evidence is what the
     command computed the report from, Pro's rounds "before". While the review waits, Pro's
     rounds change. The stop clears and the review is posted. Alex presses Approve a moment after
     the question appears: he is refused, privately, the reply naming Pro's rounds as changed and
     saying nothing was approved; one ⛔ line is in the log channel; the approval is never asked;
     and the review's take-down is asked, ending refused."""
-    from leaguebot.core.services.season_review_changes import season_review_take_down_change
+    from leaguebot.core.services.seasons.season_review_changes import season_review_take_down_change
     from tests.support.change_queue import register, retry_job
     from tests.support.review_league import block_queue
 
@@ -1034,11 +1162,11 @@ async def test_approve_refuses_where_the_season_changed_while_the_review_waited(
 
     question = _question(posting.channel)
     await _posted_a_moment_ago(posting, question.id)
-    view, cog = _approve_view(posting)
+    view, approval = _approve_view(posting, monkeypatch)
     press = _press_on(posting, question)
     await _press_approve(view, press)
 
-    cog._do_approve.assert_not_awaited()
+    approval.assert_not_awaited()
     reply = acknowledgement(press)
     assert "has changed since this review" in reply and PRO_ROUNDS in reply
     assert "Nothing has been approved" in reply
@@ -1053,7 +1181,6 @@ async def test_approve_refuses_where_the_season_changed_while_the_review_waited(
 # ---------------------------------------------------------------------------
 
 
-
 def _refused_as_expired(env: Any, interaction: Any) -> None:
     """Alex was refused, privately, the review's five minutes being up, and the refusal is the one
     ⛔ line in the log channel, naming the button and its review."""
@@ -1064,37 +1191,42 @@ def _refused_as_expired(env: Any, interaction: Any) -> None:
     assert "Approve" in line and PLACEMENTS in line
 
 
-async def test_a_press_on_a_review_whose_five_minutes_ran_is_refused_and_recorded(standing):
+async def test_a_press_on_a_review_whose_five_minutes_ran_is_refused_and_recorded(
+    standing, monkeypatch,
+):
     """Alex's review stands in channel 700, its question Q posted on 7 September, so its five
-    minutes ran long ago, but nothing has yet taken it down. Alex presses Approve on Q through a view just built for it. He is refused,
-    privately, told the review's five minutes are up and nothing was approved; one ⛔ line naming
-    Approve and `/season placements-review` is in the log channel; the approval is never asked;
-    and the button itself deletes and posts nothing in channel 700."""
-    view, cog = _approve_view(standing)
+    minutes ran long ago, but nothing has yet taken it down. Alex presses Approve on Q through a
+    view just built for it. He is refused, privately, told the review's five minutes are up and
+    nothing was approved; one ⛔ line naming Approve and `/season placements-review` is in the log
+    channel; the approval is never asked; and the button itself deletes and posts nothing in channel
+    700."""
+    view, approval = _approve_view(standing, monkeypatch)
     interaction = _press_on(standing, standing.channel.q)
 
     await _press_approve(view, interaction)
 
-    cog._do_approve.assert_not_awaited()
+    approval.assert_not_awaited()
     _refused_as_expired(standing, interaction)
     assert standing.channel.deleted == [] and standing.channel.sent == []
 
 
 @pytest.mark.parametrize("mark", ["UNDER_WAY", "TIMER_FIRED"])
-async def test_a_late_press_beside_one_under_way_leaves_the_review_to_it(standing, mark):
+async def test_a_late_press_beside_one_under_way_leaves_the_review_to_it(
+    standing, monkeypatch, mark,
+):
     """Alex's review stands past its five minutes and his first press is being worked (or the
     timer has fired and waits for it). A second press is refused as expired, privately, and
     recorded, but asks no take-down: the first press settles how the review ends, so its approval
     cannot go through with the review taken down as an expired one."""
-    from leaguebot.core.services import season_review_changes
+    from leaguebot.core.services.seasons import season_review_changes
 
     season_review_changes.mark_press(standing.channel.q.id, getattr(season_review_changes, mark))
-    view, cog = _approve_view(standing)
+    view, approval = _approve_view(standing, monkeypatch)
     interaction = _press_on(standing, standing.channel.q)
 
     await _press_approve(view, interaction)
 
-    cog._do_approve.assert_not_awaited()
+    approval.assert_not_awaited()
     _refused_as_expired(standing, interaction)
     assert await _take_downs(standing) == []
 
@@ -1107,7 +1239,7 @@ async def test_a_press_refused_while_an_approval_is_in_hand_leaves_no_review_pas
     being approved already, and the review's take-down is then asked, ending expired, so the
     review does not stand past its five minutes (core: "Upon their passing its message shall be
     deleted")."""
-    from leaguebot.core.services.season_approval_change import ALREADY_BEING_APPROVED
+    from leaguebot.core.services.seasons.season_approval_change import ALREADY_BEING_APPROVED
 
     channel = standing.channel
     await _posted_a_moment_ago(standing, channel.q.id)
@@ -1117,13 +1249,14 @@ async def test_a_press_refused_while_an_approval_is_in_hand_leaves_no_review_pas
         await fired(channel.q.id)
         return True
 
-    monkeypatch.setattr("leaguebot.core.cogs.season_cog.approval_in_hand", _in_hand)
-    view, cog = _approve_view(standing)
+    view, approval = _approve_view(standing, monkeypatch)
+    # The view asks whether an approval is in hand by the name its own module binds.
+    monkeypatch.setattr(sys.modules[type(view).__module__], "approval_in_hand", _in_hand)
     interaction = _press_on(standing, channel.q)
 
     await _press_approve(view, interaction)
 
-    cog._do_approve.assert_not_awaited()
+    approval.assert_not_awaited()
     assert acknowledgement(interaction) == ALREADY_BEING_APPROVED
     [payload] = await _take_downs(standing)
     assert (payload["ending"], payload["question_id"]) == ("expired", channel.q.id)
@@ -1135,15 +1268,20 @@ async def test_a_review_standing_after_a_restart_refuses_a_press_and_records_it(
     dead. Alex presses it before the review's take-down has run: he is refused, privately, its
     five minutes being up, the refusal is recorded in the log channel, and the button deletes
     nothing itself."""
-    from leaguebot.__main__ import _recover_expired_review_prompts
-    from leaguebot.core.cogs.season_cog import _ApproveView
+    from leaguebot.__main__ import _approve_view_for
+    from leaguebot.core.services.seasons.season_review_changes import recover_expired_review_prompts
 
+    approve_view = type(
+        _approve_view_for(standing.bot)({"view": "approve", "reviewer_id": REVIEWER})
+    )
     standing.bot.add_view = MagicMock()
-    await _recover_expired_review_prompts(standing.bot)
+    await recover_expired_review_prompts(standing.bot,
+                                          approve_view=_approve_view_for(standing.bot),
+                                          queue=standing.bot.change_queue)
 
     routed = [(call.args[0], call.kwargs.get("message_id"))
               for call in standing.bot.add_view.call_args_list
-              if call.args and isinstance(call.args[0], _ApproveView)]
+              if call.args and isinstance(call.args[0], approve_view)]
     [(view, message_id)] = routed
     assert message_id == standing.channel.q.id
 
@@ -1156,16 +1294,17 @@ async def test_a_review_standing_after_a_restart_refuses_a_press_and_records_it(
 
 async def test_a_press_hands_the_approval_what_remains_of_the_review_s_five_minutes(
         standing, monkeypatch):
-    """Alex's review stands in channel 700, its question posted four minutes ago by its row, and
+    """Alex's review stands in channel 700, its question posted four minutes ago by its row, on
+    the queue's clock, and
     the season is as its evidence describes it. Alex presses Approve on a view just built for it:
     the approval is asked once, handed as its deadline the question's posting time plus five
     minutes, about one minute on, so a backup question under test mode shares what is left of
     the review's five minutes rather than taking five of its own (core :281)."""
     from datetime import timedelta
 
-    from leaguebot.core.cogs.season_cog import APPROVAL_WINDOW_SECONDS
+    from leaguebot.core.services.seasons.season_review_changes import REVIEW_WINDOW
 
-    posted = datetime.now(timezone.utc) - timedelta(minutes=4)
+    posted = standing.clock.now - timedelta(minutes=4)
     async with get_connection(standing.db_path) as db:
         await db.execute(
             "UPDATE season_review_prompts SET posted_at = ? WHERE message_id = ?",
@@ -1174,13 +1313,13 @@ async def test_a_press_hands_the_approval_what_remains_of_the_review_s_five_minu
         await db.commit()
     await _evidence_of(standing, standing.channel.q.id, "as reviewed")
     _season_now(monkeypatch, "as reviewed")
-    view, cog = _approve_view(standing)
+    view, approval = _approve_view(standing, monkeypatch)
 
     await _press_approve(view, _press_on(standing, standing.channel.q))
 
-    cog._do_approve.assert_awaited_once()
-    deadline = cog._do_approve.await_args.kwargs["deadline"]
-    expected = posted + timedelta(seconds=APPROVAL_WINDOW_SECONDS)
+    approval.assert_awaited_once()
+    deadline = approval.await_args.kwargs["deadline"]
+    expected = posted + REVIEW_WINDOW
     assert abs((deadline - expected).total_seconds()) < 2, (deadline, expected)
 
 

@@ -43,7 +43,7 @@ async def _completed_season(tmp_path) -> str:
         await seed_team_instances(db, 1, 501)
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at) "
-            "VALUES (1, 1, 1, 'NORMAL', '2026-01-20T18:00:00')"
+            "VALUES (1, 1, 1, 'NORMAL', '2026-01-20T18:00:00+00:00')"
         )
         for sr_id, session in ((1, "FEATURE_RACE"), (2, "FEATURE_QUALIFYING")):
             await db.execute(

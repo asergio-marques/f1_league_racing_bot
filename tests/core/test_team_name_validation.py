@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from leaguebot.core.services.team_service import validate_full_name, validate_team_name
+from leaguebot.core.services.drivers.team_service import validate_full_name, validate_team_name
 
 
 # ── Rule 1: non-empty, trimmed and normalised ─────────────────────────────
@@ -102,7 +102,7 @@ DEFAULT_TEAMS = [
 def test_every_shipped_default_team_name_passes():
     """No existing server is broken by this rule, so no migration is owed."""
     seen: dict[str, str] = {}
-    from leaguebot.image.utils.asset_resolver import normalise
+    from leaguebot.core.utils.asset_slug import normalise
 
     for name in DEFAULT_TEAMS:
         assert validate_team_name(name, seen) is None, name
@@ -124,15 +124,17 @@ def test_every_shipped_default_team_name_passes():
     ],
 )
 def test_reasonable_names_are_accepted_and_key_as_expected(name, key):
-    from leaguebot.image.utils.asset_resolver import normalise
+    from leaguebot.core.utils.asset_slug import normalise
 
     assert validate_team_name(name) is None
     assert normalise(name) == key
 
 
 def test_the_key_and_the_asset_filename_come_from_one_rule():
-    """Constitution XIV.13, v4.3.0 — one datum, one spelling in id and filename alike."""
-    from leaguebot.image.utils.asset_resolver import filename_for, normalise
+    """Constitution XIV.13, v4.3.0 — one datum, one spelling in id and filename alike: core's key
+    and the image module's asset file name."""
+    from leaguebot.core.utils.asset_slug import normalise
+    from leaguebot.image.utils.asset_resolver import filename_for
 
     assert normalise("Red Bull") == "red_bull"
     assert filename_for("Red Bull") == "red_bull.svg"
@@ -147,10 +149,10 @@ def test_the_key_and_the_asset_filename_come_from_one_rule():
 # feature rewrote.
 # ══════════════════════════════════════════════════════════════════════════
 
-from unittest.mock import MagicMock as _MagicMock  # noqa: E402
+import logging  # noqa: E402
 
-from leaguebot.core.cogs.season_cog import SeasonCog  # noqa: E402
 from leaguebot.core.db.database import get_connection, run_migrations  # noqa: E402
+from leaguebot.core.services.drivers.team_service import TeamService  # noqa: E402
 
 
 async def _seed(path, server_teams, division_teams):
@@ -181,8 +183,9 @@ async def _seed(path, server_teams, division_teams):
 async def _review_problems(tmp_path, server_teams, division_teams):
     path = tmp_path / "review.db"
     await _seed(path, server_teams, division_teams)
-    cog = _MagicMock(bot=_MagicMock(db_path=str(path)))
-    return await SeasonCog._team_name_problems(cog, season_id=1)
+    from leaguebot.core.services.seasons import approval_checks
+
+    return await approval_checks.team_name_problems(TeamService(str(path)), 1)
 
 
 @pytest.mark.parametrize(
@@ -227,6 +230,26 @@ async def test_season_review_catches_two_teams_normalising_alike(tmp_path):
     assert len(problems) == 1
     assert "red_bull" in problems[0]
 
+
+
+@pytest.mark.asyncio
+async def test_a_team_name_check_that_cannot_read_the_teams_stands_aside(tmp_path, caplog):
+    """A stated exception (architecture.md, "A catch-all error handler"): the check only keeps
+    a team name from becoming a bad artwork filename, so where the teams cannot be read it finds
+    nothing wrong, and the review and the approval carry on with the names unchecked. The fault
+    goes to the host's log and nowhere else."""
+    from leaguebot.core.services.seasons import approval_checks
+
+    unreadable = TeamService(str(tmp_path))  # a directory, which no connection can open
+
+    with caplog.at_level(logging.ERROR):
+        problems = await approval_checks.team_name_problems(unreadable, 1)
+
+    assert problems == []
+    assert any(
+        "team name check failed" in record.getMessage() and record.exc_info
+        for record in caplog.records
+    )
 
 # ── The rules every typed name is held to (#362) ──────────────────────────
 

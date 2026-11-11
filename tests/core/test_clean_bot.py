@@ -23,16 +23,17 @@ import pytest
 from leaguebot.core.cogs.clean_cog import MAX_DELETIONS, CleanCog
 from leaguebot.core.db.database import run_migrations
 from tests.support.change_queue import (
+    Clock,
     INTERACTION_CHANNEL_ID,
     LOG_CHANNEL_ID,
-    Clock,
-    attach_queue,
     history_channel,
-    league_double,
+    league_bot,
+    league_queue,
     member_interaction,
     post_in,
     run_queue,
     seed_server,
+    set_user,
 )
 from tests.support.undecorate import undecorate
 
@@ -47,8 +48,8 @@ async def league(tmp_path):
     db_path = str(tmp_path / "queue.db")
     await run_migrations(db_path)
     await seed_server(db_path)
-    bot = league_double(db_path)
-    bot.user = BOT_USER
+    bot = await league_bot(db_path)
+    set_user(bot, BOT_USER)
     channel = history_channel(700)
     known = {LOG_CHANNEL_ID: bot.log_channel, INTERACTION_CHANNEL_ID: bot.interaction_channel,
              700: channel}
@@ -59,7 +60,7 @@ async def league(tmp_path):
     channel.guild = guild
     bot.get_channel = MagicMock(side_effect=known.get)
     bot.get_guild = MagicMock(return_value=guild)
-    attach_queue(bot, db_path, now=Clock(NOW))
+    league_queue(bot, db_path, now=Clock(NOW))
     return SimpleNamespace(db_path=db_path, bot=bot, channel=channel)
 
 

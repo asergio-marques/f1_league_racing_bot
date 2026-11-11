@@ -652,7 +652,7 @@ async def _make_attendance_db(tmp_path) -> str:
         await db.executemany(
             "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at) "
             "VALUES (?, 10, ?, 'NORMAL', ?)",
-            [(1, 1, "2025-06-01T18:00:00"), (2, 2, "2025-06-08T18:00:00")],
+            [(1, 1, "2025-06-01T18:00:00+00:00"), (2, 2, "2025-06-08T18:00:00+00:00")],
         )
         for dp_id in (100, 200, 300):
             await _insert_driver(db, dp_id, f"Driver {dp_id}")

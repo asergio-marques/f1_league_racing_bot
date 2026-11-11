@@ -21,24 +21,37 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-from leaguebot.core.cogs.season_cog import (
-    SeasonCog,
-    _BackupBeforeApprovalView,
-)
+import pytest
+
+from tests.support.review_workflows import build_view, run_workflow
+from tests.support.scheduler import PausingScheduler
 
 SERVER_ID = 9100
 
 
+def _view_class():
+    """The question's view, `season_review_workflows.BackupBeforeApprovalView`."""
+    from leaguebot.core.services.seasons.season_review_workflows import BackupBeforeApprovalView
+
+    return BackupBeforeApprovalView
+
+
+async def _offer(cog, interaction, deadline):
+    """Put the backup question, as the approval does after its last gate."""
+    return await run_workflow(
+        "offer_backup_before_approving", cog.bot, interaction, deadline=deadline
+    )
+
+
 def _cog(*, test_mode: bool = True, db_path: str = ":memory:"):
-    cog = SeasonCog.__new__(SeasonCog)
-    cog.bot = MagicMock()
+    cog = SimpleNamespace(bot=MagicMock())
     cog.bot.db_path = db_path
     cog.bot.config_service.get_server_config = AsyncMock(
         return_value=SimpleNamespace(test_mode_active=test_mode)
     )
-    cog.bot.scheduler_service = SimpleNamespace(
-        _jobstore_path=db_path, _scheduler=MagicMock(running=True)
-    )
+    cog.bot.scheduler_service = PausingScheduler(db_path)
+    # The time left is read from the queue's clock, here the host's.
+    cog.bot.change_queue.now = MagicMock(side_effect=lambda: datetime.now(timezone.utc))
     # The log channel takes a line, as a real one does, so a save that records itself is not
     # stopped by the test's own stand-in.
     cog.bot.output_router.post_log = AsyncMock()
@@ -70,20 +83,19 @@ def _later(seconds: float) -> datetime:
 async def test_the_question_is_asked_under_test_mode(monkeypatch):
     cog = _cog()
     interaction = _interaction()
-    monkeypatch.setattr(_BackupBeforeApprovalView, "wait", AsyncMock())
+    view_class = _view_class()
+    monkeypatch.setattr(view_class, "wait", AsyncMock())
 
     # The view is answered "skip" the moment it is constructed, standing in for a press.
-    original_init = _BackupBeforeApprovalView.__init__
+    original_init = view_class.__init__
 
     def _answered(self, *args, **kwargs):
         original_init(self, *args, **kwargs)
         self.answer = "skip"
 
-    monkeypatch.setattr(_BackupBeforeApprovalView, "__init__", _answered)
+    monkeypatch.setattr(view_class, "__init__", _answered)
 
-    assert await cog._offer_backup_before_approving(
-        interaction, _later(300)
-    ) is True
+    assert await _offer(cog, interaction, _later(300)) is True
     assert "Save the databases" in _reply(interaction)
 
 
@@ -95,9 +107,7 @@ async def test_an_already_expired_window_approves_nothing():
     cog = _cog()
     interaction = _interaction()
 
-    assert await cog._offer_backup_before_approving(
-        interaction, _later(-1)
-    ) is False
+    assert await _offer(cog, interaction, _later(-1)) is False
     assert "Nothing has been approved" in _reply(interaction)
 
 
@@ -105,11 +115,9 @@ async def test_silence_expires_the_approval(monkeypatch):
     """`answer` stays None on a timeout, which is how silence is told from a spoken no."""
     cog = _cog()
     interaction = _interaction()
-    monkeypatch.setattr(_BackupBeforeApprovalView, "wait", AsyncMock())
+    monkeypatch.setattr(_view_class(), "wait", AsyncMock())
 
-    assert await cog._offer_backup_before_approving(
-        interaction, _later(300)
-    ) is False
+    assert await _offer(cog, interaction, _later(300)) is False
     assert "expired" in _reply(interaction)
     assert "Nothing has been approved" in _reply(interaction)
 
@@ -119,15 +127,16 @@ async def test_silence_expires_the_approval(monkeypatch):
 
 async def _answered(cog, monkeypatch, answer: str):
     interaction = _interaction()
-    original_init = _BackupBeforeApprovalView.__init__
+    view_class = _view_class()
+    original_init = view_class.__init__
 
     def _set(self, *args, **kwargs):
         original_init(self, *args, **kwargs)
         self.answer = answer
 
-    monkeypatch.setattr(_BackupBeforeApprovalView, "__init__", _set)
-    monkeypatch.setattr(_BackupBeforeApprovalView, "wait", AsyncMock())
-    result = await cog._offer_backup_before_approving(interaction, _later(300))
+    monkeypatch.setattr(view_class, "__init__", _set)
+    monkeypatch.setattr(view_class, "wait", AsyncMock())
+    result = await _offer(cog, interaction, _later(300))
     return result, interaction
 
 
@@ -142,7 +151,7 @@ async def test_cancelling_approves_nothing(monkeypatch):
 
 
 def _view(cog, timeout: float = 300):
-    return _BackupBeforeApprovalView(cog, timeout=timeout)
+    return build_view("BackupBeforeApprovalView", cog.bot, timeout=timeout)
 
 
 async def test_the_view_offers_three_answers():
@@ -158,7 +167,7 @@ async def test_the_view_offers_three_answers():
 async def test_saving_takes_a_backup(tmp_path):
     import sqlite3
 
-    from leaguebot.core.services import backup_service
+    from leaguebot.core.services.upkeep import backup_service
 
     live = tmp_path / "bot.db"
     connection = sqlite3.connect(str(live))
@@ -169,7 +178,7 @@ async def test_saving_takes_a_backup(tmp_path):
         connection.close()
 
     view = _view(_cog(db_path=str(live)))
-    await _BackupBeforeApprovalView.save(view, _interaction(), MagicMock())
+    await type(view).save(view, _interaction(), MagicMock())
 
     assert backup_service.backup_path(live).is_file()
     assert view.answer == "save"
@@ -182,7 +191,7 @@ async def test_a_backup_that_cannot_be_taken_does_not_refuse_the_season(tmp_path
     view = _view(_cog(db_path=str(tmp_path / "nothing-here.db")))
     interaction = _interaction()
 
-    await _BackupBeforeApprovalView.save(view, interaction, MagicMock())
+    await type(view).save(view, interaction, MagicMock())
 
     assert view.answer == "skip", "a failed backup stopped the approval"
     assert "anyway" in _reply(interaction)
@@ -192,25 +201,6 @@ async def test_the_scheduler_is_resumed_after_a_failed_save(tmp_path):
     cog = _cog(db_path=str(tmp_path / "nothing-here.db"))
     view = _view(cog)
 
-    await _BackupBeforeApprovalView.save(view, _interaction(), MagicMock())
+    await type(view).save(view, _interaction(), MagicMock())
 
-    cog.bot.scheduler_service._scheduler.resume.assert_called_once()
-
-
-# ── Where it sits in the approval ─────────────────────────────────────────
-
-
-def test_the_question_falls_after_every_gate_and_before_every_write():
-    """Earlier it saves a season that may prove unapprovable; later, one already
-    committed. It follows the check for an approval of the season already in hand, which
-    refuses a second press without asking it, and comes before the approval is asked of the
-    change queue, which makes every write (#439)."""
-    import inspect
-
-    source = inspect.getsource(SeasonCog._do_approve)
-    asked = source.index("_offer_backup_before_approving")
-
-    for gate in ("_image_configuration_faults", "_lineup_problems", "_team_name_problems",
-                 "approval_in_hand("):
-        assert source.index(gate) < asked, f"{gate} runs after the backup question"
-    assert asked < source.index("change_queue.ask("), "the approval is asked before the question"
+    assert cog.bot.scheduler_service.events == ["pause", "resume"]

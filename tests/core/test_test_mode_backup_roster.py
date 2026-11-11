@@ -15,11 +15,10 @@ over real files, and the refusal's own words in `tests/core/test_test_mode_cog_r
 **The refusal has to say why, not just no.** It names the risk and the command that enables
 test mode, because a maintainer meeting it has usually just forgotten which mode they are in.
 
-**The roster commands report what they did in the league's own terms.** A fake driver is
-identified by a numeric Discord id, which is unreadable, so every success message names the
-driver and the team instead — `test_removing_a_driver_names_them_and_their_team` holds that.
-A non-numeric id is refused with its own message rather than being allowed to fail somewhere
-deeper, where the error would name a column instead of the thing the maintainer typed.
+**A non-numeric id is refused with its own message** rather than being allowed to fail
+somewhere deeper, where the error would name a column instead of the thing the maintainer typed.
+`/test-mode roster remove` as a change on the queue, its reply naming the driver and the team, is
+tested in `tests/core/test_test_mode_roster_remove.py`.
 
 `backup_service.state` is stubbed throughout: what is under test is which message each state of
 the backup produces, not the file handling underneath, which has its own cover in
@@ -142,7 +141,7 @@ async def test_a_saved_backup_reports_when_it_was_taken_and_how_big():
     interaction = _interaction()
 
     with patch(
-        "leaguebot.core.services.backup_service.state", return_value=_backup_state(size_bytes=8192)
+        "leaguebot.core.services.upkeep.backup_service.state", return_value=_backup_state(size_bytes=8192)
     ):
         await undecorate(_Cog.backup_status)(cog, interaction)
 
@@ -158,7 +157,7 @@ async def test_an_unreadable_backup_is_called_out_emphatically():
     interaction = _interaction()
 
     with patch(
-        "leaguebot.core.services.backup_service.state", return_value=_backup_state(readable=False)
+        "leaguebot.core.services.upkeep.backup_service.state", return_value=_backup_state(readable=False)
     ):
         await undecorate(_Cog.backup_status)(cog, interaction)
 
@@ -169,7 +168,7 @@ async def test_a_readable_backup_says_so_plainly():
     cog = _make_cog()
     interaction = _interaction()
 
-    with patch("leaguebot.core.services.backup_service.state", return_value=_backup_state(readable=True)):
+    with patch("leaguebot.core.services.upkeep.backup_service.state", return_value=_backup_state(readable=True)):
         await undecorate(_Cog.backup_status)(cog, interaction)
 
     assert "Readable: yes" in _replied(interaction)
@@ -181,7 +180,7 @@ async def test_a_locked_backup_names_who_locked_it():
     interaction = _interaction()
 
     with patch(
-        "leaguebot.core.services.backup_service.state",
+        "leaguebot.core.services.upkeep.backup_service.state",
         return_value=_backup_state(locked=True, locked_by="Maintainer"),
     ):
         await undecorate(_Cog.backup_status)(cog, interaction)
@@ -193,7 +192,7 @@ async def test_an_unlocked_backup_reports_no_lock():
     cog = _make_cog()
     interaction = _interaction()
 
-    with patch("leaguebot.core.services.backup_service.state", return_value=_backup_state(locked=False)):
+    with patch("leaguebot.core.services.upkeep.backup_service.state", return_value=_backup_state(locked=False)):
         await undecorate(_Cog.backup_status)(cog, interaction)
 
     assert "Locked: no" in _replied(interaction)
@@ -208,15 +207,6 @@ async def _remove(cog, interaction, user_id: str = "4242"):
     await undecorate(_Cog.roster_remove)(cog, interaction, user_id)
 
 
-async def test_the_roster_commands_are_refused_outside_test_mode():
-    cog = _make_cog(test_mode=False)
-    interaction = _interaction()
-
-    await _remove(cog, interaction)
-
-    assert "only available when test mode is enabled" in _replied(interaction)
-
-
 async def test_a_non_numeric_user_id_is_refused_in_its_own_words():
     """Refused here rather than deeper, where the error would name a column instead of the
     thing the maintainer typed."""
@@ -226,38 +216,3 @@ async def test_a_non_numeric_user_id_is_refused_in_its_own_words():
     await _remove(cog, interaction, user_id="not-a-number")
 
     assert "must be a numeric Discord user ID" in _replied(interaction)
-
-
-async def test_removing_a_driver_names_them_and_their_team():
-    """A fake driver is identified by a numeric id, which is unreadable — the message has
-    to name the driver and the team or the maintainer cannot tell what went."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    with patch(
-        "leaguebot.core.services.test_roster_service.remove_test_driver",
-        new=AsyncMock(return_value={"display_name": "Test Lewis", "team_name": "Alpha"}),
-    ):
-        await _remove(cog, interaction)
-
-    replied = _replied(interaction)
-    assert "Test Lewis" in replied
-    assert "Alpha" in replied
-
-
-async def test_a_successful_removal_is_logged_with_the_id_as_well_as_the_name():
-    """The id is what a maintainer would need to add the driver back, and it is the one
-    thing the readable message deliberately leaves out."""
-    cog = _make_cog()
-    interaction = _interaction()
-
-    with patch(
-        "leaguebot.core.services.test_roster_service.remove_test_driver",
-        new=AsyncMock(return_value={"display_name": "Test Lewis", "team_name": "Alpha"}),
-    ):
-        await _remove(cog, interaction, user_id="4242")
-
-    logged = cog.bot.output_router.post_log.await_args.args[0]
-    assert "roster remove" in logged
-    assert "4242" in logged
-    assert "Test Lewis" in logged

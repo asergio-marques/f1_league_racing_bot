@@ -16,7 +16,7 @@ import discord
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.services.driver_service import current_account_map_for_division
+from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.image.services import image_verdict_post
 from leaguebot.image.services.image_verdict_service import VerdictKind

@@ -4,13 +4,19 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Iterable
-from typing import Any
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection, inserted_id
+from leaguebot.core.models.change import PlannedStep
 from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.core.services.drivers.driver_service import accounts_of_profile, drivers_in_states
+from leaguebot.core.services.upkeep.pack_service import CLEARED_SIGNUP_CHANNEL_ID, CLEARED_WIZARDS
+from leaguebot.core.services.modules.review_sections import Review, ReviewSection
+from leaguebot.core.services.seasons.season_lifecycle_service import UNSETTLED_STATES
 from leaguebot.signup.models.signup_module import (
     AvailabilitySlot,
     ConfigSnapshot,
@@ -21,7 +27,46 @@ from leaguebot.signup.models.signup_module import (
     WizardState,
 )
 
+if TYPE_CHECKING:
+    from leaguebot.core.services.modules.module_service import ModuleService
+
 log = logging.getLogger(__name__)
+
+#: The names of the jobs signup plans for a held signup channel as its driver's account changes:
+#: the channel's deletion timer and permissions moved to the new account, or the replaced
+#: account's channel deleted where the new account holds one of its own.
+MOVE_HELD_CHANNEL = "move_held_channel"
+DELETE_REPLACED_CHANNEL = "delete_replaced_channel"
+
+#: The order "the driver's signup" is chosen in: the latest season first, and within a season
+#: an approved signup before any other, then the latest. A seated driver's approved signup
+#: therefore outranks a later one the league rejected on another of their accounts. A driver
+#: cannot sign up again while approved, so within one account the rule changes nothing.
+SIGNUP_PRECEDENCE_SQL = "season_id DESC, approved DESC, id DESC"
+
+
+def _fmt_ms(total_ms: int) -> str:
+    """Format milliseconds as M:ss.mmm (e.g. 83456 → '1:23.456')."""
+    minutes, remainder = divmod(total_ms, 60_000)
+    seconds, ms = divmod(remainder, 1000)
+    return f"{minutes}:{seconds:02d}.{ms:03d}"
+
+
+def _listing_order(pair: tuple[dict[str, Any], aiosqlite.Row | None]) -> tuple[Any, ...]:
+    """The order the unassigned listings keep: Unassigned drivers first, then by total lap time
+    with none last, then by the moment their signup was sent in, which a correction never moves,
+    then by the signup's id; a driver holding no signup sorts as a null does (first, where a null
+    sorts first)."""
+    driver, signup = pair
+    total = None if signup is None else signup["total_lap_ms"]
+    created = None if signup is None else signup["created_at"]
+    record_id = None if signup is None else signup["id"]
+    return (
+        driver["current_state"] != "UNASSIGNED",
+        total is None, total or 0,
+        created is not None, created or "",
+        record_id is not None, record_id or 0,
+    )
 
 
 class SignupModuleService:
@@ -77,6 +122,106 @@ class SignupModuleService:
             (row["discord_user_id"], DriverState(row["current_state"]), row["signup_channel_id"])
             for row in rows
         ]
+
+    async def driver_signups(self, profile_ids: Iterable[int]) -> dict[int, aiosqlite.Row]:
+        """The signup that is each driver's, keyed by their profile id, as `driver_signup_on`
+        chooses it across the accounts core holds for them. A driver with none is absent."""
+        found: dict[int, aiosqlite.Row] = {}
+        async with get_connection(self._db_path) as db:
+            for profile_id in profile_ids:
+                row = await driver_signup_on(db, await accounts_of_profile(db, profile_id))
+                if row is not None:
+                    found[profile_id] = row
+        return found
+
+    async def _unsettled_drivers(self) -> list[tuple[dict[str, Any], aiosqlite.Row | None]]:
+        """Every driver whose signup is unsettled (core's `UNSETTLED_STATES`), each beside their
+        signup, in the order the listings keep (`_listing_order`)."""
+        async with get_connection(self._db_path) as db:
+            drivers = await drivers_in_states(db, UNSETTLED_STATES)
+            paired = [
+                (driver, await driver_signup_on(db, await accounts_of_profile(db, driver["id"])))
+                for driver in drivers
+            ]
+        return sorted(paired, key=_listing_order)
+
+    async def get_unassigned_drivers_seeded(self) -> list[dict]:
+        """Return every unsettled signup: Unassigned drivers in seed order, then the rest.
+
+        Unassigned drivers are seeded by total_lap_ms ASC NULLS LAST, then by the moment their
+        signup was submitted — not approved, and not last corrected. A driver still awaiting
+        approval or correction follows them, holding no seed (``seed`` is None) — they are
+        listed because confirming placements waits on them too.
+        """
+        results = []
+        for i, (driver, row) in enumerate(await self._unsettled_drivers(), start=1):
+            total_ms = None if row is None else row["total_lap_ms"]
+            results.append({
+                "seed": i if driver["current_state"] == "UNASSIGNED" else None,
+                "state": driver["current_state"],
+                "discord_user_id": driver["discord_user_id"],
+                "server_display_name": (
+                    (row and row["server_display_name"]) or driver["discord_user_id"]
+                ),
+                "platform": (row and row["platform"]) or "—",
+                "availability_slot_ids": json.loads((row and row["availability_slot_ids"]) or "[]"),
+                "driver_type": (row and row["driver_type"]) or "—",
+                "preferred_teams": json.loads((row and row["preferred_teams"]) or "[]"),
+                "preferred_teammate": None if row is None else row["preferred_teammate"],
+                "notes": None if row is None else row["notes"],
+                "total_lap_ms": total_ms,
+                "total_lap_fmt": _fmt_ms(total_ms) if total_ms is not None else "—",
+            })
+        return results
+
+    async def get_unassigned_drivers_for_export(
+        self, slots: list[AvailabilitySlot]
+    ) -> list[dict]:
+        """Return every unsettled signup, as the seeded listing orders it, enriched for CSV.
+
+        Each row dict contains:
+          seed, display_name, discord_user_id, driver_type, total_lap_fmt,
+          slot_presence (dict {slot_sequence_id: bool}),
+          preferred_team_1, preferred_team_2, preferred_team_3,
+          platform, platform_id
+
+        ``slot_presence`` is **keyed** by the display ordinal, because that is the CSV
+        column order, but each answer is **matched** on the slot's durable ID. Matching
+        on the ordinal is wrong: it is a chronological position
+        recomputed on every read, so a slot added or removed since the driver signed up
+        would put their X under somebody else's time.
+        """
+        slots_ordered = sorted(slots, key=lambda s: s.slot_sequence_id)
+        results = []
+        for i, (driver, row) in enumerate(await self._unsettled_drivers(), start=1):
+            total_ms = None if row is None else row["total_lap_ms"]
+            slot_ids_raw: list[str] = json.loads((row and row["availability_slot_ids"]) or "[]")
+            slot_presence = {s.slot_sequence_id: (s.slot_id in slot_ids_raw) for s in slots_ordered}
+
+            preferred_teams_raw: list[str] = json.loads((row and row["preferred_teams"]) or "[]")
+            preferred_team_1 = preferred_teams_raw[0] if len(preferred_teams_raw) > 0 else ""
+            preferred_team_2 = preferred_teams_raw[1] if len(preferred_teams_raw) > 1 else ""
+            preferred_team_3 = preferred_teams_raw[2] if len(preferred_teams_raw) > 2 else ""
+
+            display_name = (
+                (row and (row["server_display_name"] or row["discord_username"]))
+                or driver["discord_user_id"]
+            )
+            results.append({
+                "seed": i if driver["current_state"] == "UNASSIGNED" else None,
+                "state": driver["current_state"],
+                "display_name": display_name,
+                "discord_user_id": driver["discord_user_id"],
+                "driver_type": (row and row["driver_type"]) or "",
+                "total_lap_fmt": _fmt_ms(total_ms) if total_ms is not None else "",
+                "slot_presence": slot_presence,
+                "preferred_team_1": preferred_team_1,
+                "preferred_team_2": preferred_team_2,
+                "preferred_team_3": preferred_team_3,
+                "platform": (row and row["platform"]) or "",
+                "platform_id": (row and row["platform_id"]) or "",
+            })
+        return results
 
     async def save_config(self, cfg: SignupModuleConfig) -> None:
         async with get_connection(self._db_path) as db:
@@ -163,22 +308,7 @@ class SignupModuleService:
     async def get_settings(self) -> SignupModuleSettings:
         """Return settings row; if missing, return defaults."""
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT nationality_required, time_type, time_image_required "
-                "FROM signup_module_settings",
-            )
-            row = await cursor.fetchone()
-        if row is None:
-            return SignupModuleSettings(
-                nationality_required=True,
-                time_type="TIME_TRIAL",
-                time_image_required=True,
-            )
-        return SignupModuleSettings(
-            nationality_required=bool(row["nationality_required"]),
-            time_type=row["time_type"],
-            time_image_required=bool(row["time_image_required"]),
-        )
+            return await settings_on(db)
 
     async def save_settings(self, settings: SignupModuleSettings) -> None:
         async with get_connection(self._db_path) as db:
@@ -212,24 +342,7 @@ class SignupModuleService:
         is stored against; see ``AvailabilitySlot``.
         """
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT id, day_of_week, time_hhmm "
-                "FROM signup_availability_slots "
-                " "
-                "ORDER BY day_of_week ASC, time_hhmm ASC",
-            )
-            rows = await cursor.fetchall()
-        return [
-            AvailabilitySlot(
-                id=row["id"],
-                slot_id=AvailabilitySlot.make_slot_id(row["day_of_week"], row["time_hhmm"]),
-                slot_sequence_id=i,
-                day_of_week=row["day_of_week"],
-                time_hhmm=row["time_hhmm"],
-                display_label=AvailabilitySlot.make_label(row["day_of_week"], row["time_hhmm"]),
-            )
-            for i, row in enumerate(rows, start=1)
-        ]
+            return await slots_on(db)
 
     async def add_slot(self, day_of_week: int, time_hhmm: str) -> AvailabilitySlot:
         """Insert a slot; raises ValueError on duplicate.
@@ -393,40 +506,6 @@ class SignupModuleService:
             "WHERE closed_at IS NULL",
             (close_at_iso,),
         )
-
-    async def snapshot_season_config(self, season_id: int) -> None:
-        """Keep the signup configuration *season_id* is confirmed with (issue #220).
-
-        Taken when the season's configuration is confirmed, from which point the module's
-        settings are fixed until the season ends, so the snapshot is exactly what every
-        signup of the season answered. Taken again only if called again — replaced, not
-        duplicated.
-        """
-        settings = await self.get_settings()
-        slots = await self.get_slots()
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "INSERT INTO season_signup_config "
-                "(season_id, nationality_required, time_type, time_image_required, slots_json) "
-                "VALUES (?, ?, ?, ?, ?) "
-                "ON CONFLICT(season_id) DO UPDATE SET "
-                "nationality_required = excluded.nationality_required, "
-                "time_type = excluded.time_type, "
-                "time_image_required = excluded.time_image_required, "
-                "slots_json = excluded.slots_json, captured_at = datetime('now')",
-                (
-                    season_id,
-                    int(settings.nationality_required),
-                    settings.time_type,
-                    int(settings.time_image_required),
-                    json.dumps([
-                        {"slot_id": slot.slot_id, "day_of_week": slot.day_of_week,
-                         "time_hhmm": slot.time_hhmm}
-                        for slot in slots
-                    ]),
-                ),
-            )
-            await db.commit()
 
     async def get_season_config(self, season_id: int) -> dict | None:
         """The signup configuration *season_id* was confirmed with, or None."""
@@ -640,18 +719,9 @@ class SignupModuleService:
             return None
         return self._row_to_wizard_record(row)
 
-    async def save_wizard_on(
-        self, db: aiosqlite.Connection, wizard: SignupWizardRecord, *, starting: bool = False
-    ) -> None:
+    async def save_wizard_on(self, db: aiosqlite.Connection, wizard: SignupWizardRecord) -> None:
         """Save the wizard's record on the connection handed, inserting it or updating the one
         the driver holds; commits nothing: the caller's save does.
-
-        *starting* is the save of a signup just begun (Sign Up pressed). It alone clears any
-        closing notice a past close of the window still owes the driver (`end_wizard_on`): a mark
-        a close left standing with no stop to finish it would otherwise survive into the new
-        signup, and a later finish would lock and delete the channel of a signup in progress.
-        Every other save, a step of the signup, leaves the mark as it is, so that a step saved
-        just after a close marked the driver never takes the mark away from that close.
         """
         snapshot_json = (
             json.dumps(self._snapshot_to_dict(wizard.config_snapshot))
@@ -663,7 +733,7 @@ class SignupModuleService:
             signup_channel_id=wizard.signup_channel_id, snapshot_json=snapshot_json,
             draft_answers=wizard.draft_answers,
             current_lap_track_index=wizard.current_lap_track_index,
-            last_activity_at=wizard.last_activity_at, starting=starting,
+            last_activity_at=wizard.last_activity_at,
         )
 
     async def save_wizard_row_on(
@@ -677,14 +747,12 @@ class SignupModuleService:
         draft_answers: dict[str, Any],
         current_lap_track_index: int,
         last_activity_at: str | None,
-        starting: bool = False,
     ) -> None:
         """Insert or update a driver's wizard row on the connection handed; commits nothing.
 
         What `save_wizard_on` writes, for a change that saves the row in the same save as a job's
         mark. *snapshot_json* is the configuration as `_snapshot_to_dict` freezes it, already
-        encoded, so that a job which made it can hand it on in its result. *starting* is as in
-        `save_wizard_on`.
+        encoded, so that a job which made it can hand it on in its result.
         """
         await db.execute(
             """
@@ -699,8 +767,7 @@ class SignupModuleService:
                 config_snapshot_json     = excluded.config_snapshot_json,
                 draft_answers_json       = excluded.draft_answers_json,
                 current_lap_track_index  = excluded.current_lap_track_index,
-                last_activity_at         = excluded.last_activity_at,
-                closing_notice_owed      = CASE WHEN ? THEN 0 ELSE closing_notice_owed END
+                last_activity_at         = excluded.last_activity_at
             """,
             (
                 discord_user_id,
@@ -710,7 +777,6 @@ class SignupModuleService:
                 json.dumps(draft_answers),
                 current_lap_track_index,
                 last_activity_at,
-                int(starting),
             ),
         )
 
@@ -748,124 +814,29 @@ class SignupModuleService:
             (total_ms, discord_user_id),
         )
 
-    async def withdraw_approval(self, driver_profile_id: int) -> None:
-        """Clear the approval of the driver's latest approved signup, under any of their accounts.
-
-        For an approved driver the league turns down afterwards: the signup was rejected in
-        the end, and no longer outranks the driver's others.
-        """
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                "UPDATE signup_records SET approved = 0 WHERE id = ("
-                "  SELECT id FROM signup_records WHERE approved = 1"
-                "  AND discord_user_id IN ("
-                "    SELECT discord_user_id FROM driver_accounts WHERE driver_profile_id = ?)"
-                "  ORDER BY id DESC LIMIT 1)",
-                (driver_profile_id,),
-            )
-            await db.commit()
-
-    async def rekey_wizard(self, from_account: str, to_account: str) -> None:
-        """Move a wizard record to another account of the same driver (issue #243).
-
-        A wizard record is the transient state of one signup and its channel, not a record of
-        the league's, so it follows the driver to their new current account. An abandoned
-        draft the new account holds (a signup never begun) is deleted in the same save, which
-        it would otherwise collide with.
-        """
-        async with get_connection(self._db_path) as db:
-            await self.delete_wizard_on(db, to_account)
-            await db.execute(
-                "UPDATE signup_wizard_records SET discord_user_id = ? "
-                "WHERE discord_user_id = ?",
-                (to_account, from_account),
-            )
-            await db.commit()
-
     async def delete_wizard_on(self, db: aiosqlite.Connection, discord_user_id: str) -> None:
         """Delete a driver's wizard record on the connection handed; commits nothing.
 
         For a change whose job records the deletion of the driver's channel in the save that
-        marks the job done, and for `rekey_wizard`, which clears the account a record moves to.
+        marks the job done.
         """
         await db.execute(
             "DELETE FROM signup_wizard_records WHERE discord_user_id = ?",
             (discord_user_id,),
         )
 
-    #: The values of ``signup_wizard_records.closing_notice_owed``: none, owed by the change
-    #: queue's close of the window. (A value 2, owed by a close off the queue, is no longer
-    #: written: no close is made off the queue.)
-    _OWED_NONE = 0
-    _OWED_BY_QUEUE = 1
-
-    async def end_wizard_on(
-        self,
-        db: aiosqlite.Connection,
-        discord_user_id: str,
-        *,
-        closing_notice_owed: bool = False,
-    ) -> None:
+    async def end_wizard_on(self, db: aiosqlite.Connection, discord_user_id: str) -> None:
         """Mark a driver's signup over on the connection handed; commits nothing.
 
-        The wizard is unengaged, so a restart's recovery never re-arms or expires it, and owes its
-        closing notice where asked (*closing_notice_owed*, for the change queue's close of the
-        signup window). The signup channel is kept: the channel's deletion still reads it. A driver
-        with no wizard record is nothing to end.
-
-        The owed mark is a record of work still owed, kept beside the change queue, which
-        architecture.md rejects as a rule ("a separate record of work still owed after a save").
-        It is here on purpose: the window's close returns each driver in a save of its own, before
-        the job that plans their notice and channel jobs is saved, and a kill between the two
-        leaves no queue record to find them by. The mark is written in the save that returns the
-        driver, so that the next try or the restart finds exactly those drivers, and is cleared in
-        the save that plans their jobs (`clear_closing_notices_on`), from which the queue's own
-        records hold them. It is never read from wizard state, so a channel kept on purpose is
-        never found. It is read by `owed_closing_notices` and `take_closing_notices_on`, and is
-        owed by a close of the window and by nothing else. Do not widen the mark further into a
-        general record of owed work.
+        The wizard is unengaged, so a restart's recovery never re-arms or expires it. The signup
+        channel is kept: the channel's deletion still reads it. A driver with no wizard record is
+        nothing to end.
         """
-        owed = self._OWED_BY_QUEUE if closing_notice_owed else self._OWED_NONE
         await db.execute(
-            "UPDATE signup_wizard_records SET wizard_state = 'UNENGAGED', "
-            "closing_notice_owed = ? WHERE discord_user_id = ?",
-            (owed, discord_user_id),
+            "UPDATE signup_wizard_records SET wizard_state = 'UNENGAGED' "
+            "WHERE discord_user_id = ?",
+            (discord_user_id,),
         )
-
-    async def owed_closing_notices(self) -> list[str]:
-        """The accounts the queue's close owes their closing notice, in the order of their
-        records, on a connection of its own. For a check before a step or a step with no save
-        open; a save reads them with `take_closing_notices_on`."""
-        async with get_connection(self._db_path) as db:
-            return await self._owed_closing_notices_on(db, self._OWED_BY_QUEUE)
-
-    async def clear_closing_notices_on(
-        self, db: aiosqlite.Connection, accounts: Iterable[str]
-    ) -> None:
-        """Set the closing notice owed back to none for these accounts, of either kind, on the
-        connection handed; commits nothing."""
-        for account in accounts:
-            await db.execute(
-                "UPDATE signup_wizard_records SET closing_notice_owed = 0 "
-                "WHERE discord_user_id = ?",
-                (str(account),),
-            )
-
-    async def take_closing_notices_on(self, db: aiosqlite.Connection) -> list[str]:
-        """Read the accounts the queue's close still owes their closing notice and clear them, on
-        the connection handed, so a save needs no second connection; commits nothing."""
-        accounts = await self._owed_closing_notices_on(db, self._OWED_BY_QUEUE)
-        await self.clear_closing_notices_on(db, accounts)
-        return accounts
-
-    @staticmethod
-    async def _owed_closing_notices_on(db: aiosqlite.Connection, kind: int) -> list[str]:
-        cursor = await db.execute(
-            "SELECT discord_user_id FROM signup_wizard_records "
-            "WHERE closing_notice_owed = ? ORDER BY id",
-            (kind,),
-        )
-        return [str(row["discord_user_id"]) for row in await cursor.fetchall()]
 
     async def get_all_active_wizards(self) -> list[SignupWizardRecord]:
         """Return all wizard records not in UNENGAGED state for a server."""
@@ -981,3 +952,280 @@ class SignupModuleService:
                 for s in snapshot.slots
             ],
         }
+
+
+async def settings_on(db: aiosqlite.Connection) -> SignupModuleSettings:
+    """The module's settings, read on *db*; the defaults where none are saved."""
+    cursor = await db.execute(
+        "SELECT nationality_required, time_type, time_image_required FROM signup_module_settings"
+    )
+    row = await cursor.fetchone()
+    if row is None:
+        return SignupModuleSettings(
+            nationality_required=True, time_type="TIME_TRIAL", time_image_required=True
+        )
+    return SignupModuleSettings(
+        nationality_required=bool(row["nationality_required"]),
+        time_type=row["time_type"],
+        time_image_required=bool(row["time_image_required"]),
+    )
+
+
+async def slots_on(db: aiosqlite.Connection) -> list[AvailabilitySlot]:
+    """The availability slots, read on *db*, ordered Monday to Sunday and by time, numbered 1..N
+    in that order (see `SignupModuleService.get_slots`)."""
+    cursor = await db.execute(
+        "SELECT id, day_of_week, time_hhmm FROM signup_availability_slots "
+        "ORDER BY day_of_week ASC, time_hhmm ASC"
+    )
+    return [
+        AvailabilitySlot(
+            id=row["id"],
+            slot_id=AvailabilitySlot.make_slot_id(row["day_of_week"], row["time_hhmm"]),
+            slot_sequence_id=i,
+            day_of_week=row["day_of_week"],
+            time_hhmm=row["time_hhmm"],
+            display_label=AvailabilitySlot.make_label(row["day_of_week"], row["time_hhmm"]),
+        )
+        for i, row in enumerate(await cursor.fetchall(), start=1)
+    ]
+
+
+async def signup_enabled_on(db: aiosqlite.Connection) -> bool:
+    """Whether the signup module is on, read on *db*: the module's switch reader, which the builder
+    signs up with `ModuleService` and the module's own work asks. A league that has never
+    switched it on has no row, and reads as off."""
+    cursor = await db.execute("SELECT signup_module_enabled FROM server_configs")
+    row = await cursor.fetchone()
+    return row is not None and bool(row["signup_module_enabled"])
+
+
+async def configuration_confirmed_on(
+    db: aiosqlite.Connection, season_id: int, now: datetime
+) -> None:
+    """Keep the signup configuration *season_id* is confirmed with, on *db*, committing nothing:
+    the module's settings and its availability slots, stamped *now*.
+
+    Core hands it the season's id and the queue's clock as the season's configuration is
+    confirmed, in the confirmation's own save, so that the season moves on with its signup
+    settings kept or not at all (architecture.md, "How modules and core fit together"). From that
+    moment the module's settings are fixed until the season ends, so the snapshot is exactly what
+    every signup of the season answered. Called again for the season it replaces the snapshot,
+    never duplicating it. While the signup module is off it keeps nothing, the hook being called
+    whatever the modules' switches say.
+    """
+    if not await signup_enabled_on(db):
+        return
+    settings = await settings_on(db)
+    slots = [
+        {"slot_id": slot.slot_id, "day_of_week": slot.day_of_week, "time_hhmm": slot.time_hhmm}
+        for slot in await slots_on(db)
+    ]
+    await db.execute(
+        "INSERT INTO season_signup_config "
+        "(season_id, nationality_required, time_type, time_image_required, slots_json, "
+        "captured_at) VALUES (?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(season_id) DO UPDATE SET "
+        "nationality_required = excluded.nationality_required, "
+        "time_type = excluded.time_type, "
+        "time_image_required = excluded.time_image_required, "
+        "slots_json = excluded.slots_json, captured_at = excluded.captured_at",
+        (
+            season_id,
+            int(settings.nationality_required),
+            settings.time_type,
+            int(settings.time_image_required),
+            json.dumps(slots),
+            now.isoformat(),
+        ),
+    )
+
+
+async def driver_signup_on(
+    db: aiosqlite.Connection, accounts: list[str]
+) -> aiosqlite.Row | None:
+    """The signup record that is the driver's, read on *db*, or None where they have none.
+
+    A driver's signups are kept under the account each was made from, so *accounts* are every
+    account the driver has held (core's `accounts_of_profile`), and the signup is chosen across all
+    of them in `SIGNUP_PRECEDENCE_SQL`'s order: records are kept, never overwritten, and an
+    approved one outranks a later one that was not.
+    """
+    if not accounts:
+        return None
+    cursor = await db.execute(
+        "SELECT * FROM signup_records "
+        f"WHERE discord_user_id IN ({', '.join('?' * len(accounts))}) "
+        f"ORDER BY {SIGNUP_PRECEDENCE_SQL} LIMIT 1",
+        accounts,
+    )
+    return await cursor.fetchone()
+
+
+async def driver_names(
+    service: SignupModuleService, profile_ids: Iterable[int]
+) -> dict[int, str]:
+    """The name each driver of *profile_ids* gave in their signup, keyed by profile id.
+
+    Subscribed to core's `driver_names_read`. A driver with no signup, or whose signup holds no
+    name, is absent from the answer, and core names them by their account. Reads only, and whatever
+    the module's switch says: a signup kept while the module was on still names its driver.
+    """
+    return {
+        profile_id: row["server_display_name"]
+        for profile_id, row in (await service.driver_signups(profile_ids)).items()
+        if row["server_display_name"]
+    }
+
+
+async def driver_turned_down_on(db: aiosqlite.Connection, driver_profile_id: int) -> None:
+    """Withdraw the approval of the latest approved signup of *driver_profile_id*, under any of
+    their accounts, on *db*, committing nothing.
+
+    Core hands it the driver as it turns them down, in the save that does it, so that the signup
+    ceases to be approved, and no longer outranks the driver's others, with the turn-down or not at
+    all (architecture.md, "How modules and core fit together"). The signup is kept. While the
+    signup module is off it withdraws nothing, the hook being called whatever the modules'
+    switches say.
+    """
+    if not await signup_enabled_on(db):
+        return
+    accounts = await accounts_of_profile(db, driver_profile_id)
+    if not accounts:
+        return
+    await db.execute(
+        "UPDATE signup_records SET approved = 0 WHERE id = ("
+        "  SELECT id FROM signup_records WHERE approved = 1"
+        f"  AND discord_user_id IN ({', '.join('?' * len(accounts))})"
+        "  ORDER BY id DESC LIMIT 1)",
+        accounts,
+    )
+
+
+async def driver_account_changed_on(
+    db: aiosqlite.Connection, replaced: str, new: str
+) -> tuple[PlannedStep, ...]:
+    """Move the held signup channel of the driver whose current account changes from *replaced*
+    to *new*, on *db*, committing nothing, and hand back the jobs that follow it.
+
+    Core hands it the two accounts as it changes them, in the save that does it, so that the
+    wizard record moves with the change or not at all (architecture.md, "How modules and core fit
+    together"). After an approval or a rejection the channel stays open, read-only, for 24 hours,
+    and a reassign cannot happen while a signup is in progress, so any channel the replaced
+    account holds is such a held one. Its record is re-keyed here, an abandoned draft on the new
+    account (a signup never begun) deleted in the same save, which it would otherwise collide
+    with; the job `MOVE_HELD_CHANNEL` then moves the channel's deletion timer, kept at the moment
+    it was already due, and its permissions. Where the new account holds a held channel of its own
+    that one is kept, the replaced account's record is left for the job `DELETE_REPLACED_CHANNEL`
+    to delete with the channel, and nothing is re-keyed: the driver can keep only one. While the
+    signup module is off it moves nothing, the hook being called whatever the modules' switches
+    say.
+    """
+    if not await signup_enabled_on(db):
+        return ()
+    cursor = await db.execute(
+        "SELECT signup_channel_id FROM signup_wizard_records WHERE discord_user_id = ?",
+        (replaced,),
+    )
+    held = await cursor.fetchone()
+    if held is None or held["signup_channel_id"] is None:
+        return ()
+    channel_id = int(held["signup_channel_id"])
+    cursor = await db.execute(
+        "SELECT signup_channel_id FROM signup_wizard_records WHERE discord_user_id = ?",
+        (new,),
+    )
+    theirs = await cursor.fetchone()
+    if theirs is not None and theirs["signup_channel_id"] is not None:
+        return (PlannedStep(DELETE_REPLACED_CHANNEL, {"user_id": replaced, "channel_id": channel_id}),)
+    await db.execute("DELETE FROM signup_wizard_records WHERE discord_user_id = ?", (new,))
+    await db.execute(
+        "UPDATE signup_wizard_records SET discord_user_id = ? WHERE discord_user_id = ?",
+        (new, replaced),
+    )
+    return (
+        PlannedStep(
+            MOVE_HELD_CHANNEL,
+            {"from_account": replaced, "to_account": new, "channel_id": channel_id},
+        ),
+    )
+
+
+async def season_deleted_on(db: aiosqlite.Connection, season_id: int) -> None:
+    """Delete signup's rows of *season_id* on *db*, committing nothing: the season's sign-up
+    records, its windows and its configuration.
+
+    Core hands it the season id as it deletes the season, in the delete's own save, so that the
+    module's rows go with the season or not at all (architecture.md, "The database"). The records
+    go before the windows they point at.
+    """
+    await db.execute("DELETE FROM signup_records WHERE season_id = ?", (season_id,))
+    await db.execute("DELETE FROM signup_windows WHERE season_id = ?", (season_id,))
+    await db.execute("DELETE FROM season_signup_config WHERE season_id = ?", (season_id,))
+
+
+async def bot_packed_on(db: aiosqlite.Connection) -> dict[str, Any]:
+    """Clear signup's rows tied to the server the bot leaves, on *db*, committing nothing: every
+    wizard record, and the signup channel, the Sign Up button's message and the closed post's
+    message in the configuration, if it has one.
+
+    Core hands it the pack's connection, so that signup's rows go with the rest of the pack or
+    not at all (architecture.md, "The database"). The module stays enabled with nothing
+    configured, which is the state `/module enable signup` itself leaves it in. It hands back what
+    the reply and the audit entry report: how many wizards it cleared, and the signup channel's
+    id as it stood, None where there was no configuration.
+    """
+    row = await (await db.execute("SELECT signup_channel_id FROM signup_module_config")).fetchone()
+    wizards = (await db.execute("DELETE FROM signup_wizard_records")).rowcount
+    await db.execute(
+        "UPDATE signup_module_config SET signup_channel_id = NULL, "
+        "signup_button_message_id = NULL, signup_closed_message_id = NULL"
+    )
+    return {
+        CLEARED_WIZARDS: wizards,
+        CLEARED_SIGNUP_CHANNEL_ID: None if row is None else row["signup_channel_id"],
+    }
+
+
+async def review_section(
+    service: SignupModuleService,
+    modules: "ModuleService",
+    *,
+    review: Review,
+    season_id: int,
+    division_ids: list[int],
+) -> ReviewSection | None:
+    """Signup's section of a season review: its channel, settings and available slots, or None
+    where the module is off.
+
+    Subscribed to core's `review_sections_read`. The placements review also hands the signup
+    channel it shows beside the module's line in its Modules section, where signup has a
+    configuration; the configuration review shows none. Reads only.
+    """
+    if not await modules.is_signup_enabled():
+        return None
+    config = await service.get_config()
+    settings = await service.get_settings()
+    slots = await service.get_slots()
+    channel = (
+        f"<#{config.signup_channel_id}>"
+        if config and config.signup_channel_id
+        else "*(not configured)*"
+    )
+    time_type = settings.time_type.replace("_", " ").title()
+    time_image = "Required" if settings.time_image_required else "Not required"
+    nationality = "Required" if settings.nationality_required else "Not required"
+    labels = [slot.display_label for slot in slots] if slots else ["*(none configured)*"]
+    return ReviewSection(
+        module="signup",
+        lines=[
+            "**Signup Config**",
+            f"  • Channel: {channel}",
+            f"  • Time type: {time_type}",
+            f"  • Time image: {time_image}",
+            f"  • Nationality: {nationality}",
+            f"  • Available slots: {', '.join(labels)}",
+            "",
+        ],
+        modules_note=f"Channel: {channel}" if review is Review.PLACEMENTS and config else None,
+    )

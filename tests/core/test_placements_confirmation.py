@@ -15,6 +15,14 @@ import pytest
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage
+from tests.support.review_workflows import (
+    run_check,
+    run_workflow,
+    sign_up_division_channel_faults_read,
+    sign_up_driver_names_read,
+)
+from tests.support.setup_reads import hold_setup
+
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 22070
@@ -56,7 +64,27 @@ def _cog(db_path, *, weather=False, results=False, attendance=False) -> SeasonCo
     cog.bot.module_service.is_weather_enabled = AsyncMock(return_value=weather)
     cog.bot.module_service.is_results_enabled = AsyncMock(return_value=results)
     cog.bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance)
+    sign_up_driver_names_read(cog.bot)
+    sign_up_division_channel_faults_read(cog.bot)
     return cog
+
+
+async def _faults(cog, guild=None) -> tuple[list[str], list[str]]:
+    """What stops the season's placements being confirmed: the gate both confirmations run,
+    handed the league's database, *guild* to look its channels up on, and every hook
+    it asks the modules through off the bot."""
+    return await run_check(
+        "placement_confirmation_faults",
+        cog.bot,
+        cog.bot.db_path,
+        SEASON_ID,
+        guild,
+    )
+
+
+async def _approve(cog, interaction) -> None:
+    """Press ✅ Approve: the approval's workflow, handed *cog*'s bot's services."""
+    await run_workflow("approve_season", cog.bot, interaction)
 
 
 def _guild(*, gone: tuple[int, ...] = (), unreadable: tuple[int, ...] = ()):
@@ -125,7 +153,7 @@ async def test_every_unsettled_signup_is_named(db_path):
     await _driver(db_path, "4", "ASSIGNED", "Placed")
     await _driver(db_path, "5", "NOT_SIGNED_UP", "Left")
 
-    unsettled, _ = await _cog(db_path)._placement_confirmation_faults(SEASON_ID)
+    unsettled, _ = await _faults(_cog(db_path))
 
     joined = "\n".join(unsettled)
     assert len(unsettled) == 3
@@ -135,7 +163,7 @@ async def test_every_unsettled_signup_is_named(db_path):
 
 
 async def test_a_division_missing_its_lineup_or_calendar_channel_is_named(db_path):
-    _, channels = await _cog(db_path)._placement_confirmation_faults(SEASON_ID)
+    _, channels = await _faults(_cog(db_path))
 
     assert channels == ["**Am** has no lineup channel — `/division lineup-channel`."]
 
@@ -155,8 +183,8 @@ async def test_a_module_s_channels_are_needed_only_while_it_is_enabled(db_path, 
         await db.execute("UPDATE divisions SET lineup_channel_id = 200 WHERE id = 2")
         await db.commit()
 
-    _, off = await _cog(db_path)._placement_confirmation_faults(SEASON_ID)
-    _, on = await _cog(db_path, **{module: True})._placement_confirmation_faults(SEASON_ID)
+    _, off = await _faults(_cog(db_path))
+    _, on = await _faults(_cog(db_path, **{module: True}))
 
     assert off == []
     assert len(on) == 2 * len(labels), "each of the two live divisions lacks each of them"
@@ -185,7 +213,7 @@ async def test_a_missing_module_channel_is_named_with_the_command_that_now_sets_
         await db.commit()
     cog = _cog(db_path, weather=True, results=True, attendance=True)
 
-    _, channels = await cog._placement_confirmation_faults(SEASON_ID)
+    _, channels = await _faults(cog)
 
     assert f"**Pro** has no {label} — `{command}`." in channels
 
@@ -196,9 +224,7 @@ async def test_a_channel_deleted_from_the_server_is_named_with_its_command(db_pa
     await _set_module_channels(db_path)
     cog = _cog(db_path, weather=True, results=True, attendance=True)
 
-    _, channels = await cog._placement_confirmation_faults(
-        SEASON_ID, _guild(gone=(100, 222, 231))
-    )
+    _, channels = await _faults(cog, _guild(gone=(100, 222, 231)))
 
     assert channels == [
         "**Pro**'s lineup channel is no longer on the server — `/division lineup-channel`.",
@@ -213,9 +239,7 @@ async def test_a_channel_that_could_not_be_fetched_is_not_called_gone(db_path):
     await _set_module_channels(db_path)
     cog = _cog(db_path, weather=True, results=True, attendance=True)
 
-    _, channels = await cog._placement_confirmation_faults(
-        SEASON_ID, _guild(unreadable=(100, 120))
-    )
+    _, channels = await _faults(cog, _guild(unreadable=(100, 120)))
 
     assert channels == []
 
@@ -225,7 +249,7 @@ async def test_a_cancelled_division_is_not_asked_for_its_channels(db_path):
     await _set_module_channels(db_path)
     cog = _cog(db_path, weather=True, results=True, attendance=True)
 
-    _, channels = await cog._placement_confirmation_faults(SEASON_ID, _guild())
+    _, channels = await _faults(cog, _guild())
 
     assert channels == []
 
@@ -236,7 +260,7 @@ async def test_a_settled_season_with_its_channels_has_no_faults(db_path):
         await db.commit()
     await _driver(db_path, "4", "ASSIGNED")
 
-    assert await _cog(db_path)._placement_confirmation_faults(SEASON_ID) == ([], [])
+    assert await _faults(_cog(db_path)) == ([], [])
 
 
 # ── The review and the confirmation refuse ─────────────────────────────────────────
@@ -245,7 +269,7 @@ async def test_a_settled_season_with_its_channels_has_no_faults(db_path):
 @pytest.mark.parametrize("stage", [SeasonStage.CONFIGURATION, SeasonStage.SIGNUPS])
 async def test_the_review_is_refused_outside_placements(db_path, stage):
     cog = _cog(db_path)
-    cog._pending = {USER_ID: SimpleNamespace(season_id=SEASON_ID)}
+    hold_setup(cog.bot.season_service, SimpleNamespace(season_id=SEASON_ID))
     cog.bot.season_service.get_stage = AsyncMock(return_value=stage)
     cog.bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
     interaction = MagicMock()
@@ -267,7 +291,7 @@ async def test_the_confirmation_refuses_an_unsettled_signup_and_commits_nothing(
     await _driver(db_path, "1", "UNASSIGNED", "Alice")
     cog = _cog(db_path)
     pending = SimpleNamespace(season_id=SEASON_ID, season_number=1)
-    cog._pending = {USER_ID: pending}
+    hold_setup(cog.bot.season_service, pending)
     cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
     cog.bot.season_service.get_divisions = AsyncMock(
         return_value=[SimpleNamespace(status="SETUP")]
@@ -279,7 +303,7 @@ async def test_the_confirmation_refuses_an_unsettled_signup_and_commits_nothing(
     interaction.response.defer = AsyncMock()
     interaction.followup.send = AsyncMock()
 
-    await SeasonCog._do_approve(cog, interaction)
+    await _approve(cog, interaction)
 
     assert "Alice" in interaction.followup.send.await_args.args[0]
     cog.bot.season_service.transition_to_active.assert_not_awaited()
@@ -298,7 +322,7 @@ async def test_the_confirmation_names_every_missing_channel_at_once_and_commits_
         )
         await db.commit()
     cog = _cog(db_path, results=True)
-    cog._pending = {USER_ID: SimpleNamespace(season_id=SEASON_ID, season_number=1)}
+    hold_setup(cog.bot.season_service, SimpleNamespace(season_id=SEASON_ID, season_number=1))
     cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
     cog.bot.season_service.get_divisions = AsyncMock(
         return_value=[SimpleNamespace(status="SETUP")]
@@ -310,7 +334,7 @@ async def test_the_confirmation_names_every_missing_channel_at_once_and_commits_
     interaction.response.defer = AsyncMock()
     interaction.followup.send = AsyncMock()
 
-    await SeasonCog._do_approve(cog, interaction)
+    await _approve(cog, interaction)
 
     (call,) = interaction.followup.send.await_args_list
     refusal = call.args[0]
@@ -324,7 +348,7 @@ async def test_the_confirmation_names_every_missing_channel_at_once_and_commits_
 async def test_the_confirmation_refuses_a_season_with_no_division(db_path, divisions):
     """A season with nothing to race would never reach Pending completion (issue #220)."""
     cog = _cog(db_path)
-    cog._pending = {USER_ID: SimpleNamespace(season_id=SEASON_ID)}
+    hold_setup(cog.bot.season_service, SimpleNamespace(season_id=SEASON_ID))
     cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
     cog.bot.season_service.get_divisions = AsyncMock(return_value=divisions)
     cog.bot.season_service.transition_to_active = AsyncMock()
@@ -334,7 +358,7 @@ async def test_the_confirmation_refuses_a_season_with_no_division(db_path, divis
     interaction.response.defer = AsyncMock()
     interaction.followup.send = AsyncMock()
 
-    await SeasonCog._do_approve(cog, interaction)
+    await _approve(cog, interaction)
 
     reply = interaction.followup.send.await_args.args[0]
     assert "no divisions" in reply and "Nothing has been approved" in reply
@@ -343,7 +367,7 @@ async def test_the_confirmation_refuses_a_season_with_no_division(db_path, divis
 
 async def test_the_confirmation_refuses_a_season_no_longer_in_placements(db_path):
     cog = _cog(db_path)
-    cog._pending = {USER_ID: SimpleNamespace(season_id=SEASON_ID)}
+    hold_setup(cog.bot.season_service, SimpleNamespace(season_id=SEASON_ID))
     cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.ONGOING)
     cog.bot.change_queue.ask = AsyncMock(return_value=None)
     interaction = MagicMock()
@@ -352,7 +376,7 @@ async def test_the_confirmation_refuses_a_season_no_longer_in_placements(db_path
     interaction.response.defer = AsyncMock()
     interaction.followup.send = AsyncMock()
 
-    await SeasonCog._do_approve(cog, interaction)
+    await _approve(cog, interaction)
 
     assert "no longer in placements" in interaction.followup.send.await_args.args[0]
     cog.bot.change_queue.ask.assert_not_awaited()

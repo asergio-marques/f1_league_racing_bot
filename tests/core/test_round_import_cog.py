@@ -6,8 +6,10 @@ open a modal — so the deferral moves into the modal's `on_submit`, where the w
 inversion is the thing most likely to be "corrected" by someone reading
 `test_season_setup_defers.py`, so it is pinned here from both sides.
 
-The other rule pinned here: an import of twenty rounds calls `_snapshot_pending` **once**,
-not twenty times, so the whole import lands in one transaction or not at all.
+The other rule pinned here: an import of twenty rounds is **one** change on the change queue
+(#283), not twenty, so the whole import lands in one transaction or not at all.
+
+The forms are submitted on a league whose setup the database alone holds (`setup_league`).
 """
 from __future__ import annotations
 
@@ -16,15 +18,14 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-import leaguebot.core.cogs.season_cog as season_cog
-from leaguebot.core.cogs.season_cog import (
-    BulkRoundModal,
-    PendingConfig,
-    PendingDivision,
-    SeasonCog,
-    XmlRoundModal,
-)
+import leaguebot.core.cogs.round_cog as round_cog
+from leaguebot.core.cogs.round_cog import BulkRoundModal, RoundCog, XmlRoundModal
+from tests.support.setup_rounds import FORMS, NAMED, import_rounds, round_rows, setup_league
 from tests.support.undecorate import undecorate
+
+
+#: Pro, holding no round, in season #1 being set up in Placements.
+_PRO = (("Pro", 1, 10, ()),)
 
 
 def _interaction() -> MagicMock:
@@ -41,30 +42,9 @@ def _interaction() -> MagicMock:
     return interaction
 
 
-def _cog_with(cfg: PendingConfig | None, db_path: str = ":memory:") -> MagicMock:
-    """A stub SeasonCog, registered so the modals can find it through the client."""
-    cog = MagicMock()
-    cog.resolve_pending = MagicMock(return_value=cfg)
-    cog.bot.db_path = db_path
-    cog.bot.output_router.post_log = AsyncMock()
-    cog._snapshot_pending = AsyncMock()
-    cog._calendar_round_overflow = AsyncMock(return_value=None)
-    return cog
-
-
-def _bind(interaction: MagicMock, cog: MagicMock) -> None:
-    interaction.client.get_cog = MagicMock(return_value=cog)
-
-
-def _pending() -> PendingConfig:
-    return PendingConfig(
-        divisions=[PendingDivision(name="Pro", role_id=1)]
-    )
-
-
 async def _run_command(name: str, interaction, **kwargs) -> None:
     """The command body, past whatever tier guard it wears."""
-    body = undecorate(getattr(SeasonCog, name))
+    body = undecorate(getattr(RoundCog, name))
     await body(MagicMock(), interaction, **kwargs)
 
 
@@ -106,148 +86,137 @@ async def test_the_division_is_carried_to_the_modal():
 # ── The modal defers, then replies through followup ───────────────────────
 
 
-async def test_the_modal_defers_before_doing_the_work(monkeypatch):
-    interaction = _interaction()
-    cog = _cog_with(_pending())
-    _bind(interaction, cog)
-    monkeypatch.setattr(
-        season_cog, "apply_round_import", AsyncMock(return_value=({"Pro": []}, []))
-    )
+async def test_the_modal_defers_before_doing_the_work(tmp_path):
+    """Season #1 in Placements, Pro holding no round. The manager submits `/round add-bulk`'s
+    form for Pro with one round on 14 June. The form defers once, and its reply goes as a
+    follow-up."""
+    league = await setup_league(tmp_path, divisions=_PRO)
 
-    modal = BulkRoundModal("Pro")
-    modal.entries._value = "2026-06-14T18:00, Normal, 14"
-    await modal.on_submit(interaction)
+    asked = await import_rounds(league, "bulk", "2026-06-14T18:00, Normal, 14")
 
-    interaction.response.defer.assert_awaited_once()
-    interaction.followup.send.assert_awaited()
+    asked.response.defer.assert_awaited_once()
+    asked.followup.send.assert_awaited()
 
 
-async def test_a_parse_failure_is_reported_and_nothing_is_written():
-    interaction = _interaction()
-    cog = _cog_with(_pending())
-    _bind(interaction, cog)
+async def test_a_parse_failure_is_reported_and_nothing_is_written(tmp_path):
+    """Season #1 in Placements, Pro holding no round. The manager submits `/round add-bulk`'s
+    form for Pro with "not a round at all". The reply says no rounds were added, nothing is asked
+    of the change queue, and Pro holds no round."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import last_said
 
-    modal = BulkRoundModal("Pro")
-    modal.entries._value = "not a round at all"
-    await modal.on_submit(interaction)
+    league = await setup_league(tmp_path, divisions=_PRO)
 
-    reply = interaction.followup.send.await_args.args[0]
-    assert "No rounds were added" in reply
-    cog._snapshot_pending.assert_not_awaited()
+    asked = await import_rounds(league, "bulk", "not a round at all")
 
-
-async def test_an_empty_payload_says_so():
-    interaction = _interaction()
-    _bind(interaction, _cog_with(_pending()))
-
-    modal = BulkRoundModal("Pro")
-    modal.entries._value = "\n   \n"
-    await modal.on_submit(interaction)
-
-    assert "Nothing to add" in interaction.followup.send.await_args.args[0]
+    assert "No rounds were added" in last_said(asked)
+    assert await change_rows(league.db_path) == []
+    assert await round_rows(league.db_path, "Pro") == []
 
 
-async def test_no_pending_setup_refuses_without_writing():
-    interaction = _interaction()
-    cog = _cog_with(None)
-    _bind(interaction, cog)
+async def test_an_empty_payload_says_so(tmp_path):
+    """Season #1 in Placements, Pro holding no round. The manager submits `/round add-bulk`'s
+    form for Pro holding only blank lines. The reply says there is nothing to add."""
+    from tests.support.settings_league import last_said
 
-    modal = BulkRoundModal("Pro")
-    modal.entries._value = "2026-06-14T18:00, Normal, 14"
-    await modal.on_submit(interaction)
+    league = await setup_league(tmp_path, divisions=_PRO)
 
-    assert "No pending season setup" in interaction.followup.send.await_args.args[0]
-    cog._snapshot_pending.assert_not_awaited()
+    asked = await import_rounds(league, "bulk", "\n   \n")
+
+    assert "Nothing to add" in last_said(asked)
+
+
+async def test_no_pending_setup_refuses_without_writing(tmp_path):
+    """No season is being set up. The manager submits `/round add-bulk`'s form for Pro with one
+    round on 14 June. The reply says there is no pending season setup, and nothing is asked of
+    the change queue."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import last_said
+
+    league = await setup_league(tmp_path, stage=None)
+
+    asked = await import_rounds(league, "bulk", "2026-06-14T18:00, Normal, 14")
+
+    assert "No pending season setup" in last_said(asked)
+    assert await change_rows(league.db_path) == []
 
 
 # ── The season is written once, not once per round ────────────────────────
 
 
-async def test_a_twenty_round_import_snapshots_exactly_once(monkeypatch):
-    """One write for the whole paste. Once per round would be twenty transactions, and
-    a failure part-way would leave half a calendar written."""
-    interaction = _interaction()
-    cfg = _pending()
-    cog = _cog_with(cfg)
-    _bind(interaction, cog)
-    monkeypatch.setattr(
-        season_cog,
-        "apply_round_import",
-        AsyncMock(return_value=({"Pro": [_round(day) for day in range(1, 21)]}, [])),
-    )
+async def test_a_twenty_round_import_is_one_queued_change(tmp_path):
+    """One change for the whole paste. One per round would be twenty transactions, and a failure
+    part-way would leave half a calendar written. Season #1 in Placements, Pro holding no round.
+    The manager pastes, in `/round add-bulk` for Pro, twenty rounds at the Hungaroring on 1 to 20
+    June. One change is asked of the change queue, and nothing is saved until it runs; once it
+    has, Pro holds the twenty rounds, numbered 1 to 20 by moment."""
+    from tests.support.change_queue import change_rows, run_queue
 
-    modal = BulkRoundModal("Pro")
-    modal.entries._value = "\n".join(
+    league = await setup_league(tmp_path, divisions=_PRO)
+
+    await import_rounds(league, "bulk", "\n".join(
         f"2026-06-{day:02d}T18:00, Normal, 14" for day in range(1, 21)
-    )
-    await modal.on_submit(interaction)
+    ))
 
-    assert cog._snapshot_pending.await_count == 1
-
-
-def _round(day: int) -> dict:
-    from leaguebot.core.models.round import RoundFormat
-
-    return {
-        "round_number": day,
-        "format": RoundFormat.NORMAL,
-        "track_name": "Hungaroring",
-        "scheduled_at": datetime(2026, 6, day, 18, 0),
-    }
+    assert len(await change_rows(league.db_path)) == 1
+    assert await round_rows(league.db_path, "Pro") == []
+    await run_queue(league.bot)
+    assert [(n, at[:10]) for n, _, _, at in await round_rows(league.db_path, "Pro")] == [
+        (day, f"2026-06-{day:02d}") for day in range(1, 21)
+    ]
 
 
-async def test_a_successful_import_reaches_the_log(monkeypatch):
-    interaction = _interaction()
-    cog = _cog_with(_pending())
-    _bind(interaction, cog)
-    monkeypatch.setattr(
-        season_cog,
-        "apply_round_import",
-        AsyncMock(return_value=({"Pro": [_round(14)]}, [])),
-    )
+async def test_a_successful_import_reaches_the_log(tmp_path):
+    """Season #1 in Placements, Pro holding no round. The manager pastes, in `/round add-bulk` for
+    Pro, a round at the Hungaroring on 14 June, and the queue runs it. The log channel holds one
+    line: "Admin (`<@4242>`) | /round add-bulk | Success", then "  division: Pro, now holds 1
+    round(s)"."""
+    from tests.support.change_queue import run_queue
+    from tests.support.settings_league import log_lines
 
-    modal = BulkRoundModal("Pro")
-    modal.entries._value = "2026-06-14T18:00, Normal, 14"
-    await modal.on_submit(interaction)
+    league = await setup_league(tmp_path, divisions=_PRO)
 
-    cog.bot.output_router.post_log.assert_awaited_once()
-    assert "/round add-bulk" in cog.bot.output_router.post_log.await_args.args[0]
+    await import_rounds(league, "bulk", "2026-06-14T18:00, Normal, 14")
+    await run_queue(league.bot)
+
+    assert await log_lines(league) == [
+        f"{NAMED} | /round add-bulk | Success\n  division: Pro, now holds 1 round(s)"
+    ]
 
 
 # ── The XML modal takes the same path ─────────────────────────────────────
 
 
-async def test_the_xml_modal_reports_a_parse_failure():
-    interaction = _interaction()
-    cog = _cog_with(_pending())
-    _bind(interaction, cog)
+async def test_the_xml_modal_reports_a_parse_failure(tmp_path):
+    """Season #1 in Placements, Pro holding no round. The manager submits `/round add-xml`'s form
+    with XML that cannot be read. The reply says no rounds were added, nothing is asked of the
+    change queue, and Pro holds no round."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import last_said
 
-    modal = XmlRoundModal()
-    modal.payload._value = "<config><division name='Pro'></config>"
-    await modal.on_submit(interaction)
+    league = await setup_league(tmp_path, divisions=_PRO)
 
-    assert "No rounds were added" in interaction.followup.send.await_args.args[0]
-    cog._snapshot_pending.assert_not_awaited()
+    asked = await import_rounds(league, "xml", "<config><division name='Pro'></config>")
+
+    assert "No rounds were added" in last_said(asked)
+    assert await change_rows(league.db_path) == []
+    assert await round_rows(league.db_path, "Pro") == []
 
 
-async def test_the_xml_modal_applies_a_sound_payload(monkeypatch):
-    interaction = _interaction()
-    cog = _cog_with(_pending())
-    _bind(interaction, cog)
-    applied = AsyncMock(return_value=({"Pro": [_round(14)]}, []))
-    monkeypatch.setattr(season_cog, "apply_round_import", applied)
+async def test_the_xml_modal_applies_a_sound_payload(tmp_path):
+    """Season #1 in Placements, Pro holding no round. The manager submits `/round add-xml`'s form
+    with one round for Pro at track 14 on 14 June at 18:00, Europe/Lisbon time, and the queue
+    runs it. Pro holds round 1, at the Hungaroring, at 17:00 UTC."""
+    from tests.support.change_queue import run_queue
 
-    modal = XmlRoundModal()
-    modal.payload._value = (
-        '<config><division name="Pro"><round>'
-        "<datetime>2026-06-14T18:00</datetime><timezone>Europe/Lisbon</timezone>"
-        "<format>Normal</format><track>14</track>"
-        "</round></division></config>"
-    )
-    await modal.on_submit(interaction)
+    league = await setup_league(tmp_path, divisions=_PRO)
 
-    applied.assert_awaited_once()
-    assert cog._snapshot_pending.await_count == 1
+    await import_rounds(league, "xml", _SOUND_XML)
+    await run_queue(league.bot)
+
+    assert await round_rows(league.db_path, "Pro") == [
+        (1, "NORMAL", "Hungaroring", "2026-06-14T17:00:00+00:00")
+    ]
 
 
 # ── The rejection is capped ───────────────────────────────────────────────
@@ -258,7 +227,7 @@ def test_a_long_list_of_faults_is_capped():
     refuses an over-long message whole rather than truncating it."""
     errors = [f"Line {n}: unknown track `x`." for n in range(1, 61)]
 
-    rendered = season_cog._format_import_errors(errors)
+    rendered = round_cog._format_import_errors(errors)
 
     assert "60 problem(s)" in rendered
     assert "…and 35 more." in rendered
@@ -273,71 +242,64 @@ def test_a_long_list_of_faults_is_capped():
 # `/round add` now catches it at the command, so all three agree.
 
 
-async def _run_round_add(interaction, cog, **kwargs):
-    body = undecorate(SeasonCog.round_add)
-    await body(cog, interaction, **kwargs)
+async def _run_round_add(league, **kwargs):
+    """`/round add` as the league manager Admin (4242) runs it: the interaction."""
+    from tests.support.settings_league import interaction
+
+    asked = interaction(league.bot, "round add")
+    await undecorate(RoundCog.round_add)(RoundCog(league.bot), asked, **kwargs)
+    return asked
 
 
-def _add_cog(cfg: PendingConfig) -> MagicMock:
-    cog = MagicMock()
-    cog._pending = {42: cfg}
-    cog._get_pending = MagicMock(return_value=cfg)
-    cog.bot.db_path = ":memory:"
-    cog.bot.output_router.post_log = AsyncMock()
-    cog._snapshot_pending = AsyncMock()
-    cog._calendar_round_overflow = AsyncMock(return_value=None)
-    return cog
+#: Pro, holding a round at the Hungaroring on 14 June 2026 at 18:00 UTC.
+_PRO_HOLDING_THE_14TH = (
+    ("Pro", 1, 10, (("NORMAL", "Hungaroring", datetime(2026, 6, 14, 18, 0)),)),
+)
 
 
-async def test_round_add_refuses_a_datetime_the_division_already_holds(monkeypatch):
-    cfg = _pending()
-    cfg.divisions[0].rounds = [_round(14)]
-    cog = _add_cog(cfg)
-    interaction = _interaction()
-    monkeypatch.setattr(
-        season_cog.track_service,
-        "resolve_track_name",
-        AsyncMock(return_value="Hungaroring"),
-    )
+async def test_round_add_refuses_a_datetime_the_division_already_holds(tmp_path):
+    """Season #1 is being set up, in Placements, Pro holding round 1 at the Hungaroring on 14 June
+    2026 at 18:00 UTC. The league manager runs `/round add` for Pro, a NORMAL round at track 14 on
+    14 June at 18:00. They are refused with the clash, saying the round was not added, nothing is
+    asked of the change queue, and Pro holds its one round."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import said
+    from tests.support.setup_rounds import round_rows, setup_league
 
-    await _run_round_add(
-        interaction,
-        cog,
-        division_name="Pro",
-        format="NORMAL",
-        scheduled_at="2026-06-14T18:00",
+    league = await setup_league(tmp_path, divisions=_PRO_HOLDING_THE_14TH)
+
+    asked = await _run_round_add(
+        league, division_name="Pro", format="NORMAL", scheduled_at="2026-06-14T18:00",
         track="14",
     )
 
-    reply = interaction.followup.send.await_args.args[0]
+    [reply] = said(asked)
     assert "already holds round 1" in reply
     assert "not** added" in reply
-    assert len(cfg.divisions[0].rounds) == 1, "the clashing round was added anyway"
-    cog._snapshot_pending.assert_not_awaited()
+    assert await change_rows(league.db_path) == []
+    assert len(await round_rows(league.db_path, "Pro")) == 1
 
 
-async def test_round_add_still_accepts_a_free_moment(monkeypatch):
-    cfg = _pending()
-    cfg.divisions[0].rounds = [_round(14)]
-    cog = _add_cog(cfg)
-    interaction = _interaction()
-    monkeypatch.setattr(
-        season_cog.track_service,
-        "resolve_track_name",
-        AsyncMock(return_value="Hungaroring"),
-    )
+async def test_round_add_still_accepts_a_free_moment(tmp_path):
+    """Season #1 is being set up, in Placements, Pro holding round 1 at the Hungaroring on 14 June
+    2026 at 18:00 UTC. The league manager runs `/round add` for Pro, a NORMAL round at track 14 on
+    21 June at 18:00, and the queue runs it. Pro holds two rounds, the new one round 2, its track
+    stored by the name the bot knows it by, the Hungaroring."""
+    from tests.support.change_queue import run_queue
+    from tests.support.setup_rounds import round_rows, setup_league
+
+    league = await setup_league(tmp_path, divisions=_PRO_HOLDING_THE_14TH)
 
     await _run_round_add(
-        interaction,
-        cog,
-        division_name="Pro",
-        format="NORMAL",
-        scheduled_at="2026-06-21T18:00",
+        league, division_name="Pro", format="NORMAL", scheduled_at="2026-06-21T18:00",
         track="14",
     )
+    await run_queue(league.bot)
 
-    assert len(cfg.divisions[0].rounds) == 2
-    cog._snapshot_pending.assert_awaited_once()
+    assert await round_rows(league.db_path, "Pro") == [
+        (1, "NORMAL", "Hungaroring", "2026-06-14T18:00:00+00:00"),
+        (2, "NORMAL", "Hungaroring", "2026-06-21T18:00:00+00:00"),
+    ]
 
 
 # ── Discord's own limits on a modal ───────────────────────────────────────
@@ -406,98 +368,107 @@ _SOUND_XML = (
     "<format>Normal</format><track>14</track>"
     "</round></division></config>"
 )
-#: What the season's own rules refuse of a calendar that parsed, as `apply_round_import` says it.
-_SEASON_REFUSES = [
-    "Division `Am` not found in pending setup.",
-    "[Pro] 2026-06-14 18:00 is already held by round 1.",
-]
+#: A paste the season refuses: a round at the moment Pro's round 1 holds, and one at track 99.
+_CLASHING_PASTE = "2026-06-14T18:00, Normal, 14\n2026-06-21T18:00, Normal, 99"
+#: A calendar the season refuses: a round at the moment Pro's round 1 holds, and a division Am.
+_CLASHING_XML = (
+    '<config><division name="Pro"><round>'
+    "<datetime>2026-06-14T18:00</datetime><timezone>UTC</timezone>"
+    "<format>Normal</format><track>14</track></round></division>"
+    '<division name="Am"><round>'
+    "<datetime>2026-06-21T18:00</datetime><timezone>UTC</timezone>"
+    "<format>Normal</format><track>14</track></round></division></config>"
+)
+_NOT_FOUND = "[Pro]: no division of that name in the pending setup."
 
 _NO_SETUP = "No pending season setup. Run `/season setup` first."
 
 
-def _submitted(form: str, value: str):
-    """The form as the manager submitted it: /round add-bulk's for Pro, or /round add-xml's."""
-    if form == "bulk":
-        modal = BulkRoundModal("Pro")
-        modal.entries._value = value
-    else:
-        modal = XmlRoundModal()
-        modal.payload._value = value
-    return modal
-
-
 @pytest.mark.parametrize(
-    "form, title, value, has_setup, season_refuses, reply_says, carried",
+    "form, value, stage, reply_says, carried",
     [
         pytest.param(
-            "bulk", "Add rounds in bulk", _BAD_PASTE, True, None, "Import rejected — 2 problem(s)",
-            season_cog.parse_bulk_round_lines(_BAD_PASTE)[1],
+            "bulk", _BAD_PASTE, "PLACEMENTS", "Import rejected — 2 problem(s)",
+            round_cog.parse_bulk_round_lines(_BAD_PASTE)[1],
             id="bulk_paste_with_bad_lines",
         ),
         pytest.param(
-            "bulk", "Add rounds in bulk", "\n   \n", True, None,
+            "bulk", "\n   \n", "PLACEMENTS",
             "Nothing to add — no rounds were given.",
             ["Nothing to add — no rounds were given."],
             id="bulk_paste_with_no_rounds",
         ),
         pytest.param(
-            "bulk", "Add rounds in bulk", _SOUND_PASTE, False, None, _NO_SETUP, [_NO_SETUP],
+            "bulk", _SOUND_PASTE, None, _NO_SETUP, [_NO_SETUP],
             id="bulk_with_no_season_being_set_up",
         ),
         pytest.param(
-            "bulk", "Add rounds in bulk", _SOUND_PASTE, True, _SEASON_REFUSES,
-            "Import rejected — 2 problem(s)", _SEASON_REFUSES,
+            "bulk", _SOUND_PASTE, "SIGNUPS", "Import rejected — 1 problem(s)", [_NOT_FOUND],
+            id="bulk_with_the_season_still_in_signups",
+        ),
+        pytest.param(
+            "bulk", _CLASHING_PASTE, "PLACEMENTS", "Import rejected — 2 problem(s)",
+            ["Line 2: unknown track `99`.",
+             "Line 1: duplicate datetime 2026-06-14T18:00:00 — already used by a round already "
+             "in this division."],
             id="bulk_refused_by_the_season",
         ),
         pytest.param(
-            "xml", "Add rounds from XML", _BAD_XML, True, None, "Import rejected — 3 problem(s)",
-            season_cog.parse_round_xml(_BAD_XML)[1],
+            "xml", _BAD_XML, "PLACEMENTS", "Import rejected — 3 problem(s)",
+            round_cog.parse_round_xml(_BAD_XML)[1],
             id="xml_with_bad_rounds",
         ),
         pytest.param(
-            "xml", "Add rounds from XML", _UNREADABLE_XML, True, None,
+            "xml", _UNREADABLE_XML, "PLACEMENTS",
             "Import rejected — 1 problem(s)",
-            season_cog.parse_round_xml(_UNREADABLE_XML)[1],
+            round_cog.parse_round_xml(_UNREADABLE_XML)[1],
             id="xml_that_cannot_be_read",
         ),
         pytest.param(
-            "xml", "Add rounds from XML", _SOUND_XML, False, None, _NO_SETUP, [_NO_SETUP],
+            "xml", _SOUND_XML, None, _NO_SETUP, [_NO_SETUP],
             id="xml_with_no_season_being_set_up",
         ),
         pytest.param(
-            "xml", "Add rounds from XML", _SOUND_XML, True, _SEASON_REFUSES,
-            "Import rejected — 2 problem(s)", _SEASON_REFUSES,
+            "xml", _SOUND_XML, "SIGNUPS", "Import rejected — 1 problem(s)", [_NOT_FOUND],
+            id="xml_with_the_season_still_in_signups",
+        ),
+        pytest.param(
+            "xml", _CLASHING_XML, "PLACEMENTS", "Import rejected — 2 problem(s)",
+            ["[Pro] line 1: duplicate datetime 2026-06-14T18:00:00 — already used by a round "
+             "already in this division.",
+             "[Am]: no division of that name in the pending setup."],
             id="xml_refused_by_the_season",
         ),
     ],
 )
 async def test_every_import_form_refusal_is_recorded(
-    monkeypatch, form, title, value, has_setup, season_refuses, reply_says, carried
+    tmp_path, form, value, stage, reply_says, carried
 ):
-    """Manager (id 42) submits a round import form and it is refused: the reply is today's,
-    nothing is written, and the log channel gets exactly one refusal line naming the form and
-    carrying every problem."""
-    interaction = _interaction()
-    cog = _cog_with(_pending() if has_setup else None)
-    interaction.client = cog.bot
-    cog.bot.get_cog = MagicMock(return_value=cog)
-    if season_refuses is not None:
-        monkeypatch.setattr(
-            season_cog, "apply_round_import", AsyncMock(return_value=({}, season_refuses))
-        )
+    """Season #1 is being set up, in Placements, Pro holding round 1 on 14 June 2026 at 18:00 UTC;
+    or no season is being set up; or the season is still in Signups, before any division exists,
+    which no stage check refuses but Pro not being found does (the owner's decision on #283: no
+    stage check now). Admin (4242) submits `/round add-bulk`'s form for Pro or `/round add-xml`'s,
+    and it is refused: for lines that cannot be read, for no rounds at all, for no season being
+    set up, for Pro not found, or for what the season refuses (a round at the moment Pro's round 1
+    holds, with a track the bot does not know or a division Am that does not exist). The reply is
+    today's, nothing is asked of the change queue, and the log channel gets exactly one refusal
+    line naming the form and Admin and carrying every problem."""
+    from tests.support.change_queue import change_rows
+    from tests.support.settings_league import log_lines, said
 
-    await _submitted(form, value).on_submit(interaction)
+    league = await setup_league(
+        tmp_path, stage=stage, divisions=_PRO_HOLDING_THE_14TH if stage == "PLACEMENTS" else (),
+    )
 
-    replies = "\n".join(call.args[0] for call in interaction.followup.send.await_args_list)
-    assert reply_says in replies
-    cog._snapshot_pending.assert_not_awaited()
-    lines = [call.args[0] for call in cog.bot.output_router.post_log.await_args_list]
+    asked = await import_rounds(league, form, value)
+
+    assert reply_says in "\n".join(said(asked))
+    assert await change_rows(league.db_path) == []
+    lines = await log_lines(league)
     assert len(lines) == 1, lines
     line = lines[0]
     head = line.splitlines()[0]
-    assert head.startswith("⛔ ")
-    assert title in head
-    assert " refused for Manager (<@42>) — " in head
+    assert head.startswith(f"⛔ {FORMS[form]} refused for {NAMED} — ")
     assert carried
     for problem in carried:
         assert problem in line, (problem, line)

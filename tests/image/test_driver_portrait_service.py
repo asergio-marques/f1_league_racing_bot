@@ -352,7 +352,7 @@ async def test_discarding_takes_the_portrait_of_every_account_named(
     )
     bot = _bot_with_portraits(db_path, directory, monkeypatch)
 
-    assert await discard_portraits(bot, ["7", "8"]) == 2
+    assert await discard_portraits(bot.db_path, bot.image_config_service, ["7", "8"]) == 2
 
     assert sorted(await _rows(db_path)) == ["9"]
     assert sorted(p.name for p in directory.iterdir()) == ["9.svg"]
@@ -364,7 +364,7 @@ async def test_discarding_leaves_the_league_s_own_artwork_alone(db_path, directo
     (directory / "7.svg").write_text("<svg>the league's own</svg>")
     bot = _bot_with_portraits(db_path, directory, monkeypatch)
 
-    assert await discard_portraits(bot, ["7"]) == 0
+    assert await discard_portraits(bot.db_path, bot.image_config_service, ["7"]) == 0
     assert (directory / "7.svg").read_text() == "<svg>the league's own</svg>"
 
 
@@ -384,7 +384,7 @@ async def test_discarding_removes_nothing_where_no_directory_resolves(
         lambda *a, **k: ({}, {"driver": "outside the project root"}),
     )
 
-    assert await discard_portraits(bot, ["7"]) == 0
+    assert await discard_portraits(bot.db_path, bot.image_config_service, ["7"]) == 0
     assert sorted(await _rows(db_path)) == ["7"]
     assert (directory / "7.svg").is_file()
 
@@ -397,7 +397,7 @@ async def test_discarding_removes_nothing_where_the_league_has_no_image_config(
     await refresh_portraits(db_path, [_member(7, "abc")], directory, now=NOW)
     bot = _bot_with_portraits(db_path, directory, monkeypatch, config=False)
 
-    assert await discard_portraits(bot, ["7"]) == 0
+    assert await discard_portraits(bot.db_path, bot.image_config_service, ["7"]) == 0
     assert sorted(await _rows(db_path)) == ["7"]
     assert (directory / "7.svg").is_file()
 
@@ -408,7 +408,7 @@ async def test_discarding_no_account_reads_no_configuration(db_path, directory, 
 
     bot = _bot_with_portraits(db_path, directory, monkeypatch)
 
-    assert await discard_portraits(bot, []) == 0
+    assert await discard_portraits(bot.db_path, bot.image_config_service, []) == 0
     bot.image_config_service.get_config.assert_not_awaited()
 
 
@@ -421,7 +421,17 @@ async def test_a_configuration_that_cannot_be_read_discards_nothing_and_raises_n
     bot = _bot_with_portraits(db_path, directory, monkeypatch)
     bot.image_config_service.get_config = AsyncMock(side_effect=RuntimeError("unreadable"))
 
-    assert await discard_portraits(bot, ["7"]) == 0
+    assert await discard_portraits(bot.db_path, bot.image_config_service, ["7"]) == 0
+    assert sorted(await _rows(db_path)) == ["7"]
+
+    # The same through the drawing core asks, which adds nothing that could raise.
+    from leaguebot.image.services.image_drawing import ImageDrawing
+
+    drawing = ImageDrawing(
+        MagicMock(), bot.image_config_service, MagicMock(),
+        renderer=MagicMock(), post_log=AsyncMock(), db_path=db_path,
+    )
+    assert await drawing.discard_portraits(["7"]) == 0
     assert sorted(await _rows(db_path)) == ["7"]
 
 
@@ -435,7 +445,7 @@ async def test_one_portrait_that_cannot_be_removed_does_not_keep_the_rest(
     remover = AsyncMock(side_effect=[PermissionError("read-only"), True])
     monkeypatch.setattr(driver_portrait_service, "remove_portrait", remover)
 
-    assert await discard_portraits(bot, ["7", "8"]) == 1
+    assert await discard_portraits(bot.db_path, bot.image_config_service, ["7", "8"]) == 1
     assert [c.args[1] for c in remover.await_args_list] == ["7", "8"]
 
 
@@ -523,10 +533,8 @@ async def _gate(monkeypatch, config, directory, members=None, *, obtain_missing=
         return len(list(members))
 
     monkeypatch.setattr(m, "refresh_portraits", _fake)
-    bot = MagicMock()
-    bot.db_path = ":memory:"
     written = await m.refresh_before_render(
-        bot, members if members is not None else [_member(1)],
+        ":memory:", members if members is not None else [_member(1)],
         config=config, directory=directory, obtain_missing=obtain_missing,
     )
     return written, calls
@@ -537,6 +545,37 @@ async def test_the_gate_refreshes_when_the_league_asked_for_it(monkeypatch, dire
 
     assert written == 1
     assert calls and calls[0][1] == directory
+
+
+@pytest.mark.parametrize(("prerender", "refreshed"), [(1, True), (0, False)])
+async def test_the_gate_reads_the_stored_config_where_none_is_handed(
+    tmp_path, monkeypatch, directory, prerender, refreshed
+):
+    """A preview hands no configuration: the gate reads the league's own, so a league that asked
+    for portraits before every render has them brought up to date before its preview is drawn,
+    and one that did not has none fetched."""
+    from leaguebot.image.services import driver_portrait_service as m
+
+    db_path = str(tmp_path / "portraits.db")
+    await run_migrations(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO image_config (id, use_pfp, pfp_prerender) VALUES (1, 1, ?)",
+            (prerender,),
+        )
+        await db.commit()
+    calls = []
+
+    async def _fake(db_path, members, directory, **kwargs):
+        calls.append(list(members))
+        return len(list(members))
+
+    monkeypatch.setattr(m, "refresh_portraits", _fake)
+    member = _member(1)
+
+    written = await m.refresh_before_render(db_path, [member], directory=directory)
+
+    assert (written, calls) == ((1, [[member]]) if refreshed else (0, []))
 
 
 async def test_the_gate_is_shut_while_portraits_are_disabled(monkeypatch, directory):
@@ -578,11 +617,8 @@ async def test_a_failure_beneath_the_gate_never_reaches_the_render(monkeypatch, 
     monkeypatch.setattr(
         m, "refresh_portraits", AsyncMock(side_effect=OSError("disk gone"))
     )
-    bot = MagicMock()
-    bot.db_path = ":memory:"
-
     written = await m.refresh_before_render(
-        bot,
+        ":memory:",
         [_member(1)],
         config=_config(pfp_prerender=False, pfp_daily=True),
         directory=directory,
@@ -1045,12 +1081,10 @@ async def test_the_review_obtains_a_missing_portrait_where_only_daily_updates_ar
 ):
     from leaguebot.image.services import driver_portrait_service as m
 
-    bot = MagicMock()
-    bot.db_path = db_path
     member = _member(7, "abc")
 
     written = await m.refresh_before_render(
-        bot,
+        db_path,
         [member],
         config=_config(pfp_prerender=False, pfp_daily=True),
         directory=directory,
@@ -1150,3 +1184,26 @@ async def test_a_rejected_directory_still_shuts_the_gate_for_the_review(
     )
 
     assert (written, calls) == (0, [])
+
+
+async def test_the_image_drawing_discards_the_portraits_of_the_accounts_named(
+    db_path, directory, monkeypatch
+):
+    """Accounts 7, 8 and 9 each have a portrait the bot obtained. Core asks the image module's
+    drawing, the one the builder hands it, to discard 7's and 8's: the drawing answers that it
+    removed two, and only 9's file and row are left."""
+    from leaguebot.image.services.image_drawing import ImageDrawing
+
+    await refresh_portraits(
+        db_path, [_member(7, "abc"), _member(8, "def"), _member(9, "ghi")], directory, now=NOW
+    )
+    bot = _bot_with_portraits(db_path, directory, monkeypatch)
+    drawing = ImageDrawing(
+        MagicMock(), bot.image_config_service, MagicMock(),
+        renderer=MagicMock(), post_log=AsyncMock(), db_path=db_path,
+    )
+
+    assert await drawing.discard_portraits(["7", "8"]) == 2
+
+    assert sorted(await _rows(db_path)) == ["9"]
+    assert sorted(p.name for p in directory.iterdir()) == ["9.svg"]

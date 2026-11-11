@@ -1,6 +1,6 @@
 """The hub's About option: which bot this is, and which build of it is running (#258).
 
-`src/leaguebot/core/services/about_service.py` holds the reasoning. What is pinned here:
+`src/leaguebot/core/services/modules/about_service.py` holds the reasoning. What is pinned here:
 
 - **The answer** names the bot, the version, when it was made and the repository; it says
   when the version is unknown, and leaves the date out when that is.
@@ -8,8 +8,8 @@
 - **It goes to the presser alone**, and mentions nobody.
 - **The version and its date are the ones read at start-up**, held on the bot; a press reads
   nothing.
-- **About is core's one option**: registered at import, offered always, after every
-  module's, under a key that never changes.
+- **About is core's one option**: signed up by the builder on the bot's hub options, offered
+  always, after every module's, under a key that never changes.
 """
 from __future__ import annotations
 
@@ -19,8 +19,8 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.core.services import hub_service
-from leaguebot.core.services.about_service import (
+from leaguebot.core.services.modules import hub_service
+from leaguebot.core.services.modules.about_service import (
     ABOUT_KEY,
     ABOUT_OPTION,
     REPOSITORY_URL,
@@ -28,10 +28,21 @@ from leaguebot.core.services.about_service import (
     respond,
 )
 from leaguebot.core.utils import version
+from tests.support.change_queue import built_bot
 
 
 MADE = datetime(2026, 9, 22, 12, 20, 6, tzinfo=timezone(timedelta(hours=1)))
 MADE_STAMP = "<t:1790076006:F>"
+
+
+def _hub_options(*options):
+    """The hub's options as the builder makes them, each of *options* signed up on them."""
+    from leaguebot.core.services.modules.hub_service import HubOptions
+
+    hub_options = HubOptions()
+    for option in options:
+        hub_options.register_option(option)
+    return hub_options
 
 
 def _interaction(running_version="v0.4.0-234", made=MADE):
@@ -105,36 +116,38 @@ async def test_a_bot_holding_no_version_answers_unknown():
     assert "Dated" not in answer
 
 
-async def test_about_is_always_offered_and_after_every_module(monkeypatch):
-    assert hub_service.registered_options().count(ABOUT_OPTION) == 1
-
+async def test_about_is_always_offered_and_after_every_module():
+    """About and two modules' options, ordered 10 and 999, signed up on one hub options: About
+    is offered always, and placed after both."""
     module_options = [
         hub_service.HubOption(key=key, label=key, order=order, respond=AsyncMock())
         for key, order in (("licence", 10), ("guides", 999))
     ]
-    monkeypatch.setattr(
-        hub_service, "_OPTIONS", {o.key: o for o in [ABOUT_OPTION, *module_options]}
-    )
+    hub_options = _hub_options(ABOUT_OPTION, *module_options)
 
     assert ABOUT_OPTION.offered is None
     assert await hub_service.is_offered(MagicMock(), ABOUT_OPTION) is True
-    assert [o.key for o in hub_service.registered_options()] == ["licence", "guides", "about"]
+    assert [o.key for o in hub_options.registered_options()] == ["licence", "guides", "about"]
 
 
 async def test_its_key_never_changes():
-    """Part of the button's custom id: a panel already posted carries it."""
+    """Part of the button's custom id: a panel already posted carries it. The panel is drawn from
+    About, handed hub options holding it."""
     assert ABOUT_KEY == "about"
     assert ABOUT_OPTION.key == "about"
     assert ABOUT_OPTION.label == "About"
-    _content, view = hub_service.render_panel([ABOUT_OPTION])
+    _content, view = hub_service.render_panel(
+        [ABOUT_OPTION], hub_options=_hub_options(ABOUT_OPTION)
+    )
     assert [(item.label, item.custom_id) for item in view.children] == [("About", "hub:about")]
 
 
-async def test_a_press_on_the_panel_reaches_about(monkeypatch):
-    monkeypatch.setattr(hub_service, "_OPTIONS", {ABOUT_KEY: ABOUT_OPTION})
+async def test_a_press_on_the_panel_reaches_about():
+    """About is on the hub options handed to the press; a press on its key is answered by About.
+    The bot pressed on holds no hub options, so the press reads only the ones handed to it."""
     interaction = _interaction()
 
-    await hub_service.press(interaction, ABOUT_KEY)
+    await hub_service.press(interaction, ABOUT_KEY, hub_options=_hub_options(ABOUT_OPTION))
 
     assert interaction.response.send_message.await_args.args[0] == about_text("v0.4.0-234", MADE)
 
@@ -144,21 +157,10 @@ def test_both_forms_of_the_version_are_shown_as_read(version_):
     assert f"Version: {version_}\n" in about_text(version_)
 
 
-def test_the_bot_registers_about_before_the_hub_is_recovered():
-    """`main()` imports the option's module in its own body, so About is registered before
-    `on_ready` — defined within `main()` and run later — recovers the hub."""
-    import ast
-    from pathlib import Path
+async def test_the_bot_registers_about_before_the_hub_is_recovered(tmp_path):
+    """Straight after `build`, before start-up, run later, recovers the hub, the bot's hub
+    options, which the builder makes, hold About and nothing else: the builder signs it up once,
+    and no module's option is signed up at import."""
+    bot = await built_bot(tmp_path, now=MADE)
 
-    source = (Path(__file__).resolve().parents[2] / "src" / "leaguebot" / "__main__.py").read_text(encoding="utf-8")
-    main = next(
-        node for node in ast.parse(source).body
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "main"
-    )
-    imported = [
-        alias.name
-        for statement in main.body
-        if isinstance(statement, ast.Import)
-        for alias in statement.names
-    ]
-    assert "leaguebot.core.services.about_service" in imported
+    assert bot.hub_options.registered_options() == [ABOUT_OPTION]

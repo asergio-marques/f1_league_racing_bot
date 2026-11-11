@@ -53,10 +53,12 @@ def _make_scheduler(db_path: str):
     return svc
 
 
-def _make_mock_job(job_id: str, round_id: int) -> MagicMock:
+def _make_mock_job(job_id: str, round_id: int, *, kind: str | None = None) -> MagicMock:
+    """A round's job as the store holds it: its kind (by default its id less the round
+    suffix) and the round id as its key."""
     job = MagicMock()
     job.id = job_id
-    job.kwargs = {"round_id": round_id}
+    job.kwargs = {"kind": kind or job_id.split("_s", 1)[0], "key": round_id}
     job.next_run_time = datetime(2099, 1, 1, tzinfo=timezone.utc)
     return job
 
@@ -167,7 +169,7 @@ async def test_disable_leaves_a_job_whose_id_carries_no_round_suffix(tmp_path):
     its owner read, so the filter leaves it rather than guessing."""
     def _jobs(ids):
         return _all_seeded_jobs(ids) + [
-            _make_mock_job("legacy_phase_job", ids["live_r1"])
+            _make_mock_job("legacy_phase_job", ids["live_r1"], kind="weather_p1")
         ]
 
     removed = await _disable_weather(tmp_path, _jobs)

@@ -28,7 +28,7 @@ import importlib
 import json
 import re
 from contextlib import ExitStack
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -36,6 +36,7 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection
+from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
 from tests.support.change_queue import (
     acknowledgement,
     change_rows,
@@ -74,6 +75,7 @@ from tests.support.season_league import (
     cancel_season,
     complete_season,
     driver_state,
+    notices_handed,
     ongoing_league,
     open_submission,
     profile_id,
@@ -323,13 +325,13 @@ def _posted(league: Any) -> list[list[str]]:
 def _modules() -> list[Any]:
     found = []
     for name in ("leaguebot.__main__",
-                 "leaguebot.core.services.season_service",
-                 "leaguebot.core.services.season_end_service",
-                 "leaguebot.core.services.season_lifecycle_service",
-                 "leaguebot.core.services.season_end_changes",
-                 "leaguebot.core.services.cancellation_changes",
-                 "leaguebot.core.services.test_mode_service",
-                 "leaguebot.core.services.test_roster_service",
+                 "leaguebot.core.services.seasons.season_service",
+                 "leaguebot.core.services.seasons.season_end_service",
+                 "leaguebot.core.services.seasons.season_lifecycle_service",
+                 "leaguebot.core.services.seasons.season_end_changes",
+                 "leaguebot.core.services.cancellations.cancellation_changes",
+                 "leaguebot.core.services.test_mode.test_mode_service",
+                 "leaguebot.core.services.test_mode.test_roster_service",
                  "leaguebot.weather.services.forecast_cleanup_service"):
         try:
             found.append(importlib.import_module(name))
@@ -399,7 +401,7 @@ async def _formers(league: Any, *user_ids: int) -> None:
 async def _awaiting_results(league: Any, rid: int) -> None:
     await league.write(
         "UPDATE rounds SET status = 'AWAITING_RESULTS', scheduled_at = ? WHERE id = ?",
-        (league.clock.now - timedelta(hours=2)).replace(tzinfo=None).isoformat(), rid,
+        (league.clock.now - timedelta(hours=2)).astimezone(timezone.utc).isoformat(), rid,
     )
 
 
@@ -1010,6 +1012,23 @@ async def test_the_jobs_run_in_order(tmp_path):
     assert await _status(league) == "CANCELLED"
 
 
+async def test_the_save_hands_each_running_division_to_the_notices_hook(tmp_path):
+    """The season is cancelled while Pro and Am are both still running. Inside the save, on the
+    save's own connection, the hook the modules' notices are planned through is called once for
+    each, in tier order, handed the season scope and the division: its id, name and season."""
+    league = await ongoing_league(tmp_path)
+    handed = notices_handed(league)
+    await _asked(league)
+
+    await run_queue(league.bot)
+
+    assert handed == [
+        ("season", {"division_id": each, "division_name": DIVISIONS[each][0],
+                    "season_id": SEASON_ID}, True)
+        for each in (PRO, AM)
+    ]
+
+
 async def test_every_round_of_every_division_loses_its_timed_work_first(tmp_path):
     league = await ongoing_league(tmp_path)
     await _asked(league)
@@ -1187,7 +1206,14 @@ async def test_uncommitted_placements_are_discarded(tmp_path):
 
 
 async def test_a_raced_round_awaiting_verdicts_is_made_final_before_the_driver_pass(tmp_path):
+    """Pro's round 2, awaiting its verdicts, is made final in `apply`, before the driver pass, and
+    handed alone, once, to the hook a round made final calls; Pro's rounds 3 and 4 and Am's four,
+    which the cancellation makes CANCELLED, never are."""
+    from tests.support.final_hook import recorder
+
     league = await ongoing_league(tmp_path)
+    record, handed = recorder()
+    league.bot.rounds_made_final.subscribe(record)
     await _asked(league)
 
     await _run_through(league, "apply")
@@ -1196,7 +1222,12 @@ async def test_a_raced_round_awaiting_verdicts_is_made_final_before_the_driver_p
     assert await driver_state(league, MAX) == "ASSIGNED"
 
     await run_queue(league.bot)
-    assert (await _rounds(league))[R2] == "FINAL"
+    rounds = await _rounds(league)
+    assert rounds[R2] == "FINAL"
+    assert {each for each, status in rounds.items() if status == "CANCELLED"} == {
+        R3, R4, *(round_id(AM, number) for number in range(1, 5))
+    }
+    assert [ids for _db, ids in handed] == [[R2]]
     assert await _status(league) == "CANCELLED"
 
 
@@ -1444,20 +1475,19 @@ async def test_a_module_turned_off_before_its_notice_drops_the_notice(tmp_path):
     assert await _status(league) == "CANCELLED"
 
 
-async def test_a_channel_never_set_and_a_calendar_posted_as_text_are_named_per_division(
+async def test_a_channel_never_set_is_named_and_a_calendar_posted_as_text_is_not(
     tmp_path, monkeypatch,
 ):
-    from leaguebot.core.services import calendar_post_service
-
+    """Season 3 is cancelled: Pro has no forecast channel set, and Am's calendar, drawn as a
+    picture, fails to draw and is posted again as text. The reply and the cancellation's line
+    name Pro's forecast channel as not notified, and not Am's calendar, which was posted: its
+    fallback is its job's own line."""
     league = await ongoing_league(tmp_path, weather=True, attendance=True, images=True)
     await league.write("UPDATE divisions SET forecast_channel_id = NULL WHERE id = ?", PRO)
     await league.write("UPDATE divisions SET calendar_message_id = NULL WHERE id = ?", PRO)
     await _am_calendar_posted(league)
-    league.bot.image_config_service.is_aspect_enabled = AsyncMock(
-        side_effect=lambda aspect: aspect == "calendar"
-    )
-    monkeypatch.setattr(calendar_post_service, "render_calendar_image",
-                        AsyncMock(side_effect=RuntimeError("the template has no rows")))
+    draw_calendars_with(league.bot, monkeypatch,
+                        CalendarDrawingStub(fault=RuntimeError("the template has no rows")))
     interaction = await _asked(league)
 
     await run_queue(league.bot)
@@ -1465,13 +1495,12 @@ async def test_a_channel_never_set_and_a_calendar_posted_as_text_are_named_per_d
     assert await stopped_job(league.db_path) is None
     assert all(job["done_at"] for job in await _jobs(league))
     unset = "**Pro** — forecast channel: no channel is set"
-    fell_back = ("**Am** — calendar: posted as text, as the picture could not be drawn (the "
-                 "template has no rows)")
     bullets = _not_notified(reply(interaction))
-    assert unset in bullets and fell_back in bullets
+    assert unset in bullets
+    assert not [bullet for bullet in bullets if "calendar" in bullet]
     [line] = _success_lines(league)
     assert f"\n  not notified: {unset}" in line
-    assert f"\n  not notified: {fell_back}" in line
+    assert "calendar: posted as text" not in line and "the template has no rows" not in line
     assert await _status(league) == "CANCELLED"
 
 
@@ -1586,8 +1615,7 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     closed, fails, and a league admin discards it. Only that post is dropped (b15-2): 105 is
     still told, then their channel locked, by their own jobs; the reply and the closing line say
     the window was not closed, to be closed with `/signup close`, and never name 105 as returned
-    but not told; the window is still recorded open, the season cancelled, and 105 is owed
-    nothing more."""
+    but not told; the window is still recorded open, and the season cancelled."""
     league = await ongoing_league(tmp_path, signups_open=True)
     await league.write("UPDATE seasons SET stage = 'ONGOING_SIGNUPS' WHERE id = ?", SEASON_ID)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
@@ -1613,14 +1641,14 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     assert _logged(RETURNED_NOT_TOLD) not in line
     assert await window_open(league)
     assert await _status(league) == "CANCELLED"
-    assert await league.bot.signup_module_service.owed_closing_notices() == []
 
 
 async def test_the_end_save_marks_an_in_progress_signup_over(tmp_path):
     """Driver 105 is part-way through the wizard (Pending Signup Completion, their wizard
     collecting their notes) when the cancellation's `end` runs its driver pass. Their wizard is
     unengaged in that save, before any job of theirs runs, and a restart then arms no
-    inactivity job for them and expires nothing."""
+    inactivity job for them and expires nothing. Their channel is told the season has ended,
+    word for word as it always has been."""
     league = await ongoing_league(tmp_path)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     await league.write(
@@ -1636,6 +1664,8 @@ async def test_the_end_save_marks_an_in_progress_signup_over(tmp_path):
     assert await wizard_state(league, SIGNING_UP) == "UNENGAGED"
     await run_queue(league.bot)
     assert await wizards_recovered(league) == {"armed": [], "expired": []}
+    assert league.notices == [(SIGNING_UP, "🔒 This season has ended. This channel will be "
+                                           "automatically deleted in 24 hours.")]
 
 
 
@@ -1729,7 +1759,7 @@ async def test_a_season_s_end_ends_every_conversation_it_closes(tmp_path):
     dropped (the manager's whole, Kimi's job marked done as dropped), nothing saved for round 3's sessions, nothing posted in Kimi's channel by his turn,
     and neither lane stopped."""
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
-    from leaguebot.core.services.change_queue import ChangeType, Step
+    from leaguebot.core.services.queue.change_types import ChangeType, Step
     from tests.support.change_queue import member, register
     from tests.support.season_league import SIGNUP_CHANNEL_BASE
 

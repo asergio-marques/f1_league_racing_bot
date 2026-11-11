@@ -282,7 +282,7 @@ async def test_apply_negative_penalty_reorders(
         division_id = cursor.lastrowid
         await seed_team_instances(db, division_id, 100, 200)
         cursor = await db.execute(
-            "INSERT INTO rounds (division_id, round_number, format, scheduled_at) VALUES (?,1,'NORMAL','2026-01-01T18:00:00')",
+            "INSERT INTO rounds (division_id, round_number, format, scheduled_at) VALUES (?,1,'NORMAL','2026-01-01T18:00:00+00:00')",
             (division_id,),
         )
         round_id = cursor.lastrowid
@@ -353,7 +353,7 @@ async def test_dsq_fastest_lap_not_redistributed(tmp_path):
         division_id = cursor.lastrowid
         await seed_team_instances(db, division_id, 100, 200)
         cursor = await db.execute(
-            "INSERT INTO rounds (division_id, round_number, format, scheduled_at) VALUES (?,1,'NORMAL','2026-01-01T18:00:00')",
+            "INSERT INTO rounds (division_id, round_number, format, scheduled_at) VALUES (?,1,'NORMAL','2026-01-01T18:00:00+00:00')",
             (division_id,),
         )
         round_id = cursor.lastrowid
@@ -445,7 +445,7 @@ async def _seed_one_session(tmp_path, session_type: str) -> tuple[str, int, int,
         division_id = cursor.lastrowid
         await seed_team_instances(db, division_id, 100, 200)
         cursor = await db.execute(
-            "INSERT INTO rounds (division_id, round_number, format, scheduled_at) VALUES (?,1,'NORMAL','2026-01-01T18:00:00')",
+            "INSERT INTO rounds (division_id, round_number, format, scheduled_at) VALUES (?,1,'NORMAL','2026-01-01T18:00:00+00:00')",
             (division_id,),
         )
         round_id = cursor.lastrowid

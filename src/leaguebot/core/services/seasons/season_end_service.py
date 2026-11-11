@@ -1,0 +1,317 @@
+"""season_end_service — what the end of a season does, as jobs on the change queue.
+
+A season ends when a league admin runs `/season complete`, `/season cancel` or `/season abort`,
+and in no other way: each is a change type of the queue (`season_end_changes`,
+`cancellation_changes`), whose jobs this module holds the shared ones of (`shared_steps`) and
+whose saves it holds the writes of (`write_driver_history_entries_on`, `season_role_targets_on`).
+
+No timer ends a season: a season is completed explicitly, once every division is finished or
+cancelled.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING
+
+from leaguebot.core.models.change import StepKind, StepResult
+from leaguebot.core.services.upkeep import backup_service
+from leaguebot.core.services.posting import standing_posts
+from leaguebot.core.services.queue.change_types import Step, StepContext
+from leaguebot.core.services.drivers.driver_service import accounts_of_profile
+from leaguebot.core.services.seasons.season_lifecycle_service import (
+    close_signup_steps,
+    require_guild,
+)
+
+if TYPE_CHECKING:
+    import aiosqlite
+    from leaguebot.core.utils.hooks import AwaitedHook, Hook
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
+    from leaguebot.core.services.scheduler_service import SchedulerService
+
+log = logging.getLogger(__name__)
+
+#: The jobs every end of a season shares, as the stop notice, the tests and ``StepView`` know them.
+REVOKE_ROLES = "revoke_roles"
+FLUSH_FORECASTS = "flush_forecasts"
+#: Weather's job that deletes one forecast, which the outcome names where one was left undone
+#: (weather defines the step and plans it for each forecast `flush_forecasts` clears).
+DELETE_FORECAST = "delete_forecast"
+DISCARD_PORTRAITS = "discard_portraits"
+DISCARD_BACKUP = "discard_backup"
+
+
+async def refusal_of_the_modules(
+    season_end_refused: "AwaitedHook", db_path: str, season_id: int, ending: str
+) -> str | None:
+    """What stands in the way of the season's *ending* (`COMPLETION` or `CANCELLATION`): the first
+    refusal a module hands back, or None. Each module is asked, with the database's path and the
+    season's id, and reads on a connection of its own (`season_end_refused`)."""
+    for found in await season_end_refused.call(db_path, season_id, ending):
+        if found is not None:
+            return str(found)
+    return None
+
+
+async def write_driver_history_entries_on(
+    db: "aiosqlite.Connection",
+    season_id: int,
+    season_number: int,
+    *,
+    season_standing_read: "AwaitedHook",
+    force_cancelled: bool = False,
+) -> None:
+    """Write a DriverHistoryEntry for every division each driver took part in during the season.
+
+    A driver took part in a division once a placement of theirs in it was committed, and
+    stays part of it whatever becomes of the placement afterwards: a driver moved, released
+    or sacked mid-season holds an entry for every division they raced in, as the season's
+    history lists them. Read from ``driver_division_memberships``, which records
+    each committed placement as it is committed and is never cleared by a placement changing.
+
+    Commits nothing: the caller's connection carries the write and the caller commits it.
+
+    Sources:
+    - season_number, division_name, division_tier: from the season/division rows
+    - final_position, final_points: the driver's last standing in the division, asked of the
+      modules through *season_standing_read*
+    - points_gap_to_winner: derived from final points vs the division winner's points, which the
+      same answer carries
+    - cancelled: whether the driver's division was cancelled
+
+    **Idempotent, and deliberately so.** Both ends of a season write the history in the one save
+    that flips the season's own row, last, so a failure rolls the history back with it. `INSERT OR
+    IGNORE` against the unique index `idx_driver_history_unique` is the backstop for an entry
+    already there: do not relax it to a plain INSERT on the grounds that the guard above already
+    returns early, since a second set would double a driver's history.
+
+    *force_cancelled* marks every entry cancelled without consulting the divisions' statuses,
+    which `/season cancel` passes.
+    """
+    # Every driver × division a committed placement was ever held in this season.
+    cursor = await db.execute(
+        """
+        SELECT m.driver_profile_id,
+               dp.discord_user_id,
+               d.id     AS division_id,
+               d.name   AS division_name,
+               d.tier   AS division_tier,
+               d.status AS division_status
+        FROM driver_division_memberships m
+        JOIN divisions d ON d.id = m.division_id
+        JOIN driver_profiles dp ON dp.id = m.driver_profile_id
+        WHERE m.season_id = ?
+        ORDER BY m.id
+        """,
+        (season_id,),
+    )
+    assignments = list(await cursor.fetchall())
+
+    if not assignments:
+        log.info(
+            "write_driver_history_entries_on: no assignments for season %s — skipping.",
+            season_id,
+        )
+        return
+
+    # Write a history entry for each driver × division
+    for asgn in assignments:
+        driver_profile_id = asgn["driver_profile_id"]
+        div_id = asgn["division_id"]
+        div_name = asgn["division_name"]
+        div_tier = asgn["division_tier"] or 0
+        # Cancellation reaches a driver only through their division: cancelling a
+        # season cancels each of its divisions first, so the division's status is
+        # the whole answer however the cancellation was ordered.
+        cancelled = 1 if (force_cancelled or asgn["division_status"] == "CANCELLED") else 0
+
+        # The driver's last standing in the division and the winner's points, asked of the
+        # modules under every account the driver has held (a driver who changed account after the
+        # last round finished it under the old one). The first module to answer is taken; with
+        # none answering, the driver has no standing and the division no winner.
+        standing, winner_points = None, None
+        accounts = await accounts_of_profile(db, driver_profile_id)
+        for answer in await season_standing_read.call(db, div_id, accounts):
+            if answer is not None:
+                standing, winner_points = answer
+                break
+        final_position, final_points = (standing[0], standing[1]) if standing else (0, 0)
+        points_gap = (winner_points or 0) - final_points
+
+        await db.execute(
+            """
+            INSERT OR IGNORE INTO driver_history_entries
+                (discord_user_id, driver_profile_id, season_number,
+                 division_name, division_tier, final_position, final_points,
+                 points_gap_to_winner, cancelled)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                asgn["discord_user_id"],
+                driver_profile_id,
+                season_number,
+                div_name,
+                div_tier,
+                final_position,
+                final_points,
+                points_gap,
+                cancelled,
+            ),
+        )
+
+    log.info(
+        "write_driver_history_entries_on: wrote %d entries for season %s.",
+        len(assignments),
+        season_id,
+    )
+
+
+async def season_role_targets_on(db: aiosqlite.Connection, season_id: int) -> list[dict]:
+    """Every real driver of *season_id* with the roles a season's end takes back, on *db*.
+
+    Each entry is ``{"user_id": int, "role_ids": list[int]}``, in user-id order: the division
+    role and the team role of each of the driver's placements in the season, and the league's
+    driver role where one is set. Test drivers are skipped: no Discord member stands behind
+    them. Which of these roles a member holds is Discord's to say, when
+    :meth:`TeamRoleService.revoke_roles` takes them, so the driver role is named for every
+    driver here and left alone for one who never held it.
+
+    Read in the save that records the season's end and committing nothing: the roles are
+    fixed there, and each driver's are taken back by a job of its own afterwards.
+    """
+    cursor = await db.execute(
+        """
+        SELECT DISTINCT dp.id AS driver_profile_id,
+                        CAST(dp.discord_user_id AS INTEGER) AS user_id
+        FROM driver_season_assignments dsa
+        JOIN driver_profiles dp ON dp.id = dsa.driver_profile_id
+        JOIN divisions d ON d.id = dsa.division_id
+        WHERE d.season_id = ? AND dp.is_test_driver = 0
+        ORDER BY user_id
+        """,
+        (season_id,),
+    )
+    drivers = [dict(row) for row in await cursor.fetchall()]
+
+    cursor = await db.execute("SELECT driver_role_id FROM server_configs")
+    config = await cursor.fetchone()
+    driver_role_id = config["driver_role_id"] if config else None
+
+    targets: list[dict] = []
+    for driver in drivers:
+        cursor = await db.execute(
+            """
+            SELECT d.mention_role_id AS role_id
+            FROM driver_season_assignments dsa
+            JOIN divisions d ON d.id = dsa.division_id
+            WHERE dsa.driver_profile_id = ? AND d.season_id = ?
+            UNION
+            SELECT trc.role_id
+            FROM driver_season_assignments dsa
+            JOIN divisions d ON d.id = dsa.division_id
+            JOIN team_seats ts ON ts.id = dsa.team_seat_id
+            JOIN team_instances ti ON ti.id = ts.team_instance_id
+            JOIN team_role_configs trc ON trc.team_name = ti.name
+            WHERE dsa.driver_profile_id = ? AND d.season_id = ?
+            """,
+            (driver["driver_profile_id"], season_id) * 2,
+        )
+        role_ids = {row["role_id"] for row in await cursor.fetchall()}
+        if driver_role_id is not None:
+            role_ids.add(driver_role_id)
+        targets.append(
+            {"user_id": driver["user_id"], "role_ids": sorted(r for r in role_ids if r is not None)}
+        )
+    return targets
+
+
+def flush_forecasts_step(test_mode_flushed: "AwaitedHook") -> Step:
+    """The `flush_forecasts` job, an ACT: plans the jobs the modules signed up to
+    *test_mode_flushed* hand back for what test mode posted (weather's deletion of each forecast),
+    so that each deletion is a job of its own and a refusal stops the queue there. Every change
+    that switches test mode off asks it after the save that does."""
+
+    async def flush_forecasts(_ctx: StepContext) -> StepResult:
+        planned = tuple(step for found in await test_mode_flushed.call() for step in found)
+        return StepResult(result={"planned": len(planned)}, then=planned)
+
+    async def describe_flush(_ctx: StepContext) -> str:
+        return "clearing the forecasts posted under test mode"
+
+    return Step(FLUSH_FORECASTS, StepKind.ACT, flush_forecasts, describe=describe_flush)
+
+
+def discard_backup_step(scheduler: "SchedulerService") -> Step:
+    """The `discard_backup` job, an ACT: the saved test-mode state deleted, with the *scheduler*'s
+    job store, and `deleted` in its result where one was there. It raises where a file cannot be
+    deleted, for the queue to stop on."""
+
+    async def discard_backup(ctx: StepContext) -> StepResult:
+        removed = backup_service.discard(ctx.db_path, scheduler.jobstore_path)
+        return StepResult(result={"deleted": removed})
+
+    async def describe_backup(_ctx: StepContext) -> str:
+        return "deleting the saved test-mode state"
+
+    return Step(DISCARD_BACKUP, StepKind.ACT, discard_backup, describe=describe_backup)
+
+
+def shared_steps(
+    roles: "TeamRoleService",
+    scheduler: "SchedulerService",
+    *,
+    season_end_steps: "Hook",
+    test_mode_flushed: "AwaitedHook",
+    drivers_deleted: "AwaitedHook",
+) -> dict[str, Step]:
+    """The jobs the completion, the cancellation and the abort share, each an ACT.
+
+    - `revoke_roles`: one driver's division, team and driver roles taken back, from the targets
+      the save read (`season_role_targets_on`). A member who left or a role gone is passed over.
+    - `flush_forecasts`: plans the jobs the modules signed up to *test_mode_flushed* hand back for
+      what test mode posted (weather's deletion of each forecast), so that each deletion is a job
+      of its own and a refusal stops the queue there.
+    - `discard_portraits`: the portraits of the drivers the driver pass deleted removed, by the
+      modules signed up to *drivers_deleted*.
+    - `discard_backup`: the saved test-mode state deleted, with the *scheduler*'s job store (a
+      completion's alone).
+    - the jobs of one driver's Discord side (`close_signup_steps`), among them those the modules
+      define for a season's end (*season_end_steps*), signup's close of its window among them.
+
+    Every one raises where it fails, for the queue to stop on.
+    """
+
+    async def revoke_roles(ctx: StepContext) -> StepResult:
+        guild = await require_guild(ctx.bot)
+        each = ctx.step_payload
+        revoked = await roles.revoke_roles(
+            guild, int(each["user_id"]), *[int(r) for r in each["role_ids"]],
+            reason=str(each.get("reason", "Season ended")),
+        )
+        return StepResult(result={"revoked": revoked})
+
+    async def describe_revoke(ctx: StepContext) -> str:
+        number = ctx.payload.get("season_number")
+        of = f" of season {number}" if number else ""
+        return f"taking back <@{ctx.step_payload['user_id']}>'s roles{of}"
+
+    async def discard_portraits(ctx: StepContext) -> StepResult:
+        removed = await drivers_deleted.call([str(a) for a in ctx.step_payload["accounts"]])
+        # Not "discarded": that is the key a league admin's Discard leaves on a job's result.
+        return StepResult(result={"removed": sum(n for n in removed if isinstance(n, int))})
+
+    async def describe_portraits(_ctx: StepContext) -> str:
+        return "discarding the portraits of the drivers deleted"
+
+    return {
+        REVOKE_ROLES: Step(REVOKE_ROLES, StepKind.ACT, revoke_roles, describe=describe_revoke),
+        FLUSH_FORECASTS: flush_forecasts_step(test_mode_flushed),
+        DISCARD_PORTRAITS: Step(
+            DISCARD_PORTRAITS, StepKind.ACT, discard_portraits, describe=describe_portraits
+        ),
+        DISCARD_BACKUP: discard_backup_step(scheduler),
+        # A forecast posted in parts has `delete_forecast` plan a delete for each earlier part.
+        standing_posts.DELETE_REPLACED: standing_posts.delete_replaced_step(),
+        **close_signup_steps(roles, season_end_steps=season_end_steps),
+    }

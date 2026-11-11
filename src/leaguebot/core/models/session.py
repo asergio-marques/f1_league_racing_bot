@@ -50,5 +50,3 @@ class Session:
     id: int
     round_id: int
     session_type: SessionType
-    phase2_slot_type: str | None = None   # "rain" | "mixed" | "sunny"
-    phase3_slots: list[str] | None = None  # list of weather labels

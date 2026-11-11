@@ -23,7 +23,6 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.models.session_result import SessionResult
-from leaguebot.core.services.placement_service import PlacementService
 from leaguebot.results.services.result_submission_service import (
     _build_division_validation_data,
     _row_dict_from_qualifying,
@@ -36,7 +35,7 @@ from leaguebot.results.services.standings_service import (
     compute_team_standings,
     previous_standing_positions,
 )
-from leaguebot.core.services.team_service import TeamService
+from leaguebot.core.services.drivers.team_service import TeamService
 from tests.support.session_writes import save_session_result
 from tests.support.change_queue import in_a_job
 
@@ -71,12 +70,14 @@ async def _league(tmp_path) -> tuple[str, dict[str, int]]:
         for name, role, is_reserve in (
             ("Ferrari", OLD_ROLE, 0), ("Rival", RIVAL_ROLE, 0), ("Reserve", RESERVE_ROLE, 1),
         ):
+            # The Reserve team's row is the new database's own, where it already holds one.
             await db.execute(
-                "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) VALUES (?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO default_teams (name, full_name, max_seats, is_reserve) "
+                "VALUES (?, ?, ?, ?)",
                 (name, name, -1 if is_reserve else 2, is_reserve),
             )
             await db.execute(
-                "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)",
+                "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES (?, ?, '2031-03-04T05:06:07+00:00')",
                 (name, role),
             )
             cursor = await db.execute(
@@ -107,7 +108,7 @@ async def _league(tmp_path) -> tuple[str, dict[str, int]]:
             await db.execute(
                 "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at) "
                 "VALUES (?, ?, ?, 'NORMAL', ?)",
-                (round_id, DIVISION_ID, number, f"2026-0{number}-01T18:00:00"),
+                (round_id, DIVISION_ID, number, f"2026-0{number}-01T18:00:00+00:00"),
             )
         await db.commit()
     return db_path, teams
@@ -160,8 +161,13 @@ async def _record(db_path: str, round_id: int, *, ferrari_wins: bool) -> int:
 
 
 async def _replace_ferrari_role(db_path: str) -> None:
-    """What `/team role` records. Moving the drivers' Discord roles touches no result."""
-    await PlacementService(db_path).set_team_role_config("Ferrari", NEW_ROLE)
+    """What `/team modify` records when it gives Ferrari a new role, written straight into the
+    mapping as its save writes it. Moving the drivers' Discord roles touches no result."""
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "UPDATE team_role_configs SET role_id = ? WHERE team_name = 'Ferrari'", (NEW_ROLE,)
+        )
+        await db.commit()
 
 
 async def _persist_round(db_path: str, round_id: int) -> None:

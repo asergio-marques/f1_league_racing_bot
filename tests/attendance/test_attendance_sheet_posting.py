@@ -44,13 +44,6 @@ def test_a_deadline_of_zero_hours_stands_at_the_rounds_own_start():
     assert derive_checkin_deadline(start, 0) == start
 
 
-def test_the_deadline_is_timezone_aware_even_from_a_naive_round():
-    naive = datetime(2026, 8, 13, 20, 0)
-    result = derive_checkin_deadline(naive, 3)
-    assert result.tzinfo is not None
-    assert result == datetime(2026, 8, 13, 17, 0, tzinfo=timezone.utc)
-
-
 def test_the_deadline_crosses_a_day_boundary_correctly():
     start = datetime(2026, 8, 13, 2, 0, tzinfo=timezone.utc)
     assert derive_checkin_deadline(start, 5) == datetime(
@@ -149,8 +142,8 @@ async def sheet_db(tmp_path):
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
             "scheduled_at, status) VALUES (?, 7, ?, 'NORMAL', ?, ?, ?)",
             [
-                (3, 3, "Silverstone Circuit", "2026-06-07T18:00:00", "NOT_RUN"),
-                (9, 9, "Circuit Zandvoort", "2026-08-09T18:00:00", "CANCELLED"),
+                (3, 3, "Silverstone Circuit", "2026-06-07T18:00:00+00:00", "NOT_RUN"),
+                (9, 9, "Circuit Zandvoort", "2026-08-09T18:00:00+00:00", "CANCELLED"),
             ],
         )
         await db.execute(

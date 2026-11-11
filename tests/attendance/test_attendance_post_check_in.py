@@ -49,12 +49,10 @@ import pytest
 import discord
 
 from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
-from leaguebot.attendance.services.attendance_service import AttendanceService
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.core.utils.channel_guard import LEAGUE_MANAGER, TIER_ATTRIBUTE
 from tests.support.change_queue import (
-    attach_queue,
     change_rows,
     http_error,
     member_interaction,
@@ -63,7 +61,14 @@ from tests.support.change_queue import (
     stopped_job,
 )
 from tests.support.review_league import block_queue
-from tests.support.season_league import DIVISIONS, PRO, SeasonLeague, ongoing_league, round_id
+from tests.support.season_league import (
+    DIVISIONS,
+    PRO,
+    SeasonLeague,
+    attendance_from_the_database,
+    ongoing_league,
+    round_id,
+)
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 4242
@@ -218,11 +223,10 @@ async def _invoke(cog, interaction, *, division="division 1", round=1, now=NOW,
 
 
 async def _queue_league(tmp_path) -> SeasonLeague:
-    """`ongoing_league` with attendance on and a real `AttendanceService`, its queue rebuilt on
-    it: Pro's round 4 three days off, its call due and none posted."""
+    """`ongoing_league` with attendance on and its attendance service reading the
+    database: Pro's round 4 three days off, its call due and none posted."""
     league = await ongoing_league(tmp_path, attendance=True)
-    league.bot.attendance_service = AttendanceService(league.db_path)
-    attach_queue(league.bot, league.db_path, now=league.clock)
+    attendance_from_the_database(league)
     await _round_4_in(league, timedelta(days=3))
     return league
 
@@ -230,7 +234,7 @@ async def _queue_league(tmp_path) -> SeasonLeague:
 async def _round_4_in(league: SeasonLeague, delta: timedelta) -> None:
     when = league.clock.now + delta
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       when.replace(tzinfo=None).isoformat(), ROUND_4)
+                       when.astimezone(timezone.utc).isoformat(), ROUND_4)
 
 
 async def _post_check_in(league: SeasonLeague, *, round: int = 4):

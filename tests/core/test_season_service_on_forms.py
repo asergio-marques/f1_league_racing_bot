@@ -94,7 +94,7 @@ async def test_sessions_are_replaced_not_added_on_the_save_handed(tmp_path):
     """Round 1 already holds a sprint's sessions, left by an earlier save. Making its sessions
     for a normal round, twice, on one connection leaves the normal round's set once; and nothing
     of it outlasts a rollback."""
-    from leaguebot.core.services.season_service import create_sessions_for_round_on
+    from leaguebot.core.services.seasons.season_service import create_sessions_for_round_on
 
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
@@ -121,7 +121,7 @@ async def test_sessions_are_replaced_not_added_on_the_save_handed(tmp_path):
 async def test_placements_are_committed_on_the_save_handed(tmp_path):
     """Lewis and Max are placed in Pro, neither committed. Committing the season's placements on
     a connection marks both committed and answers 2; nothing of it outlasts a rollback."""
-    from leaguebot.core.services.season_service import commit_placements_on
+    from leaguebot.core.services.seasons.season_service import commit_placements_on
 
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
@@ -144,7 +144,7 @@ async def test_the_season_moves_to_ongoing_only_from_placements(tmp_path, stage,
     """A season in Placements moves to Ongoing, its divisions active with it, and the call
     answers True; a season already Ongoing is left as it is and the call answers False. Nothing
     of it outlasts a rollback."""
-    from leaguebot.core.services.season_service import transition_to_active_on
+    from leaguebot.core.services.seasons.season_service import transition_to_active_on
 
     db_path = await _make_db(tmp_path, stage=stage)
     async with get_connection(db_path) as db:
@@ -225,7 +225,7 @@ async def test_a_round_is_cancelled_on_the_save_handed_and_gives_its_old_status(
     AWAITING_RESULTS; it reads CANCELLED there, with one round.status audit from AWAITING_RESULTS
     to CANCELLED, and Pro stays active, round 3 being still to run. Nothing of it outlasts a
     rollback."""
-    from leaguebot.core.services.season_service import cancel_round_on
+    from leaguebot.core.services.seasons.season_service import cancel_round_on
 
     db_path = await _ongoing_db(tmp_path, ("FINAL", "AWAITING_RESULTS", "NOT_RUN"))
     async with get_connection(db_path) as db:
@@ -258,7 +258,7 @@ async def test_a_round_no_longer_cancellable_is_left_and_gives_none(
     Cancelling it on a connection answers None and writes nothing: the round keeps its status
     and no audit of any kind is written. An archived season is the championship's record; a
     round inside it cannot be called off after the fact."""
-    from leaguebot.core.services.season_service import cancel_round_on
+    from leaguebot.core.services.seasons.season_service import cancel_round_on
 
     db_path = await _ongoing_db(tmp_path, (status, "NOT_RUN"), season_status=season_status)
     async with get_connection(db_path) as db:
@@ -275,7 +275,7 @@ async def test_cancelling_the_last_round_finishes_the_division_and_moves_the_sea
     """Pro, the season's only division, has round 1 final and round 2 not run. Cancelling round 2
     on a connection finishes Pro and moves the season to Pending completion on that same
     connection; a rollback leaves Pro active and the season ongoing."""
-    from leaguebot.core.services.season_service import cancel_round_on
+    from leaguebot.core.services.seasons.season_service import cancel_round_on
 
     db_path = await _ongoing_db(tmp_path, ("FINAL", "NOT_RUN"))
     async with get_connection(db_path) as db:
@@ -305,7 +305,7 @@ async def test_a_division_is_cancelled_on_the_save_handed(tmp_path, statuses):
     running division, yet the `_on` form alone leaves the season ongoing: moving it on is the
     division change's save's, and `/season cancel`'s cascade, which shares the form, must never
     leave the season it cancels at Pending completion. Nothing of it outlasts a rollback."""
-    from leaguebot.core.services.season_service import cancel_division_on
+    from leaguebot.core.services.seasons.season_service import cancel_division_on
 
     db_path = await _ongoing_db(tmp_path, statuses)
     later = range(1, len(statuses))
@@ -334,7 +334,7 @@ async def test_renumbering_on_the_connection_handed_commits_nothing(tmp_path):
     """Pro's rounds 1, 2 and 3 (ids 21, 22, 23) are not run, and round 1 has been moved after
     round 3. Renumbering Pro on a connection numbers them by date: round 2 becomes 1, round 3
     becomes 2 and the moved round 3. Nothing of it outlasts a rollback."""
-    from leaguebot.core.services.season_service import renumber_rounds_on
+    from leaguebot.core.services.seasons.season_service import renumber_rounds_on
 
     db_path = await _ongoing_db(tmp_path, ("NOT_RUN", "NOT_RUN", "NOT_RUN"))
     async with get_connection(db_path) as db:
@@ -404,7 +404,7 @@ async def _end_seed(db_path, *, season_status="ACTIVE", divisions=(("Div A", "AC
                 cur = await db.execute(
                     "INSERT INTO rounds (division_id, round_number, track_name, scheduled_at, "
                     "format) VALUES (?, ?, 'Bahrain', ?, 'NORMAL')",
-                    (division_id, i, f"2026-0{i + 3}-01T12:00:00"),
+                    (division_id, i, f"2026-0{i + 3}-01T12:00:00+00:00"),
                 )
                 round_ids.append(cur.lastrowid)
             built[name] = (division_id, round_ids)
@@ -433,7 +433,7 @@ async def _statuses(db, table, ids):
 
 
 async def test_a_season_is_completed_on_the_save_handed(tmp_path) -> None:
-    from leaguebot.core.services.season_service import complete_season_on
+    from leaguebot.core.services.seasons.season_service import complete_season_on
 
     db_path = str(tmp_path / "bot.db")
     season_id, _ = await _end_seed(db_path)
@@ -447,7 +447,7 @@ async def test_a_season_is_completed_on_the_save_handed(tmp_path) -> None:
 
 @pytest.mark.parametrize("status", ["COMPLETED", "CANCELLED"])
 async def test_a_season_no_longer_active_is_left_and_gives_false(tmp_path, status) -> None:
-    from leaguebot.core.services.season_service import complete_season_on
+    from leaguebot.core.services.seasons.season_service import complete_season_on
 
     db_path = str(tmp_path / "bot.db")
     season_id, _ = await _end_seed(db_path, season_status=status)
@@ -480,7 +480,7 @@ async def test_the_completion_refusal_is_read_on_the_save_handed(tmp_path, case,
     """Div A runs two rounds and Div B, set up and never run, holds none of its own. Each case
     makes its decisive writes on the save, uncommitted, so only a read on that save sees them.
     An ACTIVE division with nothing outstanding refuses nothing: the completion finishes it."""
-    from leaguebot.core.services.season_service import completion_refusal_on
+    from leaguebot.core.services.seasons.season_service import completion_refusal_on
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _end_seed(
@@ -509,7 +509,7 @@ async def test_the_completion_refusal_is_read_on_the_save_handed(tmp_path, case,
 
 
 async def test_a_season_is_marked_cancelled_on_the_save_handed_and_nothing_else(tmp_path) -> None:
-    from leaguebot.core.services.season_service import cancel_season_on
+    from leaguebot.core.services.seasons.season_service import cancel_season_on
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _end_seed(db_path)
@@ -529,7 +529,7 @@ async def test_a_season_s_divisions_are_cancelled_on_the_save_handed_leaving_its
 ) -> None:
     """Pro runs two rounds, the first raced and final; Am was cancelled before. Only Pro is
     cancelled, with its round not yet run; the season's row is the cancellation's last save's."""
-    from leaguebot.core.services.season_service import cancel_season_divisions_on
+    from leaguebot.core.services.seasons.season_service import cancel_season_divisions_on
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _end_seed(
@@ -560,8 +560,10 @@ async def test_a_season_s_divisions_are_cancelled_on_the_save_handed_leaving_its
 
 async def test_raced_rounds_are_closed_on_the_save_handed(tmp_path) -> None:
     """Round 1 is awaiting its report verdicts, round 2 not yet run. Round 1 is made final and
-    audited at the moment handed; round 2 is left to the divisions' cancellation."""
-    from leaguebot.core.services.season_service import close_raced_rounds_on
+    audited at the moment handed, and handed alone to the hook a round made final calls, once, on
+    the save's connection; round 2 is left to the divisions' cancellation, and never handed."""
+    from leaguebot.core.services.seasons.season_service import close_raced_rounds_on
+    from tests.support.final_hook import recording_hook
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _end_seed(db_path)
@@ -572,12 +574,15 @@ async def test_raced_rounds_are_closed_on_the_save_handed(tmp_path) -> None:
         )
         await db.commit()
 
+    hook, handed = recording_hook()
     async with get_connection(db_path) as db:
         closed = await close_raced_rounds_on(
-            db, season_id, actor_id=ACTOR_ID, actor_name=ACTOR_NAME, now=END_NOW
+            db, season_id, actor_id=ACTOR_ID, actor_name=ACTOR_NAME, now=END_NOW,
+            rounds_made_final=hook,
         )
 
         assert closed == [awaiting]
+        assert handed == [(db, [awaiting])]
         assert await _statuses(db, "rounds", [awaiting, unraced]) == {
             awaiting: "FINAL",
             unraced: "NOT_RUN",
@@ -601,7 +606,7 @@ async def test_raced_rounds_are_closed_on_the_save_handed(tmp_path) -> None:
 async def test_uncommitted_placements_are_discarded_on_the_save_handed(tmp_path) -> None:
     """Driver 1 holds a committed seat, driver 2 one placed but not yet committed. Driver 2's
     placement goes and their seat is freed; driver 1's stands."""
-    from leaguebot.core.services.season_service import discard_uncommitted_placements_on
+    from leaguebot.core.services.seasons.season_service import discard_uncommitted_placements_on
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _end_seed(db_path)
@@ -659,9 +664,10 @@ async def test_uncommitted_placements_are_discarded_on_the_save_handed(tmp_path)
 
 
 async def test_a_season_is_deleted_on_the_save_handed_and_nothing_committed(tmp_path) -> None:
-    """A season being set up, its division and its rounds, deleted on the save; rolled back,
-    every row of it is still there."""
-    from leaguebot.core.services.season_service import SeasonService
+    """A season being set up, its division and its rounds, deleted on the save with the delete
+    hooks the builder makes; rolled back, every row of it is still there."""
+    from leaguebot.core.services.seasons.season_service import SeasonService
+    from tests.support.delete_hooks import SEASON_HOOKS, delete_hooks
 
     db_path = str(tmp_path / "bot.db")
     season_id, built = await _end_seed(
@@ -677,7 +683,7 @@ async def test_a_season_is_deleted_on_the_save_handed_and_nothing_committed(tmp_
         )
 
     async with get_connection(db_path) as db:
-        await SeasonService.delete_season(db, season_id)
+        await SeasonService.delete_season(db, season_id, **delete_hooks(*SEASON_HOOKS))
         assert [row[0] for row in await _left(db)] == [0, 0, 0]
         await db.rollback()
         assert [row[0] for row in await _left(db)] == [1, 1, len(round_ids)]
@@ -717,7 +723,7 @@ async def test_end_round_not_held_on_moves_only_a_round_awaiting_results_or_repo
     Ending the middle of three rounds, round 1 final, marks that round alone. From any other
     status it answers None and writes nothing: the round keeps its status, unmarked, and no audit
     is written."""
-    from leaguebot.core.services.season_service import end_round_not_held_on
+    from leaguebot.core.services.seasons.season_service import end_round_not_held_on
 
     db_path = await _ongoing_db(tmp_path, statuses)
     async with get_connection(db_path) as db:
@@ -742,7 +748,7 @@ async def test_end_round_not_held_on_commits_nothing(tmp_path):
     Ending round 2 as not held on a connection finishes Pro and moves the season to Pending
     completion on that same connection; a rollback leaves round 2 awaiting its verdicts and
     unmarked, no audit, Pro active and the season ongoing."""
-    from leaguebot.core.services.season_service import end_round_not_held_on
+    from leaguebot.core.services.seasons.season_service import end_round_not_held_on
 
     db_path = await _ongoing_db(tmp_path, ("FINAL", "AWAITING_REPORT_VERDICTS"))
     async with get_connection(db_path) as db:

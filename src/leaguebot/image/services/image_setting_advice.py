@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from leaguebot.image.models.image_constants import LIVE_POSTING_ASPECTS
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.image.services.image_config_service import ImageConfigService
     from leaguebot.image.services.image_render_service import ImageRenderService
     from leaguebot.image.services.image_validity_service import ImageValidityService

@@ -9,17 +9,62 @@ Ordering invariant (enforced before every write):
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import AuditRecord
-from leaguebot.core.services.setting_change import Saved
+from leaguebot.core.models.round import WeatherWindows
+from leaguebot.core.services.modules.review_sections import Review, ReviewSection
+from leaguebot.core.services.queue.setting_change import Saved
 from leaguebot.weather.models.weather_config import WeatherPipelineConfig
+
+if TYPE_CHECKING:
+    from leaguebot.core.services.modules.module_service import ModuleService
 
 _DEFAULTS = WeatherPipelineConfig()  # default field values only
 
 #: The three deadline columns, in the order the phases fire; the only columns a write may name.
 DEADLINE_COLUMNS = ("phase_1_days", "phase_2_days", "phase_3_hours")
+
+
+async def round_window(
+    modules: "ModuleService", db_path: str, *, amending: bool
+) -> WeatherWindows | None:
+    """Weather's part of a round's timing windows read: its three horizons, or None where the
+    module is off. For an amendment the window counts whatever the module's switch, because a
+    forecast posted while weather was on is still posted, and whether it survives the amendment is
+    what the track and format rules turn on."""
+    if not amending and not await modules.is_weather_enabled():
+        return None
+    config = await get_weather_pipeline_config(db_path)
+    return WeatherWindows(
+        phase_1_days=config.phase_1_days,
+        phase_2_days=config.phase_2_days,
+        phase_3_hours=config.phase_3_hours,
+    )
+
+
+async def review_section(
+    modules: "ModuleService",
+    db_path: str,
+    *,
+    review: Review,
+    season_id: int,
+    division_ids: list[int],
+) -> ReviewSection | None:
+    """Weather's section of a season review: its three deadlines, in both reviews alike; None
+    where the module is off.
+
+    Subscribed to core's `review_sections_read`. Reads only.
+    """
+    if not await modules.is_weather_enabled():
+        return None
+    config = await get_weather_pipeline_config(db_path)
+    return ReviewSection(
+        module="weather", lines=["**Weather Config**", *describe_deadlines(config), ""]
+    )
 
 
 async def get_weather_pipeline_config(db_path: str) -> WeatherPipelineConfig:

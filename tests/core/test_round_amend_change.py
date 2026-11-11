@@ -23,6 +23,7 @@ import importlib
 import json
 import sqlite3
 import sys
+from collections.abc import Callable
 from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -57,6 +58,7 @@ from tests.support.season_league import (
     round_id,
 )
 from tests.support.mentions import NOBODY, notified
+
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 R3, R4 = round_id(PRO, 3), round_id(PRO, 4)
@@ -168,9 +170,10 @@ def _at(league: Any, **delta: float) -> str:
 
 
 async def _moment(league: Any, rid: int = R3) -> datetime:
+    """Round *rid*'s moment, parsed as stored: one stored without its offset is left naive, and so
+    equals no moment in UTC."""
     [row] = await league.rows("SELECT scheduled_at FROM rounds WHERE id = ?", rid)
-    moment = datetime.fromisoformat(row["scheduled_at"])
-    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+    return datetime.fromisoformat(row["scheduled_at"])
 
 
 def _when(league: Any, **delta: float) -> datetime:
@@ -309,8 +312,8 @@ def _amend_refusals(league: Any) -> list[str]:
 def _everywhere(name: str, new: Any) -> ExitStack:
     """Patch season_service's *name* with *new*, and the change type's own reference to it."""
     stack = ExitStack()
-    for module_name in ("leaguebot.core.services.season_service",
-                        "leaguebot.core.services.round_amend_change"):
+    for module_name in ("leaguebot.core.services.seasons.season_service",
+                        "leaguebot.core.services.rounds.round_amend_change"):
         try:
             module = importlib.import_module(module_name)
         except ImportError:
@@ -328,9 +331,9 @@ def _renumbering_fails() -> ExitStack:
 def _blind_to_the_queue() -> ExitStack:
     """Every check reading the queue for a change in hand finds none, as two asks in the same
     instant leave each other unseen."""
-    from leaguebot.core.services import change_queue
+    from leaguebot.core.services.queue import queue_records
 
-    real = change_queue.in_hand
+    real = queue_records.in_hand
 
     async def _nothing(*_args: Any, **_kwargs: Any) -> list[Any]:
         return []
@@ -352,19 +355,25 @@ def _unarming_mended(league: Any) -> None:
     league.bot.scheduler_service.cancel_round = MagicMock(side_effect=league.unarmed.append)
 
 
-def _judging_fails(league: Any) -> None:
+def _judging_fails(monkeypatch: Any) -> Callable[[], None]:
     """The amendment's windows can be read once more, by the check as the change starts, and
-    not again, so that the change stops at `judge`."""
-    reading = league.bot.amendment_windows
+    not again, so that the change stops at `judge`: weather's settings, which an amendment reads
+    whatever weather's switch, cannot be read a second time. Gives what mends it."""
+    from leaguebot.weather.services import weather_config_service
+
+    reading = weather_config_service.get_weather_pipeline_config
     reads = {"n": 0}
 
-    def _read() -> Any:
+    async def _read(db_path: str) -> Any:
         reads["n"] += 1
         if reads["n"] >= 2:
             raise RuntimeError("database is locked")
-        return reading()
+        return await reading(db_path)
 
-    league.bot.amendment_windows = _read
+    monkeypatch.setattr(weather_config_service, "get_weather_pipeline_config", _read)
+    return lambda: monkeypatch.setattr(
+        weather_config_service, "get_weather_pipeline_config", reading
+    )
 
 
 async def _stopped_blocker(league: Any) -> None:
@@ -442,11 +451,13 @@ async def test_the_rounds_are_renumbered_in_the_amendment_s_own_save(tmp_path):
 
 
 async def test_the_success_line_is_saved_with_the_amendment(tmp_path):
-    """The arming fails after the save, stopping the queue, and the bot restarts: the success
-    line, saved with the amendment, stands once in the log channel, and once only after the
-    arming goes through on Retry."""
+    """Round 3, ninety days out, moved a day later. The arming fails after the save, stopping
+    the queue, and the bot restarts: the success line, saved with the amendment, stands once in
+    the log channel, naming the round and both moments in UTC as a league has always read them,
+    with no offset, and once only after the arming goes through on Retry."""
     league = await ongoing_league(tmp_path)
-    await _amended(league, scheduled_at=_at(league, days=91))
+    old, new = _at(league, days=90), _at(league, days=91)
+    await _amended(league, scheduled_at=new)
     league.arming_fails = RuntimeError("job store unavailable")
     await run_queue(league.bot)
     assert await _stopped_at(league) == "arm"
@@ -455,7 +466,9 @@ async def test_the_success_line_is_saved_with_the_amendment(tmp_path):
     await run_queue(league.bot)
 
     [line] = _success_lines(league)
-    assert "scheduled_at:" in line
+    assert line.split("\n")[1:3] == [
+        f"  round 3 (round_id: {R3})", f"  scheduled_at: {old} → {new}"
+    ]
     league.arming_fails = None
     await retry_job(league.bot)
     assert len(_success_lines(league)) == 1
@@ -464,7 +477,7 @@ async def test_the_success_line_is_saved_with_the_amendment(tmp_path):
 async def test_the_manager_is_told_at_once_naming_the_job_and_the_reply_is_updated_with_the_round_list(
     tmp_path,
 ):
-    from leaguebot.core.cogs.season_cog import format_round_list
+    from leaguebot.core.utils.formatting import format_round_list
 
     league = await ongoing_league(tmp_path)
     press = await _amended(league, scheduled_at=_at(league, days=91))
@@ -513,8 +526,9 @@ async def test_a_withdrawn_forecast_discord_will_not_delete_stops_the_queue_keep
 
 
 async def test_the_invalidation_notice_notifies_nobody(tmp_path):
-    """Weather on; round 3's posted phase 1 forecast is withdrawn by moving the round ninety-one
-    days on. The notice in Pro's forecast channel that the forecasts no longer stand notifies
+    """Weather on; round 3, at Silverstone, has its posted phase 1 forecast withdrawn by moving
+    the round ninety-one days on. The notice in Pro's forecast channel that the forecasts no
+    longer stand reads, word for word, as it always has, naming the track, and notifies
     nobody."""
     league = await ongoing_league(tmp_path, weather=True, horizons=HORIZONS)
     await posted_forecast(league, R3, 1, 8001)
@@ -523,6 +537,11 @@ async def test_the_invalidation_notice_notifies_nobody(tmp_path):
     await run_queue(league.bot)
 
     assert await _stopped_at(league) is None
+    assert league.texts(PRO_CH.forecast) == [
+        "⚠️ **Weather Forecast Invalidated**\nThe configuration for **Silverstone** has been "
+        "amended by an admin. All previously published forecasts for this round have been "
+        "invalidated. An updated forecast will be posted automatically."
+    ]
     [call] = league.channel(PRO_CH.forecast).send.await_args_list
     assert notified(call.kwargs.get("allowed_mentions")) == NOBODY
 
@@ -632,8 +651,37 @@ async def test_an_amendment_judged_again_when_it_runs_is_refused_in_today_s_word
     assert [row["state"] for row in am_4] == ["DONE"]
 
 
+async def test_a_track_amendment_whose_first_forecast_is_posted_while_it_waits_is_refused(tmp_path):
+    """Weather and attendance on; Pro's round 3 is three days out, its first forecast not yet
+    drawn, and the queue is stopped at Am's round 3 cancellation. Pro's round 3 is moved to the Hungaroring and
+    confirmed, and waits. While it waits, its Phase 1 forecast is posted (message 8001). Once the
+    queue goes on, the amendment is refused in today's words, that the first forecast was drawn
+    for its present circuit, nothing of it written: the phases drawn are asked of weather when the
+    amendment runs, not taken from when it was asked."""
+    league = await ongoing_league(tmp_path, weather=True, attendance=True, horizons=HORIZONS)
+    await league.write(
+        "UPDATE rounds SET scheduled_at = ? WHERE id = ?",
+        (league.clock.now + timedelta(days=3)).astimezone(timezone.utc).isoformat(), R3,
+    )
+    await _stopped_blocker(league)
+    [before] = await league.rows("SELECT track_name FROM rounds WHERE id = ?", R3)
+    press = await _amended(league, 3, track="Hungaroring")
+    await posted_forecast(league, R3, 1, 8001)
+
+    await _clear_blocker(league)
+
+    assert _outcome(press) == NO_LONGER + (
+        "The first forecast for this round has already been posted, and it was drawn for its "
+        "present circuit. Amend the round's moment as well to put the forecasts back in question."
+    ) + NOTHING_CHANGED
+    assert (await _change(league))["state"] == "REFUSED"
+    [after] = await league.rows("SELECT track_name FROM rounds WHERE id = ?", R3)
+    assert after["track_name"] == before["track_name"]
+    assert len(_amend_refusals(league)) == 1
+
+
 async def test_a_judgement_that_stopped_and_is_retried_after_the_window_passed_is_refused_by_the_save(
-    tmp_path,
+    tmp_path, monkeypatch,
 ):
     """Attendance on, its check-in deadline one hour before the round. Pro's round 3 is moved to
     two hours from now and confirmed; the check passes, and the judgement stops, its windows
@@ -644,16 +692,15 @@ async def test_a_judgement_that_stopped_and_is_retried_after_the_window_passed_i
     league = await ongoing_league(tmp_path, attendance=True)
     await league.write("UPDATE attendance_config SET rsvp_deadline_hours = 1 WHERE id = 1")
     before = await _moment(league)
-    reading = league.bot.amendment_windows
     await _amended(league, scheduled_at=_at(league, hours=2))
-    _judging_fails(league)
+    mend = _judging_fails(monkeypatch)
     await run_queue(league.bot)
     assert await _stopped_at(league) == "judge"
     await cancel_round(league, "Am", 4)
     assert not league.errors, league.errors
 
     league.clock.advance(hours=2, minutes=1)
-    league.bot.amendment_windows = reading
+    mend()
     await retry_job(league.bot)
 
     refused = (
@@ -795,7 +842,7 @@ async def test_the_jobs_run_in_today_s_order(tmp_path, phases, reposts, weather,
 
 @pytest.mark.parametrize("stopped", ["judge", "unarm"])
 async def test_a_discarded_judgement_or_removal_amends_nothing_and_leaves_the_timed_work(
-    tmp_path, stopped,
+    tmp_path, stopped, monkeypatch,
 ):
     """The amendment stops at its judgement (its windows cannot be read) or at the removal of
     the timed work, and a league admin discards it: nothing is amended, the round keeps its timed
@@ -804,7 +851,7 @@ async def test_a_discarded_judgement_or_removal_amends_nothing_and_leaves_the_ti
     before = await _moment(league)
     press = await _amended(league, scheduled_at=_at(league, days=91))
     if stopped == "judge":
-        _judging_fails(league)
+        _judging_fails(monkeypatch)
     else:
         _unarming_fails(league)
     await run_queue(league.bot)
@@ -839,6 +886,82 @@ async def test_a_discarded_save_amends_nothing_and_arms_the_round_again_as_it_wa
     assert _success_lines(league) == []
 
 
+async def test_a_module_s_part_of_the_save_runs_on_its_connection_before_the_renumbering(
+    tmp_path, reposts,
+):
+    """Weather and attendance on; round 3's call stands and its phase 2 forecast (message 8002)
+    was posted. A further module signs up, after weather and attendance, to a round amended, to
+    the round armed again and to the steps an amendment plans, and the queue is restarted so that
+    its step is known. Pro's round 3 is moved 150 days out, past round 4.
+
+    The module's part of the save is called once, with the save's own connection and round 3: on
+    that connection core's audit of the move and round 3's new moment are written already, while
+    another connection still reads the old moment, since the save has not committed; and round 3
+    still bears number 3, the division not yet renumbered. What it hands back is kept with the
+    save, not in memory: the queue is restarted once the save is made, and the module's part of
+    the round armed again still finds it among what it is handed, and plans its own step from it.
+    The steps run in order: attendance's take-down of the call, weather's deletion of the
+    withdrawn forecast and its notice, then the further module's step, carrying what the save
+    handed back, then the reply's round list. Once the queue has run, round 3 is round 4."""
+    from collections.abc import Mapping
+
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
+    from leaguebot.core.services.queue.change_types import Step
+    from tests.support.change_queue import restart_queue
+
+    further = "a_further_module_s_post"
+    league = await ongoing_league(tmp_path, weather=True, attendance=True, horizons=HORIZONS)
+    await posted_forecast(league, R3, 2, 8002)
+    [old] = await league.rows("SELECT scheduled_at FROM rounds WHERE id = ?", R3)
+    seen: list[tuple[Any, ...]] = []
+    carried: list[Any] = []
+
+    async def _part(db: Any, rid: int, *_rest: Any, **_kwargs: Any) -> dict[str, Any]:
+        cursor = await db.execute("SELECT round_number, scheduled_at FROM rounds WHERE id = ?",
+                                  (rid,))
+        number, moment = await cursor.fetchone()
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM audit_entries WHERE change_type = 'round.scheduled_at' "
+            "AND new_value = ?", (moment,),
+        )
+        [audited] = await cursor.fetchone()
+        async with get_connection(league.db_path) as other:
+            cursor = await other.execute("SELECT scheduled_at FROM rounds WHERE id = ?", (rid,))
+            [outside] = await cursor.fetchone()
+        seen.append((rid, number, moment != old["scheduled_at"], audited,
+                     outside == old["scheduled_at"]))
+        return {further: [rid, number]}
+
+    async def _posts(*args: Any, **kwargs: Any) -> tuple[PlannedStep, ...]:
+        [kept] = [each[further] for each in (*args, *kwargs.values())
+                  if isinstance(each, Mapping) and further in each]
+        return (PlannedStep(further, {"from_the_save": kept}),)
+
+    async def _post(ctx: Any) -> StepResult:
+        carried.append(ctx.step_payload["from_the_save"])
+        return StepResult()
+
+    league.bot.round_amended.subscribe(_part)
+    league.bot.round_armed.subscribe(_posts)
+    league.bot.amendment_steps.subscribe(
+        lambda: {further: Step(further, StepKind.ACT, _post)}
+    )
+    await restart_queue(league.bot)
+    await _amended(league, scheduled_at=_at(league, days=150))
+    await _run_through(league, "apply")
+    await restart_queue(league.bot)
+    await run_queue(league.bot)
+
+    assert seen == [(R3, 3, True, 1, True)]
+    assert await _ran(league) == [
+        "judge", "unarm", "apply", "arm", "take_down_call", "delete_forecast",
+        "notify_invalidation", further, "close",
+    ]
+    assert carried == [[R3, 3]]
+    assert (await _numbers(league))[R3] == 4
+
+
 async def test_a_discarded_amendment_is_named_by_the_number_the_round_bears_when_the_reply_is_made(
     tmp_path, monkeypatch,
 ):
@@ -862,7 +985,7 @@ async def test_a_discarded_amendment_is_named_by_the_number_the_round_bears_when
     r2 = round_id(PRO, 2)
     await league.write(
         "UPDATE rounds SET status = 'NOT_RUN', scheduled_at = ? WHERE id = ?",
-        (league.clock.now + timedelta(days=60)).replace(tzinfo=None).isoformat(), r2,
+        (league.clock.now + timedelta(days=60)).astimezone(timezone.utc).isoformat(), r2,
     )
     await _stopped_blocker(league)
     await _amended(league, 2, scheduled_at=_at(league, days=150))
@@ -1098,10 +1221,11 @@ async def test_a_mystery_round_whose_save_is_discarded_is_armed_again_with_its_m
 
 
 async def _place_r3(league: Any, **delta: float) -> None:
-    """Pro's round 3 stands *delta* from "now", stored as plain UTC as production stores it."""
+    """Pro's round 3 stands *delta* from "now", stored in UTC with its offset as production
+    stores it."""
     await league.write(
         "UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-        (league.clock.now + timedelta(**delta)).replace(tzinfo=None).isoformat(), R3,
+        (league.clock.now + timedelta(**delta)).astimezone(timezone.utc).isoformat(), R3,
     )
 
 
@@ -1354,6 +1478,103 @@ async def test_an_amendment_s_deadline_whose_lock_is_refused_stops_the_queue(tmp
 
     assert await stopped_job(league.db_path) is not None
     assert _sent_in_check_in(league) == []
+
+
+#: The amendment's jobs of weather and attendance: how each is reached, the job, and the name the
+#: log channel's notice gives it when it stops the queue, the round named by the number it bears
+#: once renumbered where the amendment renumbers it.
+_NAMED_JOBS = [
+    pytest.param("moved past round 4", "take_down_call",
+                 "taking down the check-in call of round 4 in **Pro**", id="take_down_call"),
+    pytest.param("moved past round 4", "delete_forecast",
+                 "deleting a withdrawn forecast of round 4 in **Pro**",
+                 id="delete_forecast withdrawn"),
+    pytest.param("phase 1's forecast superseded at once", "delete_forecast",
+                 "deleting the superseded Phase 1 forecast of round 3 in **Pro**",
+                 id="delete_forecast superseded"),
+    pytest.param("moved past round 4", "notify_invalidation",
+                 "telling **Pro** its forecasts no longer stand", id="notify_invalidation"),
+    pytest.param("round 4 brought before round 3", "post_call",
+                 "posting the check-in call of round 3 in **Pro** again", id="post_call"),
+    pytest.param("its deadline passed while the save stood stopped", "distribute",
+                 "placing the reserves of round 3 in **Pro**", id="distribute"),
+    pytest.param("its call gone before its deadline was run", "close_without_call",
+                 "closing the check-in of round 3 in **Pro**, which has no call",
+                 id="close_without_call"),
+    pytest.param("its deadline passed while the save stood stopped", "announce",
+                 "posting the reserve announcement of round 3 in **Pro**", id="announce"),
+    pytest.param("the day after it passed while the save stood stopped", "clean_up_check_in",
+                 "finding what is left of the check-in of round 3 in **Pro**",
+                 id="clean_up_check_in"),
+]
+
+
+@pytest.mark.parametrize("scenario, job, name", _NAMED_JOBS)
+async def test_a_module_s_job_of_the_amendment_is_named_as_today_when_it_stops_the_queue(
+    tmp_path, reposts, scenario, job, name,
+):
+    """Attendance on, and weather too where a forecast is withdrawn; the save of one job of the
+    amendment fails, so the queue stops at it. Moved past round 4: round 3's call stands and its
+    phase 2 forecast (message 8002) was posted, and the round is moved 150 days out, so it is
+    round 4 by the time its call is taken down, the withdrawn forecast deleted and the division
+    told. Round 4 brought before round 3: round 4, with no call, is moved to three days out, so it
+    is round 3 when its call is posted. Phase 1's forecast superseded at once: weather alone on,
+    round 3, nothing drawn, is brought forward to one day out, so phases 1 and 2 are drawn at once
+    and phase 1's forecast is deleted as phase 2's supersedes it. Its deadline passed while the
+    save stood stopped: round 3, two hours and five minutes out, is moved a day later, the save
+    stops, and ten minutes on, past the old deadline, a league admin discards it, so the deadline
+    is run. Its call gone before its deadline was run: as the last, but the round's call record is
+    deleted once the round is armed again, so its check-in is closed as having no call. The day
+    after it passed while the save stood stopped: weather on too, round 3, thirty minutes out, its
+    phase 3 forecast (message 8003) posted, is moved a day later, the save stops, and a day and
+    forty minutes on a league admin discards it, so what is left of its check-in is cleaned up.
+    The log channel's notice that the queue stopped names the job word for word as it always
+    has."""
+    if scenario == "phase 1's forecast superseded at once":
+        league, _ = await _drawn_at_once(tmp_path, days=1)
+    else:
+        forecasts = scenario in ("moved past round 4",
+                                 "the day after it passed while the save stood stopped")
+        league = await ongoing_league(tmp_path, weather=forecasts, attendance=True,
+                                      **({"horizons": HORIZONS} if forecasts else {}))
+    await refuse_the_job(league.db_path, "season.round.amend", job, True)
+    if scenario == "phase 1's forecast superseded at once":
+        await run_queue(league.bot)
+    elif scenario == "its call gone before its deadline was run":
+        await _deadline_not_yet_run(league)
+        await _place_r3(league, hours=2, minutes=5)
+        await _amended(league, scheduled_at=_at(league, days=1, hours=2))
+        with _renumbering_fails():
+            await run_queue(league.bot)
+            assert await _stopped_at(league) == "apply"
+            league.clock.advance(minutes=10)
+            await discard_job(league.bot, run=False)
+        await _run_through(league, "arm")
+        await league.write("DELETE FROM rsvp_embed_messages WHERE round_id = ?", R3)
+        await run_queue(league.bot)
+    elif scenario == "moved past round 4":
+        await posted_forecast(league, R3, 2, 8002)
+        await _amended(league, scheduled_at=_at(league, days=150))
+        await run_queue(league.bot)
+    elif scenario == "round 4 brought before round 3":
+        await _amended(league, number=4, scheduled_at=_at(league, days=3))
+        await run_queue(league.bot)
+    elif scenario == "the day after it passed while the save stood stopped":
+        await _place_r3(league, minutes=30)
+        await posted_forecast(league, R3, 3, 8003)
+        await _amended(league, scheduled_at=_at(league, days=1))
+        with _renumbering_fails():
+            await run_queue(league.bot)
+            assert await _stopped_at(league) == "apply"
+            league.clock.advance(days=1, minutes=40)
+            await discard_job(league.bot)
+    else:
+        await _deadline_not_yet_run(league)
+        await _place_and_discard_past_the_deadline(league)
+
+    assert await _stopped_at(league) == job
+    # Both ends of the name pinned: the notice reads "… stopped at job #N: {name} for {request} …".
+    assert f": {name} for " in _stop_notices(league)[-1]
 
 
 async def test_an_amendment_s_clean_up_whose_delete_is_refused_stops_the_queue(tmp_path):
@@ -1666,7 +1887,7 @@ async def test_a_call_posted_late_at_a_restart_before_the_amendment_posts_it_is_
     the new one to post. The bot restarts before the amendment's job posts the call, and the
     start-up recovery posts it late. When the job runs, the call stands: it is neither taken down
     nor posted again, and the division is called once."""
-    from leaguebot.__main__ import _recover_missed_check_in_calls
+    from leaguebot.attendance.wiring import recover_missed_check_in_calls
 
     league = await ongoing_league(tmp_path, attendance=True)
     if path == "first post":
@@ -1675,7 +1896,7 @@ async def test_a_call_posted_late_at_a_restart_before_the_amendment_posts_it_is_
         await _amended(league, scheduled_at=_at(league, days=3))
         await _run_through(league, "take_down_call")
 
-    await _recover_missed_check_in_calls(league.bot, now=league.clock.now)
+    await recover_missed_check_in_calls(league.bot, now=league.clock.now)
     assert reposts.posted == []
     await run_queue(league.bot)
 
@@ -2366,13 +2587,18 @@ async def test_a_superseded_forecast_that_will_not_delete_is_named_as_superseded
 
 async def test_an_amendment_s_call_saves_its_record_in_the_job(tmp_path, monkeypatch):
     """Attendance on. Pro's round 3, its call standing and answered (Lewis accepted, Max not), is
-    brought forward to three days out, so its call is taken down and posted again. The attendance
-    service's own committing writers are left as the league's doubles, which write nothing: the
-    call posted again is recorded all the same, by the job that posted it, its message the one
-    standing in Pro's check-in channel and the round's attendance rows kept, and the job is done
-    with its record in one save (slice 6's A21, deferred until now)."""
+    brought forward to three days out, so its call is taken down and posted again. The call posted
+    again is recorded by the job that posted it, its message the one standing in Pro's check-in
+    channel and the round's attendance rows kept, and the job is done with its record in one save:
+    the attendance service's writers on a handed connection each write once, on the same save
+    (slice 6's A21, deferred until now)."""
     league = await ongoing_league(tmp_path, attendance=True)
     _real_call(league, monkeypatch)
+    attendance = league.bot.attendance_service
+    writers = {}
+    for name in ("insert_embed_message_on", "bulk_insert_attendance_rows_on"):
+        writers[name] = AsyncMock(wraps=getattr(attendance, name))
+        monkeypatch.setattr(attendance, name, writers[name])
     await _amended(league, scheduled_at=_at(league, days=3))
 
     await run_queue(league.bot)
@@ -2387,8 +2613,10 @@ async def test_an_amendment_s_call_saves_its_record_in_the_job(tmp_path, monkeyp
     assert len(await league.rows(
         "SELECT * FROM driver_round_attendance WHERE round_id = ?", R3
     )) == 2
-    league.bot.attendance_service.insert_embed_message.assert_not_called()
-    league.bot.attendance_service.bulk_insert_attendance_rows.assert_not_called()
+    embed, rows = writers["insert_embed_message_on"], writers["bulk_insert_attendance_rows_on"]
+    embed.assert_awaited_once()
+    rows.assert_awaited_once()
+    assert embed.await_args.args[0] is rows.await_args.args[0]
 
 
 async def test_an_amendment_s_call_posted_again_writes_no_post_check_in_line(tmp_path, reposts):

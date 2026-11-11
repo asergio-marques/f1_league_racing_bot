@@ -27,18 +27,15 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.config_service import ConfigService
-from leaguebot.core.services.module_service import ModuleService
 from leaguebot.signup.cogs.signup_cog import SignupCog
-from leaguebot.signup.services.signup_module_service import SignupModuleService
 from tests.support.change_queue import (
     Clock,
     acknowledgement,
-    attach_queue,
     change_rows,
     discard_job,
     http_error,
-    league_double,
+    league_bot,
+    league_queue,
     member_interaction,
     run_queue,
     seed_server,
@@ -54,6 +51,7 @@ from tests.support.season_league import (
     SIGNUP_BUTTON,
     SIGNUP_CHANNEL_BASE,
     SeasonLeague,
+    set_module_flag,
     setup_league,
     signing_up,
 )
@@ -70,7 +68,6 @@ DRIVER_ROLE = 555002
 CLOSED_NOTICE = 9001
 #: The permissions the bot needs on the signup channel to post the Sign Up button.
 NEEDED = ("**View Channel**", "**Send Messages**", "**Embed Links**")
-
 
 
 def _role(role_id: int) -> MagicMock:
@@ -154,17 +151,13 @@ async def _league(tmp_path: Any, *, closed_notice: bool = False,
     guild.me = MagicMock()
     signup.guild = guild
 
-    bot = league_double(db_path)
-    bot.config_service = ConfigService(db_path)
-    bot.module_service = ModuleService(db_path)
-    await bot.module_service.set_signup_enabled(True)
-    bot.signup_module_service = SignupModuleService(db_path)
-    bot.scheduler_service = MagicMock()
+    bot = await league_bot(db_path, real_config=True)
+    await set_module_flag(db_path, "signup", True)
     bot.get_guild = MagicMock(return_value=guild)
     known = {SIGNUP_CHANNEL: signup, bot.log_channel.id: bot.log_channel,
              bot.interaction_channel.id: bot.interaction_channel}
     bot.get_channel = MagicMock(side_effect=known.get)
-    attach_queue(bot, db_path, now=Clock(NOW))
+    league_queue(bot, db_path, now=Clock(NOW))
     return _League(db_path, bot, guild, events)
 
 
@@ -372,8 +365,8 @@ async def test_a_discarded_close_arming_names_the_commands_that_arm_it_again(tmp
 # ---------------------------------------------------------------------------
 #
 # Today `/signup close`, its Confirm Close button, the close timer, a restart past the close time
-# and `/module disable signup` close the window through `execute_forced_close`, off the queue:
-# each step that fails is named and the rest run on. On the queue each asks `signup.close` (or
+# and `/module disable signup` close the window off the queue: each step that fails is named and
+# the rest run on. On the queue each asks `signup.close` (or
 # `module.off:signup`): `return_drivers` returns each driver still filling in the wizard to Not
 # Signed Up, `delete_button` deletes the Sign Up message, `post_closed` posts the closed notice
 # and, in its record, saves the window closed, the season's move and the audit in one save; then
@@ -401,12 +394,12 @@ DRIVER_NOTICE = "🔒 Signups have closed."
 DELETE_TIMER = "signup_channel_delete"
 
 
-async def _close_league(tmp_path: Any, *drivers: int) -> SeasonLeague:
-    """`setup_league` at Signups with the window open; each of *drivers* still filling in the
-    wizard (Pending Signup Completion), their signup channel standing and recording what it is
-    sent and its permission edits."""
+async def _close_league(tmp_path: Any, *drivers: int, stage: str = "SIGNUPS") -> SeasonLeague:
+    """`setup_league` at *stage* (Signups unless told) with the window open; each of *drivers*
+    still filling in the wizard (Pending Signup Completion), their signup channel standing and
+    recording what it is sent and its permission edits."""
     os.makedirs(str(tmp_path), exist_ok=True)
-    league = await setup_league(tmp_path, stage="SIGNUPS", signups_open=True)
+    league = await setup_league(tmp_path, stage=stage, signups_open=True)
     for user_id in drivers:
         await signing_up(league, user_id, state="PENDING_SIGNUP_COMPLETION")
         cid = SIGNUP_CHANNEL_BASE + user_id
@@ -645,17 +638,20 @@ async def test_a_close_that_could_not_record_the_window_closed_names_the_close_t
     """The window has a close time armed, and the timer's close runs: Discord refuses "Signups are
     now closed", so the queue stops at `post_closed`, and a league admin discards it. The window
     is not recorded closed and its close time stays armed, so `/signup close` would refuse: the
-    line says to run `/signup close-time cancel` first, and so does the not-closed text a season's
-    end writes. Since `/signup close` refuses too while a season's end or wind-down is in hand,
-    the line says to let that finish first."""
-    from leaguebot.core.cogs.module_cog import close_signups_unattended
-    from leaguebot.core.services.season_lifecycle_service import WINDOW_NOT_CLOSED
+    line says to run `/signup close-time cancel` first. Since `/signup close` refuses too while a
+    season's end or wind-down is in hand, the line says to let that finish first."""
+    from leaguebot.signup.services.window_close import close_signups_unattended
 
     league = await _close_league(tmp_path)
     await league.write("UPDATE signup_module_config SET close_at = ?", "2026-10-13T11:00:00+00:00")
     league.channel(LEAGUE_SIGNUP_CHANNEL).fail_when = lambda content, _kwargs: CLOSED_TEXT in str(content)
 
-    await close_signups_unattended(league.bot, cause="timer")
+    await close_signups_unattended(
+        change_queue=league.bot.change_queue,
+        module_service=league.bot.module_service,
+        signup_module_service=league.bot.signup_module_service,
+        cause="timer",
+    )
     await run_queue(league.bot)
     await discard_job(league.bot)
 
@@ -663,7 +659,6 @@ async def test_a_close_that_could_not_record_the_window_closed_names_the_close_t
     [line] = [each for each in league.log().split("\n⌛") if "Signups auto-close" in each] or [league.log()]
     assert "`/signup close`" in line and "`/signup close-time cancel`" in line
     assert line.index("`/signup close-time cancel`") > line.index("`/signup close`")
-    assert "`/signup close-time cancel`" in WINDOW_NOT_CLOSED
     assert "season's end or wind-down is still on the queue, let it finish first" in line, line
 
 
@@ -696,7 +691,7 @@ async def test_the_close_timer_and_a_restart_past_the_close_time_ask_the_close(t
     system, as an automatic close, and one "🔒 Signups closed automatically at their set time"
     line is written, its head showing the set time (and, for the restart, that it came at
     start-up); it names no member and states beneath it the one driver returned (signup :67)."""
-    from leaguebot.core.cogs.module_cog import close_signups_unattended
+    from leaguebot.signup.services.window_close import close_signups_unattended
     from tests.support.change_queue import queued_log_lines
 
     for cause in ("timer", "restart"):
@@ -704,7 +699,12 @@ async def test_the_close_timer_and_a_restart_past_the_close_time_ask_the_close(t
         set_at = league.clock.now - timedelta(minutes=1)
         await league.write("UPDATE signup_module_config SET close_at = ?", set_at.isoformat())
 
-        await close_signups_unattended(league.bot, cause=cause)
+        await close_signups_unattended(
+            change_queue=league.bot.change_queue,
+            module_service=league.bot.module_service,
+            signup_module_service=league.bot.signup_module_service,
+            cause=cause,
+        )
 
         [change] = await _changes_of(league, CLOSE_KIND)
         assert change["origin"] == "BOT", cause
@@ -776,11 +776,16 @@ async def _season_end_in_hand(league: SeasonLeague, kind: str, *, due: bool = Tr
 async def _auto_close(league: SeasonLeague, cause: str) -> None:
     """The window's close time has passed and the bot asks its close, by the timer or at a
     restart (*cause*)."""
-    from leaguebot.core.cogs.module_cog import close_signups_unattended
+    from leaguebot.signup.services.window_close import close_signups_unattended
 
     set_at = league.clock.now - timedelta(minutes=1)
     await league.write("UPDATE signup_module_config SET close_at = ?", set_at.isoformat())
-    await close_signups_unattended(league.bot, cause=cause)
+    await close_signups_unattended(
+        change_queue=league.bot.change_queue,
+        module_service=league.bot.module_service,
+        signup_module_service=league.bot.signup_module_service,
+        cause=cause,
+    )
 
 
 @pytest.mark.parametrize("kind", SEASON_ENDS)
@@ -926,7 +931,10 @@ async def test_a_member_s_close_names_the_job_of_an_end_still_doing_one(tmp_path
     assert f"job #{job}" in reply, reply
 
 
-@pytest.mark.parametrize("asked", ("timer", "command"))
+@pytest.mark.parametrize(
+    "asked",
+    ("timer", "command"),
+)
 async def test_a_wind_down_its_check_will_drop_holds_no_close_back(tmp_path, asked):
     """Season 7 is raced with signups open (Ongoing, signups open) and two divisions, the first
     finished and the second not. The first division's appeals are approved, and the bot asks a
@@ -936,10 +944,15 @@ async def test_a_wind_down_its_check_will_drop_holds_no_close_back(tmp_path, ask
     signing up. Nothing ending the season is in hand that would close the window: the member's
     close is not refused, the close goes ahead, the window is closed with its notice posted and
     the season moves on to Ongoing, and the wind-down is dropped."""
+    import json
+
     from tests.support.change_queue import queued_log_lines
 
     async def wind_down_asked() -> None:
-        # As the approval's save queues it, a follow-on of the bot's, unchecked until its turn.
+        # As the approval's save queues it, a follow-on of the bot's, unchecked until its turn,
+        # with the jobs the wind-down itself plans.
+        [wind_down] = [kind for kind in league.bot.change_queue.types
+                       if kind.kind == WIND_DOWN_KIND]
         async with get_connection(league.db_path) as db:
             cursor = await db.execute(
                 "INSERT INTO queued_changes (kind, dedup_key, payload, origin, what) "
@@ -947,11 +960,11 @@ async def test_a_wind_down_its_check_will_drop_holds_no_close_back(tmp_path, ask
                 (WIND_DOWN_KIND, WIND_DOWN_KIND,
                  "Winding the season down after approving round 3's appeals"),
             )
-            for position, name in enumerate(("wind_down", "turn_down")):
+            for position, planned in enumerate(wind_down.opening_steps({})):
                 await db.execute(
                     "INSERT INTO queued_change_steps (change_id, position, name, payload) "
-                    "VALUES (?, ?, ?, '{}')",
-                    (cursor.lastrowid, position, name),
+                    "VALUES (?, ?, ?, ?)",
+                    (cursor.lastrowid, position, planned.name, json.dumps(planned.payload)),
                 )
             await db.commit()
 
@@ -984,7 +997,9 @@ async def test_a_wind_down_its_check_will_drop_holds_no_close_back(tmp_path, ask
 
 
 async def test_disabling_signup_closes_the_window_and_switches_the_module_off_as_jobs(tmp_path):
-    """Kimi is still filling in the wizard. Manager 77 runs `/module disable signup`. Until the
+    """Kimi is still filling in the wizard, the window left open by a season's end whose close was
+    discarded, and the new season is in Configuration, the stage at which the signup module may
+    be switched. Manager 77 runs `/module disable signup`. Until the
     queue runs, the module is still on and the window open. When it runs, the
     `module.off:signup` change closes the window as its jobs — Kimi returned, the button
     deleted, the closed notice posted, Kimi told — and its last job, `switch_off`, turns the
@@ -992,7 +1007,7 @@ async def test_disabling_signup_closes_the_window_and_switches_the_module_off_as
     and the one line is written."""
     from leaguebot.core.cogs.module_cog import ModuleCog
 
-    league = await _close_league(tmp_path, SIGNING_UP)
+    league = await _close_league(tmp_path, SIGNING_UP, stage="CONFIGURATION")
     cog = ModuleCog.__new__(ModuleCog)
     cog.bot = league.bot
     interaction = _manager(league)

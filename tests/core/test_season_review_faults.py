@@ -30,7 +30,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.__main__ import read_approval_windows
 from leaguebot.core.cogs.season_cog import SeasonCog
 
 SERVER_ID = 11808
@@ -80,13 +79,21 @@ def _make_cog(
             rsvp_notice_days=5, rsvp_last_notice_hours=24, rsvp_deadline_hours=2
         )
     )
-    # The reader the builder sets on the bot, which the cog's `_approval_windows` now asks.
-    bot.approval_windows = lambda: read_approval_windows(bot)
     cog = SeasonCog.__new__(SeasonCog)
     cog.bot = bot
     cog._weather_config = weather_config or SimpleNamespace(
         phase_1_days=5, phase_2_days=2, phase_3_hours=2
     )
+    return cog
+
+
+def _reading_windows(**kwargs) -> SeasonCog:
+    """`_make_cog`'s cog, its bot signed up to the windows hook as the builder signs attendance
+    and weather up to it, which the cog's `_approval_windows` reads through."""
+    from leaguebot.__main__ import _sign_up_to_round_windows
+
+    cog = _make_cog(**kwargs)
+    _sign_up_to_round_windows(cog.bot)
     return cog
 
 
@@ -208,7 +215,7 @@ def test_both_faults_name_the_command_that_fixes_them():
 async def test_a_league_running_neither_module_has_no_windows():
     """Nothing to be inside, so nothing can be refused for it — a league running only the
     results module must not be blocked by windows it does not have."""
-    cog = _make_cog(attendance_enabled=False, weather_enabled=False)
+    cog = _reading_windows(attendance_enabled=False, weather_enabled=False)
 
     with _weather(cog):
         attendance, weather = await cog._approval_windows()
@@ -218,7 +225,7 @@ async def test_a_league_running_neither_module_has_no_windows():
 
 
 async def test_the_weather_windows_are_read_when_the_module_is_on():
-    cog = _make_cog(weather_enabled=True)
+    cog = _reading_windows(weather_enabled=True)
 
     with _weather(cog):
         _, weather = await cog._approval_windows()
@@ -232,7 +239,7 @@ async def test_the_weather_windows_are_read_when_the_module_is_on():
 async def test_one_module_on_leaves_the_other_s_windows_absent():
     """The two are independent, and a league running attendance without weather must not
     be judged against phase horizons it never configured."""
-    cog = _make_cog(attendance_enabled=True, weather_enabled=False)
+    cog = _reading_windows(attendance_enabled=True, weather_enabled=False)
 
     with _weather(cog):
         attendance, weather = await cog._approval_windows()
@@ -244,7 +251,7 @@ async def test_one_module_on_leaves_the_other_s_windows_absent():
 async def test_a_disabled_module_s_configuration_is_not_even_read():
     """The read is the cost this helper exists to avoid paying per division; doing it for
     a module that is off would be the whole saving given back."""
-    cog = _make_cog(attendance_enabled=False, weather_enabled=False)
+    cog = _reading_windows(attendance_enabled=False, weather_enabled=False)
 
     with _weather(cog) as weather_read:
         await cog._approval_windows()
@@ -256,7 +263,7 @@ async def test_a_disabled_module_s_configuration_is_not_even_read():
 async def test_the_windows_reflect_what_the_league_configured():
     """A league that shortened its notice to two days is judged against two, not against
     the packaged default — which is the point of reading them at all."""
-    cog = _make_cog(
+    cog = _reading_windows(
         attendance_enabled=True,
         attendance_config=SimpleNamespace(
             rsvp_notice_days=2, rsvp_last_notice_hours=6, rsvp_deadline_hours=1

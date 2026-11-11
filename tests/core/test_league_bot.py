@@ -55,50 +55,31 @@ def test_bot_of_is_the_interactions_client():
     assert bot_of(interaction) is interaction.client
 
 
-def test_the_wizard_has_its_bot_before_the_gateway_opens():
-    """The signup wizard reaches the league's services through its bot. It was bound late in
-    `on_ready`, after the restart recovery, while the persistent views are routed from the
-    moment the gateway opens — so a signup press in between found no bot and failed (#228).
-    It is bound in `main` itself, before `bot.start`, and in no handler."""
-    tree = ast.parse((SRC / "__main__.py").read_text(encoding="utf-8"))
-    main = next(
-        node for node in tree.body if isinstance(node, ast.AsyncFunctionDef) and node.name == "main"
-    )
-    binds = [
-        node for node in ast.walk(main)
-        if isinstance(node, ast.Call) and ast.unparse(node.func) == "bot.wizard_service.set_bot"
-    ]
-    assert len(binds) == 1, "the wizard is bound once"
-    in_main_itself = {id(node) for stmt in main.body for node in ast.walk(stmt)} - {
-        id(node)
-        for inner in ast.walk(main)
-        if isinstance(inner, (ast.FunctionDef, ast.AsyncFunctionDef)) and inner is not main
-        for node in ast.walk(inner)
-    }
-    assert id(binds[0]) in in_main_itself, "bound inside a handler, not in main"
-    start = next(
-        node for node in ast.walk(main)
-        if isinstance(node, ast.Call) and ast.unparse(node.func) == "bot.start"
-    )
-    assert binds[0].lineno < start.lineno
+def test_setup_hook_is_the_bot_types_one_behaviour():
+    """`LeagueBot` defines `setup_hook` and no other method of its own: it is a type, whose one
+    behaviour is starting the retry loop at login (`league_bot.py`'s docstring, "it should not
+    grow another", and architecture.md, "Errors and failures")."""
+    own = sorted(name for name, value in vars(LeagueBot).items() if inspect.isfunction(value))
+    assert own == ["setup_hook"]
 
 
-def test_the_approval_windows_reader_is_declared_and_set_by_the_builder():
-    """The season cog reads the enabled modules' windows through `bot.approval_windows`, which
-    `LeagueBot` declares and the builder sets, so that core imports neither attendance nor
-    weather, nor `__main__` (#439, slice 4a)."""
+def test_the_windows_hook_is_declared_and_made_by_the_builder():
+    """The season cog reads the enabled modules' windows through `bot.round_windows_read`, the
+    hook `LeagueBot` declares and the builder makes, so that core imports neither attendance nor
+    weather, nor `__main__`; the two readers it replaces are gone (#439, slice 4a)."""
     from leaguebot.core.cogs.season_cog import SeasonCog
 
-    assert "approval_windows" in _declared()
-    assert "approval_windows" in _attached_in_bot_py()
-    assert "self.bot.approval_windows()" in inspect.getsource(SeasonCog._approval_windows)
+    assert "round_windows_read" in _declared()
+    assert "round_windows_read" in _attached_in_bot_py()
+    assert "self.bot.round_windows_read" in inspect.getsource(SeasonCog._approval_windows)
+    assert not {"approval_windows", "amendment_windows"} & (_declared() | _attached_in_bot_py())
 
 
 def test_the_season_approval_is_registered():
     """The builder registers the season's approval and the change that tells the review's channel
     of a refusal its member can no longer be told of (#439, slice 4a)."""
     from leaguebot.__main__ import register_change_types
-    from leaguebot.core.services.season_approval_change import KIND, TELL_KIND
+    from leaguebot.core.services.seasons.season_approval_change import KIND, TELL_KIND
 
     bot = MagicMock()
     register_change_types(bot)
@@ -112,7 +93,7 @@ def test_the_cancellations_are_registered():
     """The builder registers the cancellation of a round and of a division, once each, as
     "season.round.cancel" and "season.division.cancel" (#439, slice 4b)."""
     from leaguebot.__main__ import register_change_types
-    from leaguebot.core.services.cancellation_changes import DIVISION_CANCEL, ROUND_CANCEL
+    from leaguebot.core.services.cancellations.cancellation_changes import DIVISION_CANCEL, ROUND_CANCEL
 
     bot = MagicMock()
     register_change_types(bot)
@@ -127,7 +108,7 @@ def test_the_round_amendment_is_registered():
     """The builder registers the amendment of a round, once, as "season.round.amend" (#439,
     slice 4b, amendment A)."""
     from leaguebot.__main__ import register_change_types
-    from leaguebot.core.services.round_amend_change import ROUND_AMEND
+    from leaguebot.core.services.rounds.round_amend_change import ROUND_AMEND
 
     bot = MagicMock()
     register_change_types(bot)
@@ -135,6 +116,26 @@ def test_the_round_amendment_is_registered():
     kinds = [call.args[0].kind for call in bot.change_queue.register.call_args_list]
     assert ROUND_AMEND == "season.round.amend"
     assert kinds.count(ROUND_AMEND) == 1
+
+
+def test_a_setup_round_change_may_write_the_rounds_alone():
+    """The builder registers `/round add`'s change, "core.round_add", and the imports',
+    "core.round_import", once each, and each declares that its save may write the rounds alone,
+    besides the queue's own tables, the audit entries among them (#283, S14d): the queue then
+    refuses any other write, so that adding rounds to the season being set up can never touch the
+    season, a division's settings, its channels, its points configurations, its seats or a
+    driver's placement."""
+    from leaguebot.__main__ import register_change_types
+    from leaguebot.core.services.rounds.round_add_changes import ADD, IMPORT
+
+    bot = MagicMock()
+    register_change_types(bot)
+
+    registered = [call.args[0] for call in bot.change_queue.register.call_args_list]
+    assert (ADD, IMPORT) == ("core.round_add", "core.round_import")
+    for kind in (ADD, IMPORT):
+        [change_type] = [each for each in registered if each.kind == kind]
+        assert change_type.writes == ("rounds",), kind
 
 
 def test_the_season_s_end_is_registered():
@@ -150,35 +151,45 @@ def test_the_season_s_end_is_registered():
     for kind in ("season.complete", "season.cancel", "season.abort", "season.wind_down"):
         assert kinds.count(kind) == 1, kind
 
-    from leaguebot.core.services.cancellation_changes import SEASON_CANCEL
-    from leaguebot.core.services.season_end_changes import SEASON_ABORT, SEASON_COMPLETE
-    from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
+    from leaguebot.core.services.cancellations.cancellation_changes import SEASON_CANCEL
+    from leaguebot.core.services.seasons.season_end_changes import SEASON_ABORT, SEASON_COMPLETE
+    from leaguebot.core.services.seasons.season_lifecycle_service import WIND_DOWN
 
     assert (SEASON_COMPLETE, SEASON_CANCEL, SEASON_ABORT, WIND_DOWN) == (
         "season.complete", "season.cancel", "season.abort", "season.wind_down")
 
 
 #: The settings commands of results, weather and images as the builder registers them (#439,
-#: slice 7): one change type per setting, every one built by `setting_change`.
+#: slice 7), core's seven `/bot` settings, its two division channels and its test-mode nationality
+#: switch, weather's forecast channel, results' three division channels and attendance's two
+#: (#283): one change type per setting, every one built by `setting_change`.
 SETTING_KINDS = (
+    *(f"core.setting.{name}" for name in (
+        "log_channel", "interaction_channel", "interaction_role", "admin_role",
+        "base_role_id", "driver_role_id", "hub_channel_id", "lineup_channel_id",
+        "calendar_channel_id", "test_mode_nationality_required",
+    )),
     "weather.setting.deadline",
+    "weather.setting.forecast_channel",
     *(f"results.setting.{name}" for name in (
         "config_add", "config_remove", "config_points", "config_fastest_lap", "config_import",
         "config_attach", "config_detach", "reserves", "amend_mode", "amend_revert",
-        "amend_points", "amend_fastest_lap",
+        "amend_points", "amend_fastest_lap", "results_channel", "standings_channel",
+        "verdicts_channel",
     )),
     *(f"image.setting.{name}" for name in (
         "directory", "template_directory", "template", "aspect", "presentation",
         "fastest_lap_colour", "per_tier", "tier_colours", "tier_import", "portraits",
         "daily_portraits",
     )),
+    "attendance.setting.rsvp_channel",
+    "attendance.setting.attendance_channel",
 )
 
 
 def test_the_settings_changes_are_registered():
-    """The builder registers the twenty-four settings changes of results, weather and images,
-    once each, and no other kind carrying ".setting." (#439, slice 7): the attendance settings
-    stay off the queue until attendance's design pass."""
+    """The builder registers the forty settings changes of core, results, weather, images and
+    attendance, once each, and no other kind carrying ".setting." (#439, slice 7; #283)."""
     from leaguebot.__main__ import register_change_types
 
     bot = MagicMock()
@@ -187,7 +198,103 @@ def test_the_settings_changes_are_registered():
     kinds = [call.args[0].kind for call in bot.change_queue.register.call_args_list]
     settings = sorted(kind for kind in kinds if ".setting." in kind)
     assert settings == sorted(SETTING_KINDS)
-    assert len(SETTING_KINDS) == 24
+    assert len(SETTING_KINDS) == 40
+
+
+#: Each channel the channel registry knows, by its key, and the setting that points the bot at it.
+#: The signup channel is the registry's but has none: `/signup channel` is not asked of the queue,
+#: so it never waits behind a stop.
+CHANNEL_SETTING_KINDS = {
+    "calendar": "core.setting.calendar_channel_id",
+    "lineup": "core.setting.lineup_channel_id",
+    "results": "results.setting.results_channel",
+    "standings": "results.setting.standings_channel",
+    "verdicts": "results.setting.verdicts_channel",
+    "rsvp": "attendance.setting.rsvp_channel",
+    "attendance": "attendance.setting.attendance_channel",
+    "weather": "weather.setting.forecast_channel",
+    "interaction": "core.setting.interaction_channel",
+    "log": "core.setting.log_channel",
+    "hub": "core.setting.hub_channel_id",
+}
+
+
+def test_every_channel_setting_overtakes_a_stopped_job():
+    """A stop notice for a channel tells the league to set the channel, then press Retry: a
+    setting waiting behind the stop it is meant to clear could never do it. Every channel the
+    channel registry knows, the signup channel aside, has its setting registered, and each runs
+    past a stopped job; so do the interaction role and the league admin role, the league's way
+    back in, and no other change. A channel added to the registry fails here until its setting is
+    named and overtakes."""
+    from leaguebot.__main__ import register_change_types
+    from leaguebot.core.services.settings.channel_registry_service import SETTING_LABELS
+
+    bot = MagicMock()
+    register_change_types(bot)
+
+    overtaking = {
+        call.args[0].kind: call.args[0].overtakes_a_stop
+        for call in bot.change_queue.register.call_args_list
+    }
+    assert set(SETTING_LABELS) - {"signup"} == set(CHANNEL_SETTING_KINDS)
+    assert {key: overtaking.get(kind) for key, kind in CHANNEL_SETTING_KINDS.items()} == {
+        key: True for key in CHANNEL_SETTING_KINDS
+    }
+    assert sorted(kind for kind, overtakes in overtaking.items() if overtakes) == sorted(
+        [*CHANNEL_SETTING_KINDS.values(), "core.setting.interaction_role",
+         "core.setting.admin_role"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("module", "package", "on_writes", "off_writes"),
+    [
+        pytest.param("weather", "leaguebot.weather.", {"server_configs"}, {"server_configs"},
+                     id="weather"),
+        pytest.param(
+            "images", "leaguebot.image.", {"image_config", "image_aspect_toggles"},
+            {"image_config"}, id="images",
+        ),
+        pytest.param(
+            "attendance", "leaguebot.attendance.", {"attendance_config"},
+            {"attendance_config", "attendance_division_config"}, id="attendance",
+        ),
+        pytest.param(
+            "results", "leaguebot.results.", {"results_module_config"}, None, id="results",
+        ),
+        pytest.param(
+            "signup", "leaguebot.signup.", {"server_configs", "signup_module_config"}, None,
+            id="signup",
+        ),
+    ],
+)
+def test_a_module_s_switch_is_its_own_settings_signed_up_by_the_builder(
+    module, package, on_writes, off_writes
+):
+    """The builder registers each module's switch-on and switch-off, "module.on:<name>" and
+    "module.off:<name>" under the name `/module` offers, once each (#283, S11b and S11c): each is
+    the module's own (its check is the module's code) and may write only the tables holding the
+    module's switch and, for images' switch-on, the configuration it creates where missing.
+    Weather's switch is weather's column on the core table `server_configs`; images' is image's
+    own `image_config`; attendance's is `attendance_config`, its switch-off clearing the
+    division channels in `attendance_division_config` too (#283, S11d). Results' switch-on is
+    `results_module_config`; its switch-off is its own change already (`results_off_change`),
+    whose tables are not declared, so only its owner is checked (*off_writes* None). Signup's
+    switch-on is signup's column on `server_configs` and the configuration row it creates where
+    none stands; its switch-off is its own change already (`signup_off_change`), its tables not
+    declared (#283, S11e)."""
+    from leaguebot.__main__ import register_change_types
+    from leaguebot.core.models.change import module_off, module_on
+
+    bot = MagicMock()
+    register_change_types(bot)
+
+    registered = [call.args[0] for call in bot.change_queue.register.call_args_list]
+    for kind, writes in ((module_on(module), on_writes), (module_off(module), off_writes)):
+        [switch] = [change_type for change_type in registered if change_type.kind == kind]
+        assert switch.check.__module__.startswith(package), kind
+        if writes is not None:
+            assert sorted(switch.writes) == sorted(writes), kind
 
 
 def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
@@ -196,8 +303,7 @@ def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
     the league no way to put it right (#439, slice 8; owner, 2026-10-23): the arming of an
     approved season's timed work and of an amended round's, the creation of a round's results
     submission channel, the save of a round's, a division's and a season's cancellation once
-    their timed work is removed, and the letting go of a season's setup held in memory once it is
-    approved or aborted, the forgetting of a review taken down, and the start of a round's
+    their timed work is removed, the forgetting of a review taken down, and the start of a round's
     results submission and the clearing of one a restart cut short, and the last job of a penalty
     review's opening and of its prompt's posting, both jobs of an appeals review's reopening, and
     the last job of a reports approval and of an appeals approval, the marking of a round's
@@ -209,9 +315,10 @@ def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
     arming of a round's timed work again after a refused cancellation, its reserve placement and
     the marking of its check-in over included, and the ending of a round whose every session was
     entered as not held. Every other job a league admin may discard."""
-    from leaguebot.__main__ import register_change_types
+    from leaguebot.__main__ import _sign_up_to_amendments, register_change_types
 
     bot = MagicMock()
+    _sign_up_to_amendments(bot)
     register_change_types(bot)
 
     marked = sorted(
@@ -234,9 +341,7 @@ def test_the_undiscardable_jobs_are_those_whose_loss_could_stop_a_season():
         ("results.submission.open", "create_channel"),
         ("results.submission.open", "start_round"),
         ("results.submission.restart", "clear"),
-        ("season.abort", "forget_setup"),
         ("season.approve", "arm"),
-        ("season.approve", "forget_setup"),
         ("season.cancel", "apply"),
         ("season.division.cancel", "apply"),
         ("season.review.take_down", "forget"),

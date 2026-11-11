@@ -39,15 +39,22 @@ is refused as any other season is, and the review says nothing about their comin
 """
 from __future__ import annotations
 
+from contextlib import ExitStack, contextmanager
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.__main__ import read_approval_windows
 from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.services.drivers.placement_service import PlacementService
+from leaguebot.core.utils.hooks import AwaitedHook
+from tests.support.review_workflows import (
+    record_review_views, run_workflow, sign_up_confirmation_refused, sign_up_division_lines_read,
+)
+from tests.support.setup_reads import hold_setup
+
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 12808
@@ -56,6 +63,40 @@ DIVISION_ID = 21
 USER_ID = 77
 #: The channel the manager runs the review in, where it is posted: the league's interaction channel.
 COMMAND_CHANNEL = 2
+
+#: The gates a test stands in, each a function of `approval_checks` that the review command and
+#: the approval's workflow call alike.
+_GATES = (
+    "team_name_problems", "lineup_problems", "image_configuration_faults",
+    "placement_confirmation_faults", "season_has_divisions",
+)
+
+#: Results' points gates a test stands in, each a function of results' `season_points_service`
+#: that its review section and its refusals call alike (#283).
+_POINTS_GATES = (
+    "missing_points_config_problems", "no_points_config_attached", "points_ordering_problems",
+)
+
+
+@contextmanager
+def _gates_of(cog):
+    """Each gate *cog* stands in for, patched on `approval_checks`, or on results' service for a
+    points gate, for as long as it is held."""
+    from leaguebot.core.services.seasons import approval_checks
+    from leaguebot.results.services import season_points_service
+
+    with ExitStack() as stack:
+        for module, gates in ((approval_checks, _GATES), (season_points_service, _POINTS_GATES)):
+            for gate in gates:
+                if gate in vars(cog):
+                    stack.enter_context(patch.object(module, gate, vars(cog)[gate]))
+        yield
+
+
+async def _run_review(cog, interaction) -> None:
+    """Run `/season placements-review` on *cog*, its gates stood in on `approval_checks`."""
+    with _gates_of(cog):
+        await undecorate(SeasonCog.season_review)(cog, interaction)
 
 POST = "season.review.post"
 #: What the drawings the command used to make itself are stood down by, where they still exist.
@@ -93,6 +134,12 @@ async def db_path(tmp_path):
             "VALUES (?, ?, 'Pro', 1, 555)",
             (DIVISION_ID, SEASON_ID),
         )
+        # Pro's results, standings and verdicts channels, as `_division` gives them.
+        await db.execute(
+            "INSERT INTO division_results_config (division_id, results_channel_id, "
+            "standings_channel_id, penalty_channel_id) VALUES (?, 703, 704, '705')",
+            (DIVISION_ID,),
+        )
         await db.commit()
     return path
 
@@ -115,10 +162,6 @@ def _division(**overrides):
         mention_role_id=555,
         calendar_channel_id=701,
         lineup_channel_id=702,
-        results_channel_id=703,
-        standings_channel_id=704,
-        penalty_channel_id=705,
-        forecast_channel_id=706,
     )
     fields.update(overrides)
     return SimpleNamespace(**fields)
@@ -161,13 +204,22 @@ def _cog(
     bot = MagicMock()
     bot.db_path = db_path
     bot.output_router.post_log = AsyncMock()
-    # The reader the builder sets on the bot, which the cog's `_approval_windows` now asks.
-    bot.approval_windows = lambda: read_approval_windows(bot)
+    # The windows hook as the builder signs attendance and weather up to it, which the cog's
+    # `_approval_windows` reads through; and the review sections hook as the builder signs
+    # signup, attendance, results and weather up to it, each section read through the module
+    # stubs below.
+    from leaguebot.__main__ import _sign_up_to_review_sections, _sign_up_to_round_windows
+
+    _sign_up_to_round_windows(bot)
+    _sign_up_to_review_sections(bot)
+    # Each division's results and attendance lines, through the hook the review gathers them by.
+    sign_up_division_lines_read(bot)
+    # Results' refusals, through the hook a season's confirmation is refused through.
+    sign_up_confirmation_refused(bot)
     cog.bot = bot
 
-    cfg = pending or _pending()
-    cog._pending = {USER_ID: cfg}
-    cog._get_pending = MagicMock(return_value=cfg)
+    # The season being set up, read from the database (#283).
+    hold_setup(bot.season_service, pending or _pending())
 
     modules = bot.module_service
     modules.is_weather_enabled = AsyncMock(return_value=weather)
@@ -221,17 +273,20 @@ def _cog(
     bot.team_service.get_division_teams = AsyncMock(
         return_value=teams if teams is not None else [{"name": "Red", "full_name": "Red"}]
     )
-    bot.season_service.get_divisions_with_results_config = AsyncMock(
+    # Each division's lineup, read of the placements on the review's database (#283).
+    bot.placement_service = PlacementService(db_path)
+    # The divisions the review shows, read with the season's divisions.
+    bot.season_service.get_divisions = AsyncMock(
         return_value=divisions if divisions is not None else [_division()]
     )
     bot.season_service.get_division_rounds = AsyncMock(
         return_value=rounds if rounds is not None else [_round()]
     )
 
-    cog._team_name_problems = AsyncMock(return_value=name_problems or [])
-    cog._missing_points_config_problems = AsyncMock(return_value=phantoms or [])
-    cog._no_points_config_attached = AsyncMock(return_value=nothing_attached)
-    cog._points_ordering_problems = AsyncMock(return_value=points_faults or [])
+    cog.team_name_problems = AsyncMock(return_value=name_problems or [])
+    cog.missing_points_config_problems = AsyncMock(return_value=phantoms or [])
+    cog.no_points_config_attached = AsyncMock(return_value=nothing_attached)
+    cog.points_ordering_problems = AsyncMock(return_value=points_faults or [])
     # The review is asked of the queue (C94): the request is recorded, not run.
     bot.change_queue.ask = AsyncMock(return_value=1)
     # Until #439's C93 and C94, the command draws its pictures and posts its question itself;
@@ -241,20 +296,23 @@ def _cog(
             setattr(cog, name, _stood_down(name))
 
     # The image section. What it prints has tests of its own, in
-    # `tests/image/test_image_module_flow.py`; under test here is whether its faults withhold the button
-    # (#396), so the report lines are stubbed and the fault reading is left real. Its readers
-    # are pinned to "nothing wrong" — each is wrapped in a `try` that turns a mock's
-    # surprise into a fault of its own, which would withhold the button on the harness.
+    # `tests/image/test_image_drawing_review.py`; under test here is whether its faults withhold
+    # the button (#396), so the report lines are stubbed and the fault reading is left real. The
+    # image module's drawing answers "nothing wrong" to each question of the configuration, and
+    # neither picture is wanted: a mock's answer read as a fault would withhold the button on the
+    # harness.
     cog._build_image_review_section = AsyncMock(return_value=[])
     cog._calendar_capacity_warning = AsyncMock(return_value=[])
     cog._attendance_capacity_warning = AsyncMock(return_value=[])
-    cog._lineup_problems = AsyncMock(return_value=lineup_problems or [])
-    bot.image_validity_service.template_reports = AsyncMock(return_value={})
-    bot.image_validity_service.colour_shortfall = AsyncMock(return_value={})
-    bot.image_config_service.get_toggles = AsyncMock(return_value={})
-    bot.image_config_service.get_config = AsyncMock(return_value=None)
+    cog.lineup_problems = AsyncMock(return_value=lineup_problems or [])
+    bot.image_drawing.rasteriser_fault = MagicMock(return_value=None)
+    bot.image_drawing.template_faults = AsyncMock(return_value=[])
+    bot.image_drawing.colour_shortfall_problems = AsyncMock(return_value=[])
+    bot.image_drawing.portrait_fault = AsyncMock(return_value=None)
+    bot.image_drawing.calendar_wanted = AsyncMock(return_value=False)
+    bot.image_drawing.lineup_wanted = AsyncMock(return_value=False)
     if image_faults is not None:
-        cog._image_configuration_faults = AsyncMock(return_value=image_faults)
+        cog.image_configuration_faults = AsyncMock(return_value=image_faults)
 
     # In Placements with nothing unsettled (issue #220); those gates are tested in
     # test_placements_confirmation.py.
@@ -262,9 +320,11 @@ def _cog(
 
     bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
     bot.season_service.get_confirmed_season = AsyncMock(return_value=None)
-    cog._placement_confirmation_faults = AsyncMock(return_value=([], []))
+    cog.placement_confirmation_faults = AsyncMock(return_value=([], []))
     # A season with no division is refused on its own terms, pinned in test_placements_confirmation.py.
-    cog._season_has_divisions = AsyncMock(return_value=True)
+    cog.season_has_divisions = AsyncMock(return_value=True)
+    # The approval judges the dates on the queue's clock, here the host's.
+    bot.change_queue.now = MagicMock(side_effect=lambda: datetime.now(timezone.utc))
     return cog
 
 
@@ -297,17 +357,14 @@ def _interaction():
     return interaction
 
 
-async def _review(cog, interaction, *, converter=True):
+async def _review(cog, interaction):
     """Run the command, returning what it shows as ``(text, ephemeral)``: the public review it
     asked the queue to post (its report's sections, then its question where it is offered),
     then its private follow-ups. It must ask `season.review.post` exactly once, with the
     manager's interaction, and post nothing public itself; the request is kept on the cog, read
     by `_asked`.
-
-    *converter* is whether the rasteriser is installed, said rather than read from the host:
-    the image checks ask, and a test must not pass on one host and fail on the next.
     """
-    from leaguebot.core.services import season_fingerprint_service as sfs
+    from leaguebot.core.services.seasons import season_fingerprint_service as sfs
 
     async def _evidence(*_args, **_kwargs):
         return sfs.SeasonFingerprint({"the season": "as reported"})
@@ -318,10 +375,8 @@ async def _review(cog, interaction, *, converter=True):
         new=AsyncMock(
             return_value=SimpleNamespace(phase_1_days=5, phase_2_days=2, phase_3_hours=2)
         ),
-    ), patch(
-        "leaguebot.image.services.image_render_service.converter_available", return_value=converter
     ), patch.object(sfs, "take_fingerprint", _evidence):
-        await undecorate(SeasonCog.season_review)(cog, interaction)
+        await _run_review(cog, interaction)
     asked = [call for call in cog.bot.change_queue.ask.await_args_list
              if (call.kwargs.get("kind") or (call.args[0] if call.args else None)) == POST]
     assert len(asked) == 1, cog.bot.change_queue.ask.await_args_list
@@ -372,12 +427,11 @@ def _private(messages) -> str:
 
 async def test_a_server_with_no_pending_setup_is_told_to_start_one(db_path):
     cog = _cog(db_path)
-    cog._pending = {}
-    cog._get_pending = MagicMock(return_value=None)
+    hold_setup(cog.bot.season_service, None, divisions=False)
     interaction = _interaction()
     interaction.response.is_done = MagicMock(return_value=False)
 
-    await undecorate(SeasonCog.season_review)(cog, interaction)
+    await _run_review(cog, interaction)
 
     reply = str(interaction.response.send_message.await_args.args[0])
     assert "/season setup" in reply
@@ -434,6 +488,33 @@ async def test_a_disabled_modules_configuration_is_not_reviewed(db_path):
     assert "Weather Config" not in public
     assert "Signup Config" not in public
     assert "Attendance Config" not in public
+
+
+async def test_each_subsection_is_its_own_message_in_the_order_a_manager_reads_them(db_path):
+    """Every module on, the image module's section running past Discord's 2000 characters: the
+    review asked of the queue opens with the season and its modules, then signup's, attendance's,
+    results', weather's and the image module's sections, each a message of its own, ahead of the
+    divisions. The long section is split, not lost: no message passes 2000 characters, and every
+    one of its lines is posted."""
+    cog = _cog(db_path, weather=True, signup=True, results=True, attendance=True, images=True)
+    image_lines = [f"  Output {n}: " + "x" * 70 for n in range(40)]
+    cog._build_image_review_section = AsyncMock(
+        return_value=["**Image output**", *image_lines, ""]
+    )
+
+    messages = await _review(cog, _interaction())
+
+    report = _asked(cog)["report"]
+    assert "**Modules**" in report[0]
+    headings = ["**Signup Config**", "**Attendance Config**", "**Points Configs:**",
+                "**Weather Config**", "**Image output**"]
+    assert [
+        message.startswith(heading) for message, heading in zip(report[1:6], headings)
+    ] == [True] * 5
+    assert all(len(message) <= 2000 for message in report)
+    public = _public(messages)
+    assert all(line.strip() in public for line in image_lines)
+    assert public.index("**Image output**") < public.index("# PRO (Tier 1)")
 
 
 async def test_the_weather_deadlines_are_reviewed(db_path):
@@ -563,8 +644,12 @@ async def test_a_divisions_channels_are_listed(db_path):
 
 
 async def test_an_unset_channel_says_so_rather_than_being_left_out(db_path):
-    """An absent line and a configured channel read the same to someone skimming."""
-    cog = _cog(db_path, divisions=[_division(penalty_channel_id=None, lineup_channel_id=None)])
+    """An absent line and a configured channel read the same to someone skimming. Pro has no
+    verdicts channel and no lineup channel."""
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE division_results_config SET penalty_channel_id = NULL")
+        await db.commit()
+    cog = _cog(db_path, divisions=[_division(lineup_channel_id=None)])
     messages = await _review(cog, _interaction())
 
     public = _public(messages)
@@ -623,7 +708,7 @@ async def test_a_team_without_a_role_is_warned_about_in_its_lineup(db_path):
 async def test_every_unsettled_signup_is_named_in_the_public_report(db_path):
     """Whoever reads the review sees who is still to be placed or turned down (#220)."""
     cog = _cog(db_path)
-    cog._placement_confirmation_faults = AsyncMock(
+    cog.placement_confirmation_faults = AsyncMock(
         return_value=(["**Racer** — not yet placed", "**Rookie** — awaiting approval"], [])
     )
     messages = await _review(cog, _interaction())
@@ -667,7 +752,7 @@ async def test_a_round_already_run_withholds_approval(db_path):
 
 async def test_a_season_with_no_division_withholds_approval(db_path):
     cog = _cog(db_path)
-    cog._season_has_divisions = AsyncMock(return_value=False)
+    cog.season_has_divisions = AsyncMock(return_value=False)
     messages = await _review(cog, _interaction())
 
     assert not _offered(cog)
@@ -677,7 +762,7 @@ async def test_a_season_with_no_division_withholds_approval(db_path):
 async def test_an_unsettled_signup_withholds_approval_and_is_named(db_path):
     """Every signup is placed or rejected before placements are confirmed (issue #220)."""
     cog = _cog(db_path)
-    cog._placement_confirmation_faults = AsyncMock(
+    cog.placement_confirmation_faults = AsyncMock(
         return_value=(["**Racer** — not yet placed"], [])
     )
     messages = await _review(cog, _interaction())
@@ -693,7 +778,7 @@ async def test_a_division_missing_a_channel_it_posts_to_withholds_approval(db_pa
     a module's as well as the lineup's and the calendar's, so the review withholds its button
     on what the press would refuse."""
     cog = _cog(db_path)
-    cog._placement_confirmation_faults = AsyncMock(
+    cog.placement_confirmation_faults = AsyncMock(
         return_value=([], ["**Pro** has no results channel — `/results channel results`."])
     )
     messages = await _review(cog, _interaction())
@@ -708,7 +793,7 @@ async def test_a_missing_channel_and_a_phantom_config_are_named_together(db_path
     approval's results gate once carried both faults in one refusal; the channel is judged
     with every other division channel now (#374), and the review is where both are named."""
     cog = _cog(db_path, results=True, phantoms=["Standrad"])
-    cog._placement_confirmation_faults = AsyncMock(
+    cog.placement_confirmation_faults = AsyncMock(
         return_value=([], ["**Pro** has no standings channel — `/results channel standings`."])
     )
     messages = await _review(cog, _interaction())
@@ -721,20 +806,79 @@ async def test_a_missing_channel_and_a_phantom_config_are_named_together(db_path
 async def test_the_review_judges_the_channels_upon_its_own_server(db_path):
     """A channel deleted from the server is found only where the server is asked (#374)."""
     cog = _cog(db_path)
-    cog._placement_confirmation_faults = AsyncMock(return_value=([], []))
+    cog.placement_confirmation_faults = AsyncMock(return_value=([], []))
     interaction = _interaction()
 
     await _review(cog, interaction)
 
-    assert cog._placement_confirmation_faults.await_args.args[1] is interaction.guild
+    call = cog.placement_confirmation_faults.await_args
+    assert interaction.guild in call.args or call.kwargs.get("guild") is interaction.guild
+
+
+#: The review's private reply on an image fault "Inkscape is not installed on this host.", word
+#: for word.
+_IMAGE_REPLY = (
+    "\u26d4 **The image module is not correctly configured.**\n"
+    "\u2022 Inkscape is not installed on this host.\n"
+    "The season is **not** offered for approval while that stands. "
+    "Put it right, then run `/season placements-review` again."
+)
+#: The review's private reply on a season with no points configuration attached, word for word.
+_NOTHING_ATTACHED_REPLY = (
+    "\u26d4 **No points configuration is attached to this season.**\n"
+    "Without one there is nothing to score its results by. The season is "
+    "**not** offered for approval while that stands \u2014 attach one with "
+    "`/results config append`, then run `/season placements-review` again."
+)
+#: The review's private reply on a season attached to "Standrad", which does not exist.
+_PHANTOM_REPLY = (
+    "\u26d4 **This season is attached to a points configuration that does not exist.**\n"
+    "\u2022 **Standrad**\n"
+    "Nothing of that name is in the server's points store, so there is "
+    "nothing for the approval to copy. The season is **not** offered for "
+    "approval while that stands \u2014 build it with `/results config add`, or "
+    "drop it with `/results config detach`, then run `/season placements-review` "
+    "again."
+)
+#: The review's private reply on the points fault "Feature Race: P2 beats P1".
+_ORDERING_REPLY = (
+    "\u26d4 **This season's points tables are out of order.**\n"
+    "\u2022 Feature Race: P2 beats P1\n"
+    "A lower position cannot be worth as much as the one above it. The "
+    "season is **not** offered for approval while that stands \u2014 repair "
+    "the tables with `/results config session`, then run `/season placements-review` "
+    "again."
+)
+#: The review's private reply on a team name no lineup field may carry.
+_NAMES_REPLY = (
+    "\u26d4 **Some team names cannot be used as artwork filenames.** Each is "
+    "named at the head of the review. The season is **not** offered for "
+    "approval while that stands. The team list is fixed once the "
+    "configuration is confirmed, so the season must be aborted with "
+    "`/season abort` and configured again."
+)
+
+
+def _private_replies(messages) -> list[str]:
+    """The review's private replies, each whole, in the order they were sent."""
+    return [text for text, ephemeral in messages if ephemeral]
 
 
 async def test_a_phantom_points_configuration_withholds_approval(db_path):
-    cog = _cog(db_path, results=True, phantoms=["Standrad"])
+    """Each private reply whole, and in the order a manager reads them: the image module's, then
+    the points configurations', then the team names' (#283: results' replies move into results
+    with no word changed, and keep their place)."""
+    cog = _cog(
+        db_path, results=True, phantoms=["Standrad"], points_faults=["Feature Race: P2 beats P1"],
+        images=True, image_faults=["Inkscape is not installed on this host."],
+        name_problems=["'Red/Blue' contains a character no field id may"],
+    )
     messages = await _review(cog, _interaction())
 
     assert not _offered(cog)
-    assert "points configuration that does not exist" in _private(messages)
+    assert _private_replies(messages) == [
+        _IMAGE_REPLY, _PHANTOM_REPLY, _ORDERING_REPLY, _NAMES_REPLY,
+    ]
     assert "Standrad" in _public(messages)
 
 
@@ -747,13 +891,17 @@ async def test_a_season_with_no_points_attached_withholds_approval(db_path, test
     `/results config detach` stays open in Placements, so the review has to say so too. Test
     mode attaches Standard and Half Points when it is enabled and at no other moment (decided
     2026-09-23), so a test season that has had them detached is refused as any other."""
-    cog = _cog(db_path, results=True, test_mode=test_mode, nothing_attached=True)
+    cog = _cog(
+        db_path, results=True, test_mode=test_mode, nothing_attached=True,
+        images=True, image_faults=["Inkscape is not installed on this host."],
+        name_problems=["'Red/Blue' contains a character no field id may"],
+    )
     messages = await _review(cog, _interaction())
 
     assert not _offered(cog)
     assert "No points configuration attached** — this blocks approval" in _public(messages)
-    assert "No points configuration is attached to this season" in _private(messages)
-    assert "`/results config append`" in _private(messages)
+    # Whole, between the image module's reply and the team names' (#283).
+    assert _private_replies(messages) == [_IMAGE_REPLY, _NOTHING_ATTACHED_REPLY, _NAMES_REPLY]
 
 
 async def test_a_season_with_results_on_and_nothing_wrong_is_offered_for_approval(db_path):
@@ -770,7 +918,10 @@ async def test_an_out_of_order_points_table_withholds_approval(db_path):
     messages = await _review(cog, _interaction())
 
     assert not _offered(cog)
-    assert "points tables are out of order" in _private(messages)
+    # Shown in the report as well, and refused on its own words, whole, never folded into the
+    # image module's refusal, which would send a manager to its templates over a points table.
+    assert "Points tables out of order" in _public(messages)
+    assert _private_replies(messages) == [_ORDERING_REPLY]
 
 
 async def test_the_reasons_approval_is_withheld_are_private(db_path):
@@ -788,7 +939,7 @@ async def test_points_faults_are_not_checked_with_results_off(db_path):
 
     await _review(cog, _interaction())
 
-    cog._points_ordering_problems.assert_not_awaited()
+    cog.points_ordering_problems.assert_not_awaited()
     assert _offered(cog)
 
 
@@ -803,71 +954,48 @@ async def test_points_faults_are_not_checked_with_results_off(db_path):
 # confirmation refuses on, so what withholds the button here is what refuses the press.
 
 
-def _broken(template_key: str):
-    from leaguebot.image.models.image_module import ValidityReport
-
-    return ValidityReport(
-        template_key=template_key,
-        resolved_path=None,
-        valid=False,
-        depth_checked=0,
-        reason="file not found",
-    )
-
-
 async def test_a_sound_image_configuration_is_offered_for_approval(db_path):
     cog = _cog(db_path, images=True)
 
     await _review(cog, _interaction())
 
     assert _offered(cog)
+    cog.bot.image_drawing.template_faults.assert_awaited_once_with()
 
 
 async def test_a_missing_rasteriser_withholds_approval(db_path):
     """With the lineup and the calendar off the review draws nothing, so the rasteriser
     being absent was never met by a render — and every graphic of the season would fail."""
     cog = _cog(db_path, images=True)
-
-    messages = await _review(cog, _interaction(), converter=False)
-
-    assert not _offered(cog)
-    assert "image module is not correctly configured" in _private(messages)
-    assert "is not installed on this host" in _private(messages)
-
-
-async def test_a_broken_template_of_a_switched_on_output_withholds_approval(db_path):
-    from leaguebot.image.models.image_constants import TEMPLATE_LABELS
-
-    cog = _cog(db_path, images=True)
-    cog.bot.image_config_service.get_toggles = AsyncMock(return_value={"results": True})
-    cog.bot.image_validity_service.template_reports = AsyncMock(
-        return_value={"results_race_template": _broken("results_race_template")}
-    )
+    cog.bot.image_drawing.rasteriser_fault.return_value = "Inkscape is not installed on this host."
 
     messages = await _review(cog, _interaction())
 
     assert not _offered(cog)
-    assert f"Template **{TEMPLATE_LABELS['results_race_template']}**" in _private(messages)
+    assert "image module is not correctly configured" in _private(messages)
+    assert "Inkscape is not installed on this host." in _private(messages)
+    cog.bot.image_drawing.rasteriser_fault.assert_called_with()
 
 
-async def test_a_broken_template_of_a_switched_off_output_withholds_nothing(db_path):
-    """An output that is off posts as text and draws no template, so its template stops
-    nothing — the review names it as a warning, and offers the button."""
+async def test_a_broken_template_of_a_switched_on_output_withholds_approval(db_path):
+    """Which templates a switched-on output draws, and so which withhold the button, is the
+    image module's to say (`tests/image/test_image_drawing_review.py`); the review withholds it
+    on each the module names."""
+    fault = "Template **Results — race**: the template file cannot be found."
     cog = _cog(db_path, images=True)
-    cog.bot.image_validity_service.template_reports = AsyncMock(
-        return_value={"results_race_template": _broken("results_race_template")}
-    )
+    cog.bot.image_drawing.template_faults.return_value = [fault]
 
-    await _review(cog, _interaction())
+    messages = await _review(cog, _interaction())
 
-    assert _offered(cog)
+    assert not _offered(cog)
+    assert fault in _private(messages)
 
 
 async def test_a_tier_colour_shortfall_withholds_approval(db_path):
     cog = _cog(db_path, images=True)
-    cog.bot.image_validity_service.colour_shortfall = AsyncMock(
-        return_value={"calendar_template": ["`accent` is not set for **Pro**"]}
-    )
+    cog.bot.image_drawing.colour_shortfall_problems.return_value = [
+        "`calendar_template` — `accent` is not set for **Pro**"
+    ]
 
     messages = await _review(cog, _interaction())
 
@@ -883,7 +1011,7 @@ async def test_the_image_checks_are_not_read_with_the_module_off(db_path):
 
     await _review(cog, _interaction())
 
-    cog._image_configuration_faults.assert_not_awaited()
+    cog.image_configuration_faults.assert_not_awaited()
     assert _offered(cog)
 
 
@@ -930,16 +1058,18 @@ async def test_the_review_and_the_confirmation_refuse_on_the_same_image_faults(d
     season_svc = cog.bot.season_service
     season_svc.validate_division_tiers = AsyncMock()
     season_svc.get_divisions = AsyncMock(return_value=[])
-    cog.bot.approval_windows = AsyncMock(return_value=(None, None))
+    # No module's window counts: a windows hook nothing is signed up to.
+    cog.bot.round_windows_read = AwaitedHook()
     cog.bot.change_queue.ask = AsyncMock(return_value=None)
     interaction.followup.send.reset_mock()
 
-    await SeasonCog._do_approve(cog, interaction)
+    with _gates_of(cog):
+        await run_workflow("approve_season", cog.bot, interaction)
 
     refusal = "\n".join(str(c.args[0]) for c in interaction.followup.send.await_args_list)
     assert "Season cannot be approved" in refusal
     assert fault in refusal
-    assert cog._image_configuration_faults.await_count == 2
+    assert cog.image_configuration_faults.await_count == 2
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
@@ -980,8 +1110,7 @@ def _a_season_being_raced(cog):
 
 
 def _no_setup(cog):
-    cog._pending = {}
-    cog._get_pending = MagicMock(return_value=None)
+    hold_setup(cog.bot.season_service, None, divisions=False)
 
 
 def _a_season_in_configuration(cog):
@@ -1018,7 +1147,7 @@ async def test_every_placements_review_refusal_is_recorded(db_path, arrange, rep
     arrange(cog)
     interaction = _run_by_alex(cog, _interaction())
 
-    await undecorate(SeasonCog.season_review)(cog, interaction)
+    await _run_review(cog, interaction)
 
     interaction.response.send_message.assert_awaited_once_with(reply, ephemeral=True)
     interaction.response.defer.assert_not_awaited()
@@ -1029,35 +1158,19 @@ async def test_every_placements_review_refusal_is_recorded(db_path, arrange, rep
     ]
 
 
-class _RecordedApproveView:
-    """Stands in for the approve view, recording what the review did with it."""
-
-    made: list["_RecordedApproveView"] = []
-
-    def __init__(self, cog, reviewer_id):
-        self.reviewer_id = reviewer_id
-        self.record_fingerprint = AsyncMock()
-        self.bind = AsyncMock()
-        self.carries = MagicMock()
-        _RecordedApproveView.made.append(self)
-
-
 async def test_a_posted_placements_review_writes_no_line_of_its_own_and_asks_the_review_as_the_manager_s(
         db_path, monkeypatch):
     """Alex runs a clean placements review. The command builds no approve view and writes no
     line naming `/season placements-review` itself: the review's change writes the line once
     its question is posted (#482, criterion 6; `test_season_review_changes.py`). It asks the
     review of the queue with Alex's interaction, the question offered."""
-    import leaguebot.core.cogs.season_cog as season_cog
-
-    _RecordedApproveView.made = []
-    monkeypatch.setattr(season_cog, "_ApproveView", _RecordedApproveView)
+    made = record_review_views(monkeypatch)
     cog = _cog(db_path)
     interaction = _run_by_alex(cog, _interaction())
 
     await _review(cog, interaction)
 
-    assert _RecordedApproveView.made == []
+    assert made == []
     assert [line for line in _logged(cog) if "/season placements-review" in line] == []
     assert _offered(cog)
 
@@ -1067,13 +1180,11 @@ async def test_a_posted_placements_review_writes_no_line_of_its_own_and_asks_the
 # ---------------------------------------------------------------------------
 
 
-def _pictures_wanted(monkeypatch) -> None:
-    """The league's calendar and lineup pictures are switched on."""
-    import leaguebot.core.services.calendar_post_service as calendar_post
-    import leaguebot.image.services.image_lineup_post as lineup_post
-
-    monkeypatch.setattr(calendar_post, "image_calendar_wanted", AsyncMock(return_value=True))
-    monkeypatch.setattr(lineup_post, "lineup_enabled", AsyncMock(return_value=True))
+def _pictures_wanted(monkeypatch, cog) -> None:
+    """The league's calendar and lineup pictures are switched on, as answered by the drawing the
+    builder attached to *cog*'s bot."""
+    cog.bot.image_drawing.calendar_wanted = AsyncMock(return_value=True)
+    cog.bot.image_drawing.lineup_wanted = AsyncMock(return_value=True)
 
 
 async def test_a_switched_on_calendar_and_lineup_are_asked_as_pictures_in_place_of_their_text(
@@ -1083,8 +1194,8 @@ async def test_a_switched_on_calendar_and_lineup_are_asked_as_pictures_in_place_
     Pro's calendar and lineup pictures switched on, the review asks the queue for Pro's calendar
     and then its lineup as pictures, each carrying the section's text it stands in for (posted
     only where Discord refuses the picture); the report itself carries neither text."""
-    _pictures_wanted(monkeypatch)
     cog = _cog(db_path, images=True)
+    _pictures_wanted(monkeypatch, cog)
 
     messages = await _review(cog, _interaction())
 
@@ -1118,7 +1229,6 @@ async def test_a_lineup_shown_as_a_picture_still_warns_of_a_team_without_a_role(
     """A finding the picture cannot show is posted either way. Pro's team Ghost has no role and
     its lineup is a picture: the report the review asks of the queue still warns that Ghost has
     no role."""
-    _pictures_wanted(monkeypatch)
     cog = _cog(
         db_path,
         images=True,
@@ -1129,6 +1239,7 @@ async def test_a_lineup_shown_as_a_picture_still_warns_of_a_team_without_a_role(
             {"name": "Reserves", "full_name": "Reserves", "role_id": 3009, "is_reserve": True},
         ],
     )
+    _pictures_wanted(monkeypatch, cog)
 
     messages = await _review(cog, _interaction())
 
@@ -1141,8 +1252,8 @@ async def test_a_calendar_shown_as_a_picture_still_names_a_round_gone_by(db_path
     which have gone by, so the finding is posted whichever form the calendar takes. Pro's round 1
     was three days ago and its calendar is a picture: the report the review asks of the queue
     still says round 1 has already run, and the question is not offered."""
-    _pictures_wanted(monkeypatch)
     cog = _cog(db_path, images=True, rounds=[_round(1, days_away=-3)])
+    _pictures_wanted(monkeypatch, cog)
 
     messages = await _review(cog, _interaction())
 
@@ -1153,8 +1264,8 @@ async def test_a_calendar_shown_as_a_picture_still_names_a_round_gone_by(db_path
 
 async def test_the_question_asked_says_who_may_answer(db_path):
     """Public, so a reviewer who cannot approve can put the question to someone who can; so it
-    says who may answer. A clean season's review asks a question naming the reviewer (<@77>) and
-    a server administrator."""
+    says who may answer, and for how long. A clean season's review asks a question naming the
+    reviewer (<@77>) and a server administrator, open to them for the next 5 minutes."""
     cog = _cog(db_path)
 
     await _review(cog, _interaction())
@@ -1162,3 +1273,51 @@ async def test_the_question_asked_says_who_may_answer(db_path):
     question = _asked(cog)["question"]
     assert f"<@{USER_ID}>" in question
     assert "administrator" in question
+    assert "for the next 5 minutes" in question
+
+
+class _NotLookedUp:
+    """A module service the review must not reach: any use of it fails the test."""
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+
+    def __getattr__(self, attribute: str):
+        raise AssertionError(f"the review looked up {self._name}.{attribute} on the bot")
+
+
+async def test_the_review_reaches_each_module_through_its_section_alone(db_path):
+    """Signup and attendance on, their services stubbed as the builder signs their sections up,
+    then taken off the bot: the review still reports the signup channel among the modules, the
+    signup and attendance configurations, and each division's RSVP and attendance channels, in
+    today's words, after its verdicts channel and before its weather channel."""
+    cog = _cog(db_path, signup=True, attendance=True)
+    cog.bot.signup_module_service = _NotLookedUp("signup_module_service")
+    cog.bot.attendance_service = _NotLookedUp("attendance_service")
+
+    public = _public(await _review(cog, _interaction()))
+
+    assert "  Signup: ✅ Enabled | Channel: <#900>" in public
+    assert "**Signup Config**" in public
+    assert "  • Available slots: Sunday 20:00" in public
+    assert "**Attendance Config**" in public
+    assert "  • Auto-sack threshold: 10 pts" in public
+    assert (
+        "  Verdicts channel: <#705>\n  RSVP channel: <#801>\n  Attendance channel: *(not set)*\n"
+        "  Weather channel:"
+    ) in public
+
+
+async def test_the_review_judges_its_calendar_on_the_queue_s_clock(db_path):
+    """A round three days ahead by the host's clock, and the queue's clock five days ahead of
+    the host's: the round has gone by on the queue's clock, so the review says the calendar
+    holds dates already gone by and withholds Approve."""
+    cog = _cog(db_path, rounds=[_round(days_away=3)])
+    cog.bot.change_queue.now = MagicMock(
+        return_value=datetime.now(timezone.utc) + timedelta(days=5)
+    )
+
+    messages = await _review(cog, _interaction())
+
+    assert "calendar holds dates that have already gone by" in _private(messages)
+    assert not _offered(cog)

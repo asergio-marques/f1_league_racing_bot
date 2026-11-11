@@ -18,6 +18,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS
+from leaguebot.core.models.refusal import Refused
 from leaguebot.core.utils.autocomplete import bounded_autocomplete
 from leaguebot.image.models.image_constants import (
     ASPECT_LABELS,
@@ -416,7 +417,7 @@ class ImageCog(commands.Cog):
                 what=describe_command(interaction),
             )
             return
-        except ValueError as exc:
+        except Refused as exc:
             await refuse(interaction, f"❌ {exc}", what=describe_command(interaction))
             return
 
@@ -611,7 +612,7 @@ class ImageCog(commands.Cog):
                 what=describe_command(interaction),
             )
             return
-        except ValueError as exc:
+        except Refused as exc:
             await refuse(interaction, f"❌ {exc}", what=describe_command(interaction))
             return
 

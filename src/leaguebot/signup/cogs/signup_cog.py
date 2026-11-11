@@ -31,7 +31,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.cogs.module_cog import RETURNED_BY_CLOSE
+from leaguebot.signup.services.window_close import RETURNED_BY_CLOSE
 from leaguebot.core.db.database import get_connection
 from leaguebot.signup.models.signup_module import SignupModuleConfig, SignupModuleSettings
 from leaguebot.signup.services.signup_views import IN_PROGRESS_STATES, SignupButtonView
@@ -45,7 +45,7 @@ from leaguebot.signup.services.window_changes import (
     armed_close_refusal,
     season_end_close_refusal,
 )
-from leaguebot.core.services import track_service
+from leaguebot.core.services.rounds import track_service
 from leaguebot.core.utils.input_validator import parse_datetime
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.time_parsing import parse_time_of_day
@@ -53,7 +53,7 @@ from leaguebot.core.utils.channel_guard import league_manager_only, league_role_
 from leaguebot.core.utils.league_server import LeagueView, is_foreign_guild
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.log_lines import name_of_member, record_abandoned, refuse
-from leaguebot.weather.utils.message_builder import discord_ts
+from leaguebot.core.utils.formatting import discord_ts
 
 log = logging.getLogger(__name__)
 
@@ -109,7 +109,7 @@ def _parse_close_time(
             "❌ `close_time` is not a valid ISO 8601 datetime "
             "(e.g. `2025-06-15T20:00:00`)."
         )
-    parsed = moment.replace(tzinfo=timezone.utc)
+    parsed = moment
     if parsed <= (now if now is not None else datetime.now(timezone.utc)):
         return None, "❌ `close_time` must be a future datetime."
     return parsed.isoformat(), None
@@ -467,13 +467,15 @@ class SignupCog(commands.Cog):
         # A channel does one job (decided 2026-09-06). This stood as a guard against the
         # bot interaction channel alone; every configurable channel of the server is
         # checked now, the interaction channel among them.
-        from leaguebot.core.services.channel_registry_service import (
+        from leaguebot.core.services.settings.channel_registry_service import (
             ChannelUse,
             find_channel_use,
             refusal,
         )
 
-        use = await find_channel_use(self.bot.db_path, channel.id)
+        use = await find_channel_use(
+            self.bot.db_path, channel.id, channel_uses_read=self.bot.channel_uses_read
+        )
         if use is not None:
             await refuse(
                 interaction,
@@ -733,7 +735,7 @@ class SignupCog(commands.Cog):
         Returns True when the command replied and must stop, having recorded the refusal in
         the log channel unless *record* is False.
         """
-        from leaguebot.core.services.season_lifecycle_service import configuration_fixed
+        from leaguebot.core.services.seasons.season_lifecycle_service import configuration_fixed
 
         season_number = await configuration_fixed(self.bot.db_path)
         if season_number is None:
@@ -1268,7 +1270,7 @@ class SignupCog(commands.Cog):
         if not await self._module_gate(interaction, record=False):
             return
         await interaction.response.defer(ephemeral=True)
-        drivers = await self.bot.placement_service.get_unassigned_drivers_seeded()
+        drivers = await self.bot.signup_module_service.get_unassigned_drivers_seeded()
         if not drivers:
             await interaction.followup.send(
                 "No unsettled signups found.", ephemeral=True
@@ -1346,7 +1348,7 @@ class SignupCog(commands.Cog):
         slots = await self.bot.signup_module_service.get_slots()
         slots_ordered = sorted(slots, key=lambda s: s.slot_sequence_id)
 
-        drivers = await self.bot.placement_service.get_unassigned_drivers_for_export(
+        drivers = await self.bot.signup_module_service.get_unassigned_drivers_for_export(
             slots_ordered
         )
         if not drivers:

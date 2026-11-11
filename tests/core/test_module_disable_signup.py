@@ -42,7 +42,9 @@ as the signup specification requires.
 the driver role are core's, read from the server configuration, and survive the disable; only
 the base role's overwrite on the signup channel goes.
 
-The tests run the switch-off on `tests.support.season_league`'s league, its signup module on.
+The tests run the switch-off on `tests.support.season_league`'s league, its signup module on and
+its season in Configuration: `/module disable signup` is refused at every other stage of a live
+season, as it asks and again as it runs, so a switch-off runs only there or with no live season.
 """
 from __future__ import annotations
 
@@ -60,9 +62,10 @@ from leaguebot.core.cogs.module_cog import ModuleCog
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     acknowledgement,
-    attach_queue,
     change_rows,
     member_interaction,
+    league_bot,
+    league_queue,
     queued_log_lines,
     run_queue,
     step_rows,
@@ -93,7 +96,7 @@ OTHER = 107
 
 
 # ---------------------------------------------------------------------------
-# A bot double, for the command's own work on the channel's overwrites
+# The league's bot with its services' reads doubled, for the command's own work
 # ---------------------------------------------------------------------------
 
 
@@ -152,7 +155,7 @@ def _guild(*, channel=None, roles=None, missing_channel: bool = False):
 _UNSET = object()
 
 
-def _make_cog(
+async def _make_cog(
     db_path: str,
     *,
     enabled: bool = True,
@@ -161,22 +164,17 @@ def _make_cog(
     guild=_UNSET,
     server_config=_UNSET,
 ) -> ModuleCog:
-    """The command on a bot double whose services are mocks, with a real change queue attached
-    that nothing runs: what these tests read is the command's own work."""
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.module_service = MagicMock()
+    """The command on the league's bot (`league_bot`), the reads the command makes of its
+    services doubled over them, with its real change queue attached that nothing runs: what
+    these tests read is the command's own work."""
+    bot = await league_bot(db_path)
     bot.module_service.is_signup_enabled = AsyncMock(return_value=enabled)
-    bot.module_service.set_signup_enabled = AsyncMock(return_value=None)
-    bot.signup_module_service = MagicMock()
     bot.signup_module_service.get_config = AsyncMock(
         return_value=_config() if config is _UNSET else config
     )
     bot.signup_module_service.get_all_active_wizards = AsyncMock(
         return_value=wizards if wizards is not None else []
     )
-    bot.scheduler_service = MagicMock()
-    bot.config_service = MagicMock()
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
     bot.config_service.get_server_config = AsyncMock(
         return_value=_server_config() if server_config is _UNSET else server_config
@@ -184,9 +182,8 @@ def _make_cog(
     bot.get_guild = MagicMock(
         return_value=_guild(channel=_channel()) if guild is _UNSET else guild
     )
-    bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock(return_value=None)
-    attach_queue(bot, db_path, now=datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc))
+    league_queue(bot, db_path, now=datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc))
 
     cog = ModuleCog.__new__(ModuleCog)
     cog.bot = bot
@@ -238,13 +235,14 @@ async def _audit(db_path) -> list[dict]:
 
 async def _league(tmp_path: Any, *drivers: int, open_window: bool = False,
                   configured: bool = True) -> SeasonLeague:
-    """`setup_league` with the signup module on. *open_window*: the window open in the signup
+    """`setup_league` in Configuration, the one stage of a live season at which `/module` switches
+    signup, with the signup module on. *open_window*: the window open in the signup
     channel (620), its Sign Up button standing; otherwise, where *configured*, the module's
     configuration names the signup channel with the window closed, and where not it holds no
     configuration at all. Each of *drivers* is part-way through signing up (Pending Signup
     Completion, their wizard at its notes question), their own signup channel standing."""
     os.makedirs(str(tmp_path), exist_ok=True)
-    league = await setup_league(tmp_path, stage="SIGNUPS", signups_open=open_window)
+    league = await setup_league(tmp_path, stage="CONFIGURATION", signups_open=open_window)
     if not open_window:
         await league.switch("signup", True)
         if configured:
@@ -328,7 +326,7 @@ async def test_disabling_twice_does_no_work(tmp_path):
     not happen: the manager is told the module is already disabled, and nothing is done or
     audited."""
     db_path = await _make_db(tmp_path, name="disable_twice")
-    cog = _make_cog(db_path, enabled=False)
+    cog = await _make_cog(db_path, enabled=False)
     interaction = _interaction()
 
     await _disable(cog, interaction)
@@ -414,9 +412,8 @@ async def test_time_slots_and_settings_stand_again_after_a_re_enable(tmp_path):
     tables no key joins to the configuration row, so nothing but the rule keeps them: a
     disable that cleared them too would pass every other test here. Every setting is away from
     its default and two slots are saved; the module is switched off through the queue (still on
-    until it runs) and then
-    enabled again: the settings and slots are as they were, the configuration naming no
-    channel."""
+    until it runs) and then enabled again through the queue: the settings and slots are as they
+    were, the configuration naming no channel."""
     from leaguebot.signup.models.signup_module import SignupModuleSettings
 
     league = await _league(tmp_path)
@@ -436,12 +433,40 @@ async def test_time_slots_and_settings_stand_again_after_a_re_enable(tmp_path):
     cog = ModuleCog.__new__(ModuleCog)
     cog.bot = league.bot
     await cog._enable_signup(_manager(league))
+    await run_queue(league.bot)
 
     assert await league.bot.module_service.is_signup_enabled()
     assert await signup.get_settings() == settings
     assert await signup.get_slots() == slots
     config = await signup.get_config()
     assert config is not None and config.signup_channel_id is None
+
+
+async def test_a_window_closed_since_the_ask_refuses_the_switch_off(tmp_path):
+    """`/module disable signup` is asked with the window open, left open by a season's end whose
+    close was discarded, and before it runs the window is closed (`/signup close` has no stage
+    gate): the jobs the change was asked with no longer fit, so it is refused as it starts, the
+    module stays on, nothing is audited as disabled, the signup channel keeps the overwrites it
+    needs while the module is on, and the member is told the window changed and to run the command
+    again, word for word.
+
+    The opposite case, a window opened since the ask, cannot arise: `/signup open` opens a window
+    only from Waiting or Ongoing, and `/module disable signup` is refused at every stage a window
+    opens into."""
+    league = await _league(tmp_path, open_window=True)
+    channel = _signup_channel(league)
+
+    interaction = await _switch_off(league)
+    await league.write("UPDATE signup_module_config SET signups_open = 0")
+    await run_queue(league.bot)
+
+    assert await league.bot.module_service.is_signup_enabled()
+    assert await _disables(league) == []
+    assert channel.set_permissions.await_count == 0
+    assert updated_reply(interaction) == (
+        "⛔ The signup window changed since this was asked. Nothing was changed. "
+        "Run `/module disable signup` again."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -593,23 +618,6 @@ async def test_a_server_with_no_configuration_row_reverts_the_rest(tmp_path):
     assert not await league.bot.module_service.is_signup_enabled()
 
 
-async def test_a_switch_off_refused_when_it_runs_leaves_the_overwrites_standing(tmp_path):
-    """The module is switched off with the window closed, and the window is opened before the
-    queue reaches it: the switch-off is refused when it runs, nothing is changed, the module is
-    still on and the signup channel keeps the overwrites it needs while the module is on."""
-    league = await _league(tmp_path)
-    channel = _signup_channel(league)
-    interaction = await _switch_off(league)
-    await league.write("UPDATE signup_module_config SET signups_open = 1, "
-                       "signup_button_message_id = 6201")
-
-    await run_queue(league.bot)
-
-    assert "Nothing was changed" in updated_reply(interaction)
-    assert await league.bot.module_service.is_signup_enabled()
-    assert channel.set_permissions.await_count == 0
-
-
 async def test_a_discarded_switch_off_leaves_the_overwrites_standing(tmp_path, monkeypatch):
     """The switch-off's save fails, the queue stops at it and a league admin discards it: the
     module is still on, the reply says so and the signup channel keeps its overwrites."""
@@ -708,12 +716,13 @@ def _failed_steps(lines: list[str]) -> list[str]:
     return [step.split("\n")[0] for step in line.split("\n  failed_step: ")[1:]]
 
 
-async def test_a_discarded_closed_notice_is_named_and_the_season_is_moved_on(tmp_path):
-    """Kimi is still signing up, the window is open and the season is at its Signups stage. Manager
-    77 disables signup; Discord refuses "Signups are now closed" in the signup channel, and a league
-    admin discards that job. The module goes off, the season is moved on to Placements as the notice's
-    record would have moved it, and the reply and the line both say the closed notice could not be
-    posted. Kimi is still told his channel is closed."""
+async def test_a_discarded_closed_notice_is_named_and_the_season_stays_in_configuration(tmp_path):
+    """Kimi is still signing up, the window is open (left open by an earlier season's end whose
+    close was discarded) and the new season is in Configuration. Manager 77 disables signup;
+    Discord refuses "Signups are now closed" in the signup channel, and a league admin discards
+    that job. The module goes off, the season stays in Configuration, a window closed by the
+    switch-off belonging to no stage, and the reply and the line both say the closed notice could
+    not be posted."""
     from tests.support.change_queue import discard_job
 
     league = await _league(tmp_path, SIGNING_UP, open_window=True)
@@ -726,7 +735,7 @@ async def test_a_discarded_closed_notice_is_named_and_the_season_is_moved_on(tmp
     await discard_job(league.bot)
 
     assert not await league.bot.module_service.is_signup_enabled()
-    assert await _season_stage(league) == "PLACEMENTS"
+    assert await _season_stage(league) == "CONFIGURATION"
     assert "closed notice could not be posted" in updated_reply(interaction)
     assert "The module is off, but not every step succeeded" in updated_reply(interaction)
     assert _failed_steps(await _log_lines(league)) == [
@@ -737,8 +746,8 @@ async def test_a_discarded_closed_notice_is_named_and_the_season_is_moved_on(tmp
 async def test_a_discarded_return_of_the_drivers_says_the_button_was_left_standing(tmp_path, monkeypatch):
     """The first job of the close, returning the drivers still signing up, fails and is discarded.
     Nothing after it was planned, so the Sign Up button stands and no closed notice was posted:
-    the reply and the line say so, the module goes off and the season is moved on, and the window
-    is not said to be closed."""
+    the reply and the line say so, the module goes off, the season stays in Configuration, and the
+    window is not said to be closed."""
     from leaguebot.signup.services.signup_module_service import SignupModuleService
     from tests.support.change_queue import discard_job
 
@@ -752,7 +761,7 @@ async def test_a_discarded_return_of_the_drivers_says_the_button_was_left_standi
     await discard_job(league.bot)
 
     assert not await league.bot.module_service.is_signup_enabled()
-    assert await _season_stage(league) == "PLACEMENTS"
+    assert await _season_stage(league) == "CONFIGURATION"
     reply = updated_reply(interaction)
     assert "Sign Up button was left standing" in reply
     assert "The window is closed" not in reply

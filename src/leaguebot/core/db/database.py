@@ -9,7 +9,7 @@ import threading
 import weakref
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Callable, Iterable, TypeVar, overload
+from typing import Any, AsyncIterator, Callable, Iterable, Sequence, TypeVar, overload
 
 import aiosqlite
 
@@ -20,11 +20,10 @@ _MIGRATIONS_DIR = os.path.join(os.path.dirname(__file__), "migrations")
 #: How long SQLite waits for a lock before giving up, in seconds.
 #:
 #: Sized for the longest *legitimate* write, not for Discord. Several commands hold the
-#: write lock for the length of a whole transaction — `replace_setup_season_snapshot` and
-#: the factory reset run to well over a hundred lines each — and a timeout shorter than
-#: those would turn a slow admin command into a failed one, which is a worse fault than
-#: the one being fixed. Callers that genuinely cannot wait ask for less; see
-#: `AUTOCOMPLETE_TIMEOUT_SECONDS`.
+#: write lock for the length of a whole transaction — the factory reset among them — and a
+#: timeout shorter than the longest of those would turn a slow admin command into a failed one,
+#: which is a worse fault than the one being fixed. Callers that genuinely cannot wait ask for
+#: less; see `AUTOCOMPLETE_TIMEOUT_SECONDS`.
 #:
 #: This is passed to `aiosqlite.connect` rather than issued as a PRAGMA: it is a
 #: connect-time argument, so it costs no round trip. Left unset, `sqlite3` defaults it to
@@ -46,11 +45,10 @@ AUTOCOMPLETE_TIMEOUT_SECONDS = 1.0
 #:
 #: Pinned by `test_no_more_than_four_idle_connections_are_kept`. Four covers the most that run
 #: at once in practice (a step's save, a service it reads through inside that block, and a reader
-#: or two); one asking beyond that opens its own and closes it on return, as every caller did before
-#: connections were lent. Zero switches lending off. Lending was kept on what it measured: the
-#: change-queue tests of `test_season_approval_change.py`, in one process on the Pi, took 55 s with
-#: four kept against 161 s with none (2026-11-01), the schema read by every fresh connection being
-#: most of the difference.
+#: or two); one asking beyond that opens its own and closes it on return. Zero switches lending
+#: off. Lending is kept for what it saves: the change-queue tests of
+#: `test_season_approval_change.py`, in one process on the Pi, take 55 s with four kept against
+#: 161 s with none, the schema read by every fresh connection being most of the difference.
 _IDLE_CONNECTIONS_KEPT = 4
 
 #: Who has called ``never_lend``: connections that are closed on return, whatever else is true.
@@ -313,10 +311,11 @@ async def _migration_connection(db_path: str) -> AsyncIterator[aiosqlite.Connect
     migrates a fresh copy and then deletes it (`factory_reset_service.wipe`), and the last
     connection to close is the one that checkpoints the write-ahead log and removes it
     (`test_migrations_hold_no_connection_open_afterwards`).
+
+    Its foreign keys are left off, which `run_migrations` states in its docstring.
     """
     async with aiosqlite.connect(db_path, timeout=_BUSY_TIMEOUT_SECONDS) as db:
         db.row_factory = aiosqlite.Row
-        await db.execute("PRAGMA foreign_keys = ON")
         yield db
 
 
@@ -326,7 +325,7 @@ async def sole_row(cursor: aiosqlite.Cursor) -> aiosqlite.Row:
     For an aggregate — ``COUNT``, ``MAX`` — which always returns a row, and for a lookup by a
     key the caller has just taken from the database, or just written. aiosqlite types every
     ``fetchone`` as optional; a None here means that certainty was wrong, and it is raised by
-    name rather than indexed (#228).
+    name rather than indexed.
     """
     row = await cursor.fetchone()
     if row is None:
@@ -334,12 +333,27 @@ async def sole_row(cursor: aiosqlite.Cursor) -> aiosqlite.Row:
     return row
 
 
+async def tuple_rows(db: aiosqlite.Connection, sql: str, *params: Any) -> list[tuple[Any, ...]]:
+    """Every row *sql* returns on *db* as a plain tuple, so that a digest of the rows does not
+    depend on the row factory the connection carries."""
+    cursor = await db.execute(sql, params)
+    return [tuple(row) for row in await cursor.fetchall()]
+
+
+async def tuple_rows_in(
+    db: aiosqlite.Connection, sql: str, ids: Sequence[int]
+) -> list[tuple[Any, ...]]:
+    """`tuple_rows` for *sql* whose `{marks}` stands for an `IN` list of *ids*, each bound as a
+    parameter: one placeholder for each id."""
+    return await tuple_rows(db, sql.format(marks=", ".join("?" for _ in ids)), *ids)
+
+
 def inserted_id(cursor: aiosqlite.Cursor) -> int:
     """The id of the row *cursor*'s INSERT has just written.
 
     SQLite sets it after every INSERT into a rowid table; aiosqlite types it as optional because
     a cursor in general need not have run one. None here means the statement wrote no row, and
-    that is raised by name rather than stored as an id (#228).
+    that is raised by name rather than stored as an id.
     """
     row_id = cursor.lastrowid
     if row_id is None:
@@ -386,20 +400,48 @@ class DatabasePredatesBaselineError(RuntimeError):
     """The database records migrations the bot no longer carries. See `run_migrations`."""
 
 
+class MigrationBreaksForeignKeys(RuntimeError):
+    """A migration file left a row pointing at a missing parent. See `run_migrations`."""
+
+
+#: How many dangling rows a `MigrationBreaksForeignKeys` names.
+_DANGLING_ROWS_NAMED = 3
+
+
 async def run_migrations(db_path: str) -> None:
     """Apply all pending SQL migration files in order.
 
-    **The schema starts from one baseline** (issue #254). The 61 migrations that built it
-    before the bot went live were squashed into ``001_baseline.sql``; git keeps them. Until
-    go-live, which is release ``v1.0.0`` (#259), the baseline may be edited in place. From
-    go-live on it is never edited again: every schema change is a new migration numbered after
-    it, carrying a test of its own, and no applied file is ever changed. At go-live, also
-    consider recording a checksum of each applied file and refusing one that has changed
-    since, which would enforce that rule. And make the check that every table has an owning
-    module (`_declared_tables` in `tests/repository/test_architecture_rules.py`) read every
-    migration rather than the baseline alone, applying each file's drops and renames, since
-    rebuilding a table creates a temporary one; until then a table a later migration adds is
-    under no owner, and its writes go unchecked.
+    **The schema starts from one baseline**, ``001_baseline.sql``. Until go-live, which is
+    release ``v1.0.0``, the baseline may be edited in place.
+
+    **At go-live**, in one place so nothing is missed on the day:
+
+    - The baseline is frozen. Every later schema change is a new migration numbered after it,
+      with a test of its own, and no applied file is ever changed.
+    - ``test_the_baseline_is_the_only_migration`` admits each numbered migration after the
+      baseline.
+    - A test pinning the SHA-256 of each migration file (read with universal newlines) is added,
+      so an edited applied file fails the suite.
+
+    **Each file is applied whole, or not at all** (architecture.md, "A database update is applied
+    whole, or not at all"). For each pending file the foreign keys are switched off (a pragma
+    SQLite ignores inside a transaction, so it is issued first; the migrations' own connection is
+    never lent, so nothing has to switch them back), then the file runs in one transaction. Before
+    it commits, ``PRAGMA foreign_key_check`` must find no row pointing at a missing parent, or
+    :class:`MigrationBreaksForeignKeys` is raised naming the first few. The ``schema_migrations``
+    row is written in the same save. Any fault rolls the whole file back, the row with it, and is
+    raised again. This is SQLite's own procedure for changing a table: with the keys on, a rebuild
+    would delete the rows a cascade links to the table dropped.
+
+    **Three constraints on a migration file**, which that procedure puts on it:
+
+    - It carries no transaction statement (``BEGIN TRANSACTION``, ``COMMIT``, ``ROLLBACK``,
+      ``SAVEPOINT``; a trigger's ``BEGIN … END`` is not one) and no ``PRAGMA`` of its own; the
+      runner owns both.
+    - It does not record its own version; the runner does, in the same save.
+    - A table rebuild follows SQLite's order: create the new table, copy the rows, drop the old
+      one, and rename the new one into place. It never renames the old table away, which would
+      repoint the keys that refer to it at the table renamed.
 
     **A database from before the baseline is refused, not migrated.** It records versions
     such as ``001_initial.sql`` that no longer exist, and the baseline applied over its tables
@@ -458,10 +500,28 @@ async def run_migrations(db_path: str) -> None:
                 sql = fh.read()
 
             log.info("Applying migration: %s", filename)
-            await db.executescript(sql)
-            await db.execute(
-                "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
-                (version, datetime.now(timezone.utc).isoformat()),
-            )
-            await db.commit()
+            # The keys are switched off outside any transaction, where the pragma takes effect.
+            # The script's first line opens the transaction and `executescript` leaves it open, so
+            # the check and the version row fall inside it.
+            await db.execute("PRAGMA foreign_keys = OFF")
+            try:
+                await db.executescript("BEGIN IMMEDIATE;\n" + sql)
+                cursor = await db.execute("PRAGMA foreign_key_check")
+                dangling = list(await cursor.fetchall())
+                if dangling:
+                    first = dangling[:_DANGLING_ROWS_NAMED]
+                    named = ", ".join(f"{row[0]} row {row[1]} (parent {row[2]})" for row in first)
+                    raise MigrationBreaksForeignKeys(
+                        f"{version} leaves {len(dangling)} row(s) pointing at a missing parent: "
+                        f"{named}{', …' if len(dangling) > _DANGLING_ROWS_NAMED else ''}. "
+                        "Nothing was changed."
+                    )
+                await db.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+                    (version, datetime.now(timezone.utc).isoformat()),
+                )
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
             log.info("Migration applied: %s", filename)

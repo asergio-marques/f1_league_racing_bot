@@ -11,24 +11,24 @@ placement not yet committed. Each division's results and standings channels are 
 The season scores on `Standard`, attached and well ordered. The modules are as asked: results on
 and the others off unless said otherwise.
 
-"Now" is the host's clock as the league is built, to the second, and is then pinned: the press
-reads the host's clock (the review's five minutes, the dates gate), and the queue reads the
-league's `clock`, which a test moves on (`league.clock.advance`).
+"Now" is the host's clock as the league is built, to the second, and is then pinned as the queue's
+clock, `league.clock`, which a test moves on (`league.clock.advance`) while the host's is left where
+it is. A review is posted at the queue's clock, as its post job stamps it, and its button is the
+view the builder's factory makes (`_approve_view_for`), as the queue's post job attaches it.
 
-The bot is `league_double`'s, with a real `SeasonService`, `PlacementService`, `ModuleService`
-and `ConfigService`, a real queue with the real change types (`attach_queue`), the builder's
-reader of the enabled modules' windows as `bot.approval_windows`, and a real `SeasonCog` holding
-the season's setup in memory. The scheduler is a double recording each `schedule_*` call in
-`league.armed`. The league's server holds every channel above, the review's channel (610) among
-them, the roles above and the three drivers; `absent`, `fetch_fails`, `grant_fails` and
-`roles_gone` make Discord answer otherwise.
+The bot is `league_bot`'s: the one the entry point's `build` makes, every service and change type
+the builder's (`league_queue`). It reads the enabled modules' windows as the builder has it read
+them, attendance's settings through `_attendance`, and a real `SeasonCog` holds the season's setup
+in memory. The scheduler is a double recording each `schedule_*` call in `league.armed`. The
+league's server holds every channel above, the review's channel (610) among them, the roles above
+and the three drivers; `absent`, `fetch_fails`, `grant_fails` and `roles_gone` make Discord answer
+otherwise.
 
-Two of the press's gates read the season through helpers whose own tests stand elsewhere, and are
-answered "nothing wrong" here unless a test says otherwise: the team names and the lineups
-(`league.cog._team_name_problems`, `league.cog._lineup_problems`); so is the image module's
-configuration (`_image_configuration_faults`), whose rasteriser is judged again when the approval
-runs, through the builder's reader of `converter_available`, which `season_league` points at
-`league.rasteriser_on` when handed *monkeypatch*.
+The press's gates read the league as it stands, its team names, lineups and image configuration
+among them, and find nothing wrong with it. The image module's rasteriser is judged again when the
+approval runs, through the image module's drawing the builder hands it, which reads
+`converter_available` when asked; `season_league` points that at `league.rasteriser_on` when handed
+*monkeypatch*.
 
 `post_review` posts a review's ✅ Approve prompt, with the season's fingerprint, in the review's
 channel; `press_approve` presses it, answering the backup question under test mode with *backup*.
@@ -48,13 +48,12 @@ results submission for a round, its channel standing on the server; `cancel_roun
 
 For `/round amend` on the queue (slice 4b, amendment A), `ongoing_league` also takes the weather
 horizons (`horizons`, written to `weather_pipeline_config`) and the phases each round has had
-performed (`phases_done`, by round id), and the bot reads the amendment's windows through
-`bot.amendment_windows`, as the builder's reader does: attendance's only where it is on, weather's
-always. The scheduler double records `schedule_round` as weather's arming. `amend_round` runs
-`/round amend` as admin 77 and presses the Confirm it offered, giving the press;
-`amendment_changes` lists the amendments asked of the queue; `accept_session` saves a session's
-results as the wizard does on accepting them; `posted_forecast` records a phase's forecast as
-posted, its message standing in the division's forecast channel.
+performed (`phases_done`, by round id), and the bot reads the amendment's windows as the builder has
+it read them: attendance's only where it is on, weather's always. The scheduler double records
+`schedule_round` as weather's arming. `amend_round` runs `/round amend` as admin 77 and presses the
+Confirm it offered, giving the press; `amendment_changes` lists the amendments asked of the queue;
+`accept_session` saves a session's results as the wizard does on accepting them; `posted_forecast`
+records a phase's forecast as posted, its message standing in the division's forecast channel.
 
 For a season's end on the queue (slice 5), `ongoing_league` also takes *test_mode*,
 *signups_open* and *held* (`season_end_extras`): the members holding their division, team and
@@ -90,13 +89,14 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     SERVER_ID,
     Clock,
-    attach_queue,
     change_rows,
     http_error,
-    league_double,
+    league_bot,
+    league_queue,
     member_interaction,
     restart_queue,
     seed_server,
+    set_guilds,
     tier_member,
 )
 from tests.support.review_league import channel
@@ -161,15 +161,10 @@ def profile_id(user_id: int) -> int:
 
 
 class SeasonLeague:
-    """The bot double with its queue, cog, server and channels, and what they saw."""
+    """The bot with its queue, cog, server and channels, and what they saw; the bot is there once
+    build has run."""
 
     def __init__(self, db_path: str, now: datetime, *, images: bool) -> None:
-        from leaguebot.core.cogs.season_cog import SeasonCog
-        from leaguebot.core.services.config_service import ConfigService
-        from leaguebot.core.services.module_service import ModuleService
-        from leaguebot.core.services.placement_service import PlacementService
-        from leaguebot.core.services.season_service import SeasonService
-
         self.db_path = db_path
         self.clock = Clock(now)
         self.events: list[tuple[str, int, int]] = []
@@ -196,10 +191,16 @@ class SeasonLeague:
         self._removed: dict[int, Any] = {}
         #: Each backup question answered: (the answer, how many changes were asked by then).
         self.backup_answers: list[tuple[str, int]] = []
+        #: How long each backup question was given to stand, in seconds, in order.
+        self.backup_timeouts: list[float | None] = []
         #: The roles each member holds on the server (`ongoing_league`'s *held*), by user id.
         self.roles_held: dict[int, set[int]] = {}
         #: The roles taken back from each member, in order (slice 5).
         self.revoked: dict[int, list[int]] = {}
+        #: The reason Discord's audit log was given for each taking back, by user id, in order.
+        self.revoke_reasons: dict[int, list[str | None]] = {}
+        #: The reason Discord's audit log was given for each giving, by user id, in order.
+        self.grant_reasons: dict[int, list[str | None]] = {}
         #: Members whose roles Discord refuses to take back, and what it raises.
         self.revoke_fails: dict[int, BaseException] = {}
         #: Drivers whose signup channel's closing notice Discord refuses, and what it raises.
@@ -212,7 +213,23 @@ class SeasonLeague:
         self.locked: list[int] = []
         #: What the signup window's close raises as it records the window closed, if anything.
         self.close_fails: BaseException | None = None
-        self.bot = bot = league_double(db_path)
+        self.images_on = images
+
+    async def build(self) -> None:
+        """The league's bot (`league_bot`), its server, services, cog and queue."""
+        from leaguebot.core.cogs.division_cog import DivisionCog
+        from leaguebot.core.cogs.round_cog import RoundCog
+        from leaguebot.core.cogs.season_cog import SeasonCog
+        from leaguebot.core.services.modules.module_service import ModuleService
+
+        db_path = self.db_path
+        scheduler = MagicMock()
+        scheduler.schedule_all_rounds = MagicMock(side_effect=self._arm("weather"))
+        scheduler.schedule_result_submission_jobs = MagicMock(side_effect=self._arm("results"))
+        scheduler.schedule_attendance_round = MagicMock(side_effect=self._arm("attendance"))
+        scheduler.schedule_round = MagicMock(side_effect=self._arm("weather"))
+        scheduler.schedule_round_cleanups = MagicMock(side_effect=self._arm("cleanups"))
+        self.bot = bot = await league_bot(db_path, scheduler=scheduler, real_config=True)
         ids = [REVIEW_CHANNEL]
         for _name, _tier, _role, chans in DIVISIONS.values():
             ids += list(vars(chans).values())
@@ -220,7 +237,10 @@ class SeasonLeague:
         known = {bot.log_channel.id: bot.log_channel,
                  bot.interaction_channel.id: bot.interaction_channel}
 
-        def _get(cid: int) -> Any:
+        def _get(cid: int | None) -> Any:
+            # No id finds no channel, as `Guild.get_channel(None)` gives None.
+            if cid is None:
+                return None
             return self.channels.get(int(cid)) or known.get(int(cid))
 
         async def _fetch(cid: int) -> Any:
@@ -243,30 +263,18 @@ class SeasonLeague:
         bot.get_channel = MagicMock(side_effect=_get)
         bot.fetch_channel = AsyncMock(side_effect=_fetch)
         bot.get_guild = MagicMock(return_value=guild)
-        bot.guilds = [guild]
-        bot.config_service = ConfigService(db_path)
-        bot.module_service = ModuleService(db_path)
-        bot.season_service = SeasonService(db_path)
+        set_guilds(bot, [guild])
         _attach_amendment_service(bot, db_path)
-        bot.placement_service = PlacementService(db_path, bot)
         bot.attendance_service.get_or_create_config = AsyncMock(side_effect=self._attendance)
         bot.image_config_service.get_config = AsyncMock(return_value=None)
         bot.image_config_service.get_toggles = AsyncMock(return_value={})
         bot.image_validity_service.colour_shortfall = AsyncMock(return_value={})
-        scheduler = MagicMock()
-        scheduler.schedule_all_rounds = MagicMock(side_effect=self._arm("weather"))
-        scheduler.schedule_result_submission_jobs = MagicMock(side_effect=self._arm("results"))
-        scheduler.schedule_attendance_round = MagicMock(side_effect=self._arm("attendance"))
-        scheduler.schedule_round = MagicMock(side_effect=self._arm("weather"))
-        scheduler.schedule_round_cleanups = MagicMock(side_effect=self._arm("cleanups"))
-        bot.scheduler_service = scheduler
-        bot.approval_windows = lambda: _approval_windows(self)
-        bot.amendment_windows = lambda: _amendment_windows(self)
         self.cog = SeasonCog(bot)
-        self._hold_setup(self.cog, key=ADMIN_ID)
+        #: The cogs of `/division` and `/round`, the season's setup being the other's.
+        self.division_cog = DivisionCog(bot)
+        self.round_cog = RoundCog(bot)
         bot.get_cog = MagicMock(side_effect=lambda name: self.cog if name == "SeasonCog" else None)
-        self.images_on = images
-        attach_queue(bot, db_path, now=self.clock)
+        league_queue(bot, db_path, now=self.clock)
 
     # ── The Discord side ────────────────────────────────────────────────────────
 
@@ -311,16 +319,18 @@ class SeasonLeague:
                         if role is not None]
         person.guild = self.guild
 
-        async def _add_roles(*roles: Any, **_kwargs: Any) -> None:
+        async def _add_roles(*roles: Any, **kwargs: Any) -> None:
             if user_id in self.grant_fails:
                 raise self.grant_fails[user_id]
             self.granted.setdefault(user_id, []).extend(role.id for role in roles)
+            self.grant_reasons.setdefault(user_id, []).append(kwargs.get("reason"))
 
-        async def _remove_roles(*roles: Any, **_kwargs: Any) -> None:
+        async def _remove_roles(*roles: Any, **kwargs: Any) -> None:
             if user_id in self.revoke_fails:
                 raise self.revoke_fails[user_id]
             taken = [role.id for role in roles]
             self.revoked.setdefault(user_id, []).extend(taken)
+            self.revoke_reasons.setdefault(user_id, []).append(kwargs.get("reason"))
             self.roles_held[user_id] = self.roles_held.get(user_id, set()) - set(taken)
             self.events.append(("revoke", user_id, len(taken)))
 
@@ -354,15 +364,6 @@ class SeasonLeague:
             row = await (await db.execute("SELECT * FROM attendance_config WHERE id = 1")).fetchone()
         return SimpleNamespace(**dict(row))
 
-    def _hold_setup(self, cog: Any, *, key: int) -> None:
-        """The season's setup held in memory, as the setup commands leave it."""
-        from leaguebot.core.cogs.season_cog import PendingConfig
-
-        cog._pending = {key: PendingConfig(season_id=SEASON_ID, season_number=SEASON_NUMBER)}
-        cog._team_name_problems = AsyncMock(return_value=[])
-        cog._lineup_problems = AsyncMock(return_value=[])
-        cog._image_configuration_faults = AsyncMock(return_value=[])
-
     # ── What the test reads and changes ─────────────────────────────────────────
 
     def channel(self, cid: int) -> Any:
@@ -389,7 +390,7 @@ class SeasonLeague:
 
     async def switch(self, module: str, on: bool) -> None:
         """Turn *module* (weather, results, attendance, images or signup) on or off."""
-        await set_module_flag(self.db_path, self.bot.module_service, module, on)
+        await set_module_flag(self.db_path, module, on)
         if module == "images":
             self.images_on = on
 
@@ -410,41 +411,17 @@ class SeasonLeague:
         return (await self.rows("SELECT * FROM seasons WHERE id = ?", SEASON_ID))[0]
 
     async def restart(self) -> None:
-        """The bot restarted: the review prompts swept as at start-up, a fresh cog holding the
-        setup again where the season is still being set up, and the queue started afresh."""
-        from leaguebot.__main__ import _recover_expired_review_prompts
-        from leaguebot.core.cogs.season_cog import _RECOVERED, SeasonCog
+        """The bot restarted: the review prompts swept as at start-up, a fresh cog holding
+        nothing of the season being set up, which it reads from the database, and the queue
+        started afresh."""
+        from leaguebot.__main__ import _approve_view_for
+        from leaguebot.core.cogs.season_cog import SeasonCog
+        from leaguebot.core.services.seasons.season_review_changes import recover_expired_review_prompts
 
-        await _recover_expired_review_prompts(self.bot)
+        await recover_expired_review_prompts(
+            self.bot, approve_view=_approve_view_for(self.bot), queue=self.bot.change_queue)
         self.cog = SeasonCog(self.bot)
-        if (await self.season())["status"] == "SETUP":
-            self._hold_setup(self.cog, key=_RECOVERED)
         await restart_queue(self.bot)
-
-
-async def _approval_windows(league: SeasonLeague) -> Any:
-    """The builder's reader of the enabled modules' windows (`LeagueBot.approval_windows`)."""
-    from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
-
-    modules = league.bot.module_service
-    attendance = weather = None
-    if await modules.is_attendance_enabled():
-        att = await league._attendance()
-        attendance = AttendanceWindows(
-            notice_days=att.rsvp_notice_days,
-            last_notice_hours=att.rsvp_last_notice_hours,
-            deadline_hours=att.rsvp_deadline_hours,
-        )
-    if await modules.is_weather_enabled():
-        from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
-
-        wx = await get_weather_pipeline_config(league.db_path)
-        weather = WeatherWindows(
-            phase_1_days=wx.phase_1_days,
-            phase_2_days=wx.phase_2_days,
-            phase_3_hours=wx.phase_3_hours,
-        )
-    return attendance, weather
 
 
 def _attach_amendment_service(bot: Any, db_path: str) -> None:
@@ -452,34 +429,10 @@ def _attach_amendment_service(bot: Any, db_path: str) -> None:
     applied is what the cancellations read; nothing once `/round amend` is on the change queue and
     the class is gone."""
     try:
-        from leaguebot.core.services.amendment_service import AmendmentService
+        from leaguebot.core.services.rounds.amendment_service import AmendmentService
     except ImportError:
         return
     bot.amendment_service = AmendmentService(db_path)
-
-
-async def _amendment_windows(league: SeasonLeague) -> Any:
-    """The builder's reader of the windows an amendment is judged against
-    (`LeagueBot.amendment_windows`): attendance's only where it is on, weather's always, since a
-    forecast posted while weather was on is still posted."""
-    from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
-    from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
-
-    attendance = None
-    if await league.bot.module_service.is_attendance_enabled():
-        att = await league._attendance()
-        attendance = AttendanceWindows(
-            notice_days=att.rsvp_notice_days,
-            last_notice_hours=att.rsvp_last_notice_hours,
-            deadline_hours=att.rsvp_deadline_hours,
-        )
-    wx = await get_weather_pipeline_config(league.db_path)
-    weather = WeatherWindows(
-        phase_1_days=wx.phase_1_days,
-        phase_2_days=wx.phase_2_days,
-        phase_3_hours=wx.phase_3_hours,
-    )
-    return attendance, weather
 
 
 async def make_db(tmp_path: Any, now: datetime, *, extra_drivers: bool) -> str:
@@ -535,7 +488,7 @@ async def make_db(tmp_path: Any, now: datetime, *, extra_drivers: bool) -> str:
                     "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
                     "scheduled_at) VALUES (?, ?, ?, 'NORMAL', 'Silverstone', ?)",
                     (round_id(division_id, number), division_id, number,
-                     (now + timedelta(days=30 * number)).replace(tzinfo=None).isoformat()),
+                     (now + timedelta(days=30 * number)).astimezone(timezone.utc).isoformat()),
                 )
         for team_id, (division_id, name, full_name, role) in TEAMS.items():
             await db.execute(
@@ -544,7 +497,7 @@ async def make_db(tmp_path: Any, now: datetime, *, extra_drivers: bool) -> str:
                 (team_id, division_id, name, full_name),
             )
             await db.execute(
-                "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)", (name, role)
+                "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES (?, ?, '2031-03-04T05:06:07+00:00')", (name, role)
             )
         seats = dict(SEATS)
         if extra_drivers:
@@ -584,7 +537,7 @@ async def season_league(
     """The league of the module docstring, its modules and test mode as asked.
 
     With *monkeypatch*, the image module's `converter_available` answers `league.rasteriser_on`,
-    for the builder's reader of the rasteriser to read; patched before the change types are
+    for the drawing's reader of the rasteriser to read; patched before the change types are
     registered, so the reader they are handed reads it.
     """
     now = datetime.now(timezone.utc).replace(microsecond=0)
@@ -597,14 +550,12 @@ async def season_league(
             image_render_service, "converter_available",
             lambda *, use_cache=True: holder["league"].rasteriser_on,
         )
-    from leaguebot.core.services.module_service import ModuleService
-
-    modules = ModuleService(db_path)
     for name, on in (("weather", weather), ("results", results), ("attendance", attendance),
                      ("images", images)):
-        await set_module_flag(db_path, modules, name, on)
+        await set_module_flag(db_path, name, on)
     league = SeasonLeague(db_path, now, images=images)
     holder["league"] = league
+    await league.build()
     await league.set_test_mode(test_mode)
     return league
 
@@ -625,21 +576,23 @@ class Review:
 
 
 async def post_review(league: SeasonLeague) -> Review:
-    """Post a review's report and its ✅ Approve prompt, and record the prompt as the review's
-    post job records it: its row, with the report's ids and the evidence the season's fingerprint
-    gives, posted now."""
-    from leaguebot.core.cogs.season_cog import _ApproveView
-    from leaguebot.core.services.season_fingerprint_service import take_fingerprint
+    """Post a review's report and its ✅ Approve prompt, the builder's view of it, and record the
+    prompt as the review's post job records it: its row, with the report's ids and the evidence the
+    season's fingerprint gives, posted at the queue's clock."""
+    from leaguebot.__main__ import _approve_view_for
+    from tests.support.review_workflows import take_season_fingerprint
     from tests.support.review_prompts import store_review_prompt
 
-    view = _ApproveView(league.cog, ADMIN_ID)
+    view = _approve_view_for(league.bot)({"view": "approve", "reviewer_id": ADMIN_ID})
     report = [await league.review_channel.send("📋 Season 3 placements review")]
     prompt = await league.review_channel.send("Approve these placements?", view=view)
-    evidence = (await take_fingerprint(league.bot, SEASON_ID)).areas
+    evidence = (
+        await take_season_fingerprint(league.bot, league.db_path, SEASON_ID)
+    ).areas
     async with get_connection(league.db_path) as db:
         await store_review_prompt(
             db, season_id=SEASON_ID, channel_id=REVIEW_CHANNEL, message_id=prompt.id,
-            reviewer_id=ADMIN_ID, posted_at=datetime.now(timezone.utc).isoformat(),
+            reviewer_id=ADMIN_ID, posted_at=league.clock.now.isoformat(),
             report_message_ids=[message.id for message in report], evidence=evidence,
             verb="approved",
         )
@@ -654,9 +607,10 @@ async def press_approve(league: SeasonLeague, review: Review | None = None, *,
     The press is an interaction of its own in the review's channel, a league admin's (user 77)
     unless *user*; it is returned, its reply read through `reply`. Under test mode the backup
     question is answered *backup* ("save", "skip" or "cancel"; "skip" where None), each answer
-    recorded in `league.backup_answers` with how many changes had been asked by then.
+    recorded in `league.backup_answers` with how many changes had been asked by then, and the
+    time the question was given to stand in `league.backup_timeouts`.
     """
-    from leaguebot.core.cogs.season_cog import _BackupBeforeApprovalView
+    from leaguebot.core.utils.league_server import LeagueView
 
     review = review or await post_review(league)
     press = member_interaction(league.bot, user=user or tier_member("admin", member_id=ADMIN_ID))
@@ -669,9 +623,11 @@ async def press_approve(league: SeasonLeague, review: Review | None = None, *,
     async def _answer(view: Any) -> bool:
         view.answer = backup or "skip"
         league.backup_answers.append((view.answer, len(await change_rows(league.db_path))))
+        league.backup_timeouts.append(view.timeout)
         return False
 
-    with patch.object(_BackupBeforeApprovalView, "wait", _answer):
+    # The backup question is the one view the press waits on.
+    with patch.object(LeagueView, "wait", _answer):
         try:
             await review.view.approve.callback(press)
         except Exception as error:  # noqa: BLE001 — as the bot's error handler would catch it
@@ -695,27 +651,50 @@ def reply(press: Any) -> str:
 
 async def approval_changes(league: SeasonLeague) -> list[dict[str, Any]]:
     """Every season approval asked of the queue, in the order asked."""
-    from leaguebot.core.services.season_approval_change import KIND
+    from leaguebot.core.services.seasons.season_approval_change import KIND
 
     return [row for row in await change_rows(league.db_path) if row["kind"] == KIND]
 
 
-async def set_module_flag(db_path: str, modules: Any, name: str, on: bool) -> None:
-    """Turn module *name* on or off as `/module enable|disable` leaves its flag. Results' and
-    attendance's flags are written here, their change's own save being what writes them in the
-    bot (the module service holds no setter for either); weather's, images' and signup's through
-    *modules*, the module service."""
-    if name not in ("results", "attendance"):
-        await getattr(modules, f"set_{name}_enabled")(on)
-        return
+def fingerprints_taken(monkeypatch: Any, change_module: Any) -> list[dict[str, Any]]:
+    """Every fingerprint taken is of one fixed season, so a review's evidence always matches the
+    season as its change finds it; each one *change_module*'s check takes is recorded, its
+    arguments by name (`season_id`, `drawing` and the rest) and by place (`args`)."""
+    from leaguebot.core.services.seasons import season_fingerprint_service as sfs
+
+    taken: list[dict[str, Any]] = []
+
+    async def _fixed(*_args: Any, **_kwargs: Any) -> Any:
+        return sfs.SeasonFingerprint({"season": "as reviewed"})
+
+    async def _recorded(*args: Any, **kwargs: Any) -> Any:
+        taken.append({"args": args, **kwargs})
+        return await _fixed()
+
+    monkeypatch.setattr(sfs, "take_fingerprint", _fixed)
+    monkeypatch.setattr(change_module, "take_fingerprint", _recorded)
+    return taken
+
+
+async def set_module_flag(db_path: str, name: str, on: bool) -> None:
+    """Turn module *name* on or off as `/module enable|disable` leaves its flag, written here on
+    the league's database: each module's switch is its own change in the bot, whose save is what
+    writes the flag, and the module service only reads them (#283). Weather's and signup's flags
+    are their columns on `server_configs`; results', attendance's and images' are their own
+    tables' rows, written where none stands."""
     async with get_connection(db_path) as db:
-        if name == "results":
+        if name in ("weather", "signup"):
             await db.execute(
-                "INSERT OR REPLACE INTO results_module_config (id, module_enabled) "
-                "VALUES (1, ?)", (int(on),),
+                f"UPDATE server_configs SET {name}_module_enabled = ?", (int(on),)
             )
         else:
-            await db.execute("UPDATE attendance_config SET module_enabled = ?", (int(on),))
+            table = {"results": "results_module_config", "attendance": "attendance_config",
+                     "images": "image_config"}[name]
+            await db.execute(
+                f"INSERT INTO {table} (id, module_enabled) VALUES (1, ?) "
+                "ON CONFLICT(id) DO UPDATE SET module_enabled = excluded.module_enabled",
+                (int(on),),
+            )
         await db.commit()
 
 
@@ -732,7 +711,7 @@ async def placing_league(
     Season 3 is ongoing, placements: its divisions active and their rounds not run. Lewis's
     placement at Ferrari in Pro is committed; Max's beside him and Charles's at McLaren in Am were
     made by a mid-season window and are not yet committed (with *extra_drivers*, the test driver's
-    at McLaren too). The cog holds no setup in memory, as after the season's approval."""
+    at McLaren too)."""
     league = await season_league(tmp_path, results=results, attendance=attendance,
                                  images=images, extra_drivers=extra_drivers,
                                  monkeypatch=monkeypatch)
@@ -744,27 +723,89 @@ async def placing_league(
     await league.write("UPDATE rounds SET status = 'NOT_RUN'")
     await league.write("UPDATE driver_season_assignments SET committed = 1 "
                        "WHERE driver_profile_id = ?", profile_id(LEWIS))
-    league.cog._pending = {}
+    if hasattr(league.cog, "_pending"):  # no setup held once approved, while the cog holds one
+        league.cog._pending = {}
     return league
 
 
 async def post_mid_season_review(league: SeasonLeague) -> Review:
     """Post a mid-season `/season placements-review` report and its ✅ Confirm placements
     prompt in channel 610, recorded as `post_review` records an approval's."""
-    from leaguebot.core.cogs.season_cog import _ConfirmMidSeasonPlacementsView
-    from leaguebot.core.services.season_fingerprint_service import take_fingerprint
+    from leaguebot.__main__ import _approve_view_for
+    from tests.support.review_workflows import take_season_fingerprint
     from tests.support.review_prompts import store_review_prompt
 
-    view = _ConfirmMidSeasonPlacementsView(league.cog, ADMIN_ID)
+    view = _approve_view_for(league.bot)({"view": "mid_season", "reviewer_id": ADMIN_ID})
     report = [await league.review_channel.send("📋 Season 3 mid-season placements review")]
     prompt = await league.review_channel.send("Confirm these placements?", view=view)
-    evidence = (await take_fingerprint(league.bot, SEASON_ID)).areas
+    evidence = (
+        await take_season_fingerprint(league.bot, league.db_path, SEASON_ID)
+    ).areas
     async with get_connection(league.db_path) as db:
         await store_review_prompt(
             db, season_id=SEASON_ID, channel_id=REVIEW_CHANNEL, message_id=prompt.id,
-            reviewer_id=ADMIN_ID, posted_at=datetime.now(timezone.utc).isoformat(),
+            reviewer_id=ADMIN_ID, posted_at=league.clock.now.isoformat(),
             report_message_ids=[message.id for message in report], evidence=evidence,
             verb="confirmed",
+        )
+        await db.commit()
+    return Review(view=view, prompt=prompt, report=report)
+
+
+#: The kind of a season's configuration confirmation on the change queue (#283, S15d).
+CONFIGURATION_CONFIRM_KIND = "season.configuration.confirm"
+#: The league's base role, stored by `configuring_league` with *signup*.
+BASE_ROLE = 819
+
+
+async def configuring_league(
+    tmp_path: Any, *, signup: bool = False, test_mode: bool = False, monkeypatch: Any = None,
+) -> SeasonLeague:
+    """`season_league`'s season 3 before its configuration is confirmed: status SETUP, stage
+    Configuration, the results module on with its points configuration attached, no other module
+    on, test mode as *test_mode*. With *signup*, the signup module on, its signup channel 620
+    set, and the league's base role (819) and driver role (820) stored, both on the server and
+    the driver role one the bot can grant."""
+    league = await season_league(tmp_path, test_mode=test_mode, monkeypatch=monkeypatch)
+    await league.write("UPDATE seasons SET stage = 'CONFIGURATION' WHERE id = ?", SEASON_ID)
+    if signup:
+        await league.switch("signup", True)
+        await league.write(
+            "INSERT OR REPLACE INTO signup_module_config (id, signup_channel_id) VALUES (1, ?)",
+            SIGNUP_CHANNEL,
+        )
+        await league.write(
+            "UPDATE server_configs SET base_role_id = ?, driver_role_id = ?",
+            BASE_ROLE, DRIVER_ROLE,
+        )
+        driver_role = league._role(DRIVER_ROLE)
+        driver_role.managed = False
+        driver_role.is_default.return_value = False
+        driver_role.guild.me.guild_permissions.manage_roles = True
+        driver_role.guild.me.top_role.__gt__ = lambda _self, _other: True
+    return league
+
+
+async def post_config_review(league: SeasonLeague) -> Review:
+    """Post a `/season config-review` report and its ✅ Confirm configuration prompt in channel
+    610, by the admin (77), recorded as `post_review` records an approval's."""
+    from leaguebot.__main__ import _approve_view_for
+    from tests.support.review_workflows import take_season_fingerprint
+    from tests.support.review_prompts import store_review_prompt
+
+    view = _approve_view_for(league.bot)({"view": "configuration", "reviewer_id": ADMIN_ID})
+    report = [await league.review_channel.send("📋 Season 3 configuration review")]
+    prompt = await league.review_channel.send("Do you confirm this season's configuration?",
+                                              view=view)
+    evidence = (
+        await take_season_fingerprint(league.bot, league.db_path, SEASON_ID)
+    ).areas
+    async with get_connection(league.db_path) as db:
+        await store_review_prompt(
+            db, season_id=SEASON_ID, channel_id=REVIEW_CHANNEL, message_id=prompt.id,
+            reviewer_id=ADMIN_ID, posted_at=league.clock.now.isoformat(),
+            report_message_ids=[message.id for message in report], evidence=evidence,
+            review="/season config-review", verb="confirmed",
         )
         await db.commit()
     return Review(view=view, prompt=prompt, report=report)
@@ -811,7 +852,7 @@ async def ongoing_league(
                                      (2, "AWAITING_REPORT_VERDICTS", now - timedelta(days=3))):
             await db.execute(
                 "UPDATE rounds SET status = ?, scheduled_at = ? WHERE id = ?",
-                (status, when.replace(tzinfo=None).isoformat(), round_id(PRO, number)),
+                (status, when.astimezone(timezone.utc).isoformat(), round_id(PRO, number)),
             )
         call, notice, distribution = CALL_MESSAGES
         await db.execute(
@@ -854,8 +895,8 @@ async def ongoing_league(
 
     league.bot.scheduler_service.cancel_round = MagicMock(side_effect=_cancel_round)
     league.bot.scheduler_service.cancel_rounds = MagicMock(side_effect=_cancel_rounds)
-    # Set up and approved: the cog holds no setup in memory, as after a restart.
-    league.cog._pending = {}
+    if hasattr(league.cog, "_pending"):  # no setup held once approved, while the cog holds one
+        league.cog._pending = {}
     league.channel(DIVISIONS[PRO][3].calendar).seed(CALENDAR_MESSAGE, "Pro's calendar")
     checkin = league.channel(DIVISIONS[PRO][3].checkin)
     for message_id in CALL_MESSAGES:
@@ -864,6 +905,48 @@ async def ongoing_league(
     await season_end_extras(league, tmp_path, test_mode=test_mode, signups_open=signups_open,
                             held=held)
     return league
+
+
+async def run_attendance_channel_command(league: SeasonLeague, which: str, channel_id: int) -> Any:
+    """Run `/attendance channel rsvp` or `/attendance channel attendance` (*which*) for Pro with
+    channel *channel_id*, as the league manager Alex, through the command's body on the league's
+    builder-built bot; the queue is not run. Gives Alex's interaction."""
+    from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
+
+    command = {"rsvp": AttendanceCog.channel_rsvp,
+               "attendance": AttendanceCog.channel_attendance}[which]
+    cog = AttendanceCog.__new__(AttendanceCog)
+    cog.bot = league.bot
+    interaction = member_interaction(league.bot)
+    interaction.guild = league.guild
+    interaction.command = SimpleNamespace(qualified_name=f"attendance channel {which}")
+    interaction.user.display_name = "Alex"
+    await undecorate(command)(cog, interaction, "Pro", league.channel(channel_id))
+    return interaction
+
+
+async def run_division_channel_command(
+    league: SeasonLeague, cog_class: Any, command: Any, name: str, channel_id: int,
+) -> Any:
+    """Run the division channel command *command*, of *cog_class* and named *name* as Discord
+    gives it (`division lineup-channel`, `weather channel`), for Pro with channel *channel_id*,
+    as the league manager Alex, through the command's body on the league's builder-built bot;
+    the queue is not run. Gives Alex's interaction."""
+    cog = cog_class.__new__(cog_class)
+    cog.bot = league.bot
+    interaction = member_interaction(league.bot)
+    interaction.guild = league.guild
+    interaction.command = SimpleNamespace(qualified_name=name)
+    interaction.user.display_name = "Alex"
+    await undecorate(command)(cog, interaction, "Pro", league.channel(channel_id))
+    return interaction
+
+
+def attendance_from_the_database(league: SeasonLeague) -> None:
+    """The league's attendance service reading its configuration from the database, in place of
+    the league's stub, and held by the check-in's change types: the builder's own service with
+    the stub dropped, which its change types already hold."""
+    vars(league.bot.attendance_service).pop("get_or_create_config", None)
 
 
 def removed_jobs(rid: int) -> list[str]:
@@ -914,20 +997,20 @@ async def cancel_round(league: SeasonLeague, division: str, number: int, *,
                        confirm: str = "CONFIRM") -> Any:
     """Run `/round cancel` for round *number* of *division*, as admin 77; the queue is not run.
     Gives the interaction."""
-    from leaguebot.core.cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.round_cog import RoundCog
 
     interaction = _admin_interaction(league, "round cancel")
-    await undecorate(SeasonCog.round_cancel)(league.cog, interaction, division, number, confirm)
+    await undecorate(RoundCog.round_cancel)(league.round_cog, interaction, division, number, confirm)
     return interaction
 
 
 async def cancel_division(league: SeasonLeague, name: str, *, confirm: str = "CONFIRM") -> Any:
     """Run `/division cancel` for *name*, as admin 77; the queue is not run. Gives the
     interaction."""
-    from leaguebot.core.cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.division_cog import DivisionCog
 
     interaction = _admin_interaction(league, "division cancel")
-    await undecorate(SeasonCog.division_cancel)(league.cog, interaction, name, confirm)
+    await undecorate(DivisionCog.division_cancel)(league.division_cog, interaction, name, confirm)
     return interaction
 
 
@@ -956,11 +1039,11 @@ async def amend_round(league: SeasonLeague, division: str, number: int, *, track
     """Run `/round amend` for round *number* of *division* as admin 77, and press the Confirm it
     offered, as admin 77; the queue is not run. Gives the press, or None where nothing was
     offered (the offer refused)."""
-    from leaguebot.core.cogs.season_cog import SeasonCog
+    from leaguebot.core.cogs.round_cog import RoundCog
 
     asking = _admin_interaction(league, "round amend")
-    await undecorate(SeasonCog.round_amend)(
-        league.cog, asking, division, number, track, scheduled_at, format
+    await undecorate(RoundCog.round_amend)(
+        league.round_cog, asking, division, number, track, scheduled_at, format
     )
     views = [call.kwargs["view"] for call in asking.followup.send.call_args_list
              if call.kwargs.get("view") is not None]
@@ -1058,16 +1141,22 @@ async def season_end_extras(league: SeasonLeague, tmp_path: Any, *, test_mode: b
     button standing there (`SIGNUP_BUTTON`).
     *held*: the league's driver role (820) set, and every real driver holding their division
     role, their team role and the driver role; the test driver holds none.
+
+    The three services are swapped on the bot after the league's queue has registered the real
+    change types, which therefore read them when they run, not when registered: the signup module
+    and driver services through `lambda: bot.signup_module_service` and `lambda: bot.driver_service`,
+    the wizard service through the season's end's hold and lock, which read `bot.wizard_service`
+    when called. The builder keeps those reads late (#283).
     """
     bot = league.bot
     _wizard_double(league)
     _signup_services(league)
-    bot.scheduler_service._jobstore_path = os.path.join(str(tmp_path), "jobs.sqlite")
+    bot.scheduler_service.jobstore_path = os.path.join(str(tmp_path), "jobs.sqlite")
     if test_mode:
-        from leaguebot.core.services.backup_service import backup_path
+        from leaguebot.core.services.upkeep.backup_service import backup_path
 
         await league.set_test_mode(True)
-        for live in (league.db_path, bot.scheduler_service._jobstore_path):
+        for live in (league.db_path, bot.scheduler_service.jobstore_path):
             backup_path(live).write_bytes(b"saved")
     if signups_open:
         await _open_signups(league)
@@ -1081,7 +1170,7 @@ async def season_end_extras(league: SeasonLeague, tmp_path: Any, *, test_mode: b
 
 def backup_saved(league: SeasonLeague) -> bool:
     """Whether a saved test-mode backup of the league's database is still present."""
-    from leaguebot.core.services.backup_service import backup_path
+    from leaguebot.core.services.upkeep.backup_service import backup_path
 
     return backup_path(league.db_path).is_file()
 
@@ -1180,7 +1269,7 @@ def _signup_services(league: SeasonLeague) -> None:
     deletes it, and `set_window_closed_on`, the form on a handed connection that `post_closed`'s
     record calls from C66 on. Each is wrapped only where it exists, so a league builds on either
     side of those commits, and a close refused this way stops the job that records it."""
-    from leaguebot.core.services.driver_service import DriverService
+    from leaguebot.core.services.drivers.driver_service import DriverService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     service = SignupModuleService(league.db_path)
@@ -1254,38 +1343,32 @@ async def wizard_state(league: SeasonLeague, user_id: int) -> str | None:
     return rows[0]["wizard_state"] if rows else None
 
 
+def wizard_service(bot: Any, db_path: str, scheduler: Any, router: Any, *,
+                   change_queue: Any) -> Any:
+    """The signup wizard service as the builder makes it, holding *bot* from the moment it is
+    built (#283)."""
+    from leaguebot.signup.services.wizard_service import WizardService
+
+    return WizardService(db_path, scheduler, router, change_queue=change_queue, bot=bot)
+
+
 async def wizards_recovered(league: SeasonLeague) -> dict[str, list[str]]:
     """The signup wizards recovered as the bot does when it starts (`recover_wizards`), the
     wizard service built as the builder builds it, over the league's real signup module and
     driver services; gives the accounts whose 24-hour timer was armed again (``armed``) and those
     whose expiry was asked at once (``expired``), neither run.
 
-    The wizard service is handed the change queue where it takes one (#439, slice 6b, C77): an
-    expiry is then the `signup.end` it asks of the queue, and an arming the scheduler service's
-    `signup_inactivity` timer. Where it does not yet take one, its own arming and expiry are
-    recorded in their stead. `recover_wizards` reads the host's clock, as a wizard's last
-    activity written by `signing_up` does."""
+    The wizard service is handed the change queue (#439, slice 6b, C77): an expiry is then the
+    `signup.end` it asks of the queue, and an arming the scheduler service's `signup_inactivity`
+    timer. `recover_wizards` reads the host's clock, as a wizard's last activity written by
+    `signing_up` does."""
     import asyncio
-    import inspect
-
-    from leaguebot.signup.services.wizard_service import WizardService
 
     bot = league.bot
     armed: list[str] = []
     expired: list[str] = []
-    takes_the_queue = "change_queue" in inspect.signature(WizardService).parameters
-    if takes_the_queue:
-        wizards = WizardService(league.db_path, bot.scheduler_service, bot.output_router,
-                                change_queue=bot.change_queue)
-    else:
-        wizards = WizardService(league.db_path, bot.scheduler_service, bot.output_router)
-        wizards._arm_inactivity_job = AsyncMock(  # type: ignore[method-assign]
-            side_effect=lambda user_id, _at: armed.append(str(user_id))
-        )
-        wizards.handle_inactivity_timeout = AsyncMock(  # type: ignore[method-assign]
-            side_effect=lambda user_id: expired.append(str(user_id))
-        )
-    wizards.set_bot(bot)
+    wizards = wizard_service(bot, league.db_path, bot.scheduler_service, bot.output_router,
+                             change_queue=bot.change_queue)
     asked_before = {row["id"] for row in await change_rows(league.db_path)}
     arms_before = len(bot.scheduler_service.arm_once.call_args_list)
     before = asyncio.all_tasks()
@@ -1340,7 +1423,7 @@ async def pending_completion_league(
             for division_id in DIVISIONS:
                 await db.execute(
                     "UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                    ((now - timedelta(days=40 - 7 * number)).replace(tzinfo=None).isoformat(),
+                    ((now - timedelta(days=40 - 7 * number)).astimezone(timezone.utc).isoformat(),
                      round_id(division_id, number)),
                 )
         await db.execute("UPDATE divisions SET status = 'FINISHED' WHERE season_id = ?",
@@ -1510,3 +1593,65 @@ def draw_standings_pictures(monkeypatch: Any, tmp_path: Any) -> AsyncMock:
 def refuses_pictures(content: Any, kwargs: dict[str, Any]) -> bool:
     """A channel's `fail_when` refusing every send that carries a picture, and no text."""
     return bool(kwargs.get("file") or kwargs.get("files"))
+
+
+#: The name `rename_module_job` gives a module's job: one no other module, and not core, knows.
+RENAMED_JOB = "a_module_job"
+
+
+def rename_module_job(
+    monkeypatch: Any, *, steps: tuple[Any, str], planner: tuple[Any, str], old: str,
+) -> None:
+    """Have a module's job *old* run under `RENAMED_JOB`, a name nothing else knows, so that a
+    test can show the change carrying it writes what the job hands back without naming the job.
+
+    *steps* is the module and the name of its function that defines the job's step: it hands the
+    step under its own name, as before, and also under the new one. *planner* is the module and
+    the name of its subscriber that plans the job inside a save: what it hands back (a
+    `CalledOffSteps`, or a tuple of `PlannedStep`) plans the job under the new name, its payload
+    unchanged. Patched before the league is built, since the builder signs both up as it builds."""
+    import dataclasses
+
+    from leaguebot.core.models.cancellation import CalledOffSteps
+
+    steps_module, steps_name = steps
+    planner_module, planner_name = planner
+    defined = getattr(steps_module, steps_name)
+    planned = getattr(planner_module, planner_name)
+
+    def renamed(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        found = defined(*args, **kwargs)
+        return {**found, RENAMED_JOB: dataclasses.replace(found[old], name=RENAMED_JOB)}
+
+    def rename(step: Any) -> Any:
+        return dataclasses.replace(step, name=RENAMED_JOB) if step.name == old else step
+
+    async def planning(*args: Any, **kwargs: Any) -> Any:
+        handed = await planned(*args, **kwargs)
+        if isinstance(handed, CalledOffSteps):
+            return CalledOffSteps(
+                tuple(rename(step) for step in handed.first),
+                {division_id: tuple(rename(step) for step in each)
+                 for division_id, each in handed.with_division.items()},
+            )
+        return tuple(rename(step) for step in handed)
+
+    monkeypatch.setattr(steps_module, steps_name, renamed)
+    monkeypatch.setattr(planner_module, planner_name, planning)
+
+
+def notices_handed(league: SeasonLeague) -> list[tuple[str, dict[str, Any], bool]]:
+    """Sign a subscriber of the test's own up to the hook the modules' cancellation notices are
+    planned through (`cancellation_notices`), after the modules', planning nothing. The list it
+    gives fills as the hook is called, one entry for each division told: the scope, the division
+    as the cancellation hands it, and whether the connection handed is in the middle of a save."""
+    from leaguebot.core.models.cancellation import CancellationNotices
+
+    handed: list[tuple[str, dict[str, Any], bool]] = []
+
+    async def record(db: Any, scope: str, target: dict[str, Any]) -> CancellationNotices:
+        handed.append((scope, dict(target), db.in_transaction))
+        return CancellationNotices()
+
+    league.bot.cancellation_notices.subscribe(record)
+    return handed

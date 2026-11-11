@@ -1,0 +1,151 @@
+"""Attendance's own notice of a round, a division or a season called off (#175, #283).
+
+Attendance posts the one real notification of a cancellation: to the division's check-in
+channel, mentioning the division role as the check-in call does, since that is where drivers
+answer whether they are racing and so where they learn they need not. It is a job of its own on
+the change queue (`cancellation_changes`): a channel set and gone, or a send Discord refuses,
+raises `StepFailedOnDiscord`, so that the queue stops until the channel stands again and Retry is
+pressed; a channel never set is answered "no channel is set", which the cancellation names; and a
+fault of the bot's own is raised as it is.
+
+`notices_on` is attendance's subscriber to core's `cancellation_notices` hook, handing back the
+job (`notify_checkin_steps`'s `NOTIFY_CHECKIN`) that posts this notice for the division told,
+inside the save that calls it. The job itself reads its division from its own payload
+(`division_id`, `division_name`, `season_id`, and a round's `round_number`, `track_name`), through
+*seasons*, and drops itself, as it runs, where attendance is off.
+"""
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
+import aiosqlite
+import discord
+
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.cancellation import SCOPE_DIVISION, SCOPE_ROUND, CancellationNotices
+from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
+from leaguebot.core.services.cancellations.cancellation_notice_service import (
+    post_cancellation_notice,
+    require_division,
+    round_label,
+)
+from leaguebot.core.services.queue.change_types import Step, StepContext
+from leaguebot.core.services.seasons.season_lifecycle_service import require_guild
+from leaguebot.core.services.seasons.season_service import SeasonService
+from leaguebot.core.utils.in_a_job import posts_in_a_job
+from leaguebot.core.utils.league_bot import LeagueBot
+
+if TYPE_CHECKING:
+    from leaguebot.core.services.modules.module_service import ModuleService
+
+NOTIFY_CHECKIN = "notify_checkin"
+
+
+def attendance_notice(scope: str, division_name: str, round_number=None, track_name=None) -> str:
+    """The check-in channel's notice of *scope*'s cancellation, word for word."""
+    if scope == SCOPE_ROUND:
+        return (
+            f"\U0001f4e2 **Round {round_number} Cancelled: {division_name}**\n"
+            f"{round_label(round_number, track_name)} has been cancelled. "
+            "There is no check-in to answer for it, and nobody is charged for it."
+        )
+    if scope == SCOPE_DIVISION:
+        return (
+            f"\U0001f4e2 **Division Cancelled: {division_name}**\n"
+            "This division has been cancelled. There are no further check-ins to answer."
+        )
+    return (
+        "\U0001f4e2 **Season Cancelled**\n"
+        "The season has been cancelled. There are no further check-ins to answer."
+    )
+
+
+async def _rsvp_channel(db_path: str, division_id: int) -> int | None:
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT rsvp_channel_id FROM attendance_division_config WHERE division_id = ?",
+            (division_id,),
+        )
+        row = await cursor.fetchone()
+    return None if row is None else row["rsvp_channel_id"]
+
+
+@posts_in_a_job
+async def post_notice(
+    bot: LeagueBot,
+    guild,
+    division,
+    *,
+    scope: str,
+    round_number: int | None = None,
+    track_name: str | None = None,
+) -> str | None:
+    """Post attendance's notice of *division*'s cancellation to its check-in channel, mentioning
+    the division role, as a job on the change queue. Returns "no channel is set" where the
+    division has none; raises `StepFailedOnDiscord` (no cause) where the channel is set and gone,
+    and `from` Discord's refusal where it refuses the send; any other exception is a fault of the
+    bot's own and propagates unchanged.
+    """
+    channel_id = await _rsvp_channel(bot.db_path, division.id)
+    role_id = getattr(division, "mention_role_id", None)
+    ping = f"<@&{role_id}>\n" if role_id else ""
+    mentions = (
+        discord.AllowedMentions(roles=[discord.Object(id=int(role_id))], users=False, everyone=False)
+        if role_id
+        else discord.AllowedMentions.none()
+    )
+    content = ping + attendance_notice(
+        scope, division.name, round_number=round_number, track_name=track_name
+    )
+    return await post_cancellation_notice(guild, channel_id, content, mentions=mentions)
+
+
+async def notices_on(
+    _db: aiosqlite.Connection, scope: str, target: dict[str, Any]
+) -> CancellationNotices:
+    """Attendance's part of `cancellation_notices`: the check-in notice planned for the division
+    *target* names (`division_id`, `division_name`, `season_id`, and a round's `round_number`,
+    `track_name`), so that core registers the job without naming attendance. The job's own
+    payload carries *scope* beside *target*'s fields, and `notice_target` ("check-in channel"),
+    the words core's `not_notified` names this job by without naming the module, read back by
+    `notify_checkin_steps`."""
+    return CancellationNotices(
+        steps=(
+            PlannedStep(
+                NOTIFY_CHECKIN, {**target, "scope": scope, "notice_target": "check-in channel"}
+            ),
+        )
+    )
+
+
+def notify_checkin_steps(*, modules: "ModuleService", seasons: SeasonService) -> dict[str, Step]:
+    """The step `cancellation_notices` plans for attendance (`NOTIFY_CHECKIN`): posts this
+    notice for the division named in the job's own payload, due only while attendance is on. The
+    builder hands in *modules* (the switch) and *seasons* (the division read) and signs this up to
+    core's `cancellation_steps`.
+    """
+
+    async def notify_checkin(ctx: StepContext) -> StepResult:
+        payload = ctx.step_payload
+        guild = await require_guild(ctx.bot)
+        division = await require_division(seasons, payload["season_id"], payload["division_id"])
+        problem = await post_notice(
+            ctx.bot, guild, division,
+            scope=payload.get("scope", ctx.payload.get("scope", SCOPE_ROUND)),
+            round_number=payload.get("round_number", ctx.payload.get("round_number")),
+            track_name=payload.get("track_name", ctx.payload.get("track_name")),
+        )
+        return StepResult(result={"unset": True} if problem else {"sent": True})
+
+    async def attendance_on(_ctx: StepContext) -> bool:
+        return await modules.is_attendance_enabled()
+
+    async def describe(ctx: StepContext) -> str:
+        return f"posting the check-in notice for **{ctx.step_payload['division_name']}**"
+
+    return {
+        NOTIFY_CHECKIN: Step(
+            NOTIFY_CHECKIN, StepKind.ACT, notify_checkin, still_due=attendance_on,
+            describe=describe,
+        ),
+    }

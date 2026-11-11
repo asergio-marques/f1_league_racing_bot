@@ -12,7 +12,7 @@ the wave order, not for what it costs one issue.
 ## The shape
 
 The cog surface is thin and the work is in services, as the rest of the bot is: `attendance_cog` is
-some 600 lines against `attendance_service`'s 1,942, and that ratio is the one to keep. A steward
+some 1,200 lines against `attendance_service`'s 2,600, and that ratio is the one to keep. A steward
 command body is a guard, an unpack, one call and one reply.
 
 Services, and the issue that brings each:
@@ -289,13 +289,12 @@ not work, and the alternatives that do are worse — several *top-level* groups 
 `/steward-conduct`) contradict the command names the spec gives, and binding the groups by hand
 fights the library for no gain.
 
-The cost is one cog file with 53 command bodies in it. It is bounded by keeping those bodies thin:
-a guard, an unpack, a service call, a reply. That lands the cog around 1,000 lines — larger than
-`attendance_cog`, far smaller than `season_cog`, and the size lives in the services where the rest
-of the bot puts it.
-
+The cost is one cog file with 53 command bodies in it. It is bounded by keeping those bodies thin: a
+guard, an unpack, a service call, a reply. That lands the cog around 1,000 lines — about the size of
+`attendance_cog` and `season_cog`, well short of `results_cog` and `image_cog`, and the size lives
+in the services where the rest of the bot puts it.
 Commands that belong to other modules' groups go to the cogs that declare those groups, for the
-same binding reason: `division ticket-channel` and `division licence-channel` to `season_cog`,
+same binding reason: `division ticket-channel` and `division licence-channel` to `division_cog`,
 which owns `/division`; `module enable steward` to `module_cog`; `images template licence` and the
 `licence` value of `images config toggle` [STW-SHT-017, STW-SHT-018] to `image_cog`; the three
 test-mode commands [STW-TST-002, STW-TST-003, STW-TST-005] to `test_mode_cog`.
@@ -483,8 +482,8 @@ one query that forgets it resurrects a sanction that should not exist.
 
 **~~How long a gap may be disregarded.~~** Settled 2026-09-20: five minutes, now named in
 [STW-RST-002]. It is the interval the bot already holds to elsewhere, as in
-`APPROVAL_WINDOW_SECONDS`, the placements-review button, the retry loop, the signup correction
-timeout and the signup view's own. Below it, everybody's window is quietly
+`REVIEW_WINDOW` in `season_review_changes`, the placements-review button, the retry loop, the
+signup correction timeout and the signup view's own. Below it, everybody's window is quietly
 shortened by the outage; that is accepted.
 
 **~~What the flip-flop latch of a historical-accumulation rule becomes on a merge.~~** Settled

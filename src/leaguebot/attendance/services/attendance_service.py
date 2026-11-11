@@ -13,8 +13,9 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 import discord
 
-from leaguebot.core.services import audit_service
-from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services.queue import audit_service
+from leaguebot.core.services.seasons.approval_checks import channel_fault
+from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
 from leaguebot.attendance.models.attendance import (
     AttendanceConfig,
@@ -23,14 +24,18 @@ from leaguebot.attendance.models.attendance import (
     DriverRoundAttendance,
     RsvpEmbedMessage,
 )
+from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
+from leaguebot.core.models.round import AttendanceWindows
+from leaguebot.core.services.modules.review_sections import Review, ReviewSection
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_bot import LeagueBot
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.change_queue import ChangeQueue
-    from leaguebot.core.services.output_router import OutputRouter
+    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.core.services.posting.output_router import OutputRouter
 
 
 @asynccontextmanager
@@ -107,8 +112,6 @@ def derive_checkin_deadline(
     This is the deadline held against **full-time** drivers. The later deadline a reserve is
     held to is carried by neither the graphic nor the embed, and is not this function's.
     """
-    if scheduled_at.tzinfo is None:
-        scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
     return scheduled_at - timedelta(hours=deadline_hours)
 
 
@@ -231,9 +234,7 @@ class AttendanceService:
         else saves both in one go: the plain `/module disable attendance` and the cascade from
         turning Results & Standings off both use it.
         """
-        cursor = await db.execute("SELECT module_enabled FROM attendance_config")
-        row = await cursor.fetchone()
-        was_on = row is not None and bool(row["module_enabled"])
+        was_on = await attendance_enabled_on(db)
         await db.execute("UPDATE attendance_config SET module_enabled = 0")
         await db.execute("DELETE FROM attendance_division_config")
         return was_on
@@ -255,32 +256,6 @@ class AttendanceService:
             attendance_channel_id=row["attendance_channel_id"],
             attendance_message_id=row["attendance_message_id"],
         )
-
-    async def set_rsvp_channel(self, division_id: int, channel_id: int) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                """
-                INSERT INTO attendance_division_config (division_id, rsvp_channel_id)
-                VALUES (?, ?)
-                ON CONFLICT(division_id)
-                DO UPDATE SET rsvp_channel_id = excluded.rsvp_channel_id
-                """,
-                (division_id, str(channel_id)),
-            )
-            await db.commit()
-
-    async def set_attendance_channel(self, division_id: int, channel_id: int) -> None:
-        async with get_connection(self._db_path) as db:
-            await db.execute(
-                """
-                INSERT INTO attendance_division_config (division_id, attendance_channel_id)
-                VALUES (?, ?)
-                ON CONFLICT(division_id)
-                DO UPDATE SET attendance_channel_id = excluded.attendance_channel_id
-                """,
-                (division_id, str(channel_id)),
-            )
-            await db.commit()
 
     # ── Field updates ──────────────────────────────────────────────────────
 
@@ -396,7 +371,7 @@ class AttendanceService:
         everything the row needs — the driver holds a confirmed placement in this division, the
         round exists, and the answer is inside the lock — so the fact arrives at the press and
         nowhere earlier; the test-mode bulk-set form is this method's caller.
-        Seeding rows from ``assign_driver``, ``move_driver`` and the mid-season confirmation
+        Seeding rows from ``assign_on``, ``move_driver`` and the mid-season confirmation
         instead would put the same work in three places, each having to decide for itself which
         of the division's rounds have a call standing, and any placement route added later would
         reopen the hole.
@@ -658,7 +633,201 @@ class AttendanceService:
         )
 
 
+async def rounds_deleted_on(db: aiosqlite.Connection, round_ids: list[int]) -> None:
+    """Delete attendance's rows of *round_ids* on *db*, committing nothing: each driver's
+    attendance of the round, with the pardons that hang from it, and the round's RSVP embed.
+
+    Core hands it the round ids as it deletes the rounds, in the delete's own save, so that the
+    module's rows go with the round or not at all (architecture.md, "The database").
+    """
+    marks = ",".join("?" * len(round_ids))
+    await db.execute(
+        f"DELETE FROM driver_round_attendance WHERE round_id IN ({marks})", round_ids  # noqa: S608
+    )
+    await db.execute(
+        f"DELETE FROM rsvp_embed_messages WHERE round_id IN ({marks})", round_ids  # noqa: S608
+    )
+
+
+async def divisions_deleted_on(db: aiosqlite.Connection, division_ids: list[int]) -> None:
+    """Delete attendance's settings of *division_ids* on *db*, committing nothing: the
+    division's channels for the RSVP and the attendance sheet."""
+    marks = ",".join("?" * len(division_ids))
+    await db.execute(
+        f"DELETE FROM attendance_division_config WHERE division_id IN ({marks})",  # noqa: S608
+        division_ids,
+    )
+
+
+async def profiles_deleted_on(db: aiosqlite.Connection, profile_ids: list[int]) -> None:
+    """Delete attendance's rows of the drivers *profile_ids* on *db*, committing nothing: each
+    driver's attendance of every round, with the pardons that hang from it (they go by the
+    cascade from the attendance row).
+
+    Core hands it the profile ids as it deletes the drivers, in the delete's own save, so that
+    the module's rows go with the drivers or not at all (architecture.md, "The database").
+    """
+    marks = ",".join("?" * len(profile_ids))
+    await db.execute(
+        f"DELETE FROM driver_round_attendance WHERE driver_profile_id IN ({marks})",  # noqa: S608
+        profile_ids,
+    )
+
+
+async def profiles_merged_on(db: aiosqlite.Connection, kept_id: int, absorbed_id: int) -> None:
+    """Move attendance's rows of the driver *absorbed_id* onto the driver *kept_id* on *db*,
+    committing nothing: their attendance of every round.
+
+    Core hands it both profile ids as it merges the drivers, inside the merge's one transaction,
+    before the absorbed profile is deleted (architecture.md, "The database"). The merge's
+    refusals guarantee that the two drivers never held one round between them.
+    """
+    await db.execute(
+        "UPDATE driver_round_attendance SET driver_profile_id = ? WHERE driver_profile_id = ?",
+        (kept_id, absorbed_id),
+    )
+
+
+async def bot_packed_on(db: aiosqlite.Connection) -> None:
+    """Clear attendance's rows tied to the server the bot leaves, on *db*, committing nothing:
+    the record of each RSVP embed posted, by which it is edited, and each division's attendance
+    message id.
+
+    Core hands it the pack's connection, so that attendance's rows go with the rest of the pack
+    or not at all (architecture.md, "The database"). Only the ids go: a message already posted
+    stays where it is, and every driver's attendance stays with its round.
+    """
+    await db.execute("DELETE FROM rsvp_embed_messages")
+    await db.execute("UPDATE attendance_division_config SET attendance_message_id = NULL")
+
+
 # ── Row-to-dataclass helpers ───────────────────────────────────────────────
+
+
+async def round_window(
+    attendance: AttendanceService, modules: "ModuleService", *, amending: bool
+) -> AttendanceWindows | None:
+    """Attendance's part of a round's timing windows read: its three lead times, or None where
+    the module is off, since a league without attendance has no check-in to lose or to be inside
+    the window of. Counts as off for an amendment too, so *amending* changes nothing here."""
+    if not await modules.is_attendance_enabled():
+        return None
+    config = await attendance.get_or_create_config()
+    return AttendanceWindows(
+        notice_days=config.rsvp_notice_days,
+        last_notice_hours=config.rsvp_last_notice_hours,
+        deadline_hours=config.rsvp_deadline_hours,
+    )
+
+
+async def review_section(
+    service: AttendanceService,
+    modules: "ModuleService",
+    *,
+    review: Review,
+    season_id: int,
+    division_ids: list[int],
+) -> ReviewSection | None:
+    """Attendance's section of a season review: its configuration; None where the module is off.
+
+    Subscribed to core's `review_sections_read`. A module never configured has no configuration
+    to show, its section then empty. Reads only.
+    """
+    if not await modules.is_attendance_enabled():
+        return None
+    config = await service.get_config()
+    lines: list[str] = []
+    if config:
+        autoreserve = config.autoreserve_threshold
+        autosack = config.autosack_threshold
+        autoreserve_text = f"{autoreserve} pts" if autoreserve is not None else "*(not set)*"
+        autosack_text = f"{autosack} pts" if autosack is not None else "*(not set)*"
+        last_notice = (
+            f"{config.rsvp_last_notice_hours}h before deadline"
+            if config.rsvp_last_notice_hours
+            else "*(disabled)*"
+        )
+        lines = [
+            "**Attendance Config**",
+            f"  • RSVP notice: {config.rsvp_notice_days} day(s) before race",
+            f"  • Last notice: {last_notice}",
+            f"  • Deadline: {config.rsvp_deadline_hours}h before race",
+            f"  • No-RSVP penalty: {config.no_rsvp_penalty} pt(s)",
+            f"  • Absent penalty: {config.absent_penalty} pt(s)",
+            f"  • No-show penalty: {config.no_show_penalty} pt(s)",
+            f"  • Auto-reserve threshold: {autoreserve_text}",
+            f"  • Auto-sack threshold: {autosack_text}",
+            "",
+        ]
+    return ReviewSection(module="attendance", lines=lines)
+
+
+async def division_lines(
+    service: AttendanceService,
+    modules: "ModuleService",
+    *,
+    season_id: int,
+    division_ids: list[int],
+) -> dict[int, list[str]]:
+    """The RSVP and attendance channel lines the placements review shows for each division in
+    *division_ids*, "*(not set)*" where a channel is not; nothing where the module is off.
+
+    Subscribed to core's `division_lines_read`, which hands the season (as it does every
+    subscriber; the divisions named are what is read) and its divisions. Reads only.
+    """
+    if not await modules.is_attendance_enabled():
+        return {}
+    lines: dict[int, list[str]] = {}
+    for division_id in division_ids:
+        channels = await service.get_division_config(division_id)
+        rsvp = (
+            f"<#{channels.rsvp_channel_id}>"
+            if channels and channels.rsvp_channel_id
+            else "*(not set)*"
+        )
+        attendance = (
+            f"<#{channels.attendance_channel_id}>"
+            if channels and channels.attendance_channel_id
+            else "*(not set)*"
+        )
+        lines[division_id] = [
+            f"  RSVP channel: {rsvp}",
+            f"  Attendance channel: {attendance}",
+        ]
+    return lines
+
+
+async def division_channel_faults(
+    service: AttendanceService,
+    modules: "ModuleService",
+    *,
+    divisions: Mapping[int, str],
+    guild: Any = None,
+) -> dict[int, list[str]]:
+    """Each division's RSVP channel and then its attendance channel, in that order, that is not
+    set or not on the *guild*, by division id; nothing where the attendance module is off.
+
+    Subscribed to core's `division_channel_faults_read`, which hands the divisions the
+    confirmation judges (id to name) and the server. A division with no fault is given an empty
+    list. With no *guild*, only whether each channel is set is judged. Reads only.
+    """
+    if not await modules.is_attendance_enabled():
+        return {}
+    found: dict[int, list[str]] = {}
+    for division_id, name in divisions.items():
+        channels = await service.get_division_config(division_id)
+        lines: list[str] = []
+        for value, label, command in (
+            (channels.rsvp_channel_id if channels else None, "RSVP channel",
+             "/attendance channel rsvp"),
+            (channels.attendance_channel_id if channels else None, "attendance channel",
+             "/attendance channel attendance"),
+        ):
+            fault = await channel_fault(guild, name, value, label, command)
+            if fault:
+                lines.append(fault)
+        found[division_id] = lines
+    return found
 
 
 def _dra_from_row(row: aiosqlite.Row) -> DriverRoundAttendance:
@@ -1366,7 +1535,7 @@ async def _sheet_rows(db, round_id: int, division_id: int) -> list:
     recorded for the driver in this division is the evidence. Each driver's total is the one
     recorded at their latest scored round up to this one, and nought where none is.
     """
-    from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
+    from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
 
     cursor = await db.execute(
         f"""
@@ -1416,7 +1585,7 @@ async def _opening_attendance_rows(db, division_id: int) -> list[dict]:
     round does — seated, non-reserve — and carries the team name besides, which is what the
     opening order is taken on.
     """
-    from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
+    from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
 
     cursor = await db.execute(
         f"""
@@ -1589,7 +1758,7 @@ async def _round_grid(db_path: str, division_id: int, profile_ids: list[int]):
     A missing cell and a stored zero are the same picture and the same meaning: the round
     counted nothing against that driver. Nothing here distinguishes the six ways that happens.
     """
-    from leaguebot.core.services.calendar_post_service import tracks_by_name
+    from leaguebot.core.services.rounds.calendar_post_service import tracks_by_name
     from leaguebot.image.services.image_attendance_service import RoundHeading
     from leaguebot.image.services.image_calendar_service import MYSTERY_DATUM
 
@@ -1949,7 +2118,7 @@ async def check_sanction(
 ) -> None:
     """Refuse a sanction that cannot be saved, before it is: an autoreserve in a division with no
     Reserve team (`SanctionNotApplicable`), or one the placement service's capacity guards refuse
-    (ValueError). Reads templates off the loop, which a save cannot; an autosack needs no check.
+    (`Refused`). Reads templates off the loop, which a save cannot; an autosack needs no check.
     """
     if candidate["sanction"] != "AUTORESERVE":
         return
@@ -2137,7 +2306,7 @@ async def enforce_attendance_sanctions(
     if not autoreserve_threshold and not autosack_threshold:
         return outcome  # both disabled — nothing to do (FR-027)
 
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.drivers.placement_service import PlacementService
     placement: PlacementService = bot.placement_service
 
     # Track which profiles were actually sanctioned for the attendance sheet re-post.
@@ -2186,7 +2355,7 @@ async def enforce_attendance_sanctions(
     # sanctioned drivers annotated. The queue posts them (#439).
     if sanctioned_profile_ids:
         from leaguebot.attendance.services import sanctions_announce_change, sheet_posting
-        from leaguebot.core.services.lineup_posting import ask_lineup_posts
+        from leaguebot.core.services.drivers.lineup_posting import ask_lineup_posts
 
         reached = [
             other_division_id for other_division_id, profile_ids in other_divisions.items()

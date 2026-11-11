@@ -18,8 +18,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.core.cogs.season_cog import _ReviewPoster
+from leaguebot.core.utils.hooks import AwaitedHook
+from tests.support.setup_reads import hold_setup
 
 SRC = Path(__file__).resolve().parents[2] / "src"
+
+#: The approval, which the review's Approve button hands a press on to, is a core service.
+WORKFLOWS = SRC / "leaguebot" / "core" / "services" / "seasons" / "season_review_workflows.py"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
@@ -42,13 +47,26 @@ def _function_source(path: Path, name: str, *, code_only: bool = False) -> str:
     raise AssertionError(f"{name} not found in {path}")
 
 
+def _approve_view_file() -> Path:
+    """The source file of the Approve button the builder's factory makes for a review's
+    question. A view is built, so its caller runs on the event loop."""
+    import inspect
+
+    from leaguebot.__main__ import _approve_view_for
+
+    view = _approve_view_for(MagicMock())({"view": "approve", "reviewer_id": 4242})
+    source = inspect.getsourcefile(type(view))
+    assert source is not None
+    return Path(source)
+
+
 # ── The calendar's command-output renderer ────────────────────────────────
 
 
 def test_calendar_render_for_command_is_not_the_calendar_of_record():
     """It must post to no channel and write no message id — that is why it exists."""
     source = _function_source(
-        SRC / "leaguebot" / "core" / "services" / "calendar_post_service.py", "render_for_command", code_only=True
+        SRC / "leaguebot" / "core" / "services" / "rounds" / "calendar_post_service.py", "render_for_command", code_only=True
     )
     assert "calendar_message_id" not in source
     assert "replace_calendar_message" not in source
@@ -78,31 +96,33 @@ def test_the_approval_windows_are_read_once_for_the_whole_season():
 
 def test_the_approval_draws_nothing_itself():
     """The render pass is gone, and must not creep back in."""
-    approve = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "_do_approve", code_only=True)
+    approve = _function_source(WORKFLOWS, "approve_season", code_only=True)
 
     for drawn in ("_undrawable_graphics", "render_for_command", "render_lineup"):
         assert drawn not in approve, f"{drawn} draws at approval; the review does that"
 
 
-def test_approval_refuses_before_it_commits_anything():
+async def test_approval_refuses_before_it_commits_anything():
     """The fingerprint stands where the render stood: ahead of everything committed. Who is
-    pressing is settled first, so a press by somebody who may not approve costs no query."""
-    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "approve")
+    pressing is settled first, so a press by somebody who may not approve costs no query. Read
+    from the Approve button the builder's factory makes, wherever it lives."""
+    source = _function_source(_approve_view_file(), "approve")
 
     gate_at = source.index("_changed_since_review()")
     assert source.index("_may_approve") < gate_at, (
         "who is pressing is settled before what they are pressing on"
     )
-    assert gate_at < source.index("_do_approve"), (
+    assert gate_at < source.index("approve_season("), (
         "the season must be proven unchanged before it is approved"
     )
 
 
-def test_a_changed_season_approves_nothing():
-    """The refusal returns rather than merely reporting."""
-    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "approve")
+async def test_a_changed_season_approves_nothing():
+    """The refusal returns rather than merely reporting, in the Approve button the builder's
+    factory makes."""
+    source = _function_source(_approve_view_file(), "approve")
 
-    branch = source[source.index("if changed:") : source.index("await self._cog._do_approve")]
+    branch = source[source.index("if changed:") : source.index("approve_season(")]
     assert "return" in branch
     assert "Nothing has been approved" in branch
 
@@ -110,129 +130,88 @@ def test_a_changed_season_approves_nothing():
     # to pay for a rasterisation it was never going to keep (settled 2026-09-07).
 
 
-def test_the_review_and_the_approval_read_the_same_evaluation():
-    """Both must refuse on the same fault, or a manager can commit past the review."""
+async def test_the_review_and_the_approval_read_the_same_evaluation():
+    """Both must refuse on the same fault, or a manager can commit past the review. The button
+    is read from the Approve button the builder's factory makes, wherever it lives."""
     review = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "season_review")
-    approve = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "_do_approve")
+    approve = _function_source(WORKFLOWS, "approve_season")
 
     assert "approval_blockers" in review
     # The review still withholds its button on a graphic that will not draw. The approval
     # no longer re-draws to find that out — it refuses unless the season still fingerprints
     # as the one the review described, which is the same evidence reached more cheaply.
-    assert "_changed_since_review()" in _function_source(
-        SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "approve"
-    )
-    assert "differs_from" in _function_source(
-        SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "_changed_since_review"
-    )
+    button = _approve_view_file()
+    assert "_changed_since_review()" in _function_source(button, "approve")
+    assert "differs_from" in _function_source(button, "_changed_since_review")
 
     # The image configuration blocks on both surfaces too, and through one helper so that
     # the two cannot disagree about whether a season may be approved (#396). The review
     # reads the portrait settings through it.
-    assert "_image_configuration_faults" in review
-    assert "_image_configuration_faults" in approve
+    assert "approval_checks.image_configuration_faults" in review
+    assert "approval_checks.image_configuration_faults" in approve
 
 
-# ── The driver portrait settings in the review, and at approval ───────────
+# ── The image section of both reviews ─────────────────────────────────────
 
 
-def _portrait_cog(**config):
-    from unittest.mock import AsyncMock, MagicMock
-    from types import SimpleNamespace
+def _section_cog(section):
+    """A cog whose drawing answers the image section's lines with *section*, or raises it where
+    it is an exception."""
     from leaguebot.core.cogs.season_cog import SeasonCog
 
-    values = {
-        "use_pfp": False,
-        "pfp_prerender": True,
-        "pfp_daily": False,
-        "pfp_daily_time": "03:00",
-    }
-    values.update(config)
     bot = MagicMock()
-    bot.module_service.is_images_enabled = AsyncMock(return_value=True)
-    bot.image_config_service.get_config = AsyncMock(
-        return_value=None if values.get("_absent") else SimpleNamespace(**values)
-    )
+    if isinstance(section, Exception):
+        bot.image_drawing.review_section = AsyncMock(side_effect=section)
+    else:
+        bot.image_drawing.review_section = AsyncMock(return_value=list(section))
     cog = SeasonCog.__new__(SeasonCog)
     cog.bot = bot
-    return cog, bot
+    return cog
 
 
-async def test_the_review_states_the_portrait_settings_when_disabled():
-    cog, _bot = _portrait_cog(use_pfp=False)
+async def test_the_image_section_is_the_drawings_lines_beneath_cores_heading():
+    """Both reviews head the image module's section **Image output**, place its lines beneath
+    unchanged, and close it with a blank line. What the lines say is the image module's
+    (`tests/image/test_image_drawing_review.py`)."""
+    cog = _section_cog(["  Templates: 0/0 resolve", "  _No templates were checked._"])
 
-    lines = await cog._portrait_review_lines()
-
-    # Stated even when off: "the bot is not obtaining portraits" is an answer, not an
-    # absence of one, for a manager deciding whether the season is configured.
-    assert any("Driver portraits from Discord: disabled" in line for line in lines)
-
-
-async def test_the_review_names_both_update_triggers_and_the_time_in_utc():
-    cog, _bot = _portrait_cog(
-        use_pfp=True, pfp_prerender=True, pfp_daily=True, pfp_daily_time="07:45"
-    )
-
-    lines = await cog._portrait_review_lines()
-    text = "\n".join(lines)
-
-    assert "enabled" in text
-    assert "before each render" in text
-    assert "daily at 07:45 UTC" in text
-
-
-async def test_the_review_marks_an_invalid_portrait_configuration():
-    cog, _bot = _portrait_cog(use_pfp=True, pfp_prerender=False, pfp_daily=False)
-
-    text = "\n".join(await cog._portrait_review_lines())
-
-    assert "⛔" in text
-    assert "neither pre-render nor daily updates" in text
+    assert await cog._build_image_review_section() == [
+        "**Image output**",
+        "  Templates: 0/0 resolve",
+        "  _No templates were checked._",
+        "",
+    ]
 
 
 async def test_the_review_section_survives_a_configuration_it_cannot_read():
-    cog, bot = _portrait_cog()
-    bot.image_config_service.get_config.side_effect = RuntimeError("gone")
+    """A review must never fail because of this section: where the image module cannot read its
+    configuration, the section says so and the review goes on."""
+    cog = _section_cog(RuntimeError("gone"))
 
-    lines = await cog._portrait_review_lines()
-
-    # A review must never fail because of this section.
-    assert any("could not be read" in line for line in lines)
-
-
-async def test_the_blocker_fires_only_on_an_invalid_configuration():
-    invalid, _ = _portrait_cog(use_pfp=True, pfp_prerender=False, pfp_daily=False)
-    assert await invalid._portrait_configuration_blocker() is not None
-
-    for values in (
-        {"use_pfp": False, "pfp_prerender": False, "pfp_daily": False},
-        {"use_pfp": True, "pfp_prerender": True, "pfp_daily": False},
-        {"use_pfp": True, "pfp_prerender": False, "pfp_daily": True},
-        {"use_pfp": True, "pfp_prerender": True, "pfp_daily": True},
-    ):
-        cog, _ = _portrait_cog(**values)
-        assert await cog._portrait_configuration_blocker() is None, values
+    assert await cog._build_image_review_section() == [
+        "**Image output**",
+        "  ⚠️ Could not be read.",
+        "",
+    ]
 
 
-async def test_the_blocker_stands_aside_where_the_image_module_is_disabled():
-    cog, bot = _portrait_cog(use_pfp=True, pfp_prerender=False, pfp_daily=False)
-    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
+async def test_the_review_section_raises_a_switch_nobody_signed_up_for():
+    """A module's switch reader was never signed up, so the image module's section raises
+    `SwitchNotSignedUp`: a fault in the bot's assembly, which the section raises rather than
+    stating as a configuration it cannot read."""
+    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
 
-    assert await cog._portrait_configuration_blocker() is None
+    cog = _section_cog(SwitchNotSignedUp("results"))
 
-
-async def test_the_blocker_never_blocks_a_season_it_could_not_read():
-    cog, bot = _portrait_cog()
-    bot.image_config_service.get_config.side_effect = RuntimeError("gone")
-
-    assert await cog._portrait_configuration_blocker() is None
+    with pytest.raises(SwitchNotSignedUp, match="results"):
+        await cog._build_image_review_section()
 
 
 def test_the_approval_gate_returns_rather_than_merely_reporting():
     """The portrait settings refuse through the image configuration gate (#396), whose
     refusal must stop the approval rather than report and carry on, before the approval is
     asked of the change queue (#439). Driven, not read, in `test_do_approve_gates.py`."""
-    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "_do_approve")
+    source = _function_source(WORKFLOWS, "approve_season")
 
     branch = source[source.index("if image_faults:"):]
     branch = branch[: branch.index("change_queue.ask")]
@@ -252,22 +231,11 @@ def test_the_approval_gate_returns_rather_than_merely_reporting():
 # and anyone who can read the channel can see the button they post.
 
 
-from leaguebot.core.cogs.season_cog import _ApproveView  # noqa: E402
-
 REVIEWER = 4242
 
 
 ADMIN_ROLE = 444
 
-
-
-@pytest.fixture(autouse=True)
-def _no_approval_in_hand(monkeypatch):
-    """The view asks whether an approval of its season is in hand, reading the change queue's
-    tables (#439); the answer is given here: none is."""
-    monkeypatch.setattr(
-        "leaguebot.core.cogs.season_cog.approval_in_hand", AsyncMock(return_value=False)
-    )
 
 
 async def _standing_placements(tmp_path):
@@ -279,12 +247,13 @@ async def _standing_placements(tmp_path):
     return await _standing(tmp_path, "/season placements-review")
 
 
-def _view_on(env):
-    """Alex's review's Approve button, built as the question's view is, on a cog whose approval
-    (`_do_approve`) is recorded and goes through."""
+def _view_on(env, monkeypatch):
+    """Alex's review's Approve button, the view the builder's factory makes, whose approval
+    (`season_review_workflows.approve_season`) is stood in, recorded and goes through. Returns
+    the view and the stand-ins, the approval's under `approve_season`."""
     from tests.core.test_review_outcomes_recorded import _view_on as view_on
 
-    return view_on(env, _ApproveView, "_do_approve")
+    return view_on(env, "approve", "approve_season", monkeypatch)
 
 
 def _press(env, user_id: int = REVIEWER, *, league_admin: bool = False):
@@ -318,14 +287,16 @@ async def test_a_league_admin_may_approve_somebody_elses_review(tmp_path, monkey
     role but did not run the review, presses Approve: the approval is worked."""
     env = await _standing_placements(tmp_path)
     await _season_unchanged(env, monkeypatch)
-    view, cog = _view_on(env)
+    view, workflows = _view_on(env, monkeypatch)
 
-    await _ApproveView.approve(view, _press(env, 99, league_admin=True), MagicMock())
+    await type(view).approve(view, _press(env, 99, league_admin=True), MagicMock())
 
-    cog._do_approve.assert_awaited_once()
+    workflows.approve_season.assert_awaited_once()
 
 
-async def test_nobody_but_the_reviewer_may_approve_while_no_admin_role_is_set(tmp_path):
+async def test_nobody_but_the_reviewer_may_approve_while_no_admin_role_is_set(
+    tmp_path, monkeypatch,
+):
     """A league with no admin role set (one that predates it, or deleted it). Sam, holding the
     role the league once used and so Discord's old way in, presses Approve on Alex's review: he
     is refused, nothing is approved, and no take-down is asked."""
@@ -334,12 +305,12 @@ async def test_nobody_but_the_reviewer_may_approve_while_no_admin_role_is_set(tm
     env = await _standing_placements(tmp_path)
     config = await env.bot.config_service.get_server_config(7)
     config.league_admin_role_id = None
-    view, cog = _view_on(env)
+    view, workflows = _view_on(env, monkeypatch)
     interaction = _press(env, 99, league_admin=True)
 
-    await _ApproveView.approve(view, interaction, MagicMock())
+    await type(view).approve(view, interaction, MagicMock())
 
-    cog._do_approve.assert_not_awaited()
+    workflows.approve_season.assert_not_awaited()
     assert "Nothing has been approved" in acknowledgement(interaction)
     assert await _take_downs(env) == []
 
@@ -377,14 +348,15 @@ async def test_a_report_message_already_gone_does_not_stop_the_rest(tmp_path):
 
 # ── A press refused, or cancelled, leaves the review standing (#439) ───────
 #
-# The core specification's "Confirming placements": a press refused at the press by the
-# approval's own gates, or cancelled at the test-mode backup question, leaves the review and its
-# button standing, to be pressed again within its five minutes, as a press that fails on a fault
-# does. A press whose approval goes through asks the queue to take the review down, ahead of the
-# approval's work, whatever then becomes of it (core :288). These drive the real `_do_approve`
-# behind the button, so that what the helper tells the view is what is tested, not what a double
-# says. The review is read from its row: its question Q (999) posted a moment ago in channel 111,
-# its report R (900–902), the evidence its report was computed from matching the season now.
+# The core specification's "Confirming placements": a press refused at the press by the approval's
+# own gates, or cancelled at the test-mode backup question, leaves the review and its button
+# standing, to be pressed again within its five minutes, as a press that fails on a fault does. A
+# press whose approval goes through asks the queue to take the review down, ahead of the approval's
+# work, whatever then becomes of it (core :288). These drive the real approval,
+# `season_review_workflows.approve_season`, behind the button, so that what the helper tells the
+# view is what is tested, not what a double says. The review is read from its row: its question Q
+# (999) posted a moment ago in channel 111, its report R (900–902), the evidence its report was
+# computed from matching the season now.
 
 GATED_QUESTION = 999
 GATED_REPORT = (900, 901, 902)
@@ -392,20 +364,24 @@ GATED_REPORT = (900, 901, 902)
 
 async def _gated_view(tmp_path, monkeypatch, *, round_in_days: float = 30.0,
                       test_mode: bool = False):
-    """A posted review whose button reaches the real `_do_approve`, its prompt recorded in a
-    migrated database. Every gate answers "nothing wrong" but the date of its one round, which
-    *round_in_days* places, and every module is off. The queue's ask answers with a change's id."""
+    """A posted review whose button reaches the real `season_review_workflows.approve_season`,
+    its prompt recorded in a migrated database. Every gate answers "nothing wrong" but the date
+    of its one round, which *round_in_days* places, and every module is off; the gates stood in
+    are `approval_checks`'. The queue's ask answers with a change's id, and its clock is the
+    host's."""
     import json
     from datetime import datetime, timedelta, timezone
     from types import SimpleNamespace
 
-    from leaguebot.core.cogs.season_cog import SeasonCog
+    from leaguebot.__main__ import _approve_view_for
     from leaguebot.core.db.database import get_connection, run_migrations
     from leaguebot.core.models.round import Round, RoundFormat
     from leaguebot.core.models.season import SeasonStage
     from leaguebot.core.models.server_config import ServerConfig
-    from leaguebot.core.services import season_fingerprint_service as sfs
+    from leaguebot.core.services.seasons import approval_checks
+    from leaguebot.core.services.seasons import season_fingerprint_service as sfs
     from tests.support.review_prompts import store_review_prompt
+    from tests.support.review_workflows import sign_up_confirmation_refused
 
     db_path = str(tmp_path / "review.db")
     await run_migrations(db_path)
@@ -424,11 +400,13 @@ async def _gated_view(tmp_path, monkeypatch, *, round_in_days: float = 30.0,
 
     monkeypatch.setattr(sfs, "take_fingerprint", _now)
 
-    cog = SeasonCog.__new__(SeasonCog)
-    bot = cog.bot = MagicMock()
+    # What the tests read of the review's bot, kept as the cog once kept it.
+    bot = MagicMock()
+    cog = SimpleNamespace(bot=bot)
     bot.db_path = db_path
     bot.change_queue.ask = AsyncMock(return_value=1)
     bot.change_queue.ask_after = AsyncMock(return_value=1)
+    bot.change_queue.now = MagicMock(side_effect=lambda: datetime.now(timezone.utc))
     bot.output_router.post_log = AsyncMock()
     bot.config_service.get_server_config = AsyncMock(
         return_value=ServerConfig(
@@ -440,12 +418,15 @@ async def _gated_view(tmp_path, monkeypatch, *, round_in_days: float = 30.0,
             test_mode_active=test_mode,
         )
     )
-    cog._pending = {
-        REVIEWER: SimpleNamespace(server_id=7, season_id=1, season_number=1, divisions=[])
-    }
+    hold_setup(
+        bot.season_service,
+        SimpleNamespace(server_id=7, season_id=1, season_number=1, divisions=[]),
+        divisions=False,
+    )
     bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
-    cog._season_has_divisions = AsyncMock(return_value=True)
-    cog._placement_confirmation_faults = AsyncMock(return_value=([], []))
+    monkeypatch.setattr(approval_checks, "season_has_divisions", AsyncMock(return_value=True))
+    monkeypatch.setattr(approval_checks, "placement_confirmation_faults",
+                        AsyncMock(return_value=([], [])))
     bot.season_service.validate_division_tiers = AsyncMock()
     bot.season_service.get_divisions = AsyncMock(
         return_value=[SimpleNamespace(id=1, name="Premier", tier=1)]
@@ -465,17 +446,17 @@ async def _gated_view(tmp_path, monkeypatch, *, round_in_days: float = 30.0,
     for module in ("weather", "attendance", "results", "signup", "images"):
         setattr(bot.module_service, f"is_{module}_enabled", AsyncMock(return_value=False))
 
-    async def _no_windows():
-        return None, None
-
-    bot.approval_windows = _no_windows
-    cog._team_name_problems = AsyncMock(return_value=[])
-    cog._lineup_problems = AsyncMock(return_value=[])
+    # No module's window counts: a windows hook nothing is signed up to.
+    bot.round_windows_read = AwaitedHook()
+    # Results' refusals, through the hook the approval asks them of, as the builder signs them.
+    sign_up_confirmation_refused(bot)
+    monkeypatch.setattr(approval_checks, "team_name_problems", AsyncMock(return_value=[]))
+    monkeypatch.setattr(approval_checks, "lineup_problems", AsyncMock(return_value=[]))
 
     question = MagicMock(id=GATED_QUESTION, delete=AsyncMock())
     question.channel.id = 111
     question.channel.send = AsyncMock()
-    return _ApproveView(cog, REVIEWER), cog, question
+    return _approve_view_for(bot)({"view": "approve", "reviewer_id": REVIEWER}), cog, question
 
 
 def _gated_member():
@@ -542,7 +523,7 @@ async def test_a_press_refused_by_a_gate_leaves_the_review_standing(tmp_path, mo
     view, cog, question = await _gated_view(tmp_path, monkeypatch, round_in_days=-90)
     interaction = _gated_press(question)
 
-    await _ApproveView.approve(view, interaction, MagicMock())
+    await type(view).approve(view, interaction, MagicMock())
 
     assert "dates that have already gone by" in _said(interaction)
     cog.bot.change_queue.ask.assert_not_awaited()
@@ -550,7 +531,7 @@ async def test_a_press_refused_by_a_gate_leaves_the_review_standing(tmp_path, mo
     assert await _prompt_rows(cog) == 1
 
     again = _gated_press(question)
-    await _ApproveView.approve(view, again, MagicMock())
+    await type(view).approve(view, again, MagicMock())
 
     assert "dates that have already gone by" in _said(again)
     cog.bot.change_queue.ask.assert_not_awaited()
@@ -564,17 +545,17 @@ async def test_a_press_cancelled_at_the_backup_question_leaves_the_review_standi
     """Under test mode Alex presses Approve and cancels at the backup question: he is told
     nothing has been approved or saved, nothing is asked of the queue, and the review stands with
     its row, to be pressed again."""
-    from leaguebot.core.cogs.season_cog import _BackupBeforeApprovalView
+    from leaguebot.core.services.seasons.season_review_workflows import BackupBeforeApprovalView
 
     async def _cancelled(self):
         self.answer = "cancel"
         return True
 
-    monkeypatch.setattr(_BackupBeforeApprovalView, "wait", _cancelled)
+    monkeypatch.setattr(BackupBeforeApprovalView, "wait", _cancelled)
     view, cog, question = await _gated_view(tmp_path, monkeypatch, test_mode=True)
     interaction = _gated_press(question)
 
-    await _ApproveView.approve(view, interaction, MagicMock())
+    await type(view).approve(view, interaction, MagicMock())
 
     assert "Nothing has been approved, and nothing has been saved." in _said(interaction)
     cog.bot.change_queue.ask.assert_not_awaited()
@@ -592,7 +573,7 @@ async def test_a_review_lapsed_at_the_backup_question_is_still_taken_down(
     deleting and posting nothing itself."""
     from datetime import datetime, timedelta, timezone
 
-    from leaguebot.core.cogs.season_cog import _BackupBeforeApprovalView
+    from leaguebot.core.services.seasons.season_review_workflows import BackupBeforeApprovalView
     from leaguebot.core.db.database import get_connection
 
     holder = {}
@@ -607,12 +588,12 @@ async def test_a_review_lapsed_at_the_backup_question_is_still_taken_down(
         self.answer = None
         return True
 
-    monkeypatch.setattr(_BackupBeforeApprovalView, "wait", _unanswered)
+    monkeypatch.setattr(BackupBeforeApprovalView, "wait", _unanswered)
     view, cog, question = await _gated_view(tmp_path, monkeypatch, test_mode=True)
     holder["db_path"] = cog.bot.db_path
     interaction = _gated_press(question)
 
-    await _ApproveView.approve(view, interaction, MagicMock())
+    await type(view).approve(view, interaction, MagicMock())
 
     assert "expired while the backup question went unanswered" in _said(interaction)
     assert _asked(cog, "season.approve") == []
@@ -638,7 +619,7 @@ def _approval_double(refusal: str, on_check=None):
     """A `season.approve` whose check, made as the queue is asked, refuses with *refusal*,
     calling *on_check* first where given. Its jobs, never reached, do nothing."""
     from leaguebot.core.models import change
-    from leaguebot.core.services import change_queue
+    from leaguebot.core.services.queue import change_types
 
     async def _check(_ctx):
         if on_check is not None:
@@ -648,10 +629,10 @@ def _approval_double(refusal: str, on_check=None):
     async def _nothing(_ctx):
         return change.StepResult()
 
-    return change_queue.ChangeType(
+    return change_types.ChangeType(
         kind="season.approve",
         opening=(change.PlannedStep("approve", {}),),
-        steps={"approve": change_queue.Step("approve", change.StepKind.ACT, _nothing)},
+        steps={"approve": change_types.Step("approve", change.StepKind.ACT, _nothing)},
         check=_check,
         key=lambda payload: f"season.approve|{payload.get('season_id')}",
         doing=lambda _payload: "approving the season",
@@ -664,15 +645,18 @@ async def _on_a_real_queue(tmp_path, monkeypatch, approval):
     with *approval* as the season's approval and the real take-down of a season review."""
     from datetime import datetime, timezone
 
-    from leaguebot.core.services.season_review_changes import season_review_take_down_change
+    from leaguebot.__main__ import _approve_view_for
+    from leaguebot.core.services.seasons.season_review_changes import season_review_take_down_change
     from tests.support.change_queue import attach_queue, league_double, seed_server
 
-    view, cog, question = await _gated_view(tmp_path, monkeypatch)
+    _, cog, question = await _gated_view(tmp_path, monkeypatch)
     queued = league_double(cog.bot.db_path)
     await seed_server(cog.bot.db_path)
     attach_queue(queued, cog.bot.db_path, now=datetime.now(timezone.utc),
                  types=[approval, season_review_take_down_change()])
     cog.bot.change_queue = queued.change_queue
+    # The view holds the queue it is handed, so it is made again on the real one.
+    view = _approve_view_for(cog.bot)({"view": "approve", "reviewer_id": REVIEWER})
     return view, cog, question, queued
 
 
@@ -706,7 +690,7 @@ async def test_a_press_the_queue_refuses_at_once_leaves_the_review_standing(tmp_
         tmp_path, monkeypatch, _approval_double(DATE_GONE_BY))
 
     first = _queued_press(queued, question)
-    await _ApproveView.approve(view, first, MagicMock())
+    await type(view).approve(view, first, MagicMock())
 
     assert "date has gone by" in acknowledgement(first)
     assert await _kinds_queued(cog) == []
@@ -715,7 +699,7 @@ async def test_a_press_the_queue_refuses_at_once_leaves_the_review_standing(tmp_
     question.channel.send.assert_not_awaited()
 
     again = _queued_press(queued, question)
-    await _ApproveView.approve(view, again, MagicMock())
+    await type(view).approve(view, again, MagicMock())
 
     assert "date has gone by" in acknowledgement(again)
     assert await _kinds_queued(cog) == []
@@ -736,7 +720,7 @@ async def test_a_press_the_queue_refuses_for_a_changed_season_ends_the_review_as
     itself."""
     import json
 
-    from leaguebot.core.services import season_fingerprint_service as sfs
+    from leaguebot.core.services.seasons import season_fingerprint_service as sfs
     from tests.support.change_queue import acknowledgement, change_rows
 
     changed = {"now": False}
@@ -754,7 +738,7 @@ async def test_a_press_the_queue_refuses_for_a_changed_season_ends_the_review_as
     monkeypatch.setattr(sfs, "take_fingerprint", _fingerprint)
     press = _queued_press(queued, question)
 
-    await _ApproveView.approve(view, press, MagicMock())
+    await type(view).approve(view, press, MagicMock())
 
     reply = acknowledgement(press)
     assert "changed since this review" in reply and "Nothing has been approved" in reply
@@ -777,7 +761,7 @@ async def test_a_press_asked_of_the_queue_takes_the_review_down(tmp_path, monkey
     down."""
     view, cog, question = await _gated_view(tmp_path, monkeypatch)
 
-    await _ApproveView.approve(view, _gated_press(question), MagicMock())
+    await type(view).approve(view, _gated_press(question), MagicMock())
 
     # One ask, saving both: the take-down ahead of the approval.
     cog.bot.change_queue.ask.assert_not_awaited()
@@ -842,7 +826,9 @@ async def test_the_review_offers_only_the_approve_button():
     advice, and a second button on a public message is a second thing to mis-press."""
     import discord
 
-    view = _ApproveView(MagicMock(), REVIEWER)
+    from leaguebot.__main__ import _approve_view_for
+
+    view = _approve_view_for(MagicMock())({"view": "approve", "reviewer_id": REVIEWER})
     buttons = [c for c in view.children if isinstance(c, discord.ui.Button)]
 
     assert len(buttons) == 1

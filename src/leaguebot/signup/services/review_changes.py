@@ -95,16 +95,19 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.core.services import standing_posts, track_service
+from leaguebot.core.models.driver_profile import DriverState, InvalidDriverTransition
+from leaguebot.core.services.rounds import track_service
+from leaguebot.core.services.posting import standing_posts
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.services.queue.queue_records import (
+    unfinished,
+)
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
-    unfinished,
 )
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.input_validator import parse_time
@@ -135,10 +138,10 @@ from leaguebot.signup.services.wizard_service import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.change_queue import ChangeQueue
-    from leaguebot.core.services.config_service import ConfigService
-    from leaguebot.core.services.driver_service import DriverService
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.core.services.settings.config_service import ConfigService
+    from leaguebot.core.services.drivers.driver_service import DriverService
+    from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 APPROVE = "signup.approve"
@@ -629,7 +632,7 @@ def choose_change(
         # cannot be raced, and a refused one means the request has ended all the same.
         try:
             await drivers().transition_on(db, user_id, DriverState.PENDING_DRIVER_CORRECTION)
-        except ValueError:
+        except InvalidDriverTransition:
             return StepResult(result={"ended": True})
         reason = wizard.draft_answers.pop("_correction_reason", "")
         wizard.wizard_state = target
@@ -902,7 +905,7 @@ def lapse_change(
         # cannot be raced, and a refused one means the window has nothing left to lapse.
         try:
             await drivers().transition_on(db, user_id, DriverState.PENDING_ADMIN_APPROVAL)
-        except ValueError:
+        except InvalidDriverTransition:
             return StepResult(result={"ended": True})
         wizard = await signup().get_wizard_on(db, user_id)
         if wizard is None:

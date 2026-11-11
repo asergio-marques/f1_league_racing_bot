@@ -3,19 +3,20 @@
 `PlacementService.driver_role_ids` reads what the driver's standing entitles them to — the
 driver role while Unassigned or Assigned, and the division and team roles of each confirmed
 placement in the live season — from the league's own record, so it answers even when the
-account holding the roles has left. `move_driver_roles` gives them to the new current account
-and takes them from the one it replaced where that one is still in the server (E21, E22).
+account holding the roles has left. `/driver reassign` moves them, as steps after its save, to
+the new current account from the one it replaced where that one is still in the server (E21,
+E22); `test_driver_reassign.py` pins a role Discord refuses there, and `test_role_moves.py` the
+step itself.
 """
 from __future__ import annotations
 
 import os
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
-import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.placement_service import PlacementService
+from leaguebot.core.services.drivers.placement_service import PlacementService
 
 SERVER_ID = 2438
 DRIVER_ROLE, DIVISION_ROLE, TEAM_ROLE = 7001, 7002, 7003
@@ -51,7 +52,7 @@ async def _league(tmp_path, *, state: str = "ASSIGNED", committed: int = 1,
             "VALUES (1, 1, 'Alpha', 'Alpha', 2, 0)"
         )
         await db.execute(
-            "INSERT INTO team_role_configs (team_name, role_id) VALUES ('Alpha', ?)",
+            "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES ('Alpha', ?, '2031-03-04T05:06:07+00:00')",
             (TEAM_ROLE,),
         )
         cursor = await db.execute(
@@ -94,70 +95,61 @@ async def test_a_driver_holds_the_roles_their_standing_entitles_them_to(
     assert await PlacementService(db_path).driver_role_ids(pid) == expected
 
 
-def _role(role_id: int) -> MagicMock:
-    role = MagicMock(spec=discord.Role)
-    role.id = role_id
-    return role
-
-
-def _guild(members: dict[str, MagicMock]) -> MagicMock:
-    roles = {rid: _role(rid) for rid in (DRIVER_ROLE, DIVISION_ROLE, TEAM_ROLE)}
-    guild = MagicMock()
-    guild.get_role = MagicMock(side_effect=roles.get)
-    guild.get_member = MagicMock(side_effect=lambda uid: members.get(str(uid)))
-    guild.fetch_member = AsyncMock(
-        side_effect=discord.NotFound(MagicMock(status=404), "gone")
+async def _lewis_reassigned(tmp_path, *, left: bool = False):
+    """The season in Placements; Lewis (101), Assigned, his seat in Pro at Ferrari confirmed, holds
+    the driver, Pro and Ferrari roles. The league manager runs `/driver reassign` of Lewis onto
+    9001, and the queue runs it; where *left*, 101 has left the server first. Gives the league and
+    the reply."""
+    from tests.core.test_driver_reassign import _ask_reassign, _NEW, _queue_league
+    from tests.support.change_queue import run_queue
+    from tests.support.season_league import (
+        DRIVER_ROLE, FERRARI_ROLE, LEWIS, PRO_ROLE, profile_id,
     )
-    guild.roles_by_id = roles
-    return guild
 
-
-def _member(roles: list) -> MagicMock:
-    member = MagicMock()
-    member.roles = roles
-    member.add_roles = AsyncMock()
-    member.remove_roles = AsyncMock()
-    return member
+    league = await _queue_league(tmp_path)
+    await league.write(
+        "UPDATE driver_profiles SET current_state = 'ASSIGNED' WHERE id = ?", profile_id(LEWIS)
+    )
+    await league.write(
+        "UPDATE driver_season_assignments SET committed = 1 WHERE driver_profile_id = ?",
+        profile_id(LEWIS),
+    )
+    league.roles_held[LEWIS] = {DRIVER_ROLE, PRO_ROLE, FERRARI_ROLE}
+    league.bot.image_drawing.discard_portraits = AsyncMock(return_value=0)
+    if left:
+        league.absent.add(LEWIS)
+    asked = await _ask_reassign(league, LEWIS, _NEW)
+    await run_queue(league.bot)
+    return league, asked
 
 
 async def test_the_roles_move_from_the_replaced_account_to_the_current_one(tmp_path):
-    db_path, pid = await _league(tmp_path)
-    new_member = _member([])
-    guild = _guild({NEW: new_member})
-    old_member = _member(list(guild.roles_by_id.values()))
-    guild.get_member.side_effect = lambda uid: {NEW: new_member, OLD: old_member}.get(str(uid))
+    """E22 through `/driver reassign`. Lewis (101), Assigned, his seat in Pro at Ferrari confirmed,
+    holds the driver, Pro and Ferrari roles; he is reassigned onto 9001. Every role his standing
+    entitles him to is taken from 101 and given to 9001, and the reply is today's success alone."""
+    from tests.core.test_driver_reassign import _NEW
+    from tests.support.season_league import DRIVER_ROLE, FERRARI_ROLE, LEWIS, PRO_ROLE
+    from tests.support.settings_league import last_said
 
-    problems = await PlacementService(db_path).move_driver_roles(guild, pid, OLD, NEW)
+    league, asked = await _lewis_reassigned(tmp_path)
 
-    assert problems == []
-    granted = {r.id for r in new_member.add_roles.await_args.args}
-    removed = {r.id for r in old_member.remove_roles.await_args.args}
-    assert granted == removed == {DRIVER_ROLE, DIVISION_ROLE, TEAM_ROLE}
+    expected = {DRIVER_ROLE, PRO_ROLE, FERRARI_ROLE}
+    assert set(league.revoked[LEWIS]) == expected
+    assert set(league.granted[_NEW]) == expected
+    assert "⚠️" not in last_said(asked)
 
 
 async def test_a_replaced_account_that_has_left_is_skipped_quietly(tmp_path):
-    """E21: granted to the current account from the league's record; nothing to remove."""
-    db_path, pid = await _league(tmp_path)
-    new_member = _member([])
-    guild = _guild({NEW: new_member})
+    """E21 through `/driver reassign`. Lewis (101), Assigned, his seat in Pro at Ferrari confirmed,
+    has left the server when he is reassigned onto 9001. The driver, Pro and Ferrari roles are given
+    to 9001 from the league's record; nothing is taken from 101, and nothing is reported as not
+    done."""
+    from tests.core.test_driver_reassign import _NEW
+    from tests.support.season_league import DRIVER_ROLE, FERRARI_ROLE, LEWIS, PRO_ROLE
+    from tests.support.settings_league import last_said
 
-    problems = await PlacementService(db_path).move_driver_roles(guild, pid, OLD, NEW)
+    league, asked = await _lewis_reassigned(tmp_path, left=True)
 
-    assert problems == []
-    assert {r.id for r in new_member.add_roles.await_args.args} == {
-        DRIVER_ROLE, DIVISION_ROLE, TEAM_ROLE
-    }
-
-
-async def test_a_grant_discord_refuses_is_reported(tmp_path):
-    """E44: reported for the command to show; nothing raised."""
-    db_path, pid = await _league(tmp_path)
-    new_member = _member([])
-    new_member.add_roles = AsyncMock(
-        side_effect=discord.Forbidden(MagicMock(status=403), "Missing Permissions")
-    )
-    guild = _guild({NEW: new_member})
-
-    problems = await PlacementService(db_path).move_driver_roles(guild, pid, OLD, NEW)
-
-    assert len(problems) == 1 and "could not be given" in problems[0]
+    assert set(league.granted[_NEW]) == {DRIVER_ROLE, PRO_ROLE, FERRARI_ROLE}
+    assert LEWIS not in league.revoked
+    assert "⚠️" not in last_said(asked)

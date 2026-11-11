@@ -32,7 +32,7 @@ from leaguebot.image.services.image_preview_service import (
     resolve_context,
 )
 from leaguebot.image.services.image_validity_service import ImageValidityService
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 
 SERVER_ID = 9494
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
@@ -171,8 +171,7 @@ async def league(db_path):
                 )
                 await db.execute(
                     "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
-                    "division_id, current_position, current_points, points_gap_to_first, "
-                    "team_seat_id) VALUES (?, ?, ?, 0, 0, 0, ?)",
+                    "division_id, team_seat_id) VALUES (?, ?, ?, ?)",
                     (profile_id, season_id, division_id, seat_id),
                 )
                 user_id += 1

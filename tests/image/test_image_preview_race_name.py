@@ -38,7 +38,7 @@ _REGISTRY = {
 @pytest.fixture(autouse=True)
 def _registry(monkeypatch):
     """The track registry the postings read, stubbed at its one source."""
-    from leaguebot.core.services import calendar_post_service
+    from leaguebot.core.services.rounds import calendar_post_service
 
     async def _tracks_by_name(_db_path):
         return dict(_REGISTRY)

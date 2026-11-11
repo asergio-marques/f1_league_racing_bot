@@ -26,23 +26,20 @@ removed explicitly; the comments in the method say so, and this file holds them.
 leaves rows pointing at a division that no longer exists, which surfaces much later as a lineup
 drawing a team nobody can find. `test_deleting_a_division_leaves_nothing_behind` sweeps all of
 them in one assertion so a newly added child table shows up as a failure here.
-
-**The three results channel setters share one row and must not blank each other.** They are
-separate `ON CONFLICT` upserts naming one column each, which is the shape where a copy-paste
-error silently clears the neighbouring channel.
 """
 from __future__ import annotations
 
 import os
+from datetime import date
 
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStatus
-from leaguebot.core.services.season_service import SeasonImmutableError, SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonImmutableError, SeasonService
+from tests.support.delete_hooks import DIVISION_HOOKS, delete_hooks
 
 SERVER_ID = 9808
-
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -94,7 +91,7 @@ async def _seed_full_division(
     """A division with a round, a team and an empty seat hanging off it.
 
     *seated_driver* additionally places a driver in the seat and records the season
-    assignment. It defaults to **off** because `delete_division` does not delete a division
+    assignment. It defaults to **off** because `delete_division_on` does not delete a division
     in that state, by decision — see
     `test_a_division_with_a_driver_placed_in_it_is_not_deleted`.
     """
@@ -102,7 +99,7 @@ async def _seed_full_division(
     async with get_connection(db_path) as db:
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
-            "scheduled_at) VALUES (?, ?, 1, 'NORMAL', 'Silverstone Circuit', '2026-06-01')",
+            "scheduled_at) VALUES (?, ?, 1, 'NORMAL', 'Silverstone Circuit', '2026-06-01T00:00:00+00:00')",
             (division_id * 10, division_id),
         )
         await db.execute(
@@ -127,6 +124,16 @@ async def _seed_full_division(
                 "VALUES (?, ?, ?, ?)",
                 (division_id, season_id, division_id, division_id * 10),
             )
+        await db.commit()
+
+
+async def _delete_division(db_path: str, division_id: int) -> None:
+    """Delete *division_id* as `/division delete`'s save deletes it: on one connection, with the
+    builder's delete hooks, committed once it is done and rolled back where it raises."""
+    async with get_connection(db_path) as db:
+        await SeasonService.delete_division_on(
+            db, division_id, **delete_hooks(*DIVISION_HOOKS)
+        )
         await db.commit()
 
 
@@ -180,12 +187,20 @@ async def test_a_league_between_seasons_has_no_active_season(tmp_path):
 
 
 async def test_the_setup_season_is_the_one_being_built(tmp_path):
+    """Season 3, F1 25, is being set up behind two archived seasons. The read every setup command
+    makes of it (#283: the setup is read from the database, never held in memory) gives that
+    season, with its number, game edition and start date."""
     db_path = await _history_plus_live(tmp_path, "SETUP")
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE seasons SET game_edition = 25 WHERE id = 3")
+        await db.commit()
 
     season = await SeasonService(db_path).get_setup_season()
 
     assert season is not None
-    assert season.id == 3
+    assert (season.id, season.season_number, season.game_edition, season.start_date) == (
+        3, 3, 25, date(2026, 1, 1)
+    )
 
 
 async def test_a_league_mid_season_has_no_setup_season(tmp_path):
@@ -268,7 +283,7 @@ async def test_completed_seasons_are_counted(tmp_path):
 
 async def test_a_season_is_completed_in_place(tmp_path):
     """Archived, not removed — the championship's record."""
-    from leaguebot.core.services.season_service import complete_season_on
+    from leaguebot.core.services.seasons.season_service import complete_season_on
 
     db_path = await _make_db(tmp_path)
     await _seed_season(db_path, 1, "ACTIVE")
@@ -331,40 +346,23 @@ async def test_divisions_are_returned_in_tier_order(tmp_path):
     assert [d.name for d in divisions] == ["First", "Second"]
 
 
-async def test_a_division_is_renamed(tmp_path):
+async def test_tiers_with_a_gap_are_refused_in_the_member_s_words(tmp_path):
+    """Approving a season checks its divisions' tiers run 1, 2, 3 and so on with none missing,
+    and a gap is a refusal the manager reads. Season 1 is being set up with Division 1 at tier 1
+    and Division 3 at tier 3, and nothing at tier 2. The check refuses it as the member's refusal,
+    `Refused`, naming the tiers held and the one missing."""
+    from leaguebot.core.models.refusal import Refused
+
     db_path = await _make_db(tmp_path)
     await _seed_season(db_path, 1, "SETUP")
-    await _seed_division(db_path, 11, 1)
-    service = SeasonService(db_path)
+    await _seed_division(db_path, 1, 1)
+    await _seed_division(db_path, 3, 1)
 
-    await service.rename_division(11, "Premier")
-
-    assert (await service.get_divisions(1))[0].name == "Premier"
-
-
-async def test_deleting_a_division_leaves_nothing_behind(tmp_path):
-    """Seven tables, three of which have no cascade and are removed by hand. A missed one
-    leaves rows pointing at a division that no longer exists, which surfaces much later as
-    a lineup drawing a team nobody can find.
-
-    **This covers a division whose seats are empty.** A division with a driver placed in it
-    is not deleted at all, by decision; see the test below.
-    """
-    db_path = await _make_db(tmp_path)
-    await _seed_season(db_path, 1, "SETUP")
-    await _seed_full_division(db_path, 11, 1)
-
-    await SeasonService(db_path).delete_division(11)
-
-    assert await _count(db_path, "divisions", "id = ?", (11,)) == 0
-    assert await _count(db_path, "rounds", "division_id = ?", (11,)) == 0
-    assert await _count(db_path, "team_instances", "division_id = ?", (11,)) == 0
-    assert await _count(
-        db_path, "team_seats", "team_instance_id = ?", (110,)
-    ) == 0
-    assert await _count(
-        db_path, "driver_season_assignments", "division_id = ?", (11,)
-    ) == 0
+    with pytest.raises(Refused) as refused:
+        await SeasonService(db_path).validate_division_tiers(1)
+    assert str(refused.value) == (
+        "Division tiers are not sequential. Current tiers: [1, 3]. Missing tier(s): [2]."
+    )
 
 
 async def test_a_division_with_a_driver_placed_in_it_is_not_deleted(tmp_path):
@@ -376,18 +374,33 @@ async def test_a_division_with_a_driver_placed_in_it_is_not_deleted(tmp_path):
     with no delete action, so removing the seats fails while a placement points at one, and
     the whole deletion rolls back. Adding a cascade to that key, or deleting the placements
     first, would quietly reverse the decision, which is why this test pins it.
+
+    The modules have deleted their own rows by then, on the hooks the delete calls first, and
+    those roll back with it: each module deletes on the delete's own connection, inside its save
+    (#283). The division's attendance settings and its round's result stand for them.
     """
     import sqlite3
 
     db_path = await _make_db(tmp_path)
     await _seed_season(db_path, 1, "SETUP")
     await _seed_full_division(db_path, 11, 1, seated_driver=True)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, rsvp_channel_id) VALUES (11, '71')"
+        )
+        await db.execute(
+            "INSERT INTO session_results (round_id, division_id, session_type, status) "
+            "VALUES (110, 11, 'FULL_RACE', 'ACTIVE')"
+        )
+        await db.commit()
 
     with pytest.raises(sqlite3.IntegrityError):
-        await SeasonService(db_path).delete_division(11)
+        await _delete_division(db_path, 11)
 
     assert await _count(db_path, "divisions", "id = ?", (11,)) == 1
     assert await _count(db_path, "driver_season_assignments", "division_id = ?", (11,)) == 1
+    assert await _count(db_path, "attendance_division_config", "division_id = ?", (11,)) == 1
+    assert await _count(db_path, "session_results", "round_id = ?", (110,)) == 1
 
 
 async def test_deleting_one_division_leaves_its_neighbours_alone(tmp_path):
@@ -398,7 +411,7 @@ async def test_deleting_one_division_leaves_its_neighbours_alone(tmp_path):
     await _seed_full_division(db_path, 11, 1)
     await _seed_full_division(db_path, 12, 1)
 
-    await SeasonService(db_path).delete_division(11)
+    await _delete_division(db_path, 11)
 
     assert await _count(db_path, "divisions", "id = ?", (12,)) == 1
     assert await _count(db_path, "rounds", "division_id = ?", (12,)) == 1
@@ -412,118 +425,6 @@ async def test_deleting_a_division_with_no_rounds_is_not_an_error(tmp_path):
     await _seed_season(db_path, 1, "SETUP")
     await _seed_division(db_path, 11, 1)
 
-    await SeasonService(db_path).delete_division(11)
+    await _delete_division(db_path, 11)
 
     assert await _count(db_path, "divisions", "id = ?", (11,)) == 0
-
-
-# ---------------------------------------------------------------------------
-# The channel setters
-# ---------------------------------------------------------------------------
-
-
-async def test_the_forecast_channel_is_set_and_reports_what_it_replaced(tmp_path):
-    """The previous value is what the audit entry records, so a manager can get back to
-    the channel they replaced."""
-    db_path = await _make_db(tmp_path)
-    await _seed_season(db_path, 1, "SETUP")
-    await _seed_division(db_path, 11, 1)
-    service = SeasonService(db_path)
-
-    assert await service.set_division_forecast_channel(11, 700001) is None
-    assert await service.set_division_forecast_channel(11, 700002) == 700001
-    assert (await service.get_divisions(1))[0].forecast_channel_id == 700002
-
-
-CHANNEL_SETTERS = [
-    ("set_division_results_channel", "results_channel_id"),
-    ("set_division_standings_channel", "standings_channel_id"),
-    ("set_division_penalty_channel", "penalty_channel_id"),
-]
-
-
-#: `penalty_channel_id` is a TEXT column while the other two are INTEGER, so the value
-#: comes back as a string. Compared as text throughout rather than papered over with a cast:
-#: the divergence is real and a test that hid it would hide the next one too.
-def _as_text(value) -> str | None:
-    return None if value is None else str(value)
-
-
-@pytest.mark.parametrize("setter,column", CHANNEL_SETTERS)
-async def test_each_results_channel_setter_writes_its_own_column(tmp_path, setter, column):
-    db_path = await _make_db(tmp_path)
-    await _seed_season(db_path, 1, "SETUP")
-    await _seed_division(db_path, 11, 1)
-    service = SeasonService(db_path)
-
-    await getattr(service, setter)(11, 700001)
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            f"SELECT {column} FROM division_results_config WHERE division_id = 11"  # noqa: S608
-        )
-        assert _as_text((await cursor.fetchone())[column]) == "700001"
-
-
-async def test_the_three_results_channels_share_a_row_without_blanking_each_other(tmp_path):
-    """Three separate upserts naming one column each — the shape where a copy-paste error
-    silently clears the neighbouring channel."""
-    db_path = await _make_db(tmp_path)
-    await _seed_season(db_path, 1, "SETUP")
-    await _seed_division(db_path, 11, 1)
-    service = SeasonService(db_path)
-
-    await service.set_division_results_channel(11, 700001)
-    await service.set_division_standings_channel(11, 700002)
-    await service.set_division_penalty_channel(11, 700003)
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT results_channel_id, standings_channel_id, penalty_channel_id "
-            "FROM division_results_config WHERE division_id = 11"
-        )
-        row = await cursor.fetchone()
-    assert row["results_channel_id"] == 700001
-    assert row["standings_channel_id"] == 700002
-    assert _as_text(row["penalty_channel_id"]) == "700003"
-
-
-@pytest.mark.parametrize("setter,column", CHANNEL_SETTERS)
-async def test_a_results_channel_setter_reports_what_it_replaced(tmp_path, setter, column):
-    db_path = await _make_db(tmp_path)
-    await _seed_season(db_path, 1, "SETUP")
-    await _seed_division(db_path, 11, 1)
-    service = SeasonService(db_path)
-
-    assert await getattr(service, setter)(11, 700001) is None
-    assert _as_text(await getattr(service, setter)(11, 700002)) == "700001"
-
-
-@pytest.mark.parametrize("setter,column", CHANNEL_SETTERS)
-async def test_a_results_channel_can_be_cleared(tmp_path, setter, column):
-    """A league that stops posting one of the three has no other way to unset it."""
-    db_path = await _make_db(tmp_path)
-    await _seed_season(db_path, 1, "SETUP")
-    await _seed_division(db_path, 11, 1)
-    service = SeasonService(db_path)
-    await getattr(service, setter)(11, 700001)
-
-    await getattr(service, setter)(11, None)
-
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            f"SELECT {column} FROM division_results_config WHERE division_id = 11"  # noqa: S608
-        )
-        assert (await cursor.fetchone())[column] is None
-
-
-async def test_setting_a_channel_twice_does_not_make_a_second_row(tmp_path):
-    db_path = await _make_db(tmp_path)
-    await _seed_season(db_path, 1, "SETUP")
-    await _seed_division(db_path, 11, 1)
-    service = SeasonService(db_path)
-
-    await service.set_division_results_channel(11, 700001)
-    await service.set_division_results_channel(11, 700002)
-
-    assert await _count(db_path, "division_results_config", "division_id = ?", (11,)) == 1

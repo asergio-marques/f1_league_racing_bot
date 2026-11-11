@@ -3,7 +3,7 @@
 ✅ Approve on `/season placements-review` runs its gates and, under test mode, the backup
 question at the press, then asks the change queue for the season's approval. It is checked when
 pressed and again when it runs; the sessions, the placements, the points and the season's state are
-saved in one save; letting go of the setup held in memory, the arming of the timed work, each
+saved in one save; the arming of the timed work, each
 driver's roles, the batch notice and each division's lineup, calendar, opening standings and
 opening sheet follow as jobs, each of which stops the queue when it fails. While an approval is in
 hand, a second is refused without naming its job. Where the outcome can no longer reach the member,
@@ -18,7 +18,7 @@ import json
 import logging
 import re
 from contextlib import ExitStack
-from datetime import timedelta
+from datetime import timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -26,13 +26,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
-from leaguebot.core.services.module_service import ModuleService
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.modules.module_service import ModuleService
+from leaguebot.core.services.seasons.season_service import SeasonService
+from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
 from tests.support.change_queue import (
     change_rows,
     discard_job,
     http_error,
-    in_a_job,
     member_interaction,
     retry_job,
     run_queue,
@@ -65,6 +65,7 @@ from tests.support.season_league import (
 )
 from tests.support.mentions import NOBODY, notified
 from tests.support.undecorate import undecorate
+
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 APPROVED = "✅ **Season approved and activated!**\nSeason #3 (ID: 7)"
@@ -139,7 +140,7 @@ def _refuse_starting(league: Any, cid: int, start: str) -> None:
 
 def _everywhere(name: str, new: Any) -> ExitStack:
     """Patch season_service's *name* with *new*, and the change type's own reference to it."""
-    from leaguebot.core.services import season_approval_change, season_service
+    from leaguebot.core.services.seasons import season_approval_change, season_service
 
     stack = ExitStack()
     for module in (season_service, season_approval_change):
@@ -379,8 +380,10 @@ async def test_a_second_approval_from_another_review_is_refused_at_once_without_
 async def test_the_opening_standings_are_posted_in_each_division_s_standings_channel(
     tmp_path, monkeypatch,
 ):
-    """Results on, Pro's standings channel 602 and Am's 702 set in `division_results_config`:
-    each is sent the opening classification, the drivers' and the teams' championships."""
+    """Results on and attendance off, Pro's standings channel 602 and Am's 702 set in
+    `division_results_config`: each is sent the opening classification, the drivers' and the
+    teams' championships. Pro's and Am's attendance channels, set too, are sent no opening
+    sheet while attendance is off."""
     league = await _league_for(tmp_path, monkeypatch, results=True)
     await _pressed(league)
 
@@ -388,6 +391,8 @@ async def test_the_opening_standings_are_posted_in_each_division_s_standings_cha
 
     assert league.texts(PRO_CH.standings)
     assert league.texts(AM_CH.standings)
+    assert league.texts(PRO_CH.attendance) == []
+    assert league.texts(AM_CH.attendance) == []
     assert await _stopped_at(league) is None
 
 
@@ -413,18 +418,49 @@ async def test_a_role_discord_refuses_stops_the_queue_and_once_discarded_is_name
 # ── The checks ──────────────────────────────────────────────────────────────────────
 
 
+async def test_the_approval_s_check_takes_the_fingerprint_with_the_image_module_s_drawing(
+    tmp_path, monkeypatch,
+):
+    """Season 3 is in placements and its review stands. The admin presses Approve and the queue
+    runs. Each time the approval's check compares the season with the review, it takes the
+    season's fingerprint of season 3 with the bot's image drawing, its module service and the
+    hook each module hands its own areas through, which the builder hands the approval, so the
+    artwork on disk is judged as the image module signs it, which modules are on as each module's
+    switch says, and each module's configuration as that module hands it."""
+    from leaguebot.core.services.seasons import season_approval_change
+    from tests.support.season_league import fingerprints_taken
+
+    league = await _league_for(tmp_path, monkeypatch)
+    taken = fingerprints_taken(monkeypatch, season_approval_change)
+
+    await _pressed(league)
+    await run_queue(league.bot)
+
+    assert taken, "the approval's check took no fingerprint"
+    for each in taken:
+        assert each.get("drawing") is league.bot.image_drawing, each
+        assert each.get("module_service") is league.bot.module_service, each
+        assert each.get("fingerprint_areas_read") is league.bot.fingerprint_areas_read, each
+        assert SEASON_ID in (*each["args"], each.get("season_id")), each
+
+
 async def test_the_press_runs_every_gate_before_asking_and_asks_nothing_when_one_refuses(
     tmp_path, monkeypatch,
 ):
+    from leaguebot.core.services.seasons import approval_checks
+
     league = await _league_for(tmp_path, monkeypatch)
-    league.cog._team_name_problems = AsyncMock(return_value=["**Pro** — Ferrari has no driver"])
+    monkeypatch.setattr(
+        approval_checks, "team_name_problems",
+        AsyncMock(return_value=["**Pro** — Ferrari has no driver"]),
+    )
 
     refused = await _pressed(league)
 
     assert "Ferrari has no driver" in reply(refused)
     assert await change_rows(league.db_path) == []
 
-    league.cog._team_name_problems = AsyncMock(return_value=[])
+    monkeypatch.setattr(approval_checks, "team_name_problems", AsyncMock(return_value=[]))
     await _pressed(league)
 
     assert (await _approval(league))["state"] == "QUEUED"
@@ -455,8 +491,8 @@ async def test_a_refusal_found_when_the_approval_runs_updates_the_reply_and_the_
     assert await _committed(league) == 0
     assert league.armed == []
     assert await _stopped_at(league) is None
-    from leaguebot.core.services.season_approval_change import TELL_KIND
-    from leaguebot.core.services.season_review_changes import TAKE_DOWN
+    from leaguebot.core.services.seasons.season_approval_change import TELL_KIND
+    from leaguebot.core.services.seasons.season_review_changes import TAKE_DOWN
 
     # Past the 14 minutes, the approval asks the change that tells the review's channel (2.1b).
     told = [TELL_KIND] if change == "a date passed" else []
@@ -471,7 +507,7 @@ async def test_the_save_refuses_writing_nothing_where_the_season_left_placements
 ):
     """The season leaves Placements between the check and the save: the last thing the check
     reads, the channels, moves it as it is read."""
-    from leaguebot.core.services import approval_checks, season_approval_change
+    from leaguebot.core.services.seasons import approval_checks, season_approval_change
 
     league = await _league_for(tmp_path, monkeypatch)
     press = await _pressed(league)
@@ -495,15 +531,27 @@ async def test_the_save_refuses_writing_nothing_where_the_season_left_placements
     assert _confirmed_lines(league) == []
 
 
+@pytest.mark.parametrize("gate, modules", [
+    pytest.param("team_name_problems", {}, id="team names"),
+    pytest.param("lineup_problems", {}, id="lineup"),
+    pytest.param("image_configuration_faults", {"images": True}, id="image configuration"),
+])
 async def test_the_backup_question_is_put_after_every_gate_and_before_the_approval_is_asked(
-    tmp_path, monkeypatch,
+    tmp_path, monkeypatch, gate, modules,
 ):
-    league = await _league_for(tmp_path, monkeypatch, test_mode=True)
-    league.cog._lineup_problems = AsyncMock(return_value=["**Pro** — Ferrari is short"])
-    await _pressed(league, backup="save")
+    """Earlier, the question saves a season that may prove unapprovable; later, one already
+    committed. Each of the last gates refusing puts no question; none refusing puts it before the
+    approval is asked of the change queue, which makes every write."""
+    from leaguebot.core.services.seasons import approval_checks
+
+    league = await _league_for(tmp_path, monkeypatch, test_mode=True, **modules)
+    monkeypatch.setattr(
+        approval_checks, gate, AsyncMock(return_value=["**Pro** — Ferrari is short"]))
+    refused = await _pressed(league, backup="save")
+    assert "Ferrari is short" in reply(refused)
     assert league.backup_answers == []
 
-    league.cog._lineup_problems = AsyncMock(return_value=[])
+    monkeypatch.setattr(approval_checks, gate, AsyncMock(return_value=[]))
     await _pressed(league, backup="save")
 
     assert league.backup_answers == [("save", 0)]
@@ -576,12 +624,11 @@ async def test_the_save_reads_nothing_but_its_own_connection(tmp_path, monkeypat
     for cls, names in (
         (ModuleService, ("is_weather_enabled", "is_results_enabled", "is_attendance_enabled",
                          "is_images_enabled", "is_signup_enabled")),
-        (SeasonService, ("get_divisions", "get_division_rounds", "get_stage",
-                         "get_divisions_with_results_config")),
+        (SeasonService, ("get_divisions", "get_division_rounds", "get_stage")),
     ):
         for name in names:
             monkeypatch.setattr(cls, name, _guarded(getattr(cls, name)))
-    from leaguebot.core.services import season_service
+    from leaguebot.core.services.seasons import season_service
 
     real_sessions = season_service.create_sessions_for_round_on
 
@@ -603,7 +650,7 @@ async def test_each_round_gets_its_sessions_once_however_often_the_save_is_tried
 ):
     league = await _league_for(tmp_path, monkeypatch)
     await _pressed(league)
-    from leaguebot.core.services import season_service
+    from leaguebot.core.services.seasons import season_service
 
     real = season_service.commit_placements_on
     tries = {"n": 0}
@@ -627,6 +674,9 @@ async def test_each_round_gets_its_sessions_once_however_often_the_save_is_tried
 async def test_the_points_configurations_are_copied_onto_the_season_only_with_results_on(
     tmp_path, monkeypatch, results,
 ):
+    """Results on or off, Pro's and Am's standings channels set either way. Once the approval
+    has run, the season carries the points configurations only where results is on, and with
+    results off neither division's standings channel has been sent any opening standings."""
     league = await _league_for(tmp_path, monkeypatch, results=results)
     await _pressed(league)
 
@@ -639,6 +689,9 @@ async def test_the_points_configurations_are_copied_onto_the_season_only_with_re
     expected = [{"config_name": "Standard", "position": 1, "points": 25},
                 {"config_name": "Standard", "position": 2, "points": 18}]
     assert copied == (expected if results else [])
+    if not results:
+        assert league.texts(PRO_CH.standings) == []
+        assert league.texts(AM_CH.standings) == []
     assert (await _approval(league))["state"] == "DONE"
 
 
@@ -663,22 +716,35 @@ async def test_the_approval_is_audited_with_the_season_and_the_placements_commit
 async def test_each_driver_s_roles_division_s_lineup_calendar_and_opening_posts_are_jobs_of_their_own(
     tmp_path, monkeypatch,
 ):
+    """Results and attendance on, Pro (tier 1) and Am (tier 2), Lewis and Max seated in Pro and
+    Charles in Am. Once the approval has run, its jobs are, in order: the save, the arming, each
+    driver's roles, the batch notice, then for Pro and then for Am its lineup, its calendar, its
+    opening standings and its opening sheet, then the notice's deletion, the review's channel told
+    and the closing line. The modules' jobs are planned through the placements confirmed hook,
+    called inside the save, on its connection, once for each division in tier order and handed the
+    division's id and name; a further subscriber signed up to it sees the season already Ongoing on
+    that connection, before it is committed."""
     league = await _league_for(tmp_path, monkeypatch, results=True, attendance=True)
+    handed: list[tuple[Any, ...]] = []
+
+    async def watching(db: Any, division_id: int, division_name: str) -> tuple[()]:
+        cursor = await db.execute("SELECT stage FROM seasons WHERE id = ?", (SEASON_ID,))
+        stage = (await cursor.fetchone())["stage"]
+        handed.append((db.in_transaction, stage, division_id, division_name))
+        return ()
+
+    league.bot.placements_confirmed.subscribe(watching)
     await _pressed(league)
 
     await run_queue(league.bot)
 
     names = [job["name"] for job in await _jobs(league)]
-    assert names[:3] == ["apply", "forget_setup", "arm"]
-    assert names[-2:] == ["tell_review_channel", "close"]
-    assert sorted(names[3:-2]) == sorted(
-        ["grant_roles"] * 3 + ["post_batch_notice", "delete_batch_notice"]
+    assert names == (
+        ["apply", "arm"] + ["grant_roles"] * 3 + ["post_batch_notice"]
         + ["refresh_lineup", "post_calendar", "opening_standings", "opening_sheet"] * 2
+        + ["delete_batch_notice", "tell_review_channel", "close"]
     )
-    assert names.index("post_batch_notice") > max(
-        i for i, name in enumerate(names) if name == "grant_roles"
-    )
-    assert names.index("delete_batch_notice") == len(names) - 3
+    assert handed == [(True, "ONGOING", PRO, "Pro"), (True, "ONGOING", AM, "Am")]
     assert list(league.granted) == [LEWIS, MAX, CHARLES]
     sends = [cid for kind, cid, _mid in league.events if kind == "send"]
     for pro, am in ((PRO_CH.lineup, AM_CH.lineup), (PRO_CH.calendar, AM_CH.calendar),
@@ -763,13 +829,16 @@ async def test_a_seat_with_no_team_role_grants_the_division_role_alone(tmp_path,
 )
 async def test_the_timed_work_is_armed_by_the_module_rules(tmp_path, monkeypatch, modules, armed):
     """Each round's result submission is armed whatever the modules, save under test mode with
-    results on, where `/test-mode advance` opens it by hand (owner, "Fold them in")."""
+    results on, where `/test-mode advance` opens it by hand (owner, "Fold them in"). A check-in
+    is armed against the queue's clock, never the wall clock."""
     league = await _league_for(tmp_path, monkeypatch, **modules)
     await _pressed(league)
 
     await run_queue(league.bot)
 
     assert _armed(league) == {which: sorted(_all_rounds()) for which in armed}
+    check_in = league.bot.scheduler_service.schedule_attendance_round
+    assert {call.kwargs["now"] for call in check_in.call_args_list} <= {league.clock.now}
     assert (await _approval(league))["state"] == "DONE"
 
 
@@ -869,52 +938,35 @@ async def test_the_season_s_arming_cannot_be_discarded_and_once_retried_arms_eve
     assert "timed work was not armed" not in reply(press)
 
 
-#: The refusal of a Discard on letting go of the setup held in memory.
-CANNOT_DISCARD_FORGET = (
-    "⛔ This job can't be discarded: without it the bot would go on holding season 3's setup, and "
-    "`/round amend` would refuse its rounds until the bot restarts. Fix what stopped it and press "
-    "**Retry**."
-)
-
-
-async def test_letting_go_of_the_setup_cannot_be_discarded(tmp_path, monkeypatch):
-    """Letting go of the setup the bot holds in memory fails once season 3 is saved and stops the
-    queue. A league admin's Discard on it is refused, saying the bot would go on holding season
-    3's setup and `/round amend` would refuse its rounds until it restarts; the queue stays
-    stopped there. Once the fault is lifted, Retry lets the setup go and the approval goes on."""
+async def test_a_stored_job_letting_go_of_the_setup_stops_the_queue_until_discarded(
+    tmp_path, monkeypatch,
+):
+    """Season 3's approval was stored by a bot from before the setup was read from the database:
+    its save has run, and its next job is the `forget_setup` the bot no longer defines. The queue
+    stops at that job; a league admin's Discard drops it, and the approval goes on: the season's
+    timed work is armed, nothing is left stopped, and the manager is told the season is
+    approved."""
     league = await _league_for(tmp_path, monkeypatch, results=True)
     press = await _pressed(league)
-    await _fail_forget(league)
+    await _run_through(league, "apply")
+    change_id = (await _approval(league))["id"]
+    [apply_at] = [job["position"] for job in await _jobs(league) if job["name"] == "apply"]
+    await league.write("UPDATE queued_change_steps SET position = -position - 1 "
+                       "WHERE change_id = ? AND position > ?", change_id, apply_at)
+    await league.write("UPDATE queued_change_steps SET position = -position "
+                       "WHERE change_id = ? AND position < 0", change_id)
+    await league.write("INSERT INTO queued_change_steps (change_id, position, name) "
+                       "VALUES (?, ?, 'forget_setup')", change_id, apply_at + 1)
+
     await run_queue(league.bot)
     assert await _stopped_at(league) == "forget_setup"
 
-    discarding = await discard_job(league.bot)
+    await discard_job(league.bot)
+    await run_queue(league.bot)
 
-    assert CANNOT_DISCARD_FORGET in _said_to(discarding)
-    assert await _stopped_at(league) == "forget_setup"
-    assert league.cog._get_pending() is not None
-
-    del league.cog.clear_pending
-    await retry_job(league.bot)
-
-    assert league.cog._get_pending() is None
     assert await stopped_job(league.db_path) is None
+    assert any(job["name"] == "arm" and job["done_at"] for job in await _jobs(league))
     assert APPROVED in reply(press)
-    assert "could not be let go of" not in reply(press)
-
-
-async def test_the_setup_held_in_memory_is_let_go_of_once_the_season_is_saved(
-    tmp_path, monkeypatch,
-):
-    league = await _league_for(tmp_path, monkeypatch)
-    await _pressed(league)
-    assert league.cog._get_pending() is not None
-
-    await _run_through(league, "apply")
-    assert league.cog._get_pending() is not None
-    await _run_through(league, "forget_setup")
-
-    assert league.cog._get_pending() is None
 
 
 async def test_a_round_amended_while_the_posts_wait_is_amended_on_the_ongoing_season(
@@ -922,7 +974,7 @@ async def test_a_round_amended_while_the_posts_wait_is_amended_on_the_ongoing_se
 ):
     """Stopped at Pro's lineup, `/round amend` moving Pro's round 1 a week later is offered as
     an amendment of the running season (decided 2026-09-22)."""
-    from leaguebot.core.cogs.season_cog import SeasonCog, _ConfirmView
+    from leaguebot.core.cogs.round_cog import RoundCog, _ConfirmView
 
     league = await _league_for(tmp_path, monkeypatch)
     _refused(league, PRO_CH.lineup)
@@ -933,8 +985,8 @@ async def test_a_round_amended_while_the_posts_wait_is_amended_on_the_ongoing_se
     amend = member_interaction(league.bot, user=tier_member("admin", member_id=ADMIN_ID))
     amend.guild = league.guild
     later = league.clock.now + timedelta(days=37)
-    await undecorate(SeasonCog.round_amend)(
-        league.cog, amend, division_name="Pro", round_number=1,
+    await undecorate(RoundCog.round_amend)(
+        league.round_cog, amend, division_name="Pro", round_number=1,
         scheduled_at=later.strftime("%Y-%m-%dT%H:%M:%S"),
     )
 
@@ -950,20 +1002,9 @@ async def test_the_calendar_is_posted_with_the_season_number_and_its_rounds_as_t
 ):
     """Images on with the calendar aspect: the drawing is handed season 3, and the rounds read
     when the calendar job runs, Pro's round 2 moved to Monza after the save."""
-    from leaguebot.core.services import calendar_post_service
-
     league = await _league_for(tmp_path, monkeypatch, images=True)
-    league.bot.image_config_service.is_aspect_enabled = AsyncMock(
-        side_effect=lambda aspect: aspect == "calendar"
-    )
-    drawn: list[dict[str, Any]] = []
+    drawn = draw_calendars_with(league.bot, monkeypatch, CalendarDrawingStub()).asked
 
-    async def _draw(_bot: Any, division: Any, rounds: Any, _tracks: Any, **kwargs: Any) -> Any:
-        drawn.append({"division": division.name, "tracks": [r.track_name for r in rounds],
-                      **kwargs})
-        return SimpleNamespace(problem=None, notices=[], png_paths=[])
-
-    monkeypatch.setattr(calendar_post_service, "render_calendar_image", _draw)
     await _pressed(league)
     await _run_through(league, "apply")
     await _edit_round(league)
@@ -979,25 +1020,12 @@ async def test_the_calendar_is_posted_with_the_season_number_and_its_rounds_as_t
 async def test_a_season_numbered_zero_is_drawn_as_zero_and_logged(tmp_path, monkeypatch, caplog):
     """A season number of 0 is a malformed row, `seasons.season_number` counting from one. The
     calendar is drawn with 0, never hidden, and the bot logs that it will draw "SEASON 0" (#213).
-    The number is 0 both in the setup the press reads and in the database, so the test holds
-    wherever the approval takes it from; it passes today and guards the rule through the build.
+    The number is 0 in the database, where the approval reads the setup from.
     It replaces the deleted
     `test_do_approve_posting.py::test_a_season_with_no_number_still_draws_and_is_logged`."""
-    from leaguebot.core.services import calendar_post_service
-
     league = await _league_for(tmp_path, monkeypatch, images=True)
-    league.bot.image_config_service.is_aspect_enabled = AsyncMock(
-        side_effect=lambda aspect: aspect == "calendar"
-    )
-    drawn: list[dict[str, Any]] = []
-
-    async def _draw(_bot: Any, division: Any, rounds: Any, _tracks: Any, **kwargs: Any) -> Any:
-        drawn.append({"division": division.name, **kwargs})
-        return SimpleNamespace(problem=None, notices=[], png_paths=[])
-
-    monkeypatch.setattr(calendar_post_service, "render_calendar_image", _draw)
+    drawn = draw_calendars_with(league.bot, monkeypatch, CalendarDrawingStub()).asked
     await league.write("UPDATE seasons SET season_number = 0 WHERE id = ?", SEASON_ID)
-    league.cog._pending[ADMIN_ID].season_number = 0
 
     with caplog.at_level(logging.WARNING):
         await _pressed(league)
@@ -1008,73 +1036,88 @@ async def test_a_season_numbered_zero_is_drawn_as_zero_and_logged(tmp_path, monk
     assert "SEASON 0" in caplog.text
 
 
-async def test_a_calendar_that_falls_back_to_text_is_reported_in_the_reply_and_the_log(
+async def test_the_approval_s_reply_names_a_calendar_s_notices_and_not_its_fallback(
     tmp_path, monkeypatch,
 ):
-    from leaguebot.core.services import calendar_post_service
-
+    """Season 3 approved with its calendars drawn as pictures: Pro's drawing fails, and Am's draws
+    with a notice. The reply ends in a "Calendar images" section naming Am's notice alone, and not
+    Pro's fallback, which is its job's own line (Constitution XIV.4). No line of the approval's
+    own in the log channel names the notice or the fallback: the drawing reports its notices
+    itself (`tests/image/test_image_drawing_calendar.py`), and the job its fallback."""
     league = await _league_for(tmp_path, monkeypatch, images=True)
-    league.bot.image_config_service.is_aspect_enabled = AsyncMock(
-        side_effect=lambda aspect: aspect == "calendar"
-    )
-    monkeypatch.setattr(
-        calendar_post_service, "render_calendar_image",
-        AsyncMock(side_effect=RuntimeError("the template has no rows")),
-    )
+    notice = "a fallback flag stood in for Monaco's"
+
+    class _ProFails(CalendarDrawingStub):
+        """Pro's drawing raises; Am's draws with the notice."""
+
+        async def draw_calendar(self, division: Any, *args: Any, **kwargs: Any) -> Any:
+            self.fault = RuntimeError("the template has no rows") if division.name == "Pro" else None
+            return await super().draw_calendar(division, *args, **kwargs)
+
+    draw_calendars_with(league.bot, monkeypatch, _ProFails(notices=(notice,)))
     press = await _pressed(league)
 
     await run_queue(league.bot)
 
-    assert "⚠️ **Calendar images**" in reply(press)
-    assert "the template has no rows" in reply(press)
-    calendar_lines = [line for line in _log_lines(league)
-                      if "| /season placements-review | Calendar image generation" in line]
-    assert len(calendar_lines) == 1
-    assert "Fell back to the textual calendar" in calendar_lines[0]
-    assert "Pro: the template has no rows" in calendar_lines[0]
+    assert reply(press).endswith(f"\n\n⚠️ **Calendar images**\n  • Am: {notice}"), reply(press)
+    assert "the template has no rows" not in reply(press)
+    assert not [line for line in _log_lines(league)
+                if "| /season placements-review |" in line
+                and (notice in line or "the template has no rows" in line)]
 
 
 #: Each post retried: its job, its channel, the modules it needs, and where it reaches for its
 #: picture, stubbed to stand aside so that the text follows on every host, whether or not it
-#: carries the rasteriser: the module, the function, and what the stub returns.
+#: carries the rasteriser: the module (for the lineup and the calendar, the drawing the builder
+#: handed the league's bot, read from the league), the function, what the stub returns, and the
+#: gates on the same target answered as given, so that the first try reaches for the picture.
 _RETRIED_POSTS = {
     "the lineup": (
         "refresh_lineup", lambda chans: chans.lineup, {},
-        ("leaguebot.image.services.image_lineup_post", "try_post",
-         MagicMock(applicable=False)),
+        (lambda league: league.bot.image_drawing, "draw_lineup",
+         SimpleNamespace(path=None, problem=None, notices=()), {"lineup_wanted": True}),
     ),
     "the calendar": (
         "post_calendar", lambda chans: chans.calendar, {},
-        ("leaguebot.core.services.calendar_post_service", "render_calendar_image",
-         SimpleNamespace(problem=None, notices=[], png_paths=[])),
+        (lambda league: league.bot.image_drawing, "draw_calendar",
+         SimpleNamespace(path=None, problem=None, notices=()), {}),
     ),
     "the opening standings": (
         "opening_standings", lambda chans: chans.standings, {"results": True},
         ("leaguebot.image.services.image_standings_post", "try_post",
-         MagicMock(rejects=False, applicable=False)),
+         MagicMock(rejects=False, applicable=False), {}),
     ),
     "the opening sheet": (
         "opening_sheet", lambda chans: chans.attendance, {"attendance": True},
-        ("leaguebot.image.services.image_attendance_post", "attendance_enabled", False),
+        ("leaguebot.image.services.image_attendance_post", "attendance_enabled", False, {}),
     ),
 }
 
 
-@pytest.mark.parametrize("post", sorted(_RETRIED_POSTS))
+@pytest.mark.parametrize("post", [
+    pytest.param("the calendar"),
+    pytest.param("the lineup"),
+    pytest.param("the opening sheet"),
+    pytest.param("the opening standings"),
+])
 async def test_a_retried_post_is_posted_as_text(tmp_path, monkeypatch, post):
     """Images on, every aspect on: Pro's channel refuses the first send. The first try reaches
     for the picture, Pro's retry does not and posts the text, and Am's post, a first try of its
     own, reaches for it again."""
     import importlib
 
-    job, which, modules, (module, name, returned) = _RETRIED_POSTS[post]
+    job, which, modules, (module, name, returned, gates) = _RETRIED_POSTS[post]
     league = await _league_for(tmp_path, monkeypatch, images=True, **modules)
     league.bot.image_config_service.is_aspect_enabled = AsyncMock(return_value=True)
     cid = which(PRO_CH)
     league.channel(cid).send_fails = http_error(status=503, text="Service Unavailable")
     await _pressed(league)
     draw = AsyncMock(return_value=returned)
-    monkeypatch.setattr(importlib.import_module(module), name, draw)
+    target = importlib.import_module(module) if isinstance(module, str) else module(league)
+    # The drawing gains the lineup with the build, so its part is set where it is not there yet.
+    monkeypatch.setattr(target, name, draw, raising=isinstance(module, str))
+    for gate, answer in gates.items():
+        monkeypatch.setattr(target, gate, AsyncMock(return_value=answer), raising=False)
 
     await run_queue(league.bot)
     assert await _stopped_at(league) == job
@@ -1227,13 +1270,21 @@ async def test_a_discarded_part_posted_opening_standings_names_the_table_left_st
 
     assert sorted(league.channel(PRO_CH.standings).messages) == standing
     assert APPROVED in reply(press)
-    assert any(_names_for_deletion_by_hand(bullet, PRO_CH.standings, standing)
-               for bullet in _not_done(reply(press))), reply(press)
+    # The standings not posted and the table left standing are two lines of their own, in the
+    # reply's bullets and in the log line's "not done:" entries alike: never run together.
+    not_posted = _DISCARDED["opening_standings"][1]
     confirmed = _confirmed_lines(league)
     assert len(confirmed) == 1
-    not_done = confirmed[0].split("\n  not done: ")[1:]
-    assert any(_names_for_deletion_by_hand(line, PRO_CH.standings, standing)
-               for line in not_done), confirmed[0]
+    for lines, shown in (
+        (_not_done(reply(press)), reply(press)),
+        (confirmed[0].split("\n  not done: ")[1:], confirmed[0]),
+    ):
+        assert not_posted in lines, shown
+        left = [line for line in lines
+                if _names_for_deletion_by_hand(line, PRO_CH.standings, standing)]
+        assert len(left) == 1, shown
+        assert left[0].startswith("**Pro** — a part of its opening standings was posted"), shown
+        assert "could not be posted" not in left[0], shown
 
 
 async def test_a_discard_after_the_kept_table_was_removed_names_nothing_for_deletion_by_hand(
@@ -1334,28 +1385,6 @@ async def test_kept_opening_standings_are_removed_from_the_channel_they_were_pos
     assert _tables(league.channel(moved_to)) == (1, 1)
     assert not [event for event in league.events
                 if event[0] == "delete" and event[1] == moved_to]
-
-
-async def test_a_division_with_no_standings_channel_set_posts_no_opening_standings(
-    tmp_path, monkeypatch,
-):
-    """Am's standings channel never set: its opening standings job posts nothing and raises
-    nothing, while Pro's posts."""
-    from leaguebot.core.services import season_classification_service
-
-    league = await _league_for(tmp_path, monkeypatch, results=True)
-    await league.write(
-        "UPDATE division_results_config SET standings_channel_id = NULL WHERE division_id = ?", AM,
-    )
-
-    for division in (PRO, AM):
-        with in_a_job():
-            await season_classification_service.post_opening_standings(
-                league.bot, league.guild, league.db_path, division, as_text=False,
-            )
-
-    assert league.texts(PRO_CH.standings)
-    assert league.texts(AM_CH.standings) == []
 
 
 async def test_the_opening_sheet_with_no_channel_stops_the_queue(tmp_path, monkeypatch):
@@ -1469,10 +1498,6 @@ async def test_a_discarded_save_approves_nothing_and_says_to_review_again(tmp_pa
     assert league.armed == [] and league.granted == {}
 
 
-async def _fail_forget(league: Any) -> None:
-    league.cog.clear_pending = MagicMock(side_effect=RuntimeError("the cog is reloading"))
-
-
 async def _fail_arm(league: Any) -> None:
     league.arming_fails = RuntimeError("the job store is locked")
 
@@ -1521,10 +1546,22 @@ _DISCARDED = {
 }
 
 
+#: How the stop notice names each module's opening post, as it always has.
+_MODULE_STOP_LINES = {
+    "opening_standings": "posting the opening standings of **Pro**",
+    "opening_sheet": "posting the opening attendance sheet of **Pro**",
+}
+
+
 @pytest.mark.parametrize("job", list(_DISCARDED))
 async def test_each_discarded_post_is_named_under_not_everything_could_be_done(
     tmp_path, monkeypatch, job,
 ):
+    """Results and attendance on: each job after the save is made to fail in Pro, the queue
+    stops at it, and a league admin discards it. The approval still succeeds, and the job is
+    named, word for word, under "Not everything could be done" in the reply and as a "not done"
+    line on the approval's log line. A module's opening post is named in the stop notice as it
+    always has been."""
     fail, line = _DISCARDED[job]
     league = await _league_for(tmp_path, monkeypatch, results=True, attendance=True)
     press = await _pressed(league)
@@ -1532,6 +1569,8 @@ async def test_each_discarded_post_is_named_under_not_everything_could_be_done(
 
     await run_queue(league.bot)
     assert await _stopped_at(league) == job
+    if job in _MODULE_STOP_LINES:
+        assert _MODULE_STOP_LINES[job] in league.log()
     await discard_job(league.bot)
 
     assert APPROVED in reply(press)
@@ -1545,6 +1584,88 @@ async def test_each_discarded_post_is_named_under_not_everything_could_be_done(
     logged = line.replace(f"<@{LEWIS}>", f"`<@{LEWIS}>`")  # the log's mentions are in backticks
     assert len(confirmed) == 1 and f"\n  not done: {logged}" in confirmed[0]
     assert (await _approval(league))["state"] == "DONE"
+
+
+@pytest.mark.parametrize(
+    ("job", "division"),
+    [("opening_standings", "Pro"), ("opening_sheet", "Am")],
+    ids=["results' opening standings", "attendance's opening sheet"],
+)
+async def test_an_opening_post_stops_where_the_league_s_server_is_not_in_the_cache(
+    job: str, division: str, tmp_path: Any
+) -> None:
+    """The opening post's job, as the builder signs its module up (results' standings,
+    attendance's sheet), runs while the league's server is set up but not in the bot's cache. It
+    raises GuildUnavailable, a failure on Discord's side the queue stops on, rather than ending
+    as done with nothing posted."""
+    from leaguebot.__main__ import _sign_up_to_placements_confirmed
+    from leaguebot.core.models.change import GuildUnavailable
+    from leaguebot.core.services.queue.change_types import StepContext
+
+    bot = SimpleNamespace(
+        module_service=MagicMock(spec=ModuleService),
+        config_service=SimpleNamespace(get_league_server_id=AsyncMock(return_value=1)),
+        get_guild=lambda _server_id: None,
+    )
+    _sign_up_to_placements_confirmed(bot)
+    steps = {name: step for defined in bot.placements_confirmed_steps.call()
+             for name, step in defined.items()}
+    ctx = StepContext(
+        bot=bot, db_path=str(tmp_path / "bot.db"), change_id=1, kind="season.approve", payload={},
+        what="approving the season", actor_id=None, actor_name=None, named="Tester",
+        steps=(), step_name=job, step_payload={"division_id": 7, "division_name": division},
+    )
+
+    with pytest.raises(GuildUnavailable):
+        await steps[job].run(ctx)
+
+
+@pytest.mark.parametrize(
+    ("job", "owner", "fail"),
+    [
+        ("opening_standings", "leaguebot.results.services.season_standings_posts",
+         _fail_standings),
+        ("opening_sheet", "leaguebot.attendance.services.sheet_posting", _fail_sheet),
+    ],
+    ids=["results' opening standings", "attendance's opening sheet"],
+)
+async def test_a_discarded_module_job_is_named_in_its_own_step_s_words(
+    tmp_path, monkeypatch, job, owner, fail,
+):
+    """Results and attendance on. The module that owns the job defines its step with words of its
+    own for a discard ("<job> of Pro, in its own words"); Pro's post fails, the queue stops at it,
+    and a league admin discards it. Those words, and no others core keeps, are what the reply's
+    "Not everything could be done" and the approval's log line name."""
+    import dataclasses
+    import importlib
+
+    module = importlib.import_module(owner)
+    defined = module.opening_steps
+
+    def reworded(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        return {
+            name: dataclasses.replace(
+                step,
+                not_done=lambda view: f"{view.name} of {view.payload['division_name']}, in its "
+                "own words",
+            )
+            for name, step in defined(*args, **kwargs).items()
+        }
+
+    monkeypatch.setattr(module, "opening_steps", reworded)
+    league = await _league_for(tmp_path, monkeypatch, results=True, attendance=True)
+    press = await _pressed(league)
+    await fail(league)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == job
+    await discard_job(league.bot)
+
+    line = f"{job} of Pro, in its own words"
+    assert line in _not_done(reply(press))
+    assert _DISCARDED[job][1] not in _not_done(reply(press))
+    confirmed = _confirmed_lines(league)
+    assert len(confirmed) == 1 and f"\n  not done: {line}" in confirmed[0]
 
 
 async def test_no_separate_opening_classification_line_is_written(tmp_path, monkeypatch):
@@ -1614,7 +1735,7 @@ async def test_a_stop_before_the_save_approves_once_on_restart(tmp_path, monkeyp
 def _save_fails_once() -> ExitStack:
     """The save's commitment of the placements raises the first time only, as a passing fault
     of the database would; every later save goes through."""
-    from leaguebot.core.services import season_service
+    from leaguebot.core.services.seasons import season_service
 
     real = season_service.commit_placements_on
     tries = {"n": 0}
@@ -1634,7 +1755,7 @@ async def _window_opening_soon(league: Any) -> None:
     soon = league.clock.now + timedelta(days=5, minutes=5)
     await league.write(
         "UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-        soon.replace(tzinfo=None).isoformat(), round_id(PRO, 1),
+        soon.astimezone(timezone.utc).isoformat(), round_id(PRO, 1),
     )
 
 
@@ -1775,7 +1896,10 @@ def _told(league: Any, text: str) -> int:
     return sum(text in sent for sent in league.texts(REVIEW_CHANNEL))
 
 
-@pytest.mark.parametrize("cut_off", ["fourteen minutes passed", "a restart"])
+@pytest.mark.parametrize("cut_off", [
+    "fourteen minutes passed",
+    "a restart",
+])
 async def test_an_approval_whose_reply_can_no_longer_be_updated_tells_the_review_s_channel(
     tmp_path, monkeypatch, cut_off,
 ):
@@ -1849,7 +1973,7 @@ async def test_a_channel_notice_discord_refuses_stops_the_queue_and_once_discard
 
 
 async def _tell_changes(league: Any) -> list[dict[str, Any]]:
-    from leaguebot.core.services.season_approval_change import TELL_KIND
+    from leaguebot.core.services.seasons.season_approval_change import TELL_KIND
 
     return [row for row in await change_rows(league.db_path) if row["kind"] == TELL_KIND]
 
@@ -2150,7 +2274,10 @@ async def test_a_refused_opening_standings_picture_is_posted_as_text_in_the_same
     assert jobs and all(job["done_at"] and job["tries"] == 0 for job in jobs), jobs
 
 
-@pytest.mark.parametrize("told_by", ["the approval", "the tell change"])
+@pytest.mark.parametrize("told_by", [
+    "the approval",
+    "the tell change",
+])
 async def test_the_review_channel_line_notifies_only_the_member_it_names(
     tmp_path, monkeypatch, told_by,
 ):

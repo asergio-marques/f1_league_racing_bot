@@ -179,7 +179,7 @@ async def _calendar(bot: LeagueBot, division_id: int):
     and a column that disappears when a round is cancelled would redraw the graphic's width
     from one posting to the next. A round's *cells* are what emptying handles.
     """
-    from leaguebot.core.services.calendar_post_service import tracks_by_name
+    from leaguebot.core.services.rounds.calendar_post_service import tracks_by_name
     from leaguebot.image.services.image_calendar_service import MYSTERY_DATUM
     from leaguebot.image.services.image_standings_service import RoundHeading
 

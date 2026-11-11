@@ -781,7 +781,7 @@ SEASON_GATED = [
     # `/driver reassign` names its own rule, whatever the reason it is refused.
     ("leaguebot.core.cogs.driver_cog.DriverCog", "reassign", "driver reassign", (MagicMock(),),
      "only while drivers are being placed"),
-    ("leaguebot.core.cogs.season_cog.SeasonCog", "division_calendar_sync",
+    ("leaguebot.core.cogs.division_cog.DivisionCog", "division_calendar_sync",
      "division calendar-sync", ("Pro",), "there is none"),
 ]
 

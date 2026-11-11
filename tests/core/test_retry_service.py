@@ -12,18 +12,22 @@ from __future__ import annotations
 
 import os
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.retry_service import (
+from leaguebot.core.services.posting.retry_service import (
     RETRY_WARN_THRESHOLD,
     enqueue,
     get_all_pending,
     mark_delivered,
     mark_failed,
 )
+from leaguebot.core.utils.formatting import discord_ts
+
+#: The time handed in, well before the host's clock, so that a stamp read from the host shows.
+NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
 
 
 # ---------------------------------------------------------------------------
@@ -72,8 +76,7 @@ class TestEnqueue:
     @pytest.mark.asyncio
     async def test_row_has_correct_fields(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        before = datetime.now(timezone.utc)
-        await enqueue(db_path, channel_id=999, content="test msg", failure_reason="upstream error")
+        await enqueue(db_path, channel_id=999, content="test msg", failure_reason="upstream error", now=NOW)
         rows = await _fetch_all_rows(db_path)
         assert len(rows) == 1
         r = rows[0]
@@ -82,8 +85,7 @@ class TestEnqueue:
         assert r["failure_reason"] == "upstream error"
         assert r["retry_count"] == 0
         assert r["last_attempted_at"] is None
-        enqueued_at = datetime.fromisoformat(r["enqueued_at"])
-        assert enqueued_at >= before
+        assert r["enqueued_at"] == NOW.isoformat()
 
 
 # ---------------------------------------------------------------------------
@@ -101,8 +103,8 @@ class TestGetAllPending:
     @pytest.mark.asyncio
     async def test_returns_all_rows(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 100, "msg A", "err")
-        await enqueue(db_path, 200, "msg B", "err")
+        await enqueue(db_path, 100, "msg A", "err", now=NOW)
+        await enqueue(db_path, 200, "msg B", "err", now=NOW)
         result = await get_all_pending(db_path)
         assert len(result) == 2
 
@@ -127,7 +129,7 @@ class TestGetAllPending:
     @pytest.mark.asyncio
     async def test_pending_message_fields_populated(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, channel_id=77, content="hello", failure_reason="503")
+        await enqueue(db_path, channel_id=77, content="hello", failure_reason="503", now=NOW)
         result = await get_all_pending(db_path)
         pm = result[0]
         assert pm.channel_id == 77
@@ -147,7 +149,7 @@ class TestMarkDelivered:
     @pytest.mark.asyncio
     async def test_deletes_row(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 100, "msg", "err")
+        await enqueue(db_path, 100, "msg", "err", now=NOW)
         rows = await _fetch_all_rows(db_path)
         entry_id = rows[0]["id"]
         await mark_delivered(db_path, entry_id)
@@ -156,8 +158,8 @@ class TestMarkDelivered:
     @pytest.mark.asyncio
     async def test_only_deletes_targeted_row(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 100, "msg A", "err")
-        await enqueue(db_path, 200, "msg B", "err")
+        await enqueue(db_path, 100, "msg A", "err", now=NOW)
+        await enqueue(db_path, 200, "msg B", "err", now=NOW)
         rows = await _fetch_all_rows(db_path)
         first_id = rows[0]["id"]
         await mark_delivered(db_path, first_id)
@@ -185,12 +187,12 @@ class TestMarkFailed:
     ])
     async def test_each_failure_is_counted(self, tmp_path, failures):
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 100, "msg", "err")
+        await enqueue(db_path, 100, "msg", "err", now=NOW)
         rows = await _fetch_all_rows(db_path)
         entry_id = rows[0]["id"]
 
         for _ in range(failures):
-            await mark_failed(db_path, entry_id)
+            await mark_failed(db_path, entry_id, now=NOW)
 
         rows2 = await _fetch_all_rows(db_path)
         assert rows2[0]["retry_count"] == failures
@@ -198,24 +200,23 @@ class TestMarkFailed:
     @pytest.mark.asyncio
     async def test_sets_last_attempted_at(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        before = datetime.now(timezone.utc)
-        await enqueue(db_path, 100, "msg", "err")
+        await enqueue(db_path, 100, "msg", "err", now=NOW)
         rows = await _fetch_all_rows(db_path)
         entry_id = rows[0]["id"]
 
-        await mark_failed(db_path, entry_id)
+        await mark_failed(db_path, entry_id, now=NOW + timedelta(minutes=5))
 
         rows2 = await _fetch_all_rows(db_path)
-        last_attempted = datetime.fromisoformat(rows2[0]["last_attempted_at"])
-        assert last_attempted >= before
+        assert rows2[0]["last_attempted_at"] == (NOW + timedelta(minutes=5)).isoformat()
+        assert rows2[0]["enqueued_at"] == NOW.isoformat()
 
     @pytest.mark.asyncio
     async def test_does_not_delete_row(self, tmp_path):
         db_path = await _make_db(str(tmp_path))
-        await enqueue(db_path, 100, "msg", "err")
+        await enqueue(db_path, 100, "msg", "err", now=NOW)
         rows = await _fetch_all_rows(db_path)
         entry_id = rows[0]["id"]
-        await mark_failed(db_path, entry_id)
+        await mark_failed(db_path, entry_id, now=NOW)
         assert await _row_count(db_path) == 1
 
 
@@ -250,14 +251,14 @@ async def _settle() -> None:
 async def test_a_line_never_tried_is_delivered_by_the_retry_loop_without_a_retry_notice(tmp_path):
     """The bot stopped between saving a line and delivering it: nothing failed, so there is no
     retry to announce."""
-    from leaguebot.core.services.retry_service import attempt_delivery
+    from leaguebot.core.services.posting.retry_service import attempt_delivery
 
     db_path = await _make_db(str(tmp_path))
-    await enqueue(db_path, 555, "Admin (`<@4242>`) | /module disable results | Success", "")
+    await enqueue(db_path, 555, "Admin (`<@4242>`) | /module disable results | Success", "", now=NOW)
     [entry] = await get_all_pending(db_path)
     bot, channel = _delivering_bot(db_path)
 
-    assert await attempt_delivery(entry, bot) is True
+    assert await attempt_delivery(entry, bot, now=NOW) is True
     await _settle()
 
     assert channel.send.await_count == 1
@@ -268,14 +269,14 @@ async def test_a_line_never_tried_is_delivered_by_the_retry_loop_without_a_retry
 async def test_a_retried_line_is_sent_notifying_nobody(tmp_path):
     import discord
 
-    from leaguebot.core.services.retry_service import attempt_delivery
+    from leaguebot.core.services.posting.retry_service import attempt_delivery
 
     db_path = await _make_db(str(tmp_path))
-    await enqueue(db_path, 555, "<@4242> did something", "503")
+    await enqueue(db_path, 555, "<@4242> did something", "503", now=NOW)
     [entry] = await get_all_pending(db_path)
     bot, channel = _delivering_bot(db_path)
 
-    await attempt_delivery(entry, bot)
+    await attempt_delivery(entry, bot, now=NOW)
     await _settle()
 
     sent = channel.send.await_args.kwargs.get("allowed_mentions")
@@ -289,17 +290,17 @@ async def test_attempt_delivery_sends_through_the_log_writer(tmp_path, monkeypat
     marked delivered."""
     from unittest.mock import AsyncMock
 
-    from leaguebot.core.services import output_router
-    from leaguebot.core.services.retry_service import attempt_delivery
+    from leaguebot.core.services.posting import output_router
+    from leaguebot.core.services.posting.retry_service import attempt_delivery
 
     db_path = await _make_db(str(tmp_path))
-    await enqueue(db_path, 555, "Admin (`<@4242>`) | /module disable results | Success", "503")
+    await enqueue(db_path, 555, "Admin (`<@4242>`) | /module disable results | Success", "503", now=NOW)
     [entry] = await get_all_pending(db_path)
     bot, channel = _delivering_bot(db_path)
     writer = AsyncMock()
     monkeypatch.setattr(output_router, "send_log_text", writer, raising=False)
 
-    assert await attempt_delivery(entry, bot) is True
+    assert await attempt_delivery(entry, bot, now=NOW) is True
     await _settle()
 
     writer.assert_awaited_once_with(
@@ -312,21 +313,23 @@ async def test_attempt_delivery_sends_through_the_log_writer(tmp_path, monkeypat
 async def test_a_late_log_line_delivered_on_retry_reports_its_delivery_as_today(tmp_path):
     """A log line queued for channel 555 that failed once (503) is delivered on its first retry, to
     the log channel as it is now, 99. The log channel gets exactly one line, saying the delivery to
-    99 succeeded, why it first failed and how many retries it took."""
-    from leaguebot.core.services.retry_service import attempt_delivery
+    99 succeeded, why it first failed, how many retries it took and when: the time the retry was
+    handed."""
+    from leaguebot.core.services.posting.retry_service import attempt_delivery
 
     db_path = await _make_db(str(tmp_path))
-    await enqueue(db_path, 555, "Admin (`<@4242>`) | /module disable results | Success", "503")
+    await enqueue(db_path, 555, "Admin (`<@4242>`) | /module disable results | Success", "503", now=NOW)
     [entry] = await get_all_pending(db_path)
     bot, _channel = _delivering_bot(db_path)
 
-    assert await attempt_delivery(entry, bot) is True
+    delivered = NOW + timedelta(minutes=5)
+    assert await attempt_delivery(entry, bot, now=delivered) is True
     await _settle()
 
     [call] = bot.output_router.post_log.await_args_list
-    assert call.args[0].startswith(
+    assert call.args[0] == (
         "\N{WHITE HEAVY CHECK MARK} Retry delivery succeeded for channel <#99> (id=99). "
-        "Original failure: 503. Retries taken: 0. Delivered at: "
+        f"Original failure: 503. Retries taken: 0. Delivered at: {discord_ts(delivered)}."
     )
 
 
@@ -334,27 +337,30 @@ async def test_a_stuck_late_log_line_warns_before_its_retry_as_today(tmp_path):
     """A log line queued for channel 555 that failed with 503 and has been retried
     RETRY_WARN_THRESHOLD times is retried once more and delivered to the log channel as it is now,
     99. The log channel is first warned that the entry is stuck, naming 99, the channel tried, how
-    often it failed and why, and then told the delivery to 99 succeeded after that many retries."""
-    from leaguebot.core.services.retry_service import attempt_delivery
+    often it failed since the time it was queued at and why, and then told the delivery to 99
+    succeeded after that many retries, at the time the retry was handed."""
+    from leaguebot.core.services.posting.retry_service import attempt_delivery
 
     db_path = await _make_db(str(tmp_path))
-    await enqueue(db_path, 555, "Admin (`<@4242>`) | /module disable results | Success", "503")
+    await enqueue(db_path, 555, "Admin (`<@4242>`) | /module disable results | Success", "503", now=NOW)
     [entry] = await get_all_pending(db_path)
     for _ in range(RETRY_WARN_THRESHOLD):
-        await mark_failed(db_path, entry.id)
+        await mark_failed(db_path, entry.id, now=NOW)
     [entry] = await get_all_pending(db_path)
     bot, _channel = _delivering_bot(db_path)
 
-    assert await attempt_delivery(entry, bot) is True
+    delivered = NOW + timedelta(hours=1)
+    assert await attempt_delivery(entry, bot, now=delivered) is True
     await _settle()
 
     warning, success = (call.args[0] for call in bot.output_router.post_log.await_args_list)
-    assert warning.startswith(
+    assert warning == (
         f"\N{WARNING SIGN}\N{VARIATION SELECTOR-16} Stuck retry entry id={entry.id}: message to "
         f"channel <#99> (id=99) has failed {RETRY_WARN_THRESHOLD} time(s) since "
+        f"{discord_ts(NOW)}. Original failure: 503"
     )
-    assert warning.endswith("Original failure: 503")
-    assert success.startswith(
+    assert success == (
         "\N{WHITE HEAVY CHECK MARK} Retry delivery succeeded for channel <#99> (id=99). "
-        f"Original failure: 503. Retries taken: {RETRY_WARN_THRESHOLD}. Delivered at: "
+        f"Original failure: 503. Retries taken: {RETRY_WARN_THRESHOLD}. "
+        f"Delivered at: {discord_ts(delivered)}."
     )

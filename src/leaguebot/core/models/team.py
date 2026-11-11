@@ -1,4 +1,4 @@
-"""Team models: DefaultTeam, TeamInstance, TeamSeat, TeamRoleConfig dataclasses."""
+"""Team models: DefaultTeam, TeamInstance, TeamRoleConfig dataclasses."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -8,7 +8,7 @@ from dataclasses import dataclass
 class DefaultTeam:
     """A team of the server's list.
 
-    A team has three names, each with one job (#381): its **role**, which identifies it; its
+    A team has three names, each with one job: its **role**, which identifies it; its
     **shorthand** (``name``), a short alias a league types wherever a team is entered, and the
     filename its artwork is found by; and its **full name**, which is what is shown.
     """
@@ -30,14 +30,6 @@ class TeamInstance:
     full_name: str
     max_seats: int  # -1 = unlimited
     is_reserve: bool
-
-
-@dataclass
-class TeamSeat:
-    id: int
-    team_instance_id: int
-    seat_number: int
-    driver_profile_id: int | None  # None = unassigned
 
 
 @dataclass

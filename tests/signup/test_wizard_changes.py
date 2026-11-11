@@ -84,7 +84,11 @@ async def _league(tmp_path: Any, *, manage_channels: bool = True,
                   category_size: int = 3) -> SeasonLeague:
     """`setup_league` at Signups with the window open; the signup channel in the category
     "Signups", holding *category_size* channels, the bot allowed to manage channels there or
-    not; each channel the bot creates recorded, its creations in `league.created`."""
+    not; each channel the bot creates recorded, its creations in `league.created`.
+
+    The league's team service is swapped on the bot after its queue has registered the real
+    change types, so the signup's start reads it when it runs (`lambda: bot.team_service`), as
+    the builder keeps it (#283)."""
     os.makedirs(str(tmp_path), exist_ok=True)
     league = await setup_league(tmp_path, stage="SIGNUPS", signups_open=True)
     category = MagicMock(spec=discord.CategoryChannel)
@@ -108,11 +112,17 @@ async def _league(tmp_path: Any, *, manage_channels: bool = True,
     league.guild.create_text_channel = AsyncMock(side_effect=_create)
     category.create_text_channel = league.guild.create_text_channel
     # The league's default teams, which the wizard's team buttons offer (the Reserve team apart).
-    from leaguebot.core.services.team_service import TeamService
+    from leaguebot.core.db.database import get_connection
+    from leaguebot.core.services.drivers.team_service import TeamService
 
     league.bot.team_service = TeamService(league.db_path)
-    await league.bot.team_service.add_default_team("FER", full_name="Scuderia Ferrari")
-    await league.bot.team_service.add_default_team("MCL", full_name="McLaren Racing")
+    async with get_connection(league.db_path) as db:
+        await db.executemany(
+            "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
+            "VALUES (?, ?, 2, 0)",
+            [("FER", "Scuderia Ferrari"), ("MCL", "McLaren Racing")],
+        )
+        await db.commit()
     # Today's handlers off the queue, reached by the presses until the changes replace them.
     league.bot.wizard_service.start_wizard = AsyncMock(return_value=None)
     league.bot.wizard_service.withdraw = AsyncMock(return_value=None)
@@ -368,10 +378,15 @@ async def test_sign_up_while_a_close_waits_on_the_queue_is_refused_as_closing(tm
     not yet run. Kimi presses Sign Up: he is told, plainly, that signups are being closed and a
     new signup cannot start; no `signup.start` change is asked, and when the queue runs no signup
     channel is created and he is not signing up."""
-    from leaguebot.core.cogs.module_cog import close_signups_unattended
+    from leaguebot.signup.services.window_close import close_signups_unattended
 
     league = await _league(tmp_path)
-    await close_signups_unattended(league.bot, cause="timer")
+    await close_signups_unattended(
+        change_queue=league.bot.change_queue,
+        module_service=league.bot.module_service,
+        signup_module_service=league.bot.signup_module_service,
+        cause="timer",
+    )
 
     press = await _press_sign_up(league)
 
@@ -798,13 +813,12 @@ def _expired(league: SeasonLeague, user_id: int = SIGNING_UP) -> list[str]:
 def _wizards(league: SeasonLeague) -> Any:
     """The wizard service as the builder makes it, handed the change queue when built, over the
     league's real signup module service."""
-    from leaguebot.signup.services.wizard_service import WizardService
+    from tests.support.season_league import wizard_service
 
-    wizards = WizardService(
-        league.db_path, league.bot.scheduler_service, league.bot.output_router,
+    wizards = wizard_service(
+        league.bot, league.db_path, league.bot.scheduler_service, league.bot.output_router,
         change_queue=league.bot.change_queue,
     )
-    wizards.set_bot(league.bot)
     return wizards
 
 
@@ -1237,9 +1251,6 @@ async def test_a_reject_reason_is_deleted_and_the_signup_ended_as_jobs(tmp_path)
 # ---------------------------------------------------------------------------
 
 DELETE_KIND = "signup.channel.delete"
-#: Kimi's new account after a reassign, and the held signup channel it holds of its own.
-NEW_ACCOUNT = SIGNING_UP + 1000
-NEW_ACCOUNT_CHANNEL = 6600
 
 
 async def _held_after_signup(league: SeasonLeague, user_id: int = SIGNING_UP,
@@ -1310,30 +1321,6 @@ async def test_the_24_hour_deletion_runs_on_the_driver_s_lane_and_a_refusal_stop
     assert league.channel(KIMI_CHANNEL) is held
 
 
-async def test_driver_reassign_asks_the_held_channel_s_deletion(tmp_path):
-    """Kimi's old account (105) holds his signup channel (6405); his new account (1105) holds a
-    held channel of its own (6600). `/driver reassign` moves him to the new account, so the old
-    account's channel is to go. Nothing is deleted at once: a `signup.channel.delete` change is
-    asked on the league lane, the command's. When the queue runs channel 6405 is deleted and the
-    old account's wizard row with it; the new account keeps channel 6600."""
-    league = await _league(tmp_path)
-    await _held_after_signup(league)
-    await _held_after_signup(league, NEW_ACCOUNT, NEW_ACCOUNT_CHANNEL)
-
-    await _wizards(league).move_held_channel(str(SIGNING_UP), str(NEW_ACCOUNT), league.guild)
-
-    assert league.order == []
-    [change] = await _changes_of(league, DELETE_KIND)
-    assert _lane(change) == "league"
-
-    await run_queue(league.bot)
-
-    assert league.order == [f"delete {KIMI_CHANNEL}"]
-    assert await _wizard(league) is None
-    theirs = await _wizard(league, NEW_ACCOUNT)
-    assert theirs is not None and int(theirs["signup_channel_id"]) == NEW_ACCOUNT_CHANNEL
-
-
 # ---------------------------------------------------------------------------
 # A member leaving mid-signup (C80)
 # ---------------------------------------------------------------------------
@@ -1376,7 +1363,7 @@ def _stuck_turn(league: SeasonLeague) -> list[str]:
         StepResult,
         Verdict,
     )
-    from leaguebot.core.services.change_queue import ChangeType, Step
+    from leaguebot.core.services.queue.change_types import ChangeType, Step
     from tests.support.change_queue import register
 
     tries: list[str] = []

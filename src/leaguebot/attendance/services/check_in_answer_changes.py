@@ -56,19 +56,23 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.models.round import RoundStatus, read_scheduled_at
+from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
+)
+from leaguebot.core.services.queue.queue_records import (
+    in_hand,
+)
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
-    in_hand,
 )
-from leaguebot.core.services.channel_registry_service import as_text_channel
-from leaguebot.core.services.driver_service import resolve_driver_profile_id
-from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
+from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.core.services.drivers.driver_service import resolve_driver_profile_id
+from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
 from leaguebot.core.utils.log_lines import refusal_line, refuse, reply_reason
 
 log = logging.getLogger(__name__)
@@ -188,7 +192,7 @@ async def _facts(db: aiosqlite.Connection, payload: dict[str, Any]) -> _Facts | 
     held = await cursor.fetchone()
     return _Facts(
         found=held["rsvp_status"] if held is not None else "NO_RSVP",
-        scheduled_at=_aware(round_row["scheduled_at"]),
+        scheduled_at=read_scheduled_at(round_row["scheduled_at"]),
         deadline_hours=round_row["rsvp_deadline_hours"] or 0,
         is_reserve=bool(seat["is_reserve"]),
     )

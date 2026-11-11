@@ -28,6 +28,7 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.server_config import ServerConfig
 from tests.support.change_queue import in_a_job
+from tests.support.channel_uses import sign_up_channel_uses_read
 
 SERVER_ID = 4242
 MANAGER_ROLE = 222
@@ -78,7 +79,7 @@ async def _seed(tmp_path, *, admin_role_id: int | None = ADMIN_ROLE) -> str:
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
             "scheduled_at) VALUES (1, 1, 1, 'NORMAL', 'Silverstone Circuit', ?)",
-            ("2026-06-01T14:00:00",),
+            ("2026-06-01T14:00:00+00:00",),
         )
         await db.commit()
     return db_path
@@ -158,6 +159,8 @@ async def test_the_signup_channel_is_open_to_both_roles(admin_role_id, expected,
     bot.signup_module_service.save_config = AsyncMock()
     bot.output_router.post_log = AsyncMock()
     bot.db_path = await _seed(tmp_path, admin_role_id=admin_role_id)
+    # The registry asks each module for the channels it holds, through the bot's own hook.
+    sign_up_channel_uses_read(bot)
     cog.bot = bot
     # The seeded season is active, which fixes the signup settings (issue #220). That gate
     # has tests of its own; this one is about the channel's permissions.

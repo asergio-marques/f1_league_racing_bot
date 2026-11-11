@@ -3,7 +3,7 @@
 `driver_accounts` lists a profile's accounts, the current one included, and is written by
 triggers on `driver_profiles` (migration 059) so that no path creating a profile can miss it.
 These tests pin the triggers — including that they refuse an account another driver already
-lists — and each helper in `leaguebot.core.services.driver_service` the rest of the bot resolves accounts
+lists — and each helper in `leaguebot.core.services.drivers.driver_service` the rest of the bot resolves accounts
 through.
 
 Everything runs against a real migrated database, since the triggers and the cascade are the
@@ -18,7 +18,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.core.services.driver_service import (
+from leaguebot.core.services.drivers.driver_service import (
     DriverService,
     accounts_of,
     accounts_of_profile,
@@ -27,7 +27,9 @@ from leaguebot.core.services.driver_service import (
     current_account_of,
     resolve_driver_profile_id,
 )
-from leaguebot.core.services.season_lifecycle_service import delete_driver_profiles
+from leaguebot.core.services.seasons.season_lifecycle_service import delete_driver_profiles
+from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
+from tests.support.driver_transitions import transitioned
 
 SERVER_ID = 2430
 A, B, C = "1111", "2222", "3333"
@@ -88,8 +90,8 @@ async def test_creating_a_profile_lists_its_account(tmp_path):
 async def test_a_profile_created_by_the_service_lists_its_account(tmp_path):
     """The service's own creation path, which a raw INSERT above does not exercise."""
     db_path = await _make_db(tmp_path)
-    profile = await DriverService(db_path).transition(
-        A, DriverState.PENDING_SIGNUP_COMPLETION
+    profile = await transitioned(
+        db_path, A, DriverState.PENDING_SIGNUP_COMPLETION
     )
     assert await _listed(db_path) == [(profile.id, A)]
 
@@ -137,7 +139,7 @@ async def test_deleting_a_profile_frees_every_account_it_held(tmp_path):
     pid = await _profile(db_path, A)
     await _make_current(db_path, pid, B)
     async with get_connection(db_path) as db:
-        await delete_driver_profiles(db, [pid], keep_history=False)
+        await delete_driver_profiles(db, [pid], keep_history=False, **delete_hooks(*DRIVER_HOOKS))
         await db.commit()
     assert await _listed(db_path) == []
     await _profile(db_path, A)  # free again
@@ -152,7 +154,9 @@ async def test_deleting_profiles_returns_every_account_they_held(tmp_path):
     second = await _profile(db_path, C)
     kept = await _profile(db_path, "4444")
     async with get_connection(db_path) as db:
-        deleted = await delete_driver_profiles(db, [first, second], keep_history=False)
+        deleted = await delete_driver_profiles(
+            db, [first, second], keep_history=False, **delete_hooks(*DRIVER_HOOKS)
+        )
         await db.commit()
     assert deleted == [A, B, C]
     assert await _listed(db_path) == [(kept, "4444")]
@@ -161,7 +165,9 @@ async def test_deleting_profiles_returns_every_account_they_held(tmp_path):
 async def test_deleting_no_profile_returns_no_account(tmp_path):
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:
-        assert await delete_driver_profiles(db, [], keep_history=False) == []
+        assert await delete_driver_profiles(
+            db, [], keep_history=False, **delete_hooks(*DRIVER_HOOKS)
+        ) == []
 
 
 # ---------------------------------------------------------------------------

@@ -490,23 +490,29 @@ def test_parse_lap_gap_refuses_anything_else(typed):
 # ── Formats: moments ──────────────────────────────────────────────────────
 
 
-def test_parse_datetime_takes_a_zoneless_value_as_utc():
-    from datetime import datetime
 
-    assert parse_datetime("2026-06-14T18:00") == datetime(2026, 6, 14, 18, 0)
+
+def test_parse_datetime_takes_a_zoneless_value_as_utc():
+    """"2026-06-14T18:00", typed with no zone, is 18:00 UTC, handed back aware."""
+    from datetime import datetime, timezone
+
+    parsed = parse_datetime("2026-06-14T18:00")
+
+    assert parsed == datetime(2026, 6, 14, 18, 0, tzinfo=timezone.utc)
+    assert parsed.tzinfo is not None
 
 
 @pytest.mark.parametrize(
     "typed", ["2026-06-14T20:00+02:00", "2026-06-14T18:00Z", "2026-06-14T13:00:00-05:00"]
 )
 def test_parse_datetime_converts_a_zone_to_utc(typed):
-    """Stored naive as UTC, as the XML import already did."""
-    from datetime import datetime
+    """Converted to 18:00 UTC and handed back aware, in the form a round's moment is stored in."""
+    from datetime import datetime, timedelta, timezone
 
     parsed = parse_datetime(typed)
 
-    assert parsed == datetime(2026, 6, 14, 18, 0)
-    assert parsed.tzinfo is None
+    assert parsed == datetime(2026, 6, 14, 18, 0, tzinfo=timezone.utc)
+    assert parsed.utcoffset() == timedelta(0)
 
 
 @pytest.mark.parametrize("typed", ["", None, "tomorrow", "14/06/2026 18:00", "2026-13-01T00:00"])

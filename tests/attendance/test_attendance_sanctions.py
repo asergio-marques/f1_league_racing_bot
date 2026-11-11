@@ -196,10 +196,8 @@ def _make_bot(db_path: str) -> MagicMock:
     # A sack names the divisions whose lineup it owes (#439): the one the driver sat in.
     placement = MagicMock()
     placement.sack_driver = AsyncMock(return_value=[DIVISION_ID])
-    placement.assign_driver = AsyncMock(return_value=None)
-    placement.unassign_driver = AsyncMock(return_value=None)
     placement.move_driver = AsyncMock(return_value=None)
-    placement._refresh_lineup_post = AsyncMock(return_value=None)
+    bot.lineup_poster._refresh_lineup_post = AsyncMock(return_value=None)
     bot.placement_service = placement
 
     bot.output_router.post_log = AsyncMock(return_value=None)
@@ -302,7 +300,6 @@ async def test_a_server_with_no_attendance_config_is_left_alone(tmp_path, announ
 
     bot.placement_service.sack_driver.assert_not_awaited()
     bot.placement_service.move_driver.assert_not_awaited()
-    bot.placement_service.assign_driver.assert_not_awaited()
     sheet.assert_not_awaited()
 
 
@@ -326,7 +323,6 @@ async def test_both_thresholds_disabled_sanctions_nobody(
 
     bot.placement_service.sack_driver.assert_not_awaited()
     bot.placement_service.move_driver.assert_not_awaited()
-    bot.placement_service.assign_driver.assert_not_awaited()
 
 
 async def test_a_driver_below_both_thresholds_is_left_alone(tmp_path, announcer, sheet):
@@ -338,7 +334,6 @@ async def test_a_driver_below_both_thresholds_is_left_alone(tmp_path, announcer,
 
     bot.placement_service.sack_driver.assert_not_awaited()
     bot.placement_service.move_driver.assert_not_awaited()
-    bot.placement_service.unassign_driver.assert_not_awaited()
     sheet.assert_not_awaited()
 
 
@@ -390,8 +385,7 @@ async def test_autosack_supersedes_autoreserve(tmp_path, announcer, sheet):
     await _run(bot, db_path)
 
     bot.placement_service.sack_driver.assert_awaited_once()
-    bot.placement_service.unassign_driver.assert_not_awaited()
-    bot.placement_service.assign_driver.assert_not_awaited()
+    bot.placement_service.move_driver.assert_not_awaited()
 
 
 async def test_an_autosack_of_drivers_who_never_raced_sacks_every_one_of_them(
@@ -405,7 +399,7 @@ async def test_an_autosack_of_drivers_who_never_raced_sacks_every_one_of_them(
     unsanctioned with nothing reported. Two such drivers are past the threshold here, so a
     failure on the first leaves the second unsacked whichever is read first.
     """
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.drivers.placement_service import PlacementService
 
     second_profile = 103
     db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
@@ -435,7 +429,7 @@ async def test_an_autosack_of_drivers_who_never_raced_sacks_every_one_of_them(
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 20, second_profile: 25})
     bot = _make_bot(db_path)
     placement = PlacementService(db_path)
-    placement._refresh_lineup_post = AsyncMock(return_value=None)
+    bot.lineup_poster._refresh_lineup_post = AsyncMock(return_value=None)
     bot.placement_service = placement
 
     await _run(bot, db_path)
@@ -619,8 +613,6 @@ async def test_a_driver_over_the_autoreserve_threshold_is_moved_to_reserve(
     kwargs = bot.placement_service.move_driver.await_args.kwargs
     assert kwargs["team_name"] == "Reserve"
     assert kwargs["from_division_id"] == kwargs["to_division_id"]
-    bot.placement_service.unassign_driver.assert_not_awaited()
-    bot.placement_service.assign_driver.assert_not_awaited()
     assert "ATTENDANCE_AUTORESERVE" in _logged(bot)
 
 
@@ -643,8 +635,6 @@ async def test_a_driver_already_in_reserve_is_not_a_candidate(tmp_path, announce
     await _run(bot, db_path)
 
     bot.placement_service.move_driver.assert_not_awaited()
-    bot.placement_service.unassign_driver.assert_not_awaited()
-    bot.placement_service.assign_driver.assert_not_awaited()
 
 
 async def test_a_division_with_no_reserve_team_reports_each_candidate_as_failed(
@@ -700,7 +690,6 @@ async def test_a_driver_with_no_recorded_total_is_not_a_candidate(tmp_path, anno
     await _run(bot, db_path)
 
     bot.placement_service.move_driver.assert_not_awaited()
-    bot.placement_service.unassign_driver.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -717,7 +706,7 @@ async def test_the_sheet_is_reposted_only_when_somebody_was_sanctioned(tmp_path,
         await _run(bot, db_path)
 
     assert asked == [(DIVISION_ID, ROUND_ID, {FULL_TIME_PROFILE})]
-    bot.placement_service._refresh_lineup_post.assert_not_awaited()
+    bot.lineup_poster._refresh_lineup_post.assert_not_awaited()
     assert _lineups_asked(bot) == [DIVISION_ID]
 
 
@@ -727,7 +716,7 @@ async def test_a_sync_s_autosack_asks_once_for_each_lineup_it_reached(
     """The full-timer, past the autosack threshold, also sits in Division 2: the sack takes
     them out of both, and the run asks the change queue once for each division's lineup,
     posting none itself."""
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.drivers.placement_service import PlacementService
 
     db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
     async with get_connection(db_path) as db:
@@ -759,13 +748,13 @@ async def test_a_sync_s_autosack_asks_once_for_each_lineup_it_reached(
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
     bot = _make_bot(db_path)
     placement = PlacementService(db_path)
-    placement._refresh_lineup_post = AsyncMock(return_value=None)
+    bot.lineup_poster._refresh_lineup_post = AsyncMock(return_value=None)
     bot.placement_service = placement
 
     await _run(bot, db_path)
 
     assert sorted(_lineups_asked(bot)) == [DIVISION_ID, 2]
-    placement._refresh_lineup_post.assert_not_awaited()
+    bot.lineup_poster._refresh_lineup_post.assert_not_awaited()
 
 
 #: The change the run asks for the verdicts and banner its sanctions owe (#439, slice 6b, C37).

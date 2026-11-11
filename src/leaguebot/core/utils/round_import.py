@@ -6,18 +6,17 @@ manager fixes one paste rather than discovering one fault per attempt.
 
 Neither parser touches Discord or the database. That is what lets them be tested with a
 plain string in and a dataclass out, and it is why a track is carried here as the raw text
-that named it: resolving a track needs a connection, so it belongs to the applier.
+that named it: resolving a track needs a connection, so it belongs to the change that adds the
+rounds (`round_add_changes.py`).
 
-**Datetimes are naive and mean UTC**, matching how a round is stored and how `/round add`
-records one. The XML parser converts from the stated zone and then strips the tzinfo,
-which is not cosmetic: a division holding a mix of naive and aware datetimes raises
-``TypeError: can't compare offset-naive and offset-aware datetimes`` the moment its rounds
-are sorted, which is every time one is added.
+**Datetimes are aware UTC**, matching how a round is held and how `/round add` takes one. The
+XML parser converts from the stated zone, so that a pasted moment equals a stored one wherever
+the two are compared, which a naive moment never does.
 
 A local time that daylight saving makes nonexistent (the hour a spring-forward skips) or
 ambiguous (the hour an autumn-back repeats) is resolved the way Python resolves it, with
-no complaint — decided 2026-09-05. `/round add-bulk` states its times in UTC and cannot
-meet either case, which is the way round it for a league that cares.
+no complaint. `/round add-bulk` states its times in UTC and cannot meet either case, which is the
+way round it for a league that cares.
 """
 
 from __future__ import annotations
@@ -35,6 +34,7 @@ from leaguebot.core.utils.timezones import is_known_zone
 __all__ = [
     "ParsedRound",
     "ParsedDivisionRounds",
+    "format_import_errors",
     "parse_bulk_round_lines",
     "parse_round_xml",
 ]
@@ -68,6 +68,25 @@ class ParsedDivisionRounds:
     rounds: list[ParsedRound]
 
 
+#: How many faults a rejection lists before it stops. A payload wrong in one systematic
+#: way — every format misspelled, every track unknown — produces one error per round, and
+#: a reply over 2000 characters is refused by Discord whole rather than truncated, which
+#: would lose the report entirely.
+_MAX_REPORTED_ERRORS = 25
+
+
+def format_import_errors(errors: list[str]) -> str:
+    """The rejection a manager reads, capped so that the reply survives sending."""
+    shown = errors[:_MAX_REPORTED_ERRORS]
+    body = "\n".join(f"  • {error}" for error in shown)
+    if len(errors) > len(shown):
+        body += f"\n  …and {len(errors) - len(shown)} more."
+    return (
+        f"❌ Import rejected — {len(errors)} problem(s). "
+        f"**No rounds were added.**\n{body}"
+    )
+
+
 def _parse_format(raw: str, location: str, errors: list[str]) -> RoundFormat | None:
     try:
         return RoundFormat(raw.strip().upper())
@@ -80,8 +99,8 @@ def _parse_format(raw: str, location: str, errors: list[str]) -> RoundFormat | N
 
 
 def _parse_datetime(raw: str, location: str, errors: list[str]) -> datetime | None:
-    """A round's moment as naive UTC by the shared rule (#362), a zone converted as the XML
-    import converts one."""
+    """A round's moment as aware UTC by the shared rule, a zone converted as the XML import
+    converts one."""
     moment = parse_datetime(raw)
     if moment is None:
         errors.append(
@@ -177,13 +196,9 @@ def _text_of(parent, tag: str) -> str | None:
 
 
 def _to_utc(local: datetime, zone_name: str) -> datetime:
-    """*local* read in *zone_name*, as a naive UTC datetime.
-
-    The tzinfo is stripped deliberately: a round is stored naive-meaning-UTC, and a
-    division holding both naive and aware datetimes cannot be sorted.
-    """
+    """*local* read in *zone_name*, as an aware UTC datetime."""
     aware = local.replace(tzinfo=ZoneInfo(zone_name))
-    return aware.astimezone(timezone.utc).replace(tzinfo=None)
+    return aware.astimezone(timezone.utc)
 
 
 def parse_round_xml(xml_text: str) -> tuple[list[ParsedDivisionRounds], list[str]]:

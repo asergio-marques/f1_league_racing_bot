@@ -34,9 +34,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog
+from tests.support.review_workflows import build_view, run_workflow
 
 SERVER_ID = 13108
+
+#: The question's view, where the approval's workflow posts it from.
+_VIEW = "leaguebot.core.services.seasons.season_review_workflows.BackupBeforeApprovalView"
 
 
 # ---------------------------------------------------------------------------
@@ -44,7 +47,9 @@ SERVER_ID = 13108
 # ---------------------------------------------------------------------------
 
 
-def _make_cog(*, test_mode: bool = True, config_missing: bool = False) -> SeasonCog:
+def _make_cog(*, test_mode: bool = True, config_missing: bool = False) -> SimpleNamespace:
+    """A league's bot, held as the review's views hold it: the question runs with nothing of the
+    season cog."""
     bot = MagicMock()
     bot.db_path = "/tmp/does-not-matter.db"
     bot.config_service = MagicMock()
@@ -55,9 +60,9 @@ def _make_cog(*, test_mode: bool = True, config_missing: bool = False) -> Season
     # The log channel takes a line, as a real one does, so an outcome the approval or its
     # backup question records is not stopped by the test's own stand-in.
     bot.output_router.post_log = AsyncMock()
-    cog = SeasonCog.__new__(SeasonCog)
-    cog.bot = bot
-    return cog
+    # The time left is read from the queue's clock, here the host's.
+    bot.change_queue.now = MagicMock(side_effect=lambda: datetime.now(timezone.utc))
+    return SimpleNamespace(bot=bot)
 
 
 def _interaction():
@@ -100,22 +105,24 @@ def _answering(answer: str | None):
     """Patch the view so `wait()` returns immediately with *answer* already set."""
 
     class _View:
-        def __init__(self, cog, timeout=None):
+        def __init__(self, *, timeout=None, **_services):
             self.answer = answer
             self.timeout = timeout
 
         async def wait(self):
             return None
 
-    return patch("leaguebot.core.cogs.season_cog._BackupBeforeApprovalView", new=_View)
+    return patch(_VIEW, new=_View)
 
 
 async def _offer(cog, interaction, *, minutes_left: float = 5, state=None, answer=None):
     deadline = datetime.now(timezone.utc) + timedelta(minutes=minutes_left)
     with patch(
-        "leaguebot.core.services.backup_service.state", return_value=state or _backup_state()
+        "leaguebot.core.services.upkeep.backup_service.state", return_value=state or _backup_state()
     ), _answering(answer):
-        return await cog._offer_backup_before_approving(interaction, deadline)
+        return await run_workflow(
+            "offer_backup_before_approving", cog.bot, interaction, deadline=deadline
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +197,7 @@ async def test_the_question_inherits_what_is_left_of_the_review():
     captured: list[float] = []
 
     class _View:
-        def __init__(self, cog_, timeout=None):
+        def __init__(self, *, timeout=None, **_services):
             captured.append(timeout)
             self.answer = "skip"
 
@@ -198,10 +205,12 @@ async def test_the_question_inherits_what_is_left_of_the_review():
             return None
 
     deadline = datetime.now(timezone.utc) + timedelta(minutes=2)
-    with patch("leaguebot.core.services.backup_service.state", return_value=_backup_state()), patch(
-        "leaguebot.core.cogs.season_cog._BackupBeforeApprovalView", new=_View
+    with patch("leaguebot.core.services.upkeep.backup_service.state", return_value=_backup_state()), patch(
+        _VIEW, new=_View
     ):
-        await cog._offer_backup_before_approving(interaction, deadline)
+        await run_workflow(
+            "offer_backup_before_approving", cog.bot, interaction, deadline=deadline
+        )
 
     assert captured
     assert 100 < captured[0] <= 120  # what remains of the two minutes, not a fresh window
@@ -209,9 +218,9 @@ async def test_the_question_inherits_what_is_left_of_the_review():
     # The stand-in above only shows what the method hands the view. The real view must keep
     # that timeout, or an unanswered question would stay open for discord's default three
     # minutes after the review had run out.
-    from leaguebot.core.cogs.season_cog import _BackupBeforeApprovalView
-
-    assert _BackupBeforeApprovalView(cog, timeout=captured[0]).timeout == captured[0]
+    assert build_view(
+        "BackupBeforeApprovalView", cog.bot, timeout=captured[0]
+    ).timeout == captured[0]
 
 
 async def test_the_question_says_when_the_review_expires():
@@ -336,11 +345,13 @@ def _button_interaction():
 
 
 async def _view(cog=None, *, scheduler=None):
-    from leaguebot.core.cogs.season_cog import _BackupBeforeApprovalView
+    """The backup question on *cog*'s bot, whose scheduler is *scheduler*, or by default one
+    that can be paused and names a job store no test reads, as the bot always carries one."""
+    from tests.support.scheduler import PausingScheduler
 
     cog = cog or _make_cog()
-    cog.bot.scheduler_service = scheduler
-    return _BackupBeforeApprovalView(cog, timeout=60)
+    cog.bot.scheduler_service = scheduler or PausingScheduler("/tmp/not-read-jobs.db")
+    return build_view("BackupBeforeApprovalView", cog.bot, timeout=60)
 
 
 def _press(view, name, interaction):
@@ -352,46 +363,33 @@ def _press(view, name, interaction):
 async def test_the_scheduler_is_paused_for_the_copy():
     """Exactly as `/test-mode backup save` pauses it: the job store is written on the event
     loop, and a job added mid-copy tears."""
-    scheduler = MagicMock()
-    scheduler._scheduler = MagicMock()
-    scheduler._scheduler.running = True
-    view = await _view(scheduler=scheduler)
+    from tests.support.scheduler import PausingScheduler
 
-    with patch("leaguebot.core.services.backup_service.save") as save:
-        save.side_effect = lambda *a, **k: scheduler._scheduler.pause.assert_called_once()
+    scheduler = PausingScheduler("/tmp/not-read-jobs.db")
+    view = await _view(scheduler=scheduler)
+    during: list[list[str]] = []
+
+    with patch("leaguebot.core.services.upkeep.backup_service.save") as save:
+        save.side_effect = lambda *a, **k: during.append(list(scheduler.events))
         await _press(view, "save", _button_interaction())
 
-    scheduler._scheduler.pause.assert_called_once()
-    scheduler._scheduler.resume.assert_called_once()
+    assert during == [["pause"]]
+    assert scheduler.events == ["pause", "resume"]
 
 
 async def test_a_paused_scheduler_is_resumed_even_when_the_copy_fails():
     """Otherwise a failed backup silently stops every scheduled session the league has."""
-    scheduler = MagicMock()
-    scheduler._scheduler = MagicMock()
-    scheduler._scheduler.running = True
+    from tests.support.scheduler import PausingScheduler
+
+    scheduler = PausingScheduler("/tmp/not-read-jobs.db")
     view = await _view(scheduler=scheduler)
 
-    from leaguebot.core.services import backup_service
+    from leaguebot.core.services.upkeep import backup_service
 
-    with patch("leaguebot.core.services.backup_service.save", side_effect=backup_service.BackupError("nope")):
+    with patch("leaguebot.core.services.upkeep.backup_service.save", side_effect=backup_service.BackupError("nope")):
         await _press(view, "save", _button_interaction())
 
-    scheduler._scheduler.resume.assert_called_once()
-
-
-async def test_a_scheduler_that_was_not_running_is_not_resumed():
-    """Resuming one nobody paused would start a scheduler the bot deliberately left down."""
-    scheduler = MagicMock()
-    scheduler._scheduler = MagicMock()
-    scheduler._scheduler.running = False
-    view = await _view(scheduler=scheduler)
-
-    with patch("leaguebot.core.services.backup_service.save"):
-        await _press(view, "save", _button_interaction())
-
-    scheduler._scheduler.pause.assert_not_called()
-    scheduler._scheduler.resume.assert_not_called()
+    assert scheduler.events == ["pause", "resume"]
 
 
 async def test_a_backup_that_cannot_be_taken_still_approves():
@@ -401,10 +399,10 @@ async def test_a_backup_that_cannot_be_taken_still_approves():
     view = await _view()
     interaction = _button_interaction()
 
-    from leaguebot.core.services import backup_service
+    from leaguebot.core.services.upkeep import backup_service
 
     with patch(
-        "leaguebot.core.services.backup_service.save", side_effect=backup_service.BackupError("no room")
+        "leaguebot.core.services.upkeep.backup_service.save", side_effect=backup_service.BackupError("no room")
     ):
         await _press(view, "save", interaction)
 
@@ -415,7 +413,7 @@ async def test_a_backup_that_cannot_be_taken_still_approves():
 async def test_approving_without_saving_asks_for_no_backup():
     view = await _view()
 
-    with patch("leaguebot.core.services.backup_service.save") as save:
+    with patch("leaguebot.core.services.upkeep.backup_service.save") as save:
         await _press(view, "skip", _button_interaction())
 
     save.assert_not_called()
@@ -440,7 +438,7 @@ async def test_every_button_stops_the_view(name):
     """A view left running holds the approval open past the answer it already has."""
     view = await _view()
 
-    with patch("leaguebot.core.services.backup_service.save"):
+    with patch("leaguebot.core.services.upkeep.backup_service.save"):
         await _press(view, name, _button_interaction())
 
     assert view.is_finished()
@@ -462,7 +460,7 @@ async def test_silence_leaves_no_answer():
 # one line naming the member and why; a failure is recorded as every failure is. Alex (id 77) is
 # the league manager approving the season, under test mode.
 
-def _recording_cog() -> SeasonCog:
+def _recording_cog() -> SimpleNamespace:
     """A test-mode league whose bot keeps every log line and finds Alex on its server by id."""
     cog = _make_cog()
     cog.bot.output_router.post_log = AsyncMock()
@@ -472,7 +470,9 @@ def _recording_cog() -> SeasonCog:
     guild = MagicMock()
     guild.get_member = MagicMock(side_effect=lambda uid: alex if uid == 77 else None)
     cog.bot.get_guild = MagicMock(return_value=guild)
-    cog.bot.scheduler_service = None
+    from tests.support.scheduler import PausingScheduler
+
+    cog.bot.scheduler_service = PausingScheduler("/tmp/not-read-jobs.db")
     return cog
 
 
@@ -572,7 +572,7 @@ async def test_a_backup_saved_before_approving_writes_its_own_line():
     view = await _view(cog)
     interaction = _alex_pressing(cog)
 
-    with patch("leaguebot.core.services.backup_service.save") as save:
+    with patch("leaguebot.core.services.upkeep.backup_service.save") as save:
         await _press(view, "save", interaction)
 
     save.assert_called_once()
@@ -592,14 +592,14 @@ async def test_a_backup_refused_is_recorded_with_its_reason():
     He gets today's reply word for word and the approval goes on; the log gets one refusal line
     naming Alex and the save button, with the reason.
     """
-    from leaguebot.core.services import backup_service
+    from leaguebot.core.services.upkeep import backup_service
 
     cog = _recording_cog()
     view = await _view(cog)
     interaction = _alex_pressing(cog)
 
     with patch(
-        "leaguebot.core.services.backup_service.save",
+        "leaguebot.core.services.upkeep.backup_service.save",
         side_effect=backup_service.BackupError("the saved backup is locked"),
     ):
         await _press(view, "save", interaction)
@@ -627,7 +627,7 @@ async def test_a_backup_stopped_by_a_fault_is_recorded_and_the_approval_goes_on(
     "Saving a season before its placements are confirmed": "The manager shall be told that it was
     not taken and the confirmation shall continue".
     """
-    from leaguebot.core.services import backup_service
+    from leaguebot.core.services.upkeep import backup_service
 
     error = (
         backup_service.BackupFault("bot.db could not be copied: disk full")
@@ -638,7 +638,7 @@ async def test_a_backup_stopped_by_a_fault_is_recorded_and_the_approval_goes_on(
     view = await _view(cog)
     interaction = _alex_pressing(cog)
 
-    with patch("leaguebot.core.services.backup_service.save", side_effect=error):
+    with patch("leaguebot.core.services.upkeep.backup_service.save", side_effect=error):
         await _press(view, "save", interaction)
 
     assert view.answer == "skip"

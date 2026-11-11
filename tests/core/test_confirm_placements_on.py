@@ -42,7 +42,7 @@ async def _uncommitted(db) -> int:
 
 async def test_confirming_on_commits_the_placements_and_returns_the_season_to_ongoing(db_path):
     """On the connection handed, and nothing of it outlasts a rollback."""
-    from leaguebot.core.services.season_lifecycle_service import confirm_placements_on
+    from leaguebot.core.services.seasons.season_lifecycle_service import confirm_placements_on
 
     async with get_connection(db_path) as db:
         confirmed = await confirm_placements_on(db, 1)
@@ -59,7 +59,7 @@ async def test_confirming_on_commits_the_placements_and_returns_the_season_to_on
 
 async def test_confirming_on_from_another_stage_raises_and_writes_nothing(db_path):
     from leaguebot.core.models.season import InvalidStageTransition
-    from leaguebot.core.services.season_lifecycle_service import confirm_placements_on
+    from leaguebot.core.services.seasons.season_lifecycle_service import confirm_placements_on
 
     async with get_connection(db_path) as db:
         await db.execute("UPDATE seasons SET stage = 'ONGOING' WHERE id = 1")
@@ -76,7 +76,7 @@ async def test_confirming_on_never_moves_the_season_on_to_pending_completion(db_
     """Pro is finished: the confirmation is refused before it gets here (owner, check 1), and
     `confirm_placements_on` itself returns the season to Ongoing only, saying nothing of a move
     on."""
-    from leaguebot.core.services.season_lifecycle_service import confirm_placements_on
+    from leaguebot.core.services.seasons.season_lifecycle_service import confirm_placements_on
 
     async with get_connection(db_path) as db:
         await db.execute("UPDATE divisions SET status = 'FINISHED' WHERE id = ?", (DIVISION_ID,))
@@ -94,7 +94,7 @@ async def test_confirming_on_never_moves_the_season_on_to_pending_completion(db_
 async def test_the_uncommitted_placements_are_read_on_the_connection_handed(db_path):
     """Driver 1003, seated at Alpha with no placement, is placed on the open connection and not
     yet saved: the read on that connection sees them beside 1002."""
-    from leaguebot.core.services.placement_service import uncommitted_placements_on
+    from leaguebot.core.services.drivers.placement_service import uncommitted_placements_on
 
     async with get_connection(db_path) as db:
         await db.execute(
@@ -114,21 +114,21 @@ async def test_the_uncommitted_placements_are_read_on_the_connection_handed(db_p
 
 
 def _granting(monkeypatch):
-    """The step's placement double, and the league's server it reaches."""
-    from leaguebot.core.services import season_approval_change
+    """The step's team-role service double, and the league's server it reaches."""
+    from leaguebot.core.services.seasons import season_approval_change
 
     guild = MagicMock()
     monkeypatch.setattr(season_approval_change, "league_guild", AsyncMock(return_value=guild))
-    placement = MagicMock()
-    placement.get_team_role_config = AsyncMock(return_value=SimpleNamespace(role_id=777))
-    placement.grant_roles = AsyncMock(return_value=True)
-    return guild, placement
+    roles = MagicMock()
+    roles.get_team_role_config = AsyncMock(return_value=SimpleNamespace(role_id=777))
+    roles.grant_roles = AsyncMock(return_value=True)
+    return guild, roles
 
 
-async def _grant(db_path, placement, payload):
-    from leaguebot.core.services.season_approval_change import driver_roles_step
+async def _grant(db_path, roles, payload):
+    from leaguebot.core.services.seasons.season_approval_change import driver_roles_step
 
-    step = driver_roles_step(placement)
+    step = driver_roles_step(roles)
     ctx = SimpleNamespace(bot=MagicMock(), db_path=db_path, step_payload=payload,
                           step_name=step.name, tries=0, kept=None)
     return await step.run(ctx)
@@ -137,24 +137,24 @@ async def _grant(db_path, placement, payload):
 async def test_a_driver_with_no_team_is_granted_their_division_s_role_alone(db_path, monkeypatch):
     """Driver 1002 is placed in Pro with no team seat read (the placements' LEFT JOIN gives no
     team): the step gives Pro's role (1) alone and looks no team role up."""
-    guild, placement = _granting(monkeypatch)
+    guild, roles = _granting(monkeypatch)
 
-    await _grant(db_path, placement,
+    await _grant(db_path, roles,
                  {"user_id": "1002", "division_id": DIVISION_ID, "team_name": None})
 
-    placement.get_team_role_config.assert_not_awaited()
-    placement.grant_roles.assert_awaited_once_with(guild, 1002, 1)
+    roles.get_team_role_config.assert_not_awaited()
+    roles.grant_roles.assert_awaited_once_with(guild, 1002, 1)
 
 
 async def test_a_driver_with_no_role_to_give_is_granted_nothing(db_path, monkeypatch):
     """Pro has no role set (0) and driver 1002 no team: the step reaches Discord for nothing."""
-    _guild, placement = _granting(monkeypatch)
+    _guild, roles = _granting(monkeypatch)
     async with get_connection(db_path) as db:
         await db.execute("UPDATE divisions SET mention_role_id = 0 WHERE id = ?",
                          (DIVISION_ID,))
         await db.commit()
 
-    await _grant(db_path, placement,
+    await _grant(db_path, roles,
                  {"user_id": "1002", "division_id": DIVISION_ID, "team_name": None})
 
-    placement.grant_roles.assert_not_awaited()
+    roles.grant_roles.assert_not_awaited()

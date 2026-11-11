@@ -1,4 +1,4 @@
-"""`_do_approve` runs its gates without reaching for something that is not there.
+"""`approve_season` runs its gates without reaching for something that is not there.
 
 This file exists because of a shipped fault. `_image_template_problems` was deleted with
 the approval's render pass, and its *call* was left behind — so pressing Approve raised
@@ -10,7 +10,8 @@ Neither a compile check nor a lint pass catches it: `self._image_template_proble
 is valid Python and a perfectly ordinary attribute lookup, resolved only at run time. The
 one thing that catches it is running the function.
 
-So these drive `_do_approve` rather than reading it. They are not about whether each gate
+So these drive the approval's workflow, `season_review_workflows.approve_season`, rather than
+reading it. They are not about whether each gate
 decides correctly — the gates have their own tests — but about whether the sequence
 *executes*: every attribute it touches exists, and every refusal reaches the manager
 instead of an exception log.
@@ -39,19 +40,26 @@ review, in `test_season_review_report.py`.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from contextlib import ExitStack
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog
-
 from leaguebot.core.db.database import get_connection, run_migrations
+from tests.support.review_workflows import run_workflow, sign_up_confirmation_refused
 from tests.support.season_points import snapshot_points
+from tests.support.setup_reads import hold_setup
 
 SERVER_ID = 3300
 SEASON_ID = 11
 USER_ID = 77
+
+#: The gates a test may stand in, each a function of `approval_checks` the workflow calls.
+_GATES = (
+    "team_name_problems", "lineup_problems", "image_configuration_faults",
+    "placement_confirmation_faults", "season_has_divisions",
+)
 
 
 
@@ -105,11 +113,12 @@ def _pending():
 
 
 def _cog(db_path, **overrides):
-    """A cog whose services all answer, so the gates run to the end and the approval is asked
-    of the change queue (#439), whose ``ask`` is a double: what the approval then does is
-    `test_season_approval_change.py`'s. The check for an approval of the season already in
-    hand reads the real, empty, queue of this file's database."""
-    cog = SeasonCog.__new__(SeasonCog)
+    """A bot whose services all answer, and gates standing in for `approval_checks`'s, so the
+    gates run to the end and the approval is asked of the change queue (#439), whose ``ask`` is
+    a double: what the approval then does is `test_season_approval_change.py`'s. The check for
+    an approval of the season already in hand reads the real, empty, queue of this file's
+    database. The queue's clock is the host's."""
+    cog = SimpleNamespace()
     # A ``MagicMock`` bot with every awaited member named below, not a blanket
     # ``AsyncMock`` (issue #240). The blanket form looks like it makes the walk more
     # thorough and does the opposite: an unstubbed ``await bot.svc.method()`` answers with
@@ -120,13 +129,20 @@ def _cog(db_path, **overrides):
     cog.bot = MagicMock()
     cog.bot.db_path = db_path
     cog.bot.change_queue.ask = AsyncMock(return_value=None)
-    cog.bot.approval_windows = lambda: _approval_windows(cog)
+    cog.bot.change_queue.now = MagicMock(side_effect=lambda: datetime.now(timezone.utc))
+    # The windows are read as the builder has them read, through the hook it signs attendance
+    # and weather up to, off the cog's own doubles: a test switching a module on or off moves
+    # its window too.
+    from leaguebot.__main__ import _sign_up_to_round_windows
+
+    _sign_up_to_round_windows(cog.bot)
     cog.bot.output_router.post_log = AsyncMock()
-    cog._pending = {USER_ID: _pending()}
 
     season_svc = cog.bot.season_service
     season_svc.validate_division_tiers = AsyncMock()
     season_svc.get_divisions = AsyncMock(return_value=[])
+    # The season being set up, read from the database (#283).
+    hold_setup(season_svc, _pending(), divisions=False)
 
     # Every module off unless a test says otherwise. Said in as many words rather than left
     # to a mock's truthiness, so a gate that runs here runs because a test chose it.
@@ -137,61 +153,39 @@ def _cog(db_path, **overrides):
     module_svc.is_signup_enabled = AsyncMock(return_value=False)
     module_svc.is_images_enabled = AsyncMock(return_value=False)
 
-    # The image readers the review helpers reach for. Each is wrapped in a `try` that logs
-    # and carries on, so leaving them unpinned would not fail a test — it would just log an
-    # error and skip the check, which is the silence issue #240 is about.
-    cog.bot.image_config_service.get_config = AsyncMock(return_value=None)
-    cog.bot.image_config_service.get_toggles = AsyncMock(return_value={})
-    cog.bot.image_validity_service.colour_shortfall = AsyncMock(return_value={})
+    # The image module's drawing, answering "nothing wrong" to each question of the image
+    # configuration. Said in as many words, since a mock's answer read as a fault would refuse
+    # the season on the harness, and one read as a pass would hide a check that never ran.
+    drawing = cog.bot.image_drawing
+    drawing.rasteriser_fault = MagicMock(return_value=None)
+    drawing.template_faults = AsyncMock(return_value=[])
+    drawing.colour_shortfall_problems = AsyncMock(return_value=[])
+    drawing.portrait_fault = AsyncMock(return_value=None)
 
     # The gates that read the season rather than Discord. Each answers "nothing wrong",
     # so the sequence runs its whole length — which is what makes a missing attribute
     # anywhere along it fail this test rather than hide behind an early return.
-    cog._team_name_problems = AsyncMock(return_value=[])
-    cog._lineup_problems = AsyncMock(return_value=[])
-    cog._get_pending = MagicMock(return_value=_pending())
+    cog.team_name_problems = AsyncMock(return_value=[])
+    cog.lineup_problems = AsyncMock(return_value=[])
     # The season is in Placements with every signup settled and every channel set; the
     # gates of issue #220 have tests of their own in test_placements_confirmation.py.
     from leaguebot.core.models.season import SeasonStage
 
     season_svc.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
-    cog._placement_confirmation_faults = AsyncMock(return_value=([], []))
+    cog.placement_confirmation_faults = AsyncMock(return_value=([], []))
     # A season with no division is refused on its own terms, pinned in test_placements_confirmation.py.
-    cog._season_has_divisions = AsyncMock(return_value=True)
+    cog.season_has_divisions = AsyncMock(return_value=True)
 
     for name, value in overrides.items():
         setattr(cog, name, value)
+    # Results' refusals, through the hook as the builder signs them up (#283).
+    sign_up_confirmation_refused(cog.bot)
     return cog
-
-
-async def _approval_windows(cog):
-    """The builder's reader of the enabled modules' windows (`LeagueBot.approval_windows`), read
-    from the cog's own doubles so that a test switching a module on or off moves it too."""
-    from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
-
-    attendance = weather = None
-    if await cog.bot.module_service.is_attendance_enabled():
-        att = await cog.bot.attendance_service.get_or_create_config()
-        attendance = AttendanceWindows(
-            notice_days=att.rsvp_notice_days,
-            last_notice_hours=att.rsvp_last_notice_hours,
-            deadline_hours=att.rsvp_deadline_hours,
-        )
-    if await cog.bot.module_service.is_weather_enabled():
-        from leaguebot.weather.services.weather_config_service import get_weather_pipeline_config
-
-        wx = await get_weather_pipeline_config(cog.bot.db_path)
-        weather = WeatherWindows(
-            phase_1_days=wx.phase_1_days,
-            phase_2_days=wx.phase_2_days,
-            phase_3_hours=wx.phase_3_hours,
-        )
-    return attendance, weather
 
 
 def _assert_asked(cog) -> None:
     """The approval went through every gate and was asked of the change queue, once."""
-    from leaguebot.core.services.season_approval_change import KIND
+    from leaguebot.core.services.seasons.season_approval_change import KIND
 
     ask = cog.bot.change_queue.ask
     ask.assert_awaited_once()
@@ -199,8 +193,16 @@ def _assert_asked(cog) -> None:
     assert (call.args[0] if call.args else call.kwargs["kind"]) == KIND
 
 
-async def _run(cog, interaction):
-    await SeasonCog._do_approve(cog, interaction)
+async def _run(cog, interaction, **given):
+    """Press ✅ Approve: the approval's workflow, handed *cog*'s bot's services, with every gate
+    *cog* stands in for patched on `approval_checks`."""
+    from leaguebot.core.services.seasons import approval_checks
+
+    with ExitStack() as stack:
+        for gate in _GATES:
+            if hasattr(cog, gate):
+                stack.enter_context(patch.object(approval_checks, gate, getattr(cog, gate)))
+        await run_workflow("approve_season", cog.bot, interaction, **given)
 
 
 def _replies(interaction) -> str:
@@ -211,8 +213,7 @@ def _replies(interaction) -> str:
 
 async def test_no_pending_setup_refuses_without_reaching_a_gate(db_path):
     cog = _cog(db_path)
-    cog._pending = {}
-    cog._get_pending = MagicMock(return_value=None)
+    hold_setup(cog.bot.season_service, None, divisions=False)
     interaction = _interaction()
 
     await _run(cog, interaction)
@@ -222,9 +223,11 @@ async def test_no_pending_setup_refuses_without_reaching_a_gate(db_path):
 
 
 async def test_a_bad_tier_sequence_refuses_ephemerally(db_path):
+    from leaguebot.core.models.refusal import Refused
+
     cog = _cog(db_path)
     cog.bot.season_service.validate_division_tiers = AsyncMock(
-        side_effect=ValueError("Tiers must be sequential from 1.")
+        side_effect=Refused("Tiers must be sequential from 1.")
     )
     interaction = _interaction()
 
@@ -240,111 +243,86 @@ async def test_a_bad_tier_sequence_refuses_ephemerally(db_path):
 
 async def test_the_withdrawn_template_gate_is_not_called_again(db_path):
     """Gate 4 went with the approval's render pass, and its method with it. The templates
-    are judged again since #396, but through `_image_configuration_faults` — the helper the
-    review withholds its button on — and not through a second evaluation of the approval's
-    own, which is what let the two disagree."""
-    cog = _cog(db_path)
+    are judged again since #396, but through `approval_checks.image_configuration_faults` — the
+    helper the review withholds its button on — and not through a second evaluation of the
+    approval's own, which is what let the two disagree."""
+    from leaguebot.core.services.seasons import approval_checks, season_review_workflows
 
-    assert not hasattr(cog, "_image_template_problems"), (
-        "the withdrawn template gate is back; the templates are judged through "
-        "`_image_configuration_faults`"
-    )
+    for module in (approval_checks, season_review_workflows):
+        for name in ("image_template_problems", "_image_template_problems"):
+            assert not hasattr(module, name), (
+                "the withdrawn template gate is back; the templates are judged through "
+                "`approval_checks.image_configuration_faults`"
+            )
 
 
 # ── Gate 4b: the image module's configuration (#396) ────────────────────────
 #
-# The review draws the lineup and the calendar and nothing else, so its render was never
-# evidence that a results or weather template would draw, nor that the rasteriser was there
-# at all with both of those off. Each such season was named as blocked by the review and
-# then approved here. These drive the gate with the real `_image_configuration_faults` and
-# the rasteriser said rather than read from the host.
+# The review draws the lineup and the calendar and nothing else, so its render was never evidence
+# that a results or weather template would draw, nor that the rasteriser was there at all with both
+# of those off. Each such season was named as blocked by the review and then approved here. These
+# drive the gate with the real `approval_checks.image_configuration_faults`, over a stand-in for the
+# image module's drawing that answers each question as the test says; what the image module answers
+# is tested against its own drawing, in `tests/image/test_image_drawing_review.py`.
+
+_RASTERISER = "Inkscape is not installed on this host."
 
 
-def _images_on(cog, monkeypatch, *, converter=True, toggles=None, reports=None):
+def _images_on(cog, *, rasteriser=None, templates=(), colours=()):
+    """The image module switched on, its drawing answering the drawing program's fault, the
+    broken templates a switched-on output draws and the per-tier colour problems as given."""
     cog.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
-    cog.bot.image_config_service.get_toggles = AsyncMock(return_value=toggles or {})
-    cog.bot.image_validity_service.template_reports = AsyncMock(return_value=reports or {})
-    monkeypatch.setattr(
-        "leaguebot.image.services.image_render_service.converter_available", lambda: converter
-    )
+    cog.bot.image_drawing.rasteriser_fault = MagicMock(return_value=rasteriser)
+    cog.bot.image_drawing.template_faults = AsyncMock(return_value=list(templates))
+    cog.bot.image_drawing.colour_shortfall_problems = AsyncMock(return_value=list(colours))
     return cog
 
 
-def _broken(template_key: str):
-    from leaguebot.image.models.image_module import ValidityReport
-
-    return ValidityReport(
-        template_key=template_key,
-        resolved_path=None,
-        valid=False,
-        depth_checked=0,
-        reason="file not found",
-    )
-
-
-async def test_a_sound_image_configuration_still_approves(db_path, monkeypatch):
-    cog = _images_on(_cog(db_path), monkeypatch)
+async def test_a_sound_image_configuration_still_approves(db_path):
+    cog = _images_on(_cog(db_path))
 
     await _run(cog, _interaction())
 
     _assert_asked(cog)
+    cog.bot.image_drawing.template_faults.assert_awaited_once_with()
 
 
-async def test_a_missing_rasteriser_refuses_and_commits_nothing(db_path, monkeypatch):
-    cog = _images_on(_cog(db_path), monkeypatch, converter=False)
+async def test_a_missing_rasteriser_refuses_and_commits_nothing(db_path):
+    cog = _images_on(_cog(db_path), rasteriser=_RASTERISER)
     interaction = _interaction()
 
     await _run(cog, interaction)
 
     assert "image module is not correctly configured" in _replies(interaction)
-    assert "is not installed on this host" in _replies(interaction)
+    assert _RASTERISER in _replies(interaction)
+    cog.bot.image_drawing.rasteriser_fault.assert_called_with()
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-async def test_a_broken_template_of_a_switched_on_output_refuses_and_commits_nothing(
-    db_path, monkeypatch
-):
-    from leaguebot.image.models.image_constants import TEMPLATE_LABELS
+async def test_a_broken_template_of_a_switched_on_output_refuses_and_commits_nothing(db_path):
+    """Which templates a switched-on output draws, and so which break the season, is the image
+    module's to say (`test_image_drawing_review.py`); the approval refuses on each it names."""
+    fault = "Template **Results — race**: the template file cannot be found."
+    cog = _images_on(_cog(db_path), templates=[fault])
+    interaction = _interaction()
 
+    await _run(cog, interaction)
+
+    assert fault in _replies(interaction)
+    cog.bot.change_queue.ask.assert_not_awaited()
+
+
+async def test_a_tier_colour_shortfall_refuses_and_commits_nothing(db_path):
     cog = _images_on(
-        _cog(db_path),
-        monkeypatch,
-        toggles={"results": True},
-        reports={"results_race_template": _broken("results_race_template")},
+        _cog(db_path), colours=["`calendar_template` — `accent` is not set for **Pro**"]
     )
     interaction = _interaction()
 
     await _run(cog, interaction)
 
-    assert f"Template **{TEMPLATE_LABELS['results_race_template']}**" in _replies(interaction)
-    cog.bot.change_queue.ask.assert_not_awaited()
-
-
-async def test_a_broken_template_of_a_switched_off_output_still_approves(
-    db_path, monkeypatch
-):
-    """An output that is off posts as text and draws no template."""
-    cog = _images_on(
-        _cog(db_path),
-        monkeypatch,
-        reports={"results_race_template": _broken("results_race_template")},
+    assert "Tier colour: `calendar_template` — `accent` is not set for **Pro**" in _replies(
+        interaction
     )
-
-    await _run(cog, _interaction())
-
-    _assert_asked(cog)
-
-
-async def test_a_tier_colour_shortfall_refuses_and_commits_nothing(db_path, monkeypatch):
-    cog = _images_on(_cog(db_path), monkeypatch)
-    cog.bot.image_validity_service.colour_shortfall = AsyncMock(
-        return_value={"calendar_template": ["`accent` is not set for **Pro**"]}
-    )
-    interaction = _interaction()
-
-    await _run(cog, interaction)
-
-    assert "Tier colour: `calendar_template`" in _replies(interaction)
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
@@ -352,12 +330,12 @@ async def test_the_image_checks_are_not_read_with_the_module_off(db_path):
     """A league not drawing has no template, rasteriser or colour to be wrong about."""
     cog = _cog(
         db_path,
-        _image_configuration_faults=AsyncMock(return_value=["Inkscape is not installed."]),
+        image_configuration_faults=AsyncMock(return_value=["Inkscape is not installed."]),
     )
 
     await _run(cog, _interaction())
 
-    cog._image_configuration_faults.assert_not_awaited()
+    cog.image_configuration_faults.assert_not_awaited()
     _assert_asked(cog)
 
 
@@ -369,7 +347,7 @@ async def test_the_image_checks_are_not_read_with_the_module_off(db_path):
 
 
 def _division(name: str = "Premier", div_id: int = 1):
-    return SimpleNamespace(id=div_id, name=name, tier=1, forecast_channel_id="9")
+    return SimpleNamespace(id=div_id, name=name, tier=1)
 
 
 def _round_in(days_out: float, *, number: int = 1, div_id: int = 1):
@@ -475,7 +453,7 @@ async def test_the_gate_does_no_arithmetic_without_rounds(db_path):
     walk. The approval being asked of the queue is the proof it did neither, the windows
     being read through the reader the bot carries rather than the cog's configs.
 
-    It is also the regression, blunt and on purpose. `_do_approve` reads a dozen services and
+    It is also the regression, blunt and on purpose. `approve_season` reads a dozen services and
     helpers, and an editing slip that removes one while leaving its call raises only when the
     button is actually pressed. The walk ends at the change queue's ask (#439), where the press
     ends: everything before it can refuse, and the approval's own check and jobs follow it on
@@ -512,7 +490,7 @@ _NO_ATTENDANCE_CHANNEL = ([], ["**Pro** has no attendance channel — `/attendan
 async def test_a_missing_attendance_channel_refuses_before_the_window_gate(db_path):
     """The channel gate is the earlier one, and a manager hears about it first."""
     cog = _cog_with_rounds(db_path, [_round_in(3)])
-    cog._placement_confirmation_faults = AsyncMock(return_value=_NO_ATTENDANCE_CHANNEL)
+    cog.placement_confirmation_faults = AsyncMock(return_value=_NO_ATTENDANCE_CHANNEL)
     interaction = _interaction()
 
     await _run(cog, interaction)
@@ -531,7 +509,7 @@ async def test_the_window_gate_is_not_consulted_once_a_channel_is_missing(db_pat
     is refusable on both counts. Only the first refusal may be reached.
     """
     cog = _cog_with_rounds(db_path, [_round_in(3)])
-    cog._placement_confirmation_faults = AsyncMock(return_value=_NO_ATTENDANCE_CHANNEL)
+    cog.placement_confirmation_faults = AsyncMock(return_value=_NO_ATTENDANCE_CHANNEL)
 
     await _run(cog, _interaction())
 
@@ -623,7 +601,7 @@ async def test_a_cancelled_past_round_does_not_refuse_the_season(db_path):
 # The defect these pin is not that the rule was wrong — it was right, and had its own
 # passing tests — but that the gate asked it about a table nothing had filled in yet.
 # Every test of the rule seeded the season's own points by hand, so none of them could
-# notice. These drive `_do_approve` with the results module on and a config a manager
+# notice. These drive the approval with the results module on and a config a manager
 # could build this afternoon, which is the only vantage point the fault is visible from.
 # ---------------------------------------------------------------------------
 
@@ -631,7 +609,7 @@ async def test_a_cancelled_past_round_does_not_refuse_the_season(db_path):
 def _cog_with_results(db_path, **overrides):
     """A cog whose results module is on and whose test mode is off.
 
-    Test mode once mattered here: with it on, `_do_approve` attached configs of its own before
+    Test mode once mattered here: with it on, the approval attached configs of its own before
     the gate, which is precisely why #131 was invisible to anyone exercising approval in test
     mode. It attaches nothing now (decided 2026-09-23), and off is still said outright.
     """
@@ -641,19 +619,6 @@ def _cog_with_results(db_path, **overrides):
     # place the intent existed — and a test meaning to cover a league without the results
     # module would have covered this one just the same.
     cog.bot.module_service.is_results_enabled = AsyncMock(return_value=True)
-    # With the module genuinely on, the results gate reads each division's three channels
-    # before it reaches the points table these tests are about. One fully configured
-    # division, so the gate passes on its merits and the points gate is what refuses.
-    cog.bot.season_service.get_divisions_with_results_config = AsyncMock(
-        return_value=[
-            SimpleNamespace(
-                name="Pro",
-                results_channel_id=700,
-                standings_channel_id=701,
-                penalty_channel_id=702,
-            )
-        ]
-    )
     cog.bot.config_service.get_server_config = AsyncMock(
         return_value=SimpleNamespace(test_mode_active=False)
     )
@@ -683,9 +648,12 @@ async def test_a_wrongly_ordered_points_table_refuses_a_first_approval(db_path):
 
     await _run(cog, interaction)
 
-    replies = _replies(interaction)
-    assert "violates monotonic ordering" in replies
-    assert "BROKEN" in replies
+    # In full: the refusal moves into results with no word changed (#283).
+    assert _replies(interaction) == (
+        "\u274c Season cannot be approved \u2014 points configuration violates monotonic "
+        "ordering:\n\u2022 Config 'BROKEN', FEATURE_RACE: position 1 (10 pts) < "
+        "position 2 (25 pts)"
+    )
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
@@ -810,22 +778,38 @@ async def test_approve_refuses_and_names_a_phantom_points_config(db_path):
 
     await _run(cog, interaction)
 
-    replies = _replies(interaction)
-    assert "Standrad" in replies, "the refusal must name the configuration that is missing"
-    assert "does not exist" in replies
+    # In full, naming the configuration that is missing: the refusal moves into results with
+    # no word changed (#283).
+    assert _replies(interaction) == _PHANTOM_REFUSAL
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
-async def test_a_phantom_alongside_a_real_config_is_still_refused(db_path):
-    """One good configuration does not excuse the one that is not there."""
-    await _attach(db_path, "GOOD", [(1, 25), (2, 18)])
+#: The approval's refusal of a season attached to a points configuration named "Standrad" that
+#: does not exist, word for word.
+_PHANTOM_REFUSAL = (
+    "\u274c Season cannot be approved \u2014 R&S prerequisites not met:\n"
+    "\u2022 points configuration **Standrad** is attached to this season but does not exist "
+    "\u2014 create it with `/results config add`, or drop it with "
+    "`/results config detach Standrad`"
+)
+
+
+@pytest.mark.parametrize("points", [
+    pytest.param([(1, 25), (2, 18)], id="a sound table"),
+    pytest.param([(1, 10), (2, 25)], id="a table out of order"),
+])
+async def test_a_phantom_alongside_a_real_config_is_still_refused(db_path, points):
+    """One good configuration does not excuse the one that is not there; and where the other
+    is out of order as well, the approval stops at the missing one, its one refusal naming it
+    and not the ordering."""
+    await _attach(db_path, "OTHER", points)
     await _attach_phantom(db_path, "Standrad")
     cog = _cog_with_results(db_path)
     interaction = _interaction()
 
     await _run(cog, interaction)
 
-    assert "Standrad" in _replies(interaction)
+    assert _replies(interaction) == _PHANTOM_REFUSAL
     cog.bot.change_queue.ask.assert_not_awaited()
 
 
@@ -932,18 +916,18 @@ async def _a_past_round(db_path, monkeypatch):
 
 
 async def _an_unusable_team_name(db_path, monkeypatch):
-    cog = _cog(db_path, _team_name_problems=AsyncMock(return_value=["Team ✱ cannot be a field"]))
+    cog = _cog(db_path, team_name_problems=AsyncMock(return_value=["Team ✱ cannot be a field"]))
     return cog, "cannot become", None
 
 
 async def _a_lineup_too_small(db_path, monkeypatch):
-    cog = _cog(db_path, _lineup_problems=AsyncMock(return_value=["No seat for driver 3"]))
+    cog = _cog(db_path, lineup_problems=AsyncMock(return_value=["No seat for driver 3"]))
     return cog, "cannot draw this season", None
 
 
 async def _an_image_fault(db_path, monkeypatch):
     return (
-        _images_on(_cog(db_path), monkeypatch, converter=False),
+        _images_on(_cog(db_path), rasteriser=_RASTERISER),
         "image module is not correctly configured",
         None,
     )
@@ -982,7 +966,7 @@ async def test_a_refused_approval_writes_no_sessions(db_path, monkeypatch, refus
     _writing_sessions(cog, db_path, rnd)
     interaction = _interaction()
 
-    await SeasonCog._do_approve(cog, interaction, deadline=deadline)
+    await _run(cog, interaction, deadline=deadline)
 
     assert refused_for in _replies(interaction)
     cog.bot.change_queue.ask.assert_not_awaited()
@@ -1023,15 +1007,8 @@ def _what_the_line_carries(reply: str) -> list[str]:
 
 async def _gate_no_pending_setup(db_path, monkeypatch):
     cog = _cog(db_path)
-    cog._pending = {}
-    cog._get_pending = MagicMock(return_value=None)
+    hold_setup(cog.bot.season_service, None, divisions=False)
     return cog, "No pending season setup"
-
-
-async def _gate_setup_incomplete(db_path, monkeypatch):
-    cog = _cog(db_path)
-    cog._pending = {USER_ID: SimpleNamespace(server_id=SERVER_ID, season_id=0, divisions=[])}
-    return cog, "Season setup state is incomplete"
 
 
 async def _gate_no_longer_in_placements(db_path, monkeypatch):
@@ -1043,13 +1020,13 @@ async def _gate_no_longer_in_placements(db_path, monkeypatch):
 
 
 async def _gate_no_divisions(db_path, monkeypatch):
-    return _cog(db_path, _season_has_divisions=AsyncMock(return_value=False)), "no divisions"
+    return _cog(db_path, season_has_divisions=AsyncMock(return_value=False)), "no divisions"
 
 
 async def _gate_s_unsettled_signups_and_channel_faults(db_path, monkeypatch):
     cog = _cog(
         db_path,
-        _placement_confirmation_faults=AsyncMock(
+        placement_confirmation_faults=AsyncMock(
             return_value=(
                 ["Driver <@501>'s signup is not settled"],
                 ["**Pro** has no results channel set"],
@@ -1060,9 +1037,11 @@ async def _gate_s_unsettled_signups_and_channel_faults(db_path, monkeypatch):
 
 
 async def _gate_tiers_not_sequential(db_path, monkeypatch):
+    from leaguebot.core.models.refusal import Refused
+
     cog = _cog(db_path)
     cog.bot.season_service.validate_division_tiers = AsyncMock(
-        side_effect=ValueError("Tiers must be sequential from 1.")
+        side_effect=Refused("Tiers must be sequential from 1.")
     )
     return cog, "Tiers must be sequential from 1."
 
@@ -1098,17 +1077,17 @@ async def _gate_2d_a_round_already_run(db_path, monkeypatch):
 
 
 async def _gate_3a_an_unusable_team_name(db_path, monkeypatch):
-    cog = _cog(db_path, _team_name_problems=AsyncMock(return_value=["Team ✱ cannot be a field"]))
+    cog = _cog(db_path, team_name_problems=AsyncMock(return_value=["Team ✱ cannot be a field"]))
     return cog, "cannot become"
 
 
 async def _gate_4a_a_lineup_too_small(db_path, monkeypatch):
-    cog = _cog(db_path, _lineup_problems=AsyncMock(return_value=["No seat for driver 3"]))
+    cog = _cog(db_path, lineup_problems=AsyncMock(return_value=["No seat for driver 3"]))
     return cog, "cannot draw this season"
 
 
 async def _gate_4b_an_image_fault(db_path, monkeypatch):
-    cog = _images_on(_cog(db_path), monkeypatch, converter=False)
+    cog = _images_on(_cog(db_path), rasteriser=_RASTERISER)
     return cog, "image module is not correctly configured"
 
 
@@ -1116,11 +1095,10 @@ async def _gate_4b_an_image_fault(db_path, monkeypatch):
     "gate",
     [
         _gate_no_pending_setup,
-        _gate_setup_incomplete,
         _gate_no_longer_in_placements,
         _gate_no_divisions,
         _gate_s_unsettled_signups_and_channel_faults,
-        _gate_tiers_not_sequential,
+        pytest.param(_gate_tiers_not_sequential, id="tiers_not_sequential"),
         _gate_0_a_division_without_rounds,
         _gate_0b_two_rounds_at_one_moment,
         _gate_2_no_points_configuration,

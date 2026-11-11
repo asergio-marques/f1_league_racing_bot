@@ -1,8 +1,8 @@
-"""The plain data of the change queue (#439): no Discord and no database.
+"""The plain data of the change queue: no Discord and no database.
 
 `docs/design/architecture.md`, "How a change is carried out", designs the queue. This module holds
 the types a change type's steps are written in, which is why they live in a model: another module's
-step code imports them from core, and core's queue (`core/services/change_queue.py`) reads them.
+step code imports them from core, and core's queue (`core/services/queue/change_queue.py`) reads them.
 
 A change is a row of `queued_changes` and its steps are the rows of `queued_change_steps`;
 `ChangeState` and `ChangeOrigin` are the closed lists of the `CHECK` constraints on the first, tied
@@ -32,6 +32,9 @@ class ChangeState(str, Enum):
 #: The lane of the league's changes, the queue as a league knows it. A conversation's lane is
 #: `"channel:<id>"`, keyed by the channel it is held in.
 LEAGUE_LANE = "league"
+
+#: Lanes the dispatcher starts a worker for whatever else is running: the league's own changes.
+ALWAYS_RUN_LANES = (LEAGUE_LANE,)
 
 
 class ChangeOrigin(str, Enum):
@@ -172,20 +175,27 @@ class GuildUnavailable(Exception):
     """The league's server is not in the bot's cache: a failure on Discord's side, as any other."""
 
 
+def module_on(module: str) -> str:
+    """The kind of the change that turns *module* on, so core's cog names it without importing
+    the module."""
+    return f"module.on:{module}"
+
+
 def module_off(module: str) -> str:
     """The kind of the change that turns *module* off, so core's cog names it without importing
     the module."""
     return f"module.off:{module}"
 
 
-#: The kinds of weather's forecast changes, named here so that core (test mode) asks for them
-#: without importing the module, as `module_off` names a module's switch-off.
+#: The kinds of weather's forecast changes. Core names none of them: weather reads what is still
+#: unfinished of each for its own steps of `/test-mode advance`, and asks for them itself. They
+#: stay here with the other change kinds until each module owns its own.
 FORECAST = "weather.forecast"
 FORECAST_CLEAN_UP = "weather.forecast.clean_up"
-FORECAST_FLUSH = "weather.forecast.flush"
 
-#: The kinds of attendance's four check-in changes, named here so that core (test mode) asks for
-#: them without importing the module, as the forecast's are.
+#: The kinds of attendance's four check-in changes. Attendance reads what is still unfinished of
+#: each for its own steps of `/test-mode advance`, and `/test-mode review` still reads them in
+#: core until attendance hands it its own marks.
 CHECK_IN_CALL = "attendance.check_in.call"
 CHECK_IN_LAST_NOTICE = "attendance.check_in.last_notice"
 CHECK_IN_DEADLINE = "attendance.check_in.deadline"
@@ -195,8 +205,9 @@ CHECK_IN_CLEAN_UP = "attendance.check_in.clean_up"
 def forecasts_named(phases: Iterable[int]) -> str:
     """The forecasts a clean-up deletes, named by their phases as every text of the clean-up
     names them: "the Phase 2 forecast", "the Phase 1 and 2 forecasts", or "the forecast" where no
-    phase is known. Here so that core (test mode, the amendment, the restart) and weather name
-    the clean-up alike, the phase it really deletes and never one that is not standing."""
+    phase is known. Here so that core (the amendment, the restart) and weather (its changes and
+    its advance step) name the clean-up alike, the phase it really deletes and never one that is
+    not standing."""
     known = sorted(set(phases))
     if not known:
         return "the forecast"

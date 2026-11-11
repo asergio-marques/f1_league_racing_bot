@@ -28,13 +28,13 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 from tests.support.change_queue import (
     INTERACTION_CHANNEL_ID,
     LOG_CHANNEL_ID,
     acknowledgement,
-    attach_queue,
-    league_double,
+    league_bot,
+    league_queue,
     member,
     member_interaction,
     queued_log_lines,
@@ -104,20 +104,16 @@ async def _make_db(
     return db_path
 
 
-def _make_cog(db_path: str, *, attendance_enabled: bool, queued: bool = False) -> ModuleCog:
-    """A cog whose router and module flags are doubles; with *queued*, the bot as the builder
-    makes it instead: real services, router and change queue on *db_path*, "now" pinned."""
+async def _make_cog(db_path: str, *, attendance_enabled: bool,
+                    queued: bool = False) -> ModuleCog:
+    """A cog whose router and module flags are doubles; with *queued*, the league's bot
+    (`league_bot`) instead: real services, router and change queue on *db_path*, "now" pinned."""
     cog = ModuleCog.__new__(ModuleCog)
     if queued:
-        from leaguebot.attendance.services.attendance_service import AttendanceService
-        from leaguebot.core.services.module_service import ModuleService
 
-        bot = league_double(db_path)
+        bot = await league_bot(db_path)
         bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-        bot.module_service = ModuleService(db_path)
-        bot.season_service = SeasonService(db_path)
-        bot.attendance_service = AttendanceService(db_path)
-        attach_queue(bot, db_path, now=NOW)
+        league_queue(bot, db_path, now=NOW)
         cog.bot = bot
         return cog
     bot = MagicMock()
@@ -125,6 +121,11 @@ def _make_cog(db_path: str, *, attendance_enabled: bool, queued: bool = False) -
     bot.db_path = db_path
     bot.module_service.is_results_enabled = AsyncMock(return_value=True)
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=attendance_enabled)
+    # The disable now reads every module's flag through the table (#283), not attendance's
+    # alone, so each other module's getter needs its own double too.
+    bot.module_service.is_weather_enabled = AsyncMock(return_value=False)
+    bot.module_service.is_signup_enabled = AsyncMock(return_value=False)
+    bot.module_service.is_images_enabled = AsyncMock(return_value=False)
     bot.output_router.post_log = AsyncMock(return_value=None)
     # A real one: the disable asks it whether a season is running, and then to close any round
     # only the results module could have moved (issue #167).
@@ -189,7 +190,7 @@ async def _module_flags(db_path: str) -> tuple[int, int, int]:
 
 async def test_the_cascade_is_named_before_anything_is_written(tmp_path):
     db_path = await _make_db(tmp_path, attendance_enabled=True)
-    cog = _make_cog(db_path, attendance_enabled=True)
+    cog = await _make_cog(db_path, attendance_enabled=True)
     interaction = _make_interaction()
 
     await cog._disable_results(interaction)
@@ -204,7 +205,7 @@ async def test_the_cascade_is_named_before_anything_is_written(tmp_path):
 
 async def test_the_warning_carries_a_confirmation(tmp_path):
     db_path = await _make_db(tmp_path, attendance_enabled=True)
-    cog = _make_cog(db_path, attendance_enabled=True)
+    cog = await _make_cog(db_path, attendance_enabled=True)
     interaction = _make_interaction()
 
     await cog._disable_results(interaction)
@@ -222,7 +223,7 @@ async def test_cancelling_leaves_both_modules_enabled(tmp_path):
     """Cancel changes nothing, and is recorded with what stands and what to do next beneath it
     (#482)."""
     db_path = await _make_db(tmp_path, attendance_enabled=True)
-    cog = _make_cog(db_path, attendance_enabled=True)
+    cog = await _make_cog(db_path, attendance_enabled=True)
     view = _ConfirmDisableResultsView(cog, ACTOR_ID)
     interaction = _make_interaction()
     interaction.client = cog.bot
@@ -244,7 +245,7 @@ async def test_cancelling_a_results_only_disable_is_recorded(tmp_path):
     """With attendance off, Cancel is recorded with results still enabled and nothing
     deleted beneath it, and what to do next (#482)."""
     db_path = await _make_db(tmp_path, attendance_enabled=False)
-    cog = _make_cog(db_path, attendance_enabled=False)
+    cog = await _make_cog(db_path, attendance_enabled=False)
     view = _ConfirmDisableResultsView(cog, ACTOR_ID, cascade_attendance=False)
     interaction = _make_interaction()
     interaction.client = cog.bot
@@ -268,7 +269,7 @@ async def test_a_confirmation_left_unanswered_is_recorded_as_lapsed(tmp_path):
     lapsed, naming the admin who started it, with what stands and to run the command again
     beneath it (#482)."""
     db_path = await _make_db(tmp_path, attendance_enabled=True)
-    cog = _make_cog(db_path, attendance_enabled=True)
+    cog = await _make_cog(db_path, attendance_enabled=True)
     guild = MagicMock()
     guild.get_member = MagicMock(
         side_effect=lambda member_id: (
@@ -293,7 +294,7 @@ async def test_a_confirmation_left_unanswered_is_recorded_as_lapsed(tmp_path):
 
 async def test_confirming_disables_both_and_names_both(tmp_path):
     db_path = await _make_db(tmp_path, attendance_enabled=True)
-    cog = _make_cog(db_path, attendance_enabled=True, queued=True)
+    cog = await _make_cog(db_path, attendance_enabled=True, queued=True)
     view = _ConfirmDisableResultsView(cog, ACTOR_ID)
     interaction = member_interaction(cog.bot, user=member(ACTOR_ID))
 
@@ -313,7 +314,7 @@ async def test_confirming_disables_both_and_names_both(tmp_path):
 async def test_only_the_actor_may_confirm(tmp_path):
     """Another member's press changes nothing, is refused, and the refusal is recorded (#482)."""
     db_path = await _make_db(tmp_path, attendance_enabled=True)
-    cog = _make_cog(db_path, attendance_enabled=True)
+    cog = await _make_cog(db_path, attendance_enabled=True)
     view = _ConfirmDisableResultsView(cog, ACTOR_ID)
     interaction = _make_interaction()
     interaction.client = cog.bot
@@ -339,13 +340,9 @@ async def test_a_disable_whose_season_cannot_be_wound_down_says_so_in_its_line(
     queue at the wind-down's own job: the wind-down is a change of its own, asked for in the
     switch-off's save, so the stop names it and the switch-off's line carries no "not done"
     (#439)."""
-    from leaguebot.core.services import hub_service, season_lifecycle_service
+    from leaguebot.core.services.modules import hub_service
 
     monkeypatch.setattr(hub_service, "refresh_panel", AsyncMock(return_value=None))
-    monkeypatch.setattr(
-        season_lifecycle_service, "close_window_for_wind_down",
-        AsyncMock(side_effect=RuntimeError("the scheduler is down")),
-    )
     db_path = await _make_db(tmp_path, attendance_enabled=False, season_status="ACTIVE")
     async with get_connection(db_path) as db:
         # Placements still open, so the season has the wind-down's work left to do.
@@ -353,11 +350,16 @@ async def test_a_disable_whose_season_cannot_be_wound_down_says_so_in_its_line(
         await db.execute("UPDATE divisions SET status = 'ACTIVE' WHERE id = 1")
         await db.execute(
             "INSERT INTO rounds (division_id, round_number, track_name, scheduled_at, format, "
-            "status) VALUES (1, 1, 'Bahrain', '2026-01-01T12:00:00', 'NORMAL', "
+            "status) VALUES (1, 1, 'Bahrain', '2026-01-01T12:00:00+00:00', 'NORMAL', "
             "'AWAITING_RESULTS')"
         )
+        # The database refuses to move the season on to Pending completion.
+        await db.execute(
+            "CREATE TRIGGER refuse_wind_down BEFORE UPDATE OF stage ON seasons "
+            "WHEN NEW.stage = 'PENDING_COMPLETION' BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
+        )
         await db.commit()
-    cog = _make_cog(db_path, attendance_enabled=False, queued=True)
+    cog = await _make_cog(db_path, attendance_enabled=False, queued=True)
     view = _ConfirmDisableResultsView(cog, ACTOR_ID, cascade_attendance=False)
     interaction = member_interaction(cog.bot, user=member(ACTOR_ID))
 
@@ -372,10 +374,10 @@ async def test_a_disable_whose_season_cannot_be_wound_down_says_so_in_its_line(
     assert first.startswith(f"Admin (`<@{ACTOR_ID}>`) | /module disable results")
     assert not any(text.startswith("  not done:") for text in beneath)
     [stop] = [line for line in lines if line.startswith(STOPPED_AT)]
-    assert "winding the season down" in stop
+    assert "turning the pending placements down and moving the season on" in stop
     assert "`/module disable results`" in stop
     assert f"Admin (`<@{ACTOR_ID}>`)" in stop
-    assert "failed (the bot hit an internal fault)." in stop
+    assert "failed (the bot could not read or write its database)." in stop
 
 
 # ---------------------------------------------------------------------------
@@ -391,7 +393,7 @@ async def test_no_warning_where_neither_attendance_nor_a_season_is_at_stake(tmp_
     it is under way, and that reply is updated once it is done.
     """
     db_path = await _make_db(tmp_path, attendance_enabled=False)
-    cog = _make_cog(db_path, attendance_enabled=False, queued=True)
+    cog = await _make_cog(db_path, attendance_enabled=False, queued=True)
     interaction = member_interaction(cog.bot, user=member(ACTOR_ID))
 
     await cog._disable_results(interaction)
@@ -406,3 +408,57 @@ async def test_no_warning_where_neither_attendance_nor_a_season_is_at_stake(tmp_
     assert results == 0
     assert attendance == 0
     assert updated_reply(interaction) == "✅ Results & Standings module disabled."
+
+
+async def test_the_dependency_table_decides_the_cascade_and_its_warning(tmp_path, monkeypatch):
+    """The cascade and its warning read the table in `core/models/` rather than a rule of their
+    own: with the table emptied, attendance on and no season running, results goes off at once,
+    with no warning, and attendance stays on with its channels."""
+    from leaguebot.core.models import module_dependencies
+
+    monkeypatch.setattr(module_dependencies, "NEEDS", {})
+    db_path = await _make_db(tmp_path, attendance_enabled=True)
+    cog = await _make_cog(db_path, attendance_enabled=True, queued=True)
+    interaction = member_interaction(cog.bot, user=member(ACTOR_ID))
+
+    await cog._disable_results(interaction)
+
+    assert _acknowledges(acknowledgement(interaction))
+    assert "view" not in interaction.response.send_message.await_args.kwargs
+
+    await run_queue(cog.bot)
+
+    assert await _module_flags(db_path) == (0, 1, 1)
+    assert updated_reply(interaction) == "✅ Results & Standings module disabled."
+
+
+async def test_the_results_disable_hands_every_switched_on_module_to_the_table(
+    tmp_path, monkeypatch
+):
+    """The cascade reads every switched-on module through the table, not attendance's flag
+    alone, so a second entry in the table needs no change to the command: with weather and
+    attendance on and signup off, `/module disable results` hands the table weather and
+    attendance among the modules switched on, and never signup."""
+    from leaguebot.core.cogs import module_cog
+    from leaguebot.core.models import module_dependencies
+
+    handed: list[frozenset[str]] = []
+    real = module_dependencies.taken_down_with
+
+    def spy(module, enabled):
+        handed.append(frozenset(enabled))
+        return real(module, enabled)
+
+    monkeypatch.setattr(module_dependencies, "taken_down_with", spy)
+    monkeypatch.setattr(module_cog, "taken_down_with", spy, raising=False)
+    db_path = await _make_db(tmp_path, attendance_enabled=True)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE server_configs SET weather_module_enabled = 1")
+        await db.commit()
+    cog = await _make_cog(db_path, attendance_enabled=True, queued=True)
+
+    await cog._disable_results(member_interaction(cog.bot, user=member(ACTOR_ID)))
+
+    [enabled] = handed
+    assert {"weather", "attendance"} <= enabled
+    assert "signup" not in enabled

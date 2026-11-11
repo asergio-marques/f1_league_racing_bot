@@ -16,15 +16,16 @@ import os
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services import driver_service
-from leaguebot.core.services.driver_service import DriverService
+from leaguebot.core.services.drivers import driver_service
 from tests.support.teams import seed_team_instances
+from tests.support.driver_transitions import reassign_hooks, reassigned
 
 SERVER_ID = 2440
 A, B, C = "6501", "6502", "6503"
 
 #: Seasons 1 and 3 each hold a division called Pro; season 1 also holds Am.
 S1_PRO, S1_AM, S3_PRO = 11, 12, 31
+
 
 
 async def _make_db(tmp_path) -> str:
@@ -51,7 +52,7 @@ async def _make_db(tmp_path) -> str:
             await seed_team_instances(db, division, 501)
             await db.execute(
                 "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at) "
-                "VALUES (?, ?, 1, 'NORMAL', '2026-01-20T18:00:00')",
+                "VALUES (?, ?, 1, 'NORMAL', '2026-01-20T18:00:00+00:00')",
                 (division, division),
             )
             await db.execute(
@@ -108,20 +109,25 @@ async def _history(db_path: str, profile_id: int, account: str, division_name: s
 
 
 async def _snapshot(db_path: str) -> dict[str, list[tuple]]:
-    tables = (
-        "driver_profiles", "driver_accounts", "driver_division_memberships",
-        "driver_history_entries", "race_session_results",
-    )
+    """Every row of every table, so that a merge refused or rolled back is seen to change
+    nothing anywhere, the modules' tables included."""
     out: dict[str, list[tuple]] = {}
     async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        )
+        tables = [r["name"] for r in await cursor.fetchall()]
         for table in tables:
-            rows = await (await db.execute(f"SELECT * FROM {table}")).fetchall()
+            rows = await (await db.execute(f"SELECT * FROM '{table}'")).fetchall()
             out[table] = sorted((tuple(r) for r in rows), key=repr)
     return out
 
 
-async def _reassign(db_path: str, old: str, new: str):
-    return await DriverService(db_path).reassign_user_id(old, new, 77, "Manager")
+async def _reassign(db_path: str, old: str, new: str, *, hooks=None):
+    """`/driver reassign`'s save, handed the hooks a reassign is handed as the builder makes them
+    (`reassign_hooks`), or *hooks*."""
+    return await reassigned(db_path, old, new, hooks=hooks)
 
 
 async def _profiles(db_path: str) -> list[tuple]:
@@ -247,8 +253,9 @@ async def test_leftover_results_elsewhere_become_the_drivers(tmp_path):
 
 
 async def _refused(db_path: str, match: str) -> None:
+    from leaguebot.core.models.refusal import Refused
     before = await _snapshot(db_path)
-    with pytest.raises(ValueError, match=match):
+    with pytest.raises(Refused, match=match):
         await _reassign(db_path, A, B)
     assert await _snapshot(db_path) == before
 
@@ -277,6 +284,41 @@ async def test_both_taking_part_in_one_seasons_division_is_refused(tmp_path, par
     await _refused(db_path, "both took part in Season 1 Pro")
 
 
+@pytest.mark.parametrize("part", ["raced", "seated"])
+async def test_with_no_module_answering_only_a_shared_seat_is_refused(tmp_path, part):
+    """No module signed up to answer which divisions a driver raced in (results never built). A
+    and B, each a driver of their own, both took part in Season 1 Pro: racing there, neither
+    seated, or seated there. Results' rows are not read by core, so a shared race alone is no
+    obstacle and the two are merged as though neither had raced, B's account becoming the
+    driver's; a shared seat, which core records itself, is still refused in today's words,
+    changing nothing."""
+    from leaguebot.core.models.refusal import Refused
+    from leaguebot.core.utils.hooks import AwaitedHook
+    from tests.support.delete_hooks import MERGE_HOOKS, delete_hooks
+
+    db_path = await _make_db(tmp_path)
+    a = await _profile(db_path, A)
+    b = await _profile(db_path, B)
+    if part == "seated":
+        await _seated(db_path, a, S1_PRO)
+        await _seated(db_path, b, S1_PRO)
+    else:
+        await _raced(db_path, A, S1_PRO, a)
+        await _raced(db_path, B, S1_PRO, b)
+    hooks = {**delete_hooks(*MERGE_HOOKS), "divisions_raced_read": AwaitedHook()}
+
+    if part == "seated":
+        before = await _snapshot(db_path)
+        with pytest.raises(Refused, match="both took part in Season 1 Pro"):
+            await _reassign(db_path, A, B, hooks=hooks)
+        assert await _snapshot(db_path) == before
+        return
+    outcome = await _reassign(db_path, A, B, hooks=hooks)
+    assert outcome.profile.discord_user_id == B
+    assert outcome.merged_accounts == [B]
+    assert len(await _profiles(db_path)) == 1
+
+
 async def test_leftover_results_in_a_shared_division_are_refused(tmp_path):
     """E31: B holds no profile, but raced season 1 Pro, as did the driver."""
     db_path = await _make_db(tmp_path)
@@ -287,20 +329,31 @@ async def test_leftover_results_in_a_shared_division_are_refused(tmp_path):
     await _refused(db_path, "both took part in Season 1 Pro")
 
 
-async def test_a_failure_part_way_through_a_merge_changes_nothing(tmp_path, monkeypatch):
-    """E33: one transaction. A table that cannot be written stands in for any fault."""
+async def test_a_failure_part_way_through_a_merge_changes_nothing(tmp_path):
+    """E33: one transaction, the modules' part included. A, seated in the live season, is given
+    B's account; B raced Season 1 Am and holds a history entry there. The merge hook carries the
+    modules' parts and, after them, a part that fails, standing in for any fault: by then results
+    has moved B's result onto A, on the merge's connection. The reassign fails, and nothing is
+    changed: B's profile, accounts, history and result stand as they were."""
     db_path = await _make_db(tmp_path)
     a = await _profile(db_path, A, state="ASSIGNED")
     await _seated(db_path, a, S3_PRO)
     b = await _profile(db_path, B)
     await _history(db_path, b, B, "Am")
-    monkeypatch.setattr(
-        driver_service, "_PROFILE_COLUMNS",
-        (*driver_service._PROFILE_COLUMNS[:4], "no_such_table", *driver_service._PROFILE_COLUMNS[4:]),
-    )
+    await _raced(db_path, B, S1_AM, b)
+    hooks = reassign_hooks()
+    moved: list[int] = []
+
+    async def _fails(db, *_ids):
+        cursor = await db.execute("SELECT driver_profile_id FROM race_session_results")
+        moved.extend(row[0] for row in await cursor.fetchall())
+        raise RuntimeError("disk I/O error")
+
+    hooks["profiles_merged"].subscribe(_fails)
     before = await _snapshot(db_path)
 
-    with pytest.raises(Exception, match="no_such_table"):
-        await _reassign(db_path, A, B)
+    with pytest.raises(RuntimeError, match="disk I/O error"):
+        await _reassign(db_path, A, B, hooks=hooks)
 
+    assert moved == [a]  # the module's part was done before the fault
     assert await _snapshot(db_path) == before

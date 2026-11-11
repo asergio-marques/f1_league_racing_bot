@@ -11,8 +11,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from leaguebot.core.models.round import Round, RoundFormat, RoundStatus
-from leaguebot.core.services.amendment_rules_service import judge_amendment
-from leaguebot.core.services.approval_window_service import AttendanceWindows, WeatherWindows
+from leaguebot.core.services.rounds.amendment_rules_service import judge_amendment
+from leaguebot.core.models.round import AttendanceWindows, WeatherWindows
 
 NOW = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)
 
@@ -28,9 +28,6 @@ def _round(
     status: str = RoundStatus.NOT_RUN.value,
     fmt: RoundFormat = RoundFormat.NORMAL,
     track: str | None = "Bahrain International Circuit",
-    phase1_done: bool = False,
-    phase2_done: bool = False,
-    phase3_done: bool = False,
 ) -> Round:
     return Round(
         id=1,
@@ -39,9 +36,6 @@ def _round(
         format=fmt,
         track_name=track,
         scheduled_at=scheduled_at,
-        phase1_done=phase1_done,
-        phase2_done=phase2_done,
-        phase3_done=phase3_done,
         status=status,
     )
 
@@ -205,12 +199,13 @@ def test_a_small_delay_leaves_the_early_windows_standing():
 
 
 def test_a_long_delay_puts_every_phase_back_in_question():
-    rnd = _round(scheduled_at=NOW + timedelta(days=1), phase1_done=True)
+    rnd = _round(scheduled_at=NOW + timedelta(days=1))
     verdict = judge_amendment(
         rnd,
         {"scheduled_at": NOW + timedelta(days=30)},
         now=NOW,
         weather=DEFAULT_WEATHER,
+        drawn={1: True},
     )
     assert all(p.rearm for p in verdict.phases.values())
 
@@ -222,13 +217,14 @@ def test_a_delay_can_leave_phase_one_standing_while_the_later_two_are_rearmed():
     either way, so the forecast already drawn stands. Phases 2 and 3 have not come round under
     the new moment, so they are armed again.
     """
-    rnd = _round(scheduled_at=NOW + timedelta(days=3), phase1_done=True)
+    rnd = _round(scheduled_at=NOW + timedelta(days=3))
     verdict = judge_amendment(
         rnd,
         {"scheduled_at": NOW + timedelta(days=4)},
         now=NOW,
         weather=DEFAULT_WEATHER,
         attendance=DEFAULT_ATTENDANCE,
+        drawn={1: True},
     )
     assert verdict.allowed, verdict.refusals
     assert verdict.phases[1].stands
@@ -259,22 +255,28 @@ def test_no_phases_are_judged_without_configured_horizons():
 
 
 def test_the_track_may_not_be_amended_once_phase_one_has_run():
-    rnd = _round(scheduled_at=NOW + timedelta(days=3), phase1_done=True)
-    verdict = judge_amendment(rnd, {"track_name": "Silverstone Circuit"}, now=NOW)
+    rnd = _round(scheduled_at=NOW + timedelta(days=3))
+    verdict = judge_amendment(
+        rnd, {"track_name": "Silverstone Circuit"}, now=NOW, drawn={1: True}
+    )
     assert not verdict.allowed
     assert any("first forecast" in r for r in verdict.refusals)
 
 
 def test_the_format_may_not_be_amended_once_phase_two_has_run():
-    rnd = _round(scheduled_at=NOW + timedelta(days=1), phase1_done=True, phase2_done=True)
-    verdict = judge_amendment(rnd, {"format": RoundFormat.SPRINT}, now=NOW)
+    rnd = _round(scheduled_at=NOW + timedelta(days=1))
+    verdict = judge_amendment(
+        rnd, {"format": RoundFormat.SPRINT}, now=NOW, drawn={1: True, 2: True}
+    )
     assert not verdict.allowed
     assert any("second forecast" in r for r in verdict.refusals)
 
 
 def test_the_format_may_still_be_amended_after_phase_one_alone():
-    rnd = _round(scheduled_at=NOW + timedelta(days=3), phase1_done=True)
-    assert judge_amendment(rnd, {"format": RoundFormat.SPRINT}, now=NOW).allowed
+    rnd = _round(scheduled_at=NOW + timedelta(days=3))
+    assert judge_amendment(
+        rnd, {"format": RoundFormat.SPRINT}, now=NOW, drawn={1: True}
+    ).allowed
 
 
 def test_moving_a_round_forward_lets_its_track_be_amended_in_the_same_change():
@@ -283,13 +285,14 @@ def test_moving_a_round_forward_lets_its_track_be_amended_in_the_same_change():
     The round has started and its first forecast is out, so a bare track change is refused twice
     over. Moving it puts both rules back in question, and they read the round as it will stand.
     """
-    rnd = _round(scheduled_at=NOW - timedelta(hours=1), phase1_done=True)
+    rnd = _round(scheduled_at=NOW - timedelta(hours=1))
     verdict = judge_amendment(
         rnd,
         {"track_name": "Silverstone Circuit", "scheduled_at": NOW + timedelta(days=30)},
         now=NOW,
         attendance=DEFAULT_ATTENDANCE,
         weather=DEFAULT_WEATHER,
+        drawn={1: True},
     )
     assert verdict.allowed, verdict.refusals
 
@@ -398,11 +401,12 @@ def test_revealing_a_mystery_round_amends_both_at_once():
 def test_one_refused_field_refuses_the_whole_change_set():
     """Track and format together, with phase 2 out: the format alone is what refuses it, and the
     track goes with it. None of the amendment happens."""
-    rnd = _round(scheduled_at=NOW + timedelta(days=1), phase2_done=True)
+    rnd = _round(scheduled_at=NOW + timedelta(days=1))
     verdict = judge_amendment(
         rnd,
         {"track_name": "Silverstone Circuit", "format": RoundFormat.SPRINT},
         now=NOW,
+        drawn={2: True},
     )
     assert not verdict.allowed
 
@@ -449,17 +453,17 @@ def test_a_round_nudged_within_its_closed_check_in_stays_closed():
 # is tested in `test_division_no_op_judgement.py`.
 
 #: A round as `/round amend` holds it before it asks for anything: its track, its format as a
-#: `RoundFormat` and its moment as a naive UTC `datetime`, which is what `_row_to_round` makes of
+#: `RoundFormat` and its moment as an aware UTC `datetime`, which is what `_row_to_round` makes of
 #: the stored row on the active path and what the pending path's round already carries.
 _STANDING = {
     "track_name": "Bahrain International Circuit",
     "format": RoundFormat.SPRINT,
-    "scheduled_at": datetime(2026, 7, 1, 18, 0),
+    "scheduled_at": datetime(2026, 7, 1, 18, 0, tzinfo=timezone.utc),
 }
 
 
 def _asked_moment(text: str) -> datetime:
-    """A moment as `/round amend` holds it once typed: through `parse_datetime`, naive UTC."""
+    """A moment as `/round amend` holds it once typed: through `parse_datetime`, aware UTC."""
     from leaguebot.core.utils.input_validator import parse_datetime
 
     moment = parse_datetime(text)
@@ -491,7 +495,7 @@ def _asked_moment(text: str) -> datetime:
     ],
 )
 def test_a_round_amendment_to_the_values_that_stand_changes_nothing(changes):
-    from leaguebot.core.services.amendment_rules_service import amendment_changes_nothing
+    from leaguebot.core.services.rounds.amendment_rules_service import amendment_changes_nothing
 
     assert amendment_changes_nothing(_STANDING, changes)
 
@@ -512,6 +516,6 @@ def test_a_round_amendment_to_the_values_that_stand_changes_nothing(changes):
     ],
 )
 def test_a_round_amendment_with_any_value_changed_changes_something(changes):
-    from leaguebot.core.services.amendment_rules_service import amendment_changes_nothing
+    from leaguebot.core.services.rounds.amendment_rules_service import amendment_changes_nothing
 
     assert not amendment_changes_nothing(_STANDING, changes)

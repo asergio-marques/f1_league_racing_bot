@@ -89,10 +89,10 @@ async def grid_db(tmp_path):
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
             "scheduled_at) VALUES (?, 7, ?, ?, ?, ?)",
             [
-                (10, 1, "NORMAL", "Silverstone Circuit", "2026-06-07T18:00:00"),
-                (11, 2, "MYSTERY", None, "2026-06-14T18:00:00"),
-                (12, 3, "SPRINT", "Circuit Zandvoort", "2026-06-21T18:00:00"),
-                (13, 4, "NORMAL", "Suzuka", "2026-06-28T18:00:00"),
+                (10, 1, "NORMAL", "Silverstone Circuit", "2026-06-07T18:00:00+00:00"),
+                (11, 2, "MYSTERY", None, "2026-06-14T18:00:00+00:00"),
+                (12, 3, "SPRINT", "Circuit Zandvoort", "2026-06-21T18:00:00+00:00"),
+                (13, 4, "NORMAL", "Suzuka", "2026-06-28T18:00:00+00:00"),
             ],
         )
         await db.executemany(

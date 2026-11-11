@@ -3,7 +3,8 @@
 Migration 057 adds `seasons.stage` beside `seasons.status`. The status keeps the grain every
 older reader was written against; the stage refines it into the ten states the core
 specification names. These tests pin the mapping between the two, the migration's backfill
-of rows already in the old shape, and the transitions `SeasonService.set_stage` permits.
+of rows already in the old shape, and the move the configuration's confirmation makes on its
+save, `confirm_configuration_on`.
 """
 from __future__ import annotations
 
@@ -20,7 +21,7 @@ from leaguebot.core.models.season import (
     SeasonStatus,
     status_of_stage,
 )
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 
 SERVER_ID = 2200
 
@@ -92,23 +93,39 @@ async def test_a_season_inserted_without_a_stage_takes_its_status_default(db_pat
     assert await _row(db_path, season_id) == (status, stage)
 
 
-async def test_a_season_inserted_with_a_stage_keeps_it(db_path):
-    season_id = await _insert(db_path, "SETUP", "CONFIGURATION")
-    assert await _row(db_path, season_id) == ("SETUP", "CONFIGURATION")
+@pytest.mark.parametrize(
+    "status, stage",
+    [(status, stage) for status in SeasonStatus for stage in SeasonStage],
+    ids=lambda value: value.value,
+)
+async def test_every_status_and_stage_pair_is_held_by_the_triggers(db_path, status, stage):
+    """A season written with a status and a stage keeps the pair where the status admits the
+    stage (`STAGES_OF_STATUS`) and is refused otherwise, whether it is inserted with the pair or
+    has its stage moved to it, so the triggers and the mapping cannot drift apart."""
+    admitted = stage in STAGES_OF_STATUS[status]
 
-
-async def test_a_stage_its_status_does_not_admit_is_refused_on_insert(db_path):
-    with pytest.raises(sqlite3.IntegrityError, match="stage does not match"):
-        await _insert(db_path, "SETUP", "ONGOING")
-
-
-async def test_a_stage_its_status_does_not_admit_is_refused_on_update(db_path):
-    season_id = await _insert(db_path, "SETUP", "CONFIGURATION")
-    async with get_connection(db_path) as db:
+    if admitted:
+        season_id = await _insert(db_path, status.value, stage.value)
+        assert await _row(db_path, season_id) == (status.value, stage.value)
+        async with get_connection(db_path) as db:  # one live season at a time
+            await db.execute("DELETE FROM seasons")
+            await db.commit()
+    else:
         with pytest.raises(sqlite3.IntegrityError, match="stage does not match"):
-            await db.execute(
-                "UPDATE seasons SET stage = 'ONGOING' WHERE id = ?", (season_id,)
-            )
+            await _insert(db_path, status.value, stage.value)
+
+    season_id = await _insert(db_path, status.value, sorted(STAGES_OF_STATUS[status])[0].value)
+    async with get_connection(db_path) as db:
+        if admitted:
+            await db.execute("UPDATE seasons SET stage = ? WHERE id = ?", (stage.value, season_id))
+            await db.commit()
+        else:
+            with pytest.raises(sqlite3.IntegrityError, match="stage does not match"):
+                await db.execute(
+                    "UPDATE seasons SET stage = ? WHERE id = ?", (stage.value, season_id)
+                )
+    if admitted:
+        assert await _row(db_path, season_id) == (status.value, stage.value)
 
 
 async def test_a_status_written_alone_carries_the_stage_with_it(db_path):
@@ -143,54 +160,6 @@ async def test_a_status_written_alone_keeps_a_stage_it_still_admits(db_path):
 # ── SeasonService ───────────────────────────────────────────────────────────────────
 
 
-async def test_set_stage_walks_the_whole_lifecycle(db_path):
-    """Each step moves the season's stage, and its status with it."""
-    svc = SeasonService(db_path)
-    season_id = await _insert(db_path, "SETUP", "CONFIGURATION")
-    for stage in (
-        SeasonStage.WAITING,
-        SeasonStage.SIGNUPS,
-        SeasonStage.PLACEMENTS,
-        SeasonStage.ONGOING,
-        SeasonStage.ONGOING_SIGNUPS,
-        SeasonStage.ONGOING_PLACEMENTS,
-        SeasonStage.ONGOING,
-        SeasonStage.PENDING_COMPLETION,
-        SeasonStage.COMPLETED,
-    ):
-        await svc.set_stage(season_id, stage)
-        assert await svc.get_stage(season_id) is stage
-        assert await _row(db_path, season_id) == (status_of_stage(stage).value, stage.value)
-    assert await _row(db_path, season_id) == ("COMPLETED", "COMPLETED")
-
-
-@pytest.mark.parametrize(
-    "start, target",
-    [
-        ("CONFIGURATION", "SIGNUPS"),
-        ("WAITING", "PLACEMENTS"),
-        ("PLACEMENTS", "CANCELLED"),
-        ("ONGOING_PLACEMENTS", "ONGOING_SIGNUPS"),
-        ("ONGOING_SIGNUPS", "PENDING_COMPLETION"),
-        ("PENDING_COMPLETION", "CANCELLED"),
-    ],
-)
-async def test_set_stage_refuses_a_transition_the_lifecycle_forbids(db_path, start, target):
-    svc = SeasonService(db_path)
-    status = status_of_stage(SeasonStage(start)).value
-    season_id = await _insert(db_path, status, start)
-
-    with pytest.raises(InvalidStageTransition):
-        await svc.set_stage(season_id, SeasonStage(target))
-
-    assert await svc.get_stage(season_id) is SeasonStage(start)
-
-
-async def test_set_stage_refuses_a_season_that_does_not_exist(db_path):
-    with pytest.raises(InvalidStageTransition):
-        await SeasonService(db_path).set_stage(9999, SeasonStage.ONGOING)
-
-
 async def test_a_season_read_carries_its_stage(db_path):
     svc = SeasonService(db_path)
     await _insert(db_path, "ACTIVE", "ONGOING_PLACEMENTS")
@@ -205,28 +174,65 @@ async def test_a_status_the_lifecycle_does_not_know_is_left_without_a_stage(db_p
     assert await _row(db_path, season_id) == ("ARCHIVED", None)
 
 
-async def _freeze_stage(db_path):
-    """A trigger that silently drops every stage write — as if another caller got there first."""
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "CREATE TRIGGER freeze_stage BEFORE UPDATE OF stage ON seasons "
-            "BEGIN SELECT RAISE(IGNORE); END"
-        )
-        await db.commit()
-
-
-async def test_set_stage_refuses_a_season_that_left_its_stage_meanwhile(db_path):
-    """The write is conditioned on the stage read, so a lost race writes nothing and says so."""
-    season_id = await _insert(db_path, "SETUP", "CONFIGURATION")
-    await _freeze_stage(db_path)
-
-    with pytest.raises(InvalidStageTransition, match="left CONFIGURATION before it could move"):
-        await SeasonService(db_path).set_stage(season_id, SeasonStage.WAITING)
-
-
 async def test_get_stage_is_none_for_a_season_without_one_or_no_season_at_all(db_path):
     svc = SeasonService(db_path)
     season_id = await _insert(db_path, "ARCHIVED")
 
     assert await svc.get_stage(season_id) is None
     assert await svc.get_stage(9999) is None
+
+
+# ── The configuration confirmed, on the confirmation's save ─────────────────────────
+
+
+@pytest.mark.parametrize("target", [SeasonStage.WAITING, SeasonStage.PLACEMENTS])
+async def test_confirming_the_configuration_on_moves_the_stage_on_the_save_s_connection(
+    db_path, target
+):
+    """A season being set up, in Configuration. `confirm_configuration_on`, handed a connection,
+    the season and Waiting or Placements, moves the season to that stage on that connection, its
+    status still SETUP, and commits nothing: rolled back, the season is in Configuration again."""
+    from leaguebot.core.services.seasons.season_lifecycle_service import confirm_configuration_on
+
+    season_id = await _insert(db_path, "SETUP", "CONFIGURATION")
+
+    async with get_connection(db_path) as db:
+        await confirm_configuration_on(db, season_id, target)
+
+        cursor = await db.execute("SELECT status, stage FROM seasons WHERE id = ?", (season_id,))
+        row = await cursor.fetchone()
+        assert (row["status"], row["stage"]) == ("SETUP", target.value)
+        assert db.in_transaction
+        await db.rollback()
+
+    assert await _row(db_path, season_id) == ("SETUP", "CONFIGURATION")
+
+
+@pytest.mark.parametrize(
+    "start, target",
+    [
+        ("WAITING", SeasonStage.WAITING),
+        ("PLACEMENTS", SeasonStage.WAITING),
+        (None, SeasonStage.WAITING),
+        ("CONFIGURATION", SeasonStage.SIGNUPS),
+    ],
+    ids=["waiting", "placements", "no_such_season", "a_target_the_lifecycle_forbids"],
+)
+async def test_confirming_the_configuration_on_from_another_stage_raises_and_writes_nothing(
+    db_path, start, target
+):
+    """A season that has left Configuration, for Waiting or Placements, or a season that does not
+    exist, asked to move to Waiting; or a season in Configuration asked to move to Signups, which
+    the lifecycle forbids from Configuration: `confirm_configuration_on` raises
+    InvalidStageTransition, and the season, where there is one, is left where it stood."""
+    from leaguebot.core.services.seasons.season_lifecycle_service import confirm_configuration_on
+
+    season_id = await _insert(db_path, "SETUP", start) if start is not None else 9999
+
+    async with get_connection(db_path) as db:
+        with pytest.raises(InvalidStageTransition):
+            await confirm_configuration_on(db, season_id, target)
+        await db.commit()
+
+    if start is not None:
+        assert await _row(db_path, season_id) == ("SETUP", start)

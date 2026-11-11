@@ -17,7 +17,7 @@ roster across them, then writes:
     because a team whose seats both went empty has no row in the CSV to be found by
 
 Nothing here touches the database or needs a running bot. The synthetic IDs simply
-mirror the convention in src/leaguebot/core/services/test_roster_service.py, so the CSV lines up with
+mirror the convention in src/leaguebot/core/services/test_mode/test_roster_service.py, so the CSV lines up with
 what the bot creates when these commands are pasted into a clean test-mode season.
 
 Usage:
@@ -51,7 +51,7 @@ TEAMS_PATH = DATA_DIR / "teams.txt"
 FIRST_DRIVER_ID = 9_000_000_000_000_000_001
 
 #: The reserve team is appended to every division and is never taken from user input —
-#: the name is protected by TeamService (see src/leaguebot/core/services/team_service.py).
+#: the name is protected by TeamService (see src/leaguebot/core/services/drivers/team_service.py).
 RESERVE_TEAM = "Reserve"
 
 MAX_DRIVERS_PER_TEAM = 2

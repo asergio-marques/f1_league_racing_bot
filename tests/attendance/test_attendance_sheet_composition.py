@@ -57,7 +57,7 @@ async def db_path(tmp_path):
                 await db.execute(
                     "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
                     "scheduled_at, status) VALUES (?, ?, ?, 'NORMAL', 'Silverstone Circuit', "
-                    "'2026-06-01T14:00:00', 'FINAL')",
+                    "'2026-06-01T14:00:00+00:00', 'FINAL')",
                     (division_id * 100 + number, division_id, number),
                 )
         for pid in range(1, 7):
@@ -155,7 +155,7 @@ async def _enforce(db_path, *, sack=None):
     bot.output_router.post_log = AsyncMock()
     # The sack of driver 2 names the lineups it owes (#439): both divisions they sat in.
     bot.placement_service.sack_driver = sack or AsyncMock(return_value=[PRO, AM])
-    bot.placement_service._refresh_lineup_post = AsyncMock()
+    bot.lineup_poster._refresh_lineup_post = AsyncMock()
     bot.change_queue.ask = AsyncMock()
 
     with patch("leaguebot.attendance.services.attendance_service.post_attendance_sheet",

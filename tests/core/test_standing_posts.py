@@ -1,6 +1,6 @@
 """A standing post's two jobs: the post, then the deletion of the message it replaces (#439, slice 6).
 
-`core/services/standing_posts.py` holds what every standing post shares: the job that deletes the
+`core/services/posting/standing_posts.py` holds what every standing post shares: the job that deletes the
 message a post replaced (`delete_replaced`), which the post plans after itself, and the removal of
 a copy a post's earlier try sent where its record then failed (`remove_kept`). A replaced message
 already gone, or its channel, completes the deletion; one Discord refuses to delete stops the queue,
@@ -46,7 +46,7 @@ def _server(env, *, channel_standing: bool = True) -> Any:
 
 def _deleting(env) -> Any:
     """A dummy change of one job, the deletion of the old calendar as a post plans it."""
-    from leaguebot.core.services import standing_posts
+    from leaguebot.core.services.posting import standing_posts
 
     planned = standing_posts.replaced(CALENDAR_CHANNEL, OLD, NEW, what="calendar",
                                       division_name="Pro")
@@ -60,7 +60,7 @@ def _deleting(env) -> Any:
 
 def test_replaced_plans_one_delete_of_the_old_message():
     from leaguebot.core.models.change import PlannedStep
-    from leaguebot.core.services import standing_posts
+    from leaguebot.core.services.posting import standing_posts
 
     planned = standing_posts.replaced(CALENDAR_CHANNEL, OLD, NEW, what="calendar",
                                       division_name="Pro")
@@ -78,7 +78,7 @@ def test_replaced_plans_one_delete_of_the_old_message():
     pytest.param(None, OLD, NEW, id="no channel"),
 ])
 def test_replaced_plans_nothing(channel_id, old, new):
-    from leaguebot.core.services import standing_posts
+    from leaguebot.core.services.posting import standing_posts
 
     assert standing_posts.replaced(channel_id, old, new, what="calendar",
                                    division_name="Pro") == ()
@@ -140,8 +140,8 @@ async def test_a_replaced_message_whose_channel_is_gone_completes_its_delete(env
 
 
 def test_a_discarded_delete_is_named_with_its_link_for_deletion_by_hand():
-    from leaguebot.core.services import standing_posts
-    from leaguebot.core.services.change_queue import StepView
+    from leaguebot.core.services.posting import standing_posts
+    from leaguebot.core.services.queue.change_types import StepView
 
     link = f"https://discord.test/{CALENDAR_CHANNEL}/{OLD}"
     view = StepView(
@@ -171,7 +171,7 @@ async def test_a_copy_a_failed_record_left_is_removed_before_the_next_try(env, r
     deleted and the old calendar (6001) is left for the delete job; where Discord refuses, the
     job fails again keeping 7001 to remove."""
     from leaguebot.core.models.change import StepFailedOnDiscord
-    from leaguebot.core.services import standing_posts
+    from leaguebot.core.services.posting import standing_posts
 
     calendar = _server(env)
     if refused:

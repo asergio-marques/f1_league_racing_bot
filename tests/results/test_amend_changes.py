@@ -40,7 +40,7 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 from leaguebot.results.services import result_submission_service
 from leaguebot.results.services.result_submission_service import DivisionValidationData
 from tests.support.change_queue import (
@@ -458,7 +458,8 @@ async def test_a_restart_leaves_a_refused_deletion_to_the_amendment_s_own_lane(
     amendment's lane is stopped. The bot restarts: the recovery asks the lapse of the closed
     amendment, but its channel's deletion is in hand on the amendment's lane, so the lapse is not
     due and the league lane is not stopped by a second try at the same refusal."""
-    import leaguebot.__main__ as bot_module
+    from leaguebot.results.wiring import recover_orphaned_amend_channels
+
 
     league = await _league(tmp_path, monkeypatch)
     await _ask_open(league)
@@ -468,7 +469,7 @@ async def test_a_restart_leaves_a_refused_deletion_to_the_amendment_s_own_lane(
     await _type(league, "1, <@103>, FER, 1:30:00.000, 1:20.000, N/A")
     assert await stopped_job(league.db_path, LANE) is not None
 
-    await bot_module._recover_orphaned_amend_channels(league.bot)
+    await recover_orphaned_amend_channels(league.bot)
     await run_queue(league.bot)
 
     assert await stopped_job(league.db_path, "league") is None
@@ -1159,7 +1160,8 @@ async def test_a_restart_asks_the_lapse_of_each_abandoned_amendment_before_the_q
     """The bot stops with Alex's amendment of round 3 open and nothing pasted. At the restart the
     recovery asks the queue for its lapse, as the bot, and deletes nothing itself; when the queue
     runs, the channel is deleted and the row closed."""
-    import leaguebot.__main__ as bot_module
+    from leaguebot.results.wiring import recover_orphaned_amend_channels
+
 
     league = await _league(tmp_path, monkeypatch)
     async with get_connection(league.db_path) as db:
@@ -1171,7 +1173,7 @@ async def test_a_restart_asks_the_lapse_of_each_abandoned_amendment_before_the_q
         )
         await db.commit()
 
-    await bot_module._recover_orphaned_amend_channels(league.bot)
+    await recover_orphaned_amend_channels(league.bot)
 
     [lapse] = await _changes(league, LAPSE)
     assert lapse["origin"] == "BOT"

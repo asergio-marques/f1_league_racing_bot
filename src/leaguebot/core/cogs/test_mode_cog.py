@@ -3,7 +3,8 @@
 Provides subcommands for system-level testing without waiting for the real
 APScheduler triggers:
 
-  /test-mode toggle            — enable or disable test mode (state persists)
+  /test-mode toggle            — enable or disable test mode (state persists), a change on
+                                 the change queue
   /test-mode nationality       — toggle whether mock drivers carry a nationality
   /test-mode advance           — immediately execute the next pending phase
   /test-mode review            — show season/round/phase status summary (ephemeral)
@@ -17,52 +18,50 @@ same: `/attendance test rsvp` sets the RSVP status of fake drivers.
 Every command here is a league admin's — the core specification places the whole of test
 mode at that tier, backup and restore no more than the rest — and is given in the
 interaction channel.
-Every command but toggle additionally requires test mode to be active. Toggle itself
-refuses to *enable* test mode while the server holds real drivers or its signup window
-is open, and to *disable* it while a running season holds fake drivers.
+Every command but toggle additionally requires test mode to be active. Toggle itself is
+refused outside a season's Configuration, and to *enable* test mode while the server holds real
+drivers.
 """
 
 from __future__ import annotations
 
+import functools
 import logging
-from datetime import datetime, timezone
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.services.test_mode_service import (
-    toggle_test_mode,
-    toggle_test_mode_nationality,
-    count_live_real_drivers,
-    get_next_pending_phase,
+from leaguebot.core.services.test_mode.test_mode_settings import NOT_IN_TEST_MODE
+from leaguebot.core.services.test_mode.test_roster_changes import (
+    NOT_PLACING,
+    TEST_ROSTER_ADD,
+    TEST_ROSTER_ADD_BULK,
+    TEST_ROSTER_CLEAR,
+    TEST_ROSTER_REMOVE,
+    bulk_payload,
+)
+from leaguebot.core.services.test_mode.test_mode_former_driver_change import TEST_MODE_FORMER_DRIVER
+from leaguebot.core.services.test_mode.test_mode_toggle_change import TEST_MODE_TOGGLE
+from leaguebot.core.services.test_mode.test_mode_service import (
     PhaseEntry,
     build_review_summary,
-    get_passed_over_steps,
-    standing_forecast_phases,
-)
-from leaguebot.core.models.change import (
-    CHECK_IN_CALL,
-    CHECK_IN_CLEAN_UP,
-    CHECK_IN_DEADLINE,
-    CHECK_IN_LAST_NOTICE,
-    FORECAST,
-    FORECAST_CLEAN_UP,
-    FORECAST_FLUSH,
-    ChangeOrigin,
-    forecasts_named,
+    AdvanceStatus,
+    advance_next_step,
 )
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services import backup_service
+from leaguebot.core.services.upkeep import backup_service
 from leaguebot.core.utils.autocomplete import bounded_autocomplete, team_autocomplete
 from leaguebot.core.utils.channel_guard import league_admin_only, changes_nothing
 from leaguebot.core.utils.input_validator import parse_user_id
 from leaguebot.core.utils.interaction_errors import describe, describe_form, report_failure
 from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.weather.utils.message_builder import paginate_fenced
+from leaguebot.core.utils.formatting import paginate_fenced
 from leaguebot.core.utils.league_server import LeagueModal, LeagueView
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.messages import chunk_message
+from leaguebot.core.utils.roster_import import format_roster_errors as _format_roster_errors
+from leaguebot.core.utils.roster_import import parse_roster_csv
 
 log = logging.getLogger(__name__)
 
@@ -92,128 +91,16 @@ class TestModeCog(commands.Cog):
     )
     @league_admin_only
     async def toggle(self, interaction: discord.Interaction) -> None:
-        """Flip test mode for the season in configuration.
+        """Ask the change that flips test mode for the season in configuration.
 
-        Refused outside Configuration, and refused to enable while the server holds real
-        drivers: disabling it again deletes every fake driver on the server without
-        confirmation, and while it is on the signup and placement paths refuse real drivers
-        outright.
+        The command reads test mode once, to say which way it goes, and the change carries that
+        state, judging it as it is asked and again as it starts (`test_mode_toggle_change`).
         """
-        # Test mode is chosen for a season, in its configuration (issue #220). Confirming
-        # the configuration fixes it, and the season's end switches it off. That is also what
-        # retired the two refusals this command used to make: no signup window is open in
-        # Configuration, and no season in Configuration has raced a fake driver.
-        from leaguebot.core.services.season_lifecycle_service import live_season_stage
-
-        live = await live_season_stage(self.bot.db_path)
-        if live is None or live[1] is not SeasonStage.CONFIGURATION:
-            await refuse(
-                interaction,
-                "⛔ Test mode can only be switched while a season is in configuration. "
-                "Start one with `/season setup`; a season whose configuration is confirmed "
-                "keeps test mode as it stands until the season ends.",
-                what=describe(interaction),
-            )
-            return
-
-        config = await self.bot.config_service.get_server_config(
-
+        config = await self.bot.config_service.get_server_config()
+        entering = config is not None and not config.test_mode_active
+        await self.bot.change_queue.ask(
+            TEST_MODE_TOGGLE, {"on": entering}, interaction=interaction, what=describe(interaction)
         )
-        if config is not None and not config.test_mode_active:
-            real_drivers = await count_live_real_drivers(
-                self.bot.db_path,
-            )
-            if real_drivers:
-                await refuse(
-                    interaction,
-                    f"⛔ Test mode cannot be enabled while this server has "
-                    f"**{real_drivers}** real driver(s).\n"
-                    "Test mode is for an empty league — disabling it deletes every fake "
-                    "driver, and while it is on no real driver may sign up or be placed.",
-                    what=describe(interaction),
-                )
-                return
-
-        new_state = await toggle_test_mode(
-            self.bot.db_path,
-        )
-        if new_state:
-            # Auto-seed default point configs for the current season (SETUP or ACTIVE)
-            await interaction.response.defer(ephemeral=True)
-            from leaguebot.core.db.database import get_connection
-            from leaguebot.core.services.test_roster_service import ensure_test_configs
-
-            async with get_connection(self.bot.db_path) as db:
-                season_cursor = await db.execute(
-                    "SELECT id FROM seasons WHERE status IN ('SETUP', 'ACTIVE')",
-                )
-                season_row = await season_cursor.fetchone()
-
-            new_configs: list[str] = []
-            config_note = ""
-            if season_row is not None:
-                new_configs = await ensure_test_configs(
-                    season_id=season_row["id"],
-                    db_path=self.bot.db_path,
-                )
-                if new_configs:
-                    config_note = (
-                        f"\n📌 Added default point configs: **{', '.join(new_configs)}**"
-                    )
-
-            msg = (
-                "✅ Test mode **enabled**. "
-                "Use `/test-mode advance` to step through phases, "
-                f"or `/test-mode review` to inspect season status.{config_note}"
-            )
-            await interaction.followup.send(msg, ephemeral=True)
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode toggle | Success\n"
-                f"  test_mode: enabled"
-                + (f"\n  seeded_configs: {', '.join(new_configs)}" if new_configs else ""),
-            )
-        else:
-            # Defer so the flush (multiple Discord API calls) has time to complete
-            await interaction.response.defer(ephemeral=True)
-            # The forecasts posted under test mode are deleted by the change queue, each by a
-            # job of its own, once the flag reads off.
-            await self.bot.change_queue.ask(
-                FORECAST_FLUSH,
-                {},
-                what="clearing the forecasts posted under test mode",
-                origin=ChangeOrigin.BOT,
-            )
-            from leaguebot.core.services.test_roster_service import clear_all_test_drivers
-            removed = await clear_all_test_drivers(self.bot.db_path)
-            if removed:
-                log.info(
-                    "Test mode disabled: cleared %d fake driver(s)",
-                    removed,
-                )
-            # The saved state goes with test mode (decided 2026-09-17): the backup commands
-            # run in test mode alone, so a state kept past it is one nothing could restore.
-            discarded = False
-            try:
-                discarded = backup_service.discard(
-                    self.bot.db_path, _jobstore_path(self.bot)
-                )
-            except Exception:  # noqa: BLE001 — a backup left behind is not worth the toggle
-                log.exception("test-mode toggle: could not discard the saved backup")
-            msg = (
-                "✅ Test mode **disabled**. "
-                "The scheduler will resume normal operation for any remaining pending phases."
-            )
-            if removed:
-                msg += f"\n🗑️ Removed **{removed}** fake driver(s)."
-            if discarded:
-                msg += "\n🗑️ Deleted the saved test-mode backup."
-            await interaction.followup.send(msg, ephemeral=True)
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode toggle | Success\n"
-                f"  test_mode: disabled"
-                + (f"\n  removed_fake_drivers: {removed}" if removed else "")
-                + ("\n  backup: deleted" if discarded else ""),
-            )
 
     # ------------------------------------------------------------------
     # /test-mode nationality
@@ -232,32 +119,16 @@ class TestModeCog(commands.Cog):
         server under test may be seen with flags and without them without the setting real
         signups run on being touched.
         """
-        config = await self.bot.config_service.get_server_config(
-
-        )
+        config = await self.bot.config_service.get_server_config()
         if config is None or not config.test_mode_active:
-            await refuse(
-                interaction,
-                "⛔ This command is only available when test mode is enabled.",
-                what=describe(interaction),
-            )
+            await refuse(interaction, NOT_IN_TEST_MODE, what=describe(interaction))
             return
 
-        new_state = await toggle_test_mode_nationality(
-            self.bot.db_path,
-        )
-        note = (
-            "Mock drivers may be given one with `/test-mode roster add`."
-            if new_state
-            else "Mock drivers already holding one keep it, and graphics draw no flag at all."
-        )
-        await interaction.response.send_message(
-            f"✅ Test-mode nationality: **{'ON' if new_state else 'OFF'}**.\n{note}",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode nationality | Success\n"
-            f"  test_mode_nationality: {'enabled' if new_state else 'disabled'}",
+        await self.bot.change_queue.ask(
+            "core.setting.test_mode_nationality_required",
+            {"value": not config.test_mode_nationality_required},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     # ------------------------------------------------------------------
@@ -287,20 +158,20 @@ class TestModeCog(commands.Cog):
 
         # One moment for the step offered and the steps passed over, so that a race time falling
         # between two readings cannot leave a step both offered and named, or neither.
-        now = datetime.now(timezone.utc)
-        entry = await get_next_pending_phase(
+        run = await advance_next_step(
             self.bot.db_path,
             self.bot.scheduler_service,
-            now=now,
+            now=self.bot.change_queue.now(),
+            announce=functools.partial(self._announce_advance, interaction),
+            pending_steps_read=self.bot.pending_steps_read,
+            advance_steps=self.bot.advance_steps,
         )
-        # The weather steps of raced rounds passed over on the way, named before the step
-        # advanced (owner, 2026-10-12, "Advance names what it skipped").
-        passed_over = [
-            _passed_over_line(step)
-            for step in await get_passed_over_steps(self.bot.db_path, now=now)
-        ]
+        entry = run.entry
 
         if entry is None:
+            # The weather steps of raced rounds passed over on the way, named before the step
+            # advanced.
+            passed_over = [_passed_over_line(step) for step in run.passed_over]
             if passed_over:
                 said = (
                     "Nothing else is due: the weather steps above were passed over, their races "
@@ -325,11 +196,41 @@ class TestModeCog(commands.Cog):
             )
             return
 
-        for part in chunk_message("\n".join(passed_over)) if passed_over else ():
+        # A step that failed is reported here, to name the step and the round; any other fault
+        # goes to the command tree's handler.
+        if run.failure is not None:
+            failure = run.failure
+            await report_failure(
+                interaction,
+                failure.__cause__ or failure,
+                what=self._advance_what(interaction, failure.step, entry, track=failure.track),
+            )
+            return
+        outcome = run.outcome
+        assert outcome is not None  # an entry picked ends in an outcome or a failure
+        if outcome.status is AdvanceStatus.REFUSED:
+            await refuse(interaction, outcome.reply, what=describe(interaction))
+            return
+        await interaction.followup.send(outcome.reply, ephemeral=True)
+        if outcome.status is AdvanceStatus.ASKED:
+            await self.bot.output_router.post_log(
+                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
+                f"{outcome.log}",
+            )
+
+    @staticmethod
+    async def _announce_advance(
+        interaction: discord.Interaction,
+        entry: PhaseEntry,
+        passed_over: list[PhaseEntry],
+    ) -> None:
+        """Name the steps passed over to the maintainer and note the step picked, before it
+        runs."""
+        lines = [_passed_over_line(step) for step in passed_over]
+        for part in chunk_message("\n".join(lines)) if lines else ():
             await interaction.followup.send(part, ephemeral=True)
 
         phase_number = entry["phase_number"]
-
         log.info(
             "Test mode advance: Phase %s, round=%d (id=%d), division=%s, track=%s",
             "mystery-notice" if phase_number == 0 else phase_number,
@@ -337,315 +238,6 @@ class TestModeCog(commands.Cog):
             entry["round_id"],
             entry["division_name"],
             entry["track_name"],
-        )
-
-        # ── Mystery round notice (phase_number=0) ──────────────────────────────
-        if phase_number == 0:
-            # Take the round's notice job down so it doesn't ask for the notice again at its own
-            # moment, and before asking, so that an ask that raised leaves no job to fire the
-            # notice a second time. By round and the `weather_p1` it is armed under, rather
-            # than by the entry's job: one found from database state carries none, yet its job
-            # may still be queued (#426).
-            self.bot.scheduler_service.cancel_round(
-                entry["round_id"], only=frozenset({"weather_p1"})
-            )
-            try:
-                asked = await self._ask_forecast(entry, 0)
-            except Exception as exc:  # noqa: BLE001 — reported here, to name the round
-                await report_failure(
-                    interaction, exc, what=self._advance_what(interaction, "the Mystery Round notice", entry)
-                )
-                return
-            if asked is None:
-                await interaction.followup.send(
-                    f"🔮 The **Mystery Round notice** for **{entry['division_name']}** — "
-                    f"**Round {entry['round_number']}** was not due: its race has been run.",
-                    ephemeral=True,
-                )
-                return
-            await interaction.followup.send(
-                f"🔮 The **Mystery Round notice** for "
-                f"**{entry['division_name']}** — **Round {entry['round_number']}** is on the "
-                f"change queue: it goes to the division forecast channel as soon as the queue "
-                f"reaches it.",
-                ephemeral=True,
-            )
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
-                f"  phase: Mystery Round notice\n"
-                f"  division: {entry['division_name']}\n"
-                f"  round: Round {entry['round_number']}",
-            )
-            return
-
-        # ── Result submission (phase_number=4) ───────────────────────────────────
-        if phase_number == 4:
-            from leaguebot.results.services.result_submission_service import (
-                is_submission_open,
-            )
-            from leaguebot.core.services.test_mode_service import round_result_status
-
-            # Guard: if a submission channel is already open, the admin must complete
-            # that submission before advancing to the next round.
-            if await is_submission_open(self.bot.db_path, entry["round_id"]):
-                # Results are not final until the appeals review is approved. A round sitting
-                # awaiting appeal verdicts has had its report verdicts settled already,
-                # so name whichever review is actually standing rather than always the first.
-                status = await round_result_status(self.bot.db_path, entry["round_id"])
-                if status != "FINAL":
-                    review = (
-                        "appeals review"
-                        if status == "AWAITING_APPEAL_VERDICTS"
-                        else "penalty review"
-                    )
-                    await refuse(
-                        interaction,
-                        f"⏸️ **{entry['division_name']}** — **Round {entry['round_number']}** "
-                        f"is awaiting {review} approval. Please complete the {review} in the "
-                        f"submission channel before advancing.",
-                        what=describe(interaction),
-                    )
-                    return
-                # Finalized (shouldn't normally reach here, but handle gracefully)
-                await refuse(
-                    interaction,
-                    f"⏸️ Result submission for "
-                    f"**{entry['division_name']}** — **Round {entry['round_number']}** "
-                    f"is already in progress. Please submit results in the submission "
-                    f"channel before advancing.",
-                    what=describe(interaction),
-                )
-                return
-
-            # Cancel the round's own results job before opening its wizard by hand. A
-            # weather-enabled season arms one for every round, test mode or not, and left
-            # queued it would fire again once its time came. The entry carries no job ID —
-            # results jobs never come from the job store — so it is found by round and
-            # prefix rather than by an ID rebuilt here (issue #139).
-            self.bot.scheduler_service.cancel_round(
-                entry["round_id"], only=frozenset({"results"})
-            )
-            try:
-                # Core names results' kind as a string and imports nothing of results.
-                await self.bot.change_queue.ask(
-                    "results.submission.open",
-                    {"round_id": entry["round_id"]},
-                    what=(
-                        f"opening round {entry['round_number']}'s results submission "
-                        f"in {entry['division_name']}"
-                    ),
-                    origin=ChangeOrigin.BOT,
-                )
-            except Exception as exc:  # noqa: BLE001 — reported here, to name the round
-                await report_failure(
-                    interaction, exc, what=self._advance_what(interaction, "the round start", entry)
-                )
-                return
-            await interaction.followup.send(
-                f"⏩ The result submission of **{entry['division_name']}** — "
-                f"**Round {entry['round_number']}** (**{entry['track_name']}**) is on the change "
-                f"queue: its submission channel appears as soon as the queue reaches it.",
-                ephemeral=True,
-            )
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
-                f"  phase: result submission (on the change queue)\n"
-                f"  division: {entry['division_name']}\n"
-                f"  round: Round {entry['round_number']}",
-            )
-            return
-
-        # ── The check-in's call, last notice and deadline (phase_number=5, 6 and 7) ────
-        if phase_number in (5, 6, 7):
-            kind, step, emoji, name = {
-                5: (CHECK_IN_CALL, "the RSVP notice", "📨", "RSVP notice"),
-                6: (CHECK_IN_LAST_NOTICE, "the RSVP last-notice", "⏰", "RSVP last-notice"),
-                7: (CHECK_IN_DEADLINE, "the RSVP deadline", "🏁", "RSVP deadline"),
-            }[phase_number]
-            if entry["job_id"] is not None:
-                self.bot.scheduler_service.cancel_job(entry["job_id"])
-            try:
-                asked = await self._ask_check_in(entry, kind, step)
-            except Exception as exc:  # noqa: BLE001 — reported here, to name the round
-                await report_failure(
-                    interaction, exc, what=self._advance_what(interaction, step, entry)
-                )
-                return
-            if asked is None:
-                await interaction.followup.send(
-                    f"{emoji} The **{name}** for **{entry['division_name']}** — "
-                    f"**Round {entry['round_number']}** was not due.",
-                    ephemeral=True,
-                )
-                return
-            await interaction.followup.send(
-                f"{emoji} The **{name}** for **{entry['division_name']}** — "
-                f"**Round {entry['round_number']}** (**{entry['track_name']}**) is on the "
-                f"change queue: it goes to the RSVP channel as soon as the queue reaches it.",
-                ephemeral=True,
-            )
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
-                f"  phase: {('rsvp_notice', 'rsvp_last_notice', 'rsvp_deadline')[phase_number - 5]}\n"
-                f"  division: {entry['division_name']}\n"
-                f"  round: {entry['round_number']}",
-            )
-            return
-
-        # ── The cleanups a day after the round (phase_number=8 and 9, #425) ─────
-        if phase_number in (8, 9):
-            # By prefix rather than by the entry's job, which is None where the step was found
-            # from database state; a job left queued would fire again at its own moment.
-            prefix = "cleanup" if phase_number == 8 else "rsvp_cleanup"
-            what = "forecast cleanup" if phase_number == 8 else "check-in cleanup"
-            self.bot.scheduler_service.cancel_round(entry["round_id"], only=frozenset({prefix}))
-            standing: list[int] = []
-            try:
-                if phase_number == 8:
-                    standing = await standing_forecast_phases(self.bot.db_path, entry["round_id"])
-                    asked = await self._ask_forecast_clean_up(entry, standing)
-                else:
-                    asked = await self._ask_check_in(
-                        entry, CHECK_IN_CLEAN_UP, "taking down the check-in a day after the round"
-                    )
-            except Exception as exc:  # noqa: BLE001 — reported here, to name the round
-                await report_failure(
-                    interaction, exc, what=self._advance_what(interaction, f"the {what}", entry)
-                )
-                return
-            if asked is None:
-                await interaction.followup.send(
-                    f"🧹 The **forecast cleanup** for **{entry['division_name']}** — "
-                    f"**Round {entry['round_number']}** was not due: no forecast stands."
-                    if phase_number == 8 else
-                    f"🧹 The **check-in cleanup** for **{entry['division_name']}** — "
-                    f"**Round {entry['round_number']}** was not due.",
-                    ephemeral=True,
-                )
-                return
-            if phase_number == 8:
-                reply = (
-                    f"🧹 The **forecast cleanup** for **{entry['division_name']}** — "
-                    f"**Round {entry['round_number']}** is on the change queue: it deletes "
-                    f"{forecasts_named(standing)} as soon as the queue reaches it."
-                )
-            else:
-                reply = (
-                    f"🧹 The **check-in cleanup** for **{entry['division_name']}** — "
-                    f"**Round {entry['round_number']}** is on the change queue: it takes down "
-                    f"the check-in call, last notice and reserve announcement as soon as the "
-                    f"queue reaches it."
-                )
-            await interaction.followup.send(reply, ephemeral=True)
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
-                f"  phase: {prefix}\n"
-                f"  division: {entry['division_name']}\n"
-                f"  round: {entry['round_number']}",
-            )
-            return
-
-        # ── Normal weather phase dispatch ───────────────────────────────────────
-        # Cancel the scheduler job before asking so it doesn't double-fire later
-        if entry["job_id"] is not None:
-            self.bot.scheduler_service.cancel_job(entry["job_id"])
-
-        try:
-            asked = await self._ask_forecast(entry, phase_number)
-        except Exception as exc:  # noqa: BLE001 — reported here, to name the phase and the round
-            await report_failure(
-                interaction,
-                exc,
-                what=self._advance_what(
-                    interaction, f"Phase {phase_number}", entry, track=entry["track_name"]
-                ),
-            )
-            return
-        if asked is None:
-            # The forecast's check dropped it (A25): its race has been run. Nothing is on the queue.
-            await interaction.followup.send(
-                f"⏩ **Phase {phase_number}** for **{entry['division_name']}** — "
-                f"**Round {entry['round_number']}** was not due: its race has been run.",
-                ephemeral=True,
-            )
-            return
-
-        await interaction.followup.send(
-            f"⏩ **Phase {phase_number}** for "
-            f"**{entry['division_name']}** — **{entry['track_name']}** is on the change "
-            f"queue: its forecast goes to the forecast channel and its calculation to the log "
-            f"channel as soon as the queue reaches it.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode advance | Success\n"
-            f"  phase: {phase_number}\n"
-            f"  division: {entry['division_name']}\n"
-            f"  track: {entry['track_name']}\n"
-            f"  round: {entry['round_number']}",
-        )
-    async def _ask_forecast(self, entry: PhaseEntry, phase: int) -> int | None:
-        """Ask the change queue, as the bot's, for *phase* of the entry's round (0 is a mystery
-        round's notice), standing in for the timer that `/test-mode advance` fires early. Returns
-        the change's id, or None where the forecast's check dropped it as not due."""
-        where = f"round {entry['round_number']} in **{entry['division_name']}**"
-        what = (
-            f"posting the mystery round notice of {where}"
-            if phase == 0
-            else f"drawing the Phase {phase} forecast of {where}"
-        )
-        return await self.bot.change_queue.ask(
-            FORECAST,
-            {
-                "round_id": entry["round_id"],
-                "phase": phase,
-                "division_name": entry["division_name"],
-                "round_number": entry["round_number"],
-            },
-            what=what,
-            origin=ChangeOrigin.BOT,
-        )
-
-    async def _ask_check_in(self, entry: PhaseEntry, kind: str, what: str) -> int | None:
-        """Ask the change queue, as the bot's, for the check-in step *kind* of the entry's round,
-        standing in for the timer that `/test-mode advance` fires early. Returns the change's id,
-        or None where the step's check dropped it as not due."""
-        payload: dict[str, object] = {
-            "round_id": entry["round_id"],
-            "division_name": entry["division_name"],
-            "round_number": entry["round_number"],
-            # Judged by no clock: under test mode the step that ends the check-in is the one
-            # advance fires, a past-dated round's call being posted however late it is.
-            "advanced": True,
-        }
-        if kind == CHECK_IN_CALL:
-            payload |= {"replaces": None, "late": False}
-        return await self.bot.change_queue.ask(
-            kind,
-            payload,
-            what=f"{what} of round {entry['round_number']} in **{entry['division_name']}**",
-            origin=ChangeOrigin.BOT,
-        )
-
-    async def _ask_forecast_clean_up(self, entry: PhaseEntry, standing: list[int]) -> int | None:
-        """Ask the change queue, as the bot's, to delete the forecast still standing (Phase 1 to 3)
-        of the entry's round, as its timer does a day after the race, named by the phases
-        *standing*. Returns the change's id, or None where no forecast stands."""
-        return await self.bot.change_queue.ask(
-            FORECAST_CLEAN_UP,
-            {
-                "round_id": entry["round_id"],
-                "phases": [1, 2, 3],
-                "clean_up": True,
-                "standing": standing,
-                "division_name": entry["division_name"],
-                "round_number": entry["round_number"],
-            },
-            what=(
-                f"deleting {forecasts_named(standing)} of round {entry['round_number']} in "
-                f"**{entry['division_name']}** a day after it"
-            ),
-            origin=ChangeOrigin.BOT,
         )
 
     @staticmethod
@@ -687,6 +279,8 @@ class TestModeCog(commands.Cog):
         summary = await build_review_summary(
             self.bot.db_path,
             self.bot.scheduler_service,
+            now=self.bot.change_queue.now(),
+            review_marks_read=self.bot.review_marks_read,
         )
         # Discord message limit is 2000 characters; chunk if needed.
         chunks = [summary[i:i + 2000] for i in range(0, len(summary), 2000)]
@@ -713,44 +307,16 @@ class TestModeCog(commands.Cog):
         user: discord.Member,
         value: bool,
     ) -> None:
-        """Set former_driver flag — only available when test mode is active."""
-        config = await self.bot.config_service.get_server_config(
+        """Ask the change that sets the flag of the driver holding the account picked.
 
-        )
-        if config is None or not config.test_mode_active:
-            await refuse(
-                interaction,
-                "⛔ This command is only available when test mode is enabled.",
-                what=describe(interaction),
-            )
-            return
-
-        try:
-            old_val, new_val = await self.bot.driver_service.set_former_driver(
-                str(user.id),
-                value,
-                interaction.user.id,
-                str(interaction.user),
-            )
-        except ValueError as exc:
-            await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
-            return
-
-        await interaction.response.send_message(
-            f"✅ former_driver flag updated.\n"
-            f"   User     : {user.display_name}\n"
-            f"   Old value: {old_val}\n"
-            f"   New value: {new_val}",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode set-former-driver | Success\n"
-            f"  user: {user.display_name} (<@{user.id}>)\n"
-            f"  former_driver: {old_val} -> {new_val}",
-        )
-        log.info(
-            "set-former-driver: user=%s %s→%s by %s",
-            user.id, old_val, new_val, interaction.user,
+        Test mode and the profile are judged by the change, as it is asked and as it starts
+        (`test_mode_former_driver_change`).
+        """
+        await self.bot.change_queue.ask(
+            TEST_MODE_FORMER_DRIVER,
+            {"user_id": str(user.id), "name": user.display_name, "value": value},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     # ------------------------------------------------------------------
@@ -773,19 +339,19 @@ class TestModeCog(commands.Cog):
     async def _refuse_roster_change_outside_placements(
         self, interaction: discord.Interaction, *, record: bool = True
     ) -> bool:
-        """Reply and return True where the season is not in Placements (issue #220), having
-        recorded the refusal in the log channel unless *record* is False.
+        """Reply and return True where the season is not in Placements, having recorded the refusal
+        in the log channel unless *record* is False.
 
         Fake drivers are seated, removed and cleared only while the season is in Placements,
         which is where real drivers are placed too: test mode replicates the live flow rather
         than inventing one. Listing the roster is left free.
         """
-        from leaguebot.core.services.season_lifecycle_service import live_season_stage
+        from leaguebot.core.services.seasons.season_lifecycle_service import live_season_stage
 
         live = await live_season_stage(self.bot.db_path)
         if live is not None and live[1] is SeasonStage.PLACEMENTS:
             return False
-        reply = "⛔ The test roster can only be changed while the season is in placements."
+        reply = NOT_PLACING
         if record:
             await refuse(interaction, reply, what=describe(interaction))
         else:
@@ -832,18 +398,14 @@ class TestModeCog(commands.Cog):
             return
 
         db_path = self.bot.db_path
-        scheduler = getattr(self.bot, "scheduler_service", None)
+        scheduler = self.bot.scheduler_service
 
-        # Paused around the copy. APScheduler writes its jobstore on the event-loop
-        # thread, so a job added mid-copy would be caught half-written; the backup API
-        # makes that unlikely and this makes it impossible.
-        paused = False
+        # Paused around the copy, so no job fires while it is taken. That does not make the
+        # copy whole: the copy is synchronous on the event-loop thread, which is what keeps
+        # `add_job` from writing the job store mid-copy, and it goes through SQLite's backup API.
         try:
-            if scheduler is not None and getattr(scheduler, "_scheduler", None) is not None:
-                if scheduler._scheduler.running:
-                    scheduler._scheduler.pause()
-                    paused = True
-            backup_service.save(db_path, _jobstore_path(self.bot))
+            with scheduler.paused():
+                backup_service.save(db_path, scheduler.jobstore_path)
         except backup_service.BackupFault as exc:
             # A copy, write or check that failed: a fault in the bot, and one that left the
             # previous backup as it was. Any other error goes to the tree's failure handler,
@@ -859,9 +421,6 @@ class TestModeCog(commands.Cog):
             # Locked: something the maintainer can act on, so a refusal.
             await refuse(interaction, f"⛔ {exc}", what=describe(interaction))
             return
-        finally:
-            if paused and scheduler is not None:
-                scheduler._scheduler.resume()
 
         state = backup_service.state(db_path)
         await interaction.followup.send(
@@ -900,7 +459,9 @@ class TestModeCog(commands.Cog):
             )
             return
 
-        locked = backup_service.set_lock(db_path, who=interaction.user.display_name)
+        locked = backup_service.set_lock(
+            db_path, who=interaction.user.display_name, now=self.bot.change_queue.now()
+        )
         await interaction.followup.send(
             "🔒 Locked. `/test-mode backup save` will refuse to overwrite it until you "
             "run this again."
@@ -1023,79 +584,22 @@ class TestModeCog(commands.Cog):
         division: str,
         nationality: str | None = None,
     ) -> None:
-        config = await self.bot.config_service.get_server_config(
+        """Ask the change that seats the fake driver.
 
+        Test mode, the season's stage, the nationality and the seat are judged by the change, as it
+        is asked and as it starts (`test_roster_changes`).
+        """
+        await self.bot.change_queue.ask(
+            TEST_ROSTER_ADD,
+            {
+                "driver_name": driver_name,
+                "team_name": team_name,
+                "division": division,
+                "nationality": nationality,
+            },
+            interaction=interaction,
+            what=describe(interaction),
         )
-        if config is None or not config.test_mode_active:
-            await refuse(
-                interaction,
-                "⛔ This command is only available when test mode is enabled.",
-                what=describe(interaction),
-            )
-            return
-        if await self._refuse_roster_change_outside_placements(interaction):
-            return
-
-        # A nationality cannot be recorded while the switch is off, as the signup wizard
-        # drops the question entirely rather than collecting an answer it will not keep.
-        if nationality is not None and not config.test_mode_nationality_required:
-            await refuse(
-                interaction,
-                "⛔ Nationality is switched off for test mode, so one cannot be recorded. "
-                "Turn it on with `/test-mode nationality`, or leave the parameter out.",
-                what=describe(interaction),
-            )
-            return
-
-        from leaguebot.core.services.test_roster_service import add_test_driver
-
-        # The driver is written in one transaction, so a fault leaves the roster as it was,
-        # and the command says so itself (see `report_failure`).
-        try:
-            result = await add_test_driver(
-                driver_name=driver_name,
-                team_name=team_name,
-                division_name=division,
-                db_path=self.bot.db_path,
-                nationality=nationality,
-                placement_service=self.bot.placement_service,
-            )
-        except Exception as exc:  # noqa: BLE001 — reported here, to say the driver was not added
-            await report_failure(
-                interaction,
-                exc,
-                what=describe(interaction),
-                outcome="The test driver was not added. Run `/test-mode roster add` again to retry.",
-            )
-            return
-
-        if isinstance(result, str):
-            await refuse(interaction, f"⛔ {result}", what=describe(interaction))
-            return
-
-        mention_str = f"<@{result['discord_user_id']}>"
-        nationality_line = (
-            f"Nationality: **{result['nationality']}**\n" if result["nationality"] else ""
-        )
-        # The division is named because a team name repeats across divisions — every
-        # division is seeded from the same server team list — so the team alone does not
-        # say where the driver landed, which is the one thing the manager is choosing.
-        await interaction.response.send_message(
-            f"✅ Added fake driver **{result['display_name']}** to **{result['team_name']}** "
-            f"in **{division}**.\n"
-            f"{nationality_line}"
-            f"Mention string (copy-paste into results): `{mention_str}`",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode roster add | Success\n"
-            f"  driver: {result['display_name']}\n"
-            f"  team: {result['team_name']}\n"
-            f"  division: {division}\n"
-            f"  nationality: {result['nationality'] or '(none)'}",
-        )
-
-    # /test-mode roster remove --------------------------------------------
 
     # /test-mode roster add-bulk -------------------------------------------
 
@@ -1107,9 +611,10 @@ class TestModeCog(commands.Cog):
     async def roster_add_bulk(self, interaction: discord.Interaction) -> None:
         """Open the box a roster is pasted into.
 
-        **Does not defer.** `send_modal` has to be the interaction's first response, which
-        inverts the rule the rest of this cog follows — see `roster_add` above, which
-        defers as normal. Do not "correct" it.
+        **Does not defer.** `send_modal` has to be the interaction's first response, so nothing
+        before it may answer or defer but a refusal that ends the command. `roster_add` hands
+        the interaction to the change queue, which answers it; this command asks nothing until
+        the form is submitted. Do not "correct" it.
         """
         config = await self.bot.config_service.get_server_config(
 
@@ -1117,7 +622,7 @@ class TestModeCog(commands.Cog):
         if config is None or not config.test_mode_active:
             await refuse(
                 interaction,
-                "⛔ This command is only available when test mode is enabled.",
+                NOT_IN_TEST_MODE,
                 what=describe(interaction),
             )
             return
@@ -1125,6 +630,8 @@ class TestModeCog(commands.Cog):
             return
 
         await interaction.response.send_modal(_RosterImportModal(self))
+
+    # /test-mode roster remove --------------------------------------------
 
     @roster.command(
         name="remove",
@@ -1139,19 +646,11 @@ class TestModeCog(commands.Cog):
         interaction: discord.Interaction,
         user_id: str,
     ) -> None:
-        config = await self.bot.config_service.get_server_config(
+        """Ask the change that removes the fake driver, once the ID reads as a number.
 
-        )
-        if config is None or not config.test_mode_active:
-            await refuse(
-                interaction,
-                "⛔ This command is only available when test mode is enabled.",
-                what=describe(interaction),
-            )
-            return
-        if await self._refuse_roster_change_outside_placements(interaction):
-            return
-
+        Test mode, the season's stage and the driver are judged by the change, as it is asked and
+        as it starts (`test_roster_changes`).
+        """
         discord_uid = parse_user_id(user_id)
         if discord_uid is None:
             await refuse(
@@ -1160,27 +659,11 @@ class TestModeCog(commands.Cog):
                 what=describe(interaction),
             )
             return
-
-        from leaguebot.core.services.test_roster_service import remove_test_driver
-
-        result = await remove_test_driver(
-            discord_user_id=discord_uid,
-            db_path=self.bot.db_path,
-        )
-
-        if isinstance(result, str):
-            await refuse(interaction, f"⛔ {result}", what=describe(interaction))
-            return
-
-        await interaction.response.send_message(
-            f"✅ Removed fake driver **{result['display_name']}** from **{result['team_name']}**.",
-            ephemeral=True,
-        )
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode roster remove | Success\n"
-            f"  driver: {result['display_name']}\n"
-            f"  team: {result['team_name']}\n"
-            f"  user_id: {discord_uid}",
+        await self.bot.change_queue.ask(
+            TEST_ROSTER_REMOVE,
+            {"user_id": str(discord_uid)},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     # /test-mode roster list -----------------------------------------------
@@ -1207,12 +690,12 @@ class TestModeCog(commands.Cog):
         )
         if config is None or not config.test_mode_active:
             await interaction.followup.send(
-                "⛔ This command is only available when test mode is enabled.",
+                NOT_IN_TEST_MODE,
                 ephemeral=True,
             )
             return
 
-        from leaguebot.core.services.test_roster_service import list_test_drivers
+        from leaguebot.core.services.test_mode.test_roster_service import list_test_drivers
 
         result = await list_test_drivers(
             division_name=division,
@@ -1261,54 +744,22 @@ class TestModeCog(commands.Cog):
         interaction: discord.Interaction,
         division: str,
     ) -> None:
-        config = await self.bot.config_service.get_server_config(
+        """Ask the change that clears the division of its fake drivers.
 
+        Test mode, the season's stage and the division are judged by the change, as it is asked
+        and as it starts (`test_roster_changes`).
+        """
+        await self.bot.change_queue.ask(
+            TEST_ROSTER_CLEAR,
+            {"division": division},
+            interaction=interaction,
+            what=describe(interaction),
         )
-        if config is None or not config.test_mode_active:
-            await refuse(
-                interaction,
-                "⛔ This command is only available when test mode is enabled.",
-                what=describe(interaction),
-            )
-            return
-        if await self._refuse_roster_change_outside_placements(interaction):
-            return
-
-        from leaguebot.core.services.test_roster_service import clear_test_drivers
-
-        result = await clear_test_drivers(
-            division_name=division,
-            db_path=self.bot.db_path,
-        )
-
-        if isinstance(result, str):
-            await refuse(interaction, f"⛔ {result}", what=describe(interaction))
-            return
-
-        if result == 0:
-            await interaction.response.send_message(
-                f"ℹ️ No fake drivers found in **{division}**.", ephemeral=True
-            )
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
-                "/test-mode roster clear | Nothing changed\n"
-                f"  division: {division}\n"
-                "  reason: no fake drivers to remove",
-            )
-        else:
-            await interaction.response.send_message(
-                f"✅ Removed **{result}** fake driver(s) from **{division}**.", ephemeral=True
-            )
-            await self.bot.output_router.post_log(
-                f"{interaction.user.display_name} (<@{interaction.user.id}>) | /test-mode roster clear | Success\n"
-                f"  division: {division}\n"
-                f"  removed_drivers: {result}",
-            )
 
     # (submit-results removed — use /test-mode advance which now handles result submission)
 
     # ------------------------------------------------------------------
-    # The team parameter's autocomplete (#381)
+    # The team parameter's autocomplete
     # ------------------------------------------------------------------
 
     @roster_add.autocomplete("team_name")
@@ -1345,9 +796,12 @@ class _RosterImportModal(LeagueModal, title="Import a test roster"):
         self._cog = cog
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        from leaguebot.core.services.test_roster_service import add_test_drivers_in_bulk
-        from leaguebot.core.utils.roster_import import divisions_named, parse_roster_csv
+        """Ask the change that seats the roster, once the file reads on its own.
 
+        What a file shows wrong by itself is refused here, before the ask. Test mode, the
+        season's stage and everything the database must answer are judged by the change, as it is
+        asked and as it starts (`test_roster_changes`).
+        """
         await interaction.response.defer(ephemeral=True)
 
         drivers, errors = parse_roster_csv(str(self.csv_text.value))
@@ -1359,32 +813,11 @@ class _RosterImportModal(LeagueModal, title="Import a test roster"):
             )
             return
 
-        seated, errors = await add_test_drivers_in_bulk(
-            drivers,
-            self._cog.bot.db_path,
-            placement_service=self._cog.bot.placement_service,
-        )
-        if errors:
-            await refuse(
-                interaction,
-                _format_roster_errors(errors),
-                what=describe_form(self),
-            )
-            return
-
-        divisions = divisions_named(drivers)
-        await interaction.followup.send(
-            f"✅ Seated **{seated}** test driver(s) across "
-            f"{len(divisions)} division(s): {', '.join(divisions)}.\n"
-            f"`/test-mode roster list` shows a division's drivers with the mentions "
-            f"result submission wants.",
-            ephemeral=True,
-        )
-        await self._cog.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | "
-            "/test-mode roster add-bulk | Success\n"
-            f"  drivers_seated: {seated}\n"
-            f"  divisions: {', '.join(divisions)}",
+        await self._cog.bot.change_queue.ask(
+            TEST_ROSTER_ADD_BULK,
+            bulk_payload(drivers),
+            interaction=interaction,
+            what=describe_form(self),
         )
 
 
@@ -1398,29 +831,6 @@ def _passed_over_line(step: PhaseEntry) -> str:
         else f"**Phase {step['phase_number']}**"
     )
     return f"⏭️ {what} for {where} was not due: its race has been run."
-
-
-def _format_roster_errors(errors: list[str]) -> str:
-    """One shape for every refusal, capped so a systematically wrong file still replies.
-
-    A file whose every row is wrong produces one fault per row, and fifty-one of them
-    exceed Discord's 2000-character limit — which refuses the whole message rather than
-    truncating it, leaving the manager with no reply at all.
-    """
-    shown = errors[:15]
-    lines = [
-        f"⛔ The roster was not imported — {len(errors)} problem(s). "
-        f"**No drivers were added.**"
-    ]
-    lines += [f"• {problem}" for problem in shown]
-    if len(errors) > len(shown):
-        lines.append(f"…and {len(errors) - len(shown)} more.")
-    return "\n".join(lines)
-
-
-#: Re-exported from the backup service, which owns it now that the season approval
-#: needs it too. Kept as a name here because this module's tests import it.
-_jobstore_path = backup_service.jobstore_path_of
 
 
 class _ConfirmRestoreView(LeagueView):
@@ -1450,7 +860,7 @@ class _ConfirmRestoreView(LeagueView):
         await interaction.response.defer(ephemeral=True)
         bot = self._cog.bot
         try:
-            backup_service.stage_restore(bot.db_path, _jobstore_path(bot))
+            backup_service.stage_restore(bot.db_path, bot.scheduler_service.jobstore_path)
         except backup_service.BackupFault as exc:
             # A copy or write that failed. Staging undoes itself, so nothing stands.
             await report_failure(

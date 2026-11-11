@@ -12,13 +12,13 @@ import discord
 
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.services.channel_registry_service import as_text_channel
-from leaguebot.core.services.driver_service import current_account_map_for_division
+from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.core.models.change import AuditRecord
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services.setting_change import Saved
+from leaguebot.core.services.queue.setting_change import Saved
 from leaguebot.results.models.session_result import (
     DriverSessionResult,
     OutcomeModifier,
@@ -28,12 +28,12 @@ from leaguebot.results.models.session_result import (
 )
 from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
 from leaguebot.results.services import standings_service
-from leaguebot.core.services.channel_registry_service import (
+from leaguebot.core.services.settings.channel_registry_service import (
     SETTING_LABELS,
     missing_channel_fault,
     unpostable_channel_fault,
 )
-from leaguebot.core.services.team_service import team_names_for_instances
+from leaguebot.core.services.drivers.team_service import team_names_for_instances
 from leaguebot.results.utils import results_formatter
 from leaguebot.core.utils.league_bot import LeagueBot
 
@@ -1190,7 +1190,7 @@ async def set_standings_message_id_on(
 
 async def _get_reserve_user_ids(db_path: str, division_id: int) -> set[int]:
     """Return discord_user_ids of all drivers seated in a reserve team for this division."""
-    from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
+    from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(

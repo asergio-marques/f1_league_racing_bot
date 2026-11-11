@@ -60,24 +60,28 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.services.amendment_service import (
-    approval_faults,
-    validate_modification_ordering,
+from leaguebot.core.services.rounds.amendment_service import approval_faults
+from leaguebot.core.services.modules.module_service import ModuleService
+from leaguebot.core.services.queue.queue_records import (
+    in_hand,
 )
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
-    in_hand,
 )
-from leaguebot.core.services.season_service import live_season
+from leaguebot.core.services.seasons.season_service import live_season
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.services import review_posting, review_verdicts
-from leaguebot.results.services.amendment_mode_service import get_amendment_state
+from leaguebot.results.services.amendment_mode_service import (
+    get_amendment_state,
+    validate_modification_ordering,
+)
 from leaguebot.results.services.attendance_hook import AttendanceAfterReview
+from leaguebot.results.services.module_switch_settings import results_enabled_on
 from leaguebot.results.services.result_submission_service import (
     amendment_wait_text,
     open_amendment_in_season,
@@ -204,19 +208,21 @@ def _left(ctx: OutcomeContext) -> list[str]:
 
 
 def points_amendment_change(
-    *, attendance: AttendanceAfterReview, now: Callable[[], datetime]
+    *,
+    attendance: AttendanceAfterReview,
+    now: Callable[[], datetime],
+    module_service: ModuleService,
 ) -> ChangeType:
     """The change that approves a season's staged points; see the module. *attendance* is the
-    hook the builder hands every change type that reaches attendance, and *now* the queue's
-    clock."""
+    hook the builder hands every change type that reaches attendance, *now* the queue's clock,
+    and *module_service* the module switches its check of the channels asks of."""
 
     async def check(ctx: CheckContext) -> Verdict:
         db_path = ctx.db_path
         season_id = int(ctx.payload["season_id"])
         async with get_connection(db_path) as db:
-            cursor = await db.execute("SELECT module_enabled FROM results_module_config")
-            row = await cursor.fetchone()
-        if row is None or not row["module_enabled"]:
+            results_on = await results_enabled_on(db)
+        if not results_on:
             return Verdict.refuse(MODULE_OFF)
 
         live = await live_season(db_path)
@@ -254,7 +260,9 @@ def points_amendment_change(
                 "\n".join(ordering),
             )
 
-        faults = await approval_faults(db_path, season_id, ctx.bot)
+        faults = await approval_faults(
+            db_path, season_id, ctx.bot, module_service=module_service
+        )
         if faults:
             bullets = "\n• ".join(faults)
             return Verdict.refuse(

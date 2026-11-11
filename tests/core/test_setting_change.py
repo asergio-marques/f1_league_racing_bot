@@ -89,8 +89,8 @@ def _setting(env, *, after: str | None = None, carries_line: bool = False, **fie
     success line wait for it.
     """
     from leaguebot.core.models.change import AuditRecord, PlannedStep, StepKind, StepResult, Verdict
-    from leaguebot.core.services.change_queue import Step
-    from leaguebot.core.services.setting_change import After, Saved, Setting
+    from leaguebot.core.services.queue.change_types import Step
+    from leaguebot.core.services.queue.setting_change import After, Saved, Setting
 
     knobs = env.knobs
 
@@ -160,7 +160,7 @@ def _setting(env, *, after: str | None = None, carries_line: bool = False, **fie
 
 def _league(env, **setting) -> Any:
     """Attach the real queue, with the dummy setting's change type registered on it."""
-    from leaguebot.core.services.setting_change import setting_change
+    from leaguebot.core.services.queue.setting_change import setting_change
 
     return attach_queue(
         env.bot, env.db_path, now=env.clock, types=(setting_change(_setting(env, **setting)),)
@@ -215,7 +215,7 @@ def _success_line(value: int) -> str:
 async def test_a_setting_s_value_audit_entry_and_line_are_saved_in_one_save(env, monkeypatch):
     """The audit entry's write raising undoes the value with it: no success line, the failure
     line queued instead, and the lane not stopped, the request behind it running."""
-    from leaguebot.core.services import change_queue
+    from leaguebot.core.services.queue import change_queue
 
     _league(env)
     real = change_queue.record_change_on
@@ -373,7 +373,7 @@ async def test_the_acknowledgement_names_what_is_being_set(env):
 
 
 async def test_a_fault_in_the_save_saves_nothing_says_to_run_it_again_and_the_lane_goes_on(env):
-    from leaguebot.core.services.setting_change import NOTHING_SAVED
+    from leaguebot.core.services.queue.setting_change import NOTHING_SAVED
 
     assert NOTHING_SAVED == "Nothing was saved. Run `{command}` again to retry."
     _league(env)

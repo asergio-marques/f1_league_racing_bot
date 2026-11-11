@@ -17,23 +17,28 @@ timer asks it, and the queue run.
 """
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock
 
 import discord
 import pytest
 
-from leaguebot.attendance.services.attendance_service import AttendanceService
 from leaguebot.attendance.services.rsvp_service import call_failure_text
 from tests.support.change_queue import (
-    attach_queue,
     discard_job,
     http_error,
     run_queue,
     stopped_job,
 )
-from tests.support.season_league import DIVISIONS, PRO, SeasonLeague, ongoing_league, round_id
+from tests.support.season_league import (
+    DIVISIONS,
+    PRO,
+    SeasonLeague,
+    attendance_from_the_database,
+    ongoing_league,
+    round_id,
+)
 
 CHECK_IN = DIVISIONS[PRO][3].checkin
 ROUND_4 = round_id(PRO, 4)
@@ -47,11 +52,10 @@ COUNTS_NOTHING = "will count nothing against anyone"
 
 async def _league(tmp_path: Any, *, images: bool = False) -> SeasonLeague:
     league = await ongoing_league(tmp_path, attendance=True, images=images)
-    league.bot.attendance_service = AttendanceService(league.db_path)
-    attach_queue(league.bot, league.db_path, now=league.clock)
+    attendance_from_the_database(league)
     when = league.clock.now + timedelta(days=3)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       when.replace(tzinfo=None).isoformat(), ROUND_4)
+                       when.astimezone(timezone.utc).isoformat(), ROUND_4)
     return league
 
 

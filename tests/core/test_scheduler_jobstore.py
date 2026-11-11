@@ -169,7 +169,7 @@ def test_the_portrait_refresh_is_a_recurring_daily_trigger(workspace):
     assert isinstance(job.trigger, CronTrigger)
     fields = {f.name: str(f) for f in job.trigger.fields}
     assert (fields["hour"], fields["minute"]) == ("3", "0")
-    assert job.kwargs == {}
+    assert job.kwargs == {"kind": "portrait_refresh"}
 
 
 def test_the_portrait_refresh_is_scheduled_in_utc(workspace):
@@ -215,38 +215,6 @@ def test_cancelling_the_portrait_refresh_removes_it_and_tolerates_a_second_call(
     assert service._scheduler.get_job("pfp_daily") is None
 
 
-async def test_the_job_delegates_to_the_registered_callback(workspace):
-    from leaguebot.core.services import scheduler_service as m
-
-    _db_path, build = workspace
-    service = build()
-    seen: list[bool] = []
-
-    async def _cb() -> None:
-        seen.append(True)
-
-    service.register_portrait_refresh_callback(_cb)
-    m._GLOBAL_SERVICE = service
-    try:
-        await m._portrait_refresh_job()
-    finally:
-        m._GLOBAL_SERVICE = None
-
-    assert seen == [True]
-
-
-async def test_the_job_is_silent_where_no_callback_was_registered(workspace):
-    from leaguebot.core.services import scheduler_service as m
-
-    _db_path, build = workspace
-    service = build()
-    m._GLOBAL_SERVICE = service
-    try:
-        await m._portrait_refresh_job()  # must not raise
-    finally:
-        m._GLOBAL_SERVICE = None
-
-
 # ---------------------------------------------------------------------------
 # A renumbering must not let one round's jobs destroy another's
 # ---------------------------------------------------------------------------
@@ -270,7 +238,7 @@ def _round_at(round_id: int, round_number: int):
 def test_renumbering_does_not_destroy_a_sibling_rounds_jobs():
     """Two rounds that swap numbers must never share a job ID.
 
-    `renumber_rounds` rewrites the numbers of a whole division whenever an amendment changes
+    `renumber_rounds_on` rewrites the numbers of a whole division whenever an amendment changes
     the order of its rounds, and only the amended round is re-armed — so the sibling kept jobs
     named for a number it no longer held. The next amendment of *that* sibling then scheduled
     onto the same ID, and because every `add_job` passes ``replace_existing=True`` it silently
@@ -282,8 +250,6 @@ def test_renumbering_does_not_destroy_a_sibling_rounds_jobs():
     from leaguebot.core.services.scheduler_service import SchedulerService
 
     svc = SchedulerService.__new__(SchedulerService)
-    svc._phase_callbacks = {}
-    svc._mystery_notice_callback = None
     svc._db_path = ":memory:"
     svc._scheduler = MagicMock()
     svc._scheduler.add_job = MagicMock()

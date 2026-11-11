@@ -35,7 +35,7 @@ from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.member_names import interaction_member
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.change_queue import ChangeQueue
+    from leaguebot.core.services.queue.change_queue import ChangeQueue
 
 log = logging.getLogger(__name__)
 
@@ -66,7 +66,8 @@ _NOTHING_DONE = {"reject": "Nothing was rejected", "request_changes": "No change
 def clear_pending_reasons() -> None:
     """Drop every pending reason and cancel its five-minute lapse, so none fires after.
 
-    Called by `clear_in_memory_state`, for `/bot pack` and `/bot factory-reset`.
+    Signed up by the builder to the bot's hook for the in-memory clear (`/bot pack`,
+    `/bot factory-reset`).
     """
     for entry in _PENDING_REASONS.values():
         lapse = entry.get("lapse")

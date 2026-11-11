@@ -183,6 +183,69 @@ async def test_a_one_off_timer_missed_while_the_bot_was_down_fires_at_start(serv
     assert handed == [4343]
 
 
+async def test_a_timer_missed_while_down_waits_until_the_scheduler_is_resumed(services):
+    """A correction's five minutes ran out two hours ago, while the bot was down. Started again
+    paused, as start-up starts it, the scheduler can read the timer from its job store but does
+    not fire it; once resumed, as the last thing start-up does, it fires, handed its key."""
+    before = services()
+    before._scheduler.start(paused=True)
+    before.arm_once("correction_lapse", 4343, _now() - timedelta(hours=2))
+    _dispose(before)
+
+    after = services()
+    handed: list[Any] = []
+    fired = asyncio.Event()
+
+    async def _lapse(key: Any) -> None:
+        handed.append(key)
+        fired.set()
+
+    after.register_timer("correction_lapse", _lapse)
+    after.start(paused=True)
+    await _settle()
+
+    assert handed == []
+    assert after.timer_due("correction_lapse", 4343) is not None
+
+    after.resume()
+    await asyncio.wait_for(fired.wait(), 10)
+    await _settle()
+
+    assert handed == [4343]
+
+
+async def test_a_backup_taken_during_start_up_leaves_the_scheduler_paused(services):
+    """A correction's timer fell due while the bot was down, and start-up holds the scheduler
+    paused while its steps run. A backup taken meanwhile pauses the scheduler around its copy
+    (`paused()`); once the copy is done the scheduler is still paused and the timer has not fired,
+    since only start-up's last act resumes it. Then it fires."""
+    before = services()
+    before._scheduler.start(paused=True)
+    before.arm_once("correction_lapse", 4343, _now() - timedelta(hours=2))
+    _dispose(before)
+
+    after = services()
+    handed: list[Any] = []
+    fired = asyncio.Event()
+
+    async def _lapse(key: Any) -> None:
+        handed.append(key)
+        fired.set()
+
+    after.register_timer("correction_lapse", _lapse)
+    after.start(paused=True)
+
+    with after.paused():
+        pass
+    await _settle()
+
+    assert handed == []
+
+    after.resume()
+    await asyncio.wait_for(fired.wait(), 10)
+    assert handed == [4343]
+
+
 async def test_a_lane_armed_timer_asks_on_its_conversation_s_lane(services, tmp_path):
     """A round's review channel, 707, holds a lock warning whose clear is armed. The league lane
     is stopped at a change of its own. When the timer fires, the callback the builder registered
@@ -196,7 +259,7 @@ async def test_a_lane_armed_timer_asks_on_its_conversation_s_lane(services, tmp_
         StepResult,
         Verdict,
     )
-    from leaguebot.core.services.change_queue import ChangeType, Step
+    from leaguebot.core.services.queue.change_types import ChangeType, Step
 
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
@@ -251,3 +314,199 @@ async def test_a_lane_armed_timer_asks_on_its_conversation_s_lane(services, tmp_
     assert lanes["review_lock_clear"] == ("channel:707", "DONE")
     assert cleared == [77]
     assert await stopped_job(db_path, "league") is not None
+
+
+# ---------------------------------------------------------------------------
+# Every job the scheduler arms runs through the one runner (#283, S7a)
+# ---------------------------------------------------------------------------
+
+#: Pro's round 3 (id 21) of season 7, tier 1, a month away, so that no job of it is due.
+_ROUND_ID = 21
+_ROUND_SUFFIX = "_s7_d1_r3_id21"
+
+
+def _a_round() -> Any:
+    from types import SimpleNamespace
+
+    start = _now().replace(microsecond=0) + timedelta(days=30)
+    return SimpleNamespace(id=_ROUND_ID, division_id=11, round_number=3, scheduled_at=start)
+
+
+def _arm_round(service: Any, rnd: Any) -> None:
+    service.schedule_round(rnd, season_number=7, division_tier=1)
+
+
+def _arm_check_in(service: Any, rnd: Any) -> None:
+    service.schedule_attendance_round(
+        rnd, season_number=7, division_tier=1, notice_days=5, last_notice_hours=24,
+        deadline_hours=2, now=_now(),
+    )
+
+
+def _arm_cleanups(service: Any, rnd: Any) -> None:
+    service.schedule_round_cleanups(rnd, season_number=7, division_tier=1, now=_now())
+
+
+def _arm_results_only(service: Any, rnd: Any) -> None:
+    service.schedule_result_submission_jobs([rnd], division_meta={11: (7, 1)})
+
+
+def _arm_results_now(service: Any, rnd: Any) -> None:
+    service.run_result_submission_now(rnd, season_number=7, division_tier=1)
+
+
+def _arm_signup_close(service: Any, _rnd: Any) -> None:
+    service.schedule_signup_close_timer((_now() + timedelta(days=3)).isoformat())
+
+
+def _arm_portrait_refresh(service: Any, _rnd: Any) -> None:
+    service.schedule_portrait_refresh("06:00")
+
+
+def _arm_amendment_sweep(service: Any, _rnd: Any) -> None:
+    service.schedule_amendment_sweep()
+
+
+#: Every kind the builder signs up for the scheduler's own jobs, with the method that arms it,
+#: the id it is stored under, and the key its handler is handed (None: a standing job, whose
+#: handler is handed nothing). A round's kind is its job id's prefix and its key the round id.
+EVERY_ARMED_KIND = [
+    pytest.param("weather_p1", _arm_round, f"weather_p1{_ROUND_SUFFIX}", _ROUND_ID,
+                 id="weather_p1-schedule_round"),
+    pytest.param("weather_p2", _arm_round, f"weather_p2{_ROUND_SUFFIX}", _ROUND_ID,
+                 id="weather_p2-schedule_round"),
+    pytest.param("weather_p3", _arm_round, f"weather_p3{_ROUND_SUFFIX}", _ROUND_ID,
+                 id="weather_p3-schedule_round"),
+    pytest.param("cleanup", _arm_round, f"cleanup{_ROUND_SUFFIX}", _ROUND_ID,
+                 id="cleanup-schedule_round"),
+    pytest.param("results", _arm_round, f"results{_ROUND_SUFFIX}", _ROUND_ID,
+                 id="results-schedule_round"),
+    pytest.param("results", _arm_results_only, f"results{_ROUND_SUFFIX}", _ROUND_ID,
+                 id="results-schedule_result_submission_jobs"),
+    pytest.param("results", _arm_results_now, f"results{_ROUND_SUFFIX}", _ROUND_ID,
+                 id="results-run_result_submission_now"),
+    pytest.param("rsvp_notice", _arm_check_in, f"rsvp_notice{_ROUND_SUFFIX}", _ROUND_ID,
+                 id="rsvp_notice-schedule_attendance_round"),
+    pytest.param("rsvp_last_notice", _arm_check_in, f"rsvp_last_notice{_ROUND_SUFFIX}",
+                 _ROUND_ID, id="rsvp_last_notice-schedule_attendance_round"),
+    pytest.param("rsvp_deadline", _arm_check_in, f"rsvp_deadline{_ROUND_SUFFIX}", _ROUND_ID,
+                 id="rsvp_deadline-schedule_attendance_round"),
+    pytest.param("rsvp_cleanup", _arm_check_in, f"rsvp_cleanup{_ROUND_SUFFIX}", _ROUND_ID,
+                 id="rsvp_cleanup-schedule_attendance_round"),
+    pytest.param("cleanup", _arm_cleanups, f"cleanup{_ROUND_SUFFIX}", _ROUND_ID,
+                 id="cleanup-schedule_round_cleanups"),
+    pytest.param("rsvp_cleanup", _arm_cleanups, f"rsvp_cleanup{_ROUND_SUFFIX}", _ROUND_ID,
+                 id="rsvp_cleanup-schedule_round_cleanups"),
+    pytest.param("signup_close", _arm_signup_close, "signup_close", None, id="signup_close"),
+    pytest.param("portrait_refresh", _arm_portrait_refresh, "pfp_daily", None,
+                 id="portrait_refresh"),
+    pytest.param("amendment_sweep", _arm_amendment_sweep, "amend_sweep", None,
+                 id="amendment_sweep"),
+]
+
+
+def _stored(service: Any, arm: Any, job_id: str) -> Any:
+    """Arm the round's jobs (or the standing job) on a paused scheduler, and read back the job
+    stored under *job_id*, which nothing has fired."""
+    service.start(paused=True)
+    arm(service, _a_round())
+    job = service._scheduler.get_job(job_id)
+    assert job is not None, f"nothing is stored under {job_id}"
+    return job
+
+
+@pytest.mark.parametrize("kind, arm, job_id, key", EVERY_ARMED_KIND)
+async def test_every_kind_runs_through_one_runner(services, kind, arm, job_id, key):
+    """Every kind is signed up with a handler of its own, and the job is armed by its method:
+    the job stands under the id it has always had, its callable is the one runner a one-off
+    timer runs through, and it is stored as a one-off timer is, with its kind and its key as
+    keywords. Fired with them, the runner
+    calls that kind's handler alone, once, with the key (a standing job's with nothing)."""
+    from leaguebot.core.services import scheduler_service
+
+    service = services()
+    calls: dict[str, list[tuple[Any, ...]]] = {}
+
+    def _handler_of(name: str) -> Any:
+        async def _handler(*args: Any) -> None:
+            calls.setdefault(name, []).append(args)
+        return _handler
+
+    for each in {param.values[0] for param in EVERY_ARMED_KIND}:
+        service.register_timer(each, _handler_of(each))
+
+    job = _stored(service, arm, job_id)
+
+    assert job.func is scheduler_service._one_off_timer_job
+    assert job.args == ()
+    if key is None:
+        assert job.kwargs in ({"kind": kind}, {"kind": kind, "key": None})
+    else:
+        assert job.kwargs == {"kind": kind, "key": key}
+
+    await job.func(*job.args, **job.kwargs)
+
+    assert calls == {kind: [() if key is None else (key,)]}
+
+
+@pytest.mark.parametrize("kind, arm, job_id, key", EVERY_ARMED_KIND)
+async def test_a_failing_job_keeps_its_traceback(services, caplog, kind, arm, job_id, key):
+    """The kind's handler raises when its job fires: the fault is logged at ERROR with its
+    traceback, naming the kind and the key, and nothing is raised to the scheduler."""
+    service = services()
+
+    async def _fails(*_args: Any) -> None:
+        raise RuntimeError("the handler broke")
+
+    service.register_timer(kind, _fails)
+    job = _stored(service, arm, job_id)
+
+    with caplog.at_level("ERROR"):
+        await job.func(*job.args, **job.kwargs)  # must not raise
+
+    [record] = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert record.exc_info is not None
+    assert str(record.exc_info[1]) == "the handler broke"
+    assert kind in record.getMessage()
+    if key is not None:
+        assert str(key) in record.getMessage()
+
+
+#: The one runner, as the job store saves it for every job: its module's path and its name.
+RUNNER_REFERENCE = "leaguebot.core.services.scheduler_service:_one_off_timer_job"
+
+
+async def test_every_stored_job_names_the_runner_by_its_pinned_module_path(services):
+    """Every way the scheduler arms a job is used, a one-off timer's included, on a paused
+    scheduler; every job is then read back as the job store's file holds it, and each names the
+    one runner by `leaguebot.core.services.scheduler_service:_one_off_timer_job`.
+
+    **The path is pinned, and `scheduler_service.py` stays where it is.** `SQLAlchemyJobStore`
+    saves a job's callable as text, its module's path and its name, and imports that path again
+    when it loads the job. Moving the file, or renaming the runner, would leave every job a saved
+    job store holds unloadable: the host's own after an update, and the scheduler's database in
+    every saved test-mode state (core_specification.md, "Saving a state and returning to it"). So
+    while core's other services are grouped into topic folders, this one stays at
+    `core/services/scheduler_service.py` (#283), and a move fails here before it lands."""
+    import pickle
+    import sqlite3
+
+    service = services()
+    service.start(paused=True)
+    rnd = _a_round()
+    for arm in dict.fromkeys(param.values[1] for param in EVERY_ARMED_KIND):
+        arm(service, rnd)
+    service.arm_once("review_lock_clear", 77, _now() + timedelta(hours=1))
+
+    connection = sqlite3.connect(service.jobstore_path)
+    try:
+        stored = {
+            job_id: pickle.loads(state)["func"]
+            for job_id, state in connection.execute("SELECT id, job_state FROM apscheduler_jobs")
+        }
+    finally:
+        connection.close()
+
+    expected = {param.values[2] for param in EVERY_ARMED_KIND} | {"once:review_lock_clear:77"}
+    assert expected <= set(stored)
+    assert set(stored.values()) == {RUNNER_REFERENCE}

@@ -1,11 +1,11 @@
-"""Unit tests for the lineup posting decision — T043, T044.
+"""Unit tests for the lineup's command output and its portraits — T043, T044.
 
-The two behaviours this file exists to pin, and they are opposite:
-
-* **FR-025** — where the image flow runs, the PNG is produced and posted, and the poster
-  deletes nothing: the message it replaces is deleted by a job of the change queue after it
-  (#439), so a failed rebuild leaves the league the lineup it had.
-* **The image path is a guard clause** in front of the textual body, which posts first too.
+The posting of a lineup is core's: it asks the image module's drawing and posts what comes back,
+and the message it replaces is deleted by a job of the change queue after it (#439), so a failed
+rebuild leaves the league the lineup it had. That is tested in `tests/core/` against a stand-in
+drawing, and the drawing itself in `tests/image/test_image_drawing_lineup.py`. What stays here is
+the image module's own: its gate, the lineup drawn for `/team lineup` and the placements review,
+which never touches the record, and the portraits refreshed for the seats about to be drawn.
 """
 from __future__ import annotations
 
@@ -16,48 +16,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.image.models.image_module import PostingOrigin
-from leaguebot.image.services.image_lineup_post import (
-    NOT_APPLICABLE,
-    POSTED,
-    REJECTED,
-    LineupPostOutcome,
-    lineup_enabled,
-)
-from tests.support.change_queue import in_a_job
+from leaguebot.image.services.image_lineup_post import POSTED, lineup_enabled
 
 SRC = Path(__file__).resolve().parents[2] / "src"
-
-
-# ── The outcome contract ──────────────────────────────────────────────────
-
-
-def test_not_applicable_means_the_caller_runs_its_textual_body():
-    assert LineupPostOutcome().action == NOT_APPLICABLE
-    assert LineupPostOutcome().applicable is False
-
-
-@pytest.mark.parametrize("action", [POSTED, REJECTED])
-def test_every_other_outcome_stops_the_caller(action):
-    """A posted graphic and a rejected command both mean the caller posts nothing."""
-    assert LineupPostOutcome(action=action).applicable is True
-
-
-def test_a_missing_guild_is_never_applicable():
-    """No guild, no display names and no channel — the textual path handles it."""
-    import asyncio
-
-    outcome = asyncio.get_event_loop_policy().new_event_loop().run_until_complete(
-        _try_post_without_guild()
-    )
-    assert outcome.applicable is False
-
-
-async def _try_post_without_guild():
-    from leaguebot.image.services.image_lineup_post import try_post
-
-    with in_a_job():
-        return await try_post(object(), None, 1)
 
 
 # ── The enablement gate ───────────────────────────────────────────────────
@@ -94,7 +55,7 @@ async def test_the_gate_never_raises_on_a_broken_reader():
     assert await lineup_enabled(_Broken()) is False
 
 
-# ── FR-025: the image path builds before it deletes ───────────────────────
+# ── Reading one function's source ─────────────────────────────────────────
 
 
 def _function_source(path: Path, name: str, *, code_only: bool = False) -> str:
@@ -115,37 +76,6 @@ def _function_source(path: Path, name: str, *, code_only: bool = False) -> str:
                 )
             return ast.get_source_segment(text, node) or ""
     raise AssertionError(f"{name} not found in {path}")
-
-
-def test_the_image_path_deletes_nothing():
-    """FR-025, read structurally: the picture is posted, and the lineup it replaces is deleted by
-    the change queue's job after it, never here."""
-    source = _function_source(
-        SRC / "leaguebot" / "image" / "services" / "image_lineup_post.py", "try_post",
-        code_only=True,
-    )
-    assert "channel.send(" in source
-    assert ".delete(" not in source
-
-
-def test_the_image_path_is_a_guard_clause_in_front_of_the_textual_body():
-    """The image branch must return early, never interleave with the embed build."""
-    source = _function_source(
-        SRC / "leaguebot" / "core" / "services" / "placement_service.py", "_refresh_lineup_post"
-    )
-    guard_at = source.index("try_post(")
-    build_at = source.index("discord.Embed(")
-    assert guard_at < build_at
-    assert "if outcome.applicable:" in source
-    assert "return" in source[guard_at:build_at]
-
-
-def test_the_textual_body_runs_when_no_bot_is_attached():
-    """Without a bot there is no image module to consult, so the text path runs."""
-    source = _function_source(
-        SRC / "leaguebot" / "core" / "services" / "placement_service.py", "_refresh_lineup_post"
-    )
-    assert "if owner is not None:" in source
 
 
 # ── FR-024: the RSVP reserve distribution must not redraw ─────────────────
@@ -178,64 +108,6 @@ def test_render_for_command_is_always_a_commanded_posting():
     )
     assert "PostingOrigin.COMMANDED" in source
     assert "POST_TEXT_FALLBACK" not in source
-
-
-def test_team_lineup_honours_the_public_parameter():
-    source = (SRC / "leaguebot" / "core" / "cogs" / "team_cog.py").read_text(encoding="utf-8")
-    block = source[source.index("render_for_command"):]
-    assert "ephemeral=not public" in block
-
-
-def test_team_lineup_posts_one_image_per_division():
-    source = (SRC / "leaguebot" / "core" / "cogs" / "team_cog.py").read_text(encoding="utf-8")
-    block = source[source.index("render_for_command"):]
-    assert "for div in all_divisions:" in block
-    assert "files.append(" in block
-
-
-def test_season_review_sends_one_message_per_subsection():
-    """The review outgrew a single Discord message and is split by subject.
-
-    Six subsections, in the order a manager reads them. `chunk_message` stays beneath
-    them because the image subsection can pass 2000 characters on its own, and an
-    over-long send loses the whole message rather than its tail.
-    """
-    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "season_review")
-    block = source[source.index("Send one message per subsection"):]
-
-    order = [
-        "header_lines",
-        "signup_lines",
-        "attendance_lines",
-        "points_lines",
-        "weather_lines",
-        "image_lines",
-    ]
-    positions = [block.index(name) for name in order]
-    assert positions == sorted(positions), "the subsections must be sent in order"
-
-    assert "chunk_message(" in block, "each subsection must still be chunked"
-    assert "if not body:" in block, "an empty subsection must not be sent"
-
-
-def test_season_review_subsections_do_not_share_a_list():
-    """Each subsection collects into its own list, or the split is only cosmetic."""
-    import re
-
-    source = _function_source(SRC / "leaguebot" / "core" / "cogs" / "season_cog.py", "season_review")
-
-    for marker, expected in [
-        ("_signup_review_lines", "signup_lines"),
-        ("_attendance_review_lines", "attendance_lines"),
-        ("_weather_review_lines", "weather_lines"),
-        ("_points_names_review_lines", "points_lines"),
-        ("_build_image_review_section", "image_lines"),
-    ]:
-        before = source[: source.index(marker)]
-        collected_into = re.findall("([A-Za-z_]+_lines)", before)[-1]
-        assert collected_into == expected, (
-            f"{marker} is collected into {collected_into}, not {expected}"
-        )
 
 
 # ── Portraits are refreshed for the seats about to be drawn ───────────────
@@ -336,16 +208,6 @@ async def test_a_lineup_command_render_obtains_nothing_beyond_its_trigger(
     bot, spy, _member = _stub_lineup_render(monkeypatch, tmp_path)
 
     await render_for_command(bot, MagicMock(), 5)
-
-    assert spy.await_args.kwargs["obtain_missing"] is False
-
-
-async def test_a_posting_obtains_nothing_beyond_its_trigger(monkeypatch, tmp_path):
-    from leaguebot.image.services.image_lineup_post import render_png
-
-    bot, spy, _member = _stub_lineup_render(monkeypatch, tmp_path)
-
-    await render_png(bot, MagicMock(), 5, PostingOrigin.SCHEDULED)
 
     assert spy.await_args.kwargs["obtain_missing"] is False
 

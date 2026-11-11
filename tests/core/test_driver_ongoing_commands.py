@@ -1,15 +1,14 @@
 """`/driver move` and `/driver release` — the command bodies, rung by rung (issue #220).
 
-The services beneath them are tested against a real database in `test_driver_move.py` and
-`test_driver_release.py`, which also pin the stage refusal. What those leave unexercised is the
-rest of each command's ladder: a division that does not resolve, a member with no profile, and
-the reply and log line of a move or release that goes through. The two commands copy that
-ladder rather than share it, so each rung is tested for both. A refusal the service raises is
-pinned, reply and recorded line, in `test_driver_cog_refusals.py`.
-
-The reject command's own ladder is in `test_driver_reject.py`; the one branch it leaves — a
-driver role Discord will not take back — is here, because a failed role removal must not
-undo a rejection already written.
+Each command asks the change queue for a change of its own (#283): `core.driver_move` and
+`core.driver_release`, the driver, the season and the divisions named by their ids. The save, the
+roles, the lineups, the replies and the lines are the change's, tested against a real database in
+`test_driver_move.py` and `test_driver_release.py`, which also pin the stage refusal and the
+refusals the change makes at the ask. What those leave unexercised is the rest of each command's
+ladder, refused before anything is asked of the queue: a division that does not resolve, a member
+with no profile, a past account whose driver has left; and what a command that goes through asks
+of the queue. The two commands copy that ladder rather than share it, so each rung is tested for
+both. Each refusal's line is pinned in `test_driver_cog_refusals.py`.
 """
 from __future__ import annotations
 
@@ -20,7 +19,6 @@ import discord
 import pytest
 
 from leaguebot.core.cogs.driver_cog import DriverCog
-from leaguebot.core.models.driver_profile import DriverState
 from leaguebot.core.models.season import SeasonStage
 from tests.support.teams import resolves_as_typed
 from tests.support.undecorate import undecorate
@@ -51,19 +49,7 @@ def _cog(
     cog.bot.placement_service.resolve_division = AsyncMock(
         side_effect=lambda season_id, name: known.get(name)
     )
-    cog.bot.placement_service.move_driver = AsyncMock(
-        return_value={
-            "from_division": "Pro",
-            "to_division": "Academy",
-            "from_team": "Alpha",
-            "to_team": "Reserve",
-            "lineups": [],
-        }
-    )
-    cog.bot.placement_service.release_driver = AsyncMock(
-        return_value={"division_name": "Academy", "lineups": []}
-    )
-    # No lineup is owed, so none is asked of the change queue (#439).
+    # What a command that goes through asks of the change queue, which is not run (#283).
     cog.bot.change_queue.ask = AsyncMock()
     cog.bot.driver_service.get_profile = AsyncMock(return_value=profile)
     cog.bot.output_router.post_log = AsyncMock()
@@ -92,6 +78,13 @@ def _reply(interaction: MagicMock) -> str:
     return interaction.followup.send.await_args.args[0]
 
 
+def _asked(cog: DriverCog) -> tuple[str, dict]:
+    """The one change the command asked of the queue: its kind and its payload."""
+    cog.bot.change_queue.ask.assert_awaited_once()
+    kind, payload = cog.bot.change_queue.ask.await_args.args[:2]
+    return kind, payload
+
+
 async def _move(cog, interaction, from_division="Pro", team="Reserve", to_division=None):
     await undecorate(DriverCog.move)(
         cog, interaction, _member(), from_division, team, to_division
@@ -113,7 +106,7 @@ async def test_a_move_with_no_confirmed_season_is_refused():
     await _move(cog, interaction)
 
     assert "only while the season is ongoing" in _reply(interaction)
-    cog.bot.placement_service.move_driver.assert_not_awaited()
+    assert cog.bot.change_queue.method_calls == []
 
 
 async def test_a_move_from_an_unknown_division_is_refused():
@@ -123,7 +116,7 @@ async def test_a_move_from_an_unknown_division_is_refused():
     await _move(cog, interaction, from_division="Nowhere")
 
     assert "Division **Nowhere** not found" in _reply(interaction)
-    cog.bot.placement_service.move_driver.assert_not_awaited()
+    assert cog.bot.change_queue.method_calls == []
 
 
 async def test_a_move_into_an_unknown_division_is_refused():
@@ -133,7 +126,7 @@ async def test_a_move_into_an_unknown_division_is_refused():
     await _move(cog, interaction, to_division="Nowhere")
 
     assert "Division **Nowhere** not found" in _reply(interaction)
-    cog.bot.placement_service.move_driver.assert_not_awaited()
+    assert cog.bot.change_queue.method_calls == []
 
 
 async def test_a_move_of_a_member_with_no_profile_is_refused():
@@ -143,12 +136,14 @@ async def test_a_move_of_a_member_with_no_profile_is_refused():
     await _move(cog, interaction)
 
     assert "No driver profile found for **Racer**" in _reply(interaction)
-    cog.bot.placement_service.move_driver.assert_not_awaited()
+    assert cog.bot.change_queue.method_calls == []
 
 
 async def test_a_move_names_the_team_in_the_division_moved_into():
-    """The team is resolved by its shorthand in the division the driver goes to (#381)."""
-    from leaguebot.core.services.team_service import TeamReference
+    """The team is resolved by its shorthand in the division the driver goes to (#381): Racer is
+    moved from Pro into `alp` of Academy, which resolves to its team ALP; the move asked of the
+    queue names ALP."""
+    from leaguebot.core.services.drivers.team_service import TeamReference
 
     cog = _cog()
     cog.bot.team_service.resolve_division_team = AsyncMock(
@@ -158,11 +153,12 @@ async def test_a_move_names_the_team_in_the_division_moved_into():
     await _move(cog, _interaction(), from_division="Pro", team="alp", to_division="Academy")
 
     cog.bot.team_service.resolve_division_team.assert_awaited_once_with(ACADEMY[0], "alp")
-    assert cog.bot.placement_service.move_driver.await_args.kwargs["team_name"] == "ALP"
+    kind, payload = _asked(cog)
+    assert (kind, payload["team_name"]) == ("core.driver_move", "ALP")
 
 
 async def test_a_move_into_a_team_the_division_does_not_have_is_refused():
-    from leaguebot.core.services.team_service import TeamReference
+    from leaguebot.core.services.drivers.team_service import TeamReference
 
     cog = _cog()
     cog.bot.team_service.resolve_division_team = AsyncMock(
@@ -173,39 +169,43 @@ async def test_a_move_into_a_team_the_division_does_not_have_is_refused():
     await _move(cog, interaction, team="X")
 
     assert "No team of this division has the shorthand `X`." in _reply(interaction)
-    cog.bot.placement_service.move_driver.assert_not_awaited()
+    assert cog.bot.change_queue.method_calls == []
 
 
 async def test_a_move_within_one_division_passes_that_division_both_ways():
+    """Racer (profile 55) is moved to Reserve with no division to move into named: the move asked
+    of the queue is from Pro into Pro, in the confirmed season, of Racer's profile and account."""
     cog = _cog()
 
     await _move(cog, _interaction(), from_division="Pro", team="Reserve")
 
-    kwargs = cog.bot.placement_service.move_driver.await_args.kwargs
-    assert (kwargs["from_division_id"], kwargs["to_division_id"]) == (PRO[0], PRO[0])
-    assert kwargs["season_id"] == SEASON_ID
-    assert kwargs["driver_profile_id"] == PROFILE_ID
-    assert kwargs["discord_user_id"] == str(USER_ID)
+    kind, payload = _asked(cog)
+    assert kind == "core.driver_move"
+    assert (payload["from_division_id"], payload["to_division_id"]) == (PRO[0], PRO[0])
+    assert payload["season_id"] == SEASON_ID
+    assert payload["driver_profile_id"] == PROFILE_ID
+    assert payload["discord_user_id"] == str(USER_ID)
 
 
 @pytest.mark.parametrize(
     "stage", [SeasonStage.ONGOING, SeasonStage.ONGOING_SIGNUPS, SeasonStage.ONGOING_PLACEMENTS]
 )
-async def test_a_move_between_divisions_is_confirmed_and_logged(stage):
+async def test_a_move_between_divisions_is_asked_of_the_queue(stage):
+    """The season is in an ongoing stage: Ongoing, Ongoing with signups open, or Ongoing with
+    placements. A manager moves Racer from Pro into Reserve of Academy. The command asks the queue
+    for one `core.driver_move` of Racer, named "Racer", from Pro into Academy, and says and logs
+    nothing itself: the reply and the line are the change's (`test_driver_move.py`)."""
     cog = _cog(stage=stage)
     interaction = _interaction()
 
     await _move(cog, interaction, from_division="Pro", team="Reserve", to_division="Academy")
 
-    kwargs = cog.bot.placement_service.move_driver.await_args.kwargs
-    assert (kwargs["from_division_id"], kwargs["to_division_id"]) == (PRO[0], ACADEMY[0])
-    assert _reply(interaction) == (
-        "✅ Moved **Racer** from **Alpha** in **Pro** to **Reserve** in **Academy**."
-    )
-    log_line = cog.bot.output_router.post_log.await_args.args[0]
-    assert "/driver move | Success" in log_line
-    assert "from: Alpha, Pro" in log_line
-    assert "to: Reserve, Academy" in log_line
+    kind, payload = _asked(cog)
+    assert kind == "core.driver_move"
+    assert (payload["from_division_id"], payload["to_division_id"]) == (PRO[0], ACADEMY[0])
+    assert payload["driver_name"] == "Racer"
+    interaction.followup.send.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_not_awaited()
 
 
 # ── /driver release ───────────────────────────────────────────────────────────────────
@@ -219,7 +219,7 @@ async def test_a_release_with_no_confirmed_season_is_refused():
     await _release(cog, interaction)
 
     assert "only while the season is ongoing" in _reply(interaction)
-    cog.bot.placement_service.release_driver.assert_not_awaited()
+    assert cog.bot.change_queue.method_calls == []
 
 
 async def test_a_release_from_an_unknown_division_is_refused():
@@ -229,7 +229,7 @@ async def test_a_release_from_an_unknown_division_is_refused():
     await _release(cog, interaction, division="Nowhere")
 
     assert "Division **Nowhere** not found" in _reply(interaction)
-    cog.bot.placement_service.release_driver.assert_not_awaited()
+    assert cog.bot.change_queue.method_calls == []
 
 
 async def test_a_release_of_a_member_with_no_profile_is_refused():
@@ -239,70 +239,29 @@ async def test_a_release_of_a_member_with_no_profile_is_refused():
     await _release(cog, interaction)
 
     assert "No driver profile found for **Racer**" in _reply(interaction)
-    cog.bot.placement_service.release_driver.assert_not_awaited()
+    assert cog.bot.change_queue.method_calls == []
 
 
 @pytest.mark.parametrize(
     "stage", [SeasonStage.ONGOING, SeasonStage.ONGOING_SIGNUPS, SeasonStage.ONGOING_PLACEMENTS]
 )
-async def test_a_release_is_confirmed_and_logged(stage):
+async def test_a_release_is_asked_of_the_queue(stage):
+    """The season (7) is in an ongoing stage: Ongoing, Ongoing with signups open, or Ongoing with
+    placements. A manager releases Racer from Academy. The command asks the queue for one
+    `core.driver_release` of Racer, named "Racer", from Academy in season 7, and says and logs
+    nothing itself: the reply and the line are the change's (`test_driver_release.py`)."""
     cog = _cog(stage=stage)
     interaction = _interaction()
 
     await _release(cog, interaction, division="Academy")
 
-    kwargs = cog.bot.placement_service.release_driver.await_args.kwargs
-    assert kwargs["division_id"] == ACADEMY[0]
-    assert kwargs["season_id"] == SEASON_ID
-    assert _reply(interaction) == "✅ Released **Racer** from **Academy**."
-    log_line = cog.bot.output_router.post_log.await_args.args[0]
-    assert "/driver release | Success" in log_line
-    assert "division: Academy" in log_line
-
-
-# ── /driver reject: a role Discord will not take back ─────────────────────────────────
-
-
-async def test_a_rejection_whose_role_cannot_be_removed_says_so_in_reply_and_line():
-    """The rejection stands, written before the role is touched. A driver role Discord will not
-    take back is named as not done, in the manager's reply and in the log line beneath the
-    success, as `/driver reassign` names what it could not do (#482)."""
-    cog = DriverCog.__new__(DriverCog)
-    cog.bot = MagicMock()
-    cog.bot.driver_service.current_account = AsyncMock(side_effect=lambda a: str(a))
-    cog.bot.season_service.get_setup_or_active_season = AsyncMock(
-        return_value=SimpleNamespace(id=SEASON_ID, stage=SeasonStage.PLACEMENTS)
-    )
-    cog.bot.driver_service.get_profile = AsyncMock(
-        return_value=SimpleNamespace(id=PROFILE_ID, current_state=DriverState.UNASSIGNED)
-    )
-    cog.bot.driver_service.transition = AsyncMock()
-    cog.bot.signup_module_service.withdraw_approval = AsyncMock()
-    cog.bot.config_service.get_server_config = AsyncMock(
-        return_value=SimpleNamespace(driver_role_id=902)
-    )
-    cog.bot.output_router.post_log = AsyncMock()
-    interaction = _interaction()
-    interaction.guild.get_role = MagicMock(return_value=SimpleNamespace(id=902))
-    member = _member()
-    member.remove_roles = AsyncMock(
-        side_effect=discord.HTTPException(MagicMock(status=403, reason="Forbidden"), "missing")
-    )
-
-    await undecorate(DriverCog.reject)(cog, interaction, member)
-
-    cog.bot.driver_service.transition.assert_awaited_once_with(
-        str(USER_ID), DriverState.NOT_SIGNED_UP
-    )
-    reply = _reply(interaction)
-    assert reply.startswith("✅ Turned down **Racer**")
-    assert any("role" in line for line in reply.splitlines()[1:])
-    cog.bot.output_router.post_log.assert_awaited_once()
-    line = cog.bot.output_router.post_log.await_args.args[0]
-    assert line.splitlines()[0] == "Manager (<@1>) | /driver reject | Success"
-    assert any(
-        text.startswith("  not done:") and "role" in text for text in line.splitlines()[1:]
-    )
+    kind, payload = _asked(cog)
+    assert kind == "core.driver_release"
+    assert payload["division_id"] == ACADEMY[0]
+    assert payload["season_id"] == SEASON_ID
+    assert payload["driver_name"] == "Racer"
+    interaction.followup.send.assert_not_awaited()
+    cog.bot.output_router.post_log.assert_not_awaited()
 
 
 # ── Any account names the driver (issue #243) ────────────────────────────────────────
@@ -323,15 +282,18 @@ def _past_account_cog(current_member: MagicMock | None) -> tuple[DriverCog, Magi
 
 
 async def test_a_command_given_a_past_account_acts_on_the_current_one():
+    """A manager releases Racer naming a past account (4242); the driver's current account is
+    5353, Racer Now, in the server. The release asked of the queue is of the current account,
+    named Racer Now."""
     current = MagicMock(id=CURRENT_ID, display_name="Racer Now")
     cog, interaction = _past_account_cog(current)
 
     await _release(cog, interaction)
 
     interaction.guild.get_member.assert_called_once_with(CURRENT_ID)
-    kwargs = cog.bot.placement_service.release_driver.await_args.kwargs
-    assert kwargs["discord_user_id"] == str(CURRENT_ID)
-    assert "Racer Now" in _reply(interaction)
+    _kind, payload = _asked(cog)
+    assert payload["discord_user_id"] == str(CURRENT_ID)
+    assert payload["driver_name"] == "Racer Now"
 
 
 async def test_a_past_account_whose_driver_has_left_the_server_is_refused():
@@ -341,4 +303,4 @@ async def test_a_past_account_whose_driver_has_left_the_server_is_refused():
 
     assert "past account" in _reply(interaction)
     assert f"<@{CURRENT_ID}>" in _reply(interaction)
-    cog.bot.placement_service.move_driver.assert_not_awaited()
+    assert cog.bot.change_queue.method_calls == []

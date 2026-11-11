@@ -1,10 +1,10 @@
 """Attendance's share of a round's review, as the hook the builder hands results' change types
 (#439, slice 2, plan 2.6; the protocol is `results/services/attendance_hook.py`).
 
-Built once by the entry point, handed the placement service and attached as
-`bot.attendance_after_review`. It uses the bot for Discord alone (the league's server, the log
-channel, posting) and never looks another service up on it: the placement service is the one it
-was handed, and attendance's switch is read from the database, on the connection a writer is
+Built once by the entry point, handed the placement service, the team-role service and the lineup
+poster and attached as `bot.attendance_after_review`. It uses the bot for Discord alone (the league's server, the log
+channel, posting) and never looks another service up on it: the services are the ones it was
+handed, and attendance's switch is read from the database, on the connection a writer is
 handed.
 
 **Each method does nothing while attendance is off**, save three: `enabled` reports the switch,
@@ -35,10 +35,14 @@ import aiosqlite
 import discord
 
 from leaguebot.attendance.services import attendance_service as _att
+from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord
-from leaguebot.core.services import lineup_posting
-from leaguebot.core.services.placement_service import PlacementService
+from leaguebot.core.models.refusal import Refused
+from leaguebot.core.services.drivers import lineup_posting
+from leaguebot.core.services.drivers.lineup_posting import LineupPoster
+from leaguebot.core.services.drivers.placement_service import PlacementService
+from leaguebot.core.services.drivers.team_role_service import TeamRoleService
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
 
@@ -46,11 +50,24 @@ _Pardon = TypeVar("_Pardon")
 
 
 class AttendanceAfterReview:
-    """See the module docstring. Constructed as ``AttendanceAfterReview(bot, placement)``."""
+    """See the module docstring. Constructed as ``AttendanceAfterReview(bot, placement,
+    roles=roles, lineups=lineups)``: *roles* is the team-role service that gives and takes a
+    sanction's roles and *lineups* the poster of the lineups a review owes. Each is optional so
+    that a hook which is never asked to change a sanction's roles or to post a lineup is built
+    without one, and asking it then raises."""
 
-    def __init__(self, bot: LeagueBot, placement: PlacementService) -> None:
+    def __init__(
+        self,
+        bot: LeagueBot,
+        placement: PlacementService,
+        *,
+        roles: TeamRoleService | None = None,
+        lineups: LineupPoster | None = None,
+    ) -> None:
         self._bot = bot
         self._placement = placement
+        self._roles = roles
+        self._lineups = lineups
 
     @property
     def _db_path(self) -> str:
@@ -58,12 +75,7 @@ class AttendanceAfterReview:
 
     async def enabled(self) -> bool:
         async with get_connection(self._db_path) as db:
-            return await self._enabled_on(db)
-
-    @staticmethod
-    async def _enabled_on(db: aiosqlite.Connection) -> bool:
-        row = await (await db.execute("SELECT module_enabled FROM attendance_config")).fetchone()
-        return bool(row and row["module_enabled"])
+            return await attendance_enabled_on(db)
 
     async def _guild(self) -> discord.Guild:
         guild = await league_guild(self._bot)
@@ -75,7 +87,7 @@ class AttendanceAfterReview:
         self, db: aiosqlite.Connection, round_id: int, division_id: int, pardons: Any,
         now: datetime,
     ) -> None:
-        if not await self._enabled_on(db):
+        if not await attendance_enabled_on(db):
             return
         await _att.record_attendance_from_results_on(db, round_id, division_id)
         for pardon in pardons:
@@ -98,14 +110,14 @@ class AttendanceAfterReview:
     async def rewrite_pardons_on(
         self, db: aiosqlite.Connection, round_id: int, pardons: Any, now: datetime
     ) -> None:
-        if not await self._enabled_on(db):
+        if not await attendance_enabled_on(db):
             return
         await _att._rewrite_round_pardons_on(db, round_id, list(pardons), now)
 
     async def recalculate_on(
         self, db: aiosqlite.Connection, round_id: int, division_id: int
     ) -> None:
-        if not await self._enabled_on(db):
+        if not await attendance_enabled_on(db):
             return
         await _att._recalculate_forward(
             self._db_path, round_id, division_id, recompute="round", db=db
@@ -126,7 +138,7 @@ class AttendanceAfterReview:
     async def record_sheet_on(
         self, db: aiosqlite.Connection, division_id: int, posted: Mapping[str, Any]
     ) -> None:
-        if not await self._enabled_on(db):
+        if not await attendance_enabled_on(db):
             return
         await _att.record_sheet_on(db, division_id, posted)
 
@@ -145,7 +157,7 @@ class AttendanceAfterReview:
             await _att.check_sanction(
                 self._db_path, self._placement, round_id, division_id, candidate
             )
-        except (_att.SanctionNotApplicable, ValueError) as error:
+        except (_att.SanctionNotApplicable, Refused) as error:
             # Worded as a failure the queue stops on, so its notice names what to repair.
             raise StepFailedOnDiscord(str(error)) from None
 
@@ -153,7 +165,7 @@ class AttendanceAfterReview:
         self, db: aiosqlite.Connection, round_id: int, division_id: int,
         candidate: dict[str, Any],
     ) -> dict[str, Any] | None:
-        if not await self._enabled_on(db):
+        if not await attendance_enabled_on(db):
             return None
         bot_user = self._bot.user
         # Sanctions are enforced by a bot that has logged in, which is when it has a user.
@@ -173,16 +185,19 @@ class AttendanceAfterReview:
         # reads: a sanction already saved is owed its roles even once attendance is turned off
         # (the attendance specification's "Sanctions that do not apply").
         guild = await self._guild()
+        roles = self._roles
+        if roles is None:
+            raise TypeError("the hook was built without a team-role service to change roles with")
         entitled = await self._placement.driver_role_ids(profile_id)
         to_revoke = [role_id for role_id in revoke if role_id not in entitled]
         to_grant = [role_id for role_id in grant if role_id in entitled]
         present = True
         if to_revoke:
-            present = await self._placement.revoke_roles(
+            present = await roles.revoke_roles(
                 guild, user_id, *to_revoke, reason="Attendance sanction"
             )
         if present and to_grant:
-            present = await self._placement.grant_roles(guild, user_id, *to_grant)
+            present = await roles.grant_roles(guild, user_id, *to_grant)
         if not present:
             return {"absent": True}
         return {"revoked": to_revoke, "granted": to_grant}
@@ -208,7 +223,10 @@ class AttendanceAfterReview:
     ) -> dict[str, Any] | None:
         if not await self.enabled():
             return None
-        posted = await self._placement.refresh_lineup(
+        lineups = self._lineups
+        if lineups is None:
+            raise TypeError("the hook was built without a lineup poster to post a lineup with")
+        posted = await lineups.refresh_lineup(
             await self._guild(), division_id, as_text=as_text
         )
         return lineup_posting.posted_result(posted)

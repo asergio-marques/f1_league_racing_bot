@@ -17,13 +17,21 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.change import StepFailedOnDiscord
-from leaguebot.core.services.placement_service import PlacementService
+from leaguebot.core.services.drivers.placement_service import PlacementService
 from tests.support.change_queue import in_a_job
 
 USER_ID = 101
 DIVISION_ROLE = 801
 TEAM_ROLE = 811
 DIVISION_ID = 11
+
+
+
+def _roles(db_path: str):
+    """The team-role service on *db_path*, as the builder hands it to placement."""
+    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
+
+    return TeamRoleService(db_path)
 
 
 def _response(status: int, reason: str) -> MagicMock:
@@ -54,7 +62,7 @@ async def test_both_roles_are_granted(tmp_path):
     """Lewis (101) is fetched and given Pro's role (801) and Ferrari's (811)."""
     guild, member, _ = _guild()
 
-    granted = await PlacementService(str(tmp_path / "db.sqlite")).grant_roles(
+    granted = await _roles(str(tmp_path / "db.sqlite")).grant_roles(
         guild, USER_ID, DIVISION_ROLE, TEAM_ROLE
     )
 
@@ -69,7 +77,7 @@ async def test_a_role_not_on_the_server_raises(tmp_path):
     guild, _, _ = _guild(roles=(DIVISION_ROLE,))
 
     with pytest.raises(StepFailedOnDiscord):
-        await PlacementService(str(tmp_path / "db.sqlite")).grant_roles(
+        await _roles(str(tmp_path / "db.sqlite")).grant_roles(
             guild, USER_ID, DIVISION_ROLE, TEAM_ROLE
         )
 
@@ -82,7 +90,7 @@ async def test_a_role_discord_refuses_raises(tmp_path):
     )
 
     with pytest.raises(StepFailedOnDiscord):
-        await PlacementService(str(tmp_path / "db.sqlite")).grant_roles(
+        await _roles(str(tmp_path / "db.sqlite")).grant_roles(
             guild, USER_ID, DIVISION_ROLE, TEAM_ROLE
         )
 
@@ -94,7 +102,7 @@ async def test_a_member_discord_reports_absent_is_passed_over(tmp_path):
         fetch_error=discord.NotFound(_response(404, "Not Found"), "Unknown Member")
     )
 
-    granted = await PlacementService(str(tmp_path / "db.sqlite")).grant_roles(
+    granted = await _roles(str(tmp_path / "db.sqlite")).grant_roles(
         guild, USER_ID, DIVISION_ROLE, TEAM_ROLE
     )
 
@@ -124,13 +132,13 @@ async def _lineup_db(tmp_path) -> str:
     return db_path
 
 
-async def test_a_lineup_refreshed_as_text_draws_nothing(tmp_path, monkeypatch):
-    """Pro's lineup tried again after a failure, the bot able to draw it: the picture is not
-    attempted, and the textual lineup is posted in channel 600."""
-    import leaguebot.image.services.image_lineup_post as image_lineup_post
+async def test_a_lineup_refreshed_as_text_draws_nothing(tmp_path):
+    """Pro's lineup tried again after a failure, the lineup poster handed a drawing that would
+    draw it: the drawing is not asked at all, and the textual lineup is posted in channel 600."""
+    from leaguebot.core.services.drivers.lineup_posting import LineupPoster
+    from tests.support.lineup_drawing import LineupDrawingStub
 
-    try_post = AsyncMock(return_value=MagicMock(applicable=True))
-    monkeypatch.setattr(image_lineup_post, "try_post", try_post)
+    drawing = LineupDrawingStub(picture=tmp_path / "lineup_template.png")
     db_path = await _lineup_db(tmp_path)
     channel = MagicMock(spec=discord.TextChannel)
     channel.send = AsyncMock(return_value=MagicMock(id=700))
@@ -138,10 +146,10 @@ async def test_a_lineup_refreshed_as_text_draws_nothing(tmp_path, monkeypatch):
     guild.get_channel = MagicMock(return_value=channel)
 
     with in_a_job():
-        await PlacementService(db_path, bot=MagicMock()).refresh_lineup(
+        await LineupPoster(db_path, drawing=drawing).refresh_lineup(
             guild, DIVISION_ID, as_text=True
         )
 
-    try_post.assert_not_awaited()
+    assert (drawing.wanted_asked, drawing.drawn) == (0, [])
     channel.send.assert_awaited_once()
     assert "Pro Lineup" in channel.send.await_args.kwargs["embed"].title

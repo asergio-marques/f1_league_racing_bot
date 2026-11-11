@@ -54,9 +54,9 @@ from leaguebot.attendance.services.attendance_service import AttendanceService
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import (
     acknowledgement,
-    attach_queue,
     http_error,
-    league_double,
+    league_bot,
+    league_queue,
     member,
     member_interaction,
     run_queue,
@@ -185,8 +185,7 @@ async def _bot(db_path: str, *, attendance_rows=None, channel=_STANDING, saved=N
                     )
         await db.commit()
 
-    bot = league_double(db_path)
-    bot.attendance_service = AttendanceService(db_path)
+    bot = await league_bot(db_path)
     bot.config_service.get_server_config.return_value.test_mode_active = True
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
     # The lines the queue writes reach the log channel the database names (101), whose sends are
@@ -221,7 +220,7 @@ async def _bot(db_path: str, *, attendance_rows=None, channel=_STANDING, saved=N
 
     bot.fetch_channel = AsyncMock(side_effect=_fetch_channel)
     bot.output_router.post_log = AsyncMock(return_value=None)
-    attach_queue(bot, db_path, now=datetime.now(timezone.utc))
+    league_queue(bot, db_path, now=datetime.now(timezone.utc))
     return bot
 
 

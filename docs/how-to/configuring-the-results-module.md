@@ -57,7 +57,7 @@ This guide covers the results & standings module only. Setting the bot up, creat
 /module enable results
 ```
 
-It is refused once a season's **placements are confirmed**, so this belongs alongside your other setup — with no season, or before you confirm placements.
+It is refused once a season's **placements are confirmed**, so this belongs alongside your other setup — with no season, or before you confirm placements. It answers at once that it is turning the module on, and updates that reply once it has.
 
 > **Switching it off is not guarded the same way — it is worse than that.** Enabling is refused mid-season; disabling is not, and deliberately so: a league whose results have become unworkable must be able to stop running them. But **disabling mid-season deletes that season's results.** Every classification you have recorded goes, every standing computed from them goes, and every results and standings message already posted is removed from its channel. Every round still waiting on results, report verdicts or appeal verdicts is closed as having run without results — which is what lets you complete the season afterwards instead of being stuck with it for ever. Every penalty and appeal verdict you have already announced is removed from the verdicts channel too, with the header above it: the decisions go with the results they were made on. An auto-sack or auto-reserve announcement stays, being the attendance module's, and so does a header standing over one. An amendment still open is ended and its channel deleted. Your points configurations and your division channels are kept, and a round whose date has not yet come is left alone until it passes.
 >
@@ -67,7 +67,7 @@ It is refused once a season's **placements are confirmed**, so this belongs alon
 
 Nothing happens immediately. The module needs channels to post to, a points table to score with, and an approved season to work through, which are the next three steps.
 
-> **Turning results & standings off turns attendance off with it.** Where attendance is on, the bot stops and warns you before it does anything: it names what the cascade will take — every check-in still to come, and every division's check-in and attendance channels — and switches nothing off until you confirm. The reply that follows names both modules, and the log channel records the cascade as well. Attendance also cannot be switched on until results is on, because it works out who turned up by reading your classifications. See [Setting up the attendance module](configuring-the-attendance-module.md).
+> **Turning results & standings off turns attendance off with it.** Where attendance is on, the bot stops and warns you before it does anything: it names what the cascade will take — every check-in still to come, and every division's check-in and attendance channels — and switches nothing off until you confirm. The reply that follows names both modules, and the log channel records the cascade as well. Where attendance was off when you asked but is switched on before the switch-off's turn comes, the switch-off is refused and nothing is changed: run `/module disable results` again, to be warned about attendance this time. Attendance also cannot be switched on until results is on, because it works out who turned up by reading your classifications. See [Setting up the attendance module](configuring-the-attendance-module.md).
 
 ---
 
@@ -80,6 +80,8 @@ Nothing happens immediately. The module needs channels to post to, a points tabl
 ```
 
 All three are set **per division**, so a league with three divisions sets nine channels. The first carries each session's classification, the second the two championship tables, the third your stewarding verdicts. **Each needs a channel of its own.** The bot refuses a channel already doing another job (one of the other two, the same kind of channel in another division, or anything else it posts to) and names what holds it; see [Setting up the bot for your league](configuring-the-core-bot.md#step-9--point-each-division-at-its-channels). That suits these three anyway: the standings post is replaced after every round while the results posts accumulate, and the two would read badly in one channel.
+
+Each answers at once ("⏳ Setting the results channel for **Division One** to #div1-results. …") and updates that reply once it has run. The same request asked again while the first is still waiting is refused as a repeat. It is judged again as it starts: the module switched off, the division deleted, the season ended or the channel taken for another job meanwhile refuses it then. All three run even while the change queue is stopped at a job, which stays stopped — so a results or standings post, or a verdict, stopped for want of its channel is put right by setting the channel and then pressing Retry on its notice (see [When a job stops the queue](configuring-the-core-bot.md#when-a-job-stops-the-queue)).
 
 **All three block a season.** While results & standings is on, a season cannot be approved until every division has all three, and the bot names each division that is missing one. The verdicts channel is the one people forget, because penalties are the last thing on your mind while building a calendar.
 

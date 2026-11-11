@@ -36,13 +36,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.cogs.division_cog import DivisionCog
 from leaguebot.core.db.database import run_migrations
 from leaguebot.core.models.season import Season, SeasonStage, SeasonStatus
-from leaguebot.core.services.calendar_post_service import CalendarPosting
+from leaguebot.core.services.rounds.calendar_post_service import CalendarPosting
 from tests.support.change_queue import (
-    attach_queue,
-    league_double,
+    league_bot,
+    league_queue,
     run_queue,
     seed_server,
 )
@@ -89,23 +89,24 @@ def _home(tmp_path, monkeypatch):
     monkeypatch.setattr(sys.modules[__name__], "_HOME", tmp_path)
 
 
-def _make_cog(*, season=_UNSET, divisions=None):
-    """The cog on a bot with the league's log channel and a real change queue (#439), whose
-    season service finds *season* and *divisions*. The queue is attached by `_sync`, once the
+async def _make_cog(*, season=_UNSET, divisions=None):
+    """The cog on the league's bot (`league_bot`), with the league's log channel and a real
+    change queue (#439), whose season service double finds *season* and *divisions*, handed to
+    the builder so the calendar sync holds it. The queue is attached by `_sync`, once the
     database is built."""
-    bot = league_double(str(_HOME / "calendar_sync.db"))
-    bot.season_service = MagicMock()
-    bot.season_service.get_setup_or_active_season = AsyncMock(
+    season_service = MagicMock()
+    season_service.get_setup_or_active_season = AsyncMock(
         return_value=_season() if season is _UNSET else season
     )
-    bot.season_service.get_divisions = AsyncMock(
+    season_service.get_divisions = AsyncMock(
         return_value=divisions if divisions is not None else [_division()]
     )
-    bot.season_service.get_division_rounds = AsyncMock(return_value=["round"])
+    season_service.get_division_rounds = AsyncMock(return_value=["round"])
+    bot = await league_bot(str(_HOME / "calendar_sync.db"), season_service=season_service)
     bot.get_guild = MagicMock(return_value=MagicMock())
     # Whether `_queue_for` has built the database and attached the queue yet.
     bot.calendar_sync_queue_attached = False
-    cog = SeasonCog.__new__(SeasonCog)
+    cog = DivisionCog.__new__(DivisionCog)
     cog.bot = bot
     return cog
 
@@ -116,7 +117,7 @@ async def _queue_for(bot) -> None:
         return
     await run_migrations(bot.db_path)
     await seed_server(bot.db_path)
-    attach_queue(bot, bot.db_path, now=datetime.now(timezone.utc))
+    league_queue(bot, bot.db_path, now=datetime.now(timezone.utc))
     bot.calendar_sync_queue_attached = True
 
 
@@ -146,12 +147,12 @@ async def _sync(cog, interaction, *, name="Pro", posting=None):
     """Run the command, then the queue, with the calendar's posting stubbed."""
     await _queue_for(cog.bot)
     with patch(
-        "leaguebot.core.services.calendar_post_service.tracks_by_name", new=AsyncMock(return_value={})
+        "leaguebot.core.services.rounds.calendar_post_service.tracks_by_name", new=AsyncMock(return_value={})
     ), patch(
-        "leaguebot.core.services.calendar_post_service.post_division_calendar",
+        "leaguebot.core.services.rounds.calendar_post_service.post_division_calendar",
         new=AsyncMock(return_value=posting or _posting()),
     ) as post:
-        await undecorate(SeasonCog.division_calendar_sync)(cog, interaction, name)
+        await undecorate(DivisionCog.division_calendar_sync)(cog, interaction, name)
         await run_queue(cog.bot)
     return post
 
@@ -205,7 +206,7 @@ def _outcome(interaction) -> str:
 
 async def test_it_is_a_commanded_posting(tmp_path):
     """So a render fault refuses rather than quietly substituting text (XIV.7)."""
-    cog = _make_cog()
+    cog = await _make_cog()
 
     post = await _sync(cog, _interaction())
 
@@ -213,7 +214,7 @@ async def test_it_is_a_commanded_posting(tmp_path):
 
 
 async def test_the_reply_says_it_was_posted_as_an_image(tmp_path):
-    cog = _make_cog()
+    cog = await _make_cog()
     interaction = _interaction()
 
     await _sync(cog, interaction, posting=_posting(image=True))
@@ -226,7 +227,7 @@ async def test_a_refused_render_posts_nothing_and_says_the_old_calendar_stands(t
     refusal is recorded (#482): the log channel gets exactly one refusal line, naming the member
     and carrying the render's problem, written by the change's closing job as the
     acknowledgement is updated with the refusal."""
-    cog = _make_cog()
+    cog = await _make_cog()
     interaction = _run_by_the_manager(cog)
 
     await _sync(cog, interaction, posting=_posting(problem="the template has no rows"))
@@ -240,19 +241,23 @@ async def test_a_refused_render_posts_nothing_and_says_the_old_calendar_stands(t
     ]
 
 
-async def test_render_notices_are_shown_and_logged(tmp_path):
-    cog = _make_cog()
+async def test_render_notices_are_shown_in_the_reply_and_not_repeated_in_the_close_line(tmp_path):
+    """A calendar synced, drawn with a notice. The reply names the notice (Constitution XIV.4,
+    alongside a command's output); the command's line in the log channel does not repeat it,
+    the render having reported it there itself, in one message."""
+    cog = await _make_cog()
     interaction = _interaction()
 
     await _sync(cog, interaction, posting=_posting(notices=["round 12 did not fit"]))
 
     assert "round 12 did not fit" in _replied(interaction)
     logged = _logged(cog)[-1]
-    assert "notice: round 12 did not fit" in logged
+    assert "| /division calendar-sync | Success" in logged
+    assert "round 12 did not fit" not in logged
 
 
 async def test_a_server_with_no_season_is_refused(tmp_path):
-    cog = _make_cog(season=None)
+    cog = await _make_cog(season=None)
     interaction = _interaction()
 
     post = await _sync(cog, interaction)
@@ -265,7 +270,7 @@ async def test_a_server_with_no_season_is_refused(tmp_path):
 
 
 async def test_an_unknown_division_is_refused(tmp_path):
-    cog = _make_cog()
+    cog = await _make_cog()
     interaction = _interaction()
 
     post = await _sync(cog, interaction, name="Rookie")
@@ -275,7 +280,7 @@ async def test_an_unknown_division_is_refused(tmp_path):
 
 
 async def test_the_division_is_matched_regardless_of_case(tmp_path):
-    cog = _make_cog()
+    cog = await _make_cog()
 
     post = await _sync(cog, _interaction(), name="pRO")
 
@@ -283,7 +288,7 @@ async def test_the_division_is_matched_regardless_of_case(tmp_path):
 
 
 async def test_a_division_with_no_calendar_channel_says_how_to_set_one(tmp_path):
-    cog = _make_cog(divisions=[_division(calendar=None)])
+    cog = await _make_cog(divisions=[_division(calendar=None)])
     interaction = _interaction()
 
     post = await _sync(cog, interaction)
@@ -294,7 +299,7 @@ async def test_a_division_with_no_calendar_channel_says_how_to_set_one(tmp_path)
 
 async def test_the_command_defers_before_working(tmp_path):
     """A render can take seconds on the Pi."""
-    cog = _make_cog()
+    cog = await _make_cog()
     interaction = _interaction()
 
     await _sync(cog, interaction)
@@ -307,7 +312,7 @@ async def test_the_seasons_number_is_passed_to_the_render(tmp_path):
     every resynced calendar drew without its season number while the preview the manager
     approved from carried one."""
     assert not hasattr(_season(), "number")
-    cog = _make_cog()
+    cog = await _make_cog()
 
     post = await _sync(cog, _interaction())
 
@@ -323,7 +328,7 @@ async def test_a_season_with_no_number_still_draws_and_is_logged(tmp_path, caplo
     hiding the fault exactly as this issue's own defect did. This fails if anyone reaches for
     `or None` again.
     """
-    cog = _make_cog(season=_season(season_number=0))
+    cog = await _make_cog(season=_season(season_number=0))
 
     with caplog.at_level(logging.WARNING):
         post = await _sync(cog, _interaction())
@@ -361,7 +366,7 @@ async def test_every_other_calendar_sync_refusal_is_recorded(tmp_path, divisions
     does not exist, or for Pro with no calendar channel set. The manager gets today's reply word
     for word and nothing else, no calendar is posted, and the log channel gets exactly one line,
     "⛔ `/division calendar-sync` refused for Manager (<@77>) — " and the reply's words."""
-    cog = _make_cog(divisions=divisions)
+    cog = await _make_cog(divisions=divisions)
     interaction = _run_by_the_manager(cog)
 
     post = await _sync(cog, interaction, name=name)

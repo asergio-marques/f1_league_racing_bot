@@ -72,13 +72,21 @@ def test_symlinked_parent_escaping_root_is_rejected(root, tmp_path_factory, monk
 
 
 def test_empty_input_is_rejected(root):
-    with pytest.raises(ValueError):
+    """An empty directory is the member's refusal, in the words they are shown."""
+    from leaguebot.core.models.refusal import Refused
+
+    with pytest.raises(Refused, match="^Directory cannot be empty.$"):
         resolve_within_project_root("   ", root=root)
 
 
 def test_error_carries_both_given_and_resolved(root):
+    """A path outside the root is the member's refusal, carrying what was given and where it
+    resolves."""
+    from leaguebot.core.models.refusal import Refused
+
     with pytest.raises(PathContainmentError) as excinfo:
         resolve_within_project_root("../../etc", root=root)
+    assert isinstance(excinfo.value, Refused)
     assert excinfo.value.given == "../../etc"
     assert "outside the project root" in str(excinfo.value)
 

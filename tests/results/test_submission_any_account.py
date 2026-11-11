@@ -83,7 +83,7 @@ async def _db_with_a_session_under_the_past_account(tmp_path) -> tuple[str, int]
         await seed_team_instances(db, 1, TEAM_A, TEAM_B)
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at) "
-            "VALUES (1, 1, 1, 'NORMAL', '2026-09-20T18:00:00')"
+            "VALUES (1, 1, 1, 'NORMAL', '2026-09-20T18:00:00+00:00')"
         )
         await db.execute(
             "INSERT INTO session_results (id, round_id, division_id, session_type, status) "

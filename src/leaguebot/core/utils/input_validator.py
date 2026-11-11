@@ -1,15 +1,15 @@
-"""input_validator.py — every rule the bot accepts user input by, in one place (#362).
+"""input_validator.py — every rule the bot accepts user input by, in one place.
 
-Before this module each input checked itself by hand, if at all, and the same kind of value was
-accepted in one place and refused or shown differently in the next. A rule belongs here once, and
-an input names the rules it is held to rather than restating them.
+An input that checked itself by hand would accept the same kind of value that the next refuses or
+shows differently. A rule belongs here once, and an input names the rules it is held to rather
+than restating them.
 
 **Free text** is held to up to four rules, each chosen per input:
 
 * ``Rule.GROUP_MENTIONS`` — a role mention, ``@everyone`` or ``@here``, which notifies everybody
-  it covers wherever the text is posted (#204). A mention of a user is not among them: naming
+  it covers wherever the text is posted. A mention of a user is not among them: naming
   another driver is the ordinary thing to write.
-* ``Rule.USER_MENTIONS`` — a mention of a member, refused in a name alone (#381, #388). A name
+* ``Rule.USER_MENTIONS`` — a mention of a member, refused in a name alone. A name
   is printed on every post that names its thing, where a text is posted once.
 * ``Rule.EMOJI`` — which a graphic cannot draw faithfully. A server's own comes out as its raw
   markup, and a standard one as whatever the host's fonts make of it, which on the Pi is nothing.
@@ -26,7 +26,7 @@ and applies them in one of two modes:
   nobody to refuse.
 
 **Formats** are the values an input parses rather than publishes, each defined once below. A time
-of day and a colour had a single home before this module and keep it: ``leaguebot.core.utils.time_parsing`` and
+of day and a colour keep homes of their own: ``leaguebot.core.utils.time_parsing`` and
 ``leaguebot.image.utils.colour``.
 """
 from __future__ import annotations
@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 
-from leaguebot.image.utils.nationality_data import NATIONALITY_LOOKUP
+from leaguebot.core.utils.nationality_data import NATIONALITY_LOOKUP
 
 
 class Rule(Enum):
@@ -45,9 +45,8 @@ class Rule(Enum):
     GROUP_MENTIONS = "group mentions"
     EMOJI = "emoji"
     MARKUP = "markup"
-    #: A mention of a member. Refused in every name a league types (decided 2026-09-22 for a
-    #: team's, #381, and 2026-09-23 for the rest, #388), and in no free text, which may name a
-    #: driver. Never stripped.
+    #: A mention of a member. Refused in every name a league types, and in no free text, which
+    #: may name a driver. Never stripped.
     USER_MENTIONS = "user mentions"
 
 
@@ -245,7 +244,7 @@ def _tidy(text: str) -> str:
 # ── The validator ─────────────────────────────────────────────────────────
 
 #: The order a text is read in. Refusing names the first thing found, a mention before an emoji
-#: before markup, as #204 did. Stripping takes emoji first, so that a server emoji's own markup
+#: before markup. Stripping takes emoji first, so that a server emoji's own markup
 #: (``<:a_b_:1>``) goes whole before the markup rules could read an underscore pair inside it.
 _REFUSE_ORDER = (Rule.GROUP_MENTIONS, Rule.USER_MENTIONS, Rule.EMOJI, Rule.MARKUP)
 _STRIP_ORDER = (Rule.EMOJI, Rule.GROUP_MENTIONS, Rule.MARKUP)
@@ -298,7 +297,7 @@ STEWARD_TEXT = InputValidator(_ALL, Mode.REJECT)
 #: A name a league types: a division, a team's shorthand and full name, a test driver, a points
 #: configuration. Each is posted as text and drawn on graphics, and is held to the three rules
 #: and to no mention of a member either: a name is printed on every post that names its thing,
-#: so a member mentioned in one would be notified each time (#381, #388).
+#: so a member mentioned in one would be notified each time.
 NAME = InputValidator(_ALL | {Rule.USER_MENTIONS}, Mode.REJECT)
 
 #: A driver's own signup answers — notes, preferred teammate, platform ID. They are shown only in
@@ -365,7 +364,7 @@ def is_disqualification(text: str | None) -> bool:
 
 
 def is_no_further_action(text: str | None) -> bool:
-    """Whether *text* is no further action, ``NFA``, in any case (#138)."""
+    """Whether *text* is no further action, ``NFA``, in any case."""
     return (text or "").strip().upper() == "NFA"
 
 
@@ -377,11 +376,10 @@ def parse_penalty_seconds(text: str | None) -> int | None:
 
 # ── Formats: times ────────────────────────────────────────────────────────
 
-#: A time, in the one form the bot reads everywhere (decided 2026-09-21, #362): minutes and
-#: seconds ``1:23.456``, seconds alone ``58.123``, or hours ``1:02:03.456`` — always a dot, and
-#: always exactly three digits after it. Seconds and minutes written after a colon are two
-#: digits and under sixty. Signup read ``1:23:456`` and ``1:23.4`` and guessed; the results
-#: paste read neither, and the two now agree.
+#: A time, in the one form the bot reads everywhere: minutes and seconds ``1:23.456``, seconds
+#: alone ``58.123``, or hours ``1:02:03.456`` — always a dot, and always exactly three digits
+#: after it. Seconds and minutes written after a colon are two digits and under sixty. Signup
+#: and the results paste read the same form, so neither guesses at ``1:23:456`` or ``1:23.4``.
 _TIME_RE = re.compile(
     r"^(?:(?P<h>\d+):(?P<hm>\d{2}):(?P<hs>\d{2})|(?P<m>\d+):(?P<s>\d{2})|(?P<bare>\d+))"
     r"\.(?P<ms>\d{3})$",
@@ -424,20 +422,19 @@ def parse_lap_gap(text: str | None) -> int | None:
 
 
 def parse_datetime(text: str | None) -> datetime | None:
-    """An ISO 8601 moment as naive UTC, the form a round's time is stored in, or None.
+    """An ISO 8601 moment as aware UTC, the form a round's time is held in, or None.
 
     A value given with a zone is converted to UTC; one without is taken to be UTC already, as
-    every command taking one has always said. `/round add` once stored a typed zone as it
-    stood, where the XML import converted it, and the two now agree (#362). Whether the moment
-    must lie ahead is each command's own rule, not the format's.
+    every command taking one says, and `/round add` and the XML import read a zone alike.
+    Whether the moment must lie ahead is each command's own rule, not the format's.
     """
     try:
         moment = datetime.fromisoformat((text or "").strip())
     except ValueError:
         return None
-    if moment.tzinfo is not None:
-        moment = moment.astimezone(timezone.utc).replace(tzinfo=None)
-    return moment
+    if moment.tzinfo is None:
+        return moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc)
 
 
 # ── Formats: a nationality ────────────────────────────────────────────────

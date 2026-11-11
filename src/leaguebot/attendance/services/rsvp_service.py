@@ -9,9 +9,9 @@ import aiosqlite
 import discord
 
 from leaguebot.attendance.models.attendance import RsvpEmbedMessage
-from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.round import RoundFormat
+from leaguebot.core.models.round import RoundFormat, read_scheduled_at
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import LeagueView
 
@@ -60,8 +60,6 @@ def build_rsvp_embed(
     title = f"Season {season_number} Round {round_number} — {track_display}"
 
     # Dynamic Discord timestamp (full date + time format)
-    if scheduled_at.tzinfo is None:
-        scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
     unix_ts = int(scheduled_at.timestamp())
     timestamp_str = f"<t:{unix_ts}:F>"
 
@@ -185,7 +183,7 @@ async def query_division_roster(db_path: str, division_id: int) -> list[dict]:
                          "test_display_name": str | None}, ...]
         }
     """
-    from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
+    from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
 
     # A driver whose placement is not yet confirmed is not called to check-in (issue #220),
     # and so holds no attendance row for the round either.
@@ -755,11 +753,7 @@ async def _rebuild_embed_for_round(round_id: int, division_id: int, bot: LeagueB
         for team in roster
     ]
 
-    scheduled_at_raw = row["scheduled_at"]
-    if isinstance(scheduled_at_raw, str):
-        scheduled_at = datetime.fromisoformat(scheduled_at_raw)
-    else:
-        scheduled_at = scheduled_at_raw
+    scheduled_at = read_scheduled_at(row["scheduled_at"])
 
     return build_rsvp_embed(
         season_number=row["season_number"],

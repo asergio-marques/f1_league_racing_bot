@@ -36,7 +36,7 @@ const CANDIDATES = [
   '3. Settled: the layering rules are enforced by import-linter contracts (.importlinter, run by tests/repository/test_import_contracts.py) and ast checks (tests/repository/test_architecture_rules.py), each listing today\'s breaches against the issue that removes them (architecture.md, "How the rules are checked")',
   '4. Settled: one installed package, leaguebot, with a folder per module and a folder per kind of code inside each; ownership is the folder a file sits in (architecture.md, "How the code is laid out")',
   '5. Settled: a cog holds one command group, so season_cog.py is split along its groups (architecture.md, "How the code is laid out")',
-  '6. Settled: report_failure, the League* bases and the one-league claim kept; one handler per kind of post, the log line\'s handler being core/services/output_router.py (architecture.md, "Posting to Discord")',
+  '6. Settled: report_failure, the League* bases and the one-league claim kept; one handler per kind of post, the log line\'s handler being core/services/posting/output_router.py (architecture.md, "Posting to Discord")',
 ]
 
 const CONCERNS = [
@@ -62,7 +62,7 @@ const CONCERNS = [
   },
   {
     key: 'output-and-failure',
-    brief: 'How anything reaches Discord: the handler for each kind of post, core/services/output_router.py being the log line\'s, the channel registry, the log channel, retries (retry_service, retry_cog), direct .send calls around the router, and whether a posted message\'s id is kept so it can be found again (#189). Where failures go: report_failure in core/utils/interaction_errors.py, the League* bases\' on_error, scheduled jobs\' failures, broad exception handlers by layer, and what a league sees when a post fails.',
+    brief: 'How anything reaches Discord: the handler for each kind of post, core/services/posting/output_router.py being the log line\'s, the channel registry, the log channel, retries (retry_service, retry_cog), direct .send calls around the router, and whether a posted message\'s id is kept so it can be found again (#189). Where failures go: report_failure in core/utils/interaction_errors.py, the League* bases\' on_error, scheduled jobs\' failures, broad exception handlers by layer, and what a league sees when a post fails.',
     candidates: 'the OutputRouter, report_failure and League* parts of 6',
   },
 ]

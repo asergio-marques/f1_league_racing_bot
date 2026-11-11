@@ -18,7 +18,7 @@ from leaguebot.image.services.image_preview_service import (
     build_lineup_preview,
     resolve_context,
 )
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 from tests.support.saves import set_field
 
 SERVER_ID = 7272
@@ -99,8 +99,7 @@ async def _seed(db_path, *, seat_drivers: bool, teams=("Redline", "Bluewave")):
                 )
                 await db.execute(
                     "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
-                    "division_id, current_position, current_points, points_gap_to_first, "
-                    "team_seat_id) VALUES (?, ?, ?, 0, 0, 0, ?)",
+                    "division_id, team_seat_id) VALUES (?, ?, ?, ?)",
                     (profile_id, season_id, division_id, seat_id),
                 )
                 user_id += 1

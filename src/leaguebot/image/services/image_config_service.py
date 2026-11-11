@@ -3,7 +3,9 @@
 Configuration retention (FR-004a): disabling the module clears only ``module_enabled``.
 Nothing in this service deletes a configuration row or resets a toggle, which is the
 Principle X.6 exception for configuration that cannot go stale — no value here names a
-Discord channel, role, message or scheduled job.
+Discord channel, role or message. ``pfp_daily`` does name a scheduled job (the daily
+portrait job); that job staying armed while the module is off is a defect already carried
+forward, and not this service's exception to claim.
 """
 from __future__ import annotations
 
@@ -15,7 +17,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import AuditRecord
-from leaguebot.core.services.setting_change import Saved
+from leaguebot.core.services.queue.setting_change import Saved
 from leaguebot.image.models.image_constants import ASPECTS, ASSET_DIRECTORIES, TEMPLATE_COLUMNS
 from leaguebot.image.models.image_module import ImageConfig
 
@@ -88,11 +90,7 @@ class ImageConfigService:
         makes re-enabling after a disable lossless (FR-004a).
         """
         async with get_connection(self._db_path) as db:
-            await db.execute("INSERT OR IGNORE INTO image_config (id) VALUES (1)")
-            await db.executemany(
-                "INSERT OR IGNORE INTO image_aspect_toggles (aspect, enabled) VALUES (?, 0)",
-                [(aspect,) for aspect in ASPECTS],
-            )
+            await create_defaults_on(db)
             await db.commit()
 
             cursor = await db.execute("SELECT * FROM image_config")
@@ -208,10 +206,25 @@ class ImageConfigService:
 
 # ── Writes on a connection ────────────────────────────────────────────────
 #
-# The settings' saves (`image_settings`) write through these, on the connection the change
-# queue hands a step, never committing: the value and its audit entry stand or fall together.
-# Each judges "held" on the connection that writes (a change ahead may have moved the value),
-# keeps its own allow-list, and returns what `Saved` carries.
+# The settings' saves (`image_settings`, and the module's switch in `module_switch_settings`)
+# write through these, on the connection the change queue hands a step, never committing: the
+# value and its audit entry stand or fall together. A setting's writer judges "held" on the
+# connection that writes (a change ahead may have moved the value), keeps its own allow-list, and
+# returns what `Saved` carries; `create_defaults_on` only creates what is missing, and returns
+# nothing.
+
+
+async def create_defaults_on(db: aiosqlite.Connection) -> None:
+    """Create the config row and all nine toggle rows on *db*, where missing, committing nothing.
+
+    Called by the switch-on's save (`module_switch_settings.py`), and by `create_with_defaults`,
+    which commits for its own callers, so that a change to the defaults is made once.
+    """
+    await db.execute("INSERT OR IGNORE INTO image_config (id) VALUES (1)")
+    await db.executemany(
+        "INSERT OR IGNORE INTO image_aspect_toggles (aspect, enabled) VALUES (?, 0)",
+        [(aspect,) for aspect in ASPECTS],
+    )
 
 
 async def read_config_on(db: aiosqlite.Connection) -> ImageConfig | None:

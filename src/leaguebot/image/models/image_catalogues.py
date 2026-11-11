@@ -2086,7 +2086,7 @@ def declared_capacities() -> dict[str, int]:
     """Template key → **fixed** row capacity, for every type that declares one in code.
 
     A template-derived capacity is deliberately excluded. This feeds
-    ``placement_service._guard_image_capacity``, which counts seated **drivers**; a
+    ``TemplateCapacityService.guard_image_capacity``, which counts seated **drivers**; a
     calendar's collection is **rounds**, so including it would refuse a driver placement
     because a calendar template was small, and would still miss the round-add that
     actually overflows it. Rounds are guarded on their own command instead

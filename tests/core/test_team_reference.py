@@ -14,7 +14,7 @@ import os
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.team_service import (
+from leaguebot.core.services.drivers.team_service import (
     TeamService,
     resolve_division_team,
     resolve_team_reference,
@@ -110,12 +110,17 @@ async def _make_db(tmp_path) -> str:
             "VALUES (1, 1, 'Elite', 1, 900)"
         )
         await db.execute(
-            "INSERT INTO team_role_configs (team_name, role_id) VALUES ('RBR', 111)"
+            "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES ('RBR', 111, '2031-03-04T05:06:07+00:00')"
         )
         await db.commit()
     service = TeamService(db_path)
-    await service.add_default_team("RBR", full_name="Oracle Red Bull Racing")
-    await service.seed_division_teams(1)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO default_teams (name, full_name, max_seats, is_reserve) "
+            "VALUES ('RBR', 'Oracle Red Bull Racing', 2, 0)"
+        )
+        await service.seed_division_teams_on(db, 1)
+        await db.commit()
     return db_path
 
 

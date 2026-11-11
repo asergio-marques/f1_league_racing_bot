@@ -24,6 +24,7 @@ import configparser
 import re
 from pathlib import Path
 
+import pytest
 from importlinter import configuration
 from importlinter.application.use_cases import lint_imports
 
@@ -50,6 +51,12 @@ PACKAGE = CONTRACTS.parent / "src" / "leaguebot"
 #: The kinds of code a module's folder holds, each in a folder of its own (architecture.md, "How
 #: the code is laid out"). The contracts name code by these folders.
 KINDS = frozenset({"cogs", "services", "models", "utils"})
+#: A module's part of the builder, one file beside its kind folders and under the entry point's
+#: rules, imported by the entry point alone (architecture.md, "How the code is laid out"). Core has
+#: none: its part is the builder's own.
+WIRING = "wiring.py"
+#: The contract that keeps every module's wiring to the entry point.
+WIRING_CONTRACT = "nothing-imports-a-module-s-wiring-but-the-entry-point"
 
 
 def _contracts() -> configparser.ConfigParser:
@@ -82,9 +89,15 @@ _MODULE_CONTRACT = re.compile(
 def test_every_module_is_under_the_rules_between_modules():
     """The rules between modules name each module by hand, so a module's folder the contracts do
     not name would be under none of them: core could use it, and it could use anything. Adding a
-    module adds it to `.importlinter`, and to the dependency table there. Each module's contract
-    says in its name which modules it may use, and forbids exactly the rest, so a module left
-    out of another's forbidden list is found here."""
+    module adds it to `.importlinter`. Each module's contract says in its name which modules it
+    may use, and forbids exactly the rest, so a module left out of another's forbidden list is
+    found here.
+
+    The modules a contract allows are the module's row of the dependency table in
+    `core/models/module_dependencies.py`, with the image module besides, which every module may
+    call without an entry, so the contracts and the table the switches read cannot drift apart."""
+    from leaguebot.core.models.module_dependencies import needs
+
     modules = _modules()
 
     assert _named("core-uses-no-module", "forbidden_modules") == modules
@@ -99,6 +112,10 @@ def test_every_module_is_under_the_rules_between_modules():
         assert _named(match[0], "forbidden_modules") == modules - {module} - allowed, match[0]
         rows[module] = allowed
     assert set(rows) == modules, "Every module has a contract saying which modules it may use."
+    assert rows["image"] == set()
+    assert {module: allowed for module, allowed in rows.items() if module != "image"} == {
+        module: set(needs(module)) | {"image"} for module in rows if module != "image"
+    }, "Each module's contract allows the modules the dependency table says it needs, and image."
 
 
 def test_every_folder_of_the_package_is_a_package():
@@ -119,8 +136,37 @@ def _placed(parts: tuple[str, ...]) -> bool:
     if len(parts) == 1:
         return parts[0] in ("__init__.py", "__main__.py")
     if len(parts) == 2:
-        return parts[1] == "__init__.py"
+        return parts[1] == "__init__.py" or (parts[1] == WIRING and parts[0] != "core")
     return parts[1] in KINDS or parts[:2] == ("core", "db")
+
+
+@pytest.mark.parametrize(
+    ("parts", "placed"),
+    [
+        pytest.param(("results", "wiring.py"), True, id="a module's wiring"),
+        pytest.param(("core", "wiring.py"), False, id="core's"),
+        pytest.param(("results", "helpers.py"), False, id="another file beside the kinds"),
+    ],
+)
+def test_a_module_s_wiring_sits_beside_its_kind_folders(parts, placed):
+    """A module's wiring is the one file a module keeps outside its kind folders; core keeps none,
+    and any other file there is out of place."""
+    assert _placed(parts) is placed
+
+
+def test_every_module_has_its_wiring_and_only_the_entry_point_imports_it():
+    """Each module's wiring signs it up as the builder asks, and nothing but the entry point
+    imports one: not a module's own services, cogs, models or utilities, not core, and not another
+    module's wiring. A source module the contract names is a kind folder, not the module, as
+    import-linter passes over an import between a module and what lies within it."""
+    modules = _modules()
+
+    assert sorted(module for module in modules if not (PACKAGE / module / WIRING).is_file()) == []
+    assert _named(WIRING_CONTRACT, "forbidden_modules") == {"*.wiring"}
+    assert _named(WIRING_CONTRACT, "source_modules") == {f"*.{kind}" for kind in KINDS} | {
+        "*.wiring",
+        "core.db",
+    }
 
 
 def test_every_file_sits_in_a_folder_the_contracts_name():
@@ -132,6 +178,33 @@ def test_every_file_sits_in_a_folder_the_contracts_name():
         if not _placed(path.relative_to(PACKAGE).parts)
     )
     assert misplaced == []
+
+
+#: Core's services that are plumbing every module uses: the change queue, posting to Discord, and
+#: what core asks of the modules through its hooks and protocols.
+CORE_PLUMBING_FOLDERS = frozenset({"queue", "posting", "modules"})
+#: Core's services that hold a league rule of core's own.
+CORE_LEAGUE_RULE_FOLDERS = frozenset(
+    {"seasons", "cancellations", "rounds", "drivers", "settings", "test_mode", "upkeep"}
+)
+#: The files that sit directly in `core/services/`: the package's own, and the scheduler, whose
+#: path every saved job names (`test_every_stored_job_names_the_runner_by_its_pinned_module_path`).
+CORE_SERVICES_LOOSE = frozenset({"__init__.py", "scheduler_service.py"})
+
+
+def test_core_s_services_sit_in_topic_folders_plumbing_apart_from_league_rules():
+    """Core's services are grouped by topic into packages, and no folder holds both plumbing and a
+    league rule, so that a later review of what core holds can move a whole folder rather than
+    sort its files again (architecture.md, "How the code is laid out"). Every file of core's
+    services is in one of the named folders but the two that stay loose, and every named folder
+    is there."""
+    services = PACKAGE / "core" / "services"
+    loose = sorted(path.name for path in services.glob("*.py") if path.name not in CORE_SERVICES_LOOSE)
+    folders = {path.name for path in services.iterdir() if (path / "__init__.py").is_file()}
+
+    assert loose == []
+    assert folders == CORE_PLUMBING_FOLDERS | CORE_LEAGUE_RULE_FOLDERS
+    assert not CORE_PLUMBING_FOLDERS & CORE_LEAGUE_RULE_FOLDERS
 
 
 def test_the_bot_s_type_names_the_services_for_the_type_checker_only():

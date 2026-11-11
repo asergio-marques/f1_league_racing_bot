@@ -8,7 +8,10 @@ from typing import Any
 from apscheduler.job import Job
 from apscheduler.triggers.base import BaseTrigger
 
+STATE_PAUSED: int
+
 class BaseScheduler(metaclass=ABCMeta):
+    state: int
     def __init__(self, gconfig: Mapping[str, Any] = ..., **options: Any) -> None: ...
     @property
     def running(self) -> bool: ...

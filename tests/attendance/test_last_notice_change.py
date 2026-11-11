@@ -1,8 +1,8 @@
 """A round's last check-in notice on the change queue (#439, slice 6b, C29): asked by its timer,
 posted and recorded by a job of its own.
 
-The league is `ongoing_league`'s with attendance on, its queue rebuilt on a real
-`AttendanceService`: Pro (role 801) has Lewis and Max seated at Ferrari, its check-in channel is
+The league is `ongoing_league`'s with attendance on, its attendance service
+reading the database: Pro (role 801) has Lewis and Max seated at Ferrari, its check-in channel is
 603, and round 3's call stands there as message 7001, Lewis having accepted and Max not answered.
 Round 3 is moved to three hours off, past the moment its last notice falls due and an hour before
 its check-in deadline (two hours before the race), and no last notice or reserve announcement is
@@ -18,15 +18,13 @@ runs is dropped (fault 8). Discord refusing it stops the queue.
 from __future__ import annotations
 
 import inspect
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Any
 
 import discord
 import pytest
 
-from leaguebot.attendance.services.attendance_service import AttendanceService
 from tests.support.change_queue import (
-    attach_queue,
     change_rows,
     http_error,
     run_queue,
@@ -38,6 +36,7 @@ from tests.support.season_league import (
     DIVISIONS,
     PRO,
     SeasonLeague,
+    attendance_from_the_database,
     ongoing_league,
     round_id,
 )
@@ -54,11 +53,10 @@ async def _league(tmp_path: Any) -> SeasonLeague:
     """The league of the module docstring: round 3 three hours off, its call standing and no
     last notice recorded."""
     league = await ongoing_league(tmp_path, attendance=True)
-    league.bot.attendance_service = AttendanceService(league.db_path)
-    attach_queue(league.bot, league.db_path, now=league.clock)
+    attendance_from_the_database(league)
     when = league.clock.now + timedelta(hours=3)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       when.replace(tzinfo=None).isoformat(), ROUND_3)
+                       when.astimezone(timezone.utc).isoformat(), ROUND_3)
     await league.write(
         "UPDATE rsvp_embed_messages SET last_notice_msg_id = NULL, distribution_msg_id = NULL "
         "WHERE round_id = ?", ROUND_3,
@@ -106,7 +104,7 @@ async def test_the_timer_asks_for_the_last_notice_and_the_queue_posts_it_in_the_
     """Nothing is posted as the last notice is asked; the queue posts it in Pro's check-in
     channel, naming Max, who has not answered, and not Lewis, who has. The last-notice timer's
     callback asks the queue rather than posting."""
-    import leaguebot.__main__ as bot_module
+    from leaguebot.attendance import wiring
 
     league = await _league(tmp_path)
 
@@ -120,7 +118,7 @@ async def test_the_timer_asks_for_the_last_notice_and_the_queue_posts_it_in_the_
     assert posted in league.channel(CHECK_IN).messages
     assert [row["kind"] for row in await _notice_changes(league)] == [KIND]
     assert await stopped_job(league.db_path) is None
-    assert "ask_check_in_last_notice(" in inspect.getsource(bot_module.main)
+    assert "ask_check_in_last_notice(" in inspect.getsource(wiring.register_scheduler_callbacks)
 
 
 async def test_a_last_notice_after_a_channel_move_goes_to_the_new_channel_and_is_recorded_there(
@@ -145,7 +143,7 @@ async def test_a_last_notice_after_a_channel_move_goes_to_the_new_channel_and_is
 
     when = league.clock.now - timedelta(hours=25)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       when.replace(tzinfo=None).isoformat(), ROUND_3)
+                       when.astimezone(timezone.utc).isoformat(), ROUND_3)
     await ask_check_in_clean_up(league.bot.change_queue, league.db_path, ROUND_3,
                                 origin=ChangeOrigin.BOT)
     await run_queue(league.bot)

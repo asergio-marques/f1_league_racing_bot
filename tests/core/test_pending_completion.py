@@ -10,8 +10,8 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage, status_of_stage
-from leaguebot.core.services import season_lifecycle_service as lifecycle
-from leaguebot.core.services.season_service import SeasonService, refresh_division_status_on
+from leaguebot.core.services.seasons import season_lifecycle_service as lifecycle
+from leaguebot.core.services.seasons.season_service import SeasonService, refresh_division_status_on
 
 SERVER_ID = 22110
 SEASON_ID = 1
@@ -42,7 +42,7 @@ async def _db(tmp_path, stage=SeasonStage.ONGOING, divisions=(("ACTIVE", "FINAL"
                 await db.execute(
                     "INSERT INTO rounds (division_id, round_number, format, track_name, "
                     "scheduled_at, status) VALUES (?, 1, 'NORMAL', 'Silverstone Circuit', "
-                    "'2026-06-01T14:00:00', ?)",
+                    "'2026-06-01T14:00:00+00:00', ?)",
                     (index, round_status),
                 )
         await db.commit()

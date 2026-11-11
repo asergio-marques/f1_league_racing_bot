@@ -40,9 +40,9 @@ async def db_path(tmp_path):
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
             "scheduled_at) VALUES (?, 5, ?, ?, ?, ?)",
             [
-                (1, 1, "NORMAL", "Silverstone Circuit", "2026-06-07T18:00:00"),
-                (2, 2, "MYSTERY", None, "2026-06-14T18:00:00"),
-                (3, 3, "NORMAL", "Circuit Zandvoort", "2026-06-21T18:00:00"),
+                (1, 1, "NORMAL", "Silverstone Circuit", "2026-06-07T18:00:00+00:00"),
+                (2, 2, "MYSTERY", None, "2026-06-14T18:00:00+00:00"),
+                (3, 3, "NORMAL", "Circuit Zandvoort", "2026-06-21T18:00:00+00:00"),
             ],
         )
         await db.commit()

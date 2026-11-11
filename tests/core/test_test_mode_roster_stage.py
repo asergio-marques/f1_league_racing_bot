@@ -74,28 +74,6 @@ async def test_the_roster_may_not_change_outside_placements(tmp_path, stage):
     )
 
 
-@pytest.mark.parametrize(
-    "command, args",
-    [
-        ("roster_add", ("Mock", "Redline", "Pro")),
-        ("roster_add_bulk", ()),
-        ("roster_remove", ("9000000000000000001",)),
-        ("roster_clear", ("Pro",)),
-    ],
-)
-async def test_every_roster_change_is_guarded(tmp_path, command, args):
-    cog = await _cog(tmp_path, SeasonStage.ONGOING)
-    interaction = _interaction()
-    interaction.response.send_modal = AsyncMock()
-
-    await undecorate(getattr(_Cog, command))(cog, interaction, *args)
-
-    assert "only be changed while the season is in placements" in (
-        interaction.response.send_message.await_args.args[0]
-    )
-    interaction.response.send_modal.assert_not_awaited()
-
-
 # ── Every refusal is recorded (#442) ──────────────────────────────────────
 
 
@@ -136,54 +114,67 @@ async def test_the_placements_check_logs_its_refusal_unless_record_is_false(tmp_
         assert _lines(cog) == []
 
 
-#: Every refusal the four roster commands make through the placements check, and every
-#: refusal of `/test-mode roster add` itself: the command, its arguments, the stage, how the
-#: server is set, and a fragment of the reply.
+async def _placements_approved(league) -> None:
+    await league.write("UPDATE seasons SET status = 'ACTIVE', stage = 'ONGOING'")
+
+
+async def _test_mode_off(league) -> None:
+    await league.set_test_mode(False)
+
+
+#: Every refusal the cog makes of a roster change before it is asked of the queue: the command,
+#: its arguments, what is done to `season_league`'s league first, and a fragment of the reply.
+#: Those `/test-mode roster remove` and `clear` make, and a nationality refused while switched
+#: off, are tested with their commands in `test_test_mode_roster_remove.py`,
+#: `test_test_mode_roster_clear.py` and `test_test_mode_roster_add.py`.
 ROSTER_REFUSALS = [
-    pytest.param("roster_add", ("Mock", "Redline", "Pro"), SeasonStage.ONGOING, {},
+    pytest.param("roster_add", ("Mock", "McLaren", "Am"), _placements_approved,
                  "only be changed while the season is in placements", id="add-outside-placements"),
-    pytest.param("roster_add_bulk", (), SeasonStage.ONGOING, {},
+    pytest.param("roster_add_bulk", (), _placements_approved,
                  "only be changed while the season is in placements",
                  id="add-bulk-outside-placements"),
-    pytest.param("roster_remove", ("9000000000000000001",), SeasonStage.ONGOING, {},
-                 "only be changed while the season is in placements",
-                 id="remove-outside-placements"),
-    pytest.param("roster_clear", ("Pro",), SeasonStage.ONGOING, {},
-                 "only be changed while the season is in placements", id="clear-outside-placements"),
-    pytest.param("roster_add", ("Mock", "Redline", "Pro"), SeasonStage.PLACEMENTS,
-                 {"test_mode_active": False}, "only available when test mode is enabled",
-                 id="add-outside-test-mode"),
-    pytest.param("roster_add", ("Mock", "Redline", "Pro", "British"), SeasonStage.PLACEMENTS,
-                 {"test_mode_active": True, "test_mode_nationality_required": False},
-                 "Nationality is switched off", id="add-with-nationality-switched-off"),
-    pytest.param("roster_add", ("Mock", "Nobody", "Pro"), SeasonStage.PLACEMENTS,
-                 {"test_mode_active": True, "test_mode_nationality_required": True},
-                 "⛔", id="add-refused-by-the-roster"),
+    pytest.param("roster_add", ("Mock", "McLaren", "Am"), _test_mode_off,
+                 "only available when test mode is enabled", id="add-outside-test-mode"),
+    pytest.param("roster_add", ("Mock", "Nobody", "Am"), None, "⛔",
+                 id="add-refused-by-the-roster"),
 ]
 
 
-@pytest.mark.parametrize("command, args, stage, config, said", ROSTER_REFUSALS)
+@pytest.mark.parametrize("command, args, meanwhile, said_", ROSTER_REFUSALS)
 async def test_every_test_roster_refusal_reaches_the_log_channel(
-    tmp_path, command, args, stage, config, said
+    tmp_path, command, args, meanwhile, said_
 ):
-    """Each refusal answers the member as before and writes one line in the standard form,
-    naming the command."""
-    cog = await _cog(tmp_path, stage)
-    if config:
-        cog.bot.config_service.get_server_config = AsyncMock(
-            return_value=SimpleNamespace(**config)
-        )
-    cog.bot.placement_service = None
+    """On the bot the builder makes, `season_league`'s season 3 in Placements under test mode;
+    then the season's placements are approved (Ongoing), or test mode is switched off, or
+    neither. Admin (77) runs `/test-mode roster add` of Mock to McLaren in Am, or to Nobody, a
+    team Am does not hold, or `/test-mode roster add-bulk`. Each is refused at once, seen by Admin
+    alone and answered as before; the import form is not opened, nothing is queued, no fake
+    driver is created, and the log channel takes one line in the standard form, naming the
+    command and Admin."""
+    from leaguebot.core.cogs import test_mode_cog
+    from tests.support.change_queue import change_rows, member
+    from tests.support.season_league import season_league
+    from tests.support.settings_league import interaction as member_asks
+    from tests.support.settings_league import said, unruled
+
+    league = await season_league(tmp_path, test_mode=True)
+    if meanwhile is not None:
+        await meanwhile(league)
+    cog = test_mode_cog.TestModeCog.__new__(test_mode_cog.TestModeCog)
+    cog.bot = league.bot
     name = "test-mode roster " + command.removeprefix("roster_").replace("_", "-")
-    interaction = _interaction()
+    interaction = member_asks(league.bot, name, user=member(77, "Admin", "Admin#0001"))
     interaction.response.send_modal = AsyncMock()
-    _recording(cog, interaction, name)
 
-    await undecorate(getattr(_Cog, command))(cog, interaction, *args)
+    await undecorate(getattr(test_mode_cog.TestModeCog, command))(cog, interaction, *args)
 
-    assert said in interaction.response.send_message.await_args.args[0]
+    [reply] = said(interaction)
+    assert said_ in reply
+    [sent] = interaction.response.send_message.await_args_list
+    assert sent.kwargs.get("ephemeral") is True
     interaction.response.send_modal.assert_not_awaited()
-    [line] = _lines(cog)
-    assert line.startswith("⛔ ")
-    assert f"/{name}" in line
-    assert "refused for Admin (<@77>)" in line
+    assert await change_rows(league.db_path) == []
+    assert await league.rows("SELECT 1 FROM driver_profiles WHERE is_test_driver = 1") == []
+    assert [unruled(str(line)) for line in league.bot.log_channel.sent] == [
+        f"⛔ `/{name}` refused for Admin (`<@77>`) — {reply[2:]}"
+    ]

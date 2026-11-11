@@ -1,4 +1,5 @@
-"""Unit tests for PlacementService.get_unassigned_drivers_for_export.
+"""Unit tests for signup's listings of the unassigned drivers, the export's and the seeded list's
+(`SignupModuleService.get_unassigned_drivers_for_export` and `get_unassigned_drivers_seeded`).
 
 These tests drive the real service against a real migrated database. They used to
 drive a hand-copied reimplementation of the row-building logic instead, which is why
@@ -10,13 +11,13 @@ local copy of the production logic here.
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock
 
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 
 SERVER_ID = 1
+
 
 
 # ---------------------------------------------------------------------------
@@ -71,9 +72,9 @@ async def _seed(tmp_path, drivers: list[dict], slots: list[tuple[int, str]] | No
 
 
 def _service(db_path):
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
 
-    return PlacementService(db_path, bot=MagicMock())
+    return SignupModuleService(db_path)
 
 
 def _signup_service(db_path):
@@ -196,19 +197,24 @@ class TestExportRow:
         ) == expected
 
     async def test_seed_ordering_by_total_lap_ms(self, tmp_path):
-        """Lower total_lap_ms → lower seed (earlier in list → higher priority)."""
-        from leaguebot.core.services.placement_service import _fmt_ms  # type: ignore
+        """Lower total_lap_ms → lower seed (earlier in list → higher priority). A driver with no
+        time on record, though they signed up first, is seeded last, in the export and the list
+        alike (the signup specification: "Drivers with no recorded time shall be seeded last")."""
+        from leaguebot.signup.services.signup_module_service import _fmt_ms  # type: ignore
 
         db_path = await _seed(
             tmp_path,
             [
+                {"discord_user_id": "no_time", "total_lap_ms": None},
                 {"discord_user_id": "slow", "total_lap_ms": 90000},
                 {"discord_user_id": "fast", "total_lap_ms": 83456},
             ],
         )
         rows, _ = await _export(db_path)
-        assert [r["discord_user_id"] for r in rows] == ["fast", "slow"]
-        assert [r["seed"] for r in rows] == [1, 2]
+        listed = await _service(db_path).get_unassigned_drivers_seeded()
+        assert [r["discord_user_id"] for r in rows] == ["fast", "slow", "no_time"]
+        assert [r["discord_user_id"] for r in listed] == ["fast", "slow", "no_time"]
+        assert [r["seed"] for r in rows] == [1, 2, 3]
         assert rows[0]["total_lap_fmt"] == _fmt_ms(83456)
 
     async def test_a_tie_goes_to_whoever_submitted_first_not_whoever_was_corrected_last(
@@ -273,8 +279,6 @@ class TestExportRow:
     "state", ["PENDING_ADMIN_APPROVAL", "AWAITING_CORRECTION_PARAMETER", "PENDING_DRIVER_CORRECTION"]
 )
 async def test_a_signup_still_in_review_follows_the_seeded_drivers_unseeded(tmp_path, state):
-    from leaguebot.core.services.placement_service import PlacementService
-
     db_path = await _seed(
         tmp_path,
         [
@@ -282,7 +286,7 @@ async def test_a_signup_still_in_review_follows_the_seeded_drivers_unseeded(tmp_
             {"discord_user_id": "1002", "total_lap_ms": 90_000},
         ],
     )
-    service = PlacementService(db_path, bot=MagicMock())
+    service = _service(db_path)
 
     for rows in (
         await service.get_unassigned_drivers_seeded(),
@@ -294,8 +298,6 @@ async def test_a_signup_still_in_review_follows_the_seeded_drivers_unseeded(tmp_
 
 
 async def test_a_placed_or_departed_driver_is_not_listed(tmp_path):
-    from leaguebot.core.services.placement_service import PlacementService
-
     db_path = await _seed(
         tmp_path,
         [
@@ -304,4 +306,4 @@ async def test_a_placed_or_departed_driver_is_not_listed(tmp_path):
         ],
     )
 
-    assert await PlacementService(db_path, bot=MagicMock()).get_unassigned_drivers_seeded() == []
+    assert await _service(db_path).get_unassigned_drivers_seeded() == []

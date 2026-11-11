@@ -20,7 +20,7 @@ from leaguebot.image.models.image_constants import (
     TEMPLATE_COLUMNS,
 )
 from leaguebot.image.services.image_config_service import ImageConfigService
-from leaguebot.core.services.module_service import ModuleService
+from leaguebot.core.services.modules.module_service import ModuleService
 from tests.support import KIND_TEMPLATES, saves
 from tests.support.change_queue import in_a_job
 
@@ -49,24 +49,61 @@ def config_service(db_path):
 
 @pytest.fixture
 def module_service(db_path):
-    return ModuleService(db_path)
+    """The league's module service, each module's switch reader signed up as the builder signs
+    them up."""
+    from leaguebot.__main__ import register_module_switches
+
+    modules = ModuleService(db_path)
+    register_module_switches(modules)
+    return modules
 
 
 async def _enable(module_service, config_service):
-    """The service-layer half of `_enable_images`."""
+    """The module switched on with its default configuration, as `/module enable images`
+    leaves it: the set-up of the tests whose subject is not the switch itself."""
+    from tests.support.season_league import set_module_flag
+
     await config_service.create_with_defaults()
-    await module_service.set_images_enabled(True)
+    await set_module_flag(config_service._db_path, "images", True)
+
+
+async def _switched(tmp_path):
+    """A league whose settings run on the queue, the image module off with no configuration,
+    the module cog over its bot, and its image configuration service."""
+    from leaguebot.core.cogs.module_cog import ModuleCog
+    from tests.support.settings_league import settings_league
+
+    league = await settings_league(tmp_path, modules=())
+    return league, ModuleCog(league.bot), league.bot.image_config_service
+
+
+async def _switch(league, cog, *, on: bool) -> None:
+    """Run `/module enable images` (*on*) or `/module disable images` as Admin, and the queue
+    behind it, on a host the rasteriser check finds carrying Inkscape."""
+    from unittest.mock import MagicMock, patch
+
+    from tests.support.change_queue import run_queue
+    from tests.support.settings_league import interaction
+
+    verb = "enable" if on else "disable"
+    with patch(
+        "leaguebot.image.services.image_render_service.converter_available",
+        new=MagicMock(return_value=True),
+    ):
+        await getattr(cog, f"_{verb}_images")(interaction(league.bot, f"module {verb}"))
+        await run_queue(league.bot)
 
 
 # ── T011 ──────────────────────────────────────────────────────────────────
 
 
-async def test_enable_creates_defaults(module_service, config_service):
-    assert await module_service.is_images_enabled() is False
+async def test_enable_creates_defaults(tmp_path):
+    league, cog, config_service = await _switched(tmp_path)
+    assert await league.bot.module_service.is_images_enabled() is False
 
-    await _enable(module_service, config_service)
+    await _switch(league, cog, on=True)
 
-    assert await module_service.is_images_enabled() is True
+    assert await league.bot.module_service.is_images_enabled() is True
 
     cfg = await config_service.get_config()
     assert cfg is not None
@@ -79,20 +116,13 @@ async def test_enable_creates_defaults(module_service, config_service):
     assert not any(toggles.values())
 
 
-async def test_enable_is_idempotent_across_repeat_calls(module_service, config_service):
-    await _enable(module_service, config_service)
-    await saves.set_field(config_service, "template_directory", "resources/mine")
-    await _enable(module_service, config_service)
-
-    cfg = await config_service.get_config()
-    assert cfg.template_directory == "resources/mine"
-
-
 # ── T012 — the gate for the X.6 exception ─────────────────────────────────
 
 
-async def test_disable_retains_configuration(module_service, config_service):
-    await _enable(module_service, config_service)
+async def test_disable_retains_configuration(tmp_path):
+    league, cog, config_service = await _switched(tmp_path)
+    module_service = league.bot.module_service
+    await _switch(league, cog, on=True)
 
     # Customise something from every group of settable values.
     await saves.set_field(config_service, "template_directory", "resources/my_templates")
@@ -105,7 +135,7 @@ async def test_disable_retains_configuration(module_service, config_service):
     before = await config_service.get_config()
     toggles_before = await config_service.get_toggles()
 
-    await module_service.set_images_enabled(False)
+    await _switch(league, cog, on=False)
     assert await module_service.is_images_enabled() is False
 
     # Nothing may be cleared by the disable itself.
@@ -113,7 +143,7 @@ async def test_disable_retains_configuration(module_service, config_service):
     assert during.template_directory == "resources/my_templates"
     assert await config_service.get_toggles() == toggles_before
 
-    await _enable(module_service, config_service)
+    await _switch(league, cog, on=True)
 
     after = await config_service.get_config()
     assert after == before, "re-enabling must restore the exact prior configuration"
@@ -121,8 +151,9 @@ async def test_disable_retains_configuration(module_service, config_service):
     assert toggles_before["standings"] is True
 
 
-async def test_disable_preserves_every_settable_column(module_service, config_service):
-    await _enable(module_service, config_service)
+async def test_disable_preserves_every_settable_column(tmp_path):
+    league, cog, config_service = await _switched(tmp_path)
+    await _switch(league, cog, on=True)
 
     probes = {}
     for column in ("template_directory", *TEMPLATE_COLUMNS, *ASSET_DIRECTORIES):
@@ -131,8 +162,8 @@ async def test_disable_preserves_every_settable_column(module_service, config_se
     for aspect in ASPECTS:
         await saves.set_aspect(config_service, aspect, True)
 
-    await module_service.set_images_enabled(False)
-    await _enable(module_service, config_service)
+    await _switch(league, cog, on=False)
+    await _switch(league, cog, on=True)
 
     cfg = await config_service.get_config()
     for column, expected in probes.items():
@@ -143,20 +174,21 @@ async def test_disable_preserves_every_settable_column(module_service, config_se
 # ── T013 ──────────────────────────────────────────────────────────────────
 
 
-async def test_commands_gated_when_disabled(module_service, config_service):
-    """A server that never enabled the module has no configuration to read."""
-    assert await module_service.is_images_enabled() is False
+async def test_commands_gated_when_disabled(config_service):
+    """A server that never enabled the module has no configuration to read. That its switch reads
+    as off is `test_a_module_is_off_by_default[images]`'s."""
     assert await config_service.get_config() is None
     assert not any((await config_service.get_toggles()).values())
 
 
-async def test_gate_reads_flag_not_row_presence(module_service, config_service):
+async def test_gate_reads_flag_not_row_presence(tmp_path):
     """After a disable the row still exists, so the gate must read the flag."""
-    await _enable(module_service, config_service)
-    await module_service.set_images_enabled(False)
+    league, cog, config_service = await _switched(tmp_path)
+    await _switch(league, cog, on=True)
+    await _switch(league, cog, on=False)
 
     assert await config_service.get_config() is not None
-    assert await module_service.is_images_enabled() is False
+    assert await league.bot.module_service.is_images_enabled() is False
 
 
 # ── T028 — templates relocate independently (SC-002) ──────────────────────
@@ -469,11 +501,14 @@ async def test_season_review_and_config_view_agree(
     """FR-033: both surfaces render from the same AspectStatus list, so they cannot drift.
 
     One template is broken and one aspect enabled, then the aspect section of each
-    surface is compared line for line.
+    surface is compared line for line: `/images config view`'s, and the image module's
+    section of the season reviews, as its drawing answers it.
     """
+    from unittest.mock import AsyncMock, MagicMock
+
     import leaguebot.image.services.image_render_service as render_service
     from leaguebot.image.cogs.image_cog import ImageCog
-    from leaguebot.core.cogs.season_cog import SeasonCog
+    from leaguebot.image.services.image_drawing import ImageDrawing
     from leaguebot.image.services.image_validity_service import ImageValidityService
 
     monkeypatch.setattr(render_service, "converter_available", lambda **_: True)
@@ -499,11 +534,13 @@ async def test_season_review_and_config_view_agree(
 
     image_cog = ImageCog.__new__(ImageCog)
     image_cog.bot = bot
-    season_cog = SeasonCog.__new__(SeasonCog)
-    season_cog.bot = bot
+    drawing = ImageDrawing(
+        module_service, config_service, validity,
+        renderer=MagicMock(), post_log=AsyncMock(), db_path=":memory:",
+    )
 
     view_lines = await image_cog.build_aspect_section()
-    review_lines = await season_cog._build_image_review_section()
+    review_lines = await drawing.review_section()
 
     def aspect_lines(lines):
         """The eight aspect lines, and the reasons hanging off them.
@@ -546,18 +583,18 @@ def test_the_review_names_every_configured_asset_directory():
 
     A manager sets these paths once and then has nowhere in the review to see them, so a
     graphic drawing placeholders because a folder was renamed looks exactly like one whose
-    artwork was never supplied. Naming the directory is what tells the two apart.
+    artwork was never supplied. Naming the directory is what tells the two apart. The
+    section is the image module's, answered by its drawing.
 
     Asserted against `ASSET_LABELS` rather than a written-out list, so an asset class
     added later is covered by this test the day it appears.
     """
-    import asyncio
     import inspect
 
     from leaguebot.image.models.image_constants import ASSET_LABELS
-    from leaguebot.core.cogs.season_cog import SeasonCog
+    from leaguebot.image.services import image_drawing
 
-    source = inspect.getsource(SeasonCog._build_image_review_section)
+    source = inspect.getsource(image_drawing)
 
     assert "directory_reports" in source, "the review does not read the directories"
     assert "ASSET_LABELS" in source, "the review does not label them"
@@ -1005,7 +1042,7 @@ async def _measure(config_service, module_service, colour):
     colour is saved: handed the real validity and render services, not a stand-in, since the
     per-tier contrast paints each division through the render's palette step, and a stub would
     test a copy of that step."""
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.seasons.season_service import SeasonService
     from leaguebot.image.services.image_render_service import ImageRenderService
     from leaguebot.image.services.image_setting_advice import measure_fastest_lap_contrast
     from leaguebot.image.services.image_validity_service import ImageValidityService
@@ -1678,9 +1715,10 @@ async def test_only_wired_aspects_read_their_toggle(
     """A toggle may be read only by the image module, or by an aspect actually wired up.
 
     035 delivered the configuration surface with every toggle inert, and this assertion
-    guarded that. 037 wires the **calendar**: `calendar_post_service` reads the toggle to
-    decide whether the calendar is conveyed as a graphic or in the traditional textual
-    manner, which is the whole point of the aspect.
+    guarded that. 037 wires the **calendar**: the image module's drawing
+    (`image/services/image_drawing.py`) reads the toggle to tell core whether the calendar
+    is conveyed as a graphic or in the traditional textual manner, which is the whole point
+    of the aspect.
 
     The assertion therefore narrows rather than disappears — it still catches a source
     module branching on a toggle whose aspect nobody has built.
@@ -1699,8 +1737,8 @@ async def test_only_wired_aspects_read_their_toggle(
     #: branch on a toggle whose behaviour was never specified.
     #:
     #: `season_cog.py` and `calendar_post_service.py` are deliberately absent: 037 wired
-    #: the calendar, and reading the toggle to choose between the graphic and the textual
-    #: calendar is precisely what that wiring is.
+    #: the calendar, whose posting chooses between the graphic and the textual calendar on
+    #: the toggle, read for it by the image module's drawing.
     unwired_posting_paths = [
         "results_post_service.py",
         "rsvp_service.py",
@@ -2269,7 +2307,9 @@ def test_the_season_approval_refusal_is_ephemeral():
     is what shows it is private: the last call opened before the refusal's words is
     `refuse(`.
     """
-    source = (_SRC / "leaguebot" / "core" / "cogs" / "season_cog.py").read_text(encoding="utf-8")
+    source = (
+        _SRC / "leaguebot" / "core" / "services" / "seasons" / "season_review_workflows.py"
+    ).read_text(encoding="utf-8")
     marker = "the `lineup` image aspect is on but"
     assert marker in source
 

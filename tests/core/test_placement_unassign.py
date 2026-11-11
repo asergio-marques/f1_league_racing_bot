@@ -1,7 +1,10 @@
-"""`PlacementService.unassign_driver` — taking a driver out of one division.
+"""`PlacementService.unassign_on` — taking a driver out of one division.
 
-Issue #208, the companion to `test_placement_assign.py`. Unassigning is where a driver racing
-in more than one division gets complicated, and every rule in it turns on that.
+Issue #208, the companion to `test_placement_assign.py`. It is the save of `/driver unassign` and
+`/driver release`, each a change on the league's lane (#283): it writes on the connection handed,
+commits nothing, and names the roles to take back and the audit entry for the change to act on.
+Unassigning is where a driver racing in more than one division gets complicated, and every rule in
+it turns on that.
 
 **A driver may hold a seat in several divisions at once**, so removing one seat does not
 necessarily mean they stop being a driver. The state only falls back to `UNASSIGNED` when the
@@ -9,7 +12,7 @@ necessarily mean they stop being a driver. The state only falls back to `UNASSIG
 the two halves, and collapsing them would either strip a driver mid-season from a division they
 are still racing in, or leave a driver marked Assigned with no seat anywhere.
 
-**The team role is revoked only when no other seat claims it.** Two divisions can both run a
+**The team role is taken back only when no other seat claims it.** Two divisions can both run a
 team called "Alpha", the one team of the server's list mapped to one Discord role, and a driver
 leaving one of them keeps the role by virtue of the other. A role belongs to one team only
 (#375), so no differently named team can hold it too.
@@ -24,19 +27,18 @@ to know which one the bot looked in.
 from __future__ import annotations
 
 import os
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.core.services.placement_service import PlacementService
+from leaguebot.core.services.drivers.placement_service import PlacementService
+
 
 SERVER_ID = 11108
 SEASON_ID = 1
 DIVISION_A = 11
 DIVISION_B = 12
-ACTOR_ID = 77
 PROFILE_ID = 101
 ROLE_ID = 5001
 
@@ -106,34 +108,26 @@ async def _seat(db_path: str, division_id: int, *, profile_id: int = PROFILE_ID)
 async def _map_role(db_path: str, team_name: str, role_id: int = ROLE_ID) -> None:
     async with get_connection(db_path) as db:
         await db.execute(
-            "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)",
+            "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES (?, ?, '2031-03-04T05:06:07+00:00')",
             (team_name, role_id),
         )
         await db.commit()
 
 
 def _service(db_path: str) -> PlacementService:
-    service = PlacementService.__new__(PlacementService)
-    service._db_path = db_path
-    service._bot = None
-    service._refresh_lineup_post = AsyncMock(return_value=None)
-    service._revoke_roles = AsyncMock(return_value=None)
-    return service
+    return PlacementService(db_path)
 
 
-async def _unassign(service, division_id: int = DIVISION_A, *, member=None) -> dict:
-    guild = MagicMock()
-    guild.get_member = MagicMock(return_value=member)
-    guild.fetch_member = AsyncMock(return_value=member)
-    return await service.unassign_driver(
-        driver_profile_id=PROFILE_ID,
-        division_id=division_id,
-        season_id=SEASON_ID,
-        acting_user_id=ACTOR_ID,
-        acting_user_name="Manager",
-        guild=guild,
-        discord_user_id="4242",
-    )
+async def _unassign(service, division_id: int = DIVISION_A) -> dict:
+    """Unassign the driver through `unassign_on` on a connection of its own, committed once it
+    returns: the save without the change around it. The placements here are confirmed, the
+    fixture's season being active, so the roles to take back are named."""
+    async with get_connection(service._db_path) as db:
+        removed = await service.unassign_on(
+            db, driver_profile_id=PROFILE_ID, division_id=division_id, season_id=SEASON_ID
+        )
+        await db.commit()
+    return removed
 
 
 async def _state(db_path: str) -> str:
@@ -167,32 +161,35 @@ async def _seat_occupant(db_path: str, division_id: int):
 
 
 async def test_a_driver_who_does_not_exist_is_refused(tmp_path):
+    from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
     service = _service(db_path)
     async with get_connection(db_path) as db:
         await db.execute("DELETE FROM driver_profiles WHERE id = ?", (PROFILE_ID,))
         await db.commit()
 
-    with pytest.raises(ValueError, match="not found"):
+    with pytest.raises(Refused, match="not found"):
         await _unassign(service)
 
 
 @pytest.mark.parametrize("state", ["UNASSIGNED", "NOT_SIGNED_UP", "PENDING_ADMIN_APPROVAL"])
 async def test_a_driver_not_currently_assigned_is_refused(tmp_path, state):
     """The refusal quotes the state back, so a manager can see why."""
+    from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path, state=state)
 
-    with pytest.raises(ValueError, match="Assigned state"):
+    with pytest.raises(Refused, match="Assigned state"):
         await _unassign(_service(db_path))
 
 
 async def test_a_driver_not_in_that_division_is_refused_by_division_name(tmp_path):
     """A manager unassigning from the wrong division needs to know which one was looked
     in — "not assigned" alone would leave them checking the driver instead."""
+    from leaguebot.core.models.refusal import Refused
     db_path = await _make_db(tmp_path)
     await _seat(db_path, DIVISION_A)
 
-    with pytest.raises(ValueError, match="Division 2"):
+    with pytest.raises(Refused, match="Division 2"):
         await _unassign(_service(db_path), DIVISION_B)
 
     assert await _seat_occupant(db_path, DIVISION_A) == PROFILE_ID
@@ -205,18 +202,14 @@ async def test_a_driver_not_in_that_division_is_refused_by_division_name(tmp_pat
 
 async def test_the_seat_is_freed_and_the_assignment_deleted(tmp_path):
     """Both. The seat is what the lineup graphic draws from, so a deleted assignment with
-    an occupied seat would draw a driver no longer of the division. Here the driver has left
-    the server: there is no member to revoke roles from, but the seat and the assignment are
-    the league's record and must still be put right."""
+    an occupied seat would draw a driver no longer of the division."""
     db_path = await _make_db(tmp_path)
     await _seat(db_path, DIVISION_A)
-    service = _service(db_path)
 
-    await _unassign(service, DIVISION_A, member=None)
+    await _unassign(_service(db_path), DIVISION_A)
 
     assert await _seat_occupant(db_path, DIVISION_A) is None
     assert await _assignments(db_path) == 0
-    service._revoke_roles.assert_not_awaited()
 
 
 async def test_the_division_is_named_in_the_result(tmp_path):
@@ -276,13 +269,10 @@ async def test_the_team_role_is_revoked_when_no_other_seat_claims_it(tmp_path):
     db_path = await _make_db(tmp_path)
     await _map_role(db_path, "Alpha")
     await _seat(db_path, DIVISION_A)
-    service = _service(db_path)
-    member = MagicMock()
 
-    await _unassign(service, DIVISION_A, member=member)
+    result = await _unassign(_service(db_path), DIVISION_A)
 
-    service._revoke_roles.assert_awaited_once()
-    assert ROLE_ID in service._revoke_roles.await_args.args
+    assert ROLE_ID in result["revoke"]
 
 
 async def test_a_role_held_through_another_division_survives(tmp_path):
@@ -293,26 +283,20 @@ async def test_a_role_held_through_another_division_survives(tmp_path):
     await _map_role(db_path, "Alpha")
     await _seat(db_path, DIVISION_A)
     await _seat(db_path, DIVISION_B)
-    service = _service(db_path)
-    member = MagicMock()
 
-    await _unassign(service, DIVISION_A, member=member)
+    result = await _unassign(_service(db_path), DIVISION_A)
 
-    revoked = service._revoke_roles.await_args.args if service._revoke_roles.await_args else ()
-    assert ROLE_ID not in revoked
+    assert ROLE_ID not in result["revoke"]
 
 
 async def test_a_team_with_no_role_mapping_revokes_only_the_division_role(tmp_path):
     """Most leagues map no team roles at all, and the division role still goes."""
     db_path = await _make_db(tmp_path)
     await _seat(db_path, DIVISION_A)
-    service = _service(db_path)
-    member = MagicMock()
 
-    await _unassign(service, DIVISION_A, member=member)
+    result = await _unassign(_service(db_path), DIVISION_A)
 
-    service._revoke_roles.assert_awaited_once()
-    assert ROLE_ID not in service._revoke_roles.await_args.args
+    assert result["revoke"] == [500 + DIVISION_A]
 
 
 # ---------------------------------------------------------------------------
@@ -321,15 +305,11 @@ async def test_a_team_with_no_role_mapping_revokes_only_the_division_role(tmp_pa
 
 
 async def test_the_unassignment_is_audited_against_its_division(tmp_path):
+    """The audit entry the save names for the change to write, `DRIVER_UNASSIGN`, is the
+    division's; the change writes it (`test_driver_unassign.py`, `test_driver_release.py`)."""
     db_path = await _make_db(tmp_path)
     await _seat(db_path, DIVISION_A)
 
-    await _unassign(_service(db_path))
+    result = await _unassign(_service(db_path))
 
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT change_type, division_id FROM audit_entries",
-        )
-        row = await cursor.fetchone()
-    assert row["change_type"] == "DRIVER_UNASSIGN"
-    assert row["division_id"] == DIVISION_A
+    assert result["audit"]["division_id"] == DIVISION_A

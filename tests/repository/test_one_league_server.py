@@ -2,8 +2,9 @@
 
 Issue #244. The league's server is the one `server_configs` row; every command from any other
 server is refused before its body runs, every button, menu and modal from one is refused
-before its callback runs, and the host is warned when the bot sits in more than one. The claim itself — that a second server cannot be set up — is pinned in
-`test_bot_cog.py`, where `/bot init` and `save_server_config` are.
+before its callback runs, and the host is warned when the bot sits in more than one. The claim
+itself — that a second server cannot be set up — is pinned in `test_bot_cog.py`, where `/bot init`
+is, and in `test_config_claim.py`, where `ConfigService.claim_on` is.
 """
 from __future__ import annotations
 

@@ -26,6 +26,7 @@ import discord
 import pytest
 
 from tests.support.change_queue import (
+    acknowledgement,
     change_rows,
     http_error,
     in_a_job,
@@ -33,15 +34,16 @@ from tests.support.change_queue import (
     run_queue,
     step_rows,
     stopped_job,
+    updated_reply,
 )
 from tests.support.season_league import (
-    AM,
     DIVISIONS,
     PRO,
     PRO_ROLE,
     ongoing_league,
     posted_forecast,
     round_id,
+    run_division_channel_command,
 )
 
 #: The kind of a forecast's change.
@@ -401,6 +403,46 @@ async def test_a_forecast_for_a_division_with_no_forecast_channel_is_drawn_and_i
     assert await _forecasts(league) == {1: new}
 
 
+async def test_a_stopped_forecast_lands_once_the_forecast_channel_is_set_and_retried(tmp_path):
+    """Set the channel, then Retry: the remedy the stop notice leads a manager to, end to end.
+
+    Pro's forecast channel is unset, and round 3's phase 1 is drawn and stops the queue at its
+    post, its notice naming `/weather channel`. Alex runs `/weather channel` for Pro with channel
+    605 and is acknowledged; the queue runs. The setting does not wait behind the stopped
+    forecast: it runs past it, saves 605 as Pro's forecast channel and tells Alex the channel was
+    set, while the forecast still stops the league's lane. Alex presses Retry: the forecast lands
+    once in 605 and is recorded as phase 1's, its draw made once, and nothing stops the queue."""
+    from leaguebot.weather.cogs.weather_cog import WeatherCog
+
+    league = await _league(tmp_path)
+    await league.write("UPDATE divisions SET forecast_channel_id = NULL WHERE id = ?", PRO)
+    await _ask(league, 1)
+    await run_queue(league.bot)
+    assert (await stopped_job(league.db_path))["name"] == "post_forecast"
+    assert "`/weather channel`" in await _said(league)
+
+    manager = await run_division_channel_command(
+        league, WeatherCog, WeatherCog.channel, "weather channel", FORECAST,
+    )
+    assert acknowledgement(manager).startswith("⏳ ")
+    await run_queue(league.bot)
+
+    assert updated_reply(manager) == (
+        f"✅ Weather forecast channel for **Pro** set to <#{FORECAST}>."
+    )
+    [row] = await league.rows("SELECT forecast_channel_id FROM divisions WHERE id = ?", PRO)
+    assert int(row["forecast_channel_id"]) == FORECAST
+    assert (await stopped_job(league.db_path))["name"] == "post_forecast", (
+        "setting the channel ran the job"
+    )
+    await retry_job(league.bot)
+
+    [new] = _ids(_events(league), "send")
+    assert await _forecasts(league) == {1: new}
+    assert await _draws(league, 1) == 1
+    assert await stopped_job(league.db_path) is None
+
+
 async def test_a_phase_whose_race_passed_while_it_waited_is_dropped_at_its_draw(tmp_path):
     """Phase 1 asked, and its turn comes only after round 3's race: nothing drawn or posted (A25)."""
     league = await _league(tmp_path)
@@ -616,15 +658,11 @@ async def test_a_forecast_failing_after_its_first_part_removes_it_before_its_nex
 
 
 # ---------------------------------------------------------------------------
-# The deletion of forecasts a day after the round, and their clearing, as jobs
+# The deletion of forecasts a day after the round, as jobs
 # ---------------------------------------------------------------------------
 
-#: The kinds of the clean-up a day after a round and of the clearing of every forecast.
+#: The kind of the clean-up a day after a round.
 CLEAN_UP_KIND = "weather.forecast.clean_up"
-FLUSH_KIND = "weather.forecast.flush"
-#: Am's forecast channel, and its round 3.
-AM_FORECAST = DIVISIONS[AM][3].forecast
-AM_ROUND = round_id(AM, 3)
 
 
 async def _deletes_of(league: Any, kind: str) -> list[dict[str, Any]]:
@@ -737,28 +775,6 @@ async def test_a_clean_up_leaves_a_mystery_round_s_notice_standing(tmp_path):
     assert await _deletes_of(league, CLEAN_UP_KIND) == []
 
 
-async def test_a_flush_deletes_every_forecast_each_by_a_job_of_its_own(tmp_path):
-    """Test mode switched off with three forecasts standing (Pro's Phase 1 and 2 of round 3,
-    9301 and 9302, and Am's Phase 1 of round 3, 9401): the flush deletes each by a
-    `delete_forecast` job of its own, and no forecast record is left."""
-    league = await _league(tmp_path)
-    await posted_forecast(league, ROUND, 1, 9301)
-    await posted_forecast(league, ROUND, 2, 9302)
-    await posted_forecast(league, AM_ROUND, 1, 9401)
-
-    from leaguebot.weather.services.forecast_changes import ask_forecast_flush
-
-    await ask_forecast_flush(league.bot.change_queue)
-    await run_queue(league.bot)
-
-    assert await stopped_job(league.db_path) is None
-    deleted = {mid for kind, cid, mid in league.events
-               if kind == "delete" and cid in (FORECAST, AM_FORECAST)}
-    assert deleted == {9301, 9302, 9401}
-    assert len(await _deletes_of(league, FLUSH_KIND)) == 3
-    assert await league.rows("SELECT * FROM forecast_messages") == []
-
-
 @pytest.mark.parametrize("gone", ["message gone", "row already gone"])
 async def test_a_forecast_gone_by_hand_completes_its_delete_and_drops_its_row(tmp_path, gone):
     """Pro's round 3 Phase 3 forecast (9303) is gone before its clean-up's delete runs: deleted
@@ -788,38 +804,52 @@ async def test_a_forecast_gone_by_hand_completes_its_delete_and_drops_its_row(tm
 
 
 @pytest.mark.parametrize(
-    "timer, mystery, expected",
+    "timer, round_format, expected",
     [
-        ("phase 1", False, (KIND, 1)),
-        ("phase 2", False, (KIND, 2)),
-        ("phase 3", False, (KIND, 3)),
-        ("mystery notice", True, (KIND, 0)),
-        ("phase 1 of a mystery round", True, (KIND, 0)),
-        ("clean-up", False, (CLEAN_UP_KIND, None)),
+        ("phase 1", "NORMAL", (KIND, 1)),
+        ("phase 2", "NORMAL", (KIND, 2)),
+        ("phase 3", "NORMAL", (KIND, 3)),
+        ("phase 1", "SPRINT", (KIND, 1)),
+        ("phase 2", "SPRINT", (KIND, 2)),
+        ("phase 3", "SPRINT", (KIND, 3)),
+        ("phase 1", "ENDURANCE", (KIND, 1)),
+        ("phase 2", "ENDURANCE", (KIND, 2)),
+        ("phase 3", "ENDURANCE", (KIND, 3)),
+        ("phase 1 of a mystery round", "MYSTERY", (KIND, 0)),
+        ("phase 1 of a round no longer there", "NORMAL", None),
+        ("clean-up", "NORMAL", (CLEAN_UP_KIND, None)),
     ],
 )
-async def test_each_weather_timer_asks_the_queue(tmp_path, timer, mystery, expected):
+async def test_each_weather_timer_asks_the_queue(tmp_path, timer, round_format, expected):
     """Each callback `timer_callbacks` gives the scheduler, fired for Pro's round 3, puts one
-    change on the queue it was handed, and runs nothing: phases 1 to 3 their forecast, the
-    mystery notice's timer and a mystery round's phase 1 the notice (phase 0), and the clean-up,
-    a day after the race with the Phase 3 forecast (9303) standing, its deletion."""
+    change on the queue it was handed, and runs nothing: phases 1 to 3 their own forecast,
+    whether round 3 is a normal, a sprint or an endurance round, a mystery round's phase 1 the
+    notice (phase 0), and the clean-up, a day after the race with the Phase 3 forecast (9303)
+    standing, its deletion. Phase 1 fired for round 3 once it is no longer in the database asks
+    nothing."""
     from leaguebot.weather.services.forecast_changes import timer_callbacks
 
-    league = await _league(tmp_path, mystery=mystery)
+    league = await _league(tmp_path)
+    await league.write("UPDATE rounds SET format = ? WHERE id = ?", round_format, ROUND)
     if timer == "clean-up":
         await posted_forecast(league, ROUND, 3, 9303)
+    if timer == "phase 1 of a round no longer there":
+        await _remove_round(league)
     callbacks = timer_callbacks(league.bot.change_queue, league.db_path)
 
     fire = {
         "phase 1": callbacks.phases[1],
         "phase 2": callbacks.phases[2],
         "phase 3": callbacks.phases[3],
-        "mystery notice": callbacks.mystery_notice,
         "phase 1 of a mystery round": callbacks.phases[1],
+        "phase 1 of a round no longer there": callbacks.phases[1],
         "clean-up": callbacks.clean_up,
     }[timer]
     await fire(ROUND)
 
+    if expected is None:
+        assert await change_rows(league.db_path) == []
+        return
     [row] = await change_rows(league.db_path)
     payload = json.loads(row["payload"])
     kind, phase = expected
@@ -827,6 +857,45 @@ async def test_each_weather_timer_asks_the_queue(tmp_path, timer, mystery, expec
     if phase is not None:
         assert payload["phase"] == phase
     assert all(not job["done_at"] for job in await step_rows(league.db_path))
+
+
+
+async def test_a_mystery_round_s_phases_are_weather_s_to_decide(tmp_path, monkeypatch):
+    """Round 3 is a mystery round, and every kind is signed up as the builder signs it up. The
+    scheduler's runner fired for `weather_p1`, `weather_p2` and `weather_p3` of round 3, as its
+    jobs fire, the scheduler opening no connection of its own: one forecast change is asked, of
+    the round's notice (phase 0), and nothing for phases 2 and 3."""
+    from types import SimpleNamespace
+
+    from leaguebot.__main__ import register_scheduler_callbacks
+    from leaguebot.core.services import scheduler_service
+    from leaguebot.core.services.test_mode import test_mode_service
+
+    league = await _league(tmp_path, mystery=True)
+    service = scheduler_service.SchedulerService(league.db_path, str(tmp_path / "jobs.db"))
+    # The bot's own advance steps, which the builder signs each kind's step up on beside its
+    # timer.
+    steps = {"advance_steps": test_mode_service.AdvanceSteps()}
+    try:
+        register_scheduler_callbacks(SimpleNamespace(
+            change_queue=league.bot.change_queue, db_path=league.db_path,
+            scheduler_service=service, **steps,
+        ))
+        monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE", service)
+
+        def _refused(*_args: Any, **_kwargs: Any) -> Any:
+            raise AssertionError("the scheduler read the league database")
+
+        monkeypatch.setattr(scheduler_service, "get_connection", _refused)
+
+        for kind in ("weather_p1", "weather_p2", "weather_p3"):
+            await scheduler_service._one_off_timer_job(kind, ROUND)
+    finally:
+        service._scheduler._jobstores["default"].engine.dispose()
+
+    asked = [json.loads(row["payload"]) for row in await change_rows(league.db_path)
+             if row["kind"] == KIND]
+    assert [(each["round_id"], each["phase"]) for each in asked] == [(ROUND, 0)]
 
 
 # ---------------------------------------------------------------------------

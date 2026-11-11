@@ -14,7 +14,7 @@ round 3 (id 213) is NOT_RUN 90 days out unless a test moves it.
 """
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -80,10 +80,11 @@ async def _rearmings(league: Any) -> list[dict[str, Any]]:
 
 
 async def _place(league: Any, rid: int = R3, **delta: float) -> None:
-    """Round *rid* stands *delta* from "now", stored as plain UTC as production stores it."""
+    """Round *rid* stands *delta* from "now", stored in UTC with its offset as production stores
+    it."""
     await league.write(
         "UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-        (league.clock.now + timedelta(**delta)).replace(tzinfo=None).isoformat(), rid,
+        (league.clock.now + timedelta(**delta)).astimezone(timezone.utc).isoformat(), rid,
     )
 
 
@@ -216,19 +217,21 @@ async def test_a_re_arming_whose_round_can_no_longer_be_cancelled_is_dropped(tmp
     pytest.param("judge"),
     pytest.param("arm"),
 ])
-async def test_the_re_arming_cannot_be_discarded(tmp_path, job):
+async def test_the_re_arming_cannot_be_discarded(tmp_path, job, monkeypatch):
     """Pro's round 3's re-arming stops the queue: (judge) the windows it is judged by cannot be
     read, or (arm) the scheduler refuses to arm it. A league admin's Discard on the stopped job is
     refused, saying round 3 in **Pro** would be left with no timed work, never run; the queue
     stays stopped at it and nothing is armed. Once the fault is mended, a Retry arms the round."""
     league = await ongoing_league(tmp_path)
     assert await _ask_rearm(league) is not None
-    windows = league.bot.amendment_windows
+    from leaguebot.weather.services import weather_config_service
+
+    reading = weather_config_service.get_weather_pipeline_config
     if job == "judge":
-        def _unreadable() -> Any:
+        async def _unreadable(_db_path: str) -> Any:
             raise RuntimeError("database is locked")
 
-        league.bot.amendment_windows = _unreadable
+        monkeypatch.setattr(weather_config_service, "get_weather_pipeline_config", _unreadable)
     else:
         league.arming_fails = RuntimeError("job store unavailable")
     await run_queue(league.bot)
@@ -241,7 +244,7 @@ async def test_the_re_arming_cannot_be_discarded(tmp_path, job):
     assert (await stopped_job(league.db_path))["id"] == stopped["id"]
     assert league.armed == []
 
-    league.bot.amendment_windows = windows
+    monkeypatch.setattr(weather_config_service, "get_weather_pipeline_config", reading)
     league.arming_fails = None
     await retry_job(league.bot)
 
@@ -306,8 +309,8 @@ async def test_a_discarded_catch_up_of_a_re_arming_is_named_in_the_log(tmp_path,
 async def test_a_raced_round_s_re_arming_arms_its_clean_ups_alone(tmp_path):
     """Weather and attendance on. Pro's round 3 was raced two hours ago and awaits its report
     verdicts, its timed work removed. Its re-arming, asked for its clean-ups alone, arms the
-    forecast's and the check-in's clean-ups due a day after its start, and nothing else: no
-    forecast, no check-in and no results submission is armed or run."""
+    forecast's and the check-in's clean-ups due a day after its start, against the queue's clock,
+    and nothing else: no forecast, no check-in and no results submission is armed or run."""
     league = await ongoing_league(tmp_path, weather=True, attendance=True, horizons=HORIZONS)
     await league.write("UPDATE rounds SET status = 'AWAITING_REPORT_VERDICTS' WHERE id = ?", R3)
     await _place(league, hours=-2)
@@ -318,6 +321,8 @@ async def test_a_raced_round_s_re_arming_arms_its_clean_ups_alone(tmp_path):
     assert await stopped_job(league.db_path) is None
     assert [row["state"] for row in await _rearmings(league)] == ["DONE"]
     assert league.armed == [("cleanups", [R3])]
+    arming = league.bot.scheduler_service.schedule_round_cleanups
+    assert arming.call_args.kwargs["now"] == league.clock.now
     league.bot.scheduler_service.run_result_submission_now.assert_not_called()
 
 

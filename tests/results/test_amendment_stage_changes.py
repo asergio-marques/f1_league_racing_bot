@@ -512,13 +512,13 @@ async def test_a_discarded_stage_past_its_deadline_names_the_undoing_and_one_bef
 
 
 async def test_recovery_leaves_alone_an_amendment_whose_stage_is_in_hand(tmp_path):
-    from leaguebot.__main__ import _recover_orphaned_amend_channels
+    from leaguebot.results.wiring import recover_orphaned_amend_channels
 
     league = await _amend_league(tmp_path)
     await block_queue(league)
     await _approve_reports(league)
 
-    await _recover_orphaned_amend_channels(league.bot)
+    await recover_orphaned_amend_channels(league.bot)
 
     row = await _amend_row(league)
     assert row is not None and row["pre_amendment_state"] is not None

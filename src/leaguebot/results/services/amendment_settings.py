@@ -2,7 +2,7 @@
 
 Each `/results amend …` command that turns the mode on or off, discards what is staged or stages
 a value asks one `results.setting.…` change, built from a `Setting` below by `setting_change`
-(`core/services/setting_change.py`, which holds what every settings change does with a value
+(`core/services/queue/setting_change.py`, which holds what every settings change does with a value
 already held and with a fault). The check of each is the command's, in today's order and words,
 run at the ask and again as the change starts, so a mode turned off, a season that moved on or an
 approval taken in hand by a change ahead of it on the queue is taken into account. Every check
@@ -30,8 +30,8 @@ from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.models.change import Verdict
 from leaguebot.core.models.season import SeasonStatus
-from leaguebot.core.services.change_queue import CheckContext
-from leaguebot.core.services.setting_change import NOTHING_SAVED, SAVE, Saved, Setting
+from leaguebot.core.services.queue.change_types import CheckContext
+from leaguebot.core.services.queue.setting_change import NOTHING_SAVED, SAVE, Saved, Setting
 from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services import amendment_mode_service
@@ -48,8 +48,8 @@ from leaguebot.results.services.season_points_service import get_season_config_n
 if TYPE_CHECKING:
     import aiosqlite
 
-    from leaguebot.core.services.module_service import ModuleService
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.core.services.seasons.season_service import SeasonService
 
 AMEND_MODE = "results.setting.amend_mode"
 AMEND_REVERT = "results.setting.amend_revert"

@@ -12,6 +12,7 @@ A reply too long for one Discord message is sent in parts, never cut off.
 """
 from __future__ import annotations
 
+import sqlite3
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
@@ -192,16 +193,25 @@ def test_the_member_naming_helpers_import_from_member_names_and_log_lines_alike(
 
 
 @pytest.mark.parametrize(
-    "case", ["member object", "member id", "member has left", "nobody recorded", "post fails"]
+    "case",
+    [
+        "member object", "member id", "member has left", "nobody recorded", "post fails",
+        "server look-up fails",
+    ],
 )
 async def test_record_refusal_writes_the_standard_line_without_answering(case):
     """A typed wizard answer is refused by a public reply in the driver's channel, not by an
-    interaction's, so `record_refusal` writes the refusal's line alone. It never raises."""
+    interaction's, so `record_refusal` writes the refusal's line alone. It never raises. A member
+    who cannot be looked up, the league's server unreadable, is named by mention alone."""
     from leaguebot.core.utils.log_lines import record_refusal
 
     bot = _bot(None if case == "member has left" else "Alex")
     if case == "post fails":
         bot.output_router.post_log.side_effect = RuntimeError("database is locked")
+    if case == "server look-up fails":
+        bot.config_service.get_league_server_id.side_effect = sqlite3.OperationalError(
+            "database is locked"
+        )
     member: object
     if case == "member object":
         member = MagicMock(spec=discord.Member)
@@ -228,6 +238,7 @@ async def test_record_refusal_writes_the_standard_line_without_answering(case):
         "member id": f"Alex (<@{USER}>)",
         "member has left": f"<@{USER}>",
         "nobody recorded": "a member",
+        "server look-up fails": f"<@{USER}>",
     }[case]
     assert line == (
         f"⛔ the Availability step of Alex's signup wizard refused for {named} — "

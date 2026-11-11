@@ -10,6 +10,7 @@ rather than closing defect 12 unproved.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -17,7 +18,7 @@ import pytest
 from leaguebot.attendance.cogs.attendance_cog import AttendanceCog
 from leaguebot.attendance.services.attendance_service import AttendanceService
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services import audit_service
+from leaguebot.core.services.queue import audit_service
 from tests.attendance.test_attendance_config_commands import (
     CONFIG_SETTER_IDS,
     CONFIG_SETTERS,
@@ -25,6 +26,9 @@ from tests.attendance.test_attendance_config_commands import (
     _invoke,
 )
 from tests.support.change_queue import league_double, seed_server
+
+#: The time the log writer stamps its lines with.
+NOW = datetime(2026, 11, 1, 12, 0, tzinfo=timezone.utc)
 
 #: What `OutputRouter` puts beneath every line it sends to the log channel.
 SEPARATOR = "\n" + "―" * 36
@@ -38,7 +42,7 @@ async def _league(db_path: str) -> AttendanceCog:
     async with get_connection(db_path) as db:
         await db.execute("INSERT INTO attendance_config (id, module_enabled) VALUES (1, 1)")
         await db.commit()
-    bot = league_double(db_path)
+    bot = league_double(db_path, now=lambda: NOW)
     bot.attendance_service = AttendanceService(db_path)
     bot.module_service = MagicMock()
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)

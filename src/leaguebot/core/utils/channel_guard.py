@@ -12,17 +12,16 @@ Every command of the bot sits in one tier and no other:
   configuration of every module, and the results and standings that follow.
 
 Both tiers are roles the league configures. **Discord's own permissions are not a route to
-either**, and `manage_guild` is no longer consulted anywhere. A Discord permission is a
-property of the server — it carries the power to delete channels and ban members, and is
-given for reasons that have nothing to do with a racing league. A tier is a property of the
-league.
+either**, and `manage_guild` is consulted nowhere. A Discord permission is a property of the server
+— it carries the power to delete channels and ban members, and is given for reasons that have
+nothing to do with a racing league. A tier is a property of the league.
 
 **The server owner** stands outside both, for one command alone: `/bot factory-reset`, which
 returns the bot to a fresh install and leaves nothing of the league behind. No role the league
 configures can reach it, because a role is itself something the league configures and a
 factory reset destroys; only the Discord server's owner may run it, whatever roles anyone
-else holds (decided 2026-09-19, issue #247 — the one exception to "a tier is a role the
-league configures"). `server_owner_only` asks for it.
+else holds. It is the one exception to "a tier is a role the league configures"; `server_owner_only`
+asks for it.
 
 Within the two tiers the single exception is `bot_setup_only`, worn by `/bot init` and the four single-setting
 commands. Those accept the Administrator permission as well as the role, and run from any
@@ -30,14 +29,14 @@ channel, because they are what repairs the settings every other guard reads: a d
 interaction channel, or a league admin role removed from the server, would otherwise be
 unrepairable.
 
-**Order of the checks.** Channel first, then permission. That is the behaviour the bot has
-always had; whether refusing an unauthorised member in the wrong channel discloses more than
-it should is a separate question, tracked in issue #145, and is not settled here.
+**Order of the checks.** Channel first, then permission. Whether refusing an unauthorised
+member in the wrong channel discloses more than it should is a separate question, not settled
+here.
 
 **Before the bot is set up.** With no `ServerConfig` there is no channel to check and no role
 anyone can hold, so only `bot_setup_only` proceeds — on the Administrator permission, which
 is the only thing that can exist at that point. Every other command is refused and told to
-run `/bot init`. The guard this replaced let such a command through untouched.
+run `/bot init`.
 
 **A refusal names a role, never mentions one.** A refusal that pinged the league admin role
 would notify every holder of it each time somebody mistyped a command.
@@ -131,10 +130,10 @@ def role_grant_refusal(
     stands_for: str = "a team",
     remedy: str = "Choose a role of the team's own.",
 ) -> str | None:
-    """Why the bot could not grant *role* to a driver, or None where it can (#381).
+    """Why the bot could not grant *role* to a driver, or None where it can.
 
     A team's role is granted to every driver placed in it and revoked when they leave, and
-    `placement_service._grant_roles` only logs a failure — so a role the bot cannot grant costs
+    `team_role_service._grant_roles` only logs a failure — so a role the bot cannot grant costs
     a whole team their role with nobody told. The four cases are refused where the role is set,
     which is the one moment a league is there to choose another:
 
@@ -147,7 +146,7 @@ def role_grant_refusal(
     The hierarchy and the permission can change after this, so this is a check at the moment of
     setting and not a guarantee; it catches the misconfiguration a league can see and fix.
 
-    The league's driver role is granted on the same terms (#374), so *stands_for* and *remedy*
+    The league's driver role is granted on the same terms, so *stands_for* and *remedy*
     let the first two refusals say what the role is for and how to choose another. The last two
     name their own remedy, which is the same whatever the role is for.
     """
@@ -191,7 +190,7 @@ def league_role_faults(
 ) -> list[str]:
     """What is wrong with the league's two roles upon the server, each fault a full sentence.
 
-    Opening signups and confirming a season's configuration both ask this (#374). A role that
+    Opening signups and confirming a season's configuration both ask this. A role that
     is only *stored* is not enough: the base role is who can see the signup channel and who is
     pinged when it opens, and the driver role is granted at every approval by
     `signup.approve`, which passes over a role that has gone and only logs one
@@ -308,9 +307,8 @@ async def _refuse(interaction: Interaction, message: str, *, record: bool) -> No
 
     Where *record*, the refusal is written to the log channel too, through `refuse`. Where not,
     the member is answered as ever and the host's log alone keeps the refusal, naming the
-    command, the user and the server (owner decision on #482: a refusal to someone whose
-    standing the bot cannot know — another server, a direct message, a server not yet set up —
-    is not the league's to read).
+    command, the user and the server: a refusal to someone whose standing the bot cannot know —
+    another server, a direct message, a server not yet set up — is not the league's to read.
     """
     if record:
         await refuse(interaction, message, what=describe(interaction))

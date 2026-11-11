@@ -46,7 +46,7 @@ from leaguebot.results.services.result_submission_service import (
     AmendmentWouldOrphanVerdictError,
     AmendedSession,
 )
-from leaguebot.core.services.season_service import SeasonImmutableError
+from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 from tests.support.review_league import amend_stage_one, revert_amendment
 from tests.support.teams import seed_team_instances
 

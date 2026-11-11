@@ -1,13 +1,12 @@
-"""The suite must run on a host with no `.env` file.
+"""Importing the entry point needs no `.env` and no token.
 
-`src/leaguebot/__main__.py` reads `BOT_TOKEN` at import time, after `load_dotenv()`. A
-development host has a gitignored `.env` that supplies one, which hides any test that depends on
-it; CI runners have no `.env`, and a test file importing the entry point at module level then
-fails at collection and aborts the whole run on both jobs. That shipped once: five test files passed on the Pi and broke CI.
-
-`tests/conftest.py` gives the token a placeholder before collection. This test checks that the
-placeholder alone is enough, in a fresh interpreter where `.env` loading is disabled and no token
-is in the environment — which is what a runner looks like, and what a local run can never show.
+`src/leaguebot/__main__.py` reads its settings once, in `main`, after `load_dotenv()`
+(architecture.md, "Start-up runs once, in one function", step 1); importing the module, to reach one
+of its recovery sweeps or its builder, reads neither. A development host has a gitignored `.env`
+that would hide a read at import, and a CI runner has none, so a test file importing the entry point
+at module level would then fail at collection and abort the whole run on both jobs. This imports it
+in a fresh interpreter with no token in the environment, `.env` loading refused, and no conftest
+run first — which is what a runner looks like, and what a local run can never show.
 """
 from __future__ import annotations
 
@@ -20,16 +19,18 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_bot_imports_with_no_dotenv_and_no_token_once_conftest_has_run():
+def test_the_entry_point_imports_with_no_dotenv_and_no_token():
     code = textwrap.dedent(
-        f"""
-        import os, sys
+        """
+        import os
         import dotenv
-        dotenv.load_dotenv = lambda *args, **kwargs: False   # as on a runner: no .env
+
+        def refuse(*args, **kwargs):
+            raise AssertionError("the entry point loaded .env at import")
+
+        dotenv.load_dotenv = refuse                          # as on a runner: no .env
         os.environ.pop("BOT_TOKEN", None)
-        sys.path[:0] = [{str(REPO_ROOT / "tests")!r}]
-        import conftest                                      # the suite's collection-time setup
-        import leaguebot.__main__                            # must not raise KeyError
+        import leaguebot.__main__                            # must read no setting
         print("imported")
         """
     )
@@ -46,4 +47,3 @@ def test_bot_imports_with_no_dotenv_and_no_token_once_conftest_has_run():
 
     assert result.returncode == 0, result.stderr[-2000:]
     assert "imported" in result.stdout
-

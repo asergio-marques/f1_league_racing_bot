@@ -68,10 +68,10 @@ from leaguebot.core.models.change import (
     StepResult,
 )
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services.change_queue import OutcomeContext, Step, StepContext
-from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services.queue.change_types import OutcomeContext, Step, StepContext
+from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.utils.league_server import league_guild
-from leaguebot.core.services.notice_handler import delete_notice, send_notice
+from leaguebot.core.services.posting.notice_handler import delete_notice, send_notice
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.models.standings_snapshot import (
@@ -1077,7 +1077,13 @@ def cancellation_delete_step() -> Step:
     return dataclasses.replace(posting_steps()[DELETE_CHANNEL], record=_record_submission_channel_gone)
 
 
+def cancellation_steps() -> dict[str, Step]:
+    """The steps results plans in a cancellation of rounds, by name: the deletion of a submission
+    channel. Subscribed to core's `cancellation_steps`."""
+    return {DELETE_CHANNEL: cancellation_delete_step()}
+
+
 __all__ = [
-    "cancellation_delete_step", "NAMES", "display_names", "DEFAULT_NOTICE", "DELETE_BATCH_NOTICE", "DELETE_CHANNEL", "DELETE_MESSAGE", "POST_BATCH_NOTICE",
+    "cancellation_steps", "cancellation_delete_step", "NAMES", "display_names", "DEFAULT_NOTICE", "DELETE_BATCH_NOTICE", "DELETE_CHANNEL", "DELETE_MESSAGE", "POST_BATCH_NOTICE",
     "POST_SESSION_RESULTS", "POST_STANDINGS", "POST_STANDINGS_AFRESH", "not_done", "plan_division_posts", "plan_posts", "posting_steps",
 ]

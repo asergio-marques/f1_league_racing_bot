@@ -6,6 +6,8 @@ configuration was confirmed with. Both go with the season when it is deleted.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
@@ -38,7 +40,7 @@ async def db_path(tmp_path):
     async with get_connection(path) as db:
         await db.execute(
             "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (?, 1, 2, 3)",
+            "interaction_channel_id, log_channel_id, signup_module_enabled) VALUES (?, 1, 2, 3, 1)",
             (SERVER_ID,),
         )
         await db.execute(
@@ -89,7 +91,26 @@ async def test_a_second_window_is_a_second_record(db_path):
     assert windows[1]["closed_at"] is None
 
 
+#: The queue's clock as the season's configuration is confirmed.
+_CONFIRMED_AT = datetime(2026, 3, 1, 12, 30, tzinfo=timezone.utc)
+
+
+async def _confirmed(db_path, season_id: int, now: datetime = _CONFIRMED_AT) -> None:
+    """Season *season_id*'s configuration confirmed: signup's subscriber to the "configuration
+    confirmed" hook called on the save's connection, which commits nothing of its own."""
+    from leaguebot.signup.services.signup_module_service import configuration_confirmed_on
+
+    async with get_connection(db_path) as db:
+        await configuration_confirmed_on(db, season_id, now)
+        assert db.in_transaction
+        await db.commit()
+
+
 async def test_the_season_config_snapshot_holds_settings_and_slots(db_path):
+    """Signup asks for a short qualification time and no nationality, and offers one slot, Monday
+    19:00. Season 5's configuration is confirmed: signup's subscriber, handed the save's
+    connection, season 5 and the queue's clock, keeps those settings and that slot for season 5,
+    stamped with the queue's clock, on the save's connection, committing nothing itself."""
     svc = SignupModuleService(db_path)
     await svc.add_slot(1, "19:00")
     settings = await svc.get_settings()
@@ -97,32 +118,32 @@ async def test_the_season_config_snapshot_holds_settings_and_slots(db_path):
     settings.nationality_required = False
     await svc.save_settings(settings)
 
-    await svc.snapshot_season_config(5)
+    await _confirmed(db_path, 5)
 
     config = await svc.get_season_config(5)
     assert config["time_type"] == "SHORT_QUALIFICATION"
     assert config["nationality_required"] is False
     assert config["slots"] == [{"slot_id": "Mon_19_00", "day_of_week": 1, "time_hhmm": "19:00"}]
+    captured = datetime.fromisoformat(config["captured_at"]).replace(tzinfo=None)
+    assert captured == _CONFIRMED_AT.replace(tzinfo=None)
 
 
 async def test_the_snapshot_is_replaced_not_duplicated(db_path):
+    """Season 5's configuration is confirmed with no slot offered; a Wednesday 20:00 slot is then
+    added and it is confirmed again, a day on. Season 5 keeps one set of settings, the later:
+    one slot, stamped with the later clock."""
     svc = SignupModuleService(db_path)
-    await svc.snapshot_season_config(5)
+    await _confirmed(db_path, 5)
     await svc.add_slot(3, "20:00")
+    later = datetime(2026, 3, 2, 12, 30, tzinfo=timezone.utc)
 
-    await svc.snapshot_season_config(5)
+    await _confirmed(db_path, 5, later)
 
-    assert len((await svc.get_season_config(5))["slots"]) == 1
-
-
-async def test_windows_and_config_go_with_their_season(db_path):
-    svc = SignupModuleService(db_path)
-    await _open(svc, db_path, 111, [])
-    await svc.snapshot_season_config(5)
-
+    config = await svc.get_season_config(5)
+    assert len(config["slots"]) == 1
+    assert datetime.fromisoformat(config["captured_at"]).replace(tzinfo=None) == (
+        later.replace(tzinfo=None)
+    )
     async with get_connection(db_path) as db:
-        await db.execute("DELETE FROM seasons WHERE id = 5")
-        await db.commit()
-
-    assert await svc.get_windows(5) == []
-    assert await svc.get_season_config(5) is None
+        cursor = await db.execute("SELECT COUNT(*) FROM season_signup_config WHERE season_id = 5")
+        assert (await cursor.fetchone())[0] == 1

@@ -6,6 +6,19 @@ the sanctions it enforces) asks the queue, as the bot's and repeatably, to post 
 Discord refuses stops the queue at the `post_sheet` job, to be tried again as text (Constitution
 XIV, rule 8) or discarded, instead of being put on the old retry queue. A division with no
 attendance channel set stops it too, naming the command that sets one.
+
+**The opening and final sheets, posted when a season is approved and when it completes
+(#283),** are two further occasions this module posts, under the same rules: the attendance
+sheet a league already reads after every round, under the occasion's heading and with no
+message text (see
+:class:`leaguebot.core.models.classification_occasion.ClassificationOccasion`). Attendance posts
+its own, one division at a time, each a job of the season's approval or of its completion on the
+change queue, signed up to the hooks core declares for placements confirmed and for a season
+completed, after results' own standings (architecture.md, "How modules and core fit together").
+The opening sheet is drawn against the division's first round, read through core's
+`division_first_round`; the final sheet is drawn against the round the completion hands its
+step, the division's last round with results, which results reads for itself and hands on.
+Neither reads `rounds` itself, and each raises where it cannot post, for the queue to stop on.
 """
 
 from __future__ import annotations
@@ -16,6 +29,7 @@ from typing import Any
 import aiosqlite
 
 from leaguebot.attendance.services import attendance_service
+from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     ChangeOrigin,
@@ -25,19 +39,27 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.models.classification_occasion import ClassificationOccasion
+from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
+)
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
 )
-from leaguebot.core.services import standing_posts
+from leaguebot.core.services.posting import standing_posts
+from leaguebot.core.services.modules.module_service import ModuleService
+from leaguebot.core.services.seasons.season_lifecycle_service import require_guild
+from leaguebot.core.services.seasons.season_service import division_first_round
 from leaguebot.core.utils.league_server import league_guild
 
 POST_SHEET = "post_sheet"
 SHEET_POST = "attendance.sheet.post"
+OPENING_SHEET = "opening_sheet"
+FINAL_SHEET = "final_sheet"
 
 
 def sheet_step() -> Step:
@@ -98,9 +120,7 @@ def sheet_post_change() -> ChangeType:
 
     async def check(ctx: CheckContext) -> Verdict:
         async with get_connection(ctx.db_path) as db:
-            enabled = await (await db.execute(
-                "SELECT module_enabled FROM attendance_config"
-            )).fetchone()
+            enabled = await attendance_enabled_on(db)
             division = await (await db.execute(
                 "SELECT d.name, c.attendance_channel_id FROM divisions d "
                 "LEFT JOIN attendance_division_config c ON c.division_id = d.id WHERE d.id = ?",
@@ -109,7 +129,7 @@ def sheet_post_change() -> ChangeType:
             round_row = await (await db.execute(
                 "SELECT status FROM rounds WHERE id = ?", (int(ctx.payload["round_id"]),)
             )).fetchone()
-        if not (enabled and enabled["module_enabled"]):
+        if not enabled:
             return Verdict.not_due("attendance is off")
         if division is None:
             return Verdict.not_due("the division is gone")
@@ -167,3 +187,176 @@ async def ask_sheet_post(
         SHEET_POST, payload, what=f"posting the attendance sheet of **{name}**",
         origin=ChangeOrigin.BOT,
     )
+
+
+async def _opening_round(db_path: str, division_id: int):
+    """The division's first round, read through core's `division_first_round`, or None where it
+    has none.
+
+    The sheet is drawn against it: not because it stands after it, it stands after nothing, but
+    because the grid of rounds down its side is read from the season's calendar and the heading
+    context the posting resolves is keyed by a round. Every cell in that grid is empty, which is
+    exactly what an opening sheet should show. Approval refuses a division with no rounds, so
+    None cannot normally happen.
+    """
+    return await division_first_round(db_path, division_id)
+
+
+async def post_opening_sheet(
+    bot: Any, guild: Any, db_path: str, division_id: int, *, as_text: bool = False
+) -> dict[str, Any]:
+    """Post one division's opening attendance sheet, raising where it cannot be posted, and
+    give the job its result (`attendance_service.sheet_result`).
+
+    This always raises and saves nothing: a division with no attendance channel stops the queue,
+    its failure naming `/attendance channel attendance`, and so does one given a channel the
+    guild no longer holds. The opening sheet takes the division's live slot, which the job saves
+    with its mark (`attendance_service.record_sheet_on`) and replaces by a job of its own.
+    *as_text* leaves the graphic out, which is how a job retries.
+    """
+    opener = await _opening_round(db_path, division_id)
+    if opener is None:
+        return attendance_service.sheet_result(None)
+    return attendance_service.sheet_result(await attendance_service.post_attendance_sheet(
+        bot,
+        guild,
+        db_path,
+        opener.id,
+        division_id,
+        occasion=ClassificationOccasion.SEASON_OPENING,
+        as_text=as_text,
+    ))
+
+
+async def placements_confirmed_on(
+    db: Any, division_id: int, division_name: str
+) -> tuple[PlannedStep, ...]:
+    """Attendance's own job of placements confirmed (the season's approval): its opening sheet
+    for *division_id*, planned whatever attendance's switch says — :func:`opening_steps`'
+    `still_due` drops it as it runs where attendance is off."""
+    return (
+        PlannedStep(OPENING_SHEET, {"division_id": division_id, "division_name": division_name}),
+    )
+
+
+def opening_steps(modules: ModuleService) -> dict[str, Step]:
+    """Attendance's step definition for the opening sheet, signed up to
+    *placements_confirmed_steps* beside results' `season_standings_posts.opening_steps`. The
+    builder hands in *modules*, as it hands cancellation's steps theirs, so that `still_due`
+    reads attendance's switch without looking the service up on the bot (architecture.md, "How
+    modules and core fit together")."""
+
+    async def run(ctx: StepContext) -> StepResult:
+        await standing_posts.remove_kept(ctx.bot, ctx.kept)
+        guild = await require_guild(ctx.bot)
+        result = await post_opening_sheet(
+            ctx.bot, guild, ctx.db_path, int(ctx.step_payload["division_id"]),
+            as_text=ctx.tries > 0,
+        )
+        then: tuple[PlannedStep, ...] = ()
+        if result.get("takes_slot"):
+            then = standing_posts.replaced(
+                result.get("channel_id"), result.get("old"), result.get("new"),
+                what="attendance sheet",
+                division_name=str(ctx.step_payload.get("division_name", "the division")),
+            )
+        return StepResult(result=result, then=then)
+
+    async def record(db: aiosqlite.Connection, ctx: StepContext, result: StepResult) -> None:
+        await attendance_service.record_sheet_on(db, int(ctx.step_payload["division_id"]),
+                                                  result.result)
+
+    async def still_due(_ctx: StepContext) -> bool:
+        return await modules.is_attendance_enabled()
+
+    async def describe(ctx: StepContext) -> str:
+        return f"posting the opening attendance sheet of **{ctx.step_payload['division_name']}**"
+
+    def not_done(view: Any) -> str:
+        return (
+            f"**{view.payload['division_name']}** — its opening attendance sheet could not be "
+            f"posted. No command posts it again; the first round's attendance posts the sheet "
+            f"as usual."
+        )
+
+    return {
+        OPENING_SHEET: Step(
+            OPENING_SHEET, StepKind.ACT, run, still_due=still_due, describe=describe,
+            record=record, not_done=not_done,
+        ),
+    }
+
+
+async def post_final_sheet(
+    bot: Any, guild: Any, db_path: str, division_id: int, round_id: int, *, as_text: bool = False
+) -> dict[str, Any]:
+    """Post one division's final attendance sheet, drawn against *round_id*, raising where it
+    cannot be posted, and give the job its result (`attendance_service.sheet_result`).
+
+    This always raises and saves nothing: a division with no attendance channel stops the queue,
+    its failure naming `/attendance channel attendance`, and so does one given a channel the
+    guild no longer holds. The final sheet stands beside the last round's and takes no live slot,
+    so nothing is saved for it and nothing deleted. *as_text* leaves the graphic out, which is
+    how a job retries.
+    """
+    return attendance_service.sheet_result(await attendance_service.post_attendance_sheet(
+        bot,
+        guild,
+        db_path,
+        round_id,
+        division_id,
+        occasion=ClassificationOccasion.SEASON_FINAL,
+        as_text=as_text,
+    ))
+
+
+async def season_completed_on(
+    _db: Any, division_id: int, division_name: str, round_id: int
+) -> tuple[PlannedStep, ...]:
+    """Attendance's own job of a season completed: its final sheet for *division_id*, drawn
+    against *round_id*, planned whatever attendance's switch says — :func:`final_steps`'
+    `still_due` drops it as it runs where attendance is off."""
+    return (
+        PlannedStep(
+            FINAL_SHEET,
+            {"division_id": division_id, "division_name": division_name, "round_id": round_id},
+        ),
+    )
+
+
+def final_steps(modules: ModuleService) -> dict[str, Step]:
+    """Attendance's step definition for the final sheet, signed up to *season_completed_steps*
+    beside results' `season_standings_posts.final_steps`. The builder hands in *modules*, as it
+    hands the opening sheet's theirs, so that `still_due` reads attendance's switch without
+    looking the service up on the bot (architecture.md, "How modules and core fit together")."""
+
+    async def run(ctx: StepContext) -> StepResult:
+        guild = await require_guild(ctx.bot)
+        each = ctx.step_payload
+        result = await post_final_sheet(
+            ctx.bot, guild, ctx.db_path, int(each["division_id"]), int(each["round_id"]),
+            as_text=ctx.tries > 0,
+        )
+        # The final sheet stands beside the last round's: nothing is saved for it and nothing
+        # deleted, so it plans no deletion and carries no record.
+        return StepResult(result=result)
+
+    async def still_due(_ctx: StepContext) -> bool:
+        return await modules.is_attendance_enabled()
+
+    async def describe(ctx: StepContext) -> str:
+        return f"posting the final attendance sheet of **{ctx.step_payload['division_name']}**"
+
+    def not_done(view: Any) -> str:
+        name = view.payload["division_name"]
+        return (
+            f"**{name}** — its final classification (attendance sheet) could not be posted. "
+            "No command posts it again."
+        )
+
+    return {
+        FINAL_SHEET: Step(
+            FINAL_SHEET, StepKind.ACT, run, still_due=still_due, describe=describe,
+            not_done=not_done,
+        ),
+    }

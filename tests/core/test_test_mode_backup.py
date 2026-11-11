@@ -13,6 +13,7 @@ overwrites a league's history run on a league's history.
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -22,11 +23,13 @@ import pytest
 # Imported under another name: pytest tries to *collect* any class whose name
 # begins with "Test", and warns that it cannot because the cog takes arguments.
 from leaguebot.core.cogs.test_mode_cog import TestModeCog as Cog
-from leaguebot.core.cogs.test_mode_cog import _jobstore_path
-from leaguebot.core.services import backup_service as bs
+from leaguebot.core.services.upkeep import backup_service as bs
+from tests.support.scheduler import PausingScheduler
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 4400
+#: The change queue's clock, well before the host's, so that a time read from the host shows.
+NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
 USER_ID = 99
 
 
@@ -59,10 +62,7 @@ def _cog(live, *, test_mode: bool = True):
         return_value=SimpleNamespace(test_mode_active=test_mode)
     )
     # A scheduler that reports where its jobs are and can be paused, as the real one can.
-    cog.bot.scheduler_service = SimpleNamespace(
-        _jobstore_path=str(live.jobs),
-        _scheduler=MagicMock(running=True),
-    )
+    cog.bot.scheduler_service = PausingScheduler(str(live.jobs))
     # A log channel that can be written to, as every command's success, refusal and failure
     # now writes a line there (#482).
     cog.bot.output_router.post_log = AsyncMock()
@@ -215,8 +215,7 @@ async def test_save_pauses_the_scheduler_and_resumes_it(live):
 
     await _body(Cog.backup_save)(cog, _interaction())
 
-    cog.bot.scheduler_service._scheduler.pause.assert_called_once()
-    cog.bot.scheduler_service._scheduler.resume.assert_called_once()
+    assert cog.bot.scheduler_service.events == ["pause", "resume"]
 
 
 async def test_the_scheduler_is_resumed_even_when_the_save_fails(live):
@@ -231,7 +230,7 @@ async def test_the_scheduler_is_resumed_even_when_the_save_fails(live):
 
     await _through_the_tree(Cog.backup_save, cog, interaction)
 
-    cog.bot.scheduler_service._scheduler.resume.assert_called_once()
+    assert cog.bot.scheduler_service.events == ["pause", "resume"]
     reply = _reply(interaction)
     assert reply.startswith("❌ `/test-mode backup save` stopped on a fault in the bot")
     assert "The previous backup is unchanged." in reply
@@ -263,7 +262,7 @@ async def test_a_save_whose_scheduler_copy_fails_says_the_previous_backup_is_unc
         f"❌ `/test-mode backup save` failed for Manager (<@{USER_ID}>) — BackupFault."
     )
     assert bs.backup_path(live.db).read_bytes() == league_backup
-    cog.bot.scheduler_service._scheduler.resume.assert_called()
+    assert cog.bot.scheduler_service.events == ["pause", "resume"] * 2
 
 
 async def test_a_save_that_fails_unexpectedly_reaches_the_failure_line(live, monkeypatch):
@@ -290,7 +289,7 @@ async def test_a_save_that_fails_unexpectedly_reaches_the_failure_line(live, mon
     assert line.startswith(
         f"❌ `/test-mode backup save` failed for Manager (<@{USER_ID}>) — OSError."
     )
-    cog.bot.scheduler_service._scheduler.resume.assert_called_once()
+    assert cog.bot.scheduler_service.events == ["pause", "resume"]
 
 
 async def test_a_save_is_recorded(live):
@@ -307,7 +306,7 @@ async def test_a_save_is_recorded(live):
 async def test_a_locked_backup_refuses_the_save(live):
     cog = _cog(live)
     await _body(Cog.backup_save)(cog, _interaction())
-    bs.set_lock(live.db, who="Manager")
+    bs.set_lock(live.db, who="Manager", now=NOW)
     interaction = _interaction()
 
     await _body(Cog.backup_save)(cog, interaction)
@@ -319,12 +318,15 @@ async def test_a_locked_backup_refuses_the_save(live):
 
 
 async def test_lock_toggles_and_says_which_way(live):
+    """The lock is stamped with the change queue's clock, the bot's clock, not the host's."""
     cog = _cog(live)
+    cog.bot.change_queue.now = MagicMock(return_value=NOW)
     await _body(Cog.backup_save)(cog, _interaction())
 
     first = _interaction()
     await _body(Cog.backup_lock)(cog, first)
     assert "Locked" in _reply(first)
+    assert bs.locked_by(live.db) == f"locked by Manager at {NOW.isoformat(timespec='seconds')}"
 
     second = _interaction()
     await _body(Cog.backup_lock)(cog, second)
@@ -602,15 +604,16 @@ async def test_a_staged_restore_is_recorded(live):
 # ── Where the scheduler's database is ─────────────────────────────────────
 
 
-def test_the_jobstore_path_is_asked_of_the_scheduler(live):
-    """Rather than guessed, so a `SCHEDULER_DB_PATH` that moved it is still backed up."""
+async def test_the_jobstore_path_is_asked_of_the_scheduler(live):
+    """Rather than guessed, so a `SCHEDULER_DB_PATH` that moved it is still backed up: the
+    scheduler keeps its jobs in another folder than the league's database, and a save backs up
+    the job store it names there."""
+    moved = live.dir / "elsewhere" / "jobs.db"
+    moved.parent.mkdir()
+    _database(moved)
     cog = _cog(live)
+    cog.bot.scheduler_service = PausingScheduler(str(moved))
 
-    assert _jobstore_path(cog.bot) == str(live.jobs)
+    await _body(Cog.backup_save)(cog, _interaction())
 
-
-def test_the_jobstore_path_falls_back_to_the_default(live):
-    """A bot with no scheduler attached still has a conventional place for one."""
-    bot = SimpleNamespace(db_path=str(live.db), scheduler_service=None)
-
-    assert _jobstore_path(bot).endswith("scheduler.db")
+    assert bs.backup_path(moved).is_file()

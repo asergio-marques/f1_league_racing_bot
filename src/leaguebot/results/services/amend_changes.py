@@ -36,15 +36,17 @@ import discord
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
+)
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
 )
-from leaguebot.core.services.season_service import live_season
+from leaguebot.core.services.seasons.season_service import live_season
 from leaguebot.core.utils.season_gate import LIVE_STAGES, stage_refusal
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.amend_views import AmendCancelView
@@ -60,7 +62,7 @@ from leaguebot.results.services.submission_steps import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
 
 KIND = "results.amend.open"
 PLAN_OPEN = "plan_open"

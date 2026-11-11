@@ -20,9 +20,9 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.change_queue import ChangeQueue
-from leaguebot.core.services.channel_registry_service import as_text_channel
-from leaguebot.core.services.driver_service import accounts_of_in_division, current_account_map_for_division
+from leaguebot.core.services.queue.change_queue import ChangeQueue
+from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.core.services.drivers.driver_service import accounts_of_in_division, current_account_map_for_division
 from leaguebot.results.services.penalty_service import StagedPenalty, validate_penalty_input
 from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.input_validator import STEWARD_TEXT, parse_user, parse_user_id
@@ -348,7 +348,7 @@ async def _review_moved_on(state: PenaltyReviewState) -> str | None:
             "❌ This amendment's reports are already approved, so neither they nor its pardons "
             "can be changed any more. Its appeals are reviewed below."
         )
-    from leaguebot.core.services.change_queue import unfinished
+    from leaguebot.core.services.queue.queue_records import unfinished
     from leaguebot.results.services.report_approval_change import KIND
 
     if any(p.get("round_id") == state.round_id for p in await unfinished(state.db_path, [KIND])):
@@ -429,7 +429,7 @@ async def _appeals_review_moved_on(state: PenaltyReviewState) -> str | None:
     """
     if state.is_amendment:
         return None
-    from leaguebot.core.services.change_queue import unfinished
+    from leaguebot.core.services.queue.queue_records import unfinished
     from leaguebot.results.services.appeals_approval_change import KIND
 
     if any(p.get("round_id") == state.round_id for p in await unfinished(state.db_path, [KIND])):
@@ -1167,7 +1167,7 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
             return
 
         from leaguebot.core.db.database import get_connection
-        from leaguebot.core.services.driver_service import current_account_of, resolve_driver_profile_id
+        from leaguebot.core.services.drivers.driver_service import current_account_of, resolve_driver_profile_id
 
         async with get_connection(self.state.db_path) as db:
             # --- Resolve driver profile ID ---
@@ -2044,7 +2044,7 @@ class ApprovalView(LeagueView):
         ):
             return
         # Immutability guard: reject finalize on archived season
-        from leaguebot.core.services.season_service import SeasonImmutableError
+        from leaguebot.core.services.seasons.season_service import SeasonImmutableError
         from leaguebot.core.db.database import get_connection as _gc
         try:
             async with _gc(self.state.db_path) as _db:

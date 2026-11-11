@@ -26,6 +26,10 @@ failure are told apart: a render fault is reported, a posting fault is retried.
 **The rendered file is discarded whichever way this ends.** Posted, refused to a commanded
 caller, or stopped by a Discord fault — the `finally` covers all three, because a rehearsal that
 leaves its renders behind fills the Pi's disk.
+
+The calendar is drawn, and the drawn file released, through the drawing the builder hands core
+(#283); `CalendarDrawingStub` stands in for it, so these tests read no template and run no
+rasteriser.
 """
 from __future__ import annotations
 
@@ -34,14 +38,16 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.calendar_post_service import (
+from leaguebot.core.services.rounds.calendar_post_service import (
     post_division_calendar,
     replace_calendar_message,
 )
-from tests.support.change_queue import in_a_job
+from tests.support.calendar_drawing import CalendarDrawingStub
+from tests.support.change_queue import http_error, in_a_job
 
 SERVER_ID = 12708
 SEASON_ID = 1
@@ -125,57 +131,32 @@ def _guild(channel=None, *, missing: bool = False):
     return guild
 
 
-def _bot(db_path: str):
-    bot = MagicMock()
-    bot.db_path = db_path
-    return bot
-
-
-def _outcome(*, png=None, problem=None, notices=()):
-    return SimpleNamespace(
-        png_paths=[png] if png else [],
-        problem=SimpleNamespace(detail=problem) if problem else None,
-        notices=[SimpleNamespace(detail=n) for n in notices],
-    )
-
-
 async def _post(
     db_path,
     *,
     division=None,
     channel=None,
     guild=None,
-    wanted: bool = False,
-    outcome=None,
-    render_error=None,
+    drawing=None,
     commanded: bool = False,
     rounds=None,
 ):
+    """Post Pro's calendar through *drawing*, a league not drawing its calendar where None; gives
+    the posting, the channel and the drawing, which keeps what it drew and released."""
     channel = channel if channel is not None else _channel()
     guild = guild if guild is not None else _guild(channel)
-    with patch(
-        "leaguebot.core.services.calendar_post_service.image_calendar_wanted",
-        new=AsyncMock(return_value=wanted),
-    ), patch(
-        "leaguebot.core.services.calendar_post_service.render_calendar_image",
-        new=AsyncMock(return_value=outcome or _outcome(), side_effect=render_error),
-    ), patch(
-        "leaguebot.image.services.image_render_service.discard_render", new=MagicMock()
-    ) as discard, patch(
-        "leaguebot.image.services.image_render_service.discard_attachment", new=MagicMock()
-    ), patch(
-        "leaguebot.core.services.retry_service.enqueue", new=AsyncMock()
-    ) as enqueue:
+    drawing = drawing if drawing is not None else CalendarDrawingStub(wanted=False)
+    with patch("leaguebot.core.services.posting.retry_service.enqueue", new=AsyncMock()):
         with in_a_job():
             result = await post_division_calendar(
-                _bot(db_path),
+                drawing,
                 guild,
                 division or _division(),
                 rounds if rounds is not None else [_round()],
                 {},
                 commanded=commanded,
             )
-    return result, channel, discard, enqueue
+    return result, channel, drawing
 
 
 def _sent_text(channel) -> str:
@@ -200,9 +181,7 @@ async def test_a_league_without_the_graphic_gets_the_text(tmp_path):
     the id in its own save; posting writes nothing."""
     db_path = await _make_db(tmp_path, name="cal_text")
 
-    result, channel, _, _ = await _post(
-        db_path, wanted=False, rounds=[_round(1), _round(2)]
-    )
+    result, channel, _ = await _post(db_path, rounds=[_round(1), _round(2)])
 
     assert result.problem is None
     assert result.posted_as_image is False
@@ -227,15 +206,16 @@ async def test_a_rendered_calendar_is_posted_as_an_attachment(tmp_path):
     png = tmp_path / "calendar.png"
     png.write_bytes(b"\x89PNG")
 
-    result, channel, discard, _ = await _post(
-        db_path, wanted=True, outcome=_outcome(png=png, notices=["round 12 did not fit"])
+    result, channel, drawing = await _post(
+        db_path, drawing=CalendarDrawingStub(picture=png, notices=("round 12 did not fit",))
     )
 
+    assert drawing.drawn == ["Pro"]
     assert result.posted_as_image is True
     assert channel.send.await_args.kwargs.get("file") is not None
     assert channel.send.await_args.args[0] is None
     assert result.notices == ["round 12 did not fit"]
-    discard.assert_called_once()
+    assert drawing.discarded == [png]
 
 
 # ---------------------------------------------------------------------------
@@ -248,8 +228,8 @@ async def test_an_uncommanded_posting_falls_back_to_the_text(tmp_path):
     worse outcome — the calendar is not the thing being commanded (XIV.7)."""
     db_path = await _make_db(tmp_path, name="cal_fallback")
 
-    result, channel, _, _ = await _post(
-        db_path, wanted=True, outcome=_outcome(problem="the template has no rows")
+    result, channel, _ = await _post(
+        db_path, drawing=CalendarDrawingStub(problem="the template has no rows")
     )
 
     assert result.problem == "the template has no rows"
@@ -267,26 +247,25 @@ async def test_a_commanded_posting_refuses_and_posts_nothing(tmp_path):
     drawn and not posted is exactly as much clutter as one that was."""
     db_path = await _make_db(tmp_path, name="cal_commanded")
 
-    result, channel, discard, _ = await _post(
+    result, channel, drawing = await _post(
         db_path,
         division=_division(message_id=OLD_MESSAGE_ID),
-        wanted=True,
-        outcome=_outcome(problem="the template has no rows"),
+        drawing=CalendarDrawingStub(problem="the template has no rows"),
         commanded=True,
     )
 
     assert result.problem == "the template has no rows"
     channel.send.assert_not_awaited()
     channel.get_partial_message.assert_not_called()
-    discard.assert_called_once()
+    assert len(drawing.discarded) == 1
 
 
 async def test_a_render_that_raises_is_reported_rather_than_propagated(tmp_path):
     """A render fault reaching the approval would fail a season over a picture."""
     db_path = await _make_db(tmp_path, name="cal_render_raises")
 
-    result, channel, _, _ = await _post(
-        db_path, wanted=True, render_error=RuntimeError("Inkscape is not installed")
+    result, channel, _ = await _post(
+        db_path, drawing=CalendarDrawingStub(fault=RuntimeError("Inkscape is not installed"))
     )
 
     assert "Inkscape is not installed" in result.problem
@@ -314,11 +293,29 @@ async def test_a_division_with_no_calendar_channel_is_reported(tmp_path, channel
         with pytest.raises(StepFailedOnDiscord):
             await _post(db_path, guild=_guild(missing=True))
         return
-    result, sent_to, _, _ = await _post(db_path, division=_division(channel=None),
-                                        guild=_guild(missing=True))
+    result, sent_to, _ = await _post(db_path, division=_division(channel=None),
+                                     guild=_guild(missing=True))
 
     assert "no calendar channel is configured" in result.problem
     sent_to.send.assert_not_awaited()
+
+
+async def test_a_drawn_calendar_discord_refuses_is_still_released(tmp_path):
+    """Pro's calendar drawn, and Discord refusing the post: the posting raises for the change
+    queue to stop on, and the drawn file is still handed back to the drawing to release, once."""
+    from leaguebot.core.models.change import StepFailedOnDiscord
+
+    db_path = await _make_db(tmp_path, name="cal_refused_send")
+    png = tmp_path / "calendar.png"
+    png.write_bytes(b"\x89PNG")
+    channel = _channel()
+    channel.send = AsyncMock(side_effect=http_error())
+    drawing = CalendarDrawingStub(picture=png)
+
+    with pytest.raises(StepFailedOnDiscord):
+        await _post(db_path, channel=channel, drawing=drawing)
+
+    assert drawing.discarded == [png]
 
 
 # ---------------------------------------------------------------------------
@@ -326,30 +323,48 @@ async def test_a_division_with_no_calendar_channel_is_reported(tmp_path, channel
 # ---------------------------------------------------------------------------
 
 
-async def test_the_attachment_is_released_before_the_caller_removes_the_file(tmp_path):
+def _files_opened(monkeypatch) -> list:
+    """Keep each `discord.File` the posting opens, to read whether it was closed."""
+    opened: list = []
+    real = discord.File
+
+    def _file(*args, **kwargs):
+        made = real(*args, **kwargs)
+        opened.append(made)
+        return made
+
+    monkeypatch.setattr(discord, "File", _file)
+    return opened
+
+
+async def test_the_attachment_is_released_before_the_caller_removes_the_file(
+    tmp_path, monkeypatch,
+):
     """Closed where the attachment is, so the handle is gone before the caller's `finally`
     removes the path — Windows refuses to delete a file that is still open."""
     png = tmp_path / "calendar.png"
     png.write_bytes(b"\x89PNG")
     channel = _channel()
+    opened = _files_opened(monkeypatch)
 
-    with patch("leaguebot.image.services.image_render_service.discard_attachment") as discard:
-        with in_a_job():
-            await replace_calendar_message(channel, content=None, image_path=Path(png))
+    with in_a_job():
+        await replace_calendar_message(channel, content=None, image_path=Path(png))
 
-    discard.assert_called_once()
+    [attachment] = opened
+    assert attachment.fp.closed
 
 
-async def test_the_attachment_is_released_even_when_the_post_fails(tmp_path):
+async def test_the_attachment_is_released_even_when_the_post_fails(tmp_path, monkeypatch):
     """The `finally` covers it, or a failed post leaves a file handle open for the life of
     the process."""
     png = tmp_path / "calendar.png"
     png.write_bytes(b"\x89PNG")
     channel = _channel(send_fails=True)
+    opened = _files_opened(monkeypatch)
 
-    with patch("leaguebot.image.services.image_render_service.discard_attachment") as discard:
-        with pytest.raises(RuntimeError):
-            with in_a_job():
-                await replace_calendar_message(channel, content=None, image_path=Path(png))
+    with pytest.raises(RuntimeError):
+        with in_a_job():
+            await replace_calendar_message(channel, content=None, image_path=Path(png))
 
-    discard.assert_called_once()
+    [attachment] = opened
+    assert attachment.fp.closed

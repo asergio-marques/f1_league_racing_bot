@@ -26,10 +26,10 @@ import aiosqlite
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services import test_roster_service
+from leaguebot.core.services.test_mode import test_roster_service
 from leaguebot.image.services.image_config_service import ImageConfigService
 from leaguebot.image.services.image_preview_service import resolve_context
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 
 SERVER_ID = 8484
 
@@ -117,13 +117,15 @@ async def _seed_test_season(
     # drift from what test mode actually creates.
     for index, name in enumerate(MOCK_NAMES):
         team = "Redline" if index < 2 else "Bluewave"
-        result = await test_roster_service.add_test_driver(
-            name,
-            team,
-            "Division 1",
-            db_path,
-            nationality=nationalities[index % len(nationalities)] if nationalities else None,
-        )
+        async with get_connection(db_path) as db:
+            result = await test_roster_service.add_test_driver_on(
+                db,
+                name,
+                team,
+                "Division 1",
+                nationality=nationalities[index % len(nationalities)] if nationalities else None,
+            )
+            await db.commit()
         assert not isinstance(result, str), result
     return SimpleNamespace(season_id=season_id, division_id=division_id)
 

@@ -1,13 +1,13 @@
 """A team's role must be one the bot can grant (#381).
 
-A team's role is granted to every driver placed in it, and `placement_service._grant_roles` only
+A team's role is granted to every driver placed in it, and `team_role_service._grant_roles` only
 logs a failure — so a role Discord will not let the bot grant costs a whole team their role with
 nobody told. The four cases are refused where the role is chosen, which is the one moment a league
 is there to choose another.
 """
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -29,25 +29,6 @@ def _role(
     role.guild.me.guild_permissions.manage_roles = manage_roles
     role.guild.me.top_role.__gt__ = lambda _self, _other: not above_the_bot
     return role
-
-
-def _interaction() -> MagicMock:
-    """A command, or a form's submission, by a manager, whose response knows whether it has been
-    used, as Discord's does, so that a refusal answers by `response` until the interaction is
-    answered or deferred (#482)."""
-    state = {"done": False}
-
-    async def _answer(*_args, **_kwargs):
-        state["done"] = True
-
-    interaction = MagicMock()
-    interaction.guild_id = 1
-    interaction.user.id = 42
-    interaction.response.is_done = MagicMock(side_effect=lambda: state["done"])
-    interaction.response.send_message = AsyncMock(side_effect=_answer)
-    interaction.response.defer = AsyncMock(side_effect=_answer)
-    interaction.followup.send = AsyncMock()
-    return interaction
 
 
 def test_a_grantable_role_is_accepted():
@@ -110,61 +91,3 @@ def test_a_role_carrying_no_guild_is_judged_on_itself_alone():
 
     assert role_grant_refusal(role) is None
 
-
-# ── The commands that set one ─────────────────────────────────────────────
-
-
-@pytest.mark.parametrize(
-    "command,arguments",
-    [
-        ("team_reserve_role", {}),
-    ],
-)
-async def test_a_team_command_refuses_a_role_the_bot_cannot_grant(command, arguments):
-    from leaguebot.core.cogs.team_cog import TeamCog
-    from tests.support.undecorate import undecorate
-
-    bot = MagicMock()
-    bot.season_service.get_setup_or_active_season = AsyncMock(return_value=None)
-    bot.team_service.get_teams_with_roles = AsyncMock(
-        return_value=[{"name": "RBR", "full_name": "Oracle Red Bull Racing",
-                       "is_reserve": False, "role_id": None}]
-    )
-    bot.team_service.add_default_team = AsyncMock()
-    bot.placement_service.team_holding_role = AsyncMock(return_value=None)
-    bot.placement_service.set_team_role_config = AsyncMock()
-    interaction = _interaction()
-    cog = TeamCog.__new__(TeamCog)
-    cog.bot = bot
-
-    await undecorate(getattr(TeamCog, command))(
-        cog, interaction, role=_role(managed=True), **arguments
-    )
-
-    said = interaction.response.send_message.await_args.args[0]
-    assert "integration" in said
-    bot.team_service.add_default_team.assert_not_awaited()
-    bot.placement_service.set_team_role_config.assert_not_awaited()
-
-
-async def test_adding_a_team_refuses_a_role_the_bot_cannot_grant():
-    """The form's own submission, which is where `/team add` does its work now (#381)."""
-    from leaguebot.core.cogs.team_cog import TeamCog
-
-    bot = MagicMock()
-    bot.season_service.get_setup_or_active_season = AsyncMock(return_value=None)
-    bot.team_service.add_default_team = AsyncMock()
-    bot.placement_service.team_holding_role = AsyncMock(return_value=None)
-    interaction = _interaction()
-    cog = TeamCog.__new__(TeamCog)
-    cog.bot = bot
-
-    await cog.add_team(
-        interaction,
-        shorthand="RBR",
-        full_name="Oracle Red Bull Racing",
-        role=_role(managed=True),
-    )
-
-    assert "integration" in interaction.response.send_message.await_args.args[0]
-    bot.team_service.add_default_team.assert_not_awaited()

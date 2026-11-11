@@ -73,14 +73,14 @@ async def _seed(
 
 
 def _cog(db_path):
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.drivers.placement_service import PlacementService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
     bot = MagicMock()
     bot.db_path = db_path
     bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
     bot.signup_module_service = SignupModuleService(db_path)
-    bot.placement_service = PlacementService(db_path, bot=MagicMock())
+    bot.placement_service = PlacementService(db_path)
     bot.output_router.post_log = AsyncMock()
 
     cog = SignupCog.__new__(SignupCog)

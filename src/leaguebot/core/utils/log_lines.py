@@ -54,7 +54,9 @@ async def name_of_member(bot: Any, member_id: int | None) -> str:
     """The member *member_id*, named as the log channel names them, found on the league's server.
 
     For a line written without an interaction — a scheduled lapse. A member who has left the
-    server is named by mention alone; nobody recorded is "a member". Never raises.
+    server, or who cannot be looked up, is named by mention alone, which still names them; nobody
+    recorded is "a member". Never raises, because a line to the log channel must not fail the work
+    it records.
     """
     if member_id is None:
         return "a member"
@@ -150,10 +152,17 @@ def stop_line(
     return line if admins is None else f"{line}\n<@&{admins}>"
 
 
-def held_behind_text(job_id: int, lane: str = LEAGUE_LANE) -> str:
+def held_behind_text(job_id: int, lane: str = LEAGUE_LANE, *, overtaking: bool = False) -> str:
     """What a member's acknowledgement adds where *lane* is stopped at job *job_id*: their request
-    runs once that job is cleared. A sentence for the end of the acknowledgement, not a log line."""
+    runs once that job is cleared, or, where *overtaking* (a setting a league repairs itself with,
+    `ChangeType.overtakes_a_stop`), that it runs past the stop instead, which stays as it was. A
+    sentence for the end of the acknowledgement, not a log line."""
     who = _Lane(lane)
+    if overtaking:
+        return (
+            f"{who.The} {who.is_} stopped at job #{job_id}, so this request runs at once, past "
+            f"the stop; that job stays stopped."
+        )
     return (
         f"{who.The} {who.is_} stopped at job #{job_id}, so this request runs once that job is "
         f"cleared."
@@ -239,7 +248,9 @@ async def record_refusal(
 
     `refuse` writes its own through here, the line being formed by `refusal_line`. For a
     refusal whose reply is not an interaction's, and so has no `refuse`; *member* is named as
-    `record_abandoned` names its own. Never raises.
+    `record_abandoned` names its own. Never raises: the refusal is already answered, and a record
+    that fails is logged on the host, never answered a second time, because a line to the log
+    channel must not fail the work it records.
     """
     try:
         named = await _named(bot, member)

@@ -58,6 +58,7 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.cancellation import SCOPE_ROUND
 from leaguebot.core.models.change import (
     ChangeOrigin,
     FollowOn,
@@ -69,26 +70,26 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.round import RoundFormat, RoundStatus
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
+)
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
 )
-from leaguebot.core.services import season_service
-from leaguebot.core.services.calendar_post_service import POST_CALENDAR, calendar_steps
-from leaguebot.core.services.cancellation_changes import (
-    check_in_record,
-    check_in_record_not_written,
-    not_notified,
-)
-from leaguebot.core.services.cancellation_notice_service import failure_log_lines
-from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
-from leaguebot.core.services.season_service import set_round_status_on
+from leaguebot.core.services.seasons import season_service
+from leaguebot.core.services.rounds.calendar_post_service import POST_CALENDAR, calendar_steps
+from leaguebot.core.services.cancellations.cancellation_changes import not_notified
+from leaguebot.core.services.cancellations.cancellation_notice_service import failure_log_lines
+from leaguebot.core.services.seasons.season_lifecycle_service import WIND_DOWN, kept_line
+from leaguebot.core.services.seasons.season_service import set_round_status_on
+from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.results.services import review_posting
+from leaguebot.results.services.module_switch_settings import results_enabled_on
 from leaguebot.results.services.review_posting import (
     DELETE_CHANNEL,
     DELETE_MESSAGE,
@@ -99,10 +100,18 @@ from leaguebot.results.services.review_posting import (
     posting_steps,
     withdraw_round_standings_on,
 )
+from leaguebot.core.services.test_mode.test_mode_service import (
+    AdvanceOutcome,
+    AdvanceStep,
+    AdvanceStepFailed,
+    PhaseEntry,
+    round_result_status,
+)
 from leaguebot.results.services.result_submission_service import (
     _make_slug,
     expected_session_on,
     get_sessions_for_format,
+    is_submission_open,
 )
 from leaguebot.results.services.standings_service import cascade_recompute_from_round_on
 from leaguebot.results.services.submission_steps import (
@@ -116,7 +125,8 @@ from leaguebot.results.services.submission_steps import (
 from leaguebot.results.utils import results_formatter
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.season_service import SeasonService
+    from leaguebot.core.services.modules.image_drawing import ImageDrawing
+    from leaguebot.core.services.seasons.season_service import SeasonService
 
 KIND = "results.submission.open"
 START_ROUND = "start_round"
@@ -136,7 +146,7 @@ ASK_CLOSE = "ask_close"
 END_ROUND = "end_round"
 
 __all__ = [
-    "ALL_CANCELLED_KIND", "CLOSE_KIND", "KIND", "RESTART_KIND", "ask_submission_open",
+    "ALL_CANCELLED_KIND", "CLOSE_KIND", "KIND", "RESTART_KIND", "advance_step", "ask_submission_open",
     "ask_submission_restart", "submission_all_cancelled_change", "submission_close_change",
     "submission_open_change", "submission_restart_change",
 ]
@@ -147,11 +157,6 @@ _ROUND = (
     "FROM rounds r JOIN divisions d ON d.id = r.division_id JOIN seasons s ON s.id = d.season_id "
     "LEFT JOIN division_results_config c ON c.division_id = d.id WHERE r.id = ?"
 )
-
-
-async def _results_enabled(db: aiosqlite.Connection) -> bool:
-    row = await (await db.execute("SELECT module_enabled FROM results_module_config")).fetchone()
-    return bool(row is not None and row["module_enabled"])
 
 
 def submission_open_change(*, now: Callable[[], datetime]) -> ChangeType:
@@ -193,7 +198,7 @@ def submission_open_change(*, now: Callable[[], datetime]) -> ChangeType:
         row = await (await db.execute(_ROUND, (round_id,))).fetchone()
         if row is None:
             raise LookupError(f"round {round_id} is not there to start")
-        if not await _results_enabled(db):
+        if not await results_enabled_on(db):
             # Nobody will ever enter a result, so the round ends here; the division finishing may
             # have been the season's last, which the wind-down judges (the queue drops it if not).
             await set_round_status_on(
@@ -376,6 +381,54 @@ async def ask_submission_open(queue: ChangeQueue, db_path: str, round_id: int) -
     )
 
 
+def advance_step(queue: ChangeQueue, db_path: str) -> AdvanceStep:
+    """The step `/test-mode advance` runs for a round's results: it asks *queue*, as the bot, to
+    open the round's submission, early.
+
+    **It refuses while a submission channel stands open**, and names the review the round is
+    awaiting, so that the maintainer finishes the round in front of them before stepping past it.
+    A round awaiting appeal verdicts has had its report verdicts settled already, so the refusal
+    reads the round's actual status rather than always saying "penalty review". The round's results
+    job is already down by then (`run_advance_step`): a refusal means the submission is open, so
+    the job has run.
+    """
+
+    async def step(entry: PhaseEntry) -> AdvanceOutcome:
+        division, number = entry["division_name"], entry["round_number"]
+        if await is_submission_open(db_path, entry["round_id"]):
+            status = await round_result_status(db_path, entry["round_id"])
+            if status != "FINAL":
+                review = (
+                    "appeals review" if status == "AWAITING_APPEAL_VERDICTS" else "penalty review"
+                )
+                return AdvanceOutcome.refused(
+                    f"⏸️ **{division}** — **Round {number}** is awaiting {review} approval. "
+                    f"Please complete the {review} in the submission channel before advancing."
+                )
+            # Finalized (shouldn't normally reach here, but handle gracefully)
+            return AdvanceOutcome.refused(
+                f"⏸️ Result submission for **{division}** — **Round {number}** is already in "
+                f"progress. Please submit results in the submission channel before advancing."
+            )
+        try:
+            await queue.ask(
+                KIND, {"round_id": entry["round_id"]},
+                what=f"opening round {number}'s results submission in {division}",
+                origin=ChangeOrigin.BOT,
+            )
+        except Exception as exc:  # noqa: BLE001 — named by the command, which reports it
+            raise AdvanceStepFailed("the round start") from exc
+        return AdvanceOutcome.asked(
+            f"⏩ The result submission of **{division}** — **Round {number}** "
+            f"(**{entry['track_name']}**) is on the change queue: its submission channel "
+            f"appears as soon as the queue reaches it.",
+            f"  phase: result submission (on the change queue)\n  division: {division}\n"
+            f"  round: Round {number}",
+        )
+
+    return step
+
+
 def submission_restart_change() -> ChangeType:
     """The `results.submission.restart` change type, for the builder to register.
 
@@ -511,7 +564,8 @@ async def _submission_standing(ctx: CheckContext) -> Verdict:
 
 
 def submission_all_cancelled_change(
-    *, seasons: "SeasonService", record: dict[str, Step], notices: dict[str, Step],
+    *, seasons: "SeasonService", drawing: "ImageDrawing", round_ended_not_held: AwaitedHook,
+    cancellation_notices: AwaitedHook, cancellation_steps: dict[str, Step],
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The `results.submission.all_cancelled` change type, for the builder to register, on the
@@ -520,10 +574,16 @@ def submission_all_cancelled_change(
     The payload is the last turn's: ``round_id``, ``channel_id``, ``round_number`` and
     ``sessions``, each ``{"session_id", "session_type"}`` of the round's cancelled sessions in
     running order. A resubmission's adds ``resubmission`` and ``old_tables``, the ids of the
-    earlier results tables the new sessions could not carry. *seasons* posts the calendar, *record*
-    holds the job core builds that reads the round's check-in, *notices* the jobs core builds that
-    tell the round's cancellation, and *now* is the queue's clock, read when the round's ending is
-    audited.
+    earlier results tables the new sessions could not carry. *seasons* posts the calendar, drawn
+    through *drawing*, the image module's own answer to core's drawing protocol (#283),
+    *round_ended_not_held* is the hook attendance's reading of the round's check-in is planned
+    through, called inside the save on its connection, *cancellation_notices* is the hook each
+    module's own notice is planned through, called inside the same save, *cancellation_steps*
+    holds every step definition the modules hand back to core's `cancellation_steps` hook (the
+    same the three cancellations register: the modules' own notices among them, attendance's
+    check-in reading, and review posting's and attendance's take-down of the call) so this
+    change carries the jobs *round_ended_not_held* and *cancellation_notices* plan, and *now* is
+    the queue's clock, read when the round's ending is audited.
 
     Its first job, ``end_round`` (a save, **never to be discarded**: without it the round would
     never finish and its season could never be completed), ends the round CANCELLED through core's
@@ -609,14 +669,24 @@ def submission_all_cancelled_change(
             await review_posting.plan_posts(db, round_id, label="", later_rounds=True)
             if held else []
         )
+        by_notices = [
+            step
+            for planned in await cancellation_notices.call(db, SCOPE_ROUND, target)
+            for step in (*planned.steps, *planned.after_with_division)
+        ]
+        check_in_read = [
+            step
+            for planned in await round_ended_not_held.call(db, target)
+            for step in planned
+        ]
         return StepResult(
             result={"ended": True, "previous": previous, **target},
             then=(
-                *(PlannedStep(name, target) for name in record),
+                *check_in_read,
                 *posts,
                 *deletions,
                 *reposts,
-                *(PlannedStep(name, target) for name in notices),
+                *by_notices,
                 PlannedStep(POST_CALENDAR, {**target, "round_ids": [round_id], "only_if_posted": True}),
             ),
             follow_ons=(FollowOn(WIND_DOWN, {}, f"Winding the season down after {ctx.what}"),),
@@ -654,6 +724,34 @@ def submission_all_cancelled_change(
     async def describe_ask_close(_ctx: StepContext) -> str:
         return "asking for the submission channel to be closed"
 
+    steps: dict[str, Step] = {
+        END_ROUND: Step(
+            END_ROUND, StepKind.SAVE, end_round, describe=describe_end_round,
+            undiscardable=would_never_finish,
+        ),
+        NAMES: posting_steps()[NAMES],
+        POST_SESSION_RESULTS: posting_steps()[POST_SESSION_RESULTS],
+        POST_STANDINGS: posting_steps()[POST_STANDINGS],
+        DELETE_MESSAGE: posting_steps()[DELETE_MESSAGE],
+        **calendar_steps(seasons, drawing),
+        **cancellation_steps,
+        ASK_CLOSE: Step(ASK_CLOSE, StepKind.SAVE, ask_close, describe=describe_ask_close),
+    }
+
+    def check_in_record_line(ctx: OutcomeContext) -> str:
+        """The round's check-in, read by the job *round_ended_not_held* planned, from its own
+        result (`{"record": text}`), never by its name."""
+        return "".join(
+            str(view.result["record"])
+            for view in ctx.steps
+            if view.result is not None and "record" in view.result
+        )
+
+    def check_in_not_written_lines(ctx: OutcomeContext) -> list[str]:
+        """What a league admin's discard of the check-in's reading leaves undone, in the job's
+        own words (`kept_line`), never naming it."""
+        return [text for view in ctx.steps if (text := kept_line(steps, view)) is not None]
+
     def ended_lines(ctx: OutcomeContext) -> tuple[str, ...]:
         """The one line recording the ending, with what a league admin discarded beneath it; none
         where the ending found nothing to end."""
@@ -667,9 +765,9 @@ def submission_all_cancelled_change(
             f"  division: {ended['division_name']}\n"
             f"  round: {ended['round_number']}\n"
             "  reason: every session was entered as not held"
-            + check_in_record(ctx)
+            + check_in_record_line(ctx)
             + failure_log_lines(not_notified(ctx))
-            + "".join(f"\n  {text}" for text in check_in_record_not_written(ctx))
+            + "".join(f"\n  {text}" for text in check_in_not_written_lines(ctx))
             + "".join(f"\n  {text}" for text in review_posting.not_done(ctx))
         )
         return (line,)
@@ -678,20 +776,7 @@ def submission_all_cancelled_change(
         kind=ALL_CANCELLED_KIND,
         opening=(),
         plan=plan,
-        steps={
-            END_ROUND: Step(
-                END_ROUND, StepKind.SAVE, end_round, describe=describe_end_round,
-                undiscardable=would_never_finish,
-            ),
-            NAMES: posting_steps()[NAMES],
-            POST_SESSION_RESULTS: posting_steps()[POST_SESSION_RESULTS],
-            POST_STANDINGS: posting_steps()[POST_STANDINGS],
-            DELETE_MESSAGE: posting_steps()[DELETE_MESSAGE],
-            **calendar_steps(seasons),
-            **record,
-            **notices,
-            ASK_CLOSE: Step(ASK_CLOSE, StepKind.SAVE, ask_close, describe=describe_ask_close),
-        },
+        steps=steps,
         check=_submission_standing,
         key=lambda payload: f"{ALL_CANCELLED_KIND}:{payload['round_id']}",
         doing=lambda payload: f"posting round {payload['round_number']}'s cancelled sessions",

@@ -3,8 +3,9 @@ supersedes, three jobs of one change (#439, slice 6).
 
 Weather's timers, its start-up recovery and test mode's advance each ask the queue for a
 forecast (`ask_forecast`); the mystery rule is decided here and nowhere else (architecture.md,
-"Timed work and restarts"): a mystery round's phase 1 is its notice (phase 0), and its phases 2
-and 3 nothing. The change's jobs are:
+"Timed work and restarts"): the scheduler hands each phase's timer straight to this module's
+handler without reading the round's format, and a mystery round's phase 1 is its notice (phase 0),
+and its phases 2 and 3 nothing. The change's jobs are:
 
 - `draw_forecast` (a save): the phase is drawn and recorded, its flag set and its calculation line
   written to the log channel, all in the one save (weather spec :165). A phase whose earlier
@@ -27,12 +28,13 @@ them. A forecast is not repeatable: a phase is done once.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 import discord
@@ -41,8 +43,8 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import (
     FORECAST,
     FORECAST_CLEAN_UP,
-    FORECAST_FLUSH,
     ChangeOrigin,
+    GuildUnavailable,
     PlannedStep,
     StepFailedOnDiscord,
     StepKind,
@@ -50,16 +52,27 @@ from leaguebot.core.models.change import (
     Verdict,
     forecasts_named,
 )
-from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services import standing_posts
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.models.round import Round, RoundStatus, WeatherWindows, read_scheduled_at
+from leaguebot.core.services.posting import standing_posts
+from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
+)
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
     StepView,
+)
+from leaguebot.core.services.posting.notice_handler import send_notice
+from leaguebot.core.services.rounds.round_moments import clean_up_moment, phases_due
+from leaguebot.core.services.rounds.round_steps import judged_windows, named_now, round_number_now
+from leaguebot.core.services.test_mode.test_mode_service import (
+    AdvanceOutcome,
+    AdvanceStep,
+    AdvanceStepFailed,
+    PhaseEntry,
 )
 from leaguebot.weather.models.forecast import Drawn
 from leaguebot.weather.services import (
@@ -70,7 +83,14 @@ from leaguebot.weather.services import (
     phase3_service,
 )
 from leaguebot.weather.services.draw_guard import weather_enabled_on
-from leaguebot.weather.utils.message_builder import forecast_text
+from leaguebot.weather.services.forecast_channel import forecast_channels_on
+from leaguebot.weather.services.round_phases import phases_drawn_on
+from leaguebot.core.utils.league_server import league_guild
+from leaguebot.weather.utils.message_builder import forecast_text, invalidation_message
+
+if TYPE_CHECKING:
+    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.core.services.seasons.season_service import SeasonService
 
 log = logging.getLogger(__name__)
 
@@ -78,6 +98,10 @@ DRAW_FORECAST = "draw_forecast"
 POST_FORECAST = "post_forecast"
 DELETE_FORECAST = forecast_cleanup_service.DELETE_FORECAST
 PLAN_FORECAST_DELETES = "plan_forecast_deletes"
+#: The jobs an amendment plans through weather, under the names the amendment gives them.
+CLEAN_UP_FORECAST = "clean_up_forecast"
+NOTIFY_INVALIDATION = "notify_invalidation"
+RERUN_PHASE = "rerun_phase"
 
 _DONE_COLUMN = {0: "phase1_done", 1: "phase1_done", 2: "phase2_done", 3: "phase3_done"}
 
@@ -105,10 +129,7 @@ async def _round_row(db: aiosqlite.Connection, round_id: int) -> aiosqlite.Row |
 
 def _raced(row: aiosqlite.Row, now: datetime) -> bool:
     """Whether the round's race time has passed by *now*."""
-    scheduled = datetime.fromisoformat(row["scheduled_at"])
-    if scheduled.tzinfo is None:
-        scheduled = scheduled.replace(tzinfo=timezone.utc)
-    return scheduled <= now
+    return read_scheduled_at(row["scheduled_at"]) <= now
 
 
 def _not_due(
@@ -467,10 +488,20 @@ def forecast_change(*, now: Callable[[], datetime]) -> ChangeType:
     )
 
 
+@dataclass(frozen=True)
+class ForecastAsked:
+    """What `ask_forecast` asked: the *phase* asked (0 where a mystery round's phase 1 became its
+    notice) and the queue's *change* id, None where it dropped the ask as not due."""
+
+    phase: int
+    change: int | None
+
+
 async def ask_forecast(
     queue: ChangeQueue, db_path: str, round_id: int, phase: int
-) -> None:
-    """Ask the queue to draw, post and supersede *phase* of *round_id*, as its timer does.
+) -> ForecastAsked | None:
+    """Ask the queue to draw, post and supersede *phase* of *round_id*, as its timer does, and
+    return what was asked; None where nothing was.
 
     The mystery rule is weather's: a mystery round's phase 1 is asked as its notice (phase 0),
     and its phases 2 and 3 asked of nothing. A round that is not there asks nothing either. The
@@ -486,20 +517,21 @@ async def ask_forecast(
         row = await cursor.fetchone()
     if row is None:
         log.error("Forecast: round_id=%s not found — nothing asked of the queue.", round_id)
-        return
+        return None
     if row["format"] == "MYSTERY":
         if phase not in (0, 1):
             log.info(
                 "Phase %s of mystery round %s has no forecast — nothing asked of the queue.",
                 phase, round_id,
             )
-            return
+            return None
         phase = 0
     payload = {
         "round_id": round_id, "phase": phase, "division_name": row["name"],
         "round_number": row["round_number"],
     }
-    await queue.ask(FORECAST, payload, what=_doing(payload), origin=ChangeOrigin.BOT)
+    change = await queue.ask(FORECAST, payload, what=_doing(payload), origin=ChangeOrigin.BOT)
+    return ForecastAsked(phase, change)
 
 
 #: The phases whose forecasts a clean-up deletes: whichever of them still stands a day after the
@@ -562,36 +594,6 @@ def forecast_clean_up_change(*, now: Callable[[], datetime]) -> ChangeType:
     )
 
 
-def forecast_flush_change(*, now: Callable[[], datetime]) -> ChangeType:
-    """`weather.forecast.flush`: the bot's change that clears every recorded forecast, when test
-    mode is switched off, one `delete_forecast` job for each.
-
-    Repeatable: two switch-offs in a row are two requests, the second finding less. It is not
-    gated on the weather module, a forecast withdrawn being deleted whatever the module's state
-    (weather spec :153).
-    """
-
-    async def check(ctx: CheckContext) -> Verdict:
-        async with get_connection(ctx.db_path) as db:
-            cursor = await db.execute("SELECT 1 FROM forecast_messages LIMIT 1")
-            found = await cursor.fetchone()
-        return Verdict.go() if found is not None else Verdict.not_due("no forecast is recorded")
-
-    def outcome(_ctx: OutcomeContext) -> str:
-        return ""
-
-    return ChangeType(
-        kind=FORECAST_FLUSH,
-        opening=(PlannedStep(PLAN_FORECAST_DELETES),),
-        steps=forecast_steps(now=now),
-        check=check,
-        key=lambda _payload: FORECAST_FLUSH,
-        doing=lambda _payload: "clearing the forecasts posted under test mode",
-        outcome=outcome,
-        repeatable=True,
-    )
-
-
 async def _recorded(db: aiosqlite.Connection, round_id: int, phase: int) -> bool:
     """Whether a forecast of *phase* is recorded for *round_id*."""
     cursor = await db.execute(
@@ -601,11 +603,23 @@ async def _recorded(db: aiosqlite.Connection, round_id: int, phase: int) -> bool
     return await cursor.fetchone() is not None
 
 
-async def ask_forecast_clean_up(queue: ChangeQueue, db_path: str, round_id: int) -> None:
+@dataclass(frozen=True)
+class CleanUpAsked:
+    """What `ask_forecast_clean_up` asked: the phases *standing* that it names, and the queue's
+    *change* id, None where it dropped the ask as not due."""
+
+    standing: list[int]
+    change: int | None
+
+
+async def ask_forecast_clean_up(
+    queue: ChangeQueue, db_path: str, round_id: int
+) -> CleanUpAsked | None:
     """Ask the queue to delete the forecast of *round_id* that still stands (Phase 1 to 3), as its
-    timer does a day after the race. A round that is not there asks nothing; the change's check
-    drops a request that is no longer due. The phases standing as it is asked (`standing`) name
-    the change; the jobs delete what stands when they run."""
+    timer does a day after the race, and return what was asked; None where nothing was. A round
+    that is not there asks nothing; the change's check drops a request that is no longer due. The
+    phases standing as it is asked (`standing`) name the change; the jobs delete what stands when
+    they run."""
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT r.round_number, d.name FROM rounds r "
@@ -619,30 +633,24 @@ async def ask_forecast_clean_up(queue: ChangeQueue, db_path: str, round_id: int)
     if row is None:
         log.error("Forecast clean-up: round_id=%s not found — nothing asked of the queue.",
                   round_id)
-        return
+        return None
     payload = {
         "round_id": round_id, "phases": list(CLEAN_UP_PHASES), "clean_up": True,
         "standing": standing,
         "division_name": row["name"],
         "round_number": row["round_number"],
     }
-    await queue.ask(FORECAST_CLEAN_UP, payload, what=_clean_up_doing(payload),
-                    origin=ChangeOrigin.BOT)
-
-
-async def ask_forecast_flush(queue: ChangeQueue) -> None:
-    """Ask the queue to delete every recorded forecast, as test mode being switched off does."""
-    await queue.ask(FORECAST_FLUSH, {}, what="clearing the forecasts posted under test mode",
-                    origin=ChangeOrigin.BOT)
+    change = await queue.ask(FORECAST_CLEAN_UP, payload, what=_clean_up_doing(payload),
+                             origin=ChangeOrigin.BOT)
+    return CleanUpAsked(standing, change)
 
 
 @dataclass(frozen=True)
 class TimerCallbacks:
-    """The callbacks the scheduler fires for weather: each phase's, the mystery round notice's
-    and the clean-up's. Each takes a round id and asks the change queue."""
+    """The handlers the scheduler fires for weather: each phase's and the clean-up's. Each takes a
+    round id and asks the change queue."""
 
     phases: Mapping[int, Callable[[int], Awaitable[None]]]
-    mystery_notice: Callable[[int], Awaitable[None]]
     clean_up: Callable[[int], Awaitable[None]]
 
 
@@ -660,17 +668,89 @@ def timer_callbacks(queue: ChangeQueue, db_path: str) -> TimerCallbacks:
 
         return fire
 
-    async def notice(round_id: int) -> None:
-        await ask_forecast(queue, db_path, round_id, 0)
-
     async def clean_up(round_id: int) -> None:
         await ask_forecast_clean_up(queue, db_path, round_id)
 
     return TimerCallbacks(
         phases={1: _phase(1), 2: _phase(2), 3: _phase(3)},
-        mystery_notice=notice,
         clean_up=clean_up,
     )
+
+
+def advance_steps(queue: ChangeQueue, db_path: str) -> dict[str, AdvanceStep]:
+    """The step `/test-mode advance` runs for each of weather's kinds of round job: the three
+    phases and the clean-up, each asking *queue* as its timer does (`ask_forecast`,
+    `ask_forecast_clean_up`), early.
+
+    The mystery rule is `ask_forecast`'s: a round's `weather_p1` step is its notice where its
+    format is mystery and Phase 1 otherwise, so that a notice found from the job store and one
+    found from database state reach the same step. A fault is named as the entry names its step:
+    the notice (phase number 0), or the phase and its track. Each step's words, and the change it
+    asks, are what advance has always said and asked.
+    """
+
+    def phase_step(phase: int) -> AdvanceStep:
+        async def step(entry: PhaseEntry) -> AdvanceOutcome:
+            division, number = entry["division_name"], entry["round_number"]
+            notice = entry["phase_number"] == 0
+            try:
+                asked = await ask_forecast(queue, db_path, entry["round_id"], phase)
+            except Exception as exc:  # noqa: BLE001 — named by the command, which reports it
+                if notice:
+                    raise AdvanceStepFailed("the Mystery Round notice") from exc
+                raise AdvanceStepFailed(f"Phase {phase}", track=entry["track_name"]) from exc
+            if asked is not None and asked.phase == 0:
+                if asked.change is None:
+                    return AdvanceOutcome.not_due(
+                        f"🔮 The **Mystery Round notice** for **{division}** — "
+                        f"**Round {number}** was not due: its race has been run."
+                    )
+                return AdvanceOutcome.asked(
+                    f"🔮 The **Mystery Round notice** for **{division}** — **Round {number}** "
+                    f"is on the change queue: it goes to the division forecast channel as soon "
+                    f"as the queue reaches it.",
+                    f"  phase: Mystery Round notice\n  division: {division}\n"
+                    f"  round: Round {number}",
+                )
+            if asked is None or asked.change is None:
+                # The forecast's check dropped it (A25): its race has been run. Nothing is on the
+                # queue.
+                return AdvanceOutcome.not_due(
+                    f"⏩ **Phase {phase}** for **{division}** — **Round {number}** was not due: "
+                    f"its race has been run."
+                )
+            return AdvanceOutcome.asked(
+                f"⏩ **Phase {phase}** for **{division}** — **{entry['track_name']}** is on the "
+                f"change queue: its forecast goes to the forecast channel and its calculation "
+                f"to the log channel as soon as the queue reaches it.",
+                f"  phase: {phase}\n  division: {division}\n  track: {entry['track_name']}\n"
+                f"  round: {number}",
+            )
+
+        return step
+
+    async def clean_up(entry: PhaseEntry) -> AdvanceOutcome:
+        division, number = entry["division_name"], entry["round_number"]
+        try:
+            asked = await ask_forecast_clean_up(queue, db_path, entry["round_id"])
+        except Exception as exc:  # noqa: BLE001 — named by the command, which reports it
+            raise AdvanceStepFailed("the forecast cleanup") from exc
+        if asked is None or asked.change is None:
+            return AdvanceOutcome.not_due(
+                f"🧹 The **forecast cleanup** for **{division}** — **Round {number}** was not "
+                f"due: no forecast stands."
+            )
+        return AdvanceOutcome.asked(
+            f"🧹 The **forecast cleanup** for **{division}** — **Round {number}** is on the "
+            f"change queue: it deletes {forecasts_named(asked.standing)} as soon as the queue "
+            f"reaches it.",
+            f"  phase: cleanup\n  division: {division}\n  round: {number}",
+        )
+
+    return {
+        "weather_p1": phase_step(1), "weather_p2": phase_step(2), "weather_p3": phase_step(3),
+        "cleanup": clean_up,
+    }
 
 
 def forecast_failure(view: StepView) -> tuple[str, str] | None:
@@ -700,3 +780,183 @@ def forecast_failure(view: StepView) -> tuple[str, str] | None:
         return ("forecast channel", f"a part of the {view.payload['what']} could not be "
                 f"deleted, and a league admin discarded it; delete it by hand ({link})")
     return None
+
+
+async def amendment_posts(
+    _db: aiosqlite.Connection, _round_id: int, *, kept: Mapping[str, Any], draw: Sequence[int],
+    **_context: Any,
+) -> tuple[PlannedStep, ...]:
+    """The posts an amendment owes of weather's, in order, planned as the round is armed again:
+    the deletion of each withdrawn forecast that was posted, the notice that the forecasts no
+    longer stand, and the draw of each phase in *draw*. *kept* is what weather's part of the
+    save kept (`phase_withdrawal.round_amended_on`) with the track, and is empty where the save
+    was not made. Subscribed to core's `round_armed`."""
+    posted = kept.get("posted", [])
+    planned = [PlannedStep(DELETE_FORECAST, {"phase": n}) for n in posted]
+    if posted:
+        planned.append(PlannedStep(NOTIFY_INVALIDATION, {"track": kept["track"]}))
+    planned += [PlannedStep(RERUN_PHASE, {"phase": n}) for n in draw]
+    return tuple(planned)
+
+
+async def amendment_clean_ups(
+    db: aiosqlite.Connection, round_id: int, *, rnd: Round, now: Callable[[], datetime],
+    **_context: Any,
+) -> tuple[PlannedStep, ...]:
+    """The clean-up of the round's forecast a day after the round, planned where that day has
+    come and a forecast stands (whichever of Phases 1 to 3), named by the phases standing. Read on
+    *db*. Subscribed to core's `round_clean_ups_due`."""
+    if clean_up_moment(rnd.scheduled_at) > now():
+        return ()
+    cursor = await db.execute(
+        "SELECT DISTINCT phase_number FROM forecast_messages "
+        "WHERE round_id = ? AND phase_number IN (1, 2, 3) ORDER BY phase_number",
+        (round_id,),
+    )
+    standing = [int(row["phase_number"]) for row in await cursor.fetchall()]
+    if not standing:
+        return ()
+    return (PlannedStep(CLEAN_UP_FORECAST, {"phases": [1, 2, 3], "clean_up": True,
+                                            "standing": standing}),)
+
+
+def season_end_steps(
+    *, now: Callable[[], datetime], line_prefix: str | None = None
+) -> dict[str, Step]:
+    """The job weather defines for a season's end, by name: the deletion of a forecast
+    (`DELETE_FORECAST`), which the season end's `flush_forecasts` plans for each forecast posted
+    under test mode. *now* is the queue's clock; *line_prefix* is the closing line some changes
+    write, which a forecast's deletion has no use for. Subscribed to core's `season_end_steps`."""
+    return {DELETE_FORECAST: forecast_steps(now=now)[DELETE_FORECAST]}
+
+
+def amendment_steps(
+    *, now: Callable[[], datetime], seasons: SeasonService, modules: ModuleService
+) -> dict[str, Step]:
+    """The jobs weather defines for an amendment, by name: a forecast's own jobs, the draw and the
+    deletion named for what the amendment does with them, and the three the amendment plans
+    through weather: the notice that the forecasts no longer stand (`NOTIFY_INVALIDATION`), the
+    draw of a phase now due (`RERUN_PHASE`) and the deletion of the forecast a day after the round
+    (`CLEAN_UP_FORECAST`, a forecast's planning of its deletions under the amendment's name for
+    it). *now* is the queue's clock, *seasons* names the round by the number it bears when a job
+    is described, and *modules* says whether weather is on. Subscribed to core's
+    `amendment_steps`."""
+    defined = forecast_steps(now=now)
+
+    def named(text: str) -> Callable[[StepContext], Awaitable[str]]:
+        return named_now(seasons, text)
+
+    async def weather_on(_ctx: StepContext) -> bool:
+        return await modules.is_weather_enabled()
+
+    async def describe_forecast_delete(ctx: StepContext) -> str:
+        if ctx.step_payload.get("clean_up"):
+            return (
+                f"deleting the Phase {ctx.step_payload['phase']} forecast of round "
+                f"{await round_number_now(seasons, ctx)} in **{ctx.payload['division_name']}** a "
+                f"day after it"
+            )
+        if ctx.step_payload.get("superseded"):
+            return (
+                f"deleting the superseded Phase {ctx.step_payload['phase']} forecast of round "
+                f"{await round_number_now(seasons, ctx)} in **{ctx.payload['division_name']}**"
+            )
+        return await named("deleting a withdrawn forecast of round {number} in **{division}**")(ctx)
+
+    async def describe_clean_up(ctx: StepContext) -> str:
+        """The clean-up a day after the round, named by the forecasts standing when it was planned
+        (`standing`), never by a phase that is not."""
+        return (
+            f"deleting {forecasts_named(ctx.step_payload.get('standing', ()))} of round "
+            f"{await round_number_now(seasons, ctx)} in **{ctx.payload['division_name']}** a day "
+            f"after it"
+        )
+
+    async def describe_draw(ctx: StepContext) -> str:
+        """The draw of a phase the amendment makes at once, and the job that plans it, each
+        naming its phase."""
+        phase = ctx.step_payload.get("phase", ctx.payload.get("phase"))
+        return (
+            f"drawing the Phase {phase} forecast of round {await round_number_now(seasons, ctx)} "
+            f"in **{ctx.payload['division_name']}** now"
+        )
+
+    async def notify_invalidation(ctx: StepContext) -> StepResult:
+        """Tell the division's forecast channel that its forecasts no longer stand. A channel never
+        set is done and unnamed; one set and gone, or a send Discord refuses, stops the queue."""
+        division_id = int(ctx.payload["division_id"])
+        async with get_connection(ctx.db_path) as db:
+            channels = await forecast_channels_on(db, [division_id])
+        if division_id not in channels:
+            raise LookupError(f"division {ctx.payload['division_id']} is no longer there")
+        forecast_channel_id = channels[division_id]
+        if not forecast_channel_id:
+            return StepResult(result={"unset": True})
+        guild = await league_guild(ctx.bot)
+        if guild is None:
+            raise GuildUnavailable("the league's server is not in the cache")
+        channel = guild.get_channel(int(forecast_channel_id))
+        if channel is None:
+            raise StepFailedOnDiscord(
+                f"the channel <#{forecast_channel_id}> is no longer on the server"
+            )
+        try:
+            await send_notice(
+                channel,
+                invalidation_message(str(ctx.step_payload["track"])),
+                mentions=discord.AllowedMentions.none(),
+            )
+        except discord.HTTPException as exc:
+            raise StepFailedOnDiscord(
+                f"the message could not be posted to <#{forecast_channel_id}>: {exc}"
+            ) from exc
+        return StepResult(result={"sent": True})
+
+    async def phase_still_due(ctx: StepContext) -> bool:
+        """A phase is drawn at once only while weather is on and the phase is still due as the
+        round stands when this job runs (`phases_due`): not drawn yet, its horizon passed, the
+        race still ahead and the round no mystery round. A job before it can stop and be retried
+        after the race, and a forecast for a round already raced is no forecast (owner,
+        2026-10-09)."""
+        if not await modules.is_weather_enabled():
+            return False
+        rnd = await seasons.get_round(int(ctx.payload["round_id"]))
+        _, weather = judged_windows(ctx)
+        if rnd is None or weather is None:
+            return False
+        async with get_connection(ctx.db_path) as db:
+            drawn = (await phases_drawn_on(db, [rnd.id])).get(rnd.id, {})
+        return int(ctx.step_payload["phase"]) in phases_due(rnd, weather, now(), drawn=drawn)
+
+    async def rerun_phase(ctx: StepContext) -> StepResult:
+        """Plan the draw of a phase whose horizon has already passed, by the amended moment or while
+        the amendment stood stopped, where it is still due when the job runs (`phase_still_due`).
+        The draw, its post and the deletion of the forecast it supersedes are jobs of the
+        amendment's own, in that order, before the next phase's: Discord refusing the post or the
+        deletion stops the queue (owner, 2026-10-10)."""
+        phase = int(ctx.step_payload["phase"])
+        return StepResult(
+            result={"phase": phase},
+            then=(PlannedStep(DRAW_FORECAST, {"round_id": int(ctx.payload["round_id"]),
+                                              "phase": phase}),),
+        )
+
+    return {
+        **defined,
+        DRAW_FORECAST: dataclasses.replace(defined[DRAW_FORECAST], describe=describe_draw),
+        DELETE_FORECAST: dataclasses.replace(
+            defined[DELETE_FORECAST], describe=describe_forecast_delete
+        ),
+        NOTIFY_INVALIDATION: Step(
+            NOTIFY_INVALIDATION, StepKind.ACT, notify_invalidation, still_due=weather_on,
+            describe=named("telling **{division}** its forecasts no longer stand"),
+        ),
+        RERUN_PHASE: Step(
+            RERUN_PHASE, StepKind.ACT, rerun_phase, still_due=phase_still_due,
+            describe=describe_draw,
+        ),
+        CLEAN_UP_FORECAST: dataclasses.replace(
+            defined[PLAN_FORECAST_DELETES], name=CLEAN_UP_FORECAST, still_due=weather_on,
+            describe=describe_clean_up,
+        ),
+    }

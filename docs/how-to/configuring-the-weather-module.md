@@ -51,11 +51,11 @@ This guide covers the weather module only. Setting the bot up, creating a season
 
 Nothing is generated yet. The bot needs a channel to post in and a season to work through, which are the next two steps.
 
-If you turn weather on **after** a season is already running, the bot catches up: it works out any forecast whose moment has already passed and posts it straight away, then schedules the rest. That is deliberate, and it is the one way to bolt weather onto a season in progress.
+The switch answers at once that it is turning the weather module on, and updates that reply once it has.
 
-> **Switching it on can be refused.** If a season is already running and any division has no forecast channel, the bot names those divisions and does nothing. Set their channels first, then try again.
+> **Switching it on is refused once a season's placements are confirmed.** Weather cannot be bolted onto a season in progress: turn it on before you confirm placements, or wait for the next season. A switch-on asked just before an approval and still waiting its turn when the approval goes through is refused then, the same way.
 
-Turning the module off cancels every forecast still to come, and only those. Your result submissions and your check-ins carry on for the rest of the season exactly as before — switching weather off is not a way to quieten the other modules. It does **not** delete forecasts already posted, and it does not forget your channels or your timings — turn it back on and they are still there.
+Turning the module off cancels every forecast still to come, and only those. If those scheduled forecasts cannot be removed, the module is off all the same and the reply says so: they do nothing while the module is off. Your result submissions and your check-ins carry on for the rest of the season exactly as before — switching weather off is not a way to quieten the other modules. It does **not** delete forecasts already posted, and it does not forget your channels or your timings — turn it back on and they are still there.
 
 ---
 
@@ -66,6 +66,8 @@ Turning the module off cancels every forecast still to come, and only those. You
 ```
 
 Forecasts are posted **per division**, so a league with three divisions sets three channels. There is no server-wide forecast channel and no default — a division without one is a division the bot cannot post to.
+
+The command answers at once ("⏳ Setting the weather forecast channel for **Division One** to #div1-weather. …") and updates that reply once it has run. The same request asked again while the first is still waiting is refused as a repeat. It is judged again as it starts: weather switched off, the division deleted, the season ended or the channel taken for another job meanwhile refuses it then, and a division renamed meanwhile still gets its channel. It runs even while the change queue is stopped at a job, which stays stopped, so a forecast stopped for want of its channel is put right by setting the channel and pressing Retry on its notice (see [When a job stops the queue](configuring-the-core-bot.md#when-a-job-stops-the-queue)).
 
 **This is the thing that blocks a season.** While weather is on, a season cannot be approved until every division has a forecast channel, and the bot names the ones that are missing.
 
@@ -158,7 +160,7 @@ You are not going to wait five days to find out whether any of this works.
 /test-mode advance
 ```
 
-`advance` fires the next scheduled event due — often the next weather phase, but equally a results collection or a check-in call where those modules are on — straight away, and posts it to the real channels so you see exactly what your drivers will see. A weather step is asked of the change queue and the reply says so; the forecast follows as soon as the queue reaches it. A round whose race has been run has its weather steps passed over — `advance` moves on to the next step, naming each one it passed over in its reply, and `/test-mode review` marks them ⏭️ — so rehearse weather on rounds dated in the future. Run it again for the next one. `/test-mode review` shows what is still pending. [Testing with test mode](test-mode.md) covers the whole of it.
+`advance` fires the next scheduled event due — often the next weather phase, but equally a results collection or a check-in call where those modules are on — straight away, and posts it to the real channels so you see exactly what your drivers will see. A weather step is asked of the change queue and the reply says so; the forecast follows as soon as the queue reaches it. A round whose race has been run has its weather steps passed over — `advance` moves on to the next step, naming each one it passed over in its reply, and `/test-mode review` marks them ⏭️ — so rehearse weather on rounds dated in the future. A step that has already run is passed over the same way, even where the bot still holds its timer. Run it again for the next one. `/test-mode review` shows what is still pending. [Testing with test mode](test-mode.md) covers the whole of it.
 
 > **Test mode is chosen for a season, in its configuration.** `/test-mode toggle` works only while a season is in configuration, and is refused while any real driver is signed up, unassigned or assigned — which, once a season has ended, nobody is. A season confirmed in test mode never opens a signup window, and while test mode is on no real driver may sign up or be placed. It stays on until that season is completed, cancelled or aborted, which switches it off and deletes the fake drivers — so test in a season of its own, and abort it with `/season abort` if you would rather not race it out. See [Setting up the bot for your league](configuring-the-core-bot.md) for the season's stages.
 

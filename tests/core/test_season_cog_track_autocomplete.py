@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog
+from leaguebot.core.cogs.round_cog import RoundCog
 from leaguebot.core.db.database import AUTOCOMPLETE_TIMEOUT_SECONDS, get_connection, run_migrations
 
 
@@ -24,7 +24,7 @@ class _Interaction:
 
 @pytest.fixture
 async def cog(tmp_path):
-    """A SeasonCog wired to a real, migrated database — tracks come from migration 029."""
+    """A RoundCog wired to a real, migrated database — tracks come from migration 029."""
     from unittest.mock import MagicMock
 
     db_path = str(tmp_path / "bot.db")
@@ -32,7 +32,7 @@ async def cog(tmp_path):
 
     bot = MagicMock()
     bot.db_path = db_path
-    return SeasonCog(bot)
+    return RoundCog(bot)
 
 
 async def test_both_track_parameters_share_one_autocomplete():
@@ -41,8 +41,8 @@ async def test_both_track_parameters_share_one_autocomplete():
     Read off the commands themselves rather than the class, because what matters is what
     discord.py will actually invoke.
     """
-    add = SeasonCog.round_add
-    amend = SeasonCog.round_amend
+    add = RoundCog.round_add
+    amend = RoundCog.round_amend
 
     add_cb = add._params["track"].autocomplete
     amend_cb = amend._params["track"].autocomplete
@@ -93,7 +93,7 @@ async def test_an_autocomplete_that_hangs_offers_nothing(cog, monkeypatch):
     deadline is waited for, so its connection closes within the test. Left hanging, it held a
     database thread open past the test's call, and the suite's teardown waited out its whole
     grace period for it (`tests/support/change_queue.py`, `THREAD_GRACE_SECONDS`)."""
-    import leaguebot.core.services.track_service as track_service
+    import leaguebot.core.services.rounds.track_service as track_service
 
     released = asyncio.Event()
 
@@ -113,3 +113,24 @@ async def test_an_autocomplete_that_hangs_offers_nothing(cog, monkeypatch):
     released.set()
     left_running = asyncio.all_tasks() - {asyncio.current_task()}
     await asyncio.wait(left_running, timeout=5)
+
+
+async def test_it_asks_the_service_with_a_lock_wait_short_enough_to_answer_in_time(
+    cog, monkeypatch
+):
+    """The tracks are asked of the service by the database's path, with the autocomplete's
+    shorter lock wait: waiting the ordinary five seconds on a contended database would
+    overshoot Discord's three-second budget and answer into an expired token."""
+    import leaguebot.core.services.rounds.track_service as track_service
+
+    seen = {}
+
+    async def _capture(db_path, *, timeout=None):
+        seen["read"] = (db_path, timeout)
+        return []
+
+    monkeypatch.setattr(track_service, "list_tracks", _capture)
+
+    await cog._track_autocomplete(_Interaction(), "")
+
+    assert seen["read"] == (cog.bot.db_path, AUTOCOMPLETE_TIMEOUT_SECONDS)

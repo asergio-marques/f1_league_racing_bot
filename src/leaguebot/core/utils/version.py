@@ -3,8 +3,8 @@
 A version is a release, `v0.5.0`, or a build after one, `v0.4.0-230`: the latest release and
 the number of changes merged since it. Every pull request is squash-merged, so each is one
 commit on `main` and the number follows the order in which they merged — a later build
-always carries a higher number, which a pull request's own number would not (decided
-2026-09-22, #258). The release rule itself is in CONTRIBUTING.md, "Releases".
+always carries a higher number, which a pull request's own number would not. The release
+rule itself is in CONTRIBUTING.md, "Releases".
 
 **When it was made** is the date and time of the commit the version names — the last change
 it holds — with its offset from UTC, so it can be shown in each reader's own time zone.

@@ -3,8 +3,8 @@ day after the round and by the restart, run by jobs of its own — `plan` reads 
 round's check-in left recorded, one `delete_message` takes each down from the channel it was
 posted in, and `mark_cleared` marks the round's check-in over.
 
-The league is `ongoing_league`'s with attendance on, its queue rebuilt on a real
-`AttendanceService`: Pro's check-in channel is 603, and round 3's call stands there as message
+The league is `ongoing_league`'s with attendance on, its attendance service
+reading the database: Pro's check-in channel is 603, and round 3's call stands there as message
 7001 with its last notice 7002 and its reserve announcement 7003, all three recorded on the call.
 Round 3 is moved to 25 hours ago, so its clean-up is due.
 
@@ -15,16 +15,14 @@ by hand (Q9, as a cancellation's does); a message already gone completes its del
 from __future__ import annotations
 
 import inspect
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from leaguebot.attendance.services.attendance_service import AttendanceService
 from tests.support.change_queue import (
     acknowledgement,
-    attach_queue,
     change_rows,
     discard_job,
     refuse_the_job,
@@ -38,6 +36,7 @@ from tests.support.season_league import (
     DIVISIONS,
     PRO,
     SeasonLeague,
+    attendance_from_the_database,
     ongoing_league,
     round_id,
 )
@@ -55,11 +54,10 @@ async def _league(tmp_path: Any) -> SeasonLeague:
     """The league of the module docstring: round 3 raced 25 hours ago, its call, last notice
     and announcement standing and recorded."""
     league = await ongoing_league(tmp_path, attendance=True)
-    league.bot.attendance_service = AttendanceService(league.db_path)
-    attach_queue(league.bot, league.db_path, now=league.clock)
+    attendance_from_the_database(league)
     when = league.clock.now - timedelta(hours=25)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       when.replace(tzinfo=None).isoformat(), ROUND_3)
+                       when.astimezone(timezone.utc).isoformat(), ROUND_3)
     return league
 
 
@@ -96,7 +94,7 @@ async def test_the_timer_asks_for_the_clean_up_and_the_queue_deletes_each_messag
     `mark_cleared`: all three are gone from Pro's check-in channel, the call's record with them,
     and the queue is not stopped. The clean-up timer's callback asks the queue rather than
     running the clean-up."""
-    import leaguebot.__main__ as bot_module
+    from leaguebot.attendance import wiring
 
     league = await _league(tmp_path)
 
@@ -112,7 +110,7 @@ async def test_the_timer_asks_for_the_clean_up_and_the_queue_deletes_each_messag
         "plan", "delete_message", "delete_message", "delete_message", "mark_cleared",
     ]
     assert await stopped_job(league.db_path) is None
-    assert "ask_check_in_clean_up(" in inspect.getsource(bot_module.main)
+    assert "ask_check_in_clean_up(" in inspect.getsource(wiring.register_scheduler_callbacks)
 
 
 async def test_the_day_after_takes_down_the_call_of_a_round_whose_every_session_was_not_held(
@@ -242,7 +240,7 @@ async def test_the_start_up_asks_for_each_clean_up_missed(tmp_path):
     league = await _league(tmp_path)
     tomorrow = league.clock.now + timedelta(days=1)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       tomorrow.replace(tzinfo=None).isoformat(), ROUND_4)
+                       tomorrow.astimezone(timezone.utc).isoformat(), ROUND_4)
     await league.write(
         "INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id, "
         "posted_at) VALUES (?, ?, ?, ?, ?)",
@@ -268,7 +266,7 @@ async def test_the_clean_up_leaves_the_other_round_of_a_double_header_standing(t
     league = await _league(tmp_path)
     tomorrow = league.clock.now + timedelta(days=1)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       tomorrow.replace(tzinfo=None).isoformat(), ROUND_4)
+                       tomorrow.astimezone(timezone.utc).isoformat(), ROUND_4)
     await league.write(
         "INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id, "
         "posted_at, last_notice_msg_id) VALUES (?, ?, ?, ?, ?, ?)",

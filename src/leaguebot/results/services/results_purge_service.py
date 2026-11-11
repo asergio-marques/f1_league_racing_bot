@@ -40,6 +40,7 @@ what becomes of the announcement of a ban that itself survives the module being 
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -48,7 +49,7 @@ import discord
 
 from leaguebot.core.db.database import sole_row
 from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord
-from leaguebot.core.services.channel_registry_service import as_text_channel
+from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
 
@@ -312,8 +313,152 @@ async def take_down(bot: LeagueBot, item: dict[str, Any]) -> dict[str, Any]:
     return {"removed": True}
 
 
+async def rounds_deleted_on(db: aiosqlite.Connection, round_ids: list[int]) -> None:
+    """Delete results' rows of *round_ids* on *db*, committing nothing: the classifications of the
+    rounds' sessions with every verdict on them, the standings taken after each round, the
+    submission channels' records, an amendment's, a held resubmission's and the banners' records.
+
+    Core hands it the round ids as it deletes the rounds, in the delete's own save, so that the
+    module's rows go with the round or not at all (architecture.md, "The database"). The messages
+    and channels are not taken down here: the rows are all it deletes.
+
+    **Not `erase_season_on`'s erasure**, which keeps a verdict banner's record and a held
+    resubmission with their rounds: here the rounds themselves are going, and nothing is left to
+    hold them.
+    """
+    marks = ", ".join("?" for _ in round_ids)
+    await db.execute(
+        f"DELETE FROM round_amend_channels WHERE round_id IN ({marks})", round_ids  # noqa: S608
+    )
+    await db.execute(
+        f"DELETE FROM resubmission_drafts WHERE round_id IN ({marks})", round_ids  # noqa: S608
+    )
+    await db.execute(
+        f"DELETE FROM verdict_banner_messages WHERE round_id IN ({marks})", round_ids  # noqa: S608
+    )
+    await _delete_rows(db, round_ids)
+
+
+async def divisions_deleted_on(db: aiosqlite.Connection, division_ids: list[int]) -> None:
+    """Delete results' settings of *division_ids* on *db*, committing nothing: each division's
+    results, standings and verdicts channels."""
+    marks = ",".join("?" * len(division_ids))
+    await db.execute(
+        f"DELETE FROM division_results_config WHERE division_id IN ({marks})",  # noqa: S608
+        division_ids,
+    )
+
+
+async def season_deleted_on(db: aiosqlite.Connection, season_id: int) -> None:
+    """Delete results' rows of *season_id* on *db*, committing nothing: the season's own copy of
+    the points configuration, its amendment state and the modifications an amendment holds."""
+    await db.execute("DELETE FROM season_modification_fl WHERE season_id = ?", (season_id,))
+    await db.execute("DELETE FROM season_modification_entries WHERE season_id = ?", (season_id,))
+    await db.execute("DELETE FROM season_amendment_state WHERE season_id = ?", (season_id,))
+    await db.execute("DELETE FROM season_points_fl WHERE season_id = ?", (season_id,))
+    await db.execute("DELETE FROM season_points_entries WHERE season_id = ?", (season_id,))
+    await db.execute("DELETE FROM season_points_links WHERE season_id = ?", (season_id,))
+
+
+async def profiles_deleted_on(db: aiosqlite.Connection, profile_ids: list[int]) -> None:
+    """Let go of the drivers *profile_ids* in results' rows on *db*, committing nothing: their
+    race and qualifying results and the standings that name them lose the profile, and keep
+    naming the driver by their user id, as they always did.
+
+    Core hands it the profile ids as it deletes the drivers, in the delete's own save, so that
+    the rows let go of the profile with the drivers' deletion or not at all (architecture.md,
+    "The database").
+    """
+    marks = ",".join("?" * len(profile_ids))
+    await db.execute(
+        "UPDATE race_session_results SET driver_profile_id = NULL "
+        f"WHERE driver_profile_id IN ({marks})",  # noqa: S608
+        profile_ids,
+    )
+    await db.execute(
+        "UPDATE qualifying_session_results SET driver_profile_id = NULL "
+        f"WHERE driver_profile_id IN ({marks})",  # noqa: S608
+        profile_ids,
+    )
+    await db.execute(
+        "UPDATE driver_standings_snapshots SET driver_profile_id = NULL "
+        f"WHERE driver_profile_id IN ({marks})",  # noqa: S608
+        profile_ids,
+    )
+
+
+async def profiles_merged_on(db: aiosqlite.Connection, kept_id: int, absorbed_id: int) -> None:
+    """Move results' rows of the driver *absorbed_id* onto the driver *kept_id* on *db*,
+    committing nothing: their race and qualifying results and the standings that name them.
+
+    Core hands it both profile ids as it merges the drivers, inside the merge's one transaction,
+    before the absorbed profile is deleted (architecture.md, "The database").
+    """
+    moved = (kept_id, absorbed_id)
+    await db.execute(
+        "UPDATE race_session_results SET driver_profile_id = ? WHERE driver_profile_id = ?",
+        moved,
+    )
+    await db.execute(
+        "UPDATE qualifying_session_results SET driver_profile_id = ? WHERE driver_profile_id = ?",
+        moved,
+    )
+    await db.execute(
+        "UPDATE driver_standings_snapshots SET driver_profile_id = ? WHERE driver_profile_id = ?",
+        moved,
+    )
+
+
+async def divisions_raced_on(db: aiosqlite.Connection, accounts: Sequence[str]) -> set[int]:
+    """The ids of the divisions in which any of *accounts* holds a race result, a qualifying
+    result or a standing, read on *db*; none where *accounts* is empty.
+
+    Signed up to core's `divisions_raced_read`, which `/driver reassign` asks on the connection
+    its check and its save hold, handing the accounts the driver has held: core joins what it
+    answers to the divisions the driver holds a seat in (architecture.md, "How modules and core
+    fit together"). A division belongs to one season, so a division both sides of a merge raced in
+    is one person in one season's standings twice.
+    """
+    if not accounts:
+        return set()
+    # Handed as text, as accounts are kept: the INTEGER column converts a numeral on comparing, and
+    # an account that is no numeral matches nothing.
+    held = list(accounts)
+    marks = ",".join("?" for _ in held)
+    cursor = await db.execute(
+        f"""
+        SELECT sr.division_id FROM race_session_results x
+        JOIN session_results sr ON sr.id = x.session_result_id
+        WHERE x.driver_user_id IN ({marks})
+        UNION
+        SELECT sr.division_id FROM qualifying_session_results x
+        JOIN session_results sr ON sr.id = x.session_result_id
+        WHERE x.driver_user_id IN ({marks})
+        UNION
+        SELECT division_id FROM driver_standings_snapshots
+        WHERE driver_user_id IN ({marks})
+        """,  # noqa: S608
+        (*held, *held, *held),
+    )
+    return {int(row[0]) for row in await cursor.fetchall()}
+
+
+async def bot_packed_on(db: aiosqlite.Connection) -> None:
+    """Clear results' rows tied to the server the bot leaves, on *db*, committing nothing: the id
+    of each submission channel's prompt and resubmit prompt, by which they are edited.
+
+    Core hands it the pack's connection, so that results' rows go with the rest of the pack or
+    not at all (architecture.md, "The database"). Only the ids go: a prompt already posted stays
+    where it is, and every result stays with its round.
+    """
+    await db.execute(
+        "UPDATE round_submission_channels "
+        "SET prompt_message_id = NULL, resubmit_prompt_message_id = NULL"
+    )
+
+
 async def _delete_rows(db: aiosqlite.Connection, round_ids: list[int]) -> tuple[int, int]:
-    """Delete the season's result rows in foreign-key order on *db*, committing nothing.
+    """Delete the result rows of *round_ids* in foreign-key order on *db*, committing nothing.
     Returns (sessions, standings).
 
     ``penalty_records`` and ``appeal_records`` go first. Each points at a driver's row in

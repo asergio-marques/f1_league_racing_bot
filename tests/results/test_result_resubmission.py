@@ -106,7 +106,7 @@ async def _make_db(tmp_path, *, results: int = 2) -> str:
         )
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
-            "scheduled_at) VALUES (?, ?, 3, 'NORMAL', 'Silverstone Circuit', '2026-06-01')",
+            "scheduled_at) VALUES (?, ?, 3, 'NORMAL', 'Silverstone Circuit', '2026-06-01T00:00:00+00:00')",
             (ROUND_ID, DIVISION_ID),
         )
         # One row per session type: `session_results` is unique on (round, session type),

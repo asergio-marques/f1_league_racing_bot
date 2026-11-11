@@ -17,17 +17,26 @@ is `test_season_approval_change.py`'s.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from contextlib import ExitStack
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.utils.hooks import AwaitedHook
+from tests.support.review_workflows import run_workflow, sign_up_confirmation_refused
+from tests.support.setup_reads import hold_setup
 
 SERVER_ID = 12608
 SEASON_ID = 11
 USER_ID = 77
+
+#: The gates stood in, each a function of `approval_checks` the workflow calls.
+_GATES = (
+    "placement_confirmation_faults", "season_has_divisions", "team_name_problems",
+    "lineup_problems",
+)
 
 
 
@@ -63,7 +72,6 @@ def _division(division_id: int, name: str, *, lineup=700, calendar=701, tier=1):
         mention_role_id=3000 + division_id,
         lineup_channel_id=lineup,
         calendar_channel_id=calendar,
-        forecast_channel_id=None,
     )
 
 
@@ -128,27 +136,29 @@ def _cog(
     results_enabled: bool = False,
     roles=(3001, 3002),
 ):
-    cog = SeasonCog.__new__(SeasonCog)
+    cog = SimpleNamespace()
     # Member by member, not one whole-bot ``AsyncMock`` (issue #240): every unstubbed
     # ``await`` on that form answers with a truthy mock, so a branch nobody chose runs and
     # the test passes reporting on it. ``MagicMock`` raises ``TypeError`` on the same slip.
     cog.bot = MagicMock()
     cog.bot.db_path = db_path
     cog.bot.change_queue.ask = AsyncMock(return_value=None)
-    cog.bot.approval_windows = AsyncMock(return_value=(None, None))
+    cog.bot.change_queue.now = MagicMock(side_effect=lambda: datetime.now(timezone.utc))
+    # No module's window counts: a windows hook nothing is signed up to.
+    cog.bot.round_windows_read = AwaitedHook()
+    # Results' refusals, through the hook the approval asks them of, as the builder signs them.
+    sign_up_confirmation_refused(cog.bot)
     cog.bot.output_router.post_log = AsyncMock()
-    cog._pending = {USER_ID: _pending()}
-    cog._get_pending = MagicMock(return_value=_pending())
     # In Placements, every signup settled and every channel set (issue #220; tested in
     # test_placements_confirmation.py).
     from leaguebot.core.models.season import SeasonStage
 
     cog.bot.season_service.get_stage = AsyncMock(return_value=SeasonStage.PLACEMENTS)
-    cog._placement_confirmation_faults = AsyncMock(return_value=([], []))
+    cog.placement_confirmation_faults = AsyncMock(return_value=([], []))
     # A season with no division is refused on its own terms, pinned in test_placements_confirmation.py.
-    cog._season_has_divisions = AsyncMock(return_value=True)
-    cog._team_name_problems = AsyncMock(return_value=[])
-    cog._lineup_problems = AsyncMock(return_value=[])
+    cog.season_has_divisions = AsyncMock(return_value=True)
+    cog.team_name_problems = AsyncMock(return_value=[])
+    cog.lineup_problems = AsyncMock(return_value=[])
 
     divisions = divisions if divisions is not None else [_division(1, "Pro")]
     season_svc = cog.bot.season_service
@@ -157,10 +167,8 @@ def _cog(
     season_svc.get_division_rounds = AsyncMock(
         side_effect=lambda div_id: [_round(div_id * 10, div_id)]
     )
-    season_svc.get_divisions_with_results_config = AsyncMock(return_value=[])
-
-    # Read by the per-tier colour check, behind its own `try`.
-    cog.bot.image_validity_service.colour_shortfall = AsyncMock(return_value={})
+    # The season being set up, read from the database (#283).
+    hold_setup(season_svc, _pending(), divisions=False)
 
     module_svc = cog.bot.module_service
     module_svc.is_signup_enabled = AsyncMock(return_value=signup_enabled)
@@ -199,12 +207,19 @@ def _attendance_config(*, rsvp=700, attendance=701):
 
 
 async def _approve(cog, interaction):
-    await SeasonCog._do_approve(cog, interaction)
+    """Press ✅ Approve: the approval's workflow, handed *cog*'s bot's services, with the gates
+    *cog* stands in for patched on `approval_checks`."""
+    from leaguebot.core.services.seasons import approval_checks
+
+    with ExitStack() as stack:
+        for gate in _GATES:
+            stack.enter_context(patch.object(approval_checks, gate, getattr(cog, gate)))
+        await run_workflow("approve_season", cog.bot, interaction)
 
 
 def _assert_asked(cog) -> None:
     """The approval went through every gate and was asked of the change queue, once."""
-    from leaguebot.core.services.season_approval_change import KIND
+    from leaguebot.core.services.seasons.season_approval_change import KIND
 
     ask = cog.bot.change_queue.ask
     ask.assert_awaited_once()

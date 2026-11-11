@@ -15,8 +15,8 @@ from __future__ import annotations
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.test_roster_service import add_test_drivers_in_bulk
 from leaguebot.core.utils.roster_import import SYNTHETIC_ID_BASE, parse_roster_csv
+
 
 SERVER_ID = 7700
 
@@ -71,10 +71,21 @@ def _row(offset, name, team="Alpine", div="Elite", nat="British"):
     return f"{SYNTHETIC_ID_BASE + offset},{name},{team},{div},{nat}"
 
 
+async def _bulk(path, drivers):
+    """Seat *drivers* through the roster's writer, on a connection of the test's own, committed
+    as a change's save commits it."""
+    from leaguebot.core.services.test_mode.test_roster_service import add_test_drivers_in_bulk_on
+
+    async with get_connection(path) as db:
+        result = await add_test_drivers_in_bulk_on(db, drivers)
+        await db.commit()
+    return result
+
+
 async def _apply(path, text):
     drivers, errors = parse_roster_csv(text)
     assert errors == [], f"the parser refused before the apply: {errors}"
-    return await add_test_drivers_in_bulk(drivers, path)
+    return await _bulk(path, drivers)
 
 
 async def _seated(path) -> list[tuple[str, str]]:
@@ -237,7 +248,7 @@ async def test_no_season_is_reported(tmp_path):
     await run_migrations(path)
     drivers, _ = parse_roster_csv(_csv(_row(1, "Quicksilver")))
 
-    seated, errors = await add_test_drivers_in_bulk(drivers, path)
+    seated, errors = await _bulk(path, drivers)
 
     assert seated == 0
     assert "No active or setup season" in errors[0]
@@ -280,7 +291,7 @@ async def test_an_id_already_on_the_server_is_refused(season):
     await _apply(season, _csv(_row(1, "Quicksilver")))
     drivers, _ = parse_roster_csv(_csv(_row(1, "Quicksilver", div="Challenger")))
 
-    seated, errors = await add_test_drivers_in_bulk(drivers, season)
+    seated, errors = await _bulk(season, drivers)
 
     assert seated == 0
     assert any("already on this server" in problem for problem in errors)

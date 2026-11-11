@@ -552,7 +552,7 @@ async def _seed_league(tmp_path):
             cursor = await db.execute(
                 "INSERT INTO rounds (division_id, round_number, format, status, "
                 "track_name, scheduled_at) VALUES (?, ?, 'STANDARD', 'FINAL', "
-                "'Silverstone', '2026-06-01T18:00:00')",
+                "'Silverstone', '2026-06-01T18:00:00+00:00')",
                 (division_id, number),
             )
             round_ids.append(cursor.lastrowid)
@@ -570,8 +570,8 @@ async def _seed_league(tmp_path):
             ("Cobalt", 901, [(13, 1)]),
         ):
             await db.execute(
-                "INSERT INTO team_role_configs (team_name, role_id) "
-                "VALUES (?, ?)",
+                "INSERT INTO team_role_configs (team_name, role_id, updated_at) "
+                "VALUES (?, ?, '2031-03-04T05:06:07+00:00')",
                 (team_name, role_id),
             )
             # The team takes its role's number, so the results below name it either way.
@@ -889,7 +889,7 @@ async def _seed(tmp_path, *, cancelled=False):
         division_id = cursor.lastrowid
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, status, "
-            "scheduled_at) VALUES (?, 3, 'STANDARD', ?, '2026-06-01T18:00:00')",
+            "scheduled_at) VALUES (?, 3, 'STANDARD', ?, '2026-06-01T18:00:00+00:00')",
             # One chain now: a cancelled round is CANCELLED, and one that ran to the end of
             # its appeals is FINAL. The two used to be separate columns.
             (division_id, "CANCELLED" if cancelled else "FINAL"),

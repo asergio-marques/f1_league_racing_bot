@@ -2,8 +2,8 @@
 the restart, run by jobs of its own — the reserves placed (`distribute`), the call's buttons
 taken off (`lock_call`) and the placements announced (`announce`).
 
-The league is `ongoing_league`'s with attendance on, its queue rebuilt on a real
-`AttendanceService`: Pro has Lewis and Max seated at Ferrari (three seats), its check-in channel
+The league is `ongoing_league`'s with attendance on, its attendance service
+reading the database: Pro has Lewis and Max seated at Ferrari (three seats), its check-in channel
 is 603, and round 3's call stands there as message 7001 with its last notice 7002, Lewis having
 accepted and Max not answered. Round 3 is moved to an hour off, so its two-hour check-in deadline
 passed an hour ago; no announcement is recorded and the deadline is not marked as run. Where a
@@ -19,17 +19,15 @@ lock or announcement stops the queue, and a discarded announcement is named and 
 from __future__ import annotations
 
 import inspect
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import discord
 import pytest
 
-from leaguebot.attendance.services.attendance_service import AttendanceService
 from tests.support.change_queue import (
     acknowledgement,
-    attach_queue,
     change_rows,
     discard_job,
     http_error,
@@ -46,6 +44,7 @@ from tests.support.season_league import (
     PRO,
     SEASON_ID,
     SeasonLeague,
+    attendance_from_the_database,
     ongoing_league,
     round_id,
 )
@@ -67,11 +66,10 @@ async def _league(tmp_path: Any) -> SeasonLeague:
     """The league of the module docstring: round 3 an hour off, its deadline passed and not
     run, its call standing and nothing announced."""
     league = await ongoing_league(tmp_path, attendance=True)
-    league.bot.attendance_service = AttendanceService(league.db_path)
-    attach_queue(league.bot, league.db_path, now=league.clock)
+    attendance_from_the_database(league)
     when = league.clock.now + timedelta(hours=1)
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       when.replace(tzinfo=None).isoformat(), ROUND_3)
+                       when.astimezone(timezone.utc).isoformat(), ROUND_3)
     del league.channel(CHECK_IN).messages[CALL_MESSAGES[2]]
     await league.write("UPDATE rsvp_embed_messages SET distribution_msg_id = NULL "
                        "WHERE round_id = ?", ROUND_3)
@@ -159,7 +157,7 @@ def _refusing_edit(league: SeasonLeague, message_id: int) -> None:
 async def _restart_asks(league: SeasonLeague) -> list[int]:
     """Run the restart's recovery of check-in deadlines, returning the rounds whose deadline it
     asked of the queue."""
-    from leaguebot.__main__ import _recover_rsvp_views_and_deadlines
+    from leaguebot.attendance.wiring import recover_rsvp_views_and_deadlines
 
     asked: list[int] = []
 
@@ -168,7 +166,7 @@ async def _restart_asks(league: SeasonLeague) -> list[int]:
 
     with patch("leaguebot.attendance.services.check_in_changes.ask_check_in_deadline",
                new=AsyncMock(side_effect=_record)):
-        await _recover_rsvp_views_and_deadlines(league.bot)
+        await recover_rsvp_views_and_deadlines(league.bot)
     return asked
 
 
@@ -180,7 +178,7 @@ async def test_the_timer_asks_for_the_deadline_and_the_queue_distributes_locks_a
     one announcement in Pro's check-in channel, recorded on the call with the deadline marked
     as run: with no mark and no message, the deadline has not run, so it runs. The deadline
     timer's callback asks the queue rather than running the deadline."""
-    import leaguebot.__main__ as bot_module
+    from leaguebot.attendance import wiring
 
     league = await _league(tmp_path)
 
@@ -198,7 +196,7 @@ async def test_the_timer_asks_for_the_deadline_and_the_queue_distributes_locks_a
         "distribute", "lock_call", "announce",
     ]
     assert await stopped_job(league.db_path) is None
-    assert "ask_check_in_deadline(" in inspect.getsource(bot_module.main)
+    assert "ask_check_in_deadline(" in inspect.getsource(wiring.register_scheduler_callbacks)
 
 
 async def test_the_distribution_reads_the_answers_as_they_stood_at_the_deadline(tmp_path):

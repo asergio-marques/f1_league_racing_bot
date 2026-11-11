@@ -11,7 +11,8 @@ and 18 with one point for the fastest lap to the top ten. Each session's results
 standings are already posted, their messages standing in their channels. Amendment mode is on,
 with *staged* (position to points, Feature Race) staged over the season's table.
 
-The bot is `league_double`'s, with a real queue and the real change types, "now" pinned, the
+The bot is `league_bot`'s: the one the entry point's `build` makes, with its queue and change
+types; "now" pinned, the
 league's server holding a channel per configured id (`review_league.channel`) and the bot's own
 member, and attendance reached through `review_league.AttendanceDouble`. Image generation is off
 unless *images*.
@@ -34,14 +35,14 @@ import discord
 from discord import app_commands
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.season_service import SeasonService
 from tests.support.change_queue import (
-    attach_queue,
     http_error,
-    league_double,
+    league_bot,
+    league_queue,
     member_interaction,
     run_queue,
     seed_server,
+    set_guilds,
     tier_member,
 )
 from tests.support.review_league import AttendanceDouble, channel
@@ -100,7 +101,8 @@ def _raced(division_id: int, cancelled_division: bool) -> list[tuple[int, str]]:
 
 
 class PointsLeague:
-    """The bot double with its queue, its server and its channels, and what they saw."""
+    """The bot with its queue, its server and its channels, and what they saw; the bot is there
+    once `build` has run."""
 
     def __init__(self, db_path: str, *, attendance: bool, images: bool,
                  divisions: tuple[int, ...]) -> None:
@@ -112,7 +114,13 @@ class PointsLeague:
         self.events: list[tuple[str, int, int]] = []
         #: Every exception a command raised, as the bot's error handler would have caught it.
         self.errors: list[BaseException] = []
-        self.bot = league_double(db_path)
+        self.attendance = AttendanceDouble(self)  # type: ignore[arg-type]
+
+    async def build(self) -> None:
+        """The league's bot (`league_bot`), its attendance hook `attendance`, with its channels,
+        server and queue."""
+        db_path, divisions = self.db_path, self.divisions
+        self.bot = await league_bot(db_path, attendance_hook=self.attendance)
         ids = [PRO_VERDICTS, PRO_ATTENDANCE]
         for division_id in divisions:
             ids += list(DIVISIONS[division_id][3])
@@ -159,17 +167,14 @@ class PointsLeague:
         bot.get_channel = MagicMock(side_effect=_get)
         bot.fetch_channel = AsyncMock(side_effect=_fetch)
         bot.get_guild = MagicMock(return_value=guild)
-        bot.guilds = [guild]
-        bot.season_service = SeasonService(db_path)
+        set_guilds(bot, [guild])
         bot.module_service.is_results_enabled = AsyncMock(side_effect=lambda: self.results_on)
         bot.module_service.is_images_enabled = AsyncMock(side_effect=lambda: self.images_on)
         bot.module_service.is_attendance_enabled = AsyncMock(
             side_effect=lambda: self.attendance_on
         )
         bot.image_config_service.get_toggles = AsyncMock(return_value={})
-        self.attendance = AttendanceDouble(self)  # type: ignore[arg-type]
-        bot.attendance_after_review = self.attendance
-        attach_queue(bot, db_path, now=NOW)
+        league_queue(bot, db_path, now=NOW)
 
     def channel(self, cid: int) -> Any:
         return self.channels[cid]
@@ -334,6 +339,7 @@ async def points_league(
         divisions=divisions, cancelled_division=cancelled_division,
     )
     league = PointsLeague(db_path, attendance=attendance, images=images, divisions=divisions)
+    await league.build()
     for division_id in divisions:
         results, standings = DIVISIONS[division_id][3]
         for number, _status in _raced(division_id, cancelled_division):

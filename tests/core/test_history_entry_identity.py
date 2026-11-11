@@ -9,8 +9,10 @@ from __future__ import annotations
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
+from tests.support.driver_transitions import reassigned
 
 SERVER_ID = 22120
+
 
 
 @pytest.fixture
@@ -48,7 +50,7 @@ async def test_an_entry_outlives_the_profile_it_belonged_to(db_path):
 
 
 async def test_a_test_driver_created_again_holds_the_history_of_its_identifier(db_path):
-    from leaguebot.core.services.test_roster_service import _reattach_history
+    from leaguebot.core.services.test_mode.test_roster_service import _reattach_history
 
     async with get_connection(db_path) as db:
         await db.execute("DELETE FROM driver_profiles WHERE id = 1")
@@ -63,7 +65,7 @@ async def test_a_test_driver_created_again_holds_the_history_of_its_identifier(d
 
 
 async def test_history_held_by_a_living_profile_is_not_taken(db_path):
-    from leaguebot.core.services.test_roster_service import _reattach_history
+    from leaguebot.core.services.test_mode.test_roster_service import _reattach_history
 
     async with get_connection(db_path) as db:
         await _reattach_history(db, "9000000000000000001", 99)
@@ -108,7 +110,7 @@ async def _seed_a_finished_season(db_path: str) -> None:
         )
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, scheduled_at, status) "
-            "VALUES (?, ?, 1, 'NORMAL', '2026-09-20T18:00:00', 'FINAL')",
+            "VALUES (?, ?, 1, 'NORMAL', '2026-09-20T18:00:00+00:00', 'FINAL')",
             (_ROUND_ID, _DIVISION_ID),
         )
         await db.execute(
@@ -127,16 +129,17 @@ async def _seed_a_finished_season(db_path: str) -> None:
 
 async def test_a_re_keyed_driver_s_history_carries_their_final_standing(db_path):
     """Issue #222, as a league sees it: the season ends and the driver's history is right."""
-    from leaguebot.core.services.driver_service import DriverService
-    from leaguebot.core.services.season_end_service import write_driver_history_entries_on
+    from leaguebot.core.services.seasons.season_end_service import write_driver_history_entries_on
+    from tests.support.driver_records_hooks import season_standing_read
 
     await _seed_a_finished_season(db_path)
-    await DriverService(db_path).reassign_user_id(
-        _OLD_USER, _NEW_USER, 77, "Manager"
-    )
+    await reassigned(db_path, _OLD_USER, _NEW_USER)
 
     async with get_connection(db_path) as db:
-        await write_driver_history_entries_on(db, _SEASON_ID, 4)
+        await write_driver_history_entries_on(
+            db, _SEASON_ID, 4,
+            season_standing_read=season_standing_read(),
+        )
         await db.commit()
 
     async with get_connection(db_path) as db:
@@ -148,3 +151,30 @@ async def test_a_re_keyed_driver_s_history_carries_their_final_standing(db_path)
         rows = [tuple(r) for r in await cursor.fetchall()]
 
     assert rows == [(_NEW_USER, 2, 88, 12)]
+
+
+async def test_with_no_module_answering_the_history_records_no_standing(db_path):
+    """The same finished season, our driver second on 88 points behind a winner on 100, but no
+    module signed up to answer a driver's standing (results never built). The season's end
+    writes our driver's entry as it would with no standings at all: no position, no points and no
+    gap, rather than reading results' standings itself."""
+    from leaguebot.core.services.seasons.season_end_service import write_driver_history_entries_on
+    from leaguebot.core.utils.hooks import AwaitedHook
+
+    await _seed_a_finished_season(db_path)
+
+    async with get_connection(db_path) as db:
+        await write_driver_history_entries_on(
+            db, _SEASON_ID, 4, season_standing_read=AwaitedHook(),
+        )
+        await db.commit()
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT discord_user_id, final_position, final_points, points_gap_to_winner "
+            "FROM driver_history_entries WHERE driver_profile_id = ?",
+            (_PROFILE_ID,),
+        )
+        rows = [tuple(r) for r in await cursor.fetchall()]
+
+    assert rows == [(_OLD_USER, 0, 0, 0)]

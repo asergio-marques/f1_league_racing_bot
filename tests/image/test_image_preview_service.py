@@ -32,7 +32,7 @@ from leaguebot.image.services.image_preview_service import (
     resolve_asset_directories,
     resolve_context,
 )
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 from tests.support.saves import set_field
 
 SERVER_ID = 4242
@@ -166,8 +166,7 @@ async def _seat_driver(
         ).fetchone()
         await db.execute(
             "INSERT INTO driver_season_assignments (driver_profile_id, season_id, "
-            "division_id, current_position, current_points, points_gap_to_first, "
-            "team_seat_id) VALUES (?, ?, ?, 0, 0, 0, ?)",
+            "division_id, team_seat_id) VALUES (?, ?, ?, ?)",
             (profile_id, season_id, division_id, seat["id"]),
         )
         await db.commit()

@@ -331,7 +331,7 @@ async def compute_driver_standings_on(
     # A result keeps the account it was recorded under, and a driver who changed account
     # mid-season stands under two. Both are theirs and are counted as one driver, under
     # the account they use now (issue #243).
-    from leaguebot.core.services.driver_service import current_account_map_for_division
+    from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
 
     current_of = await current_account_map_for_division(db, division_id)
 
@@ -362,7 +362,7 @@ async def compute_driver_standings_on(
     # Every seat in the division, reserves included. Two jobs, one query: the non-reserve
     # seats decide who joins the standings without having scored, and every seat supplies the
     # team the final tiebreak orders on — a reserve who raced is in the set already.
-    from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
+    from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
 
     # A driver whose placement is not yet confirmed is not in the standings (issue #220).
     cursor = await db.execute(
@@ -592,7 +592,7 @@ async def opening_driver_standings(
     """
     names = display_names or {}
 
-    from leaguebot.core.services.season_lifecycle_service import uncommitted_seat_excluded
+    from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -708,7 +708,7 @@ async def _drop_superseded_driver_rows(db, driver_snaps: list[DriverStandingsSna
             (round_id, division_id),
         )
         existing = await cursor.fetchall()
-        from leaguebot.core.services.driver_service import current_account_map_for_division
+        from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
 
         current_of = await current_account_map_for_division(db, division_id)
         dropped = [
@@ -766,7 +766,7 @@ async def persist_snapshots_on(
     team_snaps: list[TeamStandingsSnapshot],
 ) -> None:
     """INSERT OR REPLACE all snapshot rows on the connection it is handed, committing nothing."""
-    from leaguebot.core.services.driver_service import resolve_driver_profile_id
+    from leaguebot.core.services.drivers.driver_service import resolve_driver_profile_id
 
     await _drop_superseded_driver_rows(db, driver_snaps)
 
@@ -1035,7 +1035,7 @@ async def previous_standing_positions(
         # position is theirs all the same (issue #243).
         current_of: dict[int, int] = {}
         if not teams:
-            from leaguebot.core.services.driver_service import current_account_map_for_division
+            from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
 
             current_of = await current_account_map_for_division(db, division_id)
     return {

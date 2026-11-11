@@ -25,6 +25,7 @@ import json
 import re
 import sqlite3
 from contextlib import ExitStack
+from datetime import timezone
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -39,6 +40,8 @@ from tests.support.change_queue import (
     discard_job,
     http_error,
     member_interaction,
+    queued_log_lines,
+    refuse_the_job,
     retry_job,
     run_queue,
     step_rows,
@@ -124,6 +127,7 @@ BACKUP_KEPT = (
 )
 NOTICE_DISCARDED = f"<@{SIGNING_UP}> — their signup channel was closed without its notice"
 SIGNUPS_CLOSED = "🔒 Signups have closed. This channel will be automatically deleted in 24 hours."
+BUTTON_KEPT = "The Sign Up button could not be removed from the signup channel."
 WINDOW_OPEN = (
     "The signup window could not be closed. Close it with `/signup close`. "
     "Where a close time is set, run `/signup close-time cancel` first, and where a season's end "
@@ -258,12 +262,12 @@ def _logged(text: str) -> str:
 def _modules() -> list[Any]:
     found = []
     for name in ("leaguebot.__main__",
-                 "leaguebot.core.services.season_service",
-                 "leaguebot.core.services.season_end_service",
-                 "leaguebot.core.services.season_lifecycle_service",
-                 "leaguebot.core.services.season_end_changes",
-                 "leaguebot.core.services.test_mode_service",
-                 "leaguebot.core.services.test_roster_service",
+                 "leaguebot.core.services.seasons.season_service",
+                 "leaguebot.core.services.seasons.season_end_service",
+                 "leaguebot.core.services.seasons.season_lifecycle_service",
+                 "leaguebot.core.services.seasons.season_end_changes",
+                 "leaguebot.core.services.test_mode.test_mode_service",
+                 "leaguebot.core.services.test_mode.test_roster_service",
                  "leaguebot.weather.services.forecast_cleanup_service",
                  "leaguebot.image.services.driver_portrait_service"):
         try:
@@ -314,7 +318,7 @@ def _raising_while(failing: dict[str, bool], reading: Any) -> Any:
 
 def _backup_undeletable(monkeypatch: Any, league: Any, refusing: dict[str, bool]) -> None:
     """The saved test-mode state cannot be deleted while *refusing* says so."""
-    from leaguebot.core.services.backup_service import backup_path
+    from leaguebot.core.services.upkeep.backup_service import backup_path
 
     saved = Path(backup_path(league.db_path))
     unlinking = Path.unlink
@@ -397,10 +401,21 @@ async def test_a_final_classification_discord_refuses_stops_the_queue_and_the_se
     assert len(_success_lines(league)) == 1
 
 
+#: How the log channel's notice that the queue stopped names each final post, as it always has.
+_FINAL_STOP_NAMES = {
+    "final_standings": "posting the final standings of **Pro**",
+    "final_sheet": "posting the final attendance sheet of **Pro**",
+}
+
+
 @pytest.mark.parametrize("which", ["standings", "attendance"])
 async def test_a_final_classification_whose_channel_was_deleted_stops_the_queue_and_goes_through_once_it_is_set_again(
     tmp_path, which,
 ):
+    """Results and attendance on; Pro's standings channel, or its attendance channel, deleted
+    from the server. The completion stops at Pro's final standings, or its final sheet, the
+    season still active, and the log channel's notice names the job as it always has; once the
+    channel is back and the job retried, the post goes out and the season is completed."""
     league = await pending_completion_league(tmp_path, attendance=True)
     cid, job = ((PRO_CH.standings, "final_standings") if which == "standings"
                 else (PRO_CH.attendance, "final_sheet"))
@@ -410,6 +425,8 @@ async def test_a_final_classification_whose_channel_was_deleted_stops_the_queue_
     await run_queue(league.bot)
     assert await _stopped_at(league) == (job, PRO)
     assert await _status(league) == "ACTIVE"
+    stops = [line for line in _log_lines(league) if "The queue is stopped at job #" in line]
+    assert f": {_FINAL_STOP_NAMES[job]} for " in stops[-1]
 
     league.restore_channel(cid)
     await retry_job(league.bot)
@@ -464,9 +481,67 @@ async def test_a_discarded_final_classification_is_named_as_never_posted_and_the
     assert f"  not done: {PRO_NOT_POSTED}" in line
     if part:
         assert standing
-        assert any(_names_for_deletion_by_hand(b, PRO_CH.standings, standing) for b in bullets)
-        assert any(_names_for_deletion_by_hand(each, PRO_CH.standings, standing)
-                   for each in line.split("\n  not done: ")[1:])
+        # The standings not posted and the table left standing are two lines of their own, in
+        # the reply's bullets and in the closing line's "not done:" entries alike: never run
+        # together.
+        for lines, shown in ((bullets, text), (line.split("\n  not done: ")[1:], line)):
+            assert PRO_NOT_POSTED in lines, shown
+            left = [each for each in lines
+                    if _names_for_deletion_by_hand(each, PRO_CH.standings, standing)]
+            assert len(left) == 1, shown
+            assert left[0].startswith(
+                "**Pro** — a part of its final classification was posted"
+            ), shown
+            assert "could not be posted" not in left[0], shown
+
+
+#: Each module's final post: the job, the module that defines its step, the channel whose post
+#: Discord refuses, and the words core has always given it when it is discarded.
+_FINAL_POSTS = [
+    pytest.param("final_standings", "leaguebot.results.services.season_standings_posts",
+                 PRO_CH.standings, PRO_NOT_POSTED, id="results' final standings"),
+    pytest.param("final_sheet", "leaguebot.attendance.services.sheet_posting",
+                 PRO_CH.attendance, PRO_SHEET_NOT_POSTED, id="attendance's final sheet"),
+]
+
+
+@pytest.mark.parametrize("job, owner, cid, today", _FINAL_POSTS)
+async def test_a_discarded_final_post_is_named_in_its_own_step_s_words(
+    tmp_path, monkeypatch, job, owner, cid, today,
+):
+    """Results and attendance on. The module that owns the job defines its step with words of its
+    own for a discard ("<job> of Pro, in its own words"); Discord refuses Pro's post, the queue
+    stops at it, and a league admin discards it. Those words, and not the ones core used to keep,
+    are what the reply's "Not everything could be done" and the closing line name."""
+    import dataclasses
+
+    module = importlib.import_module(owner)
+    defined = module.final_steps
+
+    def reworded(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        return {
+            name: dataclasses.replace(
+                step,
+                not_done=lambda view: f"{view.name} of {view.payload['division_name']}, in its "
+                "own words",
+            )
+            for name, step in defined(*args, **kwargs).items()
+        }
+
+    monkeypatch.setattr(module, "final_steps", reworded)
+    league = await pending_completion_league(tmp_path, attendance=True)
+    league.channel(cid).send_fails = _forbidden()
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == (job, PRO)
+    await discard_job(league.bot)
+
+    words = f"{job} of Pro, in its own words"
+    assert words in _not_done(reply(interaction))
+    assert today not in _not_done(reply(interaction))
+    [line] = _closing_lines(league)
+    assert f"\n  not done: {words}" in line
 
 
 async def test_a_signup_window_that_cannot_be_closed_stops_the_queue(tmp_path):
@@ -552,9 +627,225 @@ async def test_a_signup_channel_the_driver_pass_cannot_close_stops_the_queue(tmp
 
     del league.hold_fails[SIGNING_UP]
     await retry_job(league.bot)
-    assert [uid for uid, _notice in league.notices] == [SIGNING_UP]
+    assert league.notices == [(SIGNING_UP, "🔒 This season has ended. This channel will be "
+                                           "automatically deleted in 24 hours.")]
     assert league.locked == [SIGNING_UP]
     assert len(_success_lines(league)) == 1
+
+
+#: The season end's jobs a module defines: the job, and the name the log channel's notice gives it
+#: when it stops the queue, as it always has. Kimi (105) is signing up; Pro's round 4 had its
+#: Phase 2 forecast posted (message 8002) under test mode.
+_MODULE_JOBS = [
+    pytest.param("signup_notice", f"telling <@{SIGNING_UP}> that their signup has closed",
+                 id="signup_notice"),
+    pytest.param("close_signup", f"closing the signup of <@{SIGNING_UP}>", id="close_signup"),
+    pytest.param("delete_forecast",
+                 f"deleting the Phase 2 forecast of round 4 in <#{DIVISIONS[PRO][3].forecast}>",
+                 id="delete_forecast"),
+]
+
+
+@pytest.mark.parametrize("job, name", _MODULE_JOBS)
+async def test_a_module_s_job_of_the_season_s_end_is_named_as_today_when_it_stops_the_queue(
+    tmp_path, job, name,
+):
+    """Every round final, test mode on, weather on; Kimi (105) part-way through signing up, and
+    Pro's round 4 Phase 2 forecast posted (message 8002) under test mode. The season is completed
+    and the save of one job a module defines for it fails, so the queue stops at it: the log
+    channel's notice that the queue stopped names the job word for word as it always has."""
+    league = await pending_completion_league(tmp_path, weather=True, test_mode=True)
+    await signing_up(league)
+    await posted_forecast(league, round_id(PRO, 4), 2, 8002)
+    await refuse_the_job(league.db_path, SEASON_COMPLETE_KIND, job, True)
+    await _asked(league)
+
+    await run_queue(league.bot)
+
+    assert (await _stopped_at(league))[0] == job
+    stops = [line for line in _log_lines(league) if "The queue is stopped at job #" in line]
+    # Both ends of the name pinned: the notice reads "… stopped at job #N: {name} for {request} …".
+    assert f": {_logged(name)} for " in stops[-1]
+
+
+#: Each end of a season whose saves a module's part joins: the change's kind, and the season's
+#: status while its save that returns the drivers stands open, the season not yet ended.
+_END_SAVES = [
+    pytest.param(SEASON_COMPLETE_KIND, "ACTIVE", id="completion"),
+    pytest.param(SEASON_CANCEL_KIND, "ACTIVE", id="cancellation"),
+    pytest.param(SEASON_ABORT_KIND, "SETUP", id="abort"),
+]
+
+
+@pytest.mark.parametrize("kind, standing", _END_SAVES)
+async def test_a_module_s_part_of_each_end_save_runs_on_that_save_s_connection(
+    tmp_path, kind, standing,
+):
+    """Kimi (105) part-way through signing up. A further module signs up to the drivers a season's
+    end returns, and the season is completed (every
+    round final), cancelled (ongoing) or aborted (in Placements). The part for the drivers returned
+    is called once, in `end`, with that save's own connection and the drivers the pass returned,
+    Kimi among them: on that connection Kimi's signup has already ended and the season is not yet
+    archived or deleted, while another connection still reads Kimi as signing up. What it writes on
+    its connection is unseen elsewhere while `end` stands open, and is saved with that save."""
+    from leaguebot.core.db.database import get_connection
+    from tests.support.season_league import (
+        abort_season,
+        cancel_season,
+        ongoing_league,
+        setup_league,
+    )
+
+    if kind == SEASON_COMPLETE_KIND:
+        league = await pending_completion_league(tmp_path)
+    elif kind == SEASON_CANCEL_KIND:
+        league = await ongoing_league(tmp_path)
+    else:
+        league = await setup_league(tmp_path)
+    await signing_up(league)
+    before = await driver_state(league, SIGNING_UP)
+    await league.write("CREATE TABLE written_by_a_module (part TEXT)")
+    seen: list[tuple[Any, ...]] = []
+
+    async def _jobs_done(other: Any) -> dict[str, bool]:
+        cursor = await other.execute(
+            "SELECT s.name, s.done_at FROM queued_change_steps s "
+            "JOIN queued_changes c ON c.id = s.change_id WHERE c.kind = ?", (kind,),
+        )
+        return {row["name"]: row["done_at"] is not None for row in await cursor.fetchall()}
+
+    async def _written(db: Any, part: str) -> tuple[bool, dict[str, bool]]:
+        await db.execute("INSERT INTO written_by_a_module (part) VALUES (?)", (part,))
+        async with get_connection(league.db_path) as other:
+            cursor = await other.execute("SELECT COUNT(*) FROM written_by_a_module")
+            [elsewhere] = await cursor.fetchone()
+            return elsewhere == 0, await _jobs_done(other)
+
+    async def _returned(db: Any, drivers: Any, *_rest: Any) -> None:
+        cursor = await db.execute(
+            "SELECT current_state FROM driver_profiles WHERE discord_user_id = ?",
+            (str(SIGNING_UP),),
+        )
+        found = await cursor.fetchone()
+        cursor = await db.execute("SELECT status FROM seasons WHERE id = ?", (SEASON_ID,))
+        [status] = await cursor.fetchone()
+        unseen, done = await _written(db, "returned")
+        seen.append(("returned", str(SIGNING_UP) in repr(drivers),
+                     found is None or found[0] != before, status == standing,
+                     await driver_state(league, SIGNING_UP) == before, unseen,
+                     done.get("end"), done.get("close")))
+
+    league.bot.drivers_returned.subscribe(_returned)
+    if kind == SEASON_COMPLETE_KIND:
+        await _asked(league)
+    elif kind == SEASON_CANCEL_KIND:
+        await cancel_season(league)
+    else:
+        await abort_season(league)
+
+    await run_queue(league.bot)
+
+    assert seen == [
+        ("returned", True, True, True, True, True, False, False),
+    ]
+    rows = await league.rows("SELECT part FROM written_by_a_module ORDER BY rowid")
+    assert [row["part"] for row in rows] == ["returned"]
+
+
+@pytest.mark.parametrize("kind", [SEASON_COMPLETE_KIND, SEASON_CANCEL_KIND],
+                         ids=["completion", "cancellation"])
+async def test_the_history_asks_each_driver_s_standing_inside_the_end_save(tmp_path, kind):
+    """A further module signs up to answer a driver's standing in a division for the history,
+    answering nothing, and the season is completed (every round final) or cancelled (ongoing). The
+    module is asked once for each driver in each division they were placed in this season,
+    handed that division and every account the driver holds, each time inside the save that
+    writes the history."""
+    from tests.support.season_league import cancel_season, ongoing_league
+
+    if kind == SEASON_COMPLETE_KIND:
+        league = await pending_completion_league(tmp_path)
+    else:
+        league = await ongoing_league(tmp_path)
+    placed = await league.rows(
+        "SELECT m.division_id, (SELECT GROUP_CONCAT(a.discord_user_id) FROM ("
+        "  SELECT discord_user_id FROM driver_accounts WHERE driver_profile_id = "
+        "  m.driver_profile_id ORDER BY discord_user_id) a) AS held "
+        "FROM driver_division_memberships m WHERE m.season_id = ?",
+        SEASON_ID,
+    )
+    expected = sorted((row["division_id"], tuple(row["held"].split(",")), True) for row in placed)
+    asked: list[tuple[int, tuple[str, ...], bool]] = []
+
+    async def _watching(db: Any, division_id: int, accounts: Any) -> None:
+        asked.append((division_id, tuple(sorted(str(a) for a in accounts)), db.in_transaction))
+        return None
+
+    league.bot.season_standing_read.subscribe(_watching)
+    if kind == SEASON_COMPLETE_KIND:
+        await _asked(league)
+    else:
+        await cancel_season(league)
+
+    await run_queue(league.bot)
+
+    assert expected
+    assert sorted(asked) == expected
+
+
+@pytest.mark.parametrize("kind", [SEASON_COMPLETE_KIND, SEASON_CANCEL_KIND],
+                         ids=["completion", "cancellation"])
+async def test_the_history_holds_each_driver_s_final_standing_as_the_bot_is_built(tmp_path, kind):
+    """The season is completed (every round final, results accepted for Pro's rounds 1 and 2,
+    Lewis then Max at 25 and 18 points, and Am's round 1, Charles alone at 25) or cancelled
+    (ongoing, results accepted for Pro's round 1 alone, Lewis then Max at 25 and 18), on the bot as
+    it is built, no further module answering. Every driver is a former driver, so that the
+    driver pass keeps their history. Each driver's history entry for season 3 states
+    their final position and points and their gap to the division's winner: Lewis first on 25,
+    no gap; Max second on 18, 7 behind; Charles, in Am, first on 25, no gap where Am has results,
+    and no position, no points and no gap where it has none."""
+    from tests.support.season_league import cancel_season, ongoing_league
+
+    if kind == SEASON_COMPLETE_KIND:
+        league = await pending_completion_league(tmp_path)
+        charles = (1, 25, 0)
+    else:
+        league = await ongoing_league(tmp_path)
+        await league.write(
+            "INSERT INTO session_results (round_id, division_id, session_type, status, "
+            "config_name, submitted_by, submitted_at) "
+            "VALUES (?, ?, 'FEATURE_RACE', 'ACTIVE', 'Standard', 77, '2026-01-01T00:00:00+00:00')",
+            round_id(PRO, 1), PRO,
+        )
+        for position, user_id in enumerate((LEWIS, MAX), start=1):
+            await league.write(
+                "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
+                "driver_profile_id, standing_position, total_points) VALUES (?, ?, ?, "
+                "(SELECT driver_profile_id FROM driver_accounts WHERE discord_user_id = ?), ?, ?)",
+                round_id(PRO, 1), PRO, user_id, str(user_id), position, (25, 18)[position - 1],
+            )
+        charles = (0, 0, 0)
+    await league.write("UPDATE driver_profiles SET former_driver = 1")
+    if kind == SEASON_COMPLETE_KIND:
+        await _asked(league)
+    else:
+        await cancel_season(league)
+
+    await run_queue(league.bot)
+
+    rows = await league.rows(
+        "SELECT discord_user_id, division_name, final_position, final_points, "
+        "points_gap_to_winner FROM driver_history_entries WHERE season_number = 3"
+    )
+    held = {
+        (row["discord_user_id"], row["division_name"]):
+            (row["final_position"], row["final_points"], row["points_gap_to_winner"])
+        for row in rows
+    }
+    assert held == {
+        (str(LEWIS), "Pro"): (1, 25, 0),
+        (str(MAX), "Pro"): (2, 18, 7),
+        (str(CHARLES), "Am"): charles,
+    }
 
 
 async def test_a_stop_part_way_is_finished_on_restart_and_posts_no_final_classification_twice(
@@ -723,7 +1014,7 @@ async def test_the_list_of_outstanding_rounds_stops_at_twenty(tmp_path):
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, scheduled_at,"
             " status) VALUES (?, ?, ?, 'NORMAL', 'Silverstone', ?, 'NOT_RUN')",
             1000 + number, PRO, number,
-            league.clock.now.replace(tzinfo=None).isoformat(),
+            league.clock.now.astimezone(timezone.utc).isoformat(),
         )
 
     interaction = await _asked(league)
@@ -765,7 +1056,24 @@ async def test_a_refusal_found_when_the_completion_runs_updates_the_reply_and_th
 
 
 async def test_the_jobs_run_in_order(tmp_path):
+    """Results, attendance and test mode on; Pro's last round with results is its round 2, Am's
+    its round 1. The jobs run in the core specification's order: the save, then for Pro and then
+    for Am its final standings and its final sheet, each real driver's roles, the forecasts
+    cleared, the end save, the drivers' jobs, the portraits, the backup and the closing line. The
+    modules' final posts are planned through the season completed hook, called inside the first
+    save, on its connection, once for each division in order and handed the division's id and
+    name and the round results names for it; a further subscriber signed up to it sees the season
+    already Pending completion on that connection, before it is committed."""
     league = await pending_completion_league(tmp_path, attendance=True, test_mode=True)
+    handed: list[tuple[Any, ...]] = []
+
+    async def watching(db: Any, division_id: int, division_name: str, round_: int) -> tuple[()]:
+        cursor = await db.execute("SELECT stage FROM seasons WHERE id = ?", (SEASON_ID,))
+        stage = (await cursor.fetchone())["stage"]
+        handed.append((db.in_transaction, stage, division_id, division_name, round_))
+        return ()
+
+    league.bot.season_completed.subscribe(watching)
     await _asked(league)
 
     await run_queue(league.bot)
@@ -781,6 +1089,10 @@ async def test_the_jobs_run_in_order(tmp_path):
     between = names[names.index("end") + 1:names.index("discard_portraits")]
     assert set(between) <= {"signup_notice", "close_signup", "take_driver_role"}
     assert ("revoke_roles", TEST_DRIVER) not in jobs
+    assert handed == [
+        (True, "PENDING_COMPLETION", PRO, "Pro", round_id(PRO, 2)),
+        (True, "PENDING_COMPLETION", AM, "Am", round_id(AM, 1)),
+    ]
     assert await _status(league) == "COMPLETED"
 
 
@@ -801,6 +1113,10 @@ async def test_a_stale_division_is_finished_in_the_first_save_and_the_season_mov
 
 
 async def test_a_season_in_an_ongoing_stage_with_every_division_done_is_wound_down_first(tmp_path):
+    """The season Ongoing placements with every division done, Max's placement pending, and
+    signups shut. Admin 77 completes it: the first settle finds it still ongoing and winds it down
+    first (signup's close of the window, dropped as there is nothing to close, then the turn-down
+    save), then settles again; nothing is left pending and the season is completed."""
     league = await pending_completion_league(tmp_path, stage="ONGOING_PLACEMENTS")
     await league.write(
         "UPDATE driver_season_assignments SET committed = 0 WHERE driver_profile_id IN "
@@ -811,12 +1127,38 @@ async def test_a_season_in_an_ongoing_stage_with_every_division_done_is_wound_do
     await run_queue(league.bot)
 
     names = [name for name, _key in await _names(league)]
-    assert names[:4] == ["settle", "wind_down", "turn_down", "settle"]
+    assert names[:4] == ["settle", "close_window", "turn_down", "settle"]
     pending = await league.rows(
         "SELECT * FROM driver_season_assignments WHERE season_id = ? AND committed = 0", SEASON_ID
     )
     assert pending == []
     assert await _status(league) == "COMPLETED"
+
+
+async def test_every_audit_row_of_one_save_has_the_queues_time(tmp_path):
+    """The season Ongoing placements with every division done and Max's placement pending, the
+    queue's clock moved two days past the host's. Admin 77 completes it: the wind-down turns Max's
+    placement down and the end save runs the driver pass. Every audit row the completion writes,
+    the turn-down's and the driver pass's among them, carries the queue's time in ISO 8601 with
+    its UTC offset, never SQLite's clock."""
+    league = await pending_completion_league(tmp_path, stage="ONGOING_PLACEMENTS")
+    await league.write(
+        "UPDATE driver_season_assignments SET committed = 0 WHERE driver_profile_id IN "
+        "(SELECT id FROM driver_profiles WHERE discord_user_id = ?)", str(MAX),
+    )
+    before = await league.rows("SELECT COALESCE(MAX(id), 0) AS last FROM audit_entries")
+    league.clock.advance(days=2)
+    await _asked(league)
+
+    await run_queue(league.bot)
+
+    assert await _status(league) == "COMPLETED"
+    written = await league.rows(
+        "SELECT change_type, timestamp FROM audit_entries WHERE id > ?", before[0]["last"]
+    )
+    kinds = {row["change_type"] for row in written}
+    assert {"PENDING_PLACEMENTS_TURNED_DOWN", "DRIVER_PASS"} <= kinds
+    assert {row["timestamp"] for row in written} == {league.clock.now.isoformat()}
 
 
 async def test_a_discarded_wind_down_completes_nothing(tmp_path):
@@ -899,14 +1241,27 @@ async def test_a_division_that_ran_no_round_gets_no_final_classification(tmp_pat
 
 
 async def test_a_cancelled_division_gets_no_final_classification(tmp_path):
+    """Results and attendance on; Am cancelled, Charles a former driver. Am gets no final
+    standings and no final sheet, and nothing is posted in its channels, while Charles still
+    loses his roles, Am's history is written and the season is completed. The final round read
+    hook is asked for Pro's round alone: a cancelled division is left out before any module is
+    asked (decided 2026-10-09)."""
     league = await pending_completion_league(tmp_path, attendance=True)
     await league.write("UPDATE divisions SET status = 'CANCELLED' WHERE id = ?", AM)
     await league.write("UPDATE driver_profiles SET former_driver = 1 WHERE discord_user_id = ?",
                        str(CHARLES))
+    asked: list[int] = []
+
+    async def watching(_db: Any, division_id: int) -> None:
+        asked.append(division_id)
+        return None
+
+    league.bot.final_round_read.subscribe(watching)
     await _asked(league)
 
     await run_queue(league.bot)
 
+    assert asked == [PRO]
     names = await _names(league)
     assert ("final_standings", AM) not in names and ("final_sheet", AM) not in names
     assert league.texts(AM_CH.standings) == [] and league.texts(AM_CH.attendance) == []
@@ -1015,18 +1370,27 @@ async def test_the_signup_window_is_closed_as_the_season_ends_before_the_driver_
     still filling in the wizard, is returned by the close. The window's close is audited once,
     by the system, and its one "🔒 Signups closed as the season ended" line written in that
     post's record: it names no member, and states the one driver returned beneath it (signup
-    :67). The rest of the queue completes the season."""
+    :67). Driver 106, awaiting a league manager's approval, is left as they are: the close
+    returns only drivers still filling in the wizard (signup spec, "signup close"), so 106 is
+    neither returned nor told nor locked by it, and the line counts the one driver. The rest of
+    the queue completes the season."""
     league = await pending_completion_league(tmp_path, signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
+    await signing_up(league, SIGNING_UP_TOO, state="PENDING_ADMIN_APPROVAL")
     await _asked(league)
 
     await _run_through(league, "post_closed")
+    assert await driver_state(league, SIGNING_UP_TOO) == "PENDING_ADMIN_APPROVAL"
+    assert SIGNING_UP_TOO not in [user for user, _text in league.notices]
+    assert SIGNING_UP_TOO not in league.locked
     assert await _window_close_audits(league) == [
         ("SIGNUP_SEASON_END_CLOSE", "open", "closed", "system")
     ]
     [line] = await _closed_lines(league)
     assert "<@" not in line, line
-    assert any("returned" in text and "1" in text for text in line.splitlines()[1:]), line
+    assert [text for text in line.splitlines()[1:] if "returned" in text] == [
+        "  drivers_returned_to_not_signed_up: 1"
+    ], line
     assert not await window_open(league)
     assert await _history(league) == []
     assert await driver_state(league, MAX) == "ASSIGNED"
@@ -1099,7 +1463,9 @@ async def test_the_portraits_of_the_drivers_deleted_are_discarded_after_the_save
     calls: list[tuple[str, str]] = []
     holder: dict[str, str] = {}
 
-    async def _discard(_bot: Any, accounts: Any) -> None:
+    async def _discard(*args: Any) -> None:
+        # The accounts come last, whatever the discard is handed before them.
+        accounts = args[-1]
         with sqlite3.connect(holder["db"]) as db:
             status = db.execute("SELECT status FROM seasons WHERE id = ?",
                                 (SEASON_ID,)).fetchone()[0]
@@ -1210,6 +1576,16 @@ async def _window_refused(tmp_path: Any, _monkeypatch: Any) -> Any:
     return league
 
 
+async def _button_refused(tmp_path: Any, _monkeypatch: Any) -> Any:
+    from tests.support.season_league import SIGNUP_BUTTON, SIGNUP_CHANNEL
+
+    league = await pending_completion_league(tmp_path, signups_open=True)
+    league.channel(SIGNUP_CHANNEL).messages[SIGNUP_BUTTON].delete = AsyncMock(
+        side_effect=_forbidden()
+    )
+    return league
+
+
 async def _flush_refused(tmp_path: Any, monkeypatch: Any) -> Any:
     _flush_failing(monkeypatch, {"now": True})
     return await pending_completion_league(tmp_path, test_mode=True)
@@ -1238,6 +1614,7 @@ async def _sheet_refused(tmp_path: Any, _monkeypatch: Any) -> Any:
 #: Each job a league admin may discard: the league that makes it fail, where the queue stops,
 #: and what the reply and the line say was not done.
 _DISCARDS = {
+    "delete_button": (_button_refused, ("delete_button", None), BUTTON_KEPT),
     "post_closed": (_window_refused, ("post_closed", None), WINDOW_OPEN),
     "flush_forecasts": (_flush_refused, ("flush_forecasts", None), FORECASTS_KEPT),
     "close_signup": (_lock_refused, ("close_signup", SIGNING_UP), SIGNUP_KEPT),
@@ -1474,6 +1851,248 @@ async def test_a_window_close_whose_closing_record_fails_keeps_its_drivers_for_t
     assert await _status(league) == "COMPLETED"
 
 
+# ── The window's close returns its drivers in one save (#283, S8e) ──────────────────
+
+#: A driver still filling in the wizard alongside `SIGNING_UP`, read after them.
+SIGNING_UP_TOO = SIGNING_UP + 1
+
+
+async def _refuse_returning(league: Any, user_id: int) -> None:
+    """The database refuses to return driver *user_id* to Not Signed Up, as a disk that fails part
+    of the way through a close would: any save that tries it is undone."""
+    await league.write(
+        "CREATE TRIGGER refuse_return BEFORE UPDATE OF current_state ON driver_profiles "
+        "WHEN NEW.current_state = 'NOT_SIGNED_UP' AND OLD.discord_user_id = '"
+        + str(user_id) + "' BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END"
+    )
+
+
+#: Each end of a season that closes the signup window, as `_ending` names it.
+ENDS = ["completion", "cancellation", "abort", "wind-down"]
+
+
+#: The command each end's closing line names, and the word it reads with the window not closed,
+#: as today: a completion reads "Incomplete", a cancellation and an abort "Success".
+CLOSING_LINE = {
+    "completion": ("/season complete", "Incomplete"),
+    "cancellation": ("/season cancel", "Success"),
+    "abort": ("/season abort", "Success"),
+}
+
+
+#: What the league manager does with the stopped close: Retry once the database takes it, or
+#: Discard it.
+THEN = ["retry", "discard"]
+
+
+@pytest.mark.parametrize("then", THEN)
+@pytest.mark.parametrize("end", ENDS)
+async def test_the_season_s_close_returns_every_driver_signing_up_in_one_save_or_none(
+    tmp_path, end, then,
+):
+    """The signup window open with drivers 105 and 106 still filling in the wizard, and the
+    season's completion, cancellation, abort or wind-down asked. Returning 106 fails: the close
+    stops with neither driver returned, both still signing up, nobody told and the window open.
+    Once the database takes it, a Retry returns both, each is told once that signups have closed
+    and has their channel closed, the window is closed and the queue runs on to the end. A Discard
+    instead returns neither and tells nobody that signups have closed, and leaves the window open,
+    with no line naming anyone as returned but not told (decision 64, 'All or nothing').
+
+    What the queue then does to the drivers depends on the end. The completion, the cancellation
+    and the abort run on to their end save, which returns every driver still in a state to Not
+    Signed Up and deletes each real driver without the former-driver flag, as today: after a Retry
+    both are gone, and after a Discard both are gone too, each told once that the season has ended
+    and having their channel closed. Their reply names the window, alone, as not closed, to be
+    closed with `/signup close`, and so does the closing line. The wind-down deletes nobody: after
+    a Retry both are Not Signed Up; after a Discard both are still signing up, nobody is told, and
+    it writes one "System | Every division is done | Incomplete" line naming the window, alone, as
+    not closed (decision 65), as a discarded closed notice of the wind-down does today."""
+    league = await _league_ending(tmp_path, end)
+    await signing_up(league, SIGNING_UP, state="PENDING_SIGNUP_COMPLETION")
+    await signing_up(league, SIGNING_UP_TOO, state="PENDING_SIGNUP_COMPLETION")
+    await _refuse_returning(league, SIGNING_UP_TOO)
+    interaction = await _ending(league, end)
+
+    await run_queue(league.bot)
+
+    assert await driver_state(league, SIGNING_UP) == "PENDING_SIGNUP_COMPLETION"
+    assert await driver_state(league, SIGNING_UP_TOO) == "PENDING_SIGNUP_COMPLETION"
+    assert await _stopped_at(league) == ("close_window", None)
+    assert league.notices == [] and league.locked == []
+    assert await window_open(league)
+
+    await league.write("DROP TRIGGER refuse_return")
+    if then == "discard":
+        await discard_job(league.bot)
+
+        assert await window_open(league)
+        untold = "was returned to Not Signed Up when signups closed"
+        assert interaction is None or untold not in reply(interaction)
+        lines = list(league.bot.log_channel.sent) + await queued_log_lines(league.db_path)
+        assert not any(untold in line for line in lines)
+        if interaction is None:
+            # The wind-down deletes nobody: both are still signing up, and nobody is told.
+            assert await driver_state(league, SIGNING_UP) == "PENDING_SIGNUP_COMPLETION"
+            assert await driver_state(league, SIGNING_UP_TOO) == "PENDING_SIGNUP_COMPLETION"
+            assert league.notices == [] and league.locked == []
+            [line] = [each for each in _log_lines(league)
+                      if each.startswith("System | Every division is done | ")]
+            assert line.startswith("System | Every division is done | Incomplete\n"), line
+            assert [each.split("  not done: ", 1)[1] for each in line.splitlines()
+                    if each.startswith("  not done: ")] == [WINDOW_OPEN]
+            return
+        # The end save returns and deletes both, and its own driver jobs tell each the season
+        # has ended and close their channel, as today.
+        assert await driver_state(league, SIGNING_UP) is None
+        assert await driver_state(league, SIGNING_UP_TOO) is None
+        ended = ("🔒 This season has ended. This channel will be automatically deleted in 24 "
+                 "hours.")
+        assert league.notices == [(SIGNING_UP, ended), (SIGNING_UP_TOO, ended)]
+        assert league.locked == [SIGNING_UP, SIGNING_UP_TOO]
+        # What was not done is named as today: the window, alone, to be closed by hand.
+        assert _not_done(reply(interaction)) == [WINDOW_OPEN]
+        command, status = CLOSING_LINE[end]
+        [line] = [each for each in _log_lines(league) if f"| {command} | " in each]
+        assert line.startswith(f"Admin (`<@77>`) | {command} | {status}"), line
+        assert [each.split("  not done: ", 1)[1] for each in line.splitlines()
+                if each.startswith("  not done: ")] == [WINDOW_OPEN]
+        return
+    await retry_job(league.bot)
+
+    # The completion, the cancellation and the abort delete both at their end save, as today.
+    returned = "NOT_SIGNED_UP" if end == "wind-down" else None
+    assert await driver_state(league, SIGNING_UP) == returned
+    assert await driver_state(league, SIGNING_UP_TOO) == returned
+    assert league.notices == [(SIGNING_UP, SIGNUPS_CLOSED), (SIGNING_UP_TOO, SIGNUPS_CLOSED)]
+    assert league.locked == [SIGNING_UP, SIGNING_UP_TOO]
+    assert not await window_open(league)
+    assert await stopped_job(league.db_path) is None
+
+
+async def test_a_completion_whose_wind_down_close_is_discarded_closes_the_window_itself(tmp_path):
+    """The season Ongoing with signups open and every division done, driver 105 still filling in
+    the wizard, and admin 77 completes it: the completion winds the season down first. Returning
+    105 fails, so the wind-down's close of the window stops the queue, and once the database takes
+    it the admin discards that close. The queue runs on: the completion's own close closes the
+    window, 105 is told once and has their channel closed, and the season is completed. Neither
+    the reply nor the closing line names the window as not closed, as today."""
+    league = await pending_completion_league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
+    await signing_up(league, SIGNING_UP, state="PENDING_SIGNUP_COMPLETION")
+    await _refuse_returning(league, SIGNING_UP)
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+    assert await stopped_job(league.db_path) is not None
+    assert (await league.season())["stage"] == "ONGOING_SIGNUPS"
+    assert await window_open(league)
+    await league.write("DROP TRIGGER refuse_return")
+    await discard_job(league.bot)
+    await run_queue(league.bot)
+
+    assert not await window_open(league)
+    assert league.notices == [(SIGNING_UP, SIGNUPS_CLOSED)]
+    assert league.locked == [SIGNING_UP]
+    assert await _status(league) == "COMPLETED"
+    assert WINDOW_OPEN not in reply(interaction)
+    [line] = _closing_lines(league)
+    assert WINDOW_OPEN not in line, line
+
+
+async def test_a_discarded_final_post_is_named_before_a_wind_down_job_discarded_before_it(
+    tmp_path,
+):
+    """The season Ongoing with signups open and every division done, and admin 77 completes it:
+    the completion winds the season down first. Discord refuses to delete the Sign Up button, so
+    the wind-down's deletion of it stops the queue, and the admin discards it; the season is
+    turned down and settled, and Discord then refuses Pro's final standings, which the admin
+    discards too. Though the button's job ran first, the reply's "Not everything could be done"
+    names Pro's final classification first and the button after it, and so do the closing line's
+    "not done:" entries, word for word, as today."""
+    from tests.support.season_league import SIGNUP_BUTTON, SIGNUP_CHANNEL
+
+    league = await pending_completion_league(tmp_path, stage="ONGOING_SIGNUPS", signups_open=True)
+    league.channel(SIGNUP_CHANNEL).messages[SIGNUP_BUTTON].delete = AsyncMock(
+        side_effect=_forbidden()
+    )
+    league.channel(PRO_CH.standings).send_fails = _forbidden()
+    interaction = await _asked(league)
+
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == ("delete_button", None)
+    await discard_job(league.bot)
+    await run_queue(league.bot)
+    assert await _stopped_at(league) == ("final_standings", PRO)
+    await discard_job(league.bot)
+    await run_queue(league.bot)
+
+    assert await _status(league) == "COMPLETED"
+    assert _not_done(reply(interaction)) == [PRO_NOT_POSTED, BUTTON_KEPT]
+    [line] = _closing_lines(league)
+    assert line.startswith(INCOMPLETE), line
+    assert [each.split("  not done: ", 1)[1] for each in line.splitlines()
+            if each.startswith("  not done: ")] == [PRO_NOT_POSTED, BUTTON_KEPT]
+
+
+async def _league_ending(tmp_path: Any, end: str) -> Any:
+    """The league whose season *end* closes: being set up for the abort, ongoing for the
+    cancellation, ongoing with signups and every division done for the wind-down, pending
+    completion for the completion; its signup window open."""
+    from tests.support.season_league import ongoing_league, setup_league
+
+    if end == "abort":
+        return await setup_league(tmp_path, signups_open=True)
+    if end == "cancellation":
+        return await ongoing_league(tmp_path, signups_open=True)
+    if end == "wind-down":
+        return await pending_completion_league(
+            tmp_path, stage="ONGOING_SIGNUPS", signups_open=True
+        )
+    return await pending_completion_league(tmp_path, signups_open=True)
+
+
+async def _ending(league: Any, end: str) -> Any:
+    """Ask for *end* of the season: `/season complete`, `/season cancel`, `/season abort`, or the
+    wind-down the bot asks once every division is done. Gives the command's interaction, or None
+    for the wind-down, which no one types."""
+    from leaguebot.core.models.change import ChangeOrigin
+    from tests.support.season_league import WIND_DOWN_KIND, abort_season, cancel_season
+
+    if end == "completion":
+        return await _asked(league)
+    if end == "cancellation":
+        return await cancel_season(league)
+    if end == "abort":
+        return await abort_season(league)
+    await league.bot.change_queue.ask(
+        WIND_DOWN_KIND, {}, origin=ChangeOrigin.BOT, what="Winding the season down",
+    )
+    return None
+
+
+@pytest.mark.parametrize(("end", "named"), [
+    ("completion", "closing the signup window as season 3 ends"),
+    ("cancellation", "closing the signup window as season 3 ends"),
+    ("abort", "closing the signup window as the season being set up is aborted"),
+    ("wind-down", "winding the season down"),
+], ids=["completion", "cancellation", "abort", "wind-down"])
+async def test_a_season_s_close_that_fails_is_named_in_the_stop_notice_as_today(
+    tmp_path, end, named,
+):
+    """The signup window open with driver 105 still filling in the wizard, and the season's
+    completion, cancellation, abort or wind-down asked. Returning 105 fails: the queue stops, and
+    its stop notice names the job that closes the window in the words it uses today."""
+    league = await _league_ending(tmp_path, end)
+    await signing_up(league, SIGNING_UP, state="PENDING_SIGNUP_COMPLETION")
+    await _refuse_returning(league, SIGNING_UP)
+    await _ending(league, end)
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is not None
+    stops = [line for line in _log_lines(league) if line.startswith("❌ The queue is stopped at")]
+    assert len(stops) == 1 and f": {named} for " in stops[0], stops
+
+
 # ── A signup's end, marked in the save that ends it (amendment K2) ───────────────────
 
 #: How a driver returned and left untold would be named, in the reply and the line: never for a
@@ -1507,11 +2126,6 @@ async def _closed_lines(league: Any) -> list[str]:
 
 #: How a driver the season's end cannot tell for want of a signup channel is named.
 NO_CHANNEL = f"<@{SIGNING_UP}> had no signup channel left to tell"
-
-
-async def _owed(league: Any) -> list[str]:
-    """The accounts still owed their closing notice, as signup keeps them."""
-    return await league.bot.signup_module_service.owed_closing_notices()
 
 
 async def _mid_wizard(league: Any, user_id: int = SIGNING_UP, *,
@@ -1551,8 +2165,8 @@ async def test_a_window_close_cut_off_by_a_kill_after_the_window_is_recorded_clo
     """The signup window open with driver 105 still filling in the wizard, and the completion
     queued. The bot is killed in `post_closed`'s record straight after it writes the window
     closed, before its save commits: the window is still open. When the bot starts again, the
-    close is not dropped as no longer due: 105 is told once, then their channel locked, the
-    season completed, and 105 is owed nothing more."""
+    close is not dropped as no longer due: 105 is told once, then their channel locked, and the
+    season completed."""
     league = await pending_completion_league(tmp_path, signups_open=True)
     await signing_up(league, state="PENDING_SIGNUP_COMPLETION")
     _killed_after_the_window_is_recorded_closed(league)
@@ -1576,7 +2190,6 @@ async def test_a_window_close_cut_off_by_a_kill_after_the_window_is_recorded_clo
     ]
     assert not await window_open(league)
     assert await _status(league) == "COMPLETED"
-    assert await _owed(league) == []
 
 
 @pytest.mark.parametrize("refused", ["the record", "the post"])
@@ -1591,9 +2204,9 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     none stands. 105 is still told, then their channel locked, by their own jobs; the
     reply and the closing line say the window was not closed, to be closed with `/signup close`,
     and never name 105 as returned but not told; the window is still recorded open, with no
-    audit of its close and no "🔒 Signups closed" line, the season completed, and 105 is owed
-    nothing more. The closing line reads "| Incomplete" for the window alone, and nothing not
-    done, there or in the reply, names 105."""
+    audit of its close and no "🔒 Signups closed" line, and the season completed. The closing
+    line reads "| Incomplete" for the window alone, and nothing not done, there or in the reply,
+    names 105."""
     from tests.support.season_league import SIGNUP_CHANNEL
 
     league = await pending_completion_league(tmp_path, signups_open=True)
@@ -1636,7 +2249,6 @@ async def test_a_discarded_closed_notice_still_tells_and_closes_the_drivers_the_
     assert await _window_close_audits(league) == []
     assert await _closed_lines(league) == []
     assert await _status(league) == "COMPLETED"
-    assert await _owed(league) == []
 
 
 async def _withdrew_with_the_notice_refused(league: Any, user_id: int = SIGNING_UP) -> Any:

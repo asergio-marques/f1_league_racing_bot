@@ -11,10 +11,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from leaguebot.core.cogs.season_cog import PendingConfig, SeasonCog
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.cogs.season_cog import SeasonCog
 from leaguebot.core.models.season import SeasonStage
-from leaguebot.core.services.season_service import SeasonService
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 22160
@@ -28,7 +26,6 @@ def _cog(stage: SeasonStage | None) -> SeasonCog:
     )
     cog.bot.change_queue.ask = AsyncMock(return_value=1)
     cog.bot.output_router.post_log = AsyncMock()
-    cog._pending = {42: PendingConfig(season_id=7)}
     return cog
 
 
@@ -80,37 +77,3 @@ async def test_every_season_abort_refusal_is_recorded(stage, word, reply):
     cog.bot.change_queue.ask.assert_not_awaited()
     logged = [str(call.args[0]) for call in cog.bot.output_router.post_log.await_args_list]
     assert logged == [f"\u26d4 `/season abort` refused for Admin (<@42>) \u2014 {reply[2:]}"]
-
-
-async def test_deleting_the_season_takes_its_signups_windows_and_configuration(tmp_path):
-    path = str(tmp_path / "abort.db")
-    await run_migrations(path)
-    async with get_connection(path) as db:
-        await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (?, 1, 2, 3)",
-            (SERVER_ID,),
-        )
-        await db.execute(
-            "INSERT INTO seasons (id, start_date, status, season_number, stage) "
-            "VALUES (7, '2026-09-17', 'SETUP', 1, 'PLACEMENTS')"
-        )
-        await db.execute(
-            "INSERT INTO signup_windows (season_id) VALUES (7)")
-        await db.execute(
-            "INSERT INTO season_signup_config (season_id, nationality_required, time_type, "
-            "time_image_required) VALUES (7, 1, 'TIME_TRIAL', 1)"
-        )
-        await db.execute(
-            "INSERT INTO signup_records (season_id, discord_user_id) VALUES (7, '1')"
-        )
-        await db.commit()
-
-    async with get_connection(path) as db:
-        await SeasonService.delete_season(db, 7)
-        await db.commit()
-
-    async with get_connection(path) as db:
-        for table in ("seasons", "signup_windows", "season_signup_config", "signup_records"):
-            cursor = await db.execute(f"SELECT COUNT(*) FROM {table}")  # noqa: S608
-            assert (await cursor.fetchone())[0] == 0, table

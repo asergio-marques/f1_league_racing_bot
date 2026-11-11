@@ -19,14 +19,14 @@ from __future__ import annotations
 import importlib
 from contextlib import ExitStack
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
 
-from leaguebot.core.services.season_service import SeasonImmutableError
+from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 from tests.support.change_queue import (
     acknowledgement,
     change_rows,
@@ -57,6 +57,7 @@ from tests.support.season_league import (
     cancel_division,
     cancel_round,
     cancellation_changes,
+    notices_handed,
     ongoing_league,
     open_submission,
     profile_id,
@@ -164,7 +165,7 @@ async def _round_audits(league: Any) -> list[str]:
 async def _awaiting_results(league: Any, rid: int) -> None:
     await league.write(
         "UPDATE rounds SET status = 'AWAITING_RESULTS', scheduled_at = ? WHERE id = ?",
-        (league.clock.now - timedelta(hours=2)).replace(tzinfo=None).isoformat(), rid,
+        (league.clock.now - timedelta(hours=2)).astimezone(timezone.utc).isoformat(), rid,
     )
 
 
@@ -206,9 +207,9 @@ def _refusal_lines(league: Any) -> list[str]:
 def _everywhere(name: str, new: Any) -> ExitStack:
     """Patch *name* wherever core keeps it, and the change type's own reference to it."""
     stack = ExitStack()
-    for module_name in ("leaguebot.core.services.season_service",
-                        "leaguebot.core.services.season_lifecycle_service",
-                        "leaguebot.core.services.cancellation_changes"):
+    for module_name in ("leaguebot.core.services.seasons.season_service",
+                        "leaguebot.core.services.seasons.season_lifecycle_service",
+                        "leaguebot.core.services.cancellations.cancellation_changes"):
         try:
             module = importlib.import_module(module_name)
         except ImportError:
@@ -519,6 +520,77 @@ async def test_the_jobs_run_in_today_s_order(tmp_path):
     assert deleted == list(CALL_MESSAGES) + list(R4_CALL)
     sent = [cid for kind, cid, _mid in league.events if kind == "send"]
     assert sent == [PRO_CH.checkin, PRO_CH.forecast, PRO_CH.results, PRO_CH.calendar]
+
+
+#: The channel a module of the test's own plans deleted first of all after the save.
+_ITS_CHANNEL = 4242
+
+
+async def test_a_subscriber_s_planned_steps_are_planned_in_the_save_in_order(tmp_path):
+    """A module of the test's own signs up to the rounds called off, after results and
+    attendance, and plans a channel deleted ahead of every notice and, for Pro, round 4's call
+    taken down after Pro's check-in notice. Cancelling Pro, it is handed the save's own connection,
+    on which it reads round 3 already called off before the save commits, and the rounds the save
+    called off, each with its division and marked called off, and once the
+    save is done its steps stand where it placed them: the channel's deletion straight after the
+    save, then Pro's check-in notice, attendance's own take-down of round 3's call, the module's
+    take-down of round 4's, then the forecast and results notes, the calendar and the close."""
+    from leaguebot.core.models.cancellation import CalledOffSteps
+    from leaguebot.core.models.change import PlannedStep
+
+    league = await ongoing_league(tmp_path)
+    seen: list[tuple[str, list[tuple[int, int, str, bool]]]] = []
+    # Round 3's status as the connection handed in reads it. Only the save's own connection
+    # sees the round called off before the save commits.
+    read_in_the_save: list[str] = []
+
+    async def plans(db, scope, rounds):
+        cursor = await db.execute("SELECT status FROM rounds WHERE id = ?", (R3,))
+        read_in_the_save.append((await cursor.fetchone())[0])
+        seen.append((scope, [(each.round_id, each.division_id, each.division_name,
+                              each.called_off) for each in rounds]))
+        return CalledOffSteps(
+            first=(PlannedStep("delete_channel", {
+                "channel_id": _ITS_CHANNEL, "round_id": R4, "what": "test channel",
+                "reason": "Division cancelled", "division_name": "Pro", "round_number": 4,
+            }),),
+            with_division={PRO: (PlannedStep("take_down_call", {
+                "division_id": PRO, "division_name": "Pro", "season_id": SEASON_ID,
+                "round_id": R4, "round_number": 4,
+            }),)},
+        )
+
+    league.bot.rounds_called_off.subscribe(plans)
+    await _asked(league)
+
+    await _run_through(league, "apply")
+
+    jobs = await _jobs(league)
+    [saved] = [job for job in jobs if job["name"] == "apply"]
+    assert seen == [("division", [(rid, PRO, "Pro", True)
+                                  for rid in saved["result"]["called_off"]])]
+    assert read_in_the_save == ["CANCELLED"]
+    assert [job["name"] for job in jobs] == [
+        "unarm", "apply", "delete_channel", "notify_checkin", "take_down_call", "take_down_call",
+        "notify_forecast", "notify_results", "post_calendar", "close",
+    ]
+    assert json.loads(jobs[2]["payload"])["channel_id"] == _ITS_CHANNEL
+    assert [json.loads(job["payload"])["round_id"] for job in jobs[4:6]] == [R3, R4]
+
+
+async def test_the_save_hands_the_division_to_the_notices_hook(tmp_path):
+    """Pro is cancelled. Inside the save, on the save's own connection, the hook the modules'
+    notices are planned through is called once, handed the division scope and Pro: its id, name
+    and season."""
+    league = await ongoing_league(tmp_path)
+    handed = notices_handed(league)
+    await _asked(league)
+
+    await _done(league)
+
+    assert handed == [
+        ("division", {"division_id": PRO, "division_name": "Pro", "season_id": SEASON_ID}, True)
+    ]
 
 
 async def test_every_round_of_the_division_loses_its_timed_work(tmp_path):
@@ -868,7 +940,7 @@ async def test_a_session_accepted_after_the_check_refuses_the_save_and_arms_agai
     await open_submission(league, R3)
     await league.write(
         "UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-        (league.clock.now - timedelta(minutes=10)).replace(tzinfo=None).isoformat(), R4,
+        (league.clock.now - timedelta(minutes=10)).astimezone(timezone.utc).isoformat(), R4,
     )
     interaction = await _asked(league)
     scheduler = league.bot.scheduler_service

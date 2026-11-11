@@ -1,7 +1,7 @@
 """A results submission a restart cut short, cleared and reopened on the change queue (#439,
 slice 6b, C50).
 
-When the bot starts, `_recover_orphaned_submission_channels` finds each round whose submission
+When the bot starts, `recover_orphaned_submission_channels` finds each round whose submission
 channel stands open and is in no review: a first paste the restart cut short. It no longer clears
 it itself. Before the queue starts it asks, as the bot, for `results.submission.restart` of the
 round, on the league lane (a start-up step's work runs whole there, R2(a)): `clear` saves the
@@ -97,7 +97,8 @@ async def _restart(league: SeasonLeague, *, run: bool = True) -> None:
     off the queue does not run behind the test. Where the queue is not to run, its worker is
     stopped before it ever runs: left running, it would carry out what the test means to find
     still in hand, as soon as the recovery waits on the database, on a slow host."""
-    import leaguebot.__main__ as bot_module
+    from leaguebot.results.wiring import recover_orphaned_submission_channels
+
 
     queue = await restart_queue(league.bot)
     if not run:
@@ -108,7 +109,7 @@ async def _restart(league: SeasonLeague, *, run: bool = True) -> None:
         real = result_submission_service.run_result_submission_job
         result_submission_service.run_result_submission_job = stub
     try:
-        await bot_module._recover_orphaned_submission_channels(league.bot)
+        await recover_orphaned_submission_channels(league.bot)
     finally:
         if had:
             result_submission_service.run_result_submission_job = real

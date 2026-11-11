@@ -13,12 +13,21 @@ import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import StepFailedOnDiscord, VerdictKind
+from leaguebot.core.models.cancellation import (
+    SCOPE_DIVISION,
+    SCOPE_ROUND,
+    SCOPE_SEASON,
+    CalledOffSteps,
+    CancellationRound,
+)
+from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord, VerdictKind
+from leaguebot.core.models.season_end import COMPLETION
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.core.models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat
 from leaguebot.results.models.session_result import DriverSessionResult, OutcomeModifier  # DriverSessionResult kept as DTO for compute_points_for_session
-from leaguebot.core.services.team_service import resolve_team_reference
+from leaguebot.core.services.drivers.driver_service import set_former_drivers_on
+from leaguebot.core.services.drivers.team_service import resolve_team_reference
 from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.input_validator import (
     USER_MENTION,
@@ -38,9 +47,10 @@ from leaguebot.core.utils.league_server import CallbackButton, LeagueView
 from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.utils.member_names import interaction_member
 from leaguebot.results.services.results_post_service import _parse_ids
+from leaguebot.results.services.review_posting import DELETE_CHANNEL
 
 if TYPE_CHECKING:
-    from leaguebot.core.services.change_queue import ChangeQueue
+    from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.results.services.attendance_hook import AttendanceAfterReview
     from leaguebot.results.services.penalty_wizard import PenaltyReviewState
 
@@ -138,12 +148,6 @@ async def open_submissions_on(
             OpenSubmission(round_id, int(row["channel_id"]), await cursor.fetchone() is not None)
         )
     return found
-
-
-async def open_submissions(db_path: str, round_ids: Iterable[int]) -> list[OpenSubmission]:
-    """`open_submissions_on` on a connection of its own."""
-    async with get_connection(db_path) as db:
-        return await open_submissions_on(db, round_ids)
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +259,93 @@ async def close_submissions_on(
             "UPDATE round_submission_channels SET closed = 1 WHERE round_id = ?", (round_id,)
         )
     return closed
+
+
+def _accepted_in_the_way(scope: str, held: list[tuple[CancellationRound, int]]) -> str:
+    """The refusal of a cancellation of *scope* for the first of *held*, the rounds whose open
+    submission has accepted results, each with its channel: the lowest-numbered round for a
+    division's, the first in the order handed for a season's. The words are results': what the
+    cancellation would lose is the results."""
+    if scope == SCOPE_ROUND:
+        each, channel_id = held[0]
+        return (
+            f"❌ Cannot cancel Round {each.round_number} — results have already been accepted "
+            f"in its submission channel <#{channel_id}>, and cancelling would lose them."
+        )
+    if scope == SCOPE_DIVISION:
+        each, channel_id = min(held, key=lambda found: found[0].round_number)
+        return (
+            f"❌ Cannot cancel **{each.division_name}** — results have already been accepted in "
+            f"the submission channel of round {each.round_number} (<#{channel_id}>), and "
+            "cancelling would lose them."
+        )
+    each, channel_id = held[0]
+    return (
+        f"❌ Cannot cancel the season — results have already been accepted in the submission "
+        f"channel of round {each.round_number} of **{each.division_name}** (<#{channel_id}>), "
+        "and cancelling would lose them."
+    )
+
+
+async def cancellation_refusal(
+    db: aiosqlite.Connection, scope: str, rounds: Iterable[CancellationRound]
+) -> str | None:
+    """What stands in a cancellation's way, as results has it: the refusal where any of *rounds*
+    has an open submission that has accepted results (**owner, 2026-10-08, amending Constitution
+    XII**: a cancellation would lose them, and a round in its review counts), else None.
+
+    Subscribed to core's `cancellation_refused`, which asks it on a connection of its own as the
+    cancellation is asked and as it runs, and again inside the save as a backstop. Reads only.
+    """
+    standing = list(rounds)
+    accepted = {
+        each.round_id: each.channel_id
+        for each in await open_submissions_on(db, [each.round_id for each in standing])
+        if each.accepted
+    }
+    held = [(each, accepted[each.round_id]) for each in standing if each.round_id in accepted]
+    return _accepted_in_the_way(scope, held) if held else None
+
+
+#: Why each scope's cancellation deletes a submission channel, as the job says it.
+_CHANNEL_REASON = {
+    SCOPE_ROUND: "Round cancelled",
+    SCOPE_DIVISION: "Division cancelled",
+    SCOPE_SEASON: "Season cancelled",
+}
+
+
+async def close_called_off_on(
+    db: aiosqlite.Connection, scope: str, rounds: Iterable[CancellationRound]
+) -> CalledOffSteps:
+    """Close the open submission of each of *rounds* on the connection handed, committing nothing,
+    and plan the deletion of each one's channel, in the order handed, first after the save: the
+    channel is where a manager pastes, so it goes before any notice.
+
+    Subscribed to core's `rounds_called_off`. A season's cancellation hands every round of the
+    divisions it ends, whether or not it calls the round off, and every empty submission is
+    closed. A submission that has accepted nothing is all there is to close: the cancellation was
+    refused while one had accepted results (`cancellation_refusal`).
+
+    The job's own payload carries `channel_target` ("results submission channel of round N"),
+    results' own word for what a discard of it leaves undeleted, so that core's `not_notified`
+    can name it without naming the job (`notice_target` is the same shape for a module's notice).
+    """
+    standing = {each.round_id: each for each in rounds}
+    closed = dict(await close_submissions_on(db, list(standing)))
+    return CalledOffSteps(first=tuple(
+        PlannedStep(DELETE_CHANNEL, {
+            "channel_id": closed[round_id],
+            "round_id": round_id,
+            "what": "results submission channel",
+            "channel_target": f"results submission channel of round {each.round_number}",
+            "reason": _CHANNEL_REASON[scope],
+            "division_name": each.division_name,
+            "round_number": each.round_number,
+        })
+        for round_id, each in standing.items()
+        if round_id in closed
+    ))
 
 
 async def is_channel_in_penalty_review(db_path: str, channel_id: int) -> bool:
@@ -398,7 +489,11 @@ async def recompute_former_drivers_for_round(
     """Set the former-driver flag from one round's final results, both ways (#216).
 
     Runs on the caller's connection and commits nothing, so the flag moves in the same
-    transaction as whatever made the round final.
+    transaction as whatever made the round final. The flag is core's: this works out who has
+    raced and writes it through core's `set_former_drivers_on`, never into the table itself.
+    Five paths reach it, each in the save that made the round final: the appeals finaliser, an
+    amendment's stage three, the revert, and, through :func:`rounds_made_final_on`, the two
+    closers of core's that make a round FINAL (results switched off, a season cancelled).
 
     The core specification's **Leaving the league** section is the rule: a driver has raced a
     round only once that round is FINAL and only by its final results, an entry recording that
@@ -467,12 +562,20 @@ async def recompute_former_drivers_for_round(
         )
         raced_elsewhere = {r["profile_id"] for r in await cursor.fetchall()}
 
-    for profile_id in sorted(candidates):
-        should_be_former = profile_id in raced_here or profile_id in raced_elsewhere
-        await db.execute(
-            "UPDATE driver_profiles SET former_driver = ? WHERE id = ? AND former_driver != ?",
-            (int(should_be_former), profile_id, int(should_be_former)),
-        )
+    await set_former_drivers_on(
+        db, {p: p in raced_here or p in raced_elsewhere for p in candidates}
+    )
+
+
+async def rounds_made_final_on(db: aiosqlite.Connection, round_ids: Iterable[int]) -> None:
+    """Mark the drivers who raced each of *round_ids* as former drivers, on the save's connection.
+
+    Results' part of the rounds a closer of core's made FINAL (`rounds_made_final`): core hands
+    the rounds it closed, when results is switched off and when a season is cancelled, and each
+    round is recomputed as :func:`recompute_former_drivers_for_round` does it. Commits nothing.
+    """
+    for round_id in round_ids:
+        await recompute_former_drivers_for_round(db, round_id)
 
 
 @posts_in_a_job
@@ -658,7 +761,7 @@ async def _snapshot_staged_drivers_on(
     dsr_rows = await cursor.fetchall()
     # The standings are keyed by the account a driver uses now; a staged penalty by the
     # one its result stands under (issue #243).
-    from leaguebot.core.services.driver_service import current_account_map_for_division
+    from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
 
     current_of = await current_account_map_for_division(db, division_id)
 
@@ -696,8 +799,8 @@ async def _save_session_result_in_tx(
     A resubmission's swap writes every session of a round in the same transaction as the delete
     of the results they replace.
     """
-    from leaguebot.core.services.season_service import SeasonImmutableError
-    from leaguebot.core.services.driver_service import resolve_driver_profile_id
+    from leaguebot.core.services.seasons.season_service import SeasonImmutableError
+    from leaguebot.core.services.drivers.driver_service import resolve_driver_profile_id
 
     submitted_at = datetime.now(timezone.utc).isoformat()
     cursor = await db.execute(
@@ -861,7 +964,7 @@ async def _repoint_verdicts(
     """
     if not verdicts:
         return
-    from leaguebot.core.services.driver_service import current_account_map_for_division
+    from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
 
     current_of = await current_account_map_for_division(db, division_id)
 
@@ -1355,6 +1458,33 @@ async def open_amendment_in_season(db_path: str, season_id: int):
         return await cursor.fetchone()
 
 
+async def season_end_refusal(db_path: str, season_id: int, ending: str) -> str | None:
+    """What stands in the way of the season's *ending* (`COMPLETION` or `CANCELLATION`), as results
+    has it: the refusal where a round is being amended, else None (#345, decided 2026-09-21).
+
+    The corrections of an amendment open reach the final classification a completion posts and the
+    history a cancellation writes, before they are approved. Subscribed to core's
+    `season_end_refused`, which asks it with the database's path as the end is asked and as it
+    runs. Reads only.
+    """
+    held = await open_amendment_in_season(db_path, season_id)
+    if held is None:
+        return None
+    where = (
+        f"round {held['round_number']} of **{held['division_name']}** is being amended in "
+        f"<#{held['channel_id']}>. Finish or cancel it first: "
+    )
+    if ending == COMPLETION:
+        return (
+            f"❌ Cannot complete season — {where}completing posts every division's final "
+            "classification, which would carry its corrections before they are approved."
+        )
+    return (
+        f"❌ Cannot cancel the season — {where}cancelling writes every driver's history from the "
+        "standings, which would carry its corrections before they are approved."
+    )
+
+
 async def held_by_amendment(
     db_path: str, round_id: int, division_id: int, *, then: str
 ) -> str | None:
@@ -1441,7 +1571,7 @@ async def stage_in_hand(db_path: str, round_id: int, *, before: int | None = Non
     With *before*, only what was asked ahead of the change of that id counts: a Cancel asked
     before the last paste handed stage one over comes up first and ends the amendment, so stage one
     queued behind it is no stage "in hand" ahead of it."""
-    from leaguebot.core.services.change_queue import unfinished
+    from leaguebot.core.services.queue.queue_records import unfinished
     from leaguebot.results.services.amend_turn_change import STAGE_ONE_KIND
     from leaguebot.results.services.amendment_stage_changes import (
         APPEALS_KIND,
@@ -1573,7 +1703,7 @@ async def amend_round_results_on(
     from their session's corrected classification, and ``SeasonImmutableError`` for an archived
     season, with nothing written in either case, the caller's save being rolled back.
     """
-    from leaguebot.core.services.season_service import SeasonImmutableError
+    from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 
     submitted_at = (now or datetime.now(timezone.utc)).isoformat()
     # The round as it stands, before any of it is overwritten (#345). Stage one commits, so an
@@ -1678,7 +1808,7 @@ async def _write_amended_session_in_tx(
     league manager's (issue #116): amending a FINAL round overwrites what the league raced, and
     only the amendment's own snapshot, held until it completes, puts it back.
     """
-    from leaguebot.core.services.driver_service import resolve_driver_profile_id
+    from leaguebot.core.services.drivers.driver_service import resolve_driver_profile_id
 
     def _get(obj, key, default=None):
         if hasattr(obj, key):
@@ -2693,7 +2823,7 @@ async def other_active_team_assignments(
 
         # A session recorded before the driver changed account stands under the old one;
         # the check compares drivers, so both are read as the account in use (issue #243).
-        from leaguebot.core.services.driver_service import current_account_map
+        from leaguebot.core.services.drivers.driver_service import current_account_map
 
         cursor = await db.execute(
             "SELECT 1 FROM rounds r JOIN divisions d ON d.id = r.division_id "
@@ -2714,7 +2844,7 @@ async def other_active_team_assignments(
 
 async def current_accounts(db_path: str) -> dict[int, int]:
     """`driver_service.current_account_map` on a connection of its own, for the paste paths."""
-    from leaguebot.core.services.driver_service import current_account_map
+    from leaguebot.core.services.drivers.driver_service import current_account_map
 
     async with get_connection(db_path) as db:
         return await current_account_map(db)

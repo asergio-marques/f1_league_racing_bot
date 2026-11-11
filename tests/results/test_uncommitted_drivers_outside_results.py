@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.services.team_service import TeamService
+from leaguebot.core.services.drivers.team_service import TeamService
 from tests.attendance.test_uncommitted_drivers_outside_attendance import (
     DIVISION_ID,
     db_path,  # noqa: F401 — the fixture
@@ -70,9 +70,8 @@ async def test_the_lineup_graphic_does_not_draw_an_uncommitted_driver(db_path):
         captured.update(kwargs)
         return "drawing"
 
-    bot = SimpleNamespace(db_path=db_path)
     with patch("leaguebot.image.services.image_lineup_service.resolve_drawing", side_effect=_resolve):
-        await build_drawing(bot, None, DIVISION_ID)
+        await build_drawing(db_path, None, DIVISION_ID)
 
     seated = [
         seat.discord_user_id
@@ -96,9 +95,8 @@ async def test_the_mid_season_review_draws_the_lineup_as_it_will_stand(db_path):
         captured.update(kwargs)
         return "drawing"
 
-    bot = SimpleNamespace(db_path=db_path)
     with patch("leaguebot.image.services.image_lineup_service.resolve_drawing", side_effect=_resolve):
-        await build_drawing(bot, None, DIVISION_ID, include_uncommitted=True)
+        await build_drawing(db_path, None, DIVISION_ID, include_uncommitted=True)
 
     seated = [
         seat.discord_user_id
@@ -119,7 +117,7 @@ async def test_the_command_render_hands_the_request_down_to_the_drawing(monkeypa
 
     seen = {}
 
-    async def _build(bot, guild, division_id, *, include_uncommitted=False):
+    async def _build(db_path, guild, division_id, *, include_uncommitted=False):
         seen["include_uncommitted"] = include_uncommitted
         raise RuntimeError("drawn far enough")
 
@@ -127,7 +125,7 @@ async def test_the_command_render_hands_the_request_down_to_the_drawing(monkeypa
     monkeypatch.setattr(post, "build_drawing", _build)
 
     outcome = await post.render_for_command(
-        SimpleNamespace(), object(), DIVISION_ID, include_uncommitted=asked
+        SimpleNamespace(db_path="league.db"), object(), DIVISION_ID, include_uncommitted=asked
     )
 
     assert seen == {"include_uncommitted": asked}

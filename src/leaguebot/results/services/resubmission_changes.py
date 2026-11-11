@@ -44,15 +44,17 @@ import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import FollowOn, PlannedStep, StepKind, StepResult, Verdict
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
+)
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
 )
-from leaguebot.core.services import season_service
+from leaguebot.core.services.seasons import season_service
 from leaguebot.results.services import result_submission_service as submissions
 from leaguebot.results.services import review_open_change
 from leaguebot.results.services.review_posting import DELETE_MESSAGE, posting_steps

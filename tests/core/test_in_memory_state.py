@@ -2,8 +2,9 @@
 
 `/bot pack` and `/bot factory-reset` change the database under a running bot. A store in
 memory that survived them would act on a league the database no longer holds, so the clear
-has to name every one — and the completeness check below is what keeps that true as stores
-are added.
+has to reach every one: core's own stores it clears itself, and each module's through the hook
+the builder signs the module up to (architecture.md, "A hook core declares is a list of
+subscribers"). The completeness check below is what keeps that true as stores are added.
 """
 from __future__ import annotations
 
@@ -18,10 +19,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from leaguebot.core.db.database import run_migrations
-from leaguebot.core.services.in_memory_state import clear_in_memory_state
+from leaguebot.core.services.upkeep.in_memory_state import clear_in_memory_state
 from tests.support.change_queue import (
     acknowledgement,
     attach_queue,
+    built_bot,
     change_rows,
     league_double,
     member_interaction,
@@ -32,6 +34,9 @@ from tests.support.change_queue import (
 
 SRC = pathlib.Path(__file__).resolve().parents[2] / "src" / "leaguebot"
 
+#: When the built bot's change queue takes "now" to be.
+_NOW = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
+
 #: A mutable container set up empty at module level, or on `self`, typed or not. A
 #: function's own locals are indented and carry no `self.`, and die with the call.
 _STORE = re.compile(
@@ -40,24 +45,24 @@ _STORE = re.compile(
     re.MULTILINE,
 )
 
-#: Stores `clear_in_memory_state` clears, by (file, name).
+#: Stores `clear_in_memory_state` clears, itself or through the subscribers the builder signs up
+#: to the bot's hook for it, by (file, name).
 CLEARED = {
-    ("core/cogs/season_cog.py", "_pending"),
     # The interactions the change queue holds to update each change's reply: a factory reset
     # deletes the changes they belong to (#439), and a pack finds none, being refused while the
     # queue holds a job.
-    ("core/services/change_queue.py", "_held"),
+    ("core/services/queue/change_queue.py", "_held"),
     # What the queue remembers of its stopped jobs: when each stop notice was last tried, and
     # each Retry under way. `forget_held` clears them with the interactions above (#439).
-    ("core/services/change_queue.py", "_notice_tried"),
-    ("core/services/change_queue.py", "_retrying"),
+    ("core/services/queue/change_queue.py", "_notice_tried"),
+    ("core/services/queue/change_queue.py", "_retrying"),
     # The penalty review a staging is handed on to its change, by (round, appeals): dropped by
-    # the callable the builder hands the bot (`bot.clear_held_reviews`), so a pack's or a reset's
-    # gone round holds no review (#439, 6b, C54).
+    # results' subscriber to the bot's hook for the clear, so a pack's or a reset's gone round
+    # holds no review (#439, 6b, C54; #283 S8a).
     ("results/services/penalty_wizard.py", "_HELD_REVIEWS"),
     # What became of each standing review's button, by its question's id: the reviews go with the
     # database a pack or a reset replaces, so no mark may outlive them (#439, 6b, C97).
-    ("core/services/season_review_changes.py", "_PRESSES"),
+    ("core/services/seasons/season_review_changes.py", "_PRESSES"),
 }
 
 #: Stores the plan deletes, and the commit that deletes them: accounted for while they stand,
@@ -94,22 +99,34 @@ MOVING = {
 ARRIVING_EXEMPT = {
     # One lock per lane, each lane's worker holding its own while it drains its lane: the
     # queue's wiring, not the league's data (6b L4).
-    ("core/services/change_queue.py", "_working"): "#439 6b L4",
+    ("core/services/queue/change_queue.py", "_working"): "#439 6b L4",
     # The job each lane's worker is trying, keyed by lane, set only while a job runs: a pack is
     # refused while any lane holds a job, and a factory reset empties every lane (6b L5).
-    ("core/services/change_queue.py", "_trying"): "#439 6b L5",
+    ("core/services/queue/change_queue.py", "_trying"): "#439 6b L5",
     # Each running lane's worker task, keyed by lane: the queue's own tasks, cancelled by
     # `stop()`, never the league's data (6b L10).
-    ("core/services/change_queue.py", "_workers"): "#439 6b L10",
+    ("core/services/queue/change_queue.py", "_workers"): "#439 6b L10",
+    # Each round job kind's `/test-mode advance` step, held by the advance steps the builder makes
+    # and signs up beside each kind's timer handler: the bot's wiring, not the league's data
+    # (#283 S21f2).
+    ("core/services/test_mode/test_mode_service.py", "_steps"): "#283 S21f2",
+    # The hub's options, held by the hub options the builder makes and signs each module's up on:
+    # the bot's wiring, not the league's data. A pack keeps the modules, so it keeps what they
+    # offer (#283 S22a).
+    ("core/services/modules/hub_service.py", "_options"): "#283 S22a",
+    # A hook's subscribers, signed up by the builder before the bot connects: the bot's wiring,
+    # not the league's data (#283 S8a).
+    ("core/utils/hooks.py", "_subscribers"): "#283 S8a",
 }
 
 #: Stores that hold no league state, and why.
 EXEMPT = {
-    # The phase callables bound at start-up: the bot's wiring, not the league's data.
-    ("core/services/scheduler_service.py", "_phase_callbacks"),
     # The timer kinds' callables the builder registers at start-up: the bot's wiring, not the
     # league's data (#439).
     ("core/services/scheduler_service.py", "_timer_callbacks"),
+    # The module switch readers the builder signs up once at start-up: the bot's wiring, not the
+    # league's data.
+    ("core/services/modules/module_service.py", "_switch_readers"),
     # The amendment's session chooser: what the member ticked, read once when they press
     # Continue. It dies with the ephemeral view it belongs to (#345).
     ("results/cogs/results_cog.py", "selected"),
@@ -121,18 +138,15 @@ EXEMPT = {
     # lives no longer than the render or check that parsed its template.
     ("image/utils/svg_document.py", "positions"),
     ("image/utils/svg_document.py", "_by_class"),
-    # The hub's options, registered by modules at import (#279): the bot's code, not the
-    # league's data. A pack keeps the modules, so it keeps what they offer.
-    ("core/services/hub_service.py", "_OPTIONS"),
     # The change types the builder registers at start-up: the bot's wiring, not the league's
     # data (#439).
-    ("core/services/change_queue.py", "_types"),
+    ("core/services/queue/change_queue.py", "_types"),
     # The log-channel warnings being sent to members, each task dropping itself when done
     # (#439).
-    ("core/services/output_router.py", "_tasks"),
+    ("core/services/posting/output_router.py", "_tasks"),
     # The interactions whose member has been warned that the log channel failed, by id; each
     # lapses with its interaction's 14 minutes (#439).
-    ("core/services/output_router.py", "_warned"),
+    ("core/services/posting/output_router.py", "_warned"),
     # The connections kept idle to be lent again: the bot's wiring, not league data. Each is
     # re-checked against the database file's identity before it is lent, so a factory reset or a
     # restore that replaces the file leaves none serving the old one (#540).
@@ -159,8 +173,9 @@ def test_every_store_is_cleared_or_exempt():
         _stores() - CLEARED - EXEMPT - set(LEAVING) - _moving() - set(ARRIVING_EXEMPT)
     )
     assert unaccounted == [], (
-        f"clear_in_memory_state does not clear {unaccounted}; clear it there, or exempt it "
-        f"here with the reason it holds no league state"
+        f"clear_in_memory_state does not clear {unaccounted}; clear it there, or through a "
+        f"subscriber the builder signs up to the bot's hook for the clear, or exempt it here "
+        f"with the reason it holds no league state"
     )
 
 
@@ -196,81 +211,71 @@ def _pending_reasons() -> dict:
     raise AssertionError("no module holds the pending reasons")
 
 
-async def test_the_clear_empties_every_store():
-    """Every store is emptied, and a pending reason's five-minute lapse is cancelled with it,
-    so none fires after a pack or a factory reset (#482). The wizards hold no correction
-    timeouts in memory once a correction's five minutes are a one-off timer asking the queue
-    (#439, 6b, C85/C87/C88), so the clear reaches nothing of the wizard service: a wizard
-    service holding nothing at all is left untouched."""
+async def test_the_clear_empties_every_store(tmp_path):
+    """On the bot the builder makes, an admin's reason is pending; cleared through the bot's hook
+    for it, the reason is gone, its five-minute lapse cancelled with it, so none fires after a pack
+    or a factory reset (#482)."""
     import asyncio
 
-    season_cog = MagicMock()
-    bot = SimpleNamespace(
-        get_cog=lambda name: season_cog if name == "SeasonCog" else None,
-        wizard_service=SimpleNamespace(),
-    )
+    bot = await built_bot(tmp_path, now=_NOW)
     lapse = asyncio.get_running_loop().create_future()
     pending = _pending_reasons()
     pending[(1, 2)] = {"action": "x", "lapse": lapse}
 
-    clear_in_memory_state(bot, queue=MagicMock())
+    clear_in_memory_state(bot.in_memory_state_cleared, queue=bot.change_queue)
 
-    season_cog.clear_pending.assert_called_once_with()
     assert pending == {}
     assert lapse.cancelled()
 
 
-async def test_clearing_a_leagues_state_drops_the_penalty_reviews_held_for_staging():
-    """A review handed on to a staging change is gone after the clear, so a factory reset leaves
-    no review of a round that no longer exists (#439, 6b, C54)."""
-    from leaguebot.results.services.penalty_wizard import (
-        clear_held_reviews,
-        held_review,
-        hold_review,
-    )
+async def test_clearing_a_leagues_state_drops_the_penalty_reviews_held_for_staging(tmp_path):
+    """A review handed on to a staging change is gone after the clear through the hook of the
+    bot the builder makes, so a factory reset leaves no review of a round that no longer exists
+    (#439, 6b, C54)."""
+    from leaguebot.results.services.penalty_wizard import held_review, hold_review
 
     review: Any = SimpleNamespace(round_id=7)
     hold_review(review, appeals=False)
     hold_review(review, appeals=True)
-    # The builder hands the bot results' clearer (`bot.clear_held_reviews`).
-    bot = SimpleNamespace(get_cog=lambda name: None, clear_held_reviews=clear_held_reviews)
+    bot = await built_bot(tmp_path, now=_NOW)
 
-    clear_in_memory_state(bot, queue=MagicMock())
+    clear_in_memory_state(bot.in_memory_state_cleared, queue=bot.change_queue)
 
     assert held_review(7, appeals=False) is None
     assert held_review(7, appeals=True) is None
 
 
 async def test_clearing_a_leagues_state_forgets_what_became_of_a_reviews_button():
-    """A review's button was pressed and its press is under way; after the clear no review's mark
-    is left, so a review of the same question id in the league that follows is untouched."""
-    from leaguebot.core.services.season_review_changes import UNDER_WAY, _PRESSES, mark_press
+    """A review's button was pressed and its press is under way; after the clear, with no module
+    signed up to its hook, no review's mark is left, so a review of the same question id in the
+    league that follows is untouched."""
+    from leaguebot.core.services.seasons.season_review_changes import UNDER_WAY, _PRESSES, mark_press
+    from leaguebot.core.utils.hooks import Hook
 
     mark_press(999, UNDER_WAY)
     assert _PRESSES == {999: UNDER_WAY}
-    bot = SimpleNamespace(get_cog=lambda name: None)
 
-    clear_in_memory_state(bot, queue=MagicMock())
+    clear_in_memory_state(Hook(), queue=MagicMock())
 
     assert _PRESSES == {}
 
 
 async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queue_holds(tmp_path):
-    """A factory reset deletes the changes the queue holds replies for (#439), so the clear makes
-    the queue forget them: a change finishing afterwards updates no member's reply.
+    """A factory reset deletes the changes the queue holds replies for (#439), so the clear, with
+    no module signed up to its hook, makes the queue forget them: a change finishing afterwards
+    updates no member's reply.
 
     Without `forget_held` in the clear the reply would still be updated, as
     `test_the_acknowledgement_is_updated_with_the_outcome` shows of a change nobody cleared.
     """
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
-    from leaguebot.core.services.change_queue import ChangeType, Step
+    from leaguebot.core.services.queue.change_types import ChangeType, Step
+    from leaguebot.core.utils.hooks import Hook
 
     db_path = str(tmp_path / "queue.db")
     await run_migrations(db_path)
     await seed_server(db_path)
     bot = league_double(db_path)
-    bot.get_cog = lambda name: None
-    bot.wizard_service = None
     ran: list[str] = []
 
     async def _go(_ctx):
@@ -308,7 +313,7 @@ async def test_clearing_a_leagues_state_forgets_the_interactions_the_change_queu
                                refusal_what="`/dummy`")
     assert acknowledgement(interaction).startswith("⏳ Doing the dummy thing.")
 
-    clear_in_memory_state(bot, queue=bot.change_queue)
+    clear_in_memory_state(Hook(), queue=bot.change_queue)
     await run_queue(bot)
 
     assert ran == ["a"]

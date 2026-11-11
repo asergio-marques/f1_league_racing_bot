@@ -8,7 +8,8 @@ from __future__ import annotations
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.test_roster_service import clear_all_test_drivers
+from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
+
 
 SERVER_ID = 22140
 
@@ -33,7 +34,7 @@ async def db_path(tmp_path):
         )
         await db.execute(
             "INSERT INTO rounds (id, division_id, round_number, format, track_name, scheduled_at) "
-            "VALUES (1, 1, 1, 'NORMAL', 'Silverstone Circuit', '2026-06-01T14:00:00')"
+            "VALUES (1, 1, 1, 'NORMAL', 'Silverstone Circuit', '2026-06-01T14:00:00+00:00')"
         )
         await db.execute(
             "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, is_reserve) "
@@ -78,15 +79,9 @@ async def _profiles(db_path):
         return [r["id"] for r in await cursor.fetchall()]
 
 
-async def test_every_fake_driver_is_deleted_seated_or_not_and_the_real_one_kept(db_path):
-    assert await clear_all_test_drivers(db_path) == 2
-
-    assert await _profiles(db_path) == [3]
-
-
 async def test_a_fake_driver_who_raced_is_deleted_all_the_same(db_path):
-    """Attendance and placements held them: the deletion lets go of both."""
-    await clear_all_test_drivers(db_path)
+    """Attendance and placements held them: switching test mode off lets go of both."""
+    await _switch_off(db_path)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -96,7 +91,7 @@ async def test_a_fake_driver_who_raced_is_deleted_all_the_same(db_path):
 
 
 async def test_their_history_is_kept_by_identifier(db_path):
-    await clear_all_test_drivers(db_path)
+    await _switch_off(db_path)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
@@ -112,27 +107,42 @@ async def test_their_history_is_kept_by_identifier(db_path):
 
 async def _switch_off(db_path):
     """Switch test mode off on one save and commit it, as a season's end save does."""
-    from leaguebot.core.services.test_mode_service import switch_test_mode_off_on
+    from leaguebot.core.services.test_mode.test_mode_service import switch_test_mode_off_on
 
     async with get_connection(db_path) as db:
-        deleted = await switch_test_mode_off_on(db)
+        deleted = await switch_test_mode_off_on(db, **delete_hooks(*DRIVER_HOOKS))
         await db.commit()
     return deleted
 
 
-async def test_a_server_not_in_test_mode_is_left_alone(db_path):
+@pytest.mark.parametrize(
+    "setup",
+    [
+        pytest.param("UPDATE server_configs SET test_mode_active = 0", id="test_mode_off"),
+        pytest.param("DELETE FROM server_configs", id="no_config_row"),
+    ],
+)
+async def test_a_server_not_in_test_mode_is_left_alone(db_path, setup):
+    """Test mode is already off, or the server has no configuration at all: switching it off
+    deletes no driver and never turns the flag back on."""
     async with get_connection(db_path) as db:
-        await db.execute("UPDATE server_configs SET test_mode_active = 0")
+        await db.execute(setup)
         await db.commit()
 
     assert await _switch_off(db_path) == 0
     assert await _profiles(db_path) == [1, 2, 3]
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT test_mode_active FROM server_configs")
+        assert [row[0] for row in await cursor.fetchall()] in ([0], [])
 
 
 async def test_clearing_one_division_deletes_its_fake_drivers_and_keeps_their_history(db_path):
-    from leaguebot.core.services.test_roster_service import _delete_test_drivers_in_division
+    from leaguebot.core.services.test_mode.test_roster_service import clear_test_drivers_in_division_on
 
-    assert await _delete_test_drivers_in_division(1, db_path) == 1
+    async with get_connection(db_path) as db:
+        cleared = await clear_test_drivers_in_division_on(db, 1, **delete_hooks(*DRIVER_HOOKS))
+        await db.commit()
+    assert cleared == 1
 
     # The seated fake driver goes; the unseated one and the real driver stay.
     assert await _profiles(db_path) == [2, 3]
@@ -165,10 +175,10 @@ async def test_switching_off_on_the_save_handed_commits_nothing(db_path):
     """The two test drivers go and the flag is cleared on the save; rolled back, both drivers and
     the flag are as they were. It takes the save alone, with no bot to flush forecasts through,
     their clearing being a change on the queue of its own (#439)."""
-    from leaguebot.core.services.test_mode_service import switch_test_mode_off_on
+    from leaguebot.core.services.test_mode.test_mode_service import switch_test_mode_off_on
 
     async with get_connection(db_path) as db:
-        assert await switch_test_mode_off_on(db) == 2
+        assert await switch_test_mode_off_on(db, **delete_hooks(*DRIVER_HOOKS)) == 2
         assert await _profiles_on(db) == [3]
         assert await _flag_on(db) == 0
         await db.rollback()
@@ -179,10 +189,10 @@ async def test_switching_off_on_the_save_handed_commits_nothing(db_path):
 async def test_clearing_the_test_drivers_on_the_save_handed_commits_nothing(db_path):
     """The two test drivers go on the save, their history kept by identifier; rolled back, they
     are back."""
-    from leaguebot.core.services.test_roster_service import clear_all_test_drivers_on
+    from leaguebot.core.services.test_mode.test_roster_service import clear_all_test_drivers_on
 
     async with get_connection(db_path) as db:
-        assert await clear_all_test_drivers_on(db) == 2
+        assert await clear_all_test_drivers_on(db, **delete_hooks(*DRIVER_HOOKS)) == 2
         assert await _profiles_on(db) == [3]
         cursor = await db.execute(
             "SELECT COUNT(*) FROM driver_history_entries WHERE driver_profile_id IS NULL"

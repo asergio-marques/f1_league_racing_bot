@@ -11,8 +11,10 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services import backup_service, factory_reset_service
-from leaguebot.core.services.factory_reset_service import take_backup
+from leaguebot.core.services.upkeep import backup_service, factory_reset_service
+from leaguebot.core.services.upkeep.factory_reset_service import take_backup
+from leaguebot.core.utils.hooks import AwaitedHook
+from tests.support.channel_uses import setting_channels_given
 from tests.support.review_prompts import store_review_prompt
 
 NOW = datetime(2026, 9, 19, 10, 15, 0, tzinfo=timezone.utc)
@@ -175,7 +177,7 @@ async def _seed_channels(db_path: str) -> None:
             INSERT INTO attendance_division_config (division_id, rsvp_channel_id,
                 attendance_channel_id) VALUES (2, '26', '27');
             INSERT INTO rounds (id, division_id, round_number, format, scheduled_at)
-            VALUES (1, 2, 1, 'NORMAL', '2026-01-08T18:00:00');
+            VALUES (1, 2, 1, 'NORMAL', '2026-01-08T18:00:00+00:00');
             INSERT INTO rsvp_embed_messages (round_id, division_id, message_id, channel_id,
                 posted_at) VALUES (1, 2, '1', '28', '2026-01-03');
             INSERT INTO round_submission_channels (round_id, channel_id, created_at)
@@ -194,6 +196,12 @@ async def _seed_channels(db_path: str) -> None:
         await db.commit()
 
 
+async def _gather(db_path: str) -> factory_reset_service.DiscordTargets:
+    """`gather_targets`, asking each module through the bot's own hook once the reset asks one
+    (tests/support/channel_uses.py)."""
+    return await factory_reset_service.gather_targets(db_path, **setting_channels_given(db_path))
+
+
 async def test_every_channel_the_bot_posts_to_is_gathered(db_path):
     await _seed_channels(db_path)
 
@@ -202,7 +210,7 @@ async def test_every_channel_the_bot_posts_to_is_gathered(db_path):
         await db.execute("UPDATE server_configs SET hub_channel_id = 4")
         await db.commit()
 
-    targets = await factory_reset_service.gather_targets(db_path)
+    targets = await _gather(db_path)
 
     # 2 and 3 are the interaction and log channels the fixture configures; 4 is the hub.
     assert targets.channels == (
@@ -213,17 +221,79 @@ async def test_every_channel_the_bot_posts_to_is_gathered(db_path):
 async def test_the_channels_the_bot_created_are_gathered_apart(db_path):
     await _seed_channels(db_path)
 
-    targets = await factory_reset_service.gather_targets(db_path)
+    targets = await _gather(db_path)
 
     assert targets.created == (40, 41, 42)
     assert not set(targets.created) & set(targets.channels)
+
+
+async def test_a_module_s_channels_are_gathered_only_by_asking_the_module(db_path):
+    """The same two seasons, and the reset asked with no module signed up to its hook: only core's
+    own channels are gathered, since core reads no module's table or column. They are the
+    interaction and log channels, each season's lineup and calendar channels, a review prompt's
+    and an undelivered message's. The forecast, results, standings, verdicts, RSVP, attendance
+    and signup channels, the channel a check-in call was posted in, and the channels the bot
+    created (a signup wizard's, a round's submission and amendment channels) are each module's to
+    name, and with the bot's own hook they are gathered
+    (`test_every_channel_the_bot_posts_to_is_gathered`,
+    `test_the_channels_the_bot_created_are_gathered_apart`)."""
+    await _seed_channels(db_path)
+
+    targets = await factory_reset_service.gather_targets(
+        db_path, setting_channels_read=AwaitedHook()
+    )
+
+    assert targets.channels == (2, 3, 11, 12, 21, 22, 31, 32)
+    assert targets.created == ()
+
+
+@pytest.mark.parametrize(
+    ("reader", "created", "channels"),
+    [
+        pytest.param(
+            "leaguebot.weather.services.forecast_channel", (), (10, 20),
+            id="weather",
+        ),
+        pytest.param(
+            "leaguebot.results.services.division_channels", (40, 41), (23, 24, 25),
+            id="results",
+        ),
+        pytest.param(
+            "leaguebot.attendance.services.division_channels", (), (26, 27, 28),
+            id="attendance",
+        ),
+        pytest.param(
+            "leaguebot.signup.services.channel_uses", (42,), (30,),
+            id="signup",
+        ),
+    ],
+)
+async def test_each_module_hands_the_reset_the_channels_it_created_apart(
+    db_path, reader, created, channels
+):
+    """The same two seasons, and each module asked, as the reset's hook asks it, for the channels
+    it holds across both seasons' divisions. Each hands back the channels it created, which the
+    reset deletes, apart from the channels its settings name and the channels it posted to, from
+    which the reset deletes only the bot's messages: weather its two forecast channels; results
+    the round's submission and amendment channels it created, apart from the results, standings
+    and verdicts channels; attendance the RSVP and attendance channels and the channel its
+    check-in call was posted in, creating none; signup the open wizard's channel it created (the
+    wizard with no channel naming none), apart from the signup channel."""
+    import importlib
+
+    await _seed_channels(db_path)
+    module = importlib.import_module(reader)
+
+    held = await module.setting_channels(db_path, division_ids=[1, 2])
+
+    assert held == factory_reset_service.DiscordTargets(created=created, channels=channels)
 
 
 async def test_a_fresh_install_has_nothing_to_clean(tmp_path):
     path = str(tmp_path / "bot.db")
     await run_migrations(path)
 
-    targets = await factory_reset_service.gather_targets(path)
+    targets = await _gather(path)
 
     assert targets == factory_reset_service.DiscordTargets(created=(), channels=())
 
@@ -273,7 +343,7 @@ async def test_the_wipe_leaves_exactly_a_fresh_install(db_path, tmp_path):
 async def test_the_wipe_frees_the_claim(db_path):
     from unittest.mock import MagicMock
 
-    from leaguebot.core.services.config_service import ConfigService
+    from leaguebot.core.services.settings.config_service import ConfigService
 
     await factory_reset_service.wipe(db_path, MagicMock())
 
@@ -282,22 +352,23 @@ async def test_the_wipe_frees_the_claim(db_path):
 
 async def test_the_wipe_clears_every_job_and_the_memory(db_path, monkeypatch):
     """The wipe cancels every scheduled job and clears what the bot holds in memory, handing
-    the clear the change queue it was handed (#439 slice 6b, fold-in 6)."""
+    the clear the hook every module's part of it is signed up to and the change queue, both as it
+    was handed them (#439 slice 6b, fold-in 6)."""
     from unittest.mock import MagicMock
 
     cleared = []
     monkeypatch.setattr(
         factory_reset_service, "clear_in_memory_state",
-        lambda bot, *, queue: cleared.append((bot, queue)),
+        lambda hook, *, queue: cleared.append((hook, queue)),
     )
     scheduler = MagicMock()
-    bot = object()
+    hook = object()
     queue = object()
 
-    await factory_reset_service.wipe(db_path, scheduler, bot, queue=queue)
+    await factory_reset_service.wipe(db_path, scheduler, in_memory_state_cleared=hook, queue=queue)
 
     scheduler.cancel_all.assert_called_once_with()
-    assert cleared == [(bot, queue)]
+    assert cleared == [(hook, queue)]
 
 
 async def test_the_wipe_leaves_no_scratch_behind(db_path, tmp_path):

@@ -4,32 +4,17 @@ Manages the league's modules.
 """
 from __future__ import annotations
 
-import json
-import logging
-from collections.abc import Callable
-from dataclasses import dataclass
-from functools import partial
-from datetime import datetime, timezone
-
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import ChangeOrigin, StepFailedOnDiscord, module_off
-from leaguebot.core.models.driver_profile import DriverState
+from leaguebot.core.models.change import module_off, module_on
+from leaguebot.core.models.module_dependencies import needs, taken_down_with
 from leaguebot.core.utils.channel_guard import league_admin_only
 from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.interaction_errors import describe, report_failure
+from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_server import LeagueView
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
-
-log = logging.getLogger(__name__)
-
-
-def _still_off(module: str) -> str:
-    """What a failed `/module enable` tells the member: the enable undid itself, and the next step."""
-    return f"The module is still off. Run `/module enable {module}` again once the fault is cleared."
 
 
 _MODULE_CHOICES = [
@@ -40,187 +25,23 @@ _MODULE_CHOICES = [
     app_commands.Choice(name="images", value="images"),
 ]
 
-# ---------------------------------------------------------------------------
-# Shared forced-close sub-flow (called by both module_cog and signup_cog)
-# ---------------------------------------------------------------------------
+#: Every module `/module` offers, as `/module` and `ModuleService`'s getters name them
+#: (`is_<name>_enabled`) — the same names the dependency table's entries use, except images,
+#: which the table calls "image" (`module_dependencies.py`'s own docstring). Read generally so a
+#: second table entry (stewarding's) needs no change here.
+_MODULE_NAMES = tuple(choice.value for choice in _MODULE_CHOICES)
 
-
-#: The states a close returns to Not Signed Up: a driver still filling in the wizard. One
-#: awaiting approval, awaiting a correction parameter or correcting keeps their state
-#: (FR-002/FR-003). ``signup_close`` reads this set to tell a manager which drivers the close
-#: will drop and which keep their place. When it kept a list of its own, it warned that every
-#: driver mid-signup would be dropped (issue #128).
-RETURNED_BY_CLOSE: frozenset[DriverState] = frozenset({DriverState.PENDING_SIGNUP_COMPLETION})
-
+#: How each module reads in a refusal, keyed as `_MODULE_NAMES` is.
+_MODULE_LABEL = {
+    "weather": "Weather module",
+    "signup": "Signup module",
+    "results": "Results & Standings module",
+    "attendance": "Attendance module",
+    "images": "Image module",
+}
 
 #: How the change that turns results off names itself in its lines.
 _RESULTS_OFF = "`/module disable results`"
-#: How the change that turns signup off names itself in the acknowledgement.
-_SIGNUP_OFF = "`/module disable signup`"
-
-
-@dataclass(frozen=True)
-class ForcedCloseOutcome:
-    """What the close of the signup window did: the drivers it turned away.
-
-    It lives in core, beside the function that returns it: core callers (the season's end) use it
-    too, and core imports nothing from the signup module for it. Every failure of the close is
-    raised and stops the queue, so the outcome names none.
-    """
-
-    #: How many drivers were returned to Not Signed Up, read at the moment of closing.
-    returned: int
-    #: The ids of the drivers returned, in the order the close read them. The change queue's jobs
-    #: close each one's signup channel, so the close asked not to hold gives them back.
-    returned_ids: tuple[str, ...] = ()
-
-
-async def execute_forced_close(
-    bot: LeagueBot,
-    *,
-    audit_action: str,
-    cancel_timers: Callable[[str], None],
-) -> ForcedCloseOutcome:
-    """Return the drivers still filling in the signup wizard to Not Signed Up, for the change
-    queue's close of the signup window, and say what it did.
-
-    This is the queue's form, the only form there is: no close of the window is made off the queue
-    any more (`/signup close`, its timer, a restart past the close time and turning signup off
-    ask the queue's own close, and a season's end and every division done ask this one). It
-    notices and locks no signup channel itself, leaving each driver it returned (the outcome's
-    ``returned_ids``) to the queue's ``signup_notice`` and ``close_signup`` jobs, so that a notice
-    Discord refuses stops the queue before the channel is locked, and it leaves the season's stage
-    where it stands: the Sign Up button's deletion, the "Signups are now closed" post, the
-    window's close and its audit are jobs of the change that asked for it (signup's
-    ``delete_button`` and ``post_closed``). *cancel_timers* takes away one driver's signup timers
-    (the 24 hours, the channel's deletion and the correction's), signup's own, which core cannot
-    name.
-
-    Transition drivers in ``RETURNED_BY_CLOSE`` to NOT_SIGNED_UP, each marking their signup
-    wizard over in the same save (owed its closing notice), so a restart never tells a driver
-    whose signup has ended that it expired. A failed return, other than the state machine's, is
-    raised as a `StepFailedOnDiscord` whose result names the drivers already returned
-    (``returned``): the stop keeps them on the job, so that its next try, which finds none left
-    to return, still tells and closes each one's channel.
-
-    A driver whose transition the state machine refuses (``ValueError``) has moved on since the
-    close read them: they are not counted as returned, and it is not a failure. Only the drivers
-    returned have their timers cancelled, so a driver whose return failed keeps signing up.
-
-    The count is of transitions that succeeded, read at the moment of closing. The
-    confirmation ``/signup close`` shows may be up to five minutes older than that.
-    """
-    cfg = await bot.signup_module_service.get_config()
-    if cfg is None:
-        return ForcedCloseOutcome(returned=0)
-
-    async with get_connection(bot.db_path) as db:
-        placeholders = ",".join("?" for _ in RETURNED_BY_CLOSE)
-        cursor = await db.execute(
-            f"SELECT discord_user_id FROM driver_profiles "
-            f"WHERE current_state IN ({placeholders})",
-            (*[s.value for s in RETURNED_BY_CLOSE],),
-        )
-        rows = await cursor.fetchall()
-
-    returned = 0
-    returned_ids: list[str] = []
-    for row in rows:
-        try:
-            # The return and the end of the driver's signup are one save: their wizard is marked
-            # over, so a restart never expires it, and owed its closing notice, which the queue's
-            # jobs then give once. Signup writes its own table (`end_wizard_on`).
-            await bot.driver_service.transition(
-                row["discord_user_id"],
-                DriverState.NOT_SIGNED_UP,
-                also_on=partial(
-                    bot.signup_module_service.end_wizard_on,
-                    discord_user_id=row["discord_user_id"],
-                    closing_notice_owed=True,
-                ),
-            )
-            returned += 1
-            returned_ids.append(str(row["discord_user_id"]))
-            # Their timers go now, before the next driver's save and any await, so that a kill
-            # part-way through the loop never leaves a returned driver's 24-hour timer in the
-            # persistent jobstore to tell them their session expired as well as that signups
-            # closed.
-            cancel_timers(str(row["discord_user_id"]))
-        except ValueError:
-            # The state machine's refusal: the driver moved on since they were read.
-            log.info("forced_close: driver %s had moved on", row["discord_user_id"])
-        except Exception as exc:
-            # As every failure on the queue does, this raises. Each driver returned before this
-            # one is saved and marked owed, their timers already cancelled: the stop keeps them on
-            # the job for its next try.
-            raise StepFailedOnDiscord(
-                f"driver {row['discord_user_id']} could not be returned to Not Signed Up",
-                result={"returned": list(returned_ids)},
-            ) from exc
-
-    return ForcedCloseOutcome(returned=returned, returned_ids=tuple(returned_ids))
-
-
-#: Why a close nobody ran happened, and the audit action it is recorded under.
-_UNATTENDED_CAUSES: dict[str, str] = {
-    "timer": "SIGNUP_AUTO_CLOSE",
-    "restart": "SIGNUP_AUTO_CLOSE",
-    "season end": "SIGNUP_SEASON_END_CLOSE",
-    "divisions done": "SIGNUP_DIVISIONS_DONE_CLOSE",
-}
-
-
-async def close_signups_unattended(
-    bot: LeagueBot, *, cause: str, cancel_timers: Callable[[str], None] | None = None
-) -> ForcedCloseOutcome | None:
-    """Close the signup window where no member ran the close.
-
-    *cause* is one of ``"timer"`` (the close time came), ``"restart"`` (the bot came back
-    after it), ``"season end"`` and ``"divisions done"``; it picks the audit action the close
-    is written under. The close timer and the restart sweep ask the change queue's own close
-    (``signup.close``, named here as the builder registers it, signup's) as the bot's and give
-    nothing back: the window stays open until the queue reaches it, and the change's jobs tell
-    and lock each driver it returns, close the window in its channel and write the one line,
-    which names no member, since none closed the window.
-
-    A season's end and every division done close the window with ``execute_forced_close``: the
-    outcome gives the drivers it returned and the queue's jobs tell and close each one's signup
-    channel, close the window in its channel and record that in the line, which this writes
-    none of. *cancel_timers* is handed it, as there, and so a season's end and every division
-    done must give it; the close timer's and the restart's close is the queue's own, whose jobs
-    cancel the timers themselves, and need not.
-
-    Nothing is done where a window was not actually open: a module that is disabled produces
-    nothing (the core specification, Modules), and a window not open needs no close, so both
-    return ``None`` having touched nothing.
-    """
-    audit_action = _UNATTENDED_CAUSES[cause]
-    if not await bot.module_service.is_signup_enabled():
-        return None
-    cfg = await bot.signup_module_service.get_config()
-    if cfg is None or not cfg.signups_open:
-        return None
-
-    if cause in ("timer", "restart"):
-        await bot.change_queue.ask(
-            "signup.close",
-            {
-                "cause": cause,
-                "window": cfg.signup_button_message_id,
-                "confirmed": False,
-                "audit_action": audit_action,
-                "close_at": cfg.close_at,
-            },
-            what="Closing signups",
-            origin=ChangeOrigin.BOT,
-        )
-        return None
-
-    if cancel_timers is None:
-        raise TypeError(f"the {cause}'s close returns drivers, so it is handed their timers")
-    return await execute_forced_close(
-        bot, audit_action=audit_action, cancel_timers=cancel_timers
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -276,9 +97,9 @@ class _ConfirmDisableResultsView(LeagueView):
     """Confirm disabling results & standings before anything is written.
 
     Shown wherever the command costs the league something it cannot get back: a running
-    season, whose results the disable destroys (issue #167), or an enabled attendance module,
-    which the disable takes with it (issue #114). With neither at stake — between seasons, with
-    attendance already off — the command disables results straight away, as it always did.
+    season, whose results the disable destroys, or an enabled attendance module, which the disable
+    takes with it. With neither at stake — between seasons, with attendance already off — the
+    command disables results straight away.
     """
 
     def __init__(
@@ -400,7 +221,6 @@ class ModuleCog(commands.Cog):
             await self._enable_images(interaction)
         else:
             await self._enable_signup(interaction)
-        await self._refresh_hub(interaction, describe(interaction))
 
     # ── /module disable ────────────────────────────────────────────────
 
@@ -429,34 +249,6 @@ class ModuleCog(commands.Cog):
             await self._disable_images(interaction)
         else:
             await self._disable_signup(interaction)
-        if module_name.value != "results":
-            # Turning results off asks the change queue, which refreshes the panel itself
-            # once the flag is down.
-            await self._refresh_hub(interaction, describe(interaction))
-
-    async def _refresh_hub(self, interaction: discord.Interaction, what: str) -> None:
-        """Ask the change queue to bring the hub's panel up to date: a module's options are
-        offered while it is on.
-
-        Run after every enable and disable, the confirmed results disable included, whether
-        or not the module offers anything — the hub asks each option, not each module. The refresh
-        is the bot's change, named for the member and *what* caused it: a panel Discord refuses
-        stops the queue at the refresh and never fails the toggle behind it. The caller names
-        it: a button's interaction carries no command, so `describe` could only say "an
-        interaction" for it.
-        """
-        from leaguebot.core.services.hub_service import HUB_REFRESH
-
-        try:
-            await self.bot.change_queue.ask(
-                HUB_REFRESH,
-                {"command": what},
-                actor=interaction.user,
-                what="refreshing the hub panel",
-                origin=ChangeOrigin.BOT,
-            )
-        except Exception:  # noqa: BLE001 — see the docstring
-            log.exception("module toggle: the hub panel could not be asked for")
 
     async def _refuse_module_change(
         self,
@@ -468,7 +260,7 @@ class ModuleCog(commands.Cog):
     ) -> bool:
         """Refuse enabling or disabling a module where the season's stage forbids it.
 
-        Issue #220, in the order a league meets the rules:
+        In the order a league meets the rules:
 
         - the signup module is enabled and disabled only with no active season, or while its
           season is in Configuration;
@@ -479,10 +271,12 @@ class ModuleCog(commands.Cog):
         True where the command was refused, having answered the interaction and, unless
         *record* is False, recorded the refusal in the log channel.
         """
-        from leaguebot.core.services.season_lifecycle_service import (
+        from leaguebot.core.services.seasons.season_lifecycle_service import (
             FROZEN_FOR_COMPLETION_REFUSAL,
-            modules_frozen_for_completion,
+            PLACEMENTS_CONFIRMED_REFUSAL,
             configuration_fixed,
+            configuration_fixed_refusal,
+            modules_frozen_for_completion,
         )
 
         async def _refused(reply: str) -> bool:
@@ -495,17 +289,10 @@ class ModuleCog(commands.Cog):
         if module == "signup":
             season_number = await configuration_fixed(self.bot.db_path)
             if season_number is not None:
-                return await _refused(
-                    f"❌ The signup module is fixed for Season {season_number} now that its "
-                    f"configuration has been confirmed. It can be {action}d again once the "
-                    "season has ended, or while a new season is in configuration."
-                )
+                return await _refused(configuration_fixed_refusal(season_number, action))
         elif action == "enable":
             if await self.bot.season_service.get_confirmed_season() is not None:
-                return await _refused(
-                    "❌ A module cannot be enabled once the season's placements have been "
-                    "confirmed. Enable it before then, or once the season has ended."
-                )
+                return await _refused(PLACEMENTS_CONFIRMED_REFUSAL)
 
         if action == "disable" and await modules_frozen_for_completion(
             self.bot.db_path
@@ -513,85 +300,67 @@ class ModuleCog(commands.Cog):
             return await _refused(FROZEN_FOR_COMPLETION_REFUSAL)
         return False
 
-    # ── Weather enable (T011) ──────────────────────────────────────────
+    async def _enabled_modules(self) -> frozenset[str]:
+        """Every module `/module` offers that is switched on, read generally over the table's
+        names rather than naming one by its flag, so a second table entry needs no change
+        here."""
+        enabled = set()
+        for module in _MODULE_NAMES:
+            is_enabled = getattr(self.bot.module_service, f"is_{module}_enabled")
+            if await is_enabled():
+                enabled.add(module)
+        return frozenset(enabled)
+
+    async def _refuse_missing_dependency(
+        self, interaction: discord.Interaction, module: str
+    ) -> bool:
+        """Refuse enabling *module* while a module it `needs` is off, reading the dependency
+        table for every module rather than a rule of *module*'s own, so a second table entry
+        needs no change here. Empty for a module with no entry, as `needs` already is."""
+        for required in needs(module):
+            is_enabled = getattr(self.bot.module_service, f"is_{required}_enabled")
+            if not await is_enabled():
+                await refuse(
+                    interaction,
+                    f"❌ The {_MODULE_LABEL[module]} requires the {_MODULE_LABEL[required]} "
+                    "to be enabled first.",
+                    what=describe(interaction),
+                )
+                return True
+        return False
+
+    # ── Weather enable ──────────────────────────────────────────────────
 
     async def _enable_weather(
         self, interaction: discord.Interaction
     ) -> None:
-        # 1. Guard already-enabled
-        if await self.bot.module_service.is_weather_enabled():
-            await refuse(
-                interaction, "⚠️ Weather module is already enabled.", what=describe(interaction)
-            )
-            return
-
         # A season whose placements are confirmed refuses the enable before this handler is
-        # reached (issue #220), so there is never a running season to catch up on: its
-        # forecast channels are checked, and its phases armed, when placements are confirmed.
-
-        await interaction.response.defer(ephemeral=True)
-
-        # 3. Atomically set flag + audit. The two are one write, so a fault leaves the
-        # module off, and the command says so itself (see `report_failure`).
-        now = datetime.now(timezone.utc).isoformat()
-        try:
-            async with get_connection(self.bot.db_path) as db:
-                await db.execute(
-                    "UPDATE server_configs SET weather_module_enabled = 1",
-                )
-                await db.execute(
-                    "INSERT INTO audit_entries "
-                    "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                    "VALUES (?, ?, NULL, 'MODULE_ENABLE', '', ?, ?)",
-                    (interaction.user.id, str(interaction.user),
-                     json.dumps({"module": "weather"}), now),
-                )
-                await db.commit()
-        except Exception as exc:  # noqa: BLE001 — reported here, to say the module is still off
-            await report_failure(
-                interaction, exc, what=describe(interaction), outcome=_still_off("weather")
-            )
+        # reached, so there is never a running season to catch up on: its forecast channels are
+        # checked, and its phases armed, when placements are confirmed.
+        if await self._refuse_missing_dependency(interaction, "weather"):
             return
-
-        # 5. Post log channel confirmation
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable weather | Success",
+        # The switch is weather's own change on the queue: this asks for it and does nothing
+        # else.
+        await self.bot.change_queue.ask(
+            module_on("weather"),
+            {},
+            interaction=interaction,
+            what=describe(interaction),
         )
-        await interaction.followup.send("✅ Weather module enabled.", ephemeral=True)
 
-    # ── Weather disable (T012) ─────────────────────────────────────────
+    # ── Weather disable ─────────────────────────────────────────────────
 
     async def _disable_weather(
         self, interaction: discord.Interaction
     ) -> None:
-        if not await self.bot.module_service.is_weather_enabled():
-            await refuse(
-                interaction, "⚠️ Weather module is already disabled.", what=describe(interaction)
-            )
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        await self.bot.scheduler_service.cancel_all_weather()
-        await self.bot.module_service.set_weather_enabled(False)
-
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'MODULE_DISABLE', ?, '', ?)",
-                (interaction.user.id, str(interaction.user),
-                 json.dumps({"module": "weather"}), now),
-            )
-            await db.commit()
-
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable weather | Success",
-        )
-        await interaction.followup.send(
-            "✅ Weather module disabled. All scheduled weather jobs have been cancelled.",
-            ephemeral=True,
+        # The switch-off is weather's own change on the queue: it lowers the flag
+        # and writes its audit entry in one save, then removes the season's weather jobs in a
+        # step of its own. This asks for it and does nothing else.
+        await self.bot.change_queue.ask(
+            module_off("weather"),
+            {},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     # ── Results & Standings enable ─────────────────────────────────────
@@ -599,16 +368,10 @@ class ModuleCog(commands.Cog):
     async def _enable_results(
         self, interaction: discord.Interaction
     ) -> None:
-        # 1. Guard already-enabled
-        if await self.bot.module_service.is_results_enabled():
-            await refuse(
-                interaction,
-                "⚠️ Results & Standings module is already enabled.",
-                what=describe(interaction),
-            )
+        if await self._refuse_missing_dependency(interaction, "results"):
             return
 
-        # 2. Block if ACTIVE season exists (FR-003)
+        # Block if ACTIVE season exists (FR-003)
         active_season = await self.bot.season_service.get_confirmed_season()
         if active_season is not None:
             await refuse(
@@ -618,43 +381,26 @@ class ModuleCog(commands.Cog):
             )
             return
 
-        await interaction.response.defer(ephemeral=True)
-
-        # 3. Atomically set flag + audit
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT OR REPLACE INTO results_module_config (id, module_enabled) VALUES (1, 1)"
-            )
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'MODULE_ENABLE', '', ?, ?)",
-                (interaction.user.id, str(interaction.user),
-                 json.dumps({"module": "results"}), now),
-            )
-            await db.commit()
-
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable results | Success",
+        # The switch is results' own change on the queue, whose check refuses "already enabled":
+        # this asks for it and does nothing else.
+        await self.bot.change_queue.ask(
+            module_on("results"),
+            {},
+            interaction=interaction,
+            what=describe(interaction),
         )
-        await interaction.followup.send("✅ Results & Standings module enabled.", ephemeral=True)
 
     # ── Results & Standings disable ────────────────────────────────────
 
     async def _disable_results(self, interaction: discord.Interaction) -> None:
         """Disable results & standings, warning first wherever it costs the league something.
 
-        The cascade used to happen unannounced: the reply named results alone and the league
-        was told nothing about attendance going with it, its check-in and attendance channels
-        being cleared, or its being unable to come back while the season runs. That was the
-        silent half of issue #114.
+        The warning names the cascade: attendance goes with results, its check-in and
+        attendance channels are cleared, and it cannot come back while the season runs.
 
-        A running season is the other half, and was silent for longer. Disabling mid-season
-        destroys that season's results entire and closes every round still waiting on them
-        (issue #167), and a league with attendance already off was shown no warning at all
-        before it happened. So the confirmation is now owed to a running season in its own
-        right, whatever attendance is doing.
+        A running season is owed the confirmation in its own right, whatever attendance is
+        doing: disabling mid-season destroys that season's results entire and closes every
+        round still waiting on them.
         """
         if not await self.bot.module_service.is_results_enabled():
             await refuse(
@@ -664,17 +410,18 @@ class ModuleCog(commands.Cog):
 
         # Warn before anything irreversible, and write nothing until the league confirms it.
         active_season = await self.bot.season_service.get_confirmed_season()
-        attendance_on = await self.bot.module_service.is_attendance_enabled()
+        enabled = await self._enabled_modules()
+        cascade_attendance = "attendance" in taken_down_with("results", enabled)
 
-        if active_season is not None or attendance_on:
+        if active_season is not None or cascade_attendance:
             await interaction.response.send_message(
                 _results_disable_warning(
-                    season_active=active_season is not None, attendance=attendance_on
+                    season_active=active_season is not None, attendance=cascade_attendance
                 ),
                 view=_ConfirmDisableResultsView(
                     self,
                     interaction.user.id,
-                    cascade_attendance=attendance_on,
+                    cascade_attendance=cascade_attendance,
                 ),
                 ephemeral=True,
             )
@@ -693,16 +440,11 @@ class ModuleCog(commands.Cog):
     async def _enable_attendance(
         self, interaction: discord.Interaction
     ) -> None:
-        # 1. Guard: R&S must be enabled first
-        if not await self.bot.module_service.is_results_enabled():
-            await refuse(
-                interaction,
-                "❌ The Attendance module requires the Results & Standings module to be enabled first.",
-                what=describe(interaction),
-            )
+        # Guard: the dependency table's needs must be enabled first
+        if await self._refuse_missing_dependency(interaction, "attendance"):
             return
 
-        # 2. Guard: no ACTIVE season
+        # Guard: no ACTIVE season
         active_season = await self.bot.season_service.get_confirmed_season()
         if active_season is not None:
             await refuse(
@@ -712,244 +454,92 @@ class ModuleCog(commands.Cog):
             )
             return
 
-        # 3. Guard: already enabled
-        if await self.bot.module_service.is_attendance_enabled():
-            await refuse(
-                interaction, "⚠️ Attendance module is already enabled.", what=describe(interaction)
-            )
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        # 4. Atomically insert config row with defaults + audit entry. One write, so a fault
-        # leaves the module off, and the command says so itself (see `report_failure`).
-        now = datetime.now(timezone.utc).isoformat()
-        try:
-            async with get_connection(self.bot.db_path) as db:
-                await db.execute(
-                    "INSERT OR REPLACE INTO attendance_config "
-                    "(id, module_enabled, rsvp_notice_days, rsvp_last_notice_hours, "
-                    "rsvp_deadline_hours, no_rsvp_penalty, absent_penalty, no_show_penalty, "
-                    "autoreserve_threshold, autosack_threshold) "
-                    "VALUES (1, 1, 5, 24, 2, 1, 1, 1, NULL, NULL)"
-                )
-                await db.execute(
-                    "INSERT INTO audit_entries "
-                    "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                    "VALUES (?, ?, NULL, 'ATTENDANCE_MODULE_ENABLED', '', '', ?)",
-                    (interaction.user.id, str(interaction.user), now),
-                )
-                await db.commit()
-        except Exception as exc:  # noqa: BLE001 — reported here, to say the module is still off
-            await report_failure(
-                interaction, exc, what=describe(interaction), outcome=_still_off("attendance")
-            )
-            return
-
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable attendance | Success",
+        # The switch is attendance's own change on the queue, whose check refuses "already
+        # enabled": this asks for it and does nothing else.
+        await self.bot.change_queue.ask(
+            module_on("attendance"),
+            {},
+            interaction=interaction,
+            what=describe(interaction),
         )
-        await interaction.followup.send("✅ Attendance module enabled.", ephemeral=True)
 
-    # ── Images enable (T015) ───────────────────────────────────────────
+    # ── Images enable ────────────────────────────────────────────────
 
     async def _enable_images(
         self, interaction: discord.Interaction
     ) -> None:
-        from leaguebot.image.services.image_render_service import (
-            converter_absent_message,
-            converter_available,
-        )
-
-        if await self.bot.module_service.is_images_enabled():
-            await refuse(
-                interaction, "⚠️ Image module is already enabled.", what=describe(interaction)
-            )
+        if await self._refuse_missing_dependency(interaction, "images"):
             return
 
-        await interaction.response.defer(ephemeral=True)
-
-        now = datetime.now(timezone.utc).isoformat()
-        try:
-            # create_with_defaults is idempotent: an existing configuration is left
-            # exactly as it was, which is what makes re-enabling lossless (FR-004a).
-            await self.bot.image_config_service.create_with_defaults()
-            await self.bot.module_service.set_images_enabled(True)
-            async with get_connection(self.bot.db_path) as db:
-                await db.execute(
-                    "INSERT INTO audit_entries "
-                    "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                    "VALUES (?, ?, NULL, 'IMAGE_MODULE_ENABLED', '', '', ?)",
-                    (interaction.user.id, str(interaction.user), now),
-                )
-                await db.commit()
-        except Exception as exc:  # noqa: BLE001 — undone, then reported to say the module is still off
-            # The flag goes back down first. Where that fails too the module cannot be said to be
-            # off, and the second fault goes to the command's failure path instead.
-            await self.bot.module_service.set_images_enabled(False)
-            await report_failure(
-                interaction, exc, what=describe(interaction), outcome=_still_off("images")
-            )
-            return
-
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable images | Success",
+        # The switch is image's own change on the queue: this asks for it and does nothing
+        # else.
+        await self.bot.change_queue.ask(
+            module_on("images"),
+            {},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
-        message = "✅ Image module enabled. All output aspects start disabled — use `/images config toggle`."
-        # The module enables even without the rasteriser, so an administrator can finish
-        # configuring while waiting for it to be installed (FR-007, FR-008).
-        if not converter_available(use_cache=False):
-            message += "\n\n" + converter_absent_message()
-
-        await interaction.followup.send(message, ephemeral=True)
-
-    # ── Images disable (T016) ──────────────────────────────────────────
+    # ── Images disable ──────────────────────────────────────────────────
 
     async def _disable_images(
         self, interaction: discord.Interaction
     ) -> None:
-        """Clear the enabled flag and nothing else.
-
-        No configuration row is deleted, no toggle reset and no notice history purged.
-        This is the Principle X.6 exception for configuration that cannot go stale: no
-        image config value names a Discord channel, role, message or scheduled job, so
-        none can become a stale binding while the module is off (FR-004a). No
-        ``--preserve-config`` flag is offered because nothing is cleared (FR-004b).
-        """
-        if not await self.bot.module_service.is_images_enabled():
-            await refuse(
-                interaction, "⚠️ Image module is already disabled.", what=describe(interaction)
-            )
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        now = datetime.now(timezone.utc).isoformat()
-        await self.bot.module_service.set_images_enabled(False)
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'IMAGE_MODULE_DISABLED', '', '', ?)",
-                (interaction.user.id, str(interaction.user), now),
-            )
-            await db.commit()
-
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable images | Success",
-        )
-        await interaction.followup.send(
-            "✅ Image module disabled. Every aspect reverts to text output.\n"
-            "Your configuration is kept — re-enabling restores it exactly.",
-            ephemeral=True,
+        # The switch-off is image's own change on the queue: it lowers the flag and writes
+        # its audit entry in one save, deleting nothing and removing nothing (Principle X.6's
+        # exception, which image claims). This asks for it and does nothing else.
+        await self.bot.change_queue.ask(
+            module_off("images"),
+            {},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
     # ── Attendance disable ─────────────────────────────────────────────
 
     async def _disable_attendance(self, interaction: discord.Interaction) -> None:
-        if not await self.bot.module_service.is_attendance_enabled():
-            await refuse(
-                interaction, "⚠️ Attendance module is already disabled.", what=describe(interaction)
-            )
-            return
-        await interaction.response.defer(ephemeral=True)
-
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await self.bot.attendance_service.switch_off_on(db)
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'ATTENDANCE_MODULE_DISABLED', '', '', ?)",
-                (interaction.user.id, str(interaction.user), now),
-            )
-            await db.commit()
-
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module disable attendance | Success",
+        # The switch-off is attendance's own change on the queue, whose check refuses "already
+        # disabled": it calls `AttendanceService.switch_off_on` and writes its audit entry in
+        # one save. This asks for it and does nothing else.
+        await self.bot.change_queue.ask(
+            module_off("attendance"),
+            {},
+            interaction=interaction,
+            what=describe(interaction),
         )
-        await interaction.followup.send("✅ Attendance module disabled.", ephemeral=True)
 
-    # ── Signup enable (T010) ───────────────────────────────────────────
+    # ── Signup enable ───────────────────────────────────────────────────
 
     async def _enable_signup(
         self,
         interaction: discord.Interaction,
     ) -> None:
-        # Guard already-enabled
-        if await self.bot.module_service.is_signup_enabled():
-            await refuse(
-                interaction, "⚠️ Signup module is already enabled.", what=describe(interaction)
-            )
+        if await self._refuse_missing_dependency(interaction, "signup"):
             return
 
-        await interaction.response.defer(ephemeral=True)
-
-        # Upsert a bare config row — its channel NULL. The league's roles are core's (#276).
-        from leaguebot.signup.models.signup_module import SignupModuleConfig
-        new_cfg = SignupModuleConfig(
-            signup_channel_id=None,
-            signups_open=False,
-            signup_button_message_id=None,
-            selected_tracks=[],
-        )
-        await self.bot.signup_module_service.save_config(new_cfg)
-
-        # Set enabled + audit
-        await self.bot.module_service.set_signup_enabled(True)
-        now = datetime.now(timezone.utc).isoformat()
-        async with get_connection(self.bot.db_path) as db:
-            await db.execute(
-                "INSERT INTO audit_entries "
-                "(actor_id, actor_name, division_id, change_type, old_value, new_value, timestamp) "
-                "VALUES (?, ?, NULL, 'MODULE_ENABLE', '', ?, ?)",
-                (interaction.user.id, str(interaction.user),
-                 json.dumps({"module": "signup"}), now),
-            )
-            await db.commit()
-
-        await self.bot.output_router.post_log(
-            f"{interaction.user.display_name} (<@{interaction.user.id}>) | /module enable signup | Success",
-        )
-        # The two roles are the league's (issue #276): named only where still to be set.
-        server_cfg = await self.bot.config_service.get_server_config()
-        steps = ["  • `/signup channel <channel>`"]
-        if server_cfg is None or server_cfg.base_role_id is None:
-            steps.append("  • `/bot base-role <role>`")
-        if server_cfg is None or server_cfg.driver_role_id is None:
-            steps.append("  • `/bot driver-role <role>`")
-        await interaction.followup.send(
-            "✅ Signup module enabled.\n"
-            "Next steps — configure with:\n" + "\n".join(steps),
-            ephemeral=True,
+        # The switch is signup's own change on the queue, whose check refuses "already enabled"
+        # and the season's stage being fixed: this asks for it and does nothing else.
+        await self.bot.change_queue.ask(
+            module_on("signup"),
+            {},
+            interaction=interaction,
+            what=describe(interaction),
         )
 
-    # ── Signup disable (T018) ──────────────────────────────────────────
+    # ── Signup disable ──────────────────────────────────────────────────
 
     async def _disable_signup(
         self, interaction: discord.Interaction
     ) -> None:
-        if not await self.bot.module_service.is_signup_enabled():
-            await refuse(
-                interaction, "⚠️ Signup module is already disabled.", what=describe(interaction)
-            )
-            return
-
-        # The switch-off is a change on the queue: where the window is open it closes it first, as
-        # jobs, and its switch-off turns the module off, forgets the channel and audits it, then
-        # clears the channel's overwrites in a job of its own, so that they go only with the module.
-        # The command acknowledges it at once and does nothing else.
-        signup_cfg = await self.bot.signup_module_service.get_config()
-        window = (
-            signup_cfg.signup_button_message_id if signup_cfg and signup_cfg.signups_open else None
-        )
-        asked = await self.bot.change_queue.ask(
+        # The switch-off is signup's own change on the queue. It fills its own payload at the ask
+        # with the window standing then, and its check refuses "already disabled", a season whose
+        # configuration is fixed and a window changed since the ask. Where the window is open it
+        # closes it first, as jobs; its switch-off turns the module off, forgets the channel and
+        # audits it, then clears the channel's overwrites in a job of its own, so that they go only
+        # with the module. This asks for it and does nothing else.
+        await self.bot.change_queue.ask(
             module_off("signup"),
-            {"window": window},
+            {},
             interaction=interaction,
-            what=_SIGNUP_OFF,
-            refusal_what=describe(interaction),
+            what=describe(interaction),
         )
-        if asked is None:
-            return

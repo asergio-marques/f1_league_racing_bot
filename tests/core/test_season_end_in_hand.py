@@ -100,7 +100,7 @@ async def test_season_end_in_hand_names_the_job_nearest_its_turn_and_leaves_out_
     end is another season's. Asked which end of season 7 is in hand, the helper gives its kind and
     first job not done, 0 for the job where only the close is left, the earlier where two are in
     hand, and nothing where none is."""
-    from leaguebot.core.services.season_end_changes import season_end_in_hand
+    from leaguebot.core.services.seasons.season_end_changes import season_end_in_hand
 
     path = str(tmp_path / "league.db")
     await run_migrations(path)

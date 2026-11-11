@@ -45,6 +45,7 @@ from pathlib import Path
 import discord
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.image.services.image_config_service import ImageConfigService
 from leaguebot.image.utils.asset_resolver import filename_for
 from leaguebot.image.utils.svg_document import off_the_loop
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -263,14 +264,17 @@ async def remove_portrait(db_path: str, user_id: str, directory) -> bool:
     return True
 
 
-async def discard_portraits(bot: LeagueBot, user_ids: Iterable[str]) -> int:
+async def discard_portraits(
+    db_path: str, config_service: ImageConfigService, user_ids: Iterable[str],
+) -> int:
     """Remove the portraits obtained for *user_ids*, accounts no driver is drawn under any longer.
 
-    Returns how many were removed. Two paths want this. `/driver reassign` discards the
-    portrait of the account a driver has just replaced, everything being drawn under their
-    current account (issues #222 and #243). The driver pass that ends a season discards those
-    of every driver it deletes, past accounts and current alike (issue #235). Either account
-    has its picture obtained afresh should it be drawn again, as any driver's is.
+    Returns how many were removed. Two paths want this, both through core's drawing protocol
+    (`ImageDrawing.discard_portraits`, `core/services/modules/image_drawing.py`): `/driver reassign`
+    discards the portrait of the account a driver has just replaced, everything being drawn
+    under their current account. The driver pass that ends a season discards those of every
+    driver it deletes, past accounts and current alike.
+    Either account has its picture obtained afresh should it be drawn again, as any driver's is.
 
     Each goes through :func:`remove_portrait`, which leaves a portrait the league placed itself
     where it is.
@@ -289,7 +293,7 @@ async def discard_portraits(bot: LeagueBot, user_ids: Iterable[str]) -> int:
     if not user_ids:
         return 0
     try:
-        config = await bot.image_config_service.get_config()
+        config = await config_service.get_config()
         if config is None:
             return 0
         from leaguebot.image.services.image_render_service import resolve_configured_directories
@@ -309,7 +313,7 @@ async def discard_portraits(bot: LeagueBot, user_ids: Iterable[str]) -> int:
     removed = 0
     for user_id in user_ids:
         try:
-            if await remove_portrait(bot.db_path, user_id, directory):
+            if await remove_portrait(db_path, user_id, directory):
                 removed += 1
         except Exception:  # noqa: BLE001 -- as above, and the rest are still worth removing
             log.warning(
@@ -399,7 +403,7 @@ async def run_daily_refresh(bot: LeagueBot, *, now: datetime | None = None) -> i
 
 
 async def refresh_before_render(
-    bot: LeagueBot,
+    db_path: str,
     members,
     *,
     config=None,
@@ -410,11 +414,14 @@ async def refresh_before_render(
     """Refresh the portraits a graphic is about to draw, where the league asked for that.
 
     The gate for the pre-render trigger, in one place: both the posting path and the preview
-    path call this rather than each deciding for itself whether the feature is on.
+    path call this rather than each deciding for itself whether the feature is on. It is
+    handed the database's path: it reads only the database, through `refresh_portraits` and,
+    where *config* is omitted, its own read of `image_config`.
 
     *config* and *directory* are accepted because the posting path has already read and
     resolved both, and resolving twice per render would be waste; either may be omitted and
-    is then worked out here.
+    is then worked out here. Where no configuration is stored yet, the gate reads as off, as it
+    does for a configuration object predating the feature.
 
     Passing ``directory=None`` is **not** the same as omitting it. None means the caller
     resolved the driver directory and it was rejected, and the gate shuts: obtaining
@@ -434,7 +441,10 @@ async def refresh_before_render(
     """
     try:
         if config is None:
-            config = await bot.image_config_service.get_config()
+            from leaguebot.image.services.image_config_service import read_config_on
+
+            async with get_connection(db_path) as db:
+                config = await read_config_on(db)
         # `getattr` rather than attribute access: a configuration object predating migration
         # 047 carries neither field. Absent reads as off, which is the same answer the
         # defaults give.
@@ -478,7 +488,7 @@ async def refresh_before_render(
                 return 0
 
         return await refresh_portraits(
-            bot.db_path,
+            db_path,
             members,
             directory,
             aspect=await off_the_loop(portrait_aspect, config),

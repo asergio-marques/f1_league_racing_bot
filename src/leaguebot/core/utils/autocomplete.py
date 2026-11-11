@@ -3,8 +3,7 @@
 Discord allows an autocomplete callback **three seconds** and provides no way to defer one:
 `interaction.response.defer()` exists for commands, and there is no equivalent here. Answer
 late and the interaction token has already expired, so the reply comes back as
-`404 Unknown interaction` (error code 10062) — which is exactly what a `/images test lineup`
-autocomplete did on 2026-08-25.
+`404 Unknown interaction` (error code 10062).
 
 Offering no choices is a far better outcome than answering into a dead token: the manager
 types another character and gets a fresh interaction. This decorator makes that the failure
@@ -121,7 +120,7 @@ def _discard(task: asyncio.Task) -> None:
         log.warning("abandoned autocomplete finished with an error: %r", exc)
 
 
-# ── Teams (#381) ──────────────────────────────────────────────────────────
+# ── Teams ────────────────────────────────────────────────────────────────
 
 #: The most choices Discord shows for one autocomplete.
 _MAX_CHOICES = 25
@@ -130,7 +129,7 @@ _MAX_CHOICES = 25
 def team_choices(teams, current: str | None, *, include_reserve: bool) -> list:
     """The teams *current* could be the start of, as autocomplete choices.
 
-    A team is typed by its **shorthand** (#381), so that is what each choice sends. It is
+    A team is typed by its **shorthand**, so that is what each choice sends. It is
     offered under both its names — "RBR — Oracle Red Bull Racing" — and matched against either,
     so a manager who remembers only the full name still finds the team. *teams* are mappings
     carrying ``name`` (the shorthand), ``full_name`` and ``is_reserve``, in the order to offer

@@ -245,7 +245,7 @@ async def _team_names(bot: LeagueBot, guild, division_id: int, team_ids: list[in
     deleted, has no bearing on the rounds recorded under it. *guild* and *division_id* are
     kept for the callers' symmetry with the driver lookups beside this one.
     """
-    from leaguebot.core.services.team_service import team_names_for_instances
+    from leaguebot.core.services.drivers.team_service import team_names_for_instances
 
     return await team_names_for_instances(bot.db_path, team_ids)
 
@@ -256,7 +256,7 @@ async def _team_keys(bot: LeagueBot, team_ids: list[int]) -> dict[int, str]:
     Apart from the name drawn (#381): a team is drawn by its full name, and its badge file is
     named after its shorthand.
     """
-    from leaguebot.core.services.team_service import team_artwork_keys_for_instances
+    from leaguebot.core.services.drivers.team_service import team_artwork_keys_for_instances
 
     return await team_artwork_keys_for_instances(bot.db_path, team_ids)
 

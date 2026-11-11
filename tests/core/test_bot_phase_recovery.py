@@ -1,4 +1,4 @@
-"""`_recover_missed_phases` — re-firing weather phases a restart went through.
+"""`recover_missed_phases` — re-firing weather phases a restart went through.
 
 Issue #208. A phase is a scheduled job, and a job does not survive the process. On restart the
 bot therefore asks which horizons have passed without their phase having run, and fires those.
@@ -48,7 +48,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from leaguebot.__main__ import _recover_missed_phases
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.change_queue import change_rows
 from tests.support.season_league import PRO, ongoing_league, round_id
@@ -148,6 +147,8 @@ def _config(*, phase_1_days: int = 5, phase_2_days: int = 2, phase_3_hours: int 
 async def _recover(bot, *, config=None, reads: list | None = None):
     """Run the recovery, recording which phases it asked the queue for (as ``(phase, round)``)
     and which configs were read."""
+    from leaguebot.weather.wiring import recover_missed_phases
+
     fired: list[tuple[int, int]] = []
 
     async def _ask(_queue, _db_path, round_id, phase):
@@ -164,7 +165,7 @@ async def _recover(bot, *, config=None, reads: list | None = None):
         "leaguebot.weather.services.weather_config_service.get_weather_pipeline_config",
         new=AsyncMock(side_effect=_get_config),
     ):
-        await _recover_missed_phases(bot)
+        await recover_missed_phases(bot)
     return fired
 
 
@@ -353,24 +354,6 @@ async def test_a_round_not_to_be_run_recovers_nothing(tmp_path, status):
     assert await _recover(_bot(db_path)) == []
 
 
-async def test_a_naive_timestamp_is_read_as_utc(tmp_path):
-    """Rows written before the timestamps carried a zone still exist. Read as local time
-    the horizon would move by the host's offset, so the same database would recover
-    differently on the Pi than on a developer's machine; and compared with an aware "now" it
-    would raise, aborting the sweep partway through a season."""
-    db_path = await _make_db(tmp_path)
-    naive = (datetime.now(timezone.utc) + timedelta(hours=1)).replace(tzinfo=None)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE rounds SET scheduled_at = ? WHERE id = 1", (naive.isoformat(),)
-        )
-        await db.commit()
-
-    fired = await _recover(_bot(db_path))
-
-    assert sorted(p for p, _ in fired) == [1, 2, 3]
-
-
 # ---------------------------------------------------------------------------
 # A mystery round's notice, recovered through weather's ask (#439)
 # ---------------------------------------------------------------------------
@@ -415,9 +398,11 @@ async def test_a_missed_mystery_notice_is_asked_for_when_the_bot_starts(
     3; with the notice posted already, or the race run, none (folded defect 5; weather spec :158
     as amended). Thirty days out, its Phase 1 horizon not yet reached, none either: its notice is
     left to its own timer."""
+    from leaguebot.weather.wiring import recover_missed_phases
+
     league = await _mystery_league(tmp_path, hours_until_race=hours_until_race,
                                    notice_posted=notice_posted)
 
-    await _recover_missed_phases(league.bot)
+    await recover_missed_phases(league.bot)
 
     assert await _forecasts_asked(league) == expected

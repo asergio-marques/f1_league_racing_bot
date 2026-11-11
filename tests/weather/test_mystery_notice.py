@@ -68,8 +68,6 @@ def _make_scheduler_no_db():
     """Instantiate SchedulerService bypassing __init__ (no real APScheduler needed)."""
     from leaguebot.core.services.scheduler_service import SchedulerService
     svc = SchedulerService.__new__(SchedulerService)
-    svc._phase_callbacks = {}
-    svc._mystery_notice_callback = None
     svc._db_path = ":memory:"
     mock_sched = MagicMock()
     mock_sched.add_job = MagicMock()
@@ -80,10 +78,11 @@ def _make_scheduler_no_db():
 
 
 def _make_mock_job(job_id: str, round_id: int) -> MagicMock:
-    """Create a mock APScheduler job with the given id and round_id kwarg."""
+    """A mock APScheduler job with the given id, stored with its kind (its id less the round
+    suffix) and the round id as its key."""
     job = MagicMock()
     job.id = job_id
-    job.kwargs = {"round_id": round_id}
+    job.kwargs = {"kind": job_id.split("_s", 1)[0], "key": round_id}
     job.next_run_time = datetime(2099, 1, 1, tzinfo=timezone.utc)
     return job
 
@@ -100,7 +99,7 @@ def _mystery_round(round_id: int = 42) -> Round:
 
 
 def _future_round(round_id: int, fmt: RoundFormat) -> Round:
-    """Round scheduled far in the future so all RSVP job fire-times are still pending."""
+    """Round on 1 June 2099, so all RSVP job fire-times are still pending at `NOW`."""
     return Round(
         id=round_id,
         division_id=1,
@@ -139,16 +138,17 @@ class TestScheduleRoundMystery:
         assert any("weather_p3" in jid for jid in job_ids)
 
     def test_round_id_in_kwargs_for_all_jobs(self):
+        """Every job of a mystery round is stored with the round's id as its key."""
         svc = _make_scheduler_no_db()
         svc.schedule_round(_mystery_round(round_id=42), season_number=1, division_tier=1)
         for call in svc._scheduler.add_job.call_args_list:
-            assert call.kwargs["kwargs"]["round_id"] == 42
+            assert call.kwargs["kwargs"]["key"] == 42
 
     def test_job_ids_follow_new_format(self):
         svc = _make_scheduler_no_db()
         svc.schedule_round(_mystery_round(round_id=42), season_number=3, division_tier=2)
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
-        # weather_p1 replaces the old mystery_r job; it checks format at runtime.
+        # weather_p1 replaces the old mystery_r job; weather reads the format when it fires.
         # Format: <event>_s{season}_d{tier}_r{round_number}_id{round_id}. The round id is the
         # part that has to be there — season, tier and number are all rewritten by a
         # renumbering, and without the id an amended round could schedule on top of a sibling's
@@ -202,6 +202,9 @@ class TestCancelRoundIncludesMystery:
         svc._scheduler.remove_job.assert_not_called()
 
 
+#: The moment the check-in is armed against, a month before `_future_round`'s.
+NOW = datetime(2099, 5, 1, 14, 0, 0, tzinfo=timezone.utc)
+
 # ---------------------------------------------------------------------------
 # 5. schedule_attendance_round: MYSTERY round must produce RSVP jobs identical
 #    to any other round format (032-attendance-rsvp-checkin)
@@ -228,6 +231,7 @@ class TestScheduleAttendanceRoundMystery:
             notice_days=3,
             last_notice_hours=24,
             deadline_hours=2,
+            now=NOW,
         )
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
         assert expected_id in job_ids
@@ -242,6 +246,7 @@ class TestScheduleAttendanceRoundMystery:
             notice_days=3,
             last_notice_hours=24,
             deadline_hours=2,
+            now=NOW,
         )
         mystery_count = svc._scheduler.add_job.call_count
 
@@ -253,6 +258,7 @@ class TestScheduleAttendanceRoundMystery:
             notice_days=3,
             last_notice_hours=24,
             deadline_hours=2,
+            now=NOW,
         )
         normal_count = svc._scheduler.add_job.call_count
 
@@ -268,6 +274,7 @@ class TestScheduleAttendanceRoundMystery:
             notice_days=3,
             last_notice_hours=0,
             deadline_hours=2,
+            now=NOW,
         )
         assert svc._scheduler.add_job.call_count == 3
         job_ids = [c.kwargs.get("id", "") for c in svc._scheduler.add_job.call_args_list]
@@ -298,7 +305,7 @@ async def _seed_mystery_round(db_path: str, round_id: int = 1) -> None:
         await db.execute(
             "INSERT INTO rounds "
             "(id, division_id, round_number, format, track_name, scheduled_at) "
-            "VALUES (?, 1, 1, 'MYSTERY', NULL, '2026-06-01T14:00:00')",
+            "VALUES (?, 1, 1, 'MYSTERY', NULL, '2026-06-01T14:00:00+00:00')",
             (round_id,),
         )
         await db.commit()

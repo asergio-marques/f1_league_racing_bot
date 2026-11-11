@@ -22,6 +22,16 @@ makes the clobber above unreachable rather than merely corrected.
 **Each is audited as well as logged** (issue #371). The log line is all these once wrote, which
 left the database no record of who changed who may command and govern the bot, nor of what the
 setting had been. The audit keeps the value each command replaced.
+
+**The four settings are core's `Setting`s on the change queue** (#283, S13a): the command answers
+with the queue's acknowledgement, and the queue writes the value, its audit entry and its line in
+one save, stamped with the queue's clock. The tests of them run the bot the entry point builds,
+with the real queue and "now" pinned, and run the queue.
+
+**`/bot init` is a change on the queue too** (#283, S13d): its claim, its four settings and its audit
+entry are one save, a fault in it ends the change without stopping the queue, and its line is
+written to the log channel it has just set. Its refusals on another server, and while a factory
+reset is cleaning up, stay in the host's log alone, made before the queue is asked.
 """
 from __future__ import annotations
 
@@ -29,14 +39,18 @@ import json
 import logging
 import os
 import re
+from datetime import datetime, timezone
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import aiosqlite
 import discord
 import pytest
 
 from leaguebot.core.cogs.bot_cog import BotCog
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.config_service import ConfigService
+from leaguebot.core.services.settings.config_service import ConfigService
+from tests.support.channel_uses import sign_up_channel_uses_read, sign_up_setting_channels_read
 from tests.support.undecorate import undecorate
 
 SERVER_ID = 4242
@@ -47,6 +61,37 @@ CONFIGURED_CHANNEL = 111
 CONFIGURED_ROLE = 222
 CONFIGURED_LOG = 333
 CONFIGURED_ADMIN_ROLE = 444
+
+#: "Now", as the change queue's clock gives it to the tests that run it.
+NOW = datetime(2026, 10, 22, 12, 0, tzinfo=timezone.utc)
+
+#: The queue's acknowledgement of `/bot init`, before anything is claimed.
+_INIT_ACKNOWLEDGED = (
+    "⏳ Saving the bot configuration. This message will be updated when it is done; if it takes "
+    "longer, the log channel will say so."
+)
+
+#: `/bot init`'s reply once the queue has run it, for the four settings `_ask_init` gives.
+_INIT_SAVED = (
+    "✅ Bot configuration saved!\n"
+    "**League admin role**: <@&444>\n"
+    "**Interaction role**: <@&222>\n"
+    "**Interaction channel**: <#111>\n"
+    "**Log channel**: <#{log}>"
+)
+
+#: `/bot init` refused on a server already configured, word for word.
+_ALREADY_CONFIGURED = (
+    "⚠️ This server is already configured, and `/bot init` runs once.\n"
+    "To change a setting use `/bot log-channel`, `/bot interaction-channel`, "
+    "`/bot interaction-role` and `/bot admin-role`.\n"
+    "To move the league to another server, use `/bot pack` first."
+)
+
+#: `/bot init` refused because another server holds the league, word for word.
+_ANOTHER_SERVER = (
+    "⛔ This bot already serves the league on another server. One bot serves one league."
+)
 
 def _unwrap(cmd):
     """Strip `bot_setup_only` and return the command body.
@@ -94,7 +139,7 @@ async def _row(db_path: str) -> dict:
 async def _audit_rows(db_path: str) -> list[dict]:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT actor_id, division_id, change_type, old_value, new_value "
+            "SELECT actor_id, division_id, change_type, old_value, new_value, timestamp "
             "FROM audit_entries"
         )
         return [dict(r) for r in await cursor.fetchall()]
@@ -189,21 +234,51 @@ def _log_lines(bot: MagicMock) -> list[str]:
 # ── /bot init runs once ───────────────────────────────────────────────────
 
 
-async def test_bot_init_configures_an_unconfigured_server(tmp_path):
-    db_path = await _make_db(tmp_path)
-    bot = _bot(db_path)
-    cog = BotCog(bot)
-    interaction = _interaction()
-
+async def _ask_init(
+    cog, interaction, *, admin_name: str = "Stewards", interaction_channel: int = CONFIGURED_CHANNEL,
+    log_channel: int = CONFIGURED_LOG,
+) -> None:
+    """Run `/bot init` through *interaction* with the configured interaction role and league admin
+    role (the latter named *admin_name*), *interaction_channel* and *log_channel*."""
+    admin_role = _role(CONFIGURED_ADMIN_ROLE)
+    admin_role.name = admin_name
     await _unwrap(cog.handle_bot_init)(
-        cog,
-        interaction,
-        _role(CONFIGURED_ROLE),
-        _role(CONFIGURED_ADMIN_ROLE),
-        _channel(CONFIGURED_CHANNEL),
-        _channel(CONFIGURED_LOG),
+        cog, interaction, _role(CONFIGURED_ROLE), admin_role, _channel(interaction_channel),
+        _channel(log_channel),
     )
 
+
+def _init_line(*, admin_name: str = "Stewards", named: str = None, log_channel: int = CONFIGURED_LOG,
+               interaction_channel: int = CONFIGURED_CHANNEL) -> str:
+    """`/bot init`'s success line as the log channel takes it, the mentions wrapped."""
+    return (
+        f"{named or _NAMED} | /bot init | Success\n"
+        f"  league_admin_role: {admin_name} (`<@&{CONFIGURED_ADMIN_ROLE}>`)\n"
+        f"  interaction_role: Stewards (`<@&{CONFIGURED_ROLE}>`)\n"
+        f"  interaction_channel: <#{interaction_channel}>\n"
+        f"  log_channel: <#{log_channel}>"
+    )
+
+
+async def test_bot_init_configures_an_unconfigured_server(tmp_path):
+    """No server is claimed yet. An administrator runs `/bot init` with the interaction role, the
+    league admin role, the interaction channel and the log channel. They are answered at once with
+    the queue's acknowledgement, and nothing is claimed until the queue runs the change; then the
+    server is the league's, holding the four settings."""
+    from tests.support.change_queue import acknowledgement, run_queue
+
+    db_path = await _make_db(tmp_path)
+    bot = await _queued_bot(db_path)
+    cog = BotCog(bot)
+    interaction = _asking(bot, "bot init")
+
+    await _ask_init(cog, interaction)
+
+    assert acknowledgement(interaction).startswith(_INIT_ACKNOWLEDGED)
+    assert await bot.config_service.get_league_server_id() is None
+    await run_queue(bot)
+
+    assert await bot.config_service.get_league_server_id() == SERVER_ID
     row = await _row(db_path)
     assert row["interaction_role_id"] == CONFIGURED_ROLE
     assert row["league_admin_role_id"] == CONFIGURED_ADMIN_ROLE
@@ -212,18 +287,16 @@ async def test_bot_init_configures_an_unconfigured_server(tmp_path):
 
 
 async def test_bot_init_is_audited_with_the_four_settings(tmp_path):
-    """Issue #371. Nothing stood before the claim, so every value it replaced is null."""
-    db_path = await _make_db(tmp_path)
-    cog = BotCog(_bot(db_path))
+    """Issue #371. Nothing stood before the claim, so every value it replaced is null. The entry
+    is stamped with the queue's clock, never the host's."""
+    from tests.support.change_queue import run_queue
 
-    await _unwrap(cog.handle_bot_init)(
-        cog,
-        _interaction(),
-        _role(CONFIGURED_ROLE),
-        _role(CONFIGURED_ADMIN_ROLE),
-        _channel(CONFIGURED_CHANNEL),
-        _channel(CONFIGURED_LOG),
-    )
+    db_path = await _make_db(tmp_path)
+    bot = await _queued_bot(db_path)
+    cog = BotCog(bot)
+
+    await _ask_init(cog, _asking(bot, "bot init"))
+    await run_queue(bot)
 
     (row,) = await _audit_rows(db_path)
     assert row["change_type"] == "BOT_INITIALISED"
@@ -238,47 +311,38 @@ async def test_bot_init_is_audited_with_the_four_settings(tmp_path):
     }
     assert json.loads(row["new_value"]) == new
     assert json.loads(row["old_value"]) == dict.fromkeys(new)
+    assert row["timestamp"] == NOW.isoformat()
 
 
-async def _init_configured(tmp_path) -> tuple[MagicMock, MagicMock]:
-    """Run a first `/bot init` with the four configured settings: the bot and the interaction."""
+async def _init_configured(tmp_path) -> tuple[Any, MagicMock]:
+    """Run a first `/bot init` through the queue with the four configured settings, the league
+    admin role named "League Admins": the bot and the interaction."""
+    from tests.support.change_queue import run_queue
+
     db_path = await _make_db(tmp_path)
-    bot = _bot(db_path)
+    bot = await _queued_bot(db_path)
     cog = BotCog(bot)
-    interaction = _interaction()
-    admin_role = _role(CONFIGURED_ADMIN_ROLE)
-    admin_role.name = "League Admins"
+    interaction = _asking(bot, "bot init")
 
-    await _unwrap(cog.handle_bot_init)(
-        cog,
-        interaction,
-        _role(CONFIGURED_ROLE),
-        admin_role,
-        _channel(CONFIGURED_CHANNEL),
-        _channel(CONFIGURED_LOG),
-    )
+    await _ask_init(cog, interaction, admin_name="League Admins")
+    await run_queue(bot)
     return bot, interaction
 
 
 async def test_bot_init_s_line_names_the_league_admin_role(tmp_path):
-    """The line lists all four settings it saved, the league admin role among them (#482)."""
+    """The line lists all four settings it saved, the league admin role among them (#482), and is
+    written to the log channel `/bot init` has just set, so that it is told about itself."""
     bot, _interaction_ = await _init_configured(tmp_path)
 
-    [line] = _log_lines(bot)
-    assert line.startswith("admin (<@7>) | /bot init | Success")
-    assert f"League Admins (<@&{CONFIGURED_ADMIN_ROLE}>)" in line
-    assert f"(<@&{CONFIGURED_ROLE}>)" in line
-    assert f"<#{CONFIGURED_CHANNEL}>" in line and f"<#{CONFIGURED_LOG}>" in line
+    assert _delivered(bot, CONFIGURED_LOG) == [_init_line(admin_name="League Admins")]
 
 
 async def test_bot_init_s_reply_names_the_league_admin_role(tmp_path):
-    """The confirmation lists the league admin role beside the other three settings (#482, F3)."""
+    """The queue's acknowledgement is updated, once the change has run, to today's confirmation,
+    which lists the league admin role beside the other three settings (#482, F3)."""
     _bot_, interaction = await _init_configured(tmp_path)
 
-    reply = interaction.response.send_message.call_args.args[0]
-    assert f"<@&{CONFIGURED_ADMIN_ROLE}>" in reply
-    assert f"<@&{CONFIGURED_ROLE}>" in reply
-    assert f"<#{CONFIGURED_CHANNEL}>" in reply and f"<#{CONFIGURED_LOG}>" in reply
+    assert _said(interaction)[-1] == _INIT_SAVED.format(log=CONFIGURED_LOG)
 
 
 async def test_bot_init_is_refused_while_a_factory_reset_is_cleaning_up(tmp_path, caplog):
@@ -318,22 +382,22 @@ async def test_bot_init_is_refused_while_a_factory_reset_is_cleaning_up(tmp_path
 
 
 async def test_bot_init_refuses_a_second_run_and_names_the_four_commands(tmp_path):
+    """The league's server is set up; an administrator runs `/bot init` again. They are refused,
+    in today's words, at the ask: nothing is asked of the queue, and nothing is written."""
+    from tests.support.change_queue import change_rows
+
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
-    bot = _bot(db_path)
+    bot = await _queued_bot(db_path)
     cog = BotCog(bot)
-    interaction = _interaction()
+    interaction = _asking(bot, "bot init")
 
     await _unwrap(cog.handle_bot_init)(
         cog, interaction, _role(900), _role(903), _channel(901), _channel(902)
     )
 
     reply = interaction.response.send_message.call_args.args[0]
-    assert "runs once" in reply
-    assert "/bot log-channel" in reply
-    assert "/bot interaction-channel" in reply
-    assert "/bot interaction-role" in reply
-    assert "/bot admin-role" in reply
+    assert reply == _ALREADY_CONFIGURED
 
     row = await _row(db_path)
     assert row["interaction_role_id"] == CONFIGURED_ROLE
@@ -341,6 +405,7 @@ async def test_bot_init_refuses_a_second_run_and_names_the_four_commands(tmp_pat
     assert row["interaction_channel_id"] == CONFIGURED_CHANNEL
     assert row["log_channel_id"] == CONFIGURED_LOG
     assert await _audit_rows(db_path) == []
+    assert await change_rows(db_path) == []
 
 
 async def test_a_second_bot_init_does_not_switch_test_mode_off(tmp_path):
@@ -350,13 +415,17 @@ async def test_a_second_bot_init_does_not_switch_test_mode_off(tmp_path):
     `test_mode_active` defaulted to False and the upsert wrote it — leaving test mode off
     with the test drivers still seated, and nothing said so.
     """
+    from tests.support.change_queue import run_queue
+
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path, test_mode=1)
-    cog = BotCog(_bot(db_path))
+    bot = await _queued_bot(db_path)
+    cog = BotCog(bot)
 
     await _unwrap(cog.handle_bot_init)(
-        cog, _interaction(), _role(900), _role(903), _channel(901), _channel(902)
+        cog, _asking(bot, "bot init"), _role(900), _role(903), _channel(901), _channel(902)
     )
+    await run_queue(bot)
 
     assert (await _row(db_path))["test_mode_active"] == 1
 
@@ -383,89 +452,257 @@ async def test_bot_init_on_a_second_server_is_refused_and_writes_nothing(tmp_pat
 
 
 async def test_a_pack_frees_the_server_for_another(tmp_path):
-    """The claim is the configuration row's `server_id`, and `/bot pack` clears it (#247)."""
+    """The claim is the configuration row's `server_id`, and `/bot pack` clears it (#247).
+
+    The league's server is set up, test mode and both module flags on, and a league admin packs
+    it. An administrator on another server then runs `/bot init`, with log channel 555 and
+    interaction channel 556, and the queue runs it. The other server is the league's now, holding
+    the four settings it gave, and test mode and the module flags are carried over. One
+    `BOT_INITIALISED` entry records the claim as replacing nothing, the pack having cleared all
+    five. The line is delivered to the new log channel, nothing is left waiting with no channel to
+    go to, and the queue is not stopped."""
+    from tests.support.change_queue import queued_log_lines, run_queue, stopped_job
+
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
-    bot = _packing_bot(db_path)
-    cog = BotCog(bot)
-    await _unwrap(cog.handle_pack)(
-        cog, _deferred(_interaction(channel_id=CONFIGURED_CHANNEL)), "CONFIRM"
+    packing = _packing_bot(db_path)
+    packer = BotCog(packing)
+    await _unwrap(packer.handle_pack)(
+        packer, _deferred(_interaction(channel_id=CONFIGURED_CHANNEL)), "CONFIRM"
     )
-    interaction = _interaction()
+    bot = await _queued_bot(db_path)
+    cog = BotCog(bot)
+    interaction = _asking(bot, "bot init")
     interaction.guild_id = SERVER_ID + 1
 
-    await _unwrap(cog.handle_bot_init)(
-        cog, interaction, _role(900), _role(903), _channel(901), _channel(902)
-    )
+    await _ask_init(cog, interaction, interaction_channel=556, log_channel=555)
+    await run_queue(bot)
 
     assert await bot.config_service.get_league_server_id() == SERVER_ID + 1
+    async with get_connection(db_path) as db:
+        [row] = [dict(r) for r in await (await db.execute("SELECT * FROM server_configs")).fetchall()]
+    assert (row["interaction_role_id"], row["league_admin_role_id"]) == (
+        CONFIGURED_ROLE, CONFIGURED_ADMIN_ROLE)
+    assert (row["interaction_channel_id"], row["log_channel_id"]) == (556, 555)
+    assert (row["test_mode_active"], row["weather_module_enabled"],
+            row["signup_module_enabled"]) == (1, 1, 1)
+    [entry] = [r for r in await _audit_rows(db_path) if r["change_type"] == "BOT_INITIALISED"]
+    assert json.loads(entry["new_value"])["server_id"] == SERVER_ID + 1
+    assert json.loads(entry["old_value"]) == dict.fromkeys(json.loads(entry["new_value"]))
+    assert _delivered(bot, 555) == [_init_line(interaction_channel=556, log_channel=555)]
+    assert _said(interaction)[-1] == _INIT_SAVED.format(log=555).replace("<#111>", "<#556>")
+    assert await queued_log_lines(db_path) == []
+    assert await stopped_job(db_path) is None
 
 
-async def test_a_lost_race_to_another_server_names_the_other_server(tmp_path):
+async def test_a_lost_race_to_another_server_names_the_other_server(tmp_path, caplog):
+    """No server is claimed yet. An administrator on the league's server runs `/bot init`, and a
+    member on another server ("rival", id 8) runs it too before the queue has run the first. The
+    queue runs both, in the order asked. The first claims the league; the second is answered that
+    another server holds it, in today's words, and is recorded in the host's log alone, naming the
+    command and the member: the league's log channel takes the first's success line and nothing of
+    the second's. Nothing of the second is written, and the queue is not stopped."""
+    from tests.support.change_queue import queued_log_lines, run_queue, stopped_job
+
+    caplog.set_level(logging.INFO, logger="leaguebot")
     db_path = await _make_db(tmp_path)
-    bot = _bot(db_path)
-    real = bot.config_service
-
-    async def _lose(cfg):
-        await _seed_config(db_path)  # the other server wins in between
-        return await ConfigService.save_server_config(real, cfg)
-
-    bot.config_service = MagicMock(wraps=real)
-    bot.config_service.get_league_server_id = real.get_league_server_id
-    bot.config_service.get_server_config = real.get_server_config
-    bot.config_service.save_server_config = _lose
+    bot = await _queued_bot(db_path)
     cog = BotCog(bot)
-    interaction = _interaction()
-    interaction.guild_id = SERVER_ID + 1
+    first = _asking(bot, "bot init")
+    rival = _asking(bot, "bot init")
+    rival.guild_id = SERVER_ID + 1
+    rival.user.id = 8
+    rival.user.display_name = "rival"
 
-    await _unwrap(cog.handle_bot_init)(
-        cog, interaction, _role(900), _role(903), _channel(901), _channel(902)
+    await _ask_init(cog, first)
+    await _ask_init(cog, rival, interaction_channel=556, log_channel=555)
+    await run_queue(bot)
+
+    assert await bot.config_service.get_league_server_id() == SERVER_ID
+    assert _said(rival)[-1] == _ANOTHER_SERVER
+    [entry] = await _audit_rows(db_path)
+    assert json.loads(entry["new_value"])["server_id"] == SERVER_ID
+    assert _delivered(bot, CONFIGURED_LOG) == [_init_line()]
+    assert bot.test_channels[555].sent == [] and bot.test_channels[556].sent == []
+    assert await queued_log_lines(db_path) == []
+    assert await stopped_job(db_path) is None
+    member = re.compile(r"(?<!\d)8(?!\d)")
+    assert any(
+        record.name.startswith("leaguebot")
+        and record.levelno >= logging.INFO
+        and "bot init" in record.getMessage()
+        and member.search(record.getMessage())
+        for record in caplog.records
+    ), [record.getMessage() for record in caplog.records]
+
+
+@pytest.mark.parametrize("judged_by", ["check", "save"])
+async def test_a_second_bot_init_queued_behind_the_first_is_refused_as_it_starts(
+    tmp_path, judged_by
+):
+    """No server is claimed yet. An administrator runs `/bot init`, then runs it again on the same
+    server with another log channel before the queue has run the first. The queue runs both. The
+    first claims the server; the second is refused as it starts, the server now being configured,
+    found by the second's check, or, where the two raced past their checks together, by its save's
+    claim: either way its acknowledgement is updated to the refusal a second `/bot init` meets at
+    the ask, word for word, and the log channel the first has just set records the refusal beneath
+    the first's success line, the same line from either. Nothing of the second is written, and the
+    queue is not stopped."""
+    import dataclasses
+
+    from leaguebot.core.models.change import Verdict
+    from leaguebot.core.services.settings.bot_init_change import KIND
+    from tests.support.change_queue import run_queue, stopped_job
+
+    db_path = await _make_db(tmp_path)
+    bot = await _queued_bot(db_path)
+    if judged_by == "save":
+        async def passes(_ctx):
+            return Verdict.go()
+
+        queue = bot.change_queue
+        queue.register(dataclasses.replace(queue._type(KIND), check=passes))
+    cog = BotCog(bot)
+    first = _asking(bot, "bot init")
+    second = _asking(bot, "bot init")
+
+    await _ask_init(cog, first)
+    await _ask_init(cog, second, log_channel=555)
+    await run_queue(bot)
+
+    assert (await _row(db_path))["log_channel_id"] == CONFIGURED_LOG
+    assert len(await _audit_rows(db_path)) == 1
+    assert _said(second)[-1] == _ALREADY_CONFIGURED
+    assert _delivered(bot, CONFIGURED_LOG) == [
+        _init_line(),
+        f"⛔ `/bot init` refused for {_NAMED} — {_reason(_ALREADY_CONFIGURED)}",
+    ]
+    assert bot.test_channels[555].sent == []
+    assert await stopped_job(db_path) is None
+
+
+@pytest.mark.parametrize("where", ["save", "check"])
+@pytest.mark.parametrize("before", ["fresh", "packed"])
+async def test_bot_init_ends_on_a_fault_without_stopping_the_queue(
+    tmp_path, monkeypatch, caplog, before, where
+):
+    """No server is claimed: the bot is *fresh*, or the league was *packed* (its row kept, test
+    mode on, the four settings and the server cleared). An administrator runs `/bot init`, and as
+    the queue runs it the database fails *where*: in the audit entry's write in the save, or in the
+    check's read as the change starts. The claim and the four settings are not saved either, being
+    one save with the audit entry: no server is the league's. The member is told in the queue's
+    words that nothing was saved and to run it again, and that the fault is in the bot host's log;
+    no line is written for any channel, there being no log channel, and the host's log records the
+    fault. The change ends there and the queue is not stopped, there being no league admin role to
+    clear a stop: run again once the fault is gone, `/bot init` claims the server."""
+    import sqlite3
+
+    from leaguebot.core.services.queue import change_queue
+    from leaguebot.core.services.settings.config_service import RELEASE_CLAIM_SQL
+    from tests.support.change_queue import queued_log_lines, run_queue, stopped_job
+
+    caplog.set_level(logging.INFO, logger="leaguebot")
+    db_path = await _make_db(tmp_path)
+    if before == "packed":
+        await _seed_config(db_path, test_mode=1)
+        async with get_connection(db_path) as db:
+            await db.execute(RELEASE_CLAIM_SQL)
+            await db.commit()
+    bot = await _queued_bot(db_path)
+    cog = BotCog(bot)
+    interaction = _asking(bot, "bot init")
+
+    await _ask_init(cog, interaction)
+    fault = AsyncMock(side_effect=sqlite3.OperationalError("disk I/O error"))
+    if where == "save":
+        monkeypatch.setattr(change_queue, "record_change_on", fault)
+    else:
+        monkeypatch.setattr(bot.config_service, "get_league_server_id", fault)
+    await run_queue(bot)
+    monkeypatch.undo()
+
+    assert await bot.config_service.get_league_server_id() is None
+    assert await _audit_rows(db_path) == []
+    async with get_connection(db_path) as db:
+        rows = [dict(r) for r in await (await db.execute("SELECT * FROM server_configs")).fetchall()]
+    if before == "packed":
+        [row] = rows
+        assert row["log_channel_id"] is None and row["interaction_role_id"] is None
+        assert row["test_mode_active"] == 1
+    else:
+        assert rows == []
+    assert _said(interaction)[-1] == (
+        "❌ `/bot init` stopped on a fault in the bot, not on anything you entered, and did not "
+        "finish. Nothing was saved. Run `/bot init` again to retry. The fault is recorded in the "
+        "bot host's log."
     )
+    assert all(not channel.sent for channel in bot.test_channels.values())
+    assert await queued_log_lines(db_path) == []
+    assert await stopped_job(db_path) is None
+    assert any(
+        record.levelno >= logging.ERROR and "bot init" in record.getMessage()
+        for record in caplog.records
+    ), [record.getMessage() for record in caplog.records]
 
-    assert "another server" in interaction.response.send_message.call_args.args[0]
-    assert await real.get_league_server_id() == SERVER_ID
+    again = _asking(bot, "bot init")
+    await _ask_init(cog, again)
+    await run_queue(bot)
+
+    assert await bot.config_service.get_league_server_id() == SERVER_ID
+    assert _said(again)[-1] == _INIT_SAVED.format(log=CONFIGURED_LOG)
 
 
-async def test_save_server_config_will_not_overwrite_an_existing_row(tmp_path):
-    """The insert-only contract, at the layer that enforces it."""
+async def _claim(db_path: str, cfg) -> bool:
+    """Take the claim for *cfg* as `/bot init`'s save does, on a connection of its own, committed."""
+    async with get_connection(db_path) as db:
+        created = await ConfigService(db_path).claim_on(db, cfg)
+        await db.commit()
+    return created
+
+
+async def test_the_claim_will_not_overwrite_an_existing_row(tmp_path):
+    """The insert-only contract, at the layer that enforces it: the league's server is set up, and
+    the claim is asked for the same server with other settings. It is not taken, and the log
+    channel stays as it was."""
     from leaguebot.core.models.server_config import ServerConfig
 
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
-    service = ConfigService(db_path)
 
-    created = await service.save_server_config(
+    created = await _claim(
+        db_path,
         ServerConfig(
             server_id=SERVER_ID,
             interaction_role_id=1,
             interaction_channel_id=2,
             log_channel_id=3,
-        )
+        ),
     )
 
     assert created is False
     assert (await _row(db_path))["log_channel_id"] == CONFIGURED_LOG
 
 
-async def test_save_server_config_will_not_claim_a_second_server(tmp_path):
-    """Issue #244: one bot serves one league, and the first server set up is the league's."""
+async def test_the_claim_will_not_take_a_second_server(tmp_path):
+    """Issue #244: one bot serves one league, and the first server set up is the league's. The
+    league's server is set up, and the claim is asked for another server: it is not taken."""
     from leaguebot.core.models.server_config import ServerConfig
 
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
-    service = ConfigService(db_path)
 
-    created = await service.save_server_config(
+    created = await _claim(
+        db_path,
         ServerConfig(
             server_id=SERVER_ID + 1,
             interaction_role_id=1,
             interaction_channel_id=2,
             log_channel_id=3,
-        )
+        ),
     )
 
     assert created is False
-    assert await service.get_league_server_id() == SERVER_ID
+    assert await ConfigService(db_path).get_league_server_id() == SERVER_ID
 
 
 async def test_no_server_is_the_league_s_before_bot_init(tmp_path):
@@ -490,6 +727,85 @@ _AUDITED = {
     "league_admin_role_id": ("LEAGUE_ADMIN_ROLE_SET", "role_id", CONFIGURED_ADMIN_ROLE),
 }
 
+#: column → (the command as its line names it, the label its reply gives the setting)
+_WORDS = {
+    "log_channel_id": ("/bot log-channel", "Log channel"),
+    "interaction_channel_id": ("/bot interaction-channel", "Interaction channel"),
+    "interaction_role_id": ("/bot interaction-role", "Interaction role"),
+    "league_admin_role_id": ("/bot admin-role", "League admin role"),
+}
+
+#: The member `_interaction` gives, as a saved log line names them, the mention wrapped so it
+#: notifies nobody.
+_NAMED = "admin (`<@7>`)"
+
+
+async def _queued_bot(db_path: str) -> Any:
+    """The bot the entry point builds, on *db_path*, its configuration read from the database and
+    its real change queue's clock `NOW`. The configured log channel and each channel a setting
+    below sets are channels the bot finds, each recording what it is sent, in `test_channels`."""
+    from tests.support.change_queue import league_bot, league_queue, text_channel
+
+    bot = await league_bot(db_path, real_config=True)
+    ids = (CONFIGURED_LOG, *(new_id for _a, _c, factory, new_id in _SETTINGS if factory is _channel))
+    bot.test_channels = {channel_id: text_channel(channel_id) for channel_id in ids}
+    bot.get_channel = MagicMock(side_effect=bot.test_channels.get)
+    bot.fetch_channel = AsyncMock(side_effect=lambda channel_id: bot.test_channels[channel_id])
+    league_queue(bot, db_path, now=NOW)
+    return bot
+
+
+def _asking(bot: Any, command: str, *, channel_id: int = 999) -> MagicMock:
+    """`/<command>` as `_interaction` gives it, from the wrong channel by a user holding no role,
+    its client *bot*, the acknowledgement's updates and every follow-up recorded."""
+    interaction = _interaction(channel_id=channel_id)
+    interaction.client = bot
+    interaction.command.qualified_name = command
+    interaction.edit_original_response = AsyncMock()
+    interaction.followup.send = AsyncMock()
+    return interaction
+
+
+def _said(interaction: MagicMock) -> list[str]:
+    """Every word the member saw, in order: the response, its edits, then each follow-up."""
+    from tests.support.change_queue import updated_reply
+
+    first = [str(call.args[0]) for call in interaction.response.send_message.await_args_list]
+    updated = updated_reply(interaction)
+    return first + ([updated] if updated else [])
+
+
+def _delivered(bot: Any, channel_id: int) -> list[str]:
+    """Every log line channel *channel_id* took, without the rule drawn beneath each."""
+    from tests.support.settings_league import unruled
+
+    return [unruled(str(text)) for text in bot.test_channels[channel_id].sent]
+
+
+#: The league's hub channel, where a test sets one.
+HUB = 7930
+
+
+def _hub_found_by(bot: Any) -> MagicMock:
+    """The hub channel, `HUB`, as the league's server finds it for *bot*, its `edit` recording any
+    permissions set on it; the server also finds the configured interaction and admin roles."""
+    hub = MagicMock(spec=discord.TextChannel)
+    hub.id = HUB
+    hub.edit = AsyncMock()
+    roles = {role_id: _role(role_id) for role_id in (CONFIGURED_ROLE, CONFIGURED_ADMIN_ROLE)}
+    guild = MagicMock()
+    guild.get_channel = MagicMock(side_effect=lambda cid: hub if cid == HUB else None)
+    guild.get_role = MagicMock(side_effect=roles.get)
+    guild.default_role = _role(1)
+    guild.me = _role(2)
+    bot.get_guild = MagicMock(return_value=guild)
+    return hub
+
+
+def _shown(column: str, new_id: int) -> str:
+    """The value as the setting's line shows it: a role's mention wrapped so it notifies nobody."""
+    return f"<#{new_id}>" if column.endswith("channel_id") else f"`<@&{new_id}>`"
+
 
 @pytest.mark.parametrize(
     "attribute,column,factory,new_id", _SETTINGS, ids=[s[1] for s in _SETTINGS]
@@ -499,10 +815,16 @@ async def test_a_setting_command_writes_only_its_own_column(
 ):
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
-    cog = BotCog(_bot(db_path))
+    bot = await _queued_bot(db_path)
+    cog = BotCog(bot)
     before = await _row(db_path)
 
-    await _unwrap(getattr(cog, attribute))(cog, _interaction(), factory(new_id))
+    await _unwrap(getattr(cog, attribute))(
+        cog, _asking(bot, _WORDS[column][0][1:]), factory(new_id)
+    )
+    from tests.support.change_queue import run_queue
+
+    await run_queue(bot)
 
     after = await _row(db_path)
     assert after[column] == new_id
@@ -512,18 +834,27 @@ async def test_a_setting_command_writes_only_its_own_column(
 
 
 @pytest.mark.parametrize(
-    "attribute,column,factory,new_id", _SETTINGS, ids=[s[1] for s in _SETTINGS]
+    "attribute,column,factory,new_id",
+    [pytest.param(*s, id=s[1])
+     for s in _SETTINGS],
 )
 async def test_a_setting_command_is_audited_with_the_value_it_replaced(
     tmp_path, attribute, column, factory, new_id
 ):
-    """Issue #371: the log line alone left no record of who changed who governs the bot."""
+    """Issue #371: the log line alone left no record of who changed who governs the bot. The
+    entry is stamped with the queue's clock, never the host's."""
+    from tests.support.change_queue import run_queue
+
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
-    cog = BotCog(_bot(db_path))
+    bot = await _queued_bot(db_path)
+    cog = BotCog(bot)
     change_type, key, old_id = _AUDITED[column]
 
-    await _unwrap(getattr(cog, attribute))(cog, _interaction(), factory(new_id))
+    await _unwrap(getattr(cog, attribute))(
+        cog, _asking(bot, _WORDS[column][0][1:]), factory(new_id)
+    )
+    await run_queue(bot)
 
     (row,) = await _audit_rows(db_path)
     assert row["change_type"] == change_type
@@ -531,6 +862,231 @@ async def test_a_setting_command_is_audited_with_the_value_it_replaced(
     assert row["division_id"] is None
     assert json.loads(row["old_value"]) == {key: old_id}
     assert json.loads(row["new_value"]) == {key: new_id}
+    assert row["timestamp"] == NOW.isoformat()
+
+
+@pytest.mark.parametrize(
+    "attribute,column,factory,new_id",
+    [pytest.param(*s, id=s[1])
+     for s in _SETTINGS],
+)
+async def test_a_setting_command_is_acknowledged_then_answered_and_logged_in_today_s_words(
+    tmp_path, attribute, column, factory, new_id
+):
+    """The league's server is set up; an administrator runs the command with a new channel or
+    role. They are answered at once with the queue's acknowledgement, and nothing is written
+    until the queue runs the change; then the acknowledgement is updated to today's reply, and
+    today's line is written to the log channel as it stands after the save, so that a new log
+    channel is told about itself."""
+    from tests.support.change_queue import acknowledgement, run_queue
+
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    bot = await _queued_bot(db_path)
+    cog = BotCog(bot)
+    command, label = _WORDS[column]
+    chosen = factory(new_id)
+    interaction = _asking(bot, command[1:])
+
+    await _unwrap(getattr(cog, attribute))(cog, interaction, chosen)
+
+    assert acknowledgement(interaction).startswith(
+        f"⏳ Setting **{label}** to {chosen.mention}. This message will be updated when it is "
+        f"done; if it takes longer, the log channel will say so."
+    )
+    assert (await _row(db_path))[column] != new_id
+    await run_queue(bot)
+
+    assert _said(interaction)[-1] == f"✅ **{label}** set to {chosen.mention}."
+    log_channel = new_id if column == "log_channel_id" else CONFIGURED_LOG
+    assert _delivered(bot, log_channel) == [
+        f"{_NAMED} | {command} | Success\n  {column}: {_shown(column, new_id)}"
+    ]
+
+
+@pytest.mark.parametrize(
+    "attribute,column,factory,new_id",
+    [pytest.param(*s, id=s[1])
+     for s in _SETTINGS],
+)
+async def test_a_core_setting_saves_its_value_and_audit_together(
+    tmp_path, monkeypatch, attribute, column, factory, new_id
+):
+    """The league's server is set up; an administrator runs the command with a new channel or
+    role, and the audit entry's write fails on the database as the queue runs the change. The
+    value is not saved either: the setting still holds what it held, and no audit entry stands.
+    The member is told in `setting_change`'s words that nothing was saved and to run it again;
+    the log channel gets the one failure line and no success line; the queue is not stopped."""
+    import sqlite3
+
+    from leaguebot.core.services.queue import change_queue
+    from tests.support.change_queue import run_queue, stopped_job
+
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    bot = await _queued_bot(db_path)
+    cog = BotCog(bot)
+    command, _label = _WORDS[column]
+    old_id = _AUDITED[column][2]
+    monkeypatch.setattr(
+        change_queue, "record_change_on",
+        AsyncMock(side_effect=sqlite3.OperationalError("disk I/O error")),
+    )
+    interaction = _asking(bot, command[1:])
+
+    await _unwrap(getattr(cog, attribute))(cog, interaction, factory(new_id))
+    await run_queue(bot)
+
+    assert (await _row(db_path))[column] == old_id
+    assert await _audit_rows(db_path) == []
+    assert _said(interaction)[-1] == (
+        f"❌ `{command}` stopped on a fault in the bot, not on anything you entered, and did not "
+        f"finish. Nothing was saved. Run `{command}` again to retry. The fault is recorded in the "
+        f"log channel."
+    )
+    assert _delivered(bot, CONFIGURED_LOG) == [
+        f"❌ `{command}` failed for {_NAMED} — OperationalError. The details are in the host's log."
+    ]
+    assert all(not bot.test_channels[cid].sent for cid in bot.test_channels if cid != CONFIGURED_LOG)
+    assert await stopped_job(db_path) is None
+
+
+@pytest.mark.parametrize(
+    "attribute,column,held",
+    [
+        pytest.param("handle_interaction_role", "interaction_role_id", CONFIGURED_ROLE,
+                     id="interaction_role_id"),
+        pytest.param("handle_admin_role", "league_admin_role_id", CONFIGURED_ADMIN_ROLE,
+                     id="league_admin_role_id"),
+    ],
+)
+async def test_a_role_set_to_the_role_it_holds_is_answered_nothing_changed(
+    tmp_path, attribute, column, held
+):
+    """The league's server is set up, its hub set to a channel the server finds; an administrator
+    sets the interaction role, or the league admin role, to the role it already holds. The change
+    is acknowledged and run, and answered "Nothing changed" in `setting_change`'s way: the reply
+    says the role already holds the setting, the log channel gets a "Nothing changed" line, no
+    audit entry is written, and the hub's permissions are not set again (decision 163, p3)."""
+    from tests.support.change_queue import run_queue
+
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE server_configs SET hub_channel_id = ?", (HUB,))
+        await db.commit()
+    bot = await _queued_bot(db_path)
+    hub = _hub_found_by(bot)
+    cog = BotCog(bot)
+    command, label = _WORDS[column]
+    interaction = _asking(bot, command[1:])
+
+    await _unwrap(getattr(cog, attribute))(cog, interaction, _role(held))
+    await run_queue(bot)
+
+    assert (await _row(db_path))[column] == held
+    assert _said(interaction)[-1] == f"ℹ️ Nothing changed: **{label}** is already <@&{held}>."
+    assert _delivered(bot, CONFIGURED_LOG) == [
+        f"{_NAMED} | {command} | Nothing changed\n  {column}: `<@&{held}>`"
+    ]
+    assert await _audit_rows(db_path) == []
+    hub.edit.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "attribute,column,factory,new_id",
+    [pytest.param(*s, id=s[1])
+     for s in _SETTINGS],
+)
+async def test_a_repair_setting_takes_effect_while_the_queue_is_stopped_on_another_job(
+    tmp_path, attribute, column, factory, new_id
+):
+    """The league's server is set up, and the league's queue is stopped on another job, which
+    failed on a fault in the bot. An administrator runs `/bot log-channel`,
+    `/bot interaction-channel`, `/bot interaction-role` or `/bot admin-role` with a new channel or
+    role, to repair the league, after a member has asked for an ordinary change behind the stop.
+    Each is acknowledged at once: the ordinary change is told it runs once the stopped job is
+    cleared; the repair is told, in place of that, that it runs at once, past the stop, and that
+    the stopped job stays stopped. Nothing is written as they ask; once the queue runs, the setting
+    is saved and they are answered with today's reply, past the stop, while the other job stays
+    stopped where it was."""
+    from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
+    from leaguebot.core.services.queue.change_types import ChangeType, Step
+    from tests.support.change_queue import (
+        acknowledgement,
+        member,
+        member_interaction,
+        register,
+        run_queue,
+        step_rows,
+        stopped_job,
+    )
+
+    async def fails(_ctx: Any) -> StepResult:
+        raise RuntimeError("a fault in the bot")
+
+    async def go(_ctx: Any) -> Any:
+        return Verdict.go()
+
+    db_path = await _make_db(tmp_path)
+    await _seed_config(db_path)
+    bot = await _queued_bot(db_path)
+    register(bot, ChangeType(
+        kind="test.stopping",
+        opening=(PlannedStep("fail"),),
+        steps={"fail": Step("fail", StepKind.ACT, fails)},
+        check=go,
+        key=lambda _payload: "test.stopping",
+        doing=lambda _payload: "Doing another job",
+        outcome=lambda _ctx: "Done.",
+    ))
+    register(bot, ChangeType(
+        kind="test.waiting",
+        opening=(PlannedStep("fail"),),
+        steps={"fail": Step("fail", StepKind.ACT, fails)},
+        check=go,
+        key=lambda _payload: "test.waiting",
+        doing=lambda _payload: "Doing an ordinary job",
+        outcome=lambda _ctx: "Done.",
+    ))
+    other = await bot.change_queue.ask("test.stopping", {}, actor=member(), what="another job")
+    await run_queue(bot)
+    stopped = await stopped_job(db_path)
+    assert stopped is not None and stopped["change_id"] == other
+    ordinary = member_interaction(bot)
+    waiting = await bot.change_queue.ask(
+        "test.waiting", {}, interaction=ordinary, what="an ordinary job",
+        refusal_what="an ordinary job",
+    )
+    cog = BotCog(bot)
+    command, label = _WORDS[column]
+    chosen = factory(new_id)
+    interaction = _asking(bot, command[1:])
+
+    await _unwrap(getattr(cog, attribute))(cog, interaction, chosen)
+    assert (await _row(db_path))[column] != new_id
+    (waits,) = [row["id"] for row in await step_rows(db_path, waiting)]
+    repairs = min(
+        row["id"] for row in await step_rows(db_path) if row["change_id"] not in (other, waiting)
+    )
+    assert acknowledgement(ordinary) == (
+        f"⏳ Doing an ordinary job. This message will be updated when it is done; if it takes "
+        f"longer, the log channel will say so. It begins with job #{waits}. The queue is stopped "
+        f"at job #{stopped['id']}, so this request runs once that job is cleared."
+    )
+    assert acknowledgement(interaction) == (
+        f"⏳ Setting **{label}** to {chosen.mention}. This message will be updated when it is "
+        f"done; if it takes longer, the log channel will say so. It begins with job #{repairs}. "
+        f"The queue is stopped at job #{stopped['id']}, so this request runs at once, past the "
+        f"stop; that job stays stopped."
+    )
+    await run_queue(bot)
+
+    assert (await _row(db_path))[column] == new_id
+    assert _said(interaction)[-1] == f"✅ **{label}** set to {chosen.mention}."
+    still = await stopped_job(db_path)
+    assert still is not None
+    assert (still["id"], still["change_id"]) == (stopped["id"], other)
 
 
 @pytest.mark.parametrize(
@@ -540,34 +1096,63 @@ async def test_a_setting_command_works_outside_the_interaction_channel(
     tmp_path, attribute, column, factory, new_id
 ):
     """Guarding these on the settings they repair would make the failure unrecoverable."""
+    from tests.support.change_queue import run_queue
+
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
-    cog = BotCog(_bot(db_path))
+    bot = await _queued_bot(db_path)
+    cog = BotCog(bot)
 
     # The whole decorator chain, not the unwrapped body: a channel-bound guard added later
     # would refuse this interaction, and refusing it is the failure this test is for.
-    interaction = _interaction(channel_id=CONFIGURED_CHANNEL + 12345)
+    interaction = _asking(bot, _WORDS[column][0][1:], channel_id=CONFIGURED_CHANNEL + 12345)
     await getattr(cog, attribute).callback(cog, interaction, factory(new_id))
+    await run_queue(bot)
 
     assert (await _row(db_path))[column] == new_id
-    assert "✅" in interaction.response.send_message.call_args.args[0]
+    assert _said(interaction)[-1].startswith("✅")
 
 
+@pytest.mark.parametrize("packed", [False, True], ids=["never configured", "packed"])
 @pytest.mark.parametrize(
     "attribute,column,factory,new_id", _SETTINGS, ids=[s[1] for s in _SETTINGS]
 )
 async def test_a_setting_command_refuses_an_unconfigured_server(
-    tmp_path, attribute, column, factory, new_id
+    tmp_path, attribute, column, factory, new_id, packed
 ):
+    """No server is set up yet, or the league's was set up and then packed, its row kept with its
+    claim and the four settings cleared; an administrator runs the command. It is refused at the
+    ask in today's words, pointing them at `/bot init`, and once the queue has run nothing is
+    saved or audited, and no log channel is written or kept a line for."""
+    from leaguebot.core.services.settings.config_service import RELEASE_CLAIM_SQL
+    from tests.support.change_queue import queued_log_lines, run_queue
+
     db_path = await _make_db(tmp_path)
-    cog = BotCog(_bot(db_path))
-    interaction = _interaction()
+    if packed:
+        await _seed_config(db_path)
+        async with get_connection(db_path) as db:
+            await db.execute(RELEASE_CLAIM_SQL)
+            await db.commit()
+    bot = await _queued_bot(db_path)
+    cog = BotCog(bot)
+    interaction = _asking(bot, _WORDS[column][0][1:])
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT * FROM server_configs")
+        before = [dict(r) for r in await cursor.fetchall()]
 
     await _unwrap(getattr(cog, attribute))(cog, interaction, factory(new_id))
+    await run_queue(bot)
 
-    assert "/bot init" in interaction.response.send_message.call_args.args[0]
-    assert await _row(db_path) == {}
+    assert _said(interaction) == [
+        "⛔ This server is not configured yet — run `/bot init` first."
+    ]
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT * FROM server_configs")
+        after = [dict(r) for r in await cursor.fetchall()]
+    assert after == before
     assert await _audit_rows(db_path) == []
+    assert all(not channel.sent for channel in bot.test_channels.values())
+    assert await queued_log_lines(db_path) == []
 
 
 @pytest.mark.parametrize(
@@ -604,15 +1189,19 @@ async def test_a_setting_command_admits_the_league_admin_role(
     tmp_path, attribute, column, factory, new_id
 ):
     """The role is the tier; Administrator is only the way back when the role is gone."""
+    from tests.support.change_queue import run_queue
+
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
-    cog = BotCog(_bot(db_path))
+    bot = await _queued_bot(db_path)
+    cog = BotCog(bot)
 
-    interaction = _interaction()
+    interaction = _asking(bot, _WORDS[column][0][1:])
     interaction.user.guild_permissions.administrator = False
     interaction.user.roles = [_role(CONFIGURED_ADMIN_ROLE)]
 
     await getattr(cog, attribute).callback(cog, interaction, factory(new_id))
+    await run_queue(bot)
 
     assert (await _row(db_path))[column] == new_id
 
@@ -621,10 +1210,13 @@ async def test_a_setting_command_admits_an_administrator_before_the_bot_is_confi
     tmp_path,
 ):
     """The bootstrap. `/bot init` has no configuration to read a role out of."""
-    db_path = await _make_db(tmp_path)
-    cog = BotCog(_bot(db_path))
+    from tests.support.change_queue import run_queue
 
-    interaction = _interaction()
+    db_path = await _make_db(tmp_path)
+    bot = await _queued_bot(db_path)
+    cog = BotCog(bot)
+
+    interaction = _asking(bot, "bot init")
     interaction.user.guild_permissions.administrator = True
     interaction.user.roles = []
 
@@ -636,18 +1228,22 @@ async def test_a_setting_command_admits_an_administrator_before_the_bot_is_confi
         _channel(CONFIGURED_CHANNEL),
         _channel(CONFIGURED_LOG),
     )
+    await run_queue(bot)
 
     assert (await _row(db_path))["league_admin_role_id"] == CONFIGURED_ADMIN_ROLE
 
 
 async def test_set_core_setting_refuses_a_column_of_the_callers_choosing(tmp_path):
-    """The column is interpolated into the UPDATE, so the allow-list is load-bearing."""
+    """The column is interpolated into the UPDATE, so the allow-list is load-bearing in
+    `set_core_setting_on`, which writes on the connection a setting's save is handed."""
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
     service = ConfigService(db_path)
 
-    with pytest.raises(ValueError):
-        await service.set_core_setting("test_mode_active", 0)
+    async with get_connection(db_path) as db:
+        with pytest.raises(ValueError):
+            await service.set_core_setting_on(db, "test_mode_active", 0)
+        await db.commit()
 
     assert (await _row(db_path))["test_mode_active"] == 1
 
@@ -670,7 +1266,9 @@ async def test_a_league_role_or_hub_setting_is_written_alone_and_read_back(tmp_p
     service = ConfigService(db_path)
     before = await _row(db_path)
 
-    assert await service.set_core_setting(column, value) is True
+    async with get_connection(db_path) as db:
+        assert await service.set_core_setting_on(db, column, value) is True
+        await db.commit()
 
     after = await _row(db_path)
     assert after[column] == value
@@ -731,20 +1329,23 @@ def test_bot_init_requires_the_league_admin_role():
     assert parameter.required
 
 
-async def test_save_server_config_persists_the_league_admin_role(tmp_path):
+async def test_the_claim_persists_the_league_admin_role(tmp_path):
+    """No server is claimed; the claim is taken with all four settings, the league admin role among
+    them, which is stored and read back."""
     from leaguebot.core.models.server_config import ServerConfig
 
     db_path = await _make_db(tmp_path)
     service = ConfigService(db_path)
 
-    created = await service.save_server_config(
+    created = await _claim(
+        db_path,
         ServerConfig(
             server_id=SERVER_ID,
             interaction_role_id=CONFIGURED_ROLE,
             league_admin_role_id=CONFIGURED_ADMIN_ROLE,
             interaction_channel_id=CONFIGURED_CHANNEL,
             log_channel_id=CONFIGURED_LOG,
-        )
+        ),
     )
 
     assert created is True
@@ -779,9 +1380,14 @@ async def test_a_server_configured_before_the_role_existed_reads_none(tmp_path):
 
 
 def _packing_bot(db_path: str) -> MagicMock:
+    """A bot to pack, its hook for the pack carrying no module's part: what the modules clear is
+    the service's to pin, through the hook the builder makes."""
     bot = _bot(db_path)
     bot.scheduler_service.cancel_all = MagicMock(return_value=0)
+    bot.bot_packed.call = AsyncMock(return_value=[])
     bot.get_cog = MagicMock(return_value=None)
+    # The change queue's clock, the bot's: what the command hands the pack and the reset as "now".
+    bot.change_queue.now = MagicMock(return_value=NOW)
     return bot
 
 
@@ -1036,7 +1642,7 @@ async def test_bot_pack_logs_while_the_log_channel_still_exists(tmp_path):
 
 
 async def test_bot_pack_losing_a_race_to_a_new_season_says_so(tmp_path, monkeypatch):
-    from leaguebot.core.services import pack_service
+    from leaguebot.core.services.upkeep import pack_service
 
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
@@ -1066,7 +1672,7 @@ async def test_bot_pack_losing_a_race_to_a_queued_job_names_the_job_not_a_season
     refusal inside its transaction (#439), and the admin is told of the job it would wait on,
     not of a season the league does not have: the reply names the job, on the queue (the league's lane), and says to let it finish,
     and the log channel records the refusal after the line the pack wrote as it began."""
-    from leaguebot.core.services import pack_service
+    from leaguebot.core.services.upkeep import pack_service
 
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
@@ -1099,10 +1705,15 @@ async def test_bot_pack_losing_a_race_to_a_queued_job_names_the_job_not_a_season
 
 
 async def test_bot_pack_is_audited_as_the_member_who_ran_it(tmp_path):
-    """Issue #383. What the entry holds is the service's to pin; who it names is the cog's."""
+    """Issue #383. What the entry holds is the service's to pin; who it names and when, the change
+    queue's time, are the cog's. The
+    pack clears what the bot holds in memory through the bot's own hook for it, called once, and
+    has each module clear its own rows through the bot's own hook for the pack, called once on the
+    pack's connection (#283)."""
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
-    cog = BotCog(_packing_bot(db_path))
+    bot = _packing_bot(db_path)
+    cog = BotCog(bot)
 
     await _unwrap(cog.handle_pack)(
         cog, _deferred(_interaction(channel_id=CONFIGURED_CHANNEL)), "CONFIRM"
@@ -1110,6 +1721,12 @@ async def test_bot_pack_is_audited_as_the_member_who_ran_it(tmp_path):
 
     (row,) = await _audit_rows(db_path)
     assert (row["change_type"], row["actor_id"]) == ("BOT_PACKED", 7)
+    assert row["timestamp"] == NOW.isoformat()
+    bot.in_memory_state_cleared.call.assert_called_once_with()
+    bot.bot_packed.call.assert_awaited_once()
+    (handed,) = bot.bot_packed.call.await_args.args
+    assert isinstance(handed, aiosqlite.Connection)
+    assert bot.bot_packed.call.await_args.kwargs == {}
 
 
 # ── /bot factory-reset ─────────────────────────────────────────────────────
@@ -1130,11 +1747,15 @@ def _owner_interaction(user_id: int = OWNER_ID) -> MagicMock:
 def _resetting_bot(db_path: str, tmp_path) -> MagicMock:
     bot = _packing_bot(db_path)
     bot.scheduler_service._scheduler.running = False
-    bot.scheduler_service._jobstore_path = str(tmp_path / "scheduler.db")
+    bot.scheduler_service.jobstore_path = str(tmp_path / "scheduler.db")
     bot.user.id = 1000
     # Asked before the wipe where the reset's closing line goes (#482): the configured log
     # channel, as the router reads it while the configuration is still there.
     bot.output_router.log_destination = AsyncMock(return_value=CONFIGURED_LOG)
+    # The reset asks each module for every channel its settings hold, through the bot's own hook.
+    sign_up_setting_channels_read(bot)
+    # The hub's channel is checked against each module's, through the bot's own hook.
+    sign_up_channel_uses_read(bot)
     return bot
 
 
@@ -1189,7 +1810,7 @@ async def test_bot_factory_reset_erases_nothing_without_a_backup(tmp_path, monke
     refusal (owner, 2026-09-29): the standard failure reply stating that nothing was erased, with
     no raw error in Discord, and a failure line in the log channel, whose configuration is still
     there to find it (#482)."""
-    from leaguebot.core.services import backup_service, factory_reset_service
+    from leaguebot.core.services.upkeep import backup_service, factory_reset_service
     from leaguebot.core.utils.interaction_errors import failure_reply
 
     def fail(*_args, **_kwargs):
@@ -1220,6 +1841,8 @@ async def test_bot_factory_reset_erases_nothing_without_a_backup(tmp_path, monke
 
 
 async def test_bot_factory_reset_backs_up_then_wipes_then_reports_by_dm(tmp_path):
+    """The backup is named by the change queue's time. The wipe clears what the bot holds in
+    memory through the bot's own hook for it, called once."""
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
     bot = _resetting_bot(db_path, tmp_path)
@@ -1229,7 +1852,7 @@ async def test_bot_factory_reset_backs_up_then_wipes_then_reports_by_dm(tmp_path
     await _run(cog, interaction)
 
     backups = sorted(p.name for p in tmp_path.iterdir() if ".factory-" in p.name)
-    assert len(backups) == 1 and backups[0].startswith("test.factory-")
+    assert backups == ["test.factory-20261022T120000Z.db"]
     assert await ConfigService(db_path).get_league_server_id() is None
     bot.scheduler_service.cancel_all.assert_called_once_with()
     reply = interaction.followup.send.call_args.args[0]
@@ -1237,6 +1860,7 @@ async def test_bot_factory_reset_backs_up_then_wipes_then_reports_by_dm(tmp_path
     assert "direct message" in reply
     progress = interaction.user.send.return_value
     assert progress.edit.await_args_list[-1].kwargs["content"].startswith("✅")
+    bot.in_memory_state_cleared.call.assert_called_once_with()
 
 
 async def test_bot_factory_reset_reports_to_the_log_where_dms_are_closed(tmp_path):
@@ -1255,7 +1879,7 @@ async def test_bot_factory_reset_reports_to_the_log_where_dms_are_closed(tmp_pat
 
 
 async def test_a_clean_up_that_breaks_says_where_it_stopped(tmp_path, monkeypatch):
-    from leaguebot.core.services import factory_reset_service
+    from leaguebot.core.services.upkeep import factory_reset_service
 
     async def broken(*_args, **_kwargs):
         raise RuntimeError("gateway lost")
@@ -1300,12 +1924,13 @@ def _clean_up_ending(monkeypatch, bot: MagicMock, ending: str) -> dict:
     "finished" cleans everything, "faults" finishes with a channel it could not clear, and
     "stopped" breaks part-way on something it did not expect.
     """
-    from leaguebot.core.services import factory_reset_service
+    from leaguebot.core.services.upkeep import factory_reset_service
 
     seen: dict = {}
 
-    async def clean(guild, bot_user_id, targets, report, **_kwargs):
+    async def clean(guild, bot_user_id, targets, report, **kwargs):
         seen["lines_while_cleaning"] = bot.output_router.post_log.await_count
+        seen["now"] = kwargs.get("now")
         if ending == "stopped":
             raise RuntimeError("gateway lost")
         outcome = factory_reset_service.CleanOutcome(
@@ -1361,7 +1986,8 @@ async def test_a_factory_reset_that_goes_ahead_posts_one_line_once_its_clean_up_
     """One line, to the log channel found before the wipe, posted after the clean-up has ended
     and so left standing by it: it names the server owner, has what was erased beneath it, and
     says how the clean-up ended, a clean-up that stopped naming its kind of fault and never the
-    error itself (#482)."""
+    error itself (#482). The clean-up is handed the change queue's time, which it judges a
+    message's age by."""
     db_path = await _make_db(tmp_path)
     await _seed_config(db_path)
     bot = _resetting_bot(db_path, tmp_path)
@@ -1374,6 +2000,7 @@ async def test_a_factory_reset_that_goes_ahead_posts_one_line_once_its_clean_up_
 
     assert asked["configured_when_asked"] == SERVER_ID
     assert cleaning["lines_while_cleaning"] == 0
+    assert cleaning["now"] == NOW
     [call] = bot.output_router.post_log.await_args_list
     assert call.kwargs["channel"] == CONFIGURED_LOG
     line = str(call.args[0])
@@ -1498,26 +2125,6 @@ async def _seed_ongoing_season(db_path: str) -> None:
         await db.commit()
 
 
-def _losing_init_race(bot: MagicMock, db_path: str, *, winner: int) -> None:
-    """`/bot init` loses its claim to a run on server *winner* between its check and its write."""
-    real = bot.config_service
-
-    async def _lose(cfg):
-        async with get_connection(db_path) as db:
-            await db.execute(
-                "INSERT INTO server_configs (server_id, interaction_role_id, "
-                "interaction_channel_id, log_channel_id) VALUES (?, ?, ?, ?)",
-                (winner, CONFIGURED_ROLE, CONFIGURED_CHANNEL, CONFIGURED_LOG),
-            )
-            await db.commit()
-        return await ConfigService.save_server_config(real, cfg)
-
-    bot.config_service = MagicMock(wraps=real)
-    bot.config_service.get_league_server_id = real.get_league_server_id
-    bot.config_service.get_server_config = real.get_server_config
-    bot.config_service.save_server_config = _lose
-
-
 async def _init(cog, interaction):
     await _unwrap(cog.handle_bot_init)(
         cog, interaction, _role(900), _role(903), _channel(901), _channel(902)
@@ -1526,54 +2133,108 @@ async def _init(cog, interaction):
 
 async def _refused_site(case: str, tmp_path) -> tuple[MagicMock, MagicMock, str, str]:
     """Set up the refusal *case* and run it: the bot, the interaction, the command as the log
-    names it, and a phrase of today's reply."""
+    names it, and a phrase of today's reply: for a setting's refusal, the whole of it."""
     db_path = await _make_db(tmp_path)
     # Every case but these runs on the league's configured server.
-    if not (case.endswith("before init") or case == "init lost race to the same server"):
+    if not case.endswith("before init"):
         await _seed_config(db_path)
-    bot = _resetting_bot(db_path, tmp_path)
+    queued = case.startswith(("log-channel", "interaction-channel")) or case in (
+        "init already configured", "base-role fixed for the season", "driver-role cannot be granted",
+        "hub-channel already another job", "hub-channel already this setting",
+        "hub-channel lacks permissions",
+    )
+    if queued:
+        # A setting asks the change queue, whose check refuses at the ask: the bot the entry
+        # point builds, its log channel's lines read where every refusal records one.
+        bot = await _queued_bot(db_path)
+        bot.output_router.post_log = AsyncMock()
+    else:
+        bot = _resetting_bot(db_path, tmp_path)
     cog = BotCog(bot)
     command = {
-        "init": "bot init", "log": "bot log-channel", "base": "bot base-role",
+        "init": "bot init", "log": "bot log-channel",
+        "interaction": "bot interaction-channel", "base": "bot base-role",
         "driver": "bot driver-role", "hub": "bot hub-channel", "factory": "bot factory-reset",
     }[case.split("-")[0].split(" ")[0]]
     interaction = _refusable(bot, _owner_interaction(), command)
+    if queued:
+        # The league's server, found by the bot and the interaction alike, finds the role a
+        # league role case sets, 903.
+        role = _grantable_role(managed=case == "driver-role cannot be granted")
+        interaction.guild.id = SERVER_ID
+        interaction.guild.get_role = MagicMock(side_effect={role.id: role}.get)
+        bot.get_guild = MagicMock(return_value=interaction.guild)
 
     if case == "init already configured":
         await _init(cog, interaction)
         return bot, interaction, command, "runs once"
-    if case == "init lost race to the same server":
-        _losing_init_race(bot, db_path, winner=SERVER_ID)
-        await _init(cog, interaction)
-        return bot, interaction, command, "already configured"
     if case == "log-channel already another job":
         await _unwrap(cog.handle_log_channel)(cog, interaction, _channel(CONFIGURED_CHANNEL))
-        return bot, interaction, command, "bot command channel"
+        return bot, interaction, command, (
+            f"❌ <#{CONFIGURED_CHANNEL}> is already the bot command channel. A channel does one "
+            f"job — pick one that is not in use, or clear the other setting first."
+        )
+    if case == "log-channel already this setting":
+        await _unwrap(cog.handle_log_channel)(cog, interaction, _channel(CONFIGURED_LOG))
+        return bot, interaction, command, (
+            f"ℹ️ <#{CONFIGURED_LOG}> is already the bot log channel. Nothing was changed."
+        )
+    if case == "interaction-channel already another job":
+        await _unwrap(cog.handle_interaction_channel)(cog, interaction, _channel(CONFIGURED_LOG))
+        return bot, interaction, command, (
+            f"❌ <#{CONFIGURED_LOG}> is already the bot log channel. A channel does one job — "
+            f"pick one that is not in use, or clear the other setting first."
+        )
+    if case == "interaction-channel already this setting":
+        await _unwrap(cog.handle_interaction_channel)(
+            cog, interaction, _channel(CONFIGURED_CHANNEL)
+        )
+        return bot, interaction, command, (
+            f"ℹ️ <#{CONFIGURED_CHANNEL}> is already the bot command channel. Nothing was changed."
+        )
     if case == "base-role fixed for the season":
         await _seed_ongoing_season(db_path)
-        await _unwrap(cog.handle_base_role)(cog, interaction, _grantable_role())
-        return bot, interaction, command, "fixed for Season 3"
+        await _unwrap(cog.handle_base_role)(cog, interaction, role)
+        return bot, interaction, command, (
+            "❌ The league's roles are fixed for Season 3 now that its configuration has been "
+            "confirmed. `/bot base-role` is available again once the season has ended, or while "
+            "a new season is in configuration — or at once, should the role be deleted from the "
+            "server."
+        )
     if case == "driver-role cannot be granted":
-        await _unwrap(cog.handle_driver_role)(cog, interaction, _grantable_role(managed=True))
-        return bot, interaction, command, "❌"
+        await _unwrap(cog.handle_driver_role)(cog, interaction, role)
+        return bot, interaction, command, (
+            "❌ <@&903> is managed by an integration — a bot, a subscription or a linked role — "
+            "so Discord will not let me grant it. Choose a role of the drivers' own."
+        )
     if case == "hub-channel already another job":
         await _unwrap(cog.handle_hub_channel)(cog, interaction, _unconfigured_channel(CONFIGURED_LOG))
-        return bot, interaction, command, "log channel"
+        return bot, interaction, command, (
+            f"❌ <#{CONFIGURED_LOG}> is already the bot log channel. A channel does one job — "
+            f"pick one that is not in use, or clear the other setting first."
+        )
+    if case == "hub-channel already this setting":
+        async with get_connection(db_path) as db:
+            await db.execute("UPDATE server_configs SET hub_channel_id = 905")
+            await db.commit()
+        await _unwrap(cog.handle_hub_channel)(cog, interaction, _unconfigured_channel(905))
+        return bot, interaction, command, (
+            "ℹ️ <#905> is already the hub channel. Nothing was changed."
+        )
     if case == "hub-channel lacks permissions":
         channel = _unconfigured_channel()
         channel.permissions_for.return_value = MagicMock(manage_channels=False, manage_roles=True)
         await _unwrap(cog.handle_hub_channel)(cog, interaction, channel)
-        return bot, interaction, command, "Manage Channel"
+        return bot, interaction, command, (
+            "❌ The bot needs **Manage Channel** on <#905> to set who may see the hub. Nothing "
+            "was changed."
+        )
     if case == "factory-reset without the word":
         await _unwrap(cog.handle_factory_reset)(cog, interaction, "yes")
         return bot, interaction, command, "CONFIRM"
     # The host-only cases.
     if case == "init on another server":
         interaction.guild_id = SERVER_ID + 1
-        await _init(cog, interaction)
-        return bot, interaction, command, "another server"
-    if case == "init lost race to another server before init":
-        _losing_init_race(bot, db_path, winner=SERVER_ID + 1)
         await _init(cog, interaction)
         return bot, interaction, command, "another server"
     if case == "log-channel before init":
@@ -1612,11 +2273,14 @@ def _replied(interaction: MagicMock) -> str:
     "case",
     [
         "init already configured",
-        "init lost race to the same server",
         "log-channel already another job",
+        "log-channel already this setting",
+        "interaction-channel already another job",
+        "interaction-channel already this setting",
         "base-role fixed for the season",
         "driver-role cannot be granted",
         "hub-channel already another job",
+        "hub-channel already this setting",
         "hub-channel lacks permissions",
         "factory-reset without the word",
     ],
@@ -1645,7 +2309,6 @@ async def test_a_refusal_of_the_bot_cog_is_recorded_in_the_log_channel(tmp_path,
     "case",
     [
         "init on another server",
-        "init lost race to another server before init",
         "log-channel before init",
         "base-role before init",
         "hub-channel before init",

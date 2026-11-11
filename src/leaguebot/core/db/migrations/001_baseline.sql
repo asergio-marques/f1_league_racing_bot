@@ -1,17 +1,13 @@
--- The schema as it stood after migration 061, squashed into one file (issue #254).
+-- The schema the bot starts from: every table, in one file. Each table carries the comments
+-- SQLite keeps inside its CREATE statement.
 --
--- It replaced the 61 migrations 001_initial.sql to 061_one_league.sql, which git still
--- holds. It was generated from a database built through them, and proven identical to one
--- before they were deleted. Each table carries the comments SQLite kept inside its CREATE
--- statement; comments that stood above a statement live on in the history of those files.
---
--- Until go-live, which is release v1.0.0 (#259), this file may be edited in place. From
--- go-live on it is never edited again: every schema change is a new migration numbered after
--- it, with a test of its own.
+-- Until go-live, which is release v1.0.0, this file may be edited in place. What changes at
+-- go-live is listed under "At go-live" in the docstring of `run_migrations`.
 
 -- server_configs
--- One row, always. `server_id` is the claim on the league's server and is NULL while the bot
--- serves none: `/bot pack` clears it and the four settings, and keeps the rest (issue #247).
+-- At most one row: a fresh database holds none, and `/bot init` writes it. `server_id` is the
+-- claim on the league's server and is NULL while the bot serves none: `/bot pack` clears it and
+-- the four settings, and keeps the rest.
 CREATE TABLE server_configs (
     id                     INTEGER PRIMARY KEY CHECK (id = 1),
     server_id              INTEGER UNIQUE,
@@ -19,11 +15,11 @@ CREATE TABLE server_configs (
     interaction_channel_id INTEGER,
     log_channel_id         INTEGER
 , test_mode_active INTEGER NOT NULL DEFAULT 0, weather_module_enabled INTEGER NOT NULL DEFAULT 0, signup_module_enabled INTEGER NOT NULL DEFAULT 0, test_mode_nationality_required INTEGER NOT NULL DEFAULT 1, league_admin_role_id INTEGER,
-    -- The league's two roles (#276): who its members are and who its drivers are. Core's,
+    -- The league's two roles: who its members are and who its drivers are. Core's,
     -- not the signup module's, so disabling signup keeps them; a pack clears them.
     base_role_id           INTEGER,
     driver_role_id         INTEGER,
-    -- The hub (#279): the channel every member may use, and the panel posted in it, whose
+    -- The hub: the channel every member may use, and the panel posted in it, whose
     -- id is kept so the panel is edited in place. The server's, so a pack clears both.
     hub_channel_id         INTEGER,
     hub_message_id         INTEGER);
@@ -71,10 +67,7 @@ CREATE TABLE driver_season_assignments (
     driver_profile_id    INTEGER NOT NULL REFERENCES driver_profiles(id),
     season_id            INTEGER NOT NULL REFERENCES seasons(id),
     division_id          INTEGER NOT NULL REFERENCES divisions(id),
-    current_position     INTEGER NOT NULL DEFAULT 0,
-    current_points       INTEGER NOT NULL DEFAULT 0,
-    points_gap_to_first  INTEGER NOT NULL DEFAULT 0
-, team_seat_id INTEGER REFERENCES team_seats(id), committed INTEGER);
+    team_seat_id INTEGER REFERENCES team_seats(id), committed INTEGER);
 
 -- team_instances
 CREATE TABLE team_instances (
@@ -82,9 +75,9 @@ CREATE TABLE team_instances (
     division_id INTEGER NOT NULL REFERENCES divisions(id),
     -- The team's shorthand: what a league types to name it, and what its artwork is found by.
     -- Copied from the server's list with the full name, so a season keeps the names it ran
-    -- under (#381).
+    -- under.
     name        TEXT    NOT NULL,
-    -- What every post and graphic shows (#381).
+    -- What every post and graphic shows.
     full_name   TEXT    NOT NULL,
     max_seats   INTEGER NOT NULL DEFAULT 2,
     is_reserve  INTEGER NOT NULL DEFAULT 0,
@@ -103,8 +96,7 @@ CREATE TABLE team_seats (
 -- division_results_config
 CREATE TABLE division_results_config (
     division_id          INTEGER PRIMARY KEY
-                             REFERENCES divisions(id)
-                             ON DELETE CASCADE,
+                             REFERENCES divisions(id),
     results_channel_id   INTEGER,
     standings_channel_id INTEGER,
     reserves_in_standings INTEGER NOT NULL DEFAULT 1
@@ -114,8 +106,7 @@ CREATE TABLE division_results_config (
 CREATE TABLE season_points_links (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     season_id   INTEGER NOT NULL
-                    REFERENCES seasons(id)
-                    ON DELETE CASCADE,
+                    REFERENCES seasons(id),
     config_name TEXT    NOT NULL,
     UNIQUE (season_id, config_name)
 );
@@ -148,8 +139,7 @@ CREATE TABLE points_config_fl (
 CREATE TABLE season_points_entries (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     season_id    INTEGER NOT NULL
-                     REFERENCES seasons(id)
-                     ON DELETE CASCADE,
+                     REFERENCES seasons(id),
     config_name  TEXT    NOT NULL,
     session_type TEXT    NOT NULL,
     position     INTEGER NOT NULL,
@@ -161,8 +151,7 @@ CREATE TABLE season_points_entries (
 CREATE TABLE season_points_fl (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     season_id         INTEGER NOT NULL
-                          REFERENCES seasons(id)
-                          ON DELETE CASCADE,
+                          REFERENCES seasons(id),
     config_name       TEXT    NOT NULL,
     session_type      TEXT    NOT NULL,
     fl_points         INTEGER NOT NULL DEFAULT 0,
@@ -173,8 +162,7 @@ CREATE TABLE season_points_fl (
 -- season_amendment_state
 CREATE TABLE season_amendment_state (
     season_id        INTEGER PRIMARY KEY
-                         REFERENCES seasons(id)
-                         ON DELETE CASCADE,
+                         REFERENCES seasons(id),
     amendment_active INTEGER NOT NULL DEFAULT 0,
     modified_flag    INTEGER NOT NULL DEFAULT 0
 );
@@ -183,8 +171,7 @@ CREATE TABLE season_amendment_state (
 CREATE TABLE season_modification_entries (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     season_id    INTEGER NOT NULL
-                     REFERENCES seasons(id)
-                     ON DELETE CASCADE,
+                     REFERENCES seasons(id),
     config_name  TEXT    NOT NULL,
     session_type TEXT    NOT NULL,
     position     INTEGER NOT NULL,
@@ -196,8 +183,7 @@ CREATE TABLE season_modification_entries (
 CREATE TABLE season_modification_fl (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     season_id         INTEGER NOT NULL
-                          REFERENCES seasons(id)
-                          ON DELETE CASCADE,
+                          REFERENCES seasons(id),
     config_name       TEXT    NOT NULL,
     session_type      TEXT    NOT NULL,
     fl_points         INTEGER NOT NULL DEFAULT 0,
@@ -209,8 +195,7 @@ CREATE TABLE season_modification_fl (
 CREATE TABLE session_results (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
     round_id           INTEGER NOT NULL
-                           REFERENCES rounds(id)
-                           ON DELETE CASCADE,
+                           REFERENCES rounds(id),
     division_id        INTEGER NOT NULL
                            REFERENCES divisions(id),
     session_type       TEXT    NOT NULL,
@@ -223,7 +208,7 @@ CREATE TABLE session_results (
     -- anchor first. A table past 2000 characters is split across consecutive messages
     -- and only the anchor was ever recorded, leaving deletion to guess the rest by
     -- walking forward over bot-authored messages -- which mistakes an unrelated posting
-    -- below it for a continuation of this one (#345). NULL on a row written before this
+    -- below it for a continuation of this one. NULL on a row written before this
     -- column existed; such a row falls back to the walk.
     results_message_ids TEXT,
     UNIQUE (round_id, session_type)
@@ -233,8 +218,7 @@ CREATE TABLE session_results (
 CREATE TABLE driver_standings_snapshots (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     round_id            INTEGER NOT NULL
-                            REFERENCES rounds(id)
-                            ON DELETE CASCADE,
+                            REFERENCES rounds(id),
     division_id         INTEGER NOT NULL
                             REFERENCES divisions(id),
     driver_user_id      INTEGER NOT NULL,
@@ -255,8 +239,7 @@ CREATE INDEX idx_dss_driver_profile
 CREATE TABLE team_standings_snapshots (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     round_id            INTEGER NOT NULL
-                            REFERENCES rounds(id)
-                            ON DELETE CASCADE,
+                            REFERENCES rounds(id),
     division_id         INTEGER NOT NULL
                             REFERENCES divisions(id),
     team_instance_id    INTEGER NOT NULL REFERENCES team_instances(id),
@@ -271,16 +254,15 @@ CREATE TABLE team_standings_snapshots (
 CREATE TABLE round_submission_channels (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     round_id   INTEGER NOT NULL
-                   REFERENCES rounds(id)
-                   ON DELETE CASCADE,
+                   REFERENCES rounds(id),
     channel_id INTEGER NOT NULL,
     created_at TEXT    NOT NULL,
     closed     INTEGER NOT NULL DEFAULT 0, in_penalty_review INTEGER NOT NULL DEFAULT 0, results_posted   INTEGER NOT NULL DEFAULT 0, prompt_message_id INTEGER, resubmitting               INTEGER NOT NULL DEFAULT 0, resubmit_prompt_message_id INTEGER, resubmit_started_by INTEGER,
     -- appeals_prompt_message_id: the appeals review's prompt in the submission channel, saved with
-    -- its post, so that a prompt put back after a restart takes the old one down (#439).
+    -- its post, so that a prompt put back after a restart takes the old one down.
     appeals_prompt_message_id INTEGER,
     -- approval_message_id: the report stage's approval question in the submission channel, saved
-    -- with its post, so that a staging on a review built afresh withdraws it (#439).
+    -- with its post, so that a staging on a review built afresh withdraws it.
     approval_message_id INTEGER,
     UNIQUE (round_id)
 );
@@ -300,8 +282,7 @@ CREATE TABLE tracks (
 CREATE TABLE driver_round_attendance (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
     round_id           INTEGER NOT NULL
-                           REFERENCES rounds(id)
-                           ON DELETE CASCADE,
+                           REFERENCES rounds(id),
     division_id        INTEGER NOT NULL
                            REFERENCES divisions(id),
     driver_profile_id  INTEGER NOT NULL
@@ -320,8 +301,7 @@ CREATE INDEX idx_dra_round_division
 CREATE TABLE rsvp_embed_messages (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     round_id    INTEGER NOT NULL
-                    REFERENCES rounds(id)
-                    ON DELETE CASCADE,
+                    REFERENCES rounds(id),
     division_id INTEGER NOT NULL
                     REFERENCES divisions(id),
     message_id  TEXT    NOT NULL,
@@ -339,7 +319,7 @@ CREATE TABLE qualifying_session_results (
                             ON DELETE CASCADE,
     driver_user_id      INTEGER NOT NULL,
     -- The division's team the entry drove for, never its Discord role: a role is resolved
-    -- to the team once, when typed, so a team given another role keeps its results (#375).
+    -- to the team once, when typed, so a team given another role keeps its results.
     team_instance_id    INTEGER NOT NULL REFERENCES team_instances(id),
     finishing_position  INTEGER NOT NULL,
     outcome             TEXT    NOT NULL DEFAULT 'CLASSIFIED',
@@ -360,7 +340,7 @@ CREATE TABLE race_session_results (
                                     REFERENCES session_results(id)
                                     ON DELETE CASCADE,
     driver_user_id              INTEGER NOT NULL,
-    -- The division's team, as in qualifying_session_results (#375).
+    -- The division's team, as in qualifying_session_results.
     team_instance_id            INTEGER NOT NULL REFERENCES team_instances(id),
     finishing_position          INTEGER NOT NULL,
     outcome                     TEXT    NOT NULL DEFAULT 'CLASSIFIED',
@@ -398,8 +378,8 @@ CREATE TABLE "penalty_records" (
     announcement_channel_id TEXT,
     -- announcement_message_id: the verdict announcement itself, so an amendment can
     -- replace it rather than leaving a decision that contradicts the classification it
-    -- was applied to (#189). NULL for a verdict announced before this column existed;
-    -- those cannot be replaced and are re-announced fresh, which the log says (#345).
+    -- was applied to. NULL for a verdict announced before this column existed;
+    -- those cannot be replaced and are re-announced fresh, which the log says.
     announcement_message_id TEXT,
     -- The chunk list of that announcement, as elsewhere.
     announcement_message_ids TEXT
@@ -420,8 +400,8 @@ CREATE TABLE "appeal_records" (
     announcement_channel_id TEXT,
     -- announcement_message_id: the verdict announcement itself, so an amendment can
     -- replace it rather than leaving a decision that contradicts the classification it
-    -- was applied to (#189). NULL for a verdict announced before this column existed;
-    -- those cannot be replaced and are re-announced fresh, which the log says (#345).
+    -- was applied to. NULL for a verdict announced before this column existed;
+    -- those cannot be replaced and are re-announced fresh, which the log says.
     announcement_message_id TEXT,
     -- The chunk list of that announcement, as elsewhere.
     announcement_message_ids TEXT
@@ -430,14 +410,14 @@ CREATE TABLE "appeal_records" (
 -- verdict_banner_messages: the banner that heads a round's run of verdict announcements.
 -- A banner is a message of its own, above the cards, and belongs to no verdict record — so
 -- an amendment re-announcing a round could take its verdicts down and not the banner over
--- them, leaving a header above empty space and posting a fresh one below (#345). One row per
+-- them, leaving a header above empty space and posting a fresh one below. One row per
 -- banner posted; the replay deletes the round's and records what it posts in their place.
 -- heads_sanctions: set once an attendance sanction card is posted beneath the banner. Those
 -- cards are recorded nowhere else and no replay takes them down, so a banner heading one is
 -- never taken down either (decided 2026-09-21).
 CREATE TABLE verdict_banner_messages (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    round_id        INTEGER NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+    round_id        INTEGER NOT NULL REFERENCES rounds(id),
     channel_id      TEXT    NOT NULL,
     message_id      TEXT    NOT NULL,
     posted_at       TEXT    NOT NULL,
@@ -470,7 +450,8 @@ CREATE TABLE "divisions" (
     lineup_channel_id   INTEGER,
     calendar_channel_id INTEGER,
     lineup_message_id   INTEGER,
-    calendar_message_id TEXT
+    calendar_message_id TEXT,
+    UNIQUE (season_id, name COLLATE NOCASE)
 );
 
 -- rounds
@@ -480,14 +461,14 @@ CREATE TABLE "rounds" (
     round_number    INTEGER NOT NULL,
     format          TEXT    NOT NULL,  -- NORMAL | SPRINT | MYSTERY | ENDURANCE
     track_name      TEXT,
-    scheduled_at    TEXT    NOT NULL,  -- ISO datetime UTC, e.g. 2025-06-15T18:00:00
+    scheduled_at    TEXT    NOT NULL,  -- ISO 8601 UTC with its offset, e.g. 2025-06-15T18:00:00+00:00
     phase1_done     INTEGER NOT NULL DEFAULT 0,
     phase2_done     INTEGER NOT NULL DEFAULT 0,
     phase3_done     INTEGER NOT NULL DEFAULT 0,
-    checkin_cleared INTEGER NOT NULL DEFAULT 0,  -- 1 once no call is owed: the check-in cleanup has run (#425),
-                                                 -- or a restart gave up a call whose deadline had passed (#429)
+    checkin_cleared INTEGER NOT NULL DEFAULT 0,  -- 1 once no call is owed: the check-in cleanup has run,
+                                                 -- or a restart gave up a call whose deadline had passed
     not_held        INTEGER NOT NULL DEFAULT 0,  -- 1 where the round ended CANCELLED because every session
-                                                 -- was entered as not held, not because it was called off (#439)
+                                                 -- was entered as not held, not because it was called off
     status          TEXT    NOT NULL DEFAULT 'NOT_RUN'
                         CHECK (status IN ('NOT_RUN', 'AWAITING_RESULTS',
                                           'AWAITING_REPORT_VERDICTS',
@@ -499,13 +480,13 @@ CREATE INDEX idx_rounds_division ON rounds(division_id);
 
 -- season_signup_config
 CREATE TABLE season_signup_config (
-    season_id            INTEGER PRIMARY KEY REFERENCES seasons(id) ON DELETE CASCADE,
+    season_id            INTEGER PRIMARY KEY REFERENCES seasons(id),
     nationality_required INTEGER NOT NULL,
     time_type            TEXT    NOT NULL,
     time_image_required  INTEGER NOT NULL,
     -- JSON array of {"slot_id": "Mon_19_00", "day_of_week": 1, "time_hhmm": "19:00"}
     slots_json           TEXT    NOT NULL DEFAULT '[]',
-    captured_at          TEXT    NOT NULL DEFAULT (datetime('now'))
+    captured_at          TEXT    NOT NULL
 );
 
 -- driver_division_memberships
@@ -542,8 +523,7 @@ CREATE TABLE "attendance_config" (
 -- attendance_division_config
 CREATE TABLE "attendance_division_config" (
     division_id            INTEGER PRIMARY KEY
-                               REFERENCES divisions(id)
-                               ON DELETE CASCADE,
+                               REFERENCES divisions(id),
     rsvp_channel_id        TEXT,
     attendance_channel_id  TEXT,
     attendance_message_id  TEXT
@@ -633,15 +613,15 @@ CREATE TABLE "points_config_store" (
 -- round_amend_channels
 CREATE TABLE "round_amend_channels" (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    round_id     INTEGER NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+    round_id     INTEGER NOT NULL REFERENCES rounds(id),
     channel_id   INTEGER NOT NULL,
     -- session_types: the sessions this amendment re-enters, as a JSON array of session-type
-    -- values in running order (#345). One amendment covers any number of a round's sessions,
+    -- values in running order. One amendment covers any number of a round's sessions,
     -- its reports and appeals being reviewed for them together, as a round's are.
     session_types TEXT   NOT NULL,
     created_at   TEXT    NOT NULL,
-    -- pre_amendment_state: the round as it stood before stage one overwrote it, as JSON
-    -- (#345). The amendment's first stage commits the corrected classification, so an
+    -- pre_amendment_state: the round as it stood before stage one overwrote it, as JSON.
+    -- The amendment's first stage commits the corrected classification, so an
     -- amendment abandoned before its last stage is approved leaves the round scored one way
     -- and posted another. This is what the revert puts back: for each amended session, its
     -- header, its driver rows, and its verdict records whole. NULL until stage one has
@@ -652,12 +632,12 @@ CREATE TABLE "round_amend_channels" (
     -- Results" for ever.
     expires_at   TEXT,
     -- closed_at: set where the amendment has finished but its channel could not be deleted,
-    -- the guild or the channel being out of cache (#345). The row is the only thing that names
+    -- the guild or the channel being out of cache. The row is the only thing that names
     -- the channel, so restart recovery finds an orphan by no other route and it is kept for
     -- that — but it no longer describes an amendment in progress, and nothing treats it as one.
     closed_at   TEXT,
     -- superseded_announcements: the verdict announcements standing in the channel when the
-    -- amendment's report stage was approved, as JSON (#345). That stage deletes the round's
+    -- amendment's report stage was approved, as JSON. That stage deletes the round's
     -- verdict records and writes the approved set back, so the message ids of the announcements
     -- to be taken down are gone by the time the final stage re-announces — noted here first.
     superseded_announcements TEXT,
@@ -665,11 +645,11 @@ CREATE TABLE "round_amend_channels" (
     -- reverting one that lapsed can name them in the log channel. NULL only where a row was
     -- written without it, which the command never does.
     started_by   INTEGER,
-    -- reports_approved_at: when the amendment's report stage was approved (#439). NULL until then.
+    -- reports_approved_at: when the amendment's report stage was approved. NULL until then.
     -- The stage's approval is a change on the queue, which keeps nothing in memory, so the row
     -- is what says the report stage is done and the pardons close with it.
     reports_approved_at TEXT,
-    -- prompt_posted_at: when the amendment's first prompt was shown in its channel (#439). The
+    -- prompt_posted_at: when the amendment's first prompt was shown in its channel. The
     -- amendment's five minutes run from it, not from when the paste was asked for, so a prompt
     -- that waited behind other work on the queue does not use up the manager's time. NULL until
     -- the prompt is up.
@@ -679,13 +659,13 @@ CREATE TABLE "round_amend_channels" (
 );
 
 -- resubmission_drafts
--- A resubmission's pastes, held until the last swaps the round's results (#439). Each paste is a
+-- A resubmission's pastes, held until the last swaps the round's results. Each paste is a
 -- turn on the change queue, which keeps nothing in memory, so the session the resubmission
 -- expects next is read from here: the first with no draft. status is ACTIVE, or CANCELLED where
 -- the paste said the session was cancelled. config_name is NULL while the points configuration
 -- is still to be chosen, and the session is then expected again.
 CREATE TABLE resubmission_drafts (
-    round_id     INTEGER NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+    round_id     INTEGER NOT NULL REFERENCES rounds(id),
     session_type TEXT    NOT NULL,
     status       TEXT    NOT NULL DEFAULT 'ACTIVE',
     rows_json    TEXT    NOT NULL,
@@ -695,7 +675,7 @@ CREATE TABLE resubmission_drafts (
 );
 
 -- amend_drafts
--- An amendment's pastes, held as a resubmission's are (#439), keyed by the amendment. The
+-- An amendment's pastes, held as a resubmission's are, keyed by the amendment. The
 -- amendment expects the first of its own session_types with no draft; config_name is NULL while
 -- the points configuration is still to be chosen.
 CREATE TABLE amend_drafts (
@@ -708,7 +688,7 @@ CREATE TABLE amend_drafts (
 
 -- review_lock_warnings
 -- The "channel locked during penalty review" warning a round's submission channel carries until
--- its eight seconds are up (#439). The warning is a message the bot posted by a job, and the timer
+-- its eight seconds are up. The warning is a message the bot posted by a job, and the timer
 -- that takes it down is armed by a job of its own, so the row is what the timer finds when it
 -- fires: with the row gone, there is nothing to take down. due_at is when the timer was armed for.
 CREATE TABLE review_lock_warnings (
@@ -751,11 +731,6 @@ CREATE TABLE "signup_wizard_records" (
     -- Timestamp of last wizard activity, used for inactivity timeout
     last_activity_at            TEXT    NOT NULL DEFAULT (datetime('now')),
     created_at                  TEXT    NOT NULL DEFAULT (datetime('now')),
-    -- Whether a close of the signup window owes this driver their closing notice: 0 none; 1 the
-    -- change queue's close, cleared when the queue plans the notice. Set in the save that returns
-    -- the driver. (A value 2, a close off the queue, is no longer written: no close is made
-    -- off the queue.)
-    closing_notice_owed         INTEGER NOT NULL DEFAULT 0,
     -- When the correction choices a manager asked for were posted in the driver's channel: the
     -- five minutes to choose run from then. NULL while no correction is awaited.
     correction_offered_at       TEXT
@@ -774,7 +749,7 @@ CREATE TABLE "signup_availability_slots" (
 -- signup_windows
 CREATE TABLE "signup_windows" (
     id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-    season_id            INTEGER NOT NULL REFERENCES seasons(id) ON DELETE CASCADE,
+    season_id            INTEGER NOT NULL REFERENCES seasons(id),
     selected_tracks_json TEXT    NOT NULL DEFAULT '[]',
     close_at             TEXT,
     opened_at            TEXT    NOT NULL DEFAULT (datetime('now')),
@@ -785,7 +760,7 @@ CREATE INDEX idx_signup_windows_season ON signup_windows(season_id);
 -- signup_records
 CREATE TABLE "signup_records" (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-    season_id             INTEGER REFERENCES seasons(id) ON DELETE CASCADE,
+    season_id             INTEGER REFERENCES seasons(id),
     window_id             INTEGER REFERENCES signup_windows(id) ON DELETE SET NULL,
     discord_user_id       TEXT    NOT NULL,
     discord_username      TEXT,
@@ -849,21 +824,23 @@ CREATE INDEX idx_driver_history_identity
 -- default_teams
 CREATE TABLE "default_teams" (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    -- The shorthand, as on team_instances (#381).
+    -- The shorthand, as on team_instances.
     name       TEXT    NOT NULL UNIQUE,
     full_name  TEXT    NOT NULL,
     max_seats  INTEGER NOT NULL DEFAULT 2,
     is_reserve INTEGER NOT NULL DEFAULT 0
 );
+-- The list ships holding the Reserve team alone: no change adds it, and none may remove it.
+INSERT INTO default_teams (name, full_name, max_seats, is_reserve) VALUES ('Reserve', 'Reserve', -1, 1);
 
 -- team_role_configs
 CREATE TABLE "team_role_configs" (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     team_name   TEXT    NOT NULL UNIQUE,
     role_id     INTEGER NOT NULL,
-    updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    updated_at  TEXT    NOT NULL
 );
--- A role belongs to one team only: a submission names a team by its role (#375).
+-- A role belongs to one team only: a submission names a team by its role.
 CREATE UNIQUE INDEX uq_team_role_configs_role_id ON team_role_configs(role_id);
 
 -- seasons
@@ -910,7 +887,10 @@ CREATE TABLE "pending_messages" (
 -- log channel names a member. `what` is how the change's lines name it. `acknowledged_at` bounds
 -- the update of the member's reply. `lane` is the lane the change runs on: `league`, or
 -- `channel:<id>` for a conversation's own channel; each lane runs one change at a time and stops
--- alone.
+-- alone, save `overtook_a_stop` below.
+-- `overtook_a_stop` marks a change of a kind the queue lets run past its lane's own stopped head
+-- (`ChangeType.overtakes_a_stop`): it is RUNNING beside that head, which stays RUNNING and
+-- stopped, so the one-RUNNING-per-lane rule below is theirs alone and does not hold between them.
 CREATE TABLE "queued_changes" (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     kind            TEXT    NOT NULL,
@@ -924,12 +904,13 @@ CREATE TABLE "queued_changes" (
     actor_display   TEXT,
     what            TEXT    NOT NULL,
     acknowledged_at TEXT,
-    lane            TEXT    NOT NULL DEFAULT 'league'
+    lane            TEXT    NOT NULL DEFAULT 'league',
+    overtook_a_stop INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX "queued_changes_open" ON "queued_changes" (lane, id)
     WHERE state IN ('QUEUED', 'RUNNING');
 CREATE UNIQUE INDEX "queued_changes_one_running" ON "queued_changes" (lane)
-    WHERE state = 'RUNNING';
+    WHERE state = 'RUNNING' AND overtook_a_stop = 0;
 
 -- queued_change_steps
 -- A change's steps in order, each a job of its own. `id` is the job's number, never renumbered:

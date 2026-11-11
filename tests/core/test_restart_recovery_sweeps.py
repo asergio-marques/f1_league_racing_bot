@@ -1,20 +1,10 @@
-"""Two of the sweeps a restart runs over work the previous process left behind.
+"""The sweep a restart runs over the amendments the previous process left behind.
 
-Issue #208. `_recover_expired_review_prompts` and `_recover_orphaned_amend_channels` were
-uncovered. Each cleans up after something that lived only in memory and died with the process —
-a view's timeout, a `wait_for` loop — and between them they decide what a league finds when the
-bot comes back. The third, `_recover_missed_phases`, is pinned in `test_bot_phase_recovery.py`.
-
-**Every standing review prompt is expired by definition.** The approve button's five minutes are
-a `discord.ui.View` timeout held in memory; the bot was down, so they cannot have been served,
-and no view exists to serve them now. Each row's take-down is therefore asked of the change queue
-(`season.review.take_down`, ending `restart`), as the bot, before the queue starts — there is no
-"still valid" case to preserve, and a reader who added one would leave a button nothing is
-listening to standing for ever. The sweep deletes, posts and writes nothing itself, and leaves
-alone a review whose take-down is already in hand: the queue's jobs delete the question and the
-report above it and drop the row, so a deletion Discord refuses stops the queue with the row
-standing rather than losing the only record of a message still up. Those cases are pinned in
-`test_review_prompt_sweep.py`.
+Issue #208. `recover_orphaned_amend_channels` was uncovered. It cleans up after a `wait_for` loop
+that died with the previous process, and decides what a league finds of an amendment when the bot
+comes back. The other sweeps are pinned beside their own: the season review's take-down
+(`season_review_changes.recover_expired_review_prompts`) in `test_review_prompt_sweep.py`, and
+`recover_missed_phases` in `test_bot_phase_recovery.py`.
 
 **An abandoned amendment's lapse is asked of the change queue** (#439, slice 6b, C64). The sweep
 puts nothing back, deletes nothing and writes nothing itself: it asks `results.amend.lapse` as the
@@ -23,81 +13,20 @@ lapse is already in hand (core spec :133). The queue's jobs put the round back, 
 and close its row with the deletion's mark, so a crash between them is resumed rather than run
 again.
 
-**Every sweep announces itself.** A league manager whose amendment vanished needs to know to
-re-run the command, and a reviewer whose approve button disappeared needs to know to review
-again. Neither is discoverable from the absence of a message.
+**The sweep announces itself.** A league manager whose amendment vanished needs to know to re-run
+the command, which is not discoverable from the absence of a message.
 """
 from __future__ import annotations
 
-import os
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
+import pytest
 
-import leaguebot.__main__ as bot_module
-from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.db.database import get_connection
 
-SERVER_ID = 11808
-SEASON_ID = 1
-DIVISION_ID = 11
 ROUND_ID = 21
 STARTER_ID = 4242
-
-
-# ---------------------------------------------------------------------------
-# Fixtures / helpers
-# ---------------------------------------------------------------------------
-
-
-async def _base_db(tmp_path, name: str) -> str:
-    db_path = os.path.join(str(tmp_path), f"{name}.db")
-    await run_migrations(db_path)
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "INSERT INTO server_configs (server_id, interaction_role_id, "
-            "interaction_channel_id, log_channel_id) VALUES (?, 900, 100, 101)",
-            (SERVER_ID,),
-        )
-        await db.execute(
-            "INSERT INTO seasons (id, season_number, start_date, status) "
-            "VALUES (?, 1, '2026-01-01', 'ACTIVE')",
-            (SEASON_ID,),
-        )
-        await db.execute(
-            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
-            "VALUES (?, ?, 'Pro', 1, 555)",
-            (DIVISION_ID, SEASON_ID),
-        )
-        await db.commit()
-    return db_path
-
-
-def _stub_bot(db_path: str):
-    stub = MagicMock()
-    stub.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-    stub.db_path = db_path
-    stub.module_service = MagicMock()
-    stub.output_router = MagicMock()
-    stub.output_router.post_log = AsyncMock(return_value=None)
-    stub.get_guild = MagicMock(return_value=None)
-    stub.get_channel = MagicMock(return_value=None)
-    stub.fetch_channel = AsyncMock(return_value=None)
-    return stub
-
-
-# ---------------------------------------------------------------------------
-# Standing season-review prompts
-# ---------------------------------------------------------------------------
-
-
-async def test_an_unreadable_prompt_table_does_not_stop_the_start_up(tmp_path):
-    """This runs inside start-up; a failure to read one table must not stop the bot
-    starting at all."""
-    db_path = await _base_db(tmp_path, "review_unreadable")
-    stub = _stub_bot(db_path)
-    stub.db_path = os.path.join(str(tmp_path), "does-not-exist-at-all.db")
-
-    await bot_module._recover_expired_review_prompts(stub)  # must not raise
 
 
 # ---------------------------------------------------------------------------
@@ -162,9 +91,11 @@ async def _amend_league(tmp_path, *, amended: bool = False):
 
 async def _restart(league) -> list[dict]:
     """The restart's sweep, then the lapses it asked of the queue."""
+    from leaguebot.results.wiring import recover_orphaned_amend_channels
+
     from tests.support.change_queue import change_rows
 
-    await bot_module._recover_orphaned_amend_channels(league.bot)
+    await recover_orphaned_amend_channels(league.bot)
     return [row for row in await change_rows(league.db_path)
             if row["kind"] == "results.amend.lapse"]
 
@@ -203,23 +134,6 @@ async def _winner(league) -> int:
     return next(driver for driver, row in rows.items() if row["finishing_position"] == 1)
 
 
-def test_amendments_are_reverted_before_submission_channels_resume():
-    """**The amend sweep runs before the submission-channel one** (#345, decided 2026-09-21).
-
-    An amendment open at the restart has its unapproved corrections in the database, and a
-    submission channel whose results were saved but never posted posts its standings from it on
-    recovery. Swept the other way round, those standings would publish the corrections the
-    amendment's revert then takes back. Read from the source, because the two run inside
-    `on_ready` among a dozen start-up steps no test drives whole.
-    """
-    import inspect
-
-    source = inspect.getsource(bot_module.main)
-    amend = source.index("await _recover_orphaned_amend_channels(bot)")
-    submission = source.index("await _recover_orphaned_submission_channels(bot)")
-    assert amend < submission
-
-
 async def test_a_second_restart_leaves_a_lapse_in_hand_alone(tmp_path):
     """The bot stops again before the queue has run the lapse the first restart asked for. The
     second restart finds that lapse in hand and asks no other (core :133): one lapse, one line."""
@@ -236,14 +150,16 @@ async def test_a_second_restart_leaves_a_lapse_in_hand_alone(tmp_path):
 
 
 async def test_an_amendment_cannot_outlive_its_round(tmp_path):
-    """`round_amend_channels.round_id` carries `ON DELETE CASCADE`, so a round deleted while an
-    amendment was open takes the amendment's row with it: the restart finds nothing, asks no
-    lapse, and the log channel is told nothing."""
+    """A round deleted while an amendment was open, as `/round delete` deletes it, takes the
+    amendment's row with it: the results module deletes its own rows through the round's delete
+    hook. The restart finds nothing, asks no lapse, and the log channel is told nothing."""
+    from leaguebot.core.services.seasons.season_service import SeasonService
     from tests.support.change_queue import run_queue
+    from tests.support.delete_hooks import ROUND_HOOKS, delete_hooks
 
     league = await _amend_league(tmp_path)
     async with get_connection(league.db_path) as db:
-        await db.execute("DELETE FROM rounds WHERE id = ?", (ROUND_ID,))
+        await SeasonService.delete_round_on(db, ROUND_ID, **delete_hooks(*ROUND_HOOKS))
         await db.commit()
     assert await _amend_row(league) is None
 

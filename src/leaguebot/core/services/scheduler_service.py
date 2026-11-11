@@ -2,11 +2,13 @@
 
 Uses SQLAlchemyJobStore backed by **its own** SQLite file, separate from the league
 database, so jobs survive restarts. A job whose moment passed while the bot was stopped runs
-on start only if that moment is less than five minutes gone (`_GRACE_SECONDS`, every job's
-misfire grace). Later than that, APScheduler skips it with a warning in the host's log, and
-whatever should be caught up after a longer stop is caught up by the start-up recovery in
-`__main__.py`. What becomes of a job missed in a longer stop is its kind's handler's to decide
-(`docs/design/architecture.md`, "Timed work and restarts").
+on start only if that moment is less than five minutes gone (`_GRACE_SECONDS`, the misfire grace
+a job has unless it is armed with none). Later than that, APScheduler skips it with a warning in
+the host's log, and whatever should be caught up after a longer stop is caught up by the start-up
+recovery in `__main__.py`. A one-off timer and an overdue results submission are armed with no
+lateness limit, and fire at once on start whatever the stop. What becomes of a job missed in a
+longer stop is its kind's handler's to decide (`docs/design/architecture.md`, "Timed work and
+restarts").
 
 The separation is deliberate and is not tidiness. `SQLAlchemyJobStore` is synchronous, and
 it is attached to an `AsyncIOScheduler`, so every job it adds, updates or removes writes to
@@ -15,6 +17,12 @@ including the HTTP send that answers a Discord interaction. Pointed at the leagu
 that also carries hundreds of `aiosqlite` readers, those writes contended with the very
 traffic they were stalling. Given its own file the contention is gone, and the remaining
 stall is one small write to an uncontended database.
+
+**This file stays at `core/services/`, outside the topic folders, and its module path is pinned.**
+The job store pickles each timed job with the path of the runner it calls
+(`leaguebot.core.services.scheduler_service`), so moving the file would leave every job stored
+before the move, and the state test mode keeps, unable to load.
+`test_every_stored_job_names_the_runner_by_its_pinned_module_path` holds it.
 """
 
 from __future__ import annotations
@@ -25,11 +33,13 @@ import logging
 import os
 import re
 import sqlite3
-from datetime import datetime, timedelta, timezone
-from collections.abc import Collection, Iterable
-from typing import TYPE_CHECKING, Callable
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from collections.abc import Collection, Iterable, Iterator
+from typing import TYPE_CHECKING, Any, Callable
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.base import STATE_PAUSED
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.triggers.cron import CronTrigger
@@ -37,7 +47,16 @@ from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.round import Round, RoundFormat
+from leaguebot.core.models.round import (
+    ROUND_JOB_KINDS,
+    ROUND_JOB_PHASES,
+    AttendanceWindows,
+    Round,
+    RoundFormat,
+    WeatherWindows,
+)
+from leaguebot.core.models.round import WEATHER_JOB_KINDS as _WEATHER_JOB_PREFIXES
+from leaguebot.core.services.rounds.round_moments import clean_up_moment, round_event_moments
 
 if TYPE_CHECKING:
     pass
@@ -45,13 +64,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _GRACE_SECONDS = 300  # 5-minute misfire grace period
-
-#: How long after a round's scheduled start its posted messages come down: the weather module's
-#: forecast, whichever of Phases 1 to 3 still stands, and the attendance module's check-in call
-#: with its last notice and its distribution message (#425). One figure for both, so a round's
-#: channels clear together.
-POST_RACE_CLEANUP_DELAY = timedelta(hours=24)
-
 
 class _JobScheduler(AsyncIOScheduler):
     """An `AsyncIOScheduler` whose jobs run in a context of their own.
@@ -80,21 +92,19 @@ class _JobScheduler(AsyncIOScheduler):
 # modules' jobs down with it.
 _JOB_SUFFIX_RE = re.compile(r"_s\d+_d\d+_r\d+(?:_id\d+)?$")
 
-# The event-type prefixes of the jobs the **weather module** owns: its three forecast
-# phases and the post-race cleanup that deletes what they posted.
-#
-# Ownership can only be read from the job ID. All nine of a round's jobs — these four,
-# the result submission and the four attendance jobs — carry the same ``round_id`` kwarg, so
-# the kwarg says which round a job belongs to and nothing about which module it is for.
-# The prefix is the only marker there is, and ``_JOB_SUFFIX_RE`` above is what exposes it.
-_WEATHER_JOB_PREFIXES = frozenset({"weather_p1", "weather_p2", "weather_p3", "cleanup"})
+# A round's job names its owner twice over: its ID prefix and the ``kind`` it is stored with are
+# the same (`ROUND_JOB_KINDS`, with the weather module's four in `_WEATHER_JOB_PREFIXES`). All
+# nine of a round's jobs carry the same ``key`` kwarg (the round id), so the key says which round
+# a job belongs to and nothing about which module it is for. The kind says it, and so does the
+# prefix; `cancel_round(only=...)` reads the prefix, which ``_JOB_SUFFIX_RE`` above exposes,
+# because that is what its callers already hold.
 
 
 def _round_job_suffix(rnd: "Round", season_number: int, division_tier: int) -> str:
     """The ``_s{S}_d{D}_r{R}_id{round_id}`` tail every one of a round's job IDs carries.
 
     **Why the round id is in there** — a job ID must be unique to its round for the life of
-    that round, and the season, tier and round number are not. `renumber_rounds` rewrites the
+    that round, and the season, tier and round number are not. `renumber_rounds_on` rewrites the
     numbers of a whole division whenever an amendment changes the order of its rounds, and
     nothing re-arms the jobs of the rounds that merely shifted. So a round that became number 4
     kept jobs saying ``r5``, and the next amendment of the round that became number 5 scheduled
@@ -118,8 +128,8 @@ def _job_event_type(job_id: str) -> str | None:
     one from a version of the bot that named its jobs otherwise.
 
     Every caller asking what a job is for asks here, and pairs the answer with the job's
-    ``round_id`` kwarg — never rebuilding an ID to look one up. The review summary once built
-    IDs of its own, in a shape no job has ever had, and so found none of them (#426).
+    round id the job is keyed by (`_round_of`) — never rebuilding an ID to look one up: an ID
+    built elsewhere can take a shape no job has, and so find none.
     """
     m = _JOB_SUFFIX_RE.search(job_id)
     return None if m is None else job_id[: m.start()]
@@ -133,47 +143,55 @@ _GLOBAL_SERVICE: "SchedulerService | None" = None
 #: One league, so one signup window at a time and one timer to close it.
 SIGNUP_CLOSE_JOB_ID = "signup_close"
 
-
-async def _signup_close_timer_job() -> None:
-    """Module-level APScheduler callable for signup auto-close — picklable for
-    SQLAlchemyJobStore. Delegates to the registered signup-close callback."""
-    if _GLOBAL_SERVICE is None:
-        log.warning("_signup_close_timer_job fired but _GLOBAL_SERVICE is None — skipping")
-        return
-    cb = _GLOBAL_SERVICE._signup_close_callback
-    if cb is None:
-        log.warning("_signup_close_timer_job: no callback registered — skipping")
-        return
-    await cb()
+#: The kinds of the standing and one-shot jobs no round owns, named for what they do. Each is
+#: signed up with `SchedulerService.register_timer`, and stored on its job as ``kind``.
+SIGNUP_CLOSE_KIND = "signup_close"
+PORTRAIT_REFRESH_KIND = "portrait_refresh"
+AMENDMENT_SWEEP_KIND = "amendment_sweep"
 
 
-async def _one_off_timer_job(kind: str, key: int | str) -> None:
-    """Module-level APScheduler callable for a one-off timer — picklable for the job store.
+def _round_of(job: Any) -> int | None:
+    """The round a stored job belongs to — its key, where its kind is one of a round's
+    (`ROUND_JOB_KINDS`) — or None for any other job."""
+    kwargs = job.kwargs
+    if kwargs.get("kind") not in ROUND_JOB_KINDS:
+        return None
+    key = kwargs.get("key")
+    return key if isinstance(key, int) else None
 
-    Hands *key* to the callback the builder registered for *kind* (`register_timer`), which reads
-    its row again and asks its change. A kind with no callback is passed over with a warning, and
-    a callback that raises is logged: a timer's fault belongs to its host's log, and the queue it
-    would have asked is never the worse for it.
+
+async def _one_off_timer_job(kind: str, key: int | str | None = None) -> None:
+    """The one module-level APScheduler callable every job the scheduler arms runs through —
+    picklable for the job store, and named for the one-off timer it first ran.
+
+    Looks up the handler the builder registered for *kind* (`SchedulerService.register_timer`)
+    and awaits it, handed *key* (the round id of a round's job, the key of a one-off timer), which
+    reads its row again and asks its change. A standing job (the signup close, the portrait
+    refresh, the amendment sweep) is armed with no key, and its handler is handed nothing. A
+    kind with no handler is passed over with a warning, and a handler that raises is logged with
+    its traceback, naming the kind and the key: a job's fault belongs to its host's log, and
+    nothing reaches APScheduler, so a standing job outlives one bad run. Core holds no module's
+    rule about what a job does, only which handler is asked.
     """
     if _GLOBAL_SERVICE is None:
         log.warning("_one_off_timer_job %s fired but _GLOBAL_SERVICE is None — skipping", kind)
         return
-    callback = _GLOBAL_SERVICE._timer_callbacks.get(kind)
-    if callback is None:
-        log.warning("_one_off_timer_job: no callback registered for %s — skipping", kind)
+    handler = _GLOBAL_SERVICE._timer_callbacks.get(kind)
+    if handler is None:
+        log.warning("_one_off_timer_job: no handler registered for %s — skipping", kind)
         return
     try:
-        outcome = callback(key)
+        outcome = handler() if key is None else handler(key)
         if inspect.isawaitable(outcome):
             await outcome
-    except Exception:  # noqa: BLE001 — one timer's fault must not reach the scheduler
-        log.exception("_one_off_timer_job: the %s timer for %s failed", kind, key)
+    except Exception:  # noqa: BLE001 — one job's fault must not reach the scheduler
+        log.exception("_one_off_timer_job: the %s job for %s failed", kind, key)
 
 
 #: One league, so one daily refresh: the job is named by what it does, not by a server.
 PORTRAIT_REFRESH_JOB_ID = "pfp_daily"
 
-#: The standing sweep that undoes an amendment nobody approved (#345).
+#: The standing sweep that undoes an amendment nobody approved.
 AMENDMENT_SWEEP_JOB_ID = "amend_sweep"
 
 #: How often it looks. An amendment lapses after
@@ -182,196 +200,6 @@ AMENDMENT_SWEEP_JOB_ID = "amend_sweep"
 #: exactly, which is close enough for a round nobody is working on and cheap — the sweep reads
 #: one indexed table and almost always finds nothing.
 AMENDMENT_SWEEP_MINUTES = 5
-
-
-async def _portrait_refresh_job() -> None:
-    """Module-level APScheduler callable for the daily portrait refresh — picklable for
-    SQLAlchemyJobStore. Delegates to the registered portrait-refresh callback."""
-    if _GLOBAL_SERVICE is None:
-        log.warning("_portrait_refresh_job fired but _GLOBAL_SERVICE is None — skipping")
-        return
-    cb = _GLOBAL_SERVICE._portrait_refresh_callback
-    if cb is None:
-        log.warning("_portrait_refresh_job: no callback registered — skipping")
-        return
-    await cb()
-
-
-async def _amendment_sweep_job() -> None:
-    """Module-level APScheduler callable for the amendment sweep — picklable for the job store.
-
-    Undoes any amendment whose report and appeal stages went unapproved past their deadline: the
-    first stage commits, so one left hanging would otherwise leave a round scored from the
-    corrected classification and published from the old one indefinitely (#345).
-    """
-    if _GLOBAL_SERVICE is None:
-        log.warning("_amendment_sweep_job fired but _GLOBAL_SERVICE is None — skipping")
-        return
-    cb = _GLOBAL_SERVICE._amendment_sweep_callback
-    if cb is None:
-        log.warning("_amendment_sweep_job: no callback registered — skipping")
-        return
-    try:
-        await cb()
-    except Exception:  # noqa: BLE001 — a standing job must outlive one bad run
-        log.exception("_amendment_sweep_job: sweep failed")
-
-
-async def _weather_phase_job(phase_num: int, round_id: int) -> None:
-    """Top-level APScheduler callable for all weather-phase jobs.
-
-    Replaces both ``_phase_job`` (for normal/sprint/endurance rounds) and the
-    old ``_mystery_notice_job`` (for mystery rounds) in a single dispatcher:
-
-    * MYSTERY + phase 1  → fires the mystery-notice callback.
-    * MYSTERY + phase 2/3 → no-op (mystery rounds have no P2/P3 forecasts).
-    * All other formats  → delegates to the registered phase callback.
-
-    APScheduler with SQLAlchemyJobStore requires picklable callables; this
-    module-level function avoids closure pickling issues.
-    """
-    if _GLOBAL_SERVICE is None:
-        log.warning(
-            "_weather_phase_job fired but _GLOBAL_SERVICE is None "
-            "(phase=%s, round=%s) — skipping",
-            phase_num, round_id,
-        )
-        return
-
-    # Determine round format from DB so scheduling doesn't need to branch.
-    async with get_connection(_GLOBAL_SERVICE._db_path) as _db:
-        _cur = await _db.execute("SELECT format FROM rounds WHERE id = ?", (round_id,))
-        _row = await _cur.fetchone()
-    if _row is None:
-        log.warning("_weather_phase_job: round %s not found in DB — skipping", round_id)
-        return
-
-    is_mystery = _row["format"] == "MYSTERY"
-
-    if is_mystery:
-        if phase_num == 1:
-            cb = _GLOBAL_SERVICE._mystery_notice_callback
-            if cb is None:
-                log.warning("No mystery notice callback; skipping round %s.", round_id)
-                return
-            await cb(round_id)
-        # phases 2 and 3 are intentional no-ops for mystery rounds
-        return
-
-    cb = _GLOBAL_SERVICE._phase_callbacks.get(phase_num)
-    if cb is None:
-        log.warning("No callback registered for phase %s; skipping round %s.", phase_num, round_id)
-        return
-    await cb(round_id)
-
-
-async def _forecast_cleanup_job(round_id: int) -> None:
-    """Top-level APScheduler callable for post-race Phase 3 message cleanup.
-
-    Fires 24 hours after round start.  Follows the same module-level pattern as
-    ``_mystery_notice_job`` to avoid closure pickling issues with
-    SQLAlchemyJobStore.
-    """
-    if _GLOBAL_SERVICE is None:
-        log.warning(
-            "_forecast_cleanup_job fired but _GLOBAL_SERVICE is None "
-            "(round=%s) — skipping",
-            round_id,
-        )
-        return
-    cb = _GLOBAL_SERVICE._forecast_cleanup_callback
-    if cb is None:
-        log.warning(
-            "No forecast cleanup callback registered; skipping round %s.", round_id
-        )
-        return
-    await cb(round_id)
-
-
-async def _result_submission_job_wrapper(round_id: int) -> None:
-    """Top-level APScheduler callable for result submission job."""
-    if _GLOBAL_SERVICE is None:
-        log.warning(
-            "_result_submission_job_wrapper fired but _GLOBAL_SERVICE is None "
-            "(round=%s) — skipping",
-            round_id,
-        )
-        return
-    cb = _GLOBAL_SERVICE._result_submission_callback
-    if cb is None:
-        log.warning(
-            "No result submission callback registered; skipping round %s.", round_id
-        )
-        return
-    await cb(round_id)
-
-
-async def _rsvp_notice_job(round_id: int) -> None:
-    """Top-level APScheduler callable for RSVP notice jobs.
-
-    Follows the same module-level pattern as ``_mystery_notice_job`` to avoid
-    closure pickling issues with SQLAlchemyJobStore.
-    """
-    if _GLOBAL_SERVICE is None:
-        log.warning(
-            "_rsvp_notice_job fired but _GLOBAL_SERVICE is None "
-            "(round=%s) — skipping",
-            round_id,
-        )
-        return
-    cb = _GLOBAL_SERVICE._rsvp_notice_callback
-    if cb is None:
-        log.warning("No RSVP notice callback registered; skipping round %s.", round_id)
-        return
-    await cb(round_id)
-
-
-async def _rsvp_last_notice_job(round_id: int) -> None:
-    """Top-level APScheduler callable for RSVP last-notice jobs."""
-    if _GLOBAL_SERVICE is None:
-        log.warning(
-            "_rsvp_last_notice_job fired but _GLOBAL_SERVICE is None "
-            "(round=%s) — skipping",
-            round_id,
-        )
-        return
-    cb = _GLOBAL_SERVICE._rsvp_last_notice_callback
-    if cb is None:
-        log.warning("No RSVP last-notice callback registered; skipping round %s.", round_id)
-        return
-    await cb(round_id)
-
-
-async def _rsvp_deadline_job(round_id: int) -> None:
-    """Top-level APScheduler callable for RSVP deadline jobs."""
-    if _GLOBAL_SERVICE is None:
-        log.warning(
-            "_rsvp_deadline_job fired but _GLOBAL_SERVICE is None "
-            "(round=%s) — skipping",
-            round_id,
-        )
-        return
-    cb = _GLOBAL_SERVICE._rsvp_deadline_callback
-    if cb is None:
-        log.warning("No RSVP deadline callback registered; skipping round %s.", round_id)
-        return
-    await cb(round_id)
-
-
-async def _rsvp_cleanup_job(round_id: int) -> None:
-    """Top-level APScheduler callable for the check-in cleanup, 24 h after a round's start."""
-    if _GLOBAL_SERVICE is None:
-        log.warning(
-            "_rsvp_cleanup_job fired but _GLOBAL_SERVICE is None "
-            "(round=%s) — skipping",
-            round_id,
-        )
-        return
-    cb = _GLOBAL_SERVICE._rsvp_cleanup_callback
-    if cb is None:
-        log.warning("No RSVP cleanup callback registered; skipping round %s.", round_id)
-        return
-    await cb(round_id)
 
 
 def default_jobstore_path(db_path: str) -> str:
@@ -414,15 +242,17 @@ class SchedulerService:
     """The one place a job is made, found or removed (`docs/design/architecture.md`, "Timed
     work and restarts").
 
-    Every cancel is a clean-up, and none of them raises. A job that has already fired, or was
-    never armed, is the ordinary case and what the caller wanted: APScheduler says so with
-    `JobLookupError`, which is caught by name and passed over in silence. Any other failure —
-    a job store that cannot be read or written — is a real fault, and is logged as a warning
-    with its traceback and then swallowed. That broad handler is the second place
-    architecture.md's "Errors and failures" allows one: the callers are teardown lists
-    (a season cancelled, a module switched off, signups closed, a pack), where one job that
-    will not go must not stop the rest. `cancel_all` counts only the jobs that went.
-    """
+    Every cancel is a clean-up, and removing a job never raises. A job that has already fired, or
+    was never armed, is the ordinary case and what the caller wanted: APScheduler says so with
+    `JobLookupError`, which is caught by name and passed over in silence. Any other failure — a job
+    store that cannot be read or written — is a real fault, and is logged as a warning with its
+    traceback and then swallowed. That broad handler is a stated exception in architecture.md's
+    "Errors and failures": every cancel is a clean-up, so a job that will not go is logged and left,
+    whether the caller is a teardown list (a season cancelled, a module switched off, signups
+    closed, a pack), where it must not stop the rest, or a single cancel. `cancel_all` counts only
+    the jobs that went. A cancel that first lists the store (`cancel_round`, `cancel_rounds`,
+    `cancel_all`, `cancel_season_end`) or reads the league database (`cancel_all_weather`) does
+    raise where that cannot be read, before it removes anything."""
 
     def __init__(self, db_path: str, jobstore_path: str | None = None) -> None:
         self._db_path = db_path
@@ -435,99 +265,16 @@ class SchedulerService:
             job_defaults={"misfire_grace_time": _GRACE_SECONDS},
             timezone="UTC",
         )
-        # Phase callbacks injected after bot starts (to avoid circular imports)
-        self._phase_callbacks: dict[int, Callable] = {}
-        # Signup auto-close callback injected after bot starts
-        self._signup_close_callback: "Callable | None" = None
-        self._portrait_refresh_callback: "Callable | None" = None
-        # Amendment sweep callback injected after bot starts (#345)
-        self._amendment_sweep_callback: "Callable | None" = None
-        # Mystery notice callback injected after bot starts
-        self._mystery_notice_callback: "Callable | None" = None
-        # Post-race forecast cleanup callback injected after bot starts
-        self._forecast_cleanup_callback: "Callable | None" = None
-        # Result submission callback injected after bot starts
-        self._result_submission_callback: "Callable | None" = None
-        # RSVP callbacks injected after bot starts
-        self._rsvp_notice_callback: "Callable | None" = None
-        self._rsvp_last_notice_callback: "Callable | None" = None
-        self._rsvp_deadline_callback: "Callable | None" = None
-        self._rsvp_cleanup_callback: "Callable | None" = None
-        # One-off timer callbacks, by kind, registered by the builder before the scheduler starts
+        # Every job's handler, by kind, registered by the builder before the scheduler starts
         self._timer_callbacks: dict[str, Callable] = {}
 
-    def register_callbacks(
-        self,
-        phase1_cb: Callable,
-        phase2_cb: Callable,
-        phase3_cb: Callable,
-    ) -> None:
-        """Register async callables for each phase. Called from __main__.py on_ready."""
-        self._phase_callbacks[1] = phase1_cb
-        self._phase_callbacks[2] = phase2_cb
-        self._phase_callbacks[3] = phase3_cb
-
-    def register_mystery_notice_callback(self, callback: Callable) -> None:
-        """Register the async callable invoked when a Mystery round notice fires.
-
-        The callable must accept ``(round_id: int)``.
-        Called from __main__.py on_ready after the scheduler is started.
-        """
-        self._mystery_notice_callback = callback
-
-    def register_forecast_cleanup_callback(self, callback: Callable) -> None:
-        """Register the async callable invoked 24 h after a round start.
-
-        The callable must accept ``(round_id: int)``.
-        Called from __main__.py on_ready after the scheduler is started.
-        """
-        self._forecast_cleanup_callback = callback
-
-    def register_result_submission_callback(self, callback: Callable) -> None:
-        """Register the async callable invoked at round start time for result submission.
-
-        The callable must accept ``(round_id: int)``.
-        Called from __main__.py on_ready after the scheduler is started.
-        """
-        self._result_submission_callback = callback
-
-    def register_rsvp_notice_callback(self, callback: Callable) -> None:
-        """Register the async callable invoked when an RSVP notice job fires.
-
-        The callable must accept ``(round_id: int)``.
-        Called from __main__.py on_ready after the scheduler is started.
-        """
-        self._rsvp_notice_callback = callback
-
-    def register_rsvp_last_notice_callback(self, callback: Callable) -> None:
-        """Register the async callable invoked when an RSVP last-notice job fires.
-
-        The callable must accept ``(round_id: int)``.
-        Called from __main__.py on_ready after the scheduler is started.
-        """
-        self._rsvp_last_notice_callback = callback
-
-    def register_rsvp_deadline_callback(self, callback: Callable) -> None:
-        """Register the async callable invoked when an RSVP deadline job fires.
-
-        The callable must accept ``(round_id: int)``.
-        Called from __main__.py on_ready after the scheduler is started.
-        """
-        self._rsvp_deadline_callback = callback
-
-    def register_rsvp_cleanup_callback(self, callback: Callable) -> None:
-        """Register the async callable invoked when a round's check-in cleanup job fires.
-
-        The callable must accept ``(round_id: int)``.
-        Called from __main__.py on_ready after the scheduler is started.
-        """
-        self._rsvp_cleanup_callback = callback
-
     def register_timer(self, kind: str, callback: Callable) -> None:
-        """Register the callable invoked, handed its key, when a one-off timer of *kind* fires.
+        """Register the callable invoked when a job of *kind* fires: the one way to sign up a kind.
 
-        The builder registers each kind before the scheduler starts, so that a timer missed while
-        the bot was down finds its callback when it fires on start.
+        It is handed the job's key (a round's id, a one-off timer's key), or nothing where the job
+        is a standing one with no key. The builder registers each kind before the scheduler
+        starts, so that a job missed while the bot was down finds its handler when it fires on
+        start.
         """
         self._timer_callbacks[kind] = callback
 
@@ -572,16 +319,51 @@ class SchedulerService:
         """The file the job store lives in, which is never the league database."""
         return self._jobstore_path
 
-    def start(self) -> None:
+    @contextmanager
+    def paused(self) -> Iterator[None]:
+        """Hold the scheduler still for the block, resuming it however the block ends.
+
+        A scheduler that is not running is left as it is, neither paused nor resumed: resuming
+        one nobody paused would start one the bot deliberately left down. So is one that is
+        paused already: the scheduler start-up holds paused while its steps run is left paused,
+        since only start-up's last act may let the jobs run. It is for the copy of
+        the job store (a backup, a factory reset's, the approval's), where the pause keeps
+        every job from firing while the copy is taken. It is not what keeps the copy whole:
+        a copy is synchronous on the event-loop thread, which also keeps ``add_job`` out, and
+        the copy goes through SQLite's backup API besides.
+        """
+        # APScheduler 3 reports a paused scheduler as running, so the state is read besides.
+        holds = self._scheduler.running and self._scheduler.state != STATE_PAUSED
+        if holds:
+            self._scheduler.pause()
+        try:
+            yield
+        finally:
+            if holds:
+                self._scheduler.resume()
+
+    def start(self, *, paused: bool = False) -> None:
+        """Start the scheduler, and with *paused* start it holding every job still.
+
+        A paused scheduler reads the job store (``has_job``, ``get_jobs`` and ``remove_job`` see
+        what is stored) and fires nothing until :meth:`resume`, which is how start-up keeps a
+        job from running before the start-up sweep and the change queue are done."""
         global _GLOBAL_SERVICE
         _GLOBAL_SERVICE = self
         if not self._scheduler.running:
-            self._scheduler.start()
+            self._scheduler.start(paused=paused)
             log.info(
-                "APScheduler started with SQLAlchemyJobStore at %s (league data: %s)",
+                "APScheduler started%s with SQLAlchemyJobStore at %s (league data: %s)",
+                " paused" if paused else "",
                 self._jobstore_path,
                 self._db_path,
             )
+
+    def resume(self) -> None:
+        """Let a scheduler started paused run its jobs, those that fell due while it was held
+        included."""
+        self._scheduler.resume()
+        log.info("APScheduler resumed")
 
     def shutdown(self, wait: bool = True) -> None:
         if self._scheduler.running:
@@ -605,21 +387,19 @@ class SchedulerService:
         """Register DateTrigger jobs for *rnd*.
 
         Schedules three weather-phase jobs (``weather_p1`` / ``weather_p2`` /
-        ``weather_p3``), a cleanup job, and a result-submission job for every
-        round regardless of format.  MYSTERY-vs-normal dispatch is handled at
-        execution time by ``_weather_phase_job``, which checks the round format
-        from the database before deciding which callback to invoke:
-
-        * MYSTERY + weather_p1  → mystery-notice callback
-        * MYSTERY + weather_p2/3 → no-op
-        * Non-mystery           → normal phase callbacks
+        ``weather_p3``), a cleanup job, and — through `schedule_result_submission_jobs` — a
+        result-submission job for every round regardless of format.  Every job runs through
+        `_one_off_timer_job`, handed its kind (its job id's prefix) and the round id as its key.
+        Whether a MYSTERY round's phase asks for a notice or for nothing is weather's rule,
+        decided by the handler the builder signs up for ``weather_p1`` to ``weather_p3``, never
+        here.
 
         Job IDs follow the convention
         ``<event_type>_s{season_number}_d{division_tier}_r{round_number}_id{round_id}``
         written by `_round_job_suffix` and read back by `_job_event_type`. The season,
         tier and number make them readable in APScheduler admin views; the round id is
-        what makes them unique. The database ``round_id`` is always stored as a kwarg
-        for programmatic lookups.
+        what makes them unique. The round id is always stored as the job's ``key``
+        for programmatic lookups (`_round_of`).
 
         Jobs use ``replace_existing=True`` so re-scheduling an amended round
         is safe.
@@ -635,48 +415,37 @@ class SchedulerService:
                             passed by less than the misfire grace would run at once and draw
                             the phase a second time.
         """
-        scheduled_at = rnd.scheduled_at
-        if scheduled_at.tzinfo is None:
-            scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
-
         _suffix = _round_job_suffix(rnd, season_number, division_tier)
 
-        horizons = {
-            1: scheduled_at - timedelta(days=phase_1_days),
-            2: scheduled_at - timedelta(days=phase_2_days),
-            3: scheduled_at - timedelta(hours=phase_3_hours),
-        }
+        moments = round_event_moments(
+            rnd.scheduled_at,
+            weather=WeatherWindows(phase_1_days, phase_2_days, phase_3_hours),
+            attendance=None,
+        )
 
-        for phase_num, fire_at in horizons.items():
+        for phase_num in (1, 2, 3):
             if phase_num in skip_phases:
                 continue
+            fire_at = moments[f"weather_p{phase_num}"]
             job_id = f"weather_p{phase_num}{_suffix}"
             self._scheduler.add_job(
-                _weather_phase_job,
+                _one_off_timer_job,
                 trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
                 id=job_id,
                 replace_existing=True,
                 name=f"Weather P{phase_num} s{season_number} d{division_tier} r{rnd.round_number}",
-                kwargs={"phase_num": phase_num, "round_id": rnd.id},
+                kwargs={"kind": f"weather_p{phase_num}", "key": rnd.id},
             )
             log.info("Scheduled %s at %s", job_id, fire_at.isoformat())
 
         # Post-race Phase 3 cleanup, a day after round start
-        self.schedule_round_cleanups(
-            rnd, season_number=season_number, division_tier=division_tier, check_in=False
-        )
+        self._arm_forecast_cleanup(rnd, season_number=season_number, division_tier=division_tier)
 
-        # Result submission at round start time
-        results_job_id = f"results{_suffix}"
-        self._scheduler.add_job(
-            _result_submission_job_wrapper,
-            trigger=DateTrigger(run_date=scheduled_at, timezone="UTC"),
-            id=results_job_id,
-            replace_existing=True,
-            name=f"Result submission s{season_number} d{division_tier} r{rnd.round_number}",
-            kwargs={"round_id": rnd.id},
+        # Result submission at round start time, armed where every results job is, so that the
+        # one arming here is weather's alone.
+        self.schedule_result_submission_jobs(
+            [rnd], division_meta={rnd.division_id: (season_number, division_tier)}
         )
-        log.info("Scheduled %s at %s", results_job_id, scheduled_at.isoformat())
 
     def schedule_attendance_round(
         self,
@@ -687,6 +456,7 @@ class SchedulerService:
         notice_days: int,
         last_notice_hours: int,
         deadline_hours: int,
+        now: datetime,
     ) -> None:
         """Register RSVP DateTrigger jobs for *rnd* (attendance module).
 
@@ -701,73 +471,46 @@ class SchedulerService:
             notice_days:         Days before round to post RSVP embed.
             last_notice_hours:   Hours before round for last-notice ping (0 = disabled).
             deadline_hours:      Hours before round for distribution deadline.
+            now:                 The moment the jobs are judged against: one whose moment is not
+                                 ahead of it is skipped (the queue's clock, never the wall's).
 
         A fourth job, ``rsvp_cleanup``, takes the round's call, last notice and distribution
-        message down `POST_RACE_CLEANUP_DELAY` after the round's start (#425).
+        message down `POST_RACE_CLEANUP_DELAY` after the round's start.
         """
-        scheduled_at = rnd.scheduled_at
-        if scheduled_at.tzinfo is None:
-            scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
-
-        now = datetime.now(timezone.utc)
+        moments = round_event_moments(
+            rnd.scheduled_at,
+            weather=None,
+            attendance=AttendanceWindows(notice_days, last_notice_hours, deadline_hours),
+        )
         _suffix = _round_job_suffix(rnd, season_number, division_tier)
 
-        # Notice job
-        notice_fire_at = scheduled_at - timedelta(days=notice_days)
-        notice_job_id = f"rsvp_notice{_suffix}"
-        if notice_fire_at > now:
-            self._scheduler.add_job(
-                _rsvp_notice_job,
-                trigger=DateTrigger(run_date=notice_fire_at, timezone="UTC"),
-                id=notice_job_id,
-                replace_existing=True,
-                name=f"RSVP notice s{season_number} d{division_tier} r{rnd.round_number}",
-                kwargs={"round_id": rnd.id},
-            )
-            log.info("Scheduled %s at %s", notice_job_id, notice_fire_at.isoformat())
-        else:
-            log.info("Skipping %s — fire time %s is in the past", notice_job_id, notice_fire_at.isoformat())
-
-        # Last-notice job (only when last_notice_hours > 0)
-        if last_notice_hours > 0:
-            last_notice_fire_at = scheduled_at - timedelta(hours=last_notice_hours)
-            last_notice_job_id = f"rsvp_last_notice{_suffix}"
-            if last_notice_fire_at > now:
+        # The call, the last notice (absent where its hours are 0) and the deadline, each only
+        # while its moment is still ahead of *now*.
+        for kind, label in (
+            ("rsvp_notice", "RSVP notice"),
+            ("rsvp_last_notice", "RSVP last-notice"),
+            ("rsvp_deadline", "RSVP deadline"),
+        ):
+            fire_at = moments.get(kind)
+            if fire_at is None:
+                continue
+            job_id = f"{kind}{_suffix}"
+            if fire_at > now:
                 self._scheduler.add_job(
-                    _rsvp_last_notice_job,
-                    trigger=DateTrigger(run_date=last_notice_fire_at, timezone="UTC"),
-                    id=last_notice_job_id,
+                    _one_off_timer_job,
+                    trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
+                    id=job_id,
                     replace_existing=True,
-                    name=f"RSVP last-notice s{season_number} d{division_tier} r{rnd.round_number}",
-                    kwargs={"round_id": rnd.id},
+                    name=f"{label} s{season_number} d{division_tier} r{rnd.round_number}",
+                    kwargs={"kind": kind, "key": rnd.id},
                 )
-                log.info("Scheduled %s at %s", last_notice_job_id, last_notice_fire_at.isoformat())
+                log.info("Scheduled %s at %s", job_id, fire_at.isoformat())
             else:
-                log.info(
-                    "Skipping %s — fire time %s is in the past",
-                    last_notice_job_id, last_notice_fire_at.isoformat(),
-                )
-
-        # Deadline job
-        deadline_hours_actual = deadline_hours if deadline_hours > 0 else 0
-        deadline_fire_at = scheduled_at - timedelta(hours=deadline_hours_actual)
-        deadline_job_id = f"rsvp_deadline{_suffix}"
-        if deadline_fire_at > now:
-            self._scheduler.add_job(
-                _rsvp_deadline_job,
-                trigger=DateTrigger(run_date=deadline_fire_at, timezone="UTC"),
-                id=deadline_job_id,
-                replace_existing=True,
-                name=f"RSVP deadline s{season_number} d{division_tier} r{rnd.round_number}",
-                kwargs={"round_id": rnd.id},
-            )
-            log.info("Scheduled %s at %s", deadline_job_id, deadline_fire_at.isoformat())
-        else:
-            log.info("Skipping %s — fire time %s is in the past", deadline_job_id, deadline_fire_at.isoformat())
+                log.info("Skipping %s — fire time %s is in the past", job_id, fire_at.isoformat())
 
         # Cleanup job, a day after the round
         self.schedule_round_cleanups(
-            rnd, season_number=season_number, division_tier=division_tier, forecast=False
+            rnd, season_number=season_number, division_tier=division_tier, forecast=False, now=now
         )
 
     def schedule_round_cleanups(
@@ -776,6 +519,7 @@ class SchedulerService:
         *,
         season_number: int,
         division_tier: int,
+        now: datetime,
         forecast: bool = True,
         check_in: bool = True,
     ) -> None:
@@ -783,67 +527,78 @@ class SchedulerService:
 
         ``cleanup`` deletes the round's weather forecasts and ``rsvp_cleanup`` its check-in call,
         last notice and distribution message; *forecast* and *check_in* choose which are armed
-        (``schedule_round`` arms the first alone, ``schedule_attendance_round`` the second, and
-        a refused cancellation arms both for a round raced, or ended cancelled as not held,
-        #439). The forecast's is armed whatever the hour, as ever; the check-in's only while its
-        moment is still ahead, the restart's catch-up taking one already past
-        (`_recover_missed_cleanups`). Both replace a job of the same id.
+        (``schedule_round`` arms the first through `_arm_forecast_cleanup`,
+        ``schedule_attendance_round`` calls this for the second alone, and a refused
+        cancellation arms both for a round raced, or ended cancelled as not held). The
+        forecast's is armed whatever the hour; the check-in's only while its moment is still
+        ahead of *now*, the restart's catch-up taking one already past (`_recover_missed_cleanups`).
+        Both replace a job of the same id.
         """
-        scheduled_at = rnd.scheduled_at
-        if scheduled_at.tzinfo is None:
-            scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
-        suffix = _round_job_suffix(rnd, season_number, division_tier)
-        cleanup_fire_at = scheduled_at + POST_RACE_CLEANUP_DELAY
-
         if forecast:
-            cleanup_job_id = f"cleanup{suffix}"
-            self._scheduler.add_job(
-                _forecast_cleanup_job,
-                trigger=DateTrigger(run_date=cleanup_fire_at, timezone="UTC"),
-                id=cleanup_job_id,
-                replace_existing=True,
-                name=f"Forecast cleanup s{season_number} d{division_tier} r{rnd.round_number}",
-                kwargs={"round_id": rnd.id},
+            self._arm_forecast_cleanup(
+                rnd, season_number=season_number, division_tier=division_tier
             )
-            log.info("Scheduled %s at %s", cleanup_job_id, cleanup_fire_at.isoformat())
 
         if check_in:
+            suffix = _round_job_suffix(rnd, season_number, division_tier)
+            cleanup_fire_at = clean_up_moment(rnd.scheduled_at)
             rsvp_job_id = f"rsvp_cleanup{suffix}"
-            if cleanup_fire_at > datetime.now(timezone.utc):
+            if cleanup_fire_at > now:
                 self._scheduler.add_job(
-                    _rsvp_cleanup_job,
+                    _one_off_timer_job,
                     trigger=DateTrigger(run_date=cleanup_fire_at, timezone="UTC"),
                     id=rsvp_job_id,
                     replace_existing=True,
                     name=f"RSVP cleanup s{season_number} d{division_tier} r{rnd.round_number}",
-                    kwargs={"round_id": rnd.id},
+                    kwargs={"kind": "rsvp_cleanup", "key": rnd.id},
                 )
                 log.info("Scheduled %s at %s", rsvp_job_id, cleanup_fire_at.isoformat())
             else:
                 log.info("Skipping %s — fire time %s is in the past", rsvp_job_id, cleanup_fire_at.isoformat())
 
+    def _arm_forecast_cleanup(
+        self, rnd: Round, *, season_number: int, division_tier: int
+    ) -> None:
+        """Arm the ``cleanup`` job that deletes a round's forecasts, whatever the hour.
+
+        Armed by `schedule_round` and, on its own, by `schedule_round_cleanups`. No clock is
+        read: the job is armed past-dated too.
+        """
+        suffix = _round_job_suffix(rnd, season_number, division_tier)
+        cleanup_fire_at = clean_up_moment(rnd.scheduled_at)
+        cleanup_job_id = f"cleanup{suffix}"
+        self._scheduler.add_job(
+            _one_off_timer_job,
+            trigger=DateTrigger(run_date=cleanup_fire_at, timezone="UTC"),
+            id=cleanup_job_id,
+            replace_existing=True,
+            name=f"Forecast cleanup s{season_number} d{division_tier} r{rnd.round_number}",
+            kwargs={"kind": "cleanup", "key": rnd.id},
+        )
+        log.info("Scheduled %s at %s", cleanup_job_id, cleanup_fire_at.isoformat())
+
     def cancel_round(self, round_id: int, *, only: frozenset[str] | None = None) -> list[str]:
         """Remove scheduler jobs belonging to *round_id*, and give the ids of those that went.
 
-        The ids let a cancellation refused afterwards know what it took and arm it again (#439).
+        The ids let a cancellation refused afterwards know what it took and arm it again.
 
-        Iterates the live jobstore and removes every job whose ``round_id``
-        kwarg matches.  This is format-agnostic and works with both the
-        current ``<event>_s{S}_d{D}_r{R}_id{round_id}`` ID scheme and any other jobs
-        that carry ``round_id`` in their kwargs.
+        Iterates the live jobstore and removes every job of one of a round's kinds
+        (`ROUND_JOB_KINDS`) whose ``key`` is *round_id*.  This is format-agnostic, and leaves
+        alone a one-off timer of another kind that happens to be keyed with the same number.
 
         Args:
             only: When given, restricts the removal to jobs whose event type — as
-                `_job_event_type` reads it off the job ID — is in the set.  Callers cancelling a *round* want the default,
-                which takes all nine of its jobs; a caller switching **one
-                module** off wants that module's prefixes and nothing else, or
-                it takes the other modules' work down with it (issue #117).
-                A job whose ID does not carry the round suffix is left alone
-                while *only* is in force, since its owner cannot be read.
+                `_job_event_type` reads it off the job ID — is in the set.  Callers
+                cancelling a *round* want the default, which takes all nine of its jobs; a
+                caller switching **one module** off wants that module's prefixes and nothing
+                else, or it takes the other modules' work down with it. The filter reads the ID's
+                prefix, which is the kind the job is stored with, so it never has to guess a job's
+                owner; a job whose ID carries no round suffix has no event type to match and is left
+                alone while *only* is in force.
         """
         removed: list[str] = []
         for job in self._scheduler.get_jobs():
-            if job.kwargs.get("round_id") != round_id:
+            if _round_of(job) != round_id:
                 continue
             if only is not None:
                 event_type = _job_event_type(job.id)
@@ -862,15 +617,15 @@ class SchedulerService:
 
         The store is listed once, before anything is removed, and that listing is the only call
         that can raise: a store that cannot be read removes nothing, so a division's or a
-        season's cancellation that unarms its rounds first stands as it was (#439, slice 8).
-        Each removal then goes through `_remove_job`, which never raises. With *season_end*,
-        any stale ``season_end*`` job the store still carries goes in the same pass.
+        season's cancellation that unarms its rounds first stands as it was. Each removal then goes
+        through `_remove_job`, which never raises. With *season_end*, any stale ``season_end*`` job
+        the store still carries goes in the same pass.
         """
         wanted = set(round_ids)
         removed: dict[int, list[str]] = {}
         jobs = list(self._scheduler.get_jobs())
         for job in jobs:
-            round_id = job.kwargs.get("round_id")
+            round_id = _round_of(job)
             if round_id in wanted or (season_end and job.id.startswith("season_end")):
                 if self._remove_job(job.id):
                     log.info("Removed job %s", job.id)
@@ -894,13 +649,14 @@ class SchedulerService:
           cannot be run again on an active season, so cancelling them loses the season's check-ins
           for good.
 
-        Do not widen this back to a whole-round cancel: that was issue #117, in which
-        switching weather off silently stopped results collection and check-ins for the
-        rest of the season while reporting that only weather jobs had been cancelled.
+        Do not widen this to a whole-round cancel: switching weather off would then silently
+        stop results collection and check-ins for the rest of the season while reporting that
+        only weather jobs had been cancelled.
 
-        The weather *enable* rollback calls this too, and so leaves behind any ``results``
-        job its catch-up created. That is deliberate: a rollback that removed it would
-        destroy the round-arrival transition of a league whose results module is on, which
+        Weather's switch-off is the caller: the ``REMOVE_JOBS`` ``After`` step of
+        ``module_off_weather`` (`weather/services/module_switch_settings.py`), run once the flag's
+        save has gone through. Leaving the ``results`` job in place is deliberate: removing it
+        would destroy the round-arrival transition of a league whose results module is on, which
         is the defect above by another route.
         """
         async with get_connection(self._db_path) as db:
@@ -947,11 +703,13 @@ class SchedulerService:
         *,
         division_meta: dict[int, tuple[int, int]],
     ) -> None:
-        """Schedule only the result-submission job for each round.
+        """Schedule the result-submission job for each round: the one place it is armed, which
+        ``schedule_round`` also calls.
 
-        Used when the results module is enabled but the weather module is not,
-        so ``schedule_round`` (which creates all weather + results jobs together)
-        was not called at approval time.
+        Called alone where ``schedule_round`` (which creates the weather jobs too) is
+        not called for a round: the weather module is off (at approval or at an
+        amendment), or a mystery round was amended inside its first horizon. The round still
+        needs this job to leave Not run.
 
         Args:
             division_meta: Mapping of ``division_id`` →
@@ -959,20 +717,20 @@ class SchedulerService:
                 job IDs.  Every round's ``division_id`` must have an entry.
         """
         for rnd in rounds:
-            scheduled_at = rnd.scheduled_at
-            if scheduled_at.tzinfo is None:
-                scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+            fire_at = round_event_moments(rnd.scheduled_at, weather=None, attendance=None)[
+                "results"
+            ]
             season_number, division_tier = division_meta[rnd.division_id]
             job_id = f"results{_round_job_suffix(rnd, season_number, division_tier)}"
             self._scheduler.add_job(
-                _result_submission_job_wrapper,
-                trigger=DateTrigger(run_date=scheduled_at, timezone="UTC"),
+                _one_off_timer_job,
+                trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
                 id=job_id,
                 replace_existing=True,
                 name=f"Result submission s{season_number} d{division_tier} r{rnd.round_number}",
-                kwargs={"round_id": rnd.id},
+                kwargs={"kind": "results", "key": rnd.id},
             )
-            log.info("Scheduled %s at %s", job_id, scheduled_at.isoformat())
+            log.info("Scheduled %s at %s", job_id, fire_at.isoformat())
 
     def run_result_submission_now(
         self, rnd: Round, *, season_number: int, division_tier: int
@@ -987,12 +745,12 @@ class SchedulerService:
         """
         job_id = f"results{_round_job_suffix(rnd, season_number, division_tier)}"
         self._scheduler.add_job(
-            _result_submission_job_wrapper,
+            _one_off_timer_job,
             id=job_id,
             replace_existing=True,
             misfire_grace_time=None,
             name=f"Result submission s{season_number} d{division_tier} r{rnd.round_number}",
-            kwargs={"round_id": rnd.id},
+            kwargs={"kind": "results", "key": rnd.id},
         )
         log.info("Running %s at once: the round's moment has passed", job_id)
 
@@ -1000,7 +758,8 @@ class SchedulerService:
         """Remove *job_id*, and say whether it went; never raises (see the class docstring).
 
         A job already gone is passed over in silence. Any other failure is logged as a warning
-        with its traceback, so that a real job-store fault can be found.
+        with its traceback, so that a real job-store fault can be found, and a teardown goes on
+        past one job that will not go.
         """
         try:
             self._scheduler.remove_job(job_id)
@@ -1023,11 +782,11 @@ class SchedulerService:
     def cancel_all(self, *, keep: frozenset[str] = frozenset()) -> int:
         """Remove every job but those whose ids are in *keep*, and return how many went.
 
-        For `/bot pack` and `/bot factory-reset` (issue #247), which clear all of the
-        league's scheduled work at once rather than round by round, and so reach the jobs no
-        round owns — the signup close timer, a wizard's inactivity and channel-delete jobs, a
-        stale season-end job. Pack keeps the daily portrait refresh: it is a standing
-        instruction from a setting pack keeps, and does nothing while no server is claimed.
+        For `/bot pack` and `/bot factory-reset`, which clear all of the league's scheduled work at
+        once rather than round by round, and so reach the jobs no round owns — the signup close
+        timer, a wizard's inactivity and channel-delete jobs, a stale season-end job. Pack keeps the
+        daily portrait refresh: it is a standing instruction from a setting pack keeps, and does
+        nothing while no server is claimed.
         """
         removed = 0
         for job in list(self._scheduler.get_jobs()):
@@ -1050,7 +809,7 @@ class SchedulerService:
           - ``round_id``     — round this job belongs to
           - ``phase_number`` — 1/2/3 = the weather phases, 5/6/7 = the check-in call, its
             last notice and its deadline, 8/9 = the forecast and the check-in cleanups a day
-            after the round (#425). A mystery round's notice is armed as ``weather_p1`` and so
+            after the round. A mystery round's notice is armed as ``weather_p1`` and so
             comes back as 1, which ``get_next_pending_phase`` then reads as the notice — this
             method knows nothing of formats. 0 never occurs here.
           - ``next_run_time``— datetime when the job is scheduled to fire
@@ -1062,28 +821,18 @@ class SchedulerService:
         # For test-mode advance, result submission is detected via DB state
         # (rounds_with_results fallback) so that past-dated results jobs
         # that already auto-fired don't block or double-trigger the wizard.
-        _PHASE_PREFIX_MAP = {
-            "weather_p1":       1,
-            "weather_p2":       2,
-            "weather_p3":       3,
-            "rsvp_notice":      5,
-            "rsvp_last_notice": 6,
-            "rsvp_deadline":    7,
-            "cleanup":          8,
-            "rsvp_cleanup":     9,
-        }
         result: list[dict] = []
         for job in self._scheduler.get_jobs():
             if job.next_run_time is None:
                 continue
-            round_id = job.kwargs.get("round_id")
+            round_id = _round_of(job)
             if round_id is None or round_id not in round_ids:
                 continue
             # The event type, read off the ID by the scheme's one reader
             event_type = _job_event_type(job.id)
             if event_type is None:
                 continue
-            phase = _PHASE_PREFIX_MAP.get(event_type)
+            phase = ROUND_JOB_PHASES.get(event_type)
             if phase is None:
                 continue  # results, season_end, etc.
             result.append(
@@ -1105,12 +854,12 @@ class SchedulerService:
         type — ``results`` and both cleanups are included — so it answers "is a job queued",
         not "what will advance fire".
 
-        A job is found by its round and its event type, the way ``cancel_round`` finds one
-        (issue #139): the ``round_id`` kwarg, which is the round's own key whatever numbers
-        its ID carries, and the type `_job_event_type` reads off the ID. A caller asks
-        ``(round_id, "weather_p1") in queued`` and never rebuilds an ID to look one up — the
-        review once did, in a shape no job has ever had, and so found none (#426). A mystery
-        round's notice is armed as ``weather_p1`` and is found under that type.
+        A job is found by its round and its event type, the way ``cancel_round`` finds one: the
+        round id the job is keyed by, which is the round's own key whatever numbers its ID
+        carries (`_round_of`), and the type `_job_event_type` reads off the ID. A caller asks
+        ``(round_id, "weather_p1") in queued`` and never rebuilds an ID to look one up: an ID
+        built elsewhere can take a shape no job has, and so find none. A mystery round's notice
+        is armed as ``weather_p1`` and is found under that type.
 
         A paused job (``next_run_time is None``) will not fire and is left out, as is one whose
         ID carries no round suffix.
@@ -1119,8 +868,8 @@ class SchedulerService:
         for job in self._scheduler.get_jobs():
             if job.next_run_time is None:
                 continue
-            round_id = job.kwargs.get("round_id")
-            if round_id not in round_ids:
+            round_id = _round_of(job)
+            if round_id is None or round_id not in round_ids:
                 continue
             event_type = _job_event_type(job.id)
             if event_type is not None:
@@ -1134,13 +883,11 @@ class SchedulerService:
     def cancel_season_end(self) -> None:
         """Remove any season-end job a scheduler store still carries.
 
-        Nothing schedules one any more. A season ends when a league manager runs
-        `/season complete`, and `schedule_season_end` — along with the timer that armed it seven
-        days after the last round — was deleted with issue #154. This is kept because a
-        `scheduler.db` written by an older version may still carry a `season_end_*` job, and
-        because `/season cancel` should go on saying so plainly. A stale job whose
-        callable no longer exists is dropped by APScheduler on load, with a warning, rather than
-        failing start-up.
+        Nothing schedules one: a season ends when a league manager runs `/season complete`.
+        This is kept because a `scheduler.db` written by an older version of the bot may still
+        carry a `season_end_*` job, and because `/season cancel` should go on saying so plainly.
+        A stale job whose callable no longer exists is dropped by APScheduler on load, with a
+        warning, rather than failing start-up.
         """
         for job in list(self._scheduler.get_jobs()):
             if job.id.startswith("season_end"):
@@ -1151,19 +898,15 @@ class SchedulerService:
     # Signup auto-close scheduling
     # ------------------------------------------------------------------
 
-    def register_portrait_refresh_callback(self, callback: Callable) -> None:
-        """Register the coroutine the daily driver-portrait refresh delegates to."""
-        self._portrait_refresh_callback = callback
-
     def schedule_portrait_refresh(self, time_of_day: str) -> None:
         """Schedule the league's daily driver-portrait refresh at *time_of_day* UTC.
 
-        **The one recurring trigger in this service, and deliberately so.** Every other job
-        here is a one-shot ``DateTrigger`` arming a single event of a round or a season, and
-        that shape is right for those: each fires once and is done. This one is a standing
-        instruction rather than an event, and re-arming it from inside its own callback would
-        put the survival of the schedule at the mercy of the job body -- a refresh that raised
-        would silently be the last one. A ``CronTrigger`` is re-armed by APScheduler itself
+        **A recurring trigger, and deliberately so** (`schedule_amendment_sweep` is the other).
+        Every other job here is a one-shot ``DateTrigger`` arming a single event of a round or a
+        season, and that shape is right for those: each fires once and is done. This one is a
+        standing instruction rather than an event, and re-arming it from inside its own callback
+        would put the survival of the schedule at the mercy of the job body -- a refresh that
+        raised would silently be the last one. A ``CronTrigger`` is re-armed by APScheduler itself
         and outlives a failing run.
 
         *time_of_day* is ``HH:MM`` read as UTC, matching every other trigger in this service.
@@ -1175,24 +918,17 @@ class SchedulerService:
         hour, _, minute = time_of_day.partition(":")
         job_id = PORTRAIT_REFRESH_JOB_ID
         self._scheduler.add_job(
-            _portrait_refresh_job,
+            _one_off_timer_job,
             trigger=CronTrigger(hour=int(hour), minute=int(minute), timezone="UTC"),
             id=job_id,
             replace_existing=True,
             name="Daily driver portrait refresh",
+            kwargs={"kind": PORTRAIT_REFRESH_KIND},
         )
         log.info("Scheduled %s at %s UTC daily", job_id, time_of_day)
 
-    def register_amendment_sweep_callback(self, callback: Callable) -> None:
-        """Register the async callable the standing amendment sweep invokes (#345).
-
-        Injected from `__main__.py` after startup, as the other callbacks here are, so the scheduler
-        keeps no reference to the bot and this module stays importable on its own.
-        """
-        self._amendment_sweep_callback = callback
-
     def schedule_amendment_sweep(self) -> None:
-        """Arm the standing sweep that undoes an amendment nobody carried through (#345).
+        """Arm the standing sweep that undoes an amendment nobody carried through.
 
         An ``IntervalTrigger`` for the reason ``schedule_portrait_refresh`` gives for its cron
         one: this is a standing instruction rather than an event, and re-arming it from inside
@@ -1202,11 +938,12 @@ class SchedulerService:
         ``replace_existing=True`` so a restart re-arms rather than duplicates it.
         """
         self._scheduler.add_job(
-            _amendment_sweep_job,
+            _one_off_timer_job,
             trigger=IntervalTrigger(minutes=AMENDMENT_SWEEP_MINUTES),
             id=AMENDMENT_SWEEP_JOB_ID,
             replace_existing=True,
             name="Revert abandoned round amendments",
+            kwargs={"kind": AMENDMENT_SWEEP_KIND},
         )
         log.info(
             "Scheduled %s every %d minutes", AMENDMENT_SWEEP_JOB_ID, AMENDMENT_SWEEP_MINUTES
@@ -1218,14 +955,6 @@ class SchedulerService:
         if self._remove_job(job_id):
             log.info("Removed %s", job_id)
 
-    def register_signup_close_callback(self, callback: Callable) -> None:
-        """Register the async callable invoked when the signup close timer fires.
-
-        The callable takes no arguments.
-        Called from __main__.py on_ready after the scheduler is started.
-        """
-        self._signup_close_callback = callback
-
     def schedule_signup_close_timer(self, close_at_iso: str) -> None:
         """Schedule the one-shot signup auto-close job at the given ISO 8601 UTC timestamp.
 
@@ -1233,11 +962,12 @@ class SchedulerService:
         """
         fire_at = datetime.fromisoformat(close_at_iso).replace(tzinfo=timezone.utc)
         self._scheduler.add_job(
-            _signup_close_timer_job,
+            _one_off_timer_job,
             trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
             id=SIGNUP_CLOSE_JOB_ID,
             replace_existing=True,
             name="Signup auto-close",
+            kwargs={"kind": SIGNUP_CLOSE_KIND},
         )
         log.info("Scheduled %s at %s", SIGNUP_CLOSE_JOB_ID, fire_at.isoformat())
 

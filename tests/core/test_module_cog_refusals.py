@@ -17,15 +17,15 @@ from leaguebot.core.cogs.module_cog import ModuleCog
 ADMIN_ID = 4242
 
 
-def _cog() -> ModuleCog:
-    """A module cog whose every module reads as disabled."""
-    cog = ModuleCog.__new__(ModuleCog)
-    bot = MagicMock()
-    for module in ("weather", "results", "images", "attendance", "signup"):
-        setattr(bot.module_service, f"is_{module}_enabled", AsyncMock(return_value=False))
-    bot.output_router.post_log = AsyncMock()
-    cog.bot = bot
-    return cog
+async def _cog(tmp_path) -> ModuleCog:
+    """A module cog over the bot the entry point builds, every module off, its change queue the
+    real one: weather's switch is a change on it, refused there where the module is already off.
+    The log channel's lines are recorded as they are written."""
+    from tests.support.settings_league import settings_league
+
+    league = await settings_league(tmp_path, modules=())
+    league.bot.output_router.post_log = AsyncMock()
+    return ModuleCog(league.bot)
 
 
 def _interaction(cog: ModuleCog) -> MagicMock:
@@ -58,9 +58,9 @@ def _interaction(cog: ModuleCog) -> MagicMock:
     ],
     ids=["weather", "results", "images", "attendance", "signup"],
 )
-async def test_disabling_a_module_already_disabled_is_recorded(module, reason):
+async def test_disabling_a_module_already_disabled_is_recorded(tmp_path, module, reason):
     """The admin is told the module is already disabled, and the refusal is recorded (#482)."""
-    cog = _cog()
+    cog = await _cog(tmp_path)
     interaction = _interaction(cog)
 
     await getattr(cog, f"_disable_{module}")(interaction)

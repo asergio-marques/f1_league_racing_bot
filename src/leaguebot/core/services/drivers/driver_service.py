@@ -1,0 +1,700 @@
+"""DriverService — driver profile CRUD and state machine."""
+from __future__ import annotations
+
+import logging
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
+
+import aiosqlite
+
+from leaguebot.core.db.database import get_connection, inserted_id
+from leaguebot.core.models.driver_profile import (
+    DriverProfile, DriverState, InvalidDriverTransition,
+)
+from leaguebot.core.models.refusal import Refused
+from leaguebot.core.utils.hooks import AwaitedHook
+
+log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# State machine transition map
+# ---------------------------------------------------------------------------
+
+ALLOWED_TRANSITIONS: dict[DriverState, set[DriverState]] = {
+    DriverState.NOT_SIGNED_UP: {
+        DriverState.PENDING_SIGNUP_COMPLETION,
+    },
+    DriverState.PENDING_SIGNUP_COMPLETION: {
+        DriverState.PENDING_ADMIN_APPROVAL,
+        DriverState.NOT_SIGNED_UP,  # withdrawal, inactivity, or force-close
+    },
+    DriverState.PENDING_ADMIN_APPROVAL: {
+        DriverState.AWAITING_CORRECTION_PARAMETER,
+        DriverState.UNASSIGNED,
+        DriverState.NOT_SIGNED_UP,  # rejection or withdrawal
+    },
+    DriverState.AWAITING_CORRECTION_PARAMETER: {
+        DriverState.PENDING_DRIVER_CORRECTION,
+        DriverState.PENDING_ADMIN_APPROVAL,  # 5-minute timeout
+        DriverState.NOT_SIGNED_UP,           # withdrawal or force-close
+    },
+    DriverState.PENDING_DRIVER_CORRECTION: {
+        DriverState.PENDING_ADMIN_APPROVAL,
+        DriverState.NOT_SIGNED_UP,  # withdrawal, inactivity, or force-close
+    },
+    DriverState.UNASSIGNED: {
+        DriverState.ASSIGNED,
+        DriverState.NOT_SIGNED_UP,  # /driver sack
+    },
+    DriverState.ASSIGNED: {
+        DriverState.UNASSIGNED,
+        DriverState.NOT_SIGNED_UP,  # /driver sack
+    },
+}
+
+# Test-mode additional transitions from NOT_SIGNED_UP
+_TEST_MODE_EXTRA_FROM_NOT_SIGNED_UP: set[DriverState] = {
+    DriverState.UNASSIGNED,
+    DriverState.ASSIGNED,
+}
+
+
+async def write_transition(
+    db,
+    profile_id: int,
+    current: DriverState,
+    new_state: DriverState,
+    *,
+    test_mode_active: bool = False,
+) -> None:
+    """Write *profile_id*'s move from *current* to *new_state*, within the caller's transaction.
+
+    The one place a driver's state is written (Constitution VIII: no code path sets a state
+    directly). A caller changing a state as part of a larger write — a sack freeing seats in the
+    same transaction, the driver pass ending a season — calls this rather than issuing the UPDATE
+    itself, so the transition table governs every route alike. Raises InvalidDriverTransition for a
+    transition the table does not allow, having written nothing. Does not commit.
+    """
+    allowed = set(ALLOWED_TRANSITIONS.get(current, set()))
+    if test_mode_active and current == DriverState.NOT_SIGNED_UP:
+        allowed |= _TEST_MODE_EXTRA_FROM_NOT_SIGNED_UP
+    if new_state not in allowed:
+        raise InvalidDriverTransition(
+            f"Transition from {current.value} to {new_state.value} is not allowed. "
+            f"Allowed targets: {sorted(s.value for s in allowed) or 'none'}."
+        )
+    await db.execute(
+        "UPDATE driver_profiles SET current_state = ? WHERE id = ?",
+        (new_state.value, profile_id),
+    )
+
+
+def _row_to_profile(row) -> DriverProfile:
+    """Convert an aiosqlite Row from driver_profiles to a DriverProfile."""
+    return DriverProfile(
+        id=row["id"],
+        discord_user_id=row["discord_user_id"],
+        current_state=DriverState(row["current_state"]),
+        former_driver=bool(row["former_driver"]),
+    )
+
+
+async def resolve_driver_profile_id(discord_user_id: int, db) -> int | None:
+    """Return the id of the driver who holds *discord_user_id*, or None.
+
+    Any account the driver has held identifies them, not only the current one. Accepts an open
+    aiosqlite connection so callers can reuse an existing transaction.
+    """
+    cursor = await db.execute(
+        "SELECT driver_profile_id FROM driver_accounts "
+        "WHERE discord_user_id = ?",
+        (str(discord_user_id),),
+    )
+    row = await cursor.fetchone()
+    return row[0] if row else None
+
+
+# ---------------------------------------------------------------------------
+# A driver's accounts
+# ---------------------------------------------------------------------------
+#
+# A driver owns every Discord account they have raced under; `driver_accounts` lists them
+# and `driver_profiles.discord_user_id` names the current one. A stored record keeps the
+# account it was written under, so the rest of the bot applies three rules, through the
+# helpers below:
+#
+# - an account arriving from Discord — a command, a pasted result, a button — is mapped to
+#   the current account *first* (`current_account_of`), and everything after runs as before;
+# - finding a stored record from an account matches every account of the driver
+#   (`accounts_of`);
+# - reading stored records for counting or drawing maps each to the current account
+#   (`current_account_map`), so a driver is counted once and named by the account in use.
+#
+# An account no driver holds maps to itself throughout: a record of a driver since deleted
+# still reads exactly as it was written.
+#
+# Accounts bind as TEXT, matching the column. The results tables hold them as INTEGER, and
+# the maps are keyed by int for that reason; an account that is not a number cannot appear
+# in those tables and is left out of the maps.
+
+
+async def drivers_in_states(db, states: Sequence[str]) -> list[dict[str, Any]]:
+    """Every driver whose state is one of *states*, oldest profile first, each as their profile id
+    (``id``), account (``discord_user_id``) and state (``current_state``), read on *db*.
+
+    The one read a module lists drivers by their state through without reading `driver_profiles`
+    itself, as signup lists the unsettled ones.
+    """
+    if not states:
+        return []
+    cursor = await db.execute(
+        "SELECT id, discord_user_id, current_state FROM driver_profiles "
+        f"WHERE current_state IN ({', '.join('?' * len(states))}) ORDER BY id",
+        tuple(states),
+    )
+    return [dict(row) for row in await cursor.fetchall()]
+
+
+async def accounts_of(db, discord_user_id) -> list[str]:
+    """Every account of the driver holding *discord_user_id*, or just that account.
+
+    Sorted, so a caller building SQL from it binds in a stable order.
+    """
+    cursor = await db.execute(
+        "SELECT discord_user_id FROM driver_accounts WHERE driver_profile_id = ("
+        "  SELECT driver_profile_id FROM driver_accounts"
+        "  WHERE discord_user_id = ?"
+        ") ORDER BY discord_user_id",
+        (str(discord_user_id),),
+    )
+    rows = await cursor.fetchall()
+    return [str(r[0]) for r in rows] or [str(discord_user_id)]
+
+
+async def accounts_of_profile(db, profile_id: int) -> list[str]:
+    """Every account *profile_id* has held, current included, sorted."""
+    cursor = await db.execute(
+        "SELECT discord_user_id FROM driver_accounts WHERE driver_profile_id = ? "
+        "ORDER BY discord_user_id",
+        (profile_id,),
+    )
+    return [str(r[0]) for r in await cursor.fetchall()]
+
+
+async def driver_names_for_profiles(
+    db_path: str, profile_ids,
+) -> dict[int, tuple[str, str | None]]:
+    """The current account and test display name of each driver in *profile_ids*, keyed by
+    their profile id: ``(discord_user_id, test_display_name)``.
+
+    The one read a module names a driver through without reading `driver_profiles` itself
+    (core owns it, CLAUDE.md); a caller names a mention and, where the driver is a test one, the
+    name beside it, exactly as `driver_profiles.test_display_name` holds it. An id holding no
+    profile is simply absent from the answer (`team_names_for_instances` is the same shape for a
+    team).
+    """
+    ids = sorted({int(i) for i in profile_ids})
+    if not ids:
+        return {}
+    marks = ",".join("?" * len(ids))
+    async with get_connection(db_path) as db:
+        rows = await (
+            await db.execute(
+                f"SELECT id, discord_user_id, test_display_name FROM driver_profiles "  # noqa: S608
+                f"WHERE id IN ({marks})",
+                ids,
+            )
+        ).fetchall()
+    return {int(r["id"]): (str(r["discord_user_id"]), r["test_display_name"]) for r in rows}
+
+
+async def current_account_of(db, discord_user_id) -> str:
+    """The current account of the driver holding *discord_user_id*; the account itself if none."""
+    cursor = await db.execute(
+        "SELECT dp.discord_user_id FROM driver_accounts da "
+        "JOIN driver_profiles dp ON dp.id = da.driver_profile_id "
+        "WHERE da.discord_user_id = ?",
+        (str(discord_user_id),),
+    )
+    row = await cursor.fetchone()
+    return str(row[0]) if row else str(discord_user_id)
+
+
+async def current_account_map(db) -> dict[int, int]:
+    """Every *past* account → its driver's current account, as ints.
+
+    A current account is absent, as is any account no driver holds: look up with
+    ``mapping.get(uid, uid)``. Carrying only the accounts that differ keeps the map to the
+    handful of drivers who ever changed account.
+    """
+    cursor = await db.execute(
+        "SELECT da.discord_user_id AS account, dp.discord_user_id AS current "
+        "FROM driver_accounts da JOIN driver_profiles dp ON dp.id = da.driver_profile_id "
+        "WHERE da.discord_user_id != dp.discord_user_id",
+    )
+    mapping: dict[int, int] = {}
+    for row in await cursor.fetchall():
+        try:
+            mapping[int(row["account"])] = int(row["current"])
+        except (TypeError, ValueError):
+            continue
+    return mapping
+
+
+async def set_former_drivers_on(db, former: Mapping[int, bool]) -> None:
+    """Set `driver_profiles.former_driver` for each profile in *former* (profile id -> flag), on
+    the connection handed and in the save it belongs to.
+
+    The flag is core's, so whoever works out who has raced, results, writes it through here and
+    never into the table. Only a row whose value differs is written, and nothing is committed:
+    the flag moves with whatever made the round final. No audit row is added; the flag is
+    derived from results, and `/test-mode set-former-driver` sets it by hand, as a change of its own
+    with its own audit entry (`test_mode_former_driver_change`).
+    """
+    for profile_id, value in sorted(former.items()):
+        await db.execute(
+            "UPDATE driver_profiles SET former_driver = ? WHERE id = ? AND former_driver != ?",
+            (int(value), profile_id, int(value)),
+        )
+
+
+async def _division_exists(db, division_id: int) -> bool:
+    cursor = await db.execute("SELECT 1 FROM divisions WHERE id = ?", (division_id,))
+    return await cursor.fetchone() is not None
+
+
+async def accounts_of_in_division(db, division_id: int, discord_user_id) -> list[str]:
+    """`accounts_of`, for a reader holding a division. An unknown division knows only the
+    account it was given."""
+    if not await _division_exists(db, division_id):
+        return [str(discord_user_id)]
+    return await accounts_of(db, discord_user_id)
+
+
+async def current_account_map_for_division(db, division_id: int) -> dict[int, int]:
+    """`current_account_map`, for the readers of the results and standings tables, which
+    hold a division. An unknown division maps nothing.
+    """
+    if not await _division_exists(db, division_id):
+        return {}
+    return await current_account_map(db)
+
+
+async def divisions_taken_part_in(
+    db, profile_id: int | None, accounts: list[str], divisions_raced_read: AwaitedHook,
+) -> set[int]:
+    """Every division the identity took part in: by a confirmed seat, or by a
+    result or a standing under any of *accounts*.
+
+    The seats are core's own, read here. What was raced is not: the modules are asked through
+    *divisions_raced_read*, on *db*, handed *accounts*, and each hands back the ids of the
+    divisions it holds a record of any of them in (results'). With no module signed up the
+    identity raced in none.
+
+    A division belongs to one season, so two identities sharing one is one person in one
+    season's standings twice — which is what a merge must not produce.
+    *profile_id* is None for an account no driver holds, whose leftover records are all there
+    is of it.
+    """
+    divisions: set[int] = set()
+    if profile_id is not None:
+        cursor = await db.execute(
+            "SELECT division_id FROM driver_division_memberships WHERE driver_profile_id = ?",
+            (profile_id,),
+        )
+        divisions |= {r[0] for r in await cursor.fetchall()}
+    for raced in await divisions_raced_read.call(db, accounts):
+        divisions |= set(raced)
+    return divisions
+
+
+async def _describe_division(db, division_id: int) -> str:
+    cursor = await db.execute(
+        "SELECT s.season_number, d.name FROM divisions d JOIN seasons s ON s.id = d.season_id "
+        "WHERE d.id = ?",
+        (division_id,),
+    )
+    row = await cursor.fetchone()
+    return f"Season {row[0]} {row[1]}" if row else f"division {division_id}"
+
+
+#: The states of a driver whose signup is under way: collecting their answers, in review, or
+#: in correction. A reassign waits for it to be finished or withdrawn.
+SIGNUP_IN_PROGRESS = frozenset({
+    DriverState.PENDING_SIGNUP_COMPLETION.value,
+    DriverState.PENDING_ADMIN_APPROVAL.value,
+    DriverState.AWAITING_CORRECTION_PARAMETER.value,
+    DriverState.PENDING_DRIVER_CORRECTION.value,
+})
+
+
+async def _profile_holding(db, discord_user_id):
+    """The driver_profiles row of the driver holding *discord_user_id*, by any account."""
+    cursor = await db.execute(
+        "SELECT dp.id, dp.discord_user_id, dp.current_state, dp.former_driver, "
+        "dp.is_test_driver FROM driver_accounts da "
+        "JOIN driver_profiles dp ON dp.id = da.driver_profile_id "
+        "WHERE da.discord_user_id = ?",
+        (str(discord_user_id),),
+    )
+    return await cursor.fetchone()
+
+
+#: The states in which a driver holds a signup or a seat in the live season. Two profiles both
+#: in one of these cannot become one driver.
+_HOLDS_THE_LIVE_SEASON = frozenset({DriverState.UNASSIGNED.value, DriverState.ASSIGNED.value})
+
+
+async def _refuse_a_shared_division(
+    db, ours: set[int], theirs: set[int], who: str
+) -> None:
+    shared = sorted(ours & theirs)
+    if shared:
+        raise Refused(
+            f"This driver and {who} both took part in {await _describe_division(db, shared[0])}. "
+            "One person cannot stand twice in one season's standings, so the accounts cannot "
+            "be joined."
+        )
+
+
+async def _merge(
+    db, kept, absorbed, actor_id: int, actor_name: str, *, profiles_merged: AwaitedHook,
+    now: datetime,
+) -> None:
+    """Fold the *absorbed* profile into the *kept* one, within the caller's transaction.
+
+    Every column naming the absorbed driver by profile is moved onto the kept one, its
+    accounts with them; the former-driver flag is kept if either held it; and the absorbed
+    profile is deleted. The modules re-point their own rows through *profiles_merged*, called
+    on this connection with the kept and absorbed ids before core's own five tables, which keep
+    their order. The refusals before this guarantee no two rows collide on a key. Nothing
+    naming a driver by account is touched. The merge's audit entry is stamped *now*.
+    """
+    await profiles_merged.call(db, kept["id"], absorbed["id"])
+    moved = (kept["id"], absorbed["id"])
+    await db.execute(
+        "UPDATE driver_division_memberships SET driver_profile_id = ? WHERE driver_profile_id = ?",
+        moved,
+    )
+    await db.execute(
+        "UPDATE team_seats SET driver_profile_id = ? WHERE driver_profile_id = ?", moved
+    )
+    await db.execute(
+        "UPDATE driver_season_assignments SET driver_profile_id = ? WHERE driver_profile_id = ?",
+        moved,
+    )
+    await db.execute(
+        "UPDATE driver_history_entries SET driver_profile_id = ? WHERE driver_profile_id = ?",
+        moved,
+    )
+    await db.execute(
+        "UPDATE driver_accounts SET driver_profile_id = ? WHERE driver_profile_id = ?", moved
+    )
+    await db.execute(
+        "UPDATE driver_profiles SET former_driver = 1 WHERE id = ? AND ? = 1",
+        (kept["id"], int(bool(absorbed["former_driver"]))),
+    )
+    await db.execute("DELETE FROM driver_profiles WHERE id = ?", (absorbed["id"],))
+    await db.execute(
+        "INSERT INTO audit_entries "
+        "(actor_id, actor_name, division_id, change_type, old_value, new_value, "
+        "timestamp) VALUES (?, ?, NULL, "
+        "'DRIVER_PROFILES_MERGED', ?, ?, ?)",
+        (actor_id, actor_name, str(absorbed["id"]), str(kept["id"]), now.isoformat()),
+    )
+
+
+def _refuse_a_signup_in_progress(row, who: str) -> None:
+    if row["current_state"] in SIGNUP_IN_PROGRESS:
+        raise Refused(
+            f"{who[0].upper()}{who[1:]} has a signup in progress. Finish it — approve or reject "
+            "it — or have it withdrawn first."
+        )
+
+
+@dataclass
+class ReassignJudgement:
+    """What a reassign was judged against: the driver the old account names, the profile holding
+    the new account (None where no driver holds it), the account replaced, whether the new account
+    is one of the driver's own, and the accounts of each profile."""
+
+    driver: Any
+    owner: Any
+    replaced: str
+    switched_back: bool
+    driver_accounts: list[str]
+    owner_accounts: list[str] | None
+
+
+async def _judge_reassign(
+    db, old_user_id: str, new_user_id: str, divisions_raced_read: AwaitedHook,
+) -> ReassignJudgement:
+    """Judge a reassign on *db*, writing nothing; raises Refused for each refusal in the order
+    `DriverService.reassign_user_id_on` documents. Where each side raced is asked of the modules
+    through *divisions_raced_read*, on *db*."""
+    driver = await _profile_holding(db, old_user_id)
+    if driver is None:
+        raise Refused(f"No driver profile found for user {old_user_id} on this server.")
+    if driver["is_test_driver"]:
+        raise Refused(
+            "That driver was created by test mode. A test-mode driver cannot be "
+            "given a real account, nor a real driver a test-mode one."
+        )
+    replaced = str(driver["discord_user_id"])
+    if replaced == str(new_user_id):
+        raise Refused(f"<@{new_user_id}> is already this driver's current account.")
+
+    owner = await _profile_holding(db, new_user_id)
+    switched_back = owner is not None and owner["id"] == driver["id"]
+    if owner is not None and not switched_back:
+        if str(owner["discord_user_id"]) != str(new_user_id):
+            raise Refused(
+                f"<@{new_user_id}> is a past account of another driver in this "
+                "league, and an account belongs to one driver."
+            )
+        if owner["is_test_driver"]:
+            raise Refused(
+                f"<@{new_user_id}> is a test-mode driver. A test-mode driver cannot "
+                "be merged with a real one."
+            )
+    _refuse_a_signup_in_progress(driver, "this driver")
+    driver_accounts = await accounts_of_profile(db, driver["id"])
+    owner_accounts: list[str] | None = None
+    if owner is not None and not switched_back:
+        _refuse_a_signup_in_progress(owner, f"<@{new_user_id}>")
+        if driver["current_state"] in _HOLDS_THE_LIVE_SEASON and (
+            owner["current_state"] in _HOLDS_THE_LIVE_SEASON
+        ):
+            raise Refused(
+                f"This driver and <@{new_user_id}> both hold a seat or a signup in "
+                "the live season, so they cannot be merged into one driver."
+            )
+        owner_accounts = await accounts_of_profile(db, owner["id"])
+        await _refuse_a_shared_division(
+            db,
+            await divisions_taken_part_in(
+                db, driver["id"], driver_accounts, divisions_raced_read),
+            await divisions_taken_part_in(
+                db, owner["id"], owner_accounts, divisions_raced_read),
+            f"<@{new_user_id}>",
+        )
+    elif owner is None:
+        await _refuse_a_shared_division(
+            db,
+            await divisions_taken_part_in(
+                db, driver["id"], driver_accounts, divisions_raced_read),
+            await divisions_taken_part_in(
+                db, None, [str(new_user_id)], divisions_raced_read),
+            f"<@{new_user_id}>",
+        )
+    return ReassignJudgement(driver, owner, replaced, switched_back, driver_accounts, owner_accounts)
+
+
+@dataclass
+class ReassignOutcome:
+    """What a reassign did, for the change's save to plan its jobs from and its reply to report."""
+
+    #: The driver, standing on their new current account.
+    profile: DriverProfile
+    #: The account that was current before, whose roles and held signup channel move to the new one.
+    replaced_account: str
+    #: Every account the driver now holds, current included, sorted.
+    accounts: list[str]
+    #: Whether the new account was one of the driver's own past accounts.
+    switched_back: bool = False
+    #: The accounts of a second profile merged into this one, where the new account had one.
+    merged_accounts: list[str] | None = None
+
+
+class DriverService:
+    def __init__(self, db_path: str) -> None:
+        self._db_path = db_path
+
+    # ------------------------------------------------------------------
+    # DB helpers
+    # ------------------------------------------------------------------
+
+    async def get_profile(self, discord_user_id: str) -> DriverProfile | None:
+        """Return the DriverProfile for this server/user, or None."""
+        async with get_connection(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT id, discord_user_id, current_state, former_driver "
+                "FROM driver_profiles WHERE discord_user_id = ?",
+                (discord_user_id,),
+            )
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        return _row_to_profile(row)
+
+    async def current_account(self, discord_user_id) -> str:
+        """The current account of the driver holding *discord_user_id*; see `current_account_of`."""
+        async with get_connection(self._db_path) as db:
+            return await current_account_of(db, discord_user_id)
+
+    # ------------------------------------------------------------------
+    # State machine
+    # ------------------------------------------------------------------
+
+    async def transition_on(
+        self,
+        db: aiosqlite.Connection,
+        discord_user_id: str,
+        new_state: DriverState,
+        *,
+        test_mode_active: bool = False,
+    ) -> DriverProfile:
+        """Transition a driver to *new_state* on the connection handed, committing nothing.
+
+        For a change that moves the driver in a save of its own with what else it writes: the
+        state is written through `write_transition`, and a driver with no profile is given one at
+        *new_state*, where the state machine allows it from Not Signed Up. Returns the updated
+        DriverProfile. No transition deletes a profile: a driver without the former-driver flag
+        who reaches NOT_SIGNED_UP is pending deletion, and is deleted by the driver pass that ends
+        the season. Raises InvalidDriverTransition for a disallowed transition.
+        """
+        cursor = await db.execute(
+            "SELECT id, discord_user_id, current_state, former_driver "
+            "FROM driver_profiles WHERE discord_user_id = ?",
+            (discord_user_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            valid = set(ALLOWED_TRANSITIONS.get(DriverState.NOT_SIGNED_UP, set()))
+            if test_mode_active:
+                valid |= _TEST_MODE_EXTRA_FROM_NOT_SIGNED_UP
+            if new_state not in valid:
+                raise InvalidDriverTransition(
+                    f"No driver profile found for user {discord_user_id}; "
+                    f"transition from NOT_SIGNED_UP to {new_state.value} is not allowed. "
+                    f"Allowed targets: {sorted(s.value for s in valid) or 'none'}."
+                )
+            cursor = await db.execute(
+                "INSERT INTO driver_profiles (discord_user_id, current_state, former_driver) "
+                "VALUES (?, ?, 0)",
+                (discord_user_id, new_state.value),
+            )
+            return DriverProfile(
+                id=inserted_id(cursor), discord_user_id=discord_user_id,
+                current_state=new_state, former_driver=False,
+            )
+        profile = _row_to_profile(row)
+        await write_transition(
+            db, profile.id, profile.current_state, new_state, test_mode_active=test_mode_active
+        )
+        profile.current_state = new_state
+        return profile
+
+    # ------------------------------------------------------------------
+    # Reassign user ID (US2)
+    # ------------------------------------------------------------------
+
+    async def judge_reassign_on(
+        self, db: aiosqlite.Connection, old_user_id: str, new_user_id: str,
+        *, divisions_raced_read: AwaitedHook,
+    ) -> ReassignJudgement:
+        """Judge a reassign on *db*, writing nothing: raises Refused, in the words a league is
+        told, for what `reassign_user_id_on` would refuse, and hands back what it was judged
+        against, which `reassign_judged_on` writes. *divisions_raced_read* is the hook the
+        modules are asked, on *db*, which divisions each side raced in."""
+        return await _judge_reassign(db, old_user_id, new_user_id, divisions_raced_read)
+
+    async def reassign_user_id_on(
+        self,
+        db: aiosqlite.Connection,
+        old_user_id: str,
+        new_user_id: str,
+        actor_id: int,
+        actor_name: str,
+        *,
+        profiles_merged: AwaitedHook,
+        divisions_raced_read: AwaitedHook,
+        now: datetime,
+    ) -> ReassignOutcome:
+        """Make *new_user_id* the current account of the driver *old_user_id* names, on the
+        connection handed, committing nothing.
+
+        A person changing Discord account keeps their history because a driver owns every account
+        they have held: the profile's current account changes, the
+        `driver_account_on_current_change` trigger lists the new one beside the old, and **no record
+        is rewritten**. A result, a standing, a signup or a history entry keeps the account it was
+        written under, and an archived season stays exactly as it was. Everything read from then on
+        maps the old account to the new one.
+
+        *old_user_id* may be any account of the driver's, current or past. Naming one of the
+        driver's own past accounts as *new_user_id* makes it current again.
+
+        Where *new_user_id* is another profile's current account, the two are **merged** into
+        one driver owning both lists of accounts. The profile holding the live season's seat
+        or signup is the one kept, the driver named otherwise; the other's links — seats,
+        placements, attendance, history, results — move onto it, as does its former-driver
+        flag, and it is deleted. The merge's audit entry is stamped *now*; the reassign's own is
+        its change's to write.
+
+        Refused, having written nothing, when: no driver holds *old_user_id*;
+        *new_user_id* is already the driver's current account; it is a past account of another
+        driver; either side is a test-mode driver; either side has a signup in progress; both
+        sides hold a seat or a signup in the live season; or both took part in one division —
+        one season's division, by a confirmed seat or by a record a module holds (results', asked
+        through *divisions_raced_read*). That last applies as much to an
+        account no driver holds whose leftover results sit in such a division: one person would
+        stand twice in one season's standings.
+
+        Every refusal is judged before the first write, on the connection the caller's save
+        holds, so a signup begun or a second reassign given in between cannot slip past a check
+        that has already passed. The Discord side — roles, a held signup channel, a portrait — is
+        the change's, in jobs after the save.
+        """
+        judged = await _judge_reassign(db, old_user_id, new_user_id, divisions_raced_read)
+        return await self.reassign_judged_on(
+            db, judged, new_user_id, actor_id, actor_name, profiles_merged=profiles_merged,
+            now=now,
+        )
+
+    async def reassign_judged_on(
+        self,
+        db: aiosqlite.Connection,
+        judged: ReassignJudgement,
+        new_user_id: str,
+        actor_id: int,
+        actor_name: str,
+        *,
+        profiles_merged: AwaitedHook,
+        now: datetime,
+    ) -> ReassignOutcome:
+        """Write the reassign *judged* on *db* (`judge_reassign_on`), on that connection and
+        committing nothing: it refuses nothing, so a caller that catches the refusals of the
+        judge holds no module's hook inside that catch. Nothing may have been written on *db*
+        between the judgement and this call."""
+        driver, owner = judged.driver, judged.owner
+        kept = driver
+        merged_accounts: list[str] | None = None
+        if owner is not None and not judged.switched_back:
+            kept, absorbed = (
+                (owner, driver) if owner["current_state"] in _HOLDS_THE_LIVE_SEASON
+                else (driver, owner)
+            )
+            await _merge(
+                db, kept, absorbed, actor_id, actor_name, profiles_merged=profiles_merged,
+                now=now,
+            )
+            merged_accounts = judged.owner_accounts
+        await db.execute(
+            "UPDATE driver_profiles SET discord_user_id = ? WHERE id = ?",
+            (str(new_user_id), kept["id"]),
+        )
+        accounts = await accounts_of_profile(db, kept["id"])
+        cursor = await db.execute(
+            "SELECT id, discord_user_id, current_state, former_driver "
+            "FROM driver_profiles WHERE id = ?",
+            (kept["id"],),
+        )
+        return ReassignOutcome(
+            profile=_row_to_profile(await cursor.fetchone()),
+            replaced_account=judged.replaced,
+            accounts=accounts,
+            switched_back=judged.switched_back,
+            merged_accounts=merged_accounts,
+        )

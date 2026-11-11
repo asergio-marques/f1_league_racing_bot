@@ -2,7 +2,7 @@
 
 The approval is judged twice: at the press, by the cog, and again when it comes up to run on the
 change queue, by the change type, which may import no cog. So the two reads both make, the
-divisions' channels and the unsettled signups, live in `core/services/approval_checks.py`, and the
+divisions' channels and the unsettled signups, live in `core/services/seasons/approval_checks.py`, and the
 cog's methods call them. The cog's own tests (`test_placements_confirmation.py`) still pin every
 case through the cog; these pin that the service gives the same answers on its own.
 """
@@ -56,37 +56,113 @@ def _modules(*, weather=False, results=False, attendance=False):
     return modules
 
 
-def _guild(*, gone: tuple[int, ...] = ()):
-    """A server holding every channel but those *gone*, which a fetch reports not found."""
+def _guild(*, gone: tuple[int, ...] = (), unreadable: tuple[int, ...] = ()):
+    """A server holding every channel but those *gone*, which a fetch reports not found, and
+    those *unreadable*, out of the cache and whose fetch fails with a server error."""
 
     async def _fetch(channel_id):
+        if channel_id in unreadable:
+            raise discord.HTTPException(MagicMock(status=500), "Internal Server Error")
         raise discord.NotFound(MagicMock(status=404), "Unknown Channel")
 
     guild = MagicMock()
-    guild.get_channel = MagicMock(side_effect=lambda cid: None if cid in gone else MagicMock())
+    guild.get_channel = MagicMock(
+        side_effect=lambda cid: None if cid in gone or cid in unreadable else MagicMock()
+    )
     guild.fetch_channel = AsyncMock(side_effect=_fetch)
     return guild
 
 
-async def test_the_channel_faults_are_read_by_the_service(db_path):
+def _faults_bot(db_path, modules):
+    """A bot carrying *modules*, the database and attendance's service, and the hook a division's
+    channel faults are read through, each module signed up to it by the builder's own sign-up."""
+    from types import SimpleNamespace
+
+    from leaguebot.__main__ import _sign_up_to_division_channel_faults_read
+    from leaguebot.attendance.services.attendance_service import AttendanceService
+
+    bot = SimpleNamespace(
+        module_service=modules, db_path=db_path, attendance_service=AttendanceService(db_path)
+    )
+    _sign_up_to_division_channel_faults_read(bot)
+    return bot
+
+
+@pytest.mark.parametrize("pro_lineup", ["deleted", "cannot be told"])
+async def test_the_channel_faults_are_read_by_the_service(db_path, pro_lineup):
     """With every module off, Am has no lineup channel and Pro's lineup channel 100 has been
     deleted from the server. The service names both, with the command that sets each, and asks
-    nothing of the cancelled division."""
-    from leaguebot.core.services.approval_checks import division_channel_faults
+    nothing of the cancelled division. Where Discord cannot say whether channel 100 is there (a
+    server error), it is taken as there: a check that could not tell does not refuse a season.
+    Each module is asked its own channels through the hook the builder signs them up to, and,
+    being off, names none."""
+    from tests.support.review_workflows import run_check
 
-    faults = await division_channel_faults(_modules(), db_path, SEASON_ID, _guild(gone=(100,)))
+    guild = _guild(gone=(100,)) if pro_lineup == "deleted" else _guild(unreadable=(100,))
+    bot = _faults_bot(db_path, _modules())
+
+    faults = await run_check("division_channel_faults", bot, db_path, SEASON_ID, guild)
+
+    pro = ["**Pro**'s lineup channel is no longer on the server — `/division lineup-channel`."]
+    assert faults == (pro if pro_lineup == "deleted" else []) + [
+        "**Am** has no lineup channel — `/division lineup-channel`.",
+    ]
+
+
+async def test_each_division_s_module_channels_follow_its_own_in_the_modules_order(db_path):
+    """Every module on. Pro's lineup channel 100, results channel 120 and attendance channel 131
+    are gone from the server, its other channels there; Am has no lineup, weather, results,
+    standings, verdicts, RSVP or attendance channel. Each module answers for its own channels
+    through the hook the builder signs them up to, and the faults read division by division, in
+    tier order: the division's own lineup and calendar channels first, then weather's, results'
+    and attendance's, as they read before the modules answered for them. The cancelled division
+    is asked nothing."""
+    from tests.support.review_workflows import run_check
+
+    async with get_connection(db_path) as db:
+        await db.execute("UPDATE divisions SET forecast_channel_id = 110 WHERE id = 1")
+        await db.execute(
+            "INSERT INTO division_results_config (division_id, results_channel_id, "
+            "standings_channel_id, penalty_channel_id) VALUES (1, 120, 121, '122')"
+        )
+        await db.execute(
+            "INSERT INTO attendance_division_config (division_id, rsvp_channel_id, "
+            "attendance_channel_id) VALUES (1, '130', '131')"
+        )
+        await db.commit()
+    bot = _faults_bot(db_path, _modules(weather=True, results=True, attendance=True))
+
+    faults = await run_check(
+        "division_channel_faults", bot, db_path, SEASON_ID, _guild(gone=(100, 120, 131))
+    )
 
     assert faults == [
         "**Pro**'s lineup channel is no longer on the server — `/division lineup-channel`.",
+        "**Pro**'s results channel is no longer on the server — `/results channel results`.",
+        "**Pro**'s attendance channel is no longer on the server — "
+        "`/attendance channel attendance`.",
         "**Am** has no lineup channel — `/division lineup-channel`.",
+        "**Am** has no weather channel — `/weather channel`.",
+        "**Am** has no results channel — `/results channel results`.",
+        "**Am** has no standings channel — `/results channel standings`.",
+        "**Am** has no verdicts channel — `/results channel verdicts`.",
+        "**Am** has no RSVP channel — `/attendance channel rsvp`.",
+        "**Am** has no attendance channel — `/attendance channel attendance`.",
     ]
 
 
 async def test_the_unsettled_signups_are_read_by_the_service(db_path):
     """Alice is not yet placed, Bob awaits approval, driver 3 is correcting their signup, and
     two others are placed or signed out. The service names the three unsettled, as the review
-    and the confirmation name them."""
-    from leaguebot.core.services.approval_checks import unsettled_signups
+    and the confirmation name them, each by the name signup holds for them, asked through the
+    hook a driver's name is read by as the builder makes it and signup's wiring signs signup up to
+    it; driver 3, with no signup, by their user id."""
+    from types import SimpleNamespace
+
+    from leaguebot.core.services.seasons.approval_checks import unsettled_signups
+    from leaguebot.core.utils.hooks import AwaitedHook
+    from leaguebot.signup.services.signup_module_service import SignupModuleService
+    from leaguebot.signup.wiring import sign_up_to_driver_names_read
 
     async with get_connection(db_path) as db:
         for user_id, state, name in (
@@ -108,10 +184,84 @@ async def test_the_unsettled_signups_are_read_by_the_service(db_path):
                 )
         await db.commit()
 
-    unsettled = await unsettled_signups(db_path)
+    bot = SimpleNamespace(db_path=db_path, signup_module_service=SignupModuleService(db_path),
+                          driver_names_read=AwaitedHook())
+    sign_up_to_driver_names_read(bot)
+
+    unsettled = await unsettled_signups(db_path, bot.driver_names_read)
 
     assert sorted(unsettled) == sorted([
         "**Alice** — not yet placed",
         "**Bob** — awaiting approval",
         "**3** — correcting their signup",
     ])
+
+
+def _division(division_id: int, name: str):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(id=division_id, name=name)
+
+
+def _round(at):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(scheduled_at=at)
+
+
+def test_the_divisions_with_no_rounds_are_named_in_order():
+    """The core specification's approval: a season is approved only with a round in every
+    division. Pro holds one round, Am and Academy none; the check names Am and Academy, in the
+    order given, and none where every division holds a round."""
+    from datetime import datetime, timezone
+
+    from leaguebot.core.services.seasons import approval_checks
+
+    at = datetime(2026, 11, 20, 19, tzinfo=timezone.utc)
+    divisions = [_division(1, "Pro"), _division(2, "Am"), _division(3, "Academy")]
+
+    assert approval_checks.divisions_without_rounds(
+        divisions, {1: [_round(at)], 2: [], 3: []}
+    ) == ["Am", "Academy"]
+    assert approval_checks.divisions_without_rounds(divisions[:1], {1: [_round(at)]}) == []
+
+
+def test_a_division_holding_two_rounds_at_one_moment_is_named_once():
+    """No two rounds of a division may share a moment. Pro holds three rounds, two at 19:00 on
+    20 November, and Am two at different moments; the check names Pro once, with the moment
+    repeated as Discord shows it, and Am not at all."""
+    from datetime import datetime, timedelta, timezone
+
+    from leaguebot.core.services.seasons import approval_checks
+    from leaguebot.core.utils.formatting import discord_ts
+
+    at = datetime(2026, 11, 20, 19, tzinfo=timezone.utc)
+    later = at + timedelta(days=7)
+    divisions = [_division(1, "Pro"), _division(2, "Am")]
+
+    assert approval_checks.duplicate_round_times(
+        divisions, {1: [_round(at), _round(at), _round(later)], 2: [_round(at), _round(later)]}
+    ) == [f"**Pro** has multiple rounds scheduled at {discord_ts(at)}"]
+
+
+@pytest.mark.parametrize(
+    "enabled, config, problems",
+    [
+        pytest.param(True, MagicMock(signup_channel_id=None),
+                     ["**Signup channel** (use `/signup channel`)"], id="no-signup-channel"),
+        pytest.param(True, MagicMock(signup_channel_id=55), [], id="channel-set"),
+        pytest.param(True, None, [], id="no-configuration"),
+        pytest.param(False, MagicMock(signup_channel_id=None), [], id="signup-off"),
+    ],
+)
+async def test_the_signup_module_lacks_only_its_channel_while_it_is_on(enabled, config, problems):
+    """While the signup module is on, a season is approved only once its signup channel is set;
+    with signup off, or no signup configuration at all, nothing is lacking."""
+    from leaguebot.core.services.seasons import approval_checks
+
+    module_service = MagicMock(is_signup_enabled=AsyncMock(return_value=enabled))
+    signup_module_service = MagicMock(get_config=AsyncMock(return_value=config))
+
+    assert await approval_checks.signup_prerequisite_problems(
+        module_service=module_service, signup_module_service=signup_module_service
+    ) == problems

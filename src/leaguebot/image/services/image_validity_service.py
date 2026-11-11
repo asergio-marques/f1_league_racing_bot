@@ -59,8 +59,9 @@ from leaguebot.image.models.image_module import (
     Problem,
     ValidityReport,
 )
+from leaguebot.core.models.refusal import Refused
 from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.core.utils.paths import PathContainmentError, resolve_within_project_root
+from leaguebot.core.utils.paths import resolve_within_project_root
 from leaguebot.image.utils.svg_document import (
     FieldIndex,
     SvgNoCanvasError,
@@ -848,7 +849,7 @@ def evaluate_template(ctx: TemplateContext, layers: list[ValidityLayer] | None =
 
     try:
         resolved_path: Path | None = ctx.resolve()
-    except (PathContainmentError, ValueError) as exc:
+    except Refused as exc:
         return ValidityReport(
             template_key=ctx.template_key,
             resolved_path=None,
@@ -1201,7 +1202,7 @@ def evaluate_all_templates(
 def _template_directory_problem(config: ImageConfig, root: Path | None) -> str | None:
     try:
         directory = resolve_within_project_root(config.template_directory, root=root)
-    except (PathContainmentError, ValueError) as exc:
+    except Refused as exc:
         # Named, so a reader of the log — and :func:`plain_reason` — can tell a bad
         # template directory from a bad individual template file.
         return f"template directory: {exc}"
@@ -1225,7 +1226,7 @@ def evaluate_directories(
         value = getattr(config, column)
         try:
             resolved = resolve_within_project_root(value, root=root)
-        except (PathContainmentError, ValueError) as exc:
+        except Refused as exc:
             reports[column] = DirectoryReport(column, None, False, str(exc))
             continue
         if not resolved.exists():
@@ -1447,7 +1448,7 @@ def colour_shortfall(
     Keyed by template so :func:`build_aspect_statuses` can attribute each line to the
     aspect that would draw it. Every missing pair is named rather than counted: a manager
     fixing them one review at a time is a manager the check is failing, which is the rule
-    `_team_name_problems` already follows.
+    `approval_checks.team_name_problems` already follows.
 
     Measured **per template, against the slots that template actually marks**, so a
     template marking none demands nothing and can never be blocked by this — which is what

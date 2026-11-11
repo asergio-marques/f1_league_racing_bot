@@ -539,7 +539,7 @@ async def test_channel_not_in_penalty_review_when_flag_zero(tmp_path):
         )
         division_id = cursor.lastrowid
         cursor = await db.execute(
-            "INSERT INTO rounds (division_id, round_number, format, scheduled_at) VALUES (?,1,'NORMAL','2026-01-01T18:00:00')",
+            "INSERT INTO rounds (division_id, round_number, format, scheduled_at) VALUES (?,1,'NORMAL','2026-01-01T18:00:00+00:00')",
             (division_id,),
         )
         round_id = cursor.lastrowid
@@ -816,7 +816,7 @@ async def _seed_round(db) -> int:
     division_id = cursor.lastrowid
     await seed_team_instances(db, division_id, 300, 301, 999)
     cursor = await db.execute(
-        "INSERT INTO rounds (division_id, round_number, format, scheduled_at) VALUES (?,1,'NORMAL','2026-01-01T18:00:00')",
+        "INSERT INTO rounds (division_id, round_number, format, scheduled_at) VALUES (?,1,'NORMAL','2026-01-01T18:00:00+00:00')",
         (division_id,),
     )
     return cursor.lastrowid

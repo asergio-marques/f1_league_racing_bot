@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from discord.ext import commands, tasks
 
-from leaguebot.core.services.retry_service import attempt_delivery, get_all_pending
+from leaguebot.core.services.posting.retry_service import attempt_delivery, get_all_pending
 
 if TYPE_CHECKING:
     from leaguebot.core.utils.league_bot import LeagueBot
@@ -26,10 +26,21 @@ class RetryCog(commands.Cog):
 
     def __init__(self, bot: "LeagueBot") -> None:
         self._bot = bot
-        self.retry_loop.start()
 
     async def cog_unload(self) -> None:
         self.retry_loop.cancel()
+
+    def start_loop(self) -> None:
+        """Start the retry loop; ``LeagueBot.setup_hook`` calls this once, at login.
+
+        Not from ``__init__`` or ``cog_load``: both run as ``build`` adds the cog, before the
+        bot has logged in, and the loop's first act is ``wait_until_ready``, which raises on a
+        bot that never logs in (a built bot a test holds) and leaves a failed task. Not from an
+        ``on_ready`` listener either: discord.py reports "ready" again after a network drop, and
+        start-up work does not belong in that handler (architecture.md, "Start-up runs once").
+        ``setup_hook`` runs once per run, after login and before the connection is made.
+        """
+        self.retry_loop.start()
 
     @tasks.loop(minutes=5)
     async def retry_loop(self) -> None:
@@ -45,7 +56,7 @@ class RetryCog(commands.Cog):
 
         log.info("retry_loop: processing %d pending message(s)", len(pending))
         for entry in pending:
-            await attempt_delivery(entry, self._bot)
+            await attempt_delivery(entry, self._bot, now=self._bot.change_queue.now())
 
     @retry_loop.before_loop
     async def before_retry_loop(self) -> None:

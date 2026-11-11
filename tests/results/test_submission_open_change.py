@@ -22,6 +22,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
+import pytest
 
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.results.services.result_submission_service import get_sessions_for_format
@@ -115,7 +116,7 @@ async def test_the_round_start_asks_and_the_queue_opens_the_channel_with_its_ope
     open for **Round 3** (Pro)", naming its sessions, Qualifying and Race) and then the first
     session's prompt. The round-start timer's callback asks the queue rather than running the
     submission itself."""
-    import leaguebot.__main__ as bot_module
+    from leaguebot.results import wiring
 
     league = await _league(tmp_path)
 
@@ -132,7 +133,9 @@ async def test_the_round_start_asks_and_the_queue_opens_the_channel_with_its_ope
     assert "Qualifying" in opening and "Race" in opening
     assert f"📋 Submit **{await _first_session_label(league)}** results" in prompt
     assert [row["kind"] for row in await _open_changes(league)] == [KIND]
-    assert "run_result_submission_job" not in inspect.getsource(bot_module.main)
+    assert "run_result_submission_job" not in inspect.getsource(
+        wiring.register_scheduler_callbacks
+    )
 
 
 async def test_the_round_moves_off_not_run_in_the_open_s_save(tmp_path):
@@ -188,7 +191,7 @@ async def test_a_round_starting_while_the_queue_is_stopped_opens_when_it_clears_
 async def test_a_round_with_results_off_asks_the_wind_down(tmp_path):
     """The results module is off when round 3 starts. The queue makes round 3 FINAL, creates no
     channel, and asks for the season's wind-down, as the bot."""
-    from leaguebot.core.services.season_lifecycle_service import WIND_DOWN
+    from leaguebot.core.services.seasons.season_lifecycle_service import WIND_DOWN
 
     league = await _league(tmp_path)
     await league.switch("results", False)

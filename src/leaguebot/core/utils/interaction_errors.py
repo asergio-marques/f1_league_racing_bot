@@ -1,17 +1,17 @@
-"""What the bot does when a command, button or form fails (issue #156).
+"""What the bot does when a command, button or form fails.
 
 discord.py's own handlers log a traceback to the host and do nothing else, so a failure
-reached the league as Discord's "The application did not respond", or as a "thinking"
-indicator that quietly expired. `report_failure` is what `LeagueCommandTree`, `LeagueView`
+would reach the league as Discord's "The application did not respond", or as a "thinking"
+indicator that quietly expires. `report_failure` is what `LeagueCommandTree`, `LeagueView`
 and `LeagueModal` call instead. It does three things, each independent of the others:
 
-- **The host's log keeps the traceback**, exactly as the library logged it before.
+- **The host's log keeps the traceback**, exactly as the library logs it.
 - **The member is told, seen by them alone**, what did not finish and that the fault is the
   bot's rather than anything they entered. The reply names no exception: a Python type name
   tells a league manager nothing. It says the command may have been partly done, because
   nothing is rolled back and "nothing was changed" would be a promise the bot cannot keep.
   Naming the command and the kind of fault is what keeps it clear of the constitution's ban
-  on a generic "something went wrong" (decided 2026-09-19).
+  on a generic "something went wrong".
 - **The log channel gets one line** naming the member, what failed and the exception's type,
   so the league holds something to report. The member is named as every line in the channel
   names them, by display name and mention (`interaction_member`, from
@@ -21,7 +21,7 @@ and `LeagueModal` call instead. It does three things, each independent of the ot
 **The handler never raises.** It runs where the failure already happened: the interaction's
 token may have expired, or the fault may be the database `post_log` reads its channel from.
 The reply and the log line are therefore each attempted on their own, and a failure of
-either is logged and leaves the other to go ahead (decided 2026-09-19).
+either is logged and leaves the other to go ahead.
 
 **Two kinds of caller.** Almost every failure reaches this through the base classes: the
 command lets the error propagate, and one failure makes one line. A command, button or form
@@ -58,33 +58,51 @@ from leaguebot.core.utils.member_names import interaction_member
 log = logging.getLogger(__name__)
 
 #: What the member who ran a failed command, button or form is told; `{what}` is `describe`'s,
-#: and `{outcome}` what became of the change.
+#: `{outcome}` what became of the change, and `{recorded}` where the fault was recorded.
 FAILURE_REPLY = (
     "❌ {what} stopped on a fault in the bot, not on anything you entered, and did not "
-    "finish. {outcome} The fault is recorded in the log channel."
+    "finish. {outcome} The fault is recorded in {recorded}."
 )
 #: The outcome of a failure the command did not undo.
 PARTLY_DONE = "It may have been partly done — check before running it again."
 
 
-def failure_reply(what: str, outcome: str | None = None) -> str:
+def failure_reply(
+    what: str, outcome: str | None = None, *, recorded: str = "the log channel"
+) -> str:
     """The reply for *what*, its first letter raised to open the sentence.
 
     *outcome*, where given, replaces `PARTLY_DONE`: a command that undid itself says what
     became of the change, and what to do next, rather than that it may have been partly done.
+    *recorded* names where the fault was recorded, the log channel unless a command fails before
+    there is one.
     """
-    return FAILURE_REPLY.format(what=what[:1].upper() + what[1:], outcome=outcome or PARTLY_DONE)
+    return FAILURE_REPLY.format(
+        what=what[:1].upper() + what[1:], outcome=outcome or PARTLY_DONE, recorded=recorded
+    )
 
 
 def failure_line(what: str, named: str, error: BaseException) -> str:
     """The log channel's line for *what* failing for *named* with *error*; *what* is used as given.
 
-    The one place a failure's line is formed: `report_failure` writes it, and so does the change
-    queue for a change that faults.
+    The line of a failure with a member to name: `report_failure` writes it, and so does the
+    change queue for a change that faults. A Discord event's has none, and is formed by
+    `event_failure_line`.
     """
     return (
         f"❌ {what} failed for {named} — {type(error).__name__}. "
         f"The details are in the host's log."
+    )
+
+
+def event_failure_line(event: str, error: BaseException) -> str:
+    """The log channel's line for the Discord event *event* whose handling failed with *error*.
+
+    The failure line's shape, with no member to name: an event has none.
+    """
+    return (
+        f"❌ The bot's handling of the Discord event `{event}` failed — "
+        f"{type(error).__name__}. The details are in the host's log."
     )
 
 

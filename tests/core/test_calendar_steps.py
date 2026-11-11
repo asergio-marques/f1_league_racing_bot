@@ -22,7 +22,9 @@ from unittest.mock import AsyncMock
 import discord
 import pytest
 
+from tests.support.calendar_drawing import CalendarDrawingStub, draw_calendars_with
 from tests.support.change_queue import (
+    MANAGER_ROLE_ID,
     change_rows,
     discard_job,
     http_error,
@@ -30,18 +32,26 @@ from tests.support.change_queue import (
     run_queue,
     step_rows,
     stopped_job,
+    typed_message,
 )
 from tests.support.season_league import (
+    ADMIN_ID,
     CALENDAR_MESSAGE,
     DIVISIONS,
     PRO,
     ROUND_CANCEL_KIND,
+    SUBMISSION_CHANNEL,
+    accept_session,
     cancel_round,
+    cancel_season,
     ongoing_league,
+    open_submission,
     press_approve,
     reply,
+    round_id,
     season_league,
 )
+
 
 PRO_CALENDAR = DIVISIONS[PRO][3].calendar
 #: The link Discord gives Pro's old calendar, which a discarded deletion names.
@@ -241,7 +251,7 @@ async def test_the_calendar_replaced_is_read_when_the_job_runs(tmp_path):
 async def test_a_first_calendar_plans_no_delete(tmp_path, monkeypatch):
     """A season approved with no calendar posted before: its calendar is posted and its id saved,
     and nothing is planned to delete."""
-    from leaguebot.core.services.season_approval_change import KIND
+    from leaguebot.core.services.seasons.season_approval_change import KIND
 
     league = await season_league(tmp_path, monkeypatch=monkeypatch)
     await press_approve(league)
@@ -255,3 +265,165 @@ async def test_a_first_calendar_plans_no_delete(tmp_path, monkeypatch):
     [new] = list(league.channel(PRO_CALENDAR).messages)
     assert await _calendar_id(league) == str(new)
 
+
+# ── A calendar fallen back to text, recorded by its own job (#283, S12) ──────────────────────
+
+#: What the drawing of every calendar meets in the tests below.
+PROBLEM = "the template has no rows"
+#: The `post_calendar` job's own line where its calendar fell back to text, after the member and
+#: the change it ran for (Constitution XIV.4: recorded alongside the source's own entry): the
+#: division, the problem, and what puts it right (the owner's decision on #283).
+POSTED_AS_TEXT = (
+    " | Calendar posted as text\n"
+    "  division: {division}\n"
+    "  problem: {problem}\n"
+    "  to put it right: fix the calendar template, then run `/division calendar-sync` while the "
+    "season is still being raced"
+)
+#: The same line where a season's cancellation posted the calendar: no command posts it again
+#: once the season is cancelled, so nothing puts it right (the owner's decision on #283).
+POSTED_AS_TEXT_IN_A_CANCELLED_SEASON = (
+    " | Calendar posted as text\n"
+    "  division: {division}\n"
+    "  problem: {problem}\n"
+    "  to put it right: nothing does; no command posts the picture again now the season is "
+    "cancelled, and the text calendar stands"
+)
+
+
+def _drawing_fails(league: Any, monkeypatch: Any) -> CalendarDrawingStub:
+    """The league conveys its calendar as a picture, and every drawing of one, through the drawing
+    the builder handed the calendar job, raises; gives the drawing."""
+    return draw_calendars_with(league.bot, monkeypatch,
+                               CalendarDrawingStub(fault=RuntimeError(PROBLEM)))
+
+
+async def _approved(tmp_path: Any, monkeypatch: Any) -> tuple[Any, Any]:
+    """Season 3's placements approved by the admin: Pro's and Am's calendars are posted. Returns
+    the league and the press."""
+    league = await season_league(tmp_path, monkeypatch=monkeypatch, images=True)
+    _drawing_fails(league, monkeypatch)
+    return league, await press_approve(league)
+
+
+async def _round_cancelled(tmp_path: Any, monkeypatch: Any) -> tuple[Any, Any]:
+    """Pro's round 3 cancelled with `/round cancel`: Pro's calendar is posted again. Returns the
+    league and the command's interaction."""
+    league = await ongoing_league(tmp_path, images=True)
+    _drawing_fails(league, monkeypatch)
+    return league, await _cancel(league)
+
+
+async def _season_cancelled(tmp_path: Any, monkeypatch: Any) -> tuple[Any, Any]:
+    """Season 3 cancelled with `/season cancel`: Pro's calendar is posted again. Returns the
+    league and the command's interaction."""
+    league = await ongoing_league(tmp_path, images=True)
+    _drawing_fails(league, monkeypatch)
+    return league, await cancel_season(league)
+
+
+async def _round_not_held(tmp_path: Any, monkeypatch: Any) -> tuple[Any, None]:
+    """Pro's round 3 awaiting results, its Feature Qualifying entered as cancelled; the admin types
+    CANCELLED for its Feature Race, so the round ends not held and Pro's calendar is posted again
+    (results' `results.submission.all_cancelled`). Returns the league, and no reply, the ending
+    having none."""
+    from leaguebot.results.cogs.results_cog import ResultsCog
+
+    league = await ongoing_league(tmp_path, images=True)
+    _drawing_fails(league, monkeypatch)
+    league.roles_held[ADMIN_ID] = {MANAGER_ROLE_ID}
+    round_3 = round_id(PRO, 3)
+    await league.write("UPDATE rounds SET status = 'AWAITING_RESULTS' WHERE id = ?", round_3)
+    await open_submission(league, round_3)
+    sub = league.channel(SUBMISSION_CHANNEL)
+    if not isinstance(getattr(sub, "posted", None), list):
+        sub.posted = []
+    await accept_session(league, round_3, session="FEATURE_QUALIFYING", status="CANCELLED")
+    await ResultsCog(league.bot).on_message(typed_message(
+        sub, league._member(ADMIN_ID), "CANCELLED", created_at=league.clock.now,
+    ))
+    return league, None
+
+
+@pytest.mark.parametrize(("start", "change", "divisions", "posted"), [
+    pytest.param(_approved, "the ✅ Approve button of `/season placements-review`",
+                 ("Pro", "Am"), POSTED_AS_TEXT, id="the approval"),
+    pytest.param(_round_cancelled, "`/round cancel`", ("Pro",), POSTED_AS_TEXT,
+                 id="a round's cancellation"),
+    pytest.param(_round_not_held, "posting round 3's cancelled sessions", ("Pro",),
+                 POSTED_AS_TEXT, id="results' round not held"),
+    pytest.param(_season_cancelled, "`/season cancel`", ("Pro",),
+                 POSTED_AS_TEXT_IN_A_CANCELLED_SEASON, id="a season's cancellation"),
+])
+async def test_a_calendar_fallen_back_to_text_is_recorded_by_every_change_that_posts_it(
+    tmp_path, monkeypatch, start, change, divisions, posted,
+):
+    """Each change that posts a calendar, where the drawing fails and the text stands in: the log
+    channel names the problem once for each calendar, in the `post_calendar` job's own line,
+    opening with the member and the change it ran for as every line does, and in no line of the
+    change's own (Constitution XIV.4, the data model's render problems). No line
+    names a calendar as not notified, and the member's reply names neither the problem nor a
+    calendar posted as text: no "Not notified" for a cancellation, and no "Calendar images"
+    section for the approval, where the fallback was all it would have held. Where the season is
+    being cancelled, the line says nothing puts it right, as no command posts the calendar
+    again."""
+    league, asked = await start(tmp_path, monkeypatch)
+    assert not league.errors, league.errors
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    logged = list(league.bot.log_channel.sent)
+    named = [line for line in logged if PROBLEM in line]
+    assert len(named) == len(divisions), named
+    opening = f"Admin (`<@{ADMIN_ID}>`) | {change}"
+    for division in divisions:
+        line = opening + posted.format(division=division, problem=PROBLEM)
+        assert sum(each.startswith(line) for each in named) == 1, named
+    assert not [line for line in logged if "not notified:" in line], logged
+    if asked is not None:
+        told = reply(asked)
+        for words in (PROBLEM, "posted as text", "Not notified", "Calendar images"):
+            assert words not in told, told
+
+
+async def test_a_calendar_job_that_finds_no_calendar_channel_claims_no_text_posted(
+    tmp_path, monkeypatch,
+):
+    """Pro's calendar stands as posted, but Pro has no calendar channel set, a state no command
+    leaves; Pro's round 3 is cancelled. The calendar job posts nothing, and neither the reply nor
+    the log channel says a calendar was posted as text."""
+    league = await ongoing_league(tmp_path, images=True)
+    _drawing_fails(league, monkeypatch)
+    await league.write("UPDATE divisions SET calendar_channel_id = NULL WHERE id = ?", PRO)
+    interaction = await _cancel(league)
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert league.texts(PRO_CALENDAR) == []
+    assert "posted as text" not in reply(interaction)
+    assert not any("posted as text" in line for line in league.bot.log_channel.sent)
+
+
+async def test_a_calendar_the_league_does_not_draw_is_posted_as_text_with_no_line(
+    tmp_path, monkeypatch,
+):
+    """Season 3 being raced with the images module on, the drawing answering that the league does
+    not draw its calendar; Pro's round 3 is cancelled. The calendar job draws nothing and posts
+    Pro's textual calendar, and neither the reply nor the log channel says a calendar was posted
+    as text: the text is what the league asked for, not a fallback."""
+    from leaguebot.core.services.rounds.calendar_post_service import calendar_heading
+
+    league = await ongoing_league(tmp_path, images=True)
+    drawing = draw_calendars_with(league.bot, monkeypatch, CalendarDrawingStub(wanted=False))
+    interaction = await _cancel(league)
+
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert drawing.drawn == []
+    [posted] = league.texts(PRO_CALENDAR)
+    assert posted.startswith(calendar_heading("Pro")), posted
+    assert "posted as text" not in reply(interaction)
+    assert not any("posted as text" in line for line in league.bot.log_channel.sent)

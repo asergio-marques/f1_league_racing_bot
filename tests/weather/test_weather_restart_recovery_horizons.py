@@ -6,7 +6,7 @@ configured ones, not the packaged ones."
 Every other path that decides whether a phase is overdue reads `weather_pipeline_config`:
 the confirmation of placements, and `/round amend`'s change on the change queue (`amend_round`
 until #439) since #110.
-`_recover_missed_phases` did not — it worked from `timedelta(days=5)`, `timedelta(days=2)` and
+`recover_missed_phases` did not — it worked from `timedelta(days=5)`, `timedelta(days=2)` and
 `timedelta(hours=2)` literals, so a restart judged every league by the packaged 5 / 2 / 2. A league
 running a longer phase 1 lost the forecast entirely until the bot happened to restart inside the
 last five days; one running a shorter phase 1 got it days early. The same league therefore saw one
@@ -130,12 +130,12 @@ class _Phases:
 
 async def _recover(bot: MagicMock) -> _Phases:
     """Run the restart recovery with weather's `ask_forecast` recorded."""
-    from leaguebot.__main__ import _recover_missed_phases
+    from leaguebot.weather.wiring import recover_missed_phases
 
     phases = _Phases()
     with patch("leaguebot.weather.services.forecast_changes.ask_forecast",
                AsyncMock(side_effect=phases.ask)):
-        await _recover_missed_phases(bot)
+        await recover_missed_phases(bot)
     return phases
 
 
@@ -222,18 +222,18 @@ async def test_a_restart_recovers_no_phase_for_a_mystery_round(tmp_path):
     queue, as weather's real `ask_forecast` asks it, and no phase is."""
     import json
 
-    from leaguebot.__main__ import _recover_missed_phases
-    from tests.support.change_queue import attach_queue, change_rows, league_double
+    from leaguebot.weather.wiring import recover_missed_phases
+    from tests.support.change_queue import change_rows, league_bot, league_queue
 
     db_path = await _make_db(tmp_path)
     await _seed_server(
         db_path, days_until_round=0.25, horizons=(7, 3, 12), round_format="MYSTERY"
     )
-    bot = league_double(db_path)
+    bot = await league_bot(db_path)
     bot.module_service.is_weather_enabled = AsyncMock(return_value=True)
-    attach_queue(bot, db_path, now=datetime.now(timezone.utc))
+    league_queue(bot, db_path, now=datetime.now(timezone.utc))
 
-    await _recover_missed_phases(bot)
+    await recover_missed_phases(bot)
 
     asked = [(row["kind"], json.loads(row["payload"])["phase"])
              for row in await change_rows(db_path)]

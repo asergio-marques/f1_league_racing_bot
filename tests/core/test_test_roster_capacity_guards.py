@@ -1,14 +1,17 @@
 """A test roster is held to the template capacities a real placement is — issue #150.
 
 Test mode exists so a league can rehearse a season and learn what would go wrong before it
-matters. It seats its fake drivers without passing through ``assign_driver``, where the three
+matters. It seats its fake drivers without passing through ``guard_assign``, where the three
 template capacity guards live — the lineup's reserve block, the attendance sheet and the
 driver standings — so a roster those templates could not hold was accepted, and the overflow
 surfaced only as a fallback at the first posting. A rehearsal that passes a configuration a
 real season would refuse is worse than no rehearsal.
 
-``PlacementService.guard_roster_capacity`` runs the three guards over a whole change at once,
-summed per division, and both roster paths call it before they write anything.
+``TemplateCapacityService.guard_roster_capacity`` asks the three guards over a whole change at once,
+summed per division, and both roster paths call it before they write anything. What it counts
+and asks is ``tests/core/test_placement_capacity_guards.py``'s, through a stub; here the image
+module's own implementation of core's protocol is handed in (#283), so that each roster path
+is refused as a league meets it.
 
 Nothing here rasterises: the templates are built in memory and read as SVG.
 """
@@ -20,6 +23,7 @@ import pytest
 from lxml import etree
 
 from leaguebot.core.db.database import get_connection, run_migrations
+
 
 SVG_NS = "http://www.w3.org/2000/svg"
 LINEUP = "lineup_template"
@@ -95,27 +99,34 @@ def _standings(tmp_path, *, rows: int) -> str:
     )
 
 
-def _bot(db_path: str, templates: dict[str, str]):
-    """A bot with every image aspect on and *templates* the only ones configured."""
-    bot = MagicMock()
-    bot.db_path = db_path
-    bot.module_service.is_images_enabled = AsyncMock(return_value=True)
-    bot.image_config_service.get_toggles = AsyncMock(
+def _drawing(db_path: str, templates: dict[str, str]):
+    """The image module's implementation of core's protocol, every image aspect on and
+    *templates* the only ones configured."""
+    from leaguebot.image.services.image_drawing import ImageDrawing
+
+    modules = MagicMock()
+    modules.is_images_enabled = AsyncMock(return_value=True)
+    config = MagicMock()
+    config.get_toggles = AsyncMock(
         return_value={"lineup": True, "attendance": True, "standings": True}
     )
-    bot.image_validity_service.template_reports = AsyncMock(
+    validity = MagicMock()
+    validity.template_reports = AsyncMock(
         return_value={
             key: MagicMock(valid=True, resolved_path=path, template_key=key)
             for key, path in templates.items()
         }
     )
-    return bot
+    return ImageDrawing(
+        modules=modules, config=config, validity=validity,
+        renderer=MagicMock(), post_log=AsyncMock(), db_path=db_path,
+    )
 
 
 def _service(db_path: str, templates: dict[str, str]):
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.services.drivers.template_capacity_service import TemplateCapacityService
 
-    return PlacementService(db_path, bot=_bot(db_path, templates))
+    return TemplateCapacityService(db_path, drawing=_drawing(db_path, templates))
 
 
 # ── The season ────────────────────────────────────────────────────────────
@@ -172,73 +183,24 @@ async def _seated(path: str) -> int:
     return row["n"]
 
 
-# ── guard_roster_capacity ─────────────────────────────────────────────────
-
-
-async def test_drivers_across_two_teams_are_summed_against_the_standings(tmp_path):
-    """Neither team outgrows three rows on its own; the division does."""
-    path, divisions = await _seed(tmp_path)
-    service = _service(path, {DRIVERS: _standings(tmp_path, rows=3)})
-
-    await service.guard_roster_capacity(divisions["Alpha"], {TEAMS[0]: 2, TEAMS[1]: 1})
-    with pytest.raises(ValueError) as excinfo:
-        await service.guard_roster_capacity(divisions["Alpha"], {TEAMS[0]: 2, TEAMS[1]: 2})
-
-    assert "4 drivers" in str(excinfo.value)
-
-
-async def test_reserves_count_towards_the_reserve_block_and_the_sheet(tmp_path):
-    path, divisions = await _seed(tmp_path)
-    service = _service(
-        path,
-        {LINEUP: _lineup(tmp_path, reserve_slots=2), SHEET: _sheet(tmp_path, rows=5)},
-    )
-
-    with pytest.raises(ValueError) as excinfo:
-        await service.guard_roster_capacity(divisions["Alpha"], {RESERVE: 3})
-    assert "3 reserve drivers" in str(excinfo.value)
-
-    with pytest.raises(ValueError) as excinfo:
-        await service.guard_roster_capacity(divisions["Alpha"], {TEAMS[0]: 4, RESERVE: 2})
-    assert "6" in str(excinfo.value), "the sheet draws the reserves beside the grid"
-
-
-async def test_reserves_do_not_count_towards_the_standings(tmp_path):
-    """A reserve is not an entry of a classification, so a full grid still takes one."""
-    path, divisions = await _seed(tmp_path)
-    service = _service(path, {DRIVERS: _standings(tmp_path, rows=2)})
-
-    await service.guard_roster_capacity(divisions["Alpha"], {TEAMS[0]: 2, RESERVE: 5})
-
-
-async def test_an_unknown_team_is_left_to_the_roster_to_report(tmp_path):
-    path, divisions = await _seed(tmp_path)
-    service = _service(path, {DRIVERS: _standings(tmp_path, rows=1)})
-
-    await service.guard_roster_capacity(divisions["Alpha"], {"No Such Team": 9})
-
-
-async def test_no_bot_means_no_guard(tmp_path):
-    from leaguebot.core.services.placement_service import PlacementService
-
-    path, divisions = await _seed(tmp_path)
-
-    await PlacementService(path).guard_roster_capacity(divisions["Alpha"], {TEAMS[0]: 99})
-
-
 # ── /test-mode roster add ─────────────────────────────────────────────────
 
 
 async def _add(path, service, team, division="Alpha", name="Mock"):
-    from leaguebot.core.services.test_roster_service import add_test_driver
+    """Seat *name* at *team* in *division* through the roster's writer, held to *service*'s
+    capacities, on a connection of the test's own, committed as a change's save commits it."""
+    from leaguebot.core.services.test_mode.test_roster_service import add_test_driver_on
 
-    return await add_test_driver(
-        driver_name=name,
-        team_name=team,
-        division_name=division,
-        db_path=path,
-        placement_service=service,
-    )
+    async with get_connection(path) as db:
+        result = await add_test_driver_on(
+            db,
+            driver_name=name,
+            team_name=team,
+            division_name=division,
+            capacity=service,
+        )
+        await db.commit()
+    return result
 
 
 async def test_a_reserve_past_the_lineup_s_reserve_slots_is_refused(tmp_path):
@@ -279,50 +241,60 @@ async def test_a_driver_past_the_standings_rows_is_refused_but_a_reserve_is_not(
     assert isinstance(reserve, dict), "a reserve adds no entry to the classification"
 
 
-async def test_the_command_refuses_it_in_placements(tmp_path):
-    """Through the cog, in the one stage the roster may change in (issue #220).
+async def test_the_command_refuses_it_in_placements(tmp_path, monkeypatch):
+    """Through the cog, on the bot the builder makes, in the one stage the roster may change in.
 
-    Nothing about the stage is stubbed: the season is in Placements, the roster change is
-    allowed there, and it is the template that refuses it — with the bot's own placement
-    service, as the cog is wired in production. The refusal is logged, as every refusal of a
-    command that changes something is.
+    `season_league`'s season 3 is in Placements under test mode, McLaren in Am holding Charles in
+    its first seat and its second seat free, and the driver standings template holds one row, so
+    Am's standings could not draw a second driver. Admin (77) runs `/test-mode roster add` of Mock
+    to McLaren in Am. Nothing about the stage is stubbed: the roster change is allowed there, and
+    it is the template that refuses it, measured by the bot's own template capacity service, here
+    one whose image drawing holds that template, so a service made apart from the bot would let the
+    driver through. Admin is refused at once, seen by them alone, the reply saying
+    the driver was **not** assigned; nothing is queued, no fake driver is created, nothing is
+    audited, and the log channel takes the refusal as its only line, naming the command and Admin.
     """
-    from types import SimpleNamespace
-
-    from leaguebot.core.cogs.test_mode_cog import TestModeCog
-    from leaguebot.core.services.placement_service import PlacementService
+    from leaguebot.core.cogs import test_mode_cog
+    from tests.support.change_queue import change_rows, member
+    from tests.support.season_league import AM, MCLAREN, season_league
+    from tests.support.settings_league import audit_rows, said, unruled
+    from tests.support.settings_league import interaction as member_asks
     from tests.support.undecorate import undecorate
 
-    path, _divisions = await _seed(tmp_path)
-    assert isinstance(await _add(path, None, TEAMS[0], name="First"), dict)
-    bot = _bot(path, {DRIVERS: _standings(tmp_path, rows=1)})
-    bot.config_service.get_server_config = AsyncMock(
-        return_value=SimpleNamespace(
-            test_mode_active=True, test_mode_nationality_required=True
-        )
+    league = await season_league(tmp_path, test_mode=True)
+    await league.write(
+        "INSERT INTO team_seats (team_instance_id, seat_number) VALUES (?, 2)", MCLAREN
     )
-    bot.output_router.post_log = AsyncMock()
-    bot.placement_service = PlacementService(path, bot=bot)
-    cog = TestModeCog.__new__(TestModeCog)
-    cog.bot = bot
-    interaction = MagicMock()
-    interaction.user.id = 77
-    interaction.user.display_name = "Admin"
-    interaction.client = bot
-    interaction.command.qualified_name = "test-mode roster add"
-    interaction.response.is_done = MagicMock(return_value=False)
-    interaction.response.send_message = AsyncMock()
+    monkeypatch.setattr(
+        league.bot,
+        "template_capacity_service",
+        _service(league.db_path, {DRIVERS: _standings(tmp_path, rows=1)}),
+    )
+    cog = test_mode_cog.TestModeCog.__new__(test_mode_cog.TestModeCog)
+    cog.bot = league.bot
+    interaction = member_asks(
+        league.bot, "test-mode roster add", user=member(77, "Admin", "Admin#0001")
+    )
 
-    await undecorate(TestModeCog.roster_add)(cog, interaction, "Mock", TEAMS[0], "Alpha")
+    await undecorate(test_mode_cog.TestModeCog.roster_add)(
+        cog, interaction, "Mock", "McLaren", "Am", None
+    )
 
-    reply = interaction.response.send_message.await_args.args[0]
-    assert reply.startswith("⛔")
+    [reply] = said(interaction)
+    assert reply.startswith("⛔ ")
     assert "**not** assigned" in reply
-    assert await _seated(path) == 1
-    [line] = [str(c.args[0]) for c in bot.output_router.post_log.await_args_list]
-    assert line.startswith("⛔ ")
-    assert "/test-mode roster add" in line
-    assert "refused for Admin (<@77>)" in line
+    [sent] = interaction.response.send_message.await_args_list
+    assert sent.kwargs.get("ephemeral") is True
+    assert await change_rows(league.db_path) == []
+    assert await league.rows("SELECT 1 FROM driver_profiles WHERE is_test_driver = 1") == []
+    assert await league.rows(
+        "SELECT 1 FROM driver_season_assignments WHERE division_id = ? "
+        "AND driver_profile_id IN (SELECT id FROM driver_profiles WHERE is_test_driver = 1)", AM
+    ) == []
+    assert await audit_rows(league.db_path) == []
+    assert [unruled(str(line)) for line in league.bot.log_channel.sent] == [
+        f"⛔ `/test-mode roster add` refused for Admin (`<@77>`) — {reply[2:]}"
+    ]
 
 
 # ── /test-mode roster add-bulk ────────────────────────────────────────────
@@ -346,9 +318,14 @@ def _roster(*rows: tuple[str, str], nationality: str | None = "British"):
 
 
 async def _bulk(path, service, drivers):
-    from leaguebot.core.services.test_roster_service import add_test_drivers_in_bulk
+    """Seat *drivers* through the roster's writer, held to *service*'s capacities, on a
+    connection of the test's own, committed as a change's save commits it."""
+    from leaguebot.core.services.test_mode.test_roster_service import add_test_drivers_in_bulk_on
 
-    return await add_test_drivers_in_bulk(drivers, path, placement_service=service)
+    async with get_connection(path) as db:
+        result = await add_test_drivers_in_bulk_on(db, drivers, capacity=service)
+        await db.commit()
+    return result
 
 
 async def test_a_roster_outgrowing_the_standings_across_its_teams_seats_nobody(tmp_path):

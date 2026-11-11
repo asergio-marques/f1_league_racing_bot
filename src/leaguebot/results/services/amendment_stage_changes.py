@@ -70,16 +70,18 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.services.queue.queue_records import (
+    unfinished,
+)
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
-    unfinished,
 )
-from leaguebot.core.services.channel_registry_service import as_text_channel
-from leaguebot.core.services.driver_service import current_account_map_for_division
+from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services import review_posting, review_verdicts
 from leaguebot.results.services.attendance_hook import AttendanceAfterReview

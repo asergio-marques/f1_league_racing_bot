@@ -42,14 +42,13 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
-from leaguebot.core.services.season_service import SeasonService
 from tests.support.change_queue import (
     INTERACTION_CHANNEL_ID,
     LOG_CHANNEL_ID,
     SERVER_ID,
-    attach_queue,
     discard_job,
-    league_double,
+    league_bot,
+    league_queue,
     member,
     member_interaction,
     run_queue,
@@ -125,19 +124,14 @@ class _FakeChannel:
         self.deleted = True
 
 
-def _make_bot(db_path: str, *, guild: bool = True) -> MagicMock:
-    """The bot as the builder makes it: a real router and services on *db_path*, and a fake
-    server whose channels are in `bot.channels`. Its change queue is attached by `_disable`, or by
-    the test, so a test that never reaches the queue does not need it built."""
-    from leaguebot.attendance.services.attendance_service import AttendanceService
-    from leaguebot.core.services.module_service import ModuleService
+async def _make_bot(db_path: str, *, guild: bool = True) -> MagicMock:
+    """The league's bot (`league_bot`): a real router and services on *db_path*, and a fake
+    server whose channels are in `bot.channels`. Its change queue is attached by `_disable`, so a
+    test that never reaches the queue does not need it attached."""
 
-    bot = league_double(db_path)
+    bot = await league_bot(db_path)
     bot.user.id = BOT_USER_ID
     bot.config_service.get_league_server_id = AsyncMock(return_value=SERVER_ID)
-    bot.module_service = ModuleService(db_path)
-    bot.season_service = SeasonService(db_path)
-    bot.attendance_service = AttendanceService(db_path)
 
     channels = {
         RESULTS_CHANNEL_ID: _FakeChannel(RESULTS_CHANNEL_ID),
@@ -157,14 +151,14 @@ def _make_bot(db_path: str, *, guild: bool = True) -> MagicMock:
 @pytest.fixture(autouse=True)
 def _no_panel_to_refresh(monkeypatch):
     """The hub has no panel here; turning results off refreshes it as a change of its own."""
-    from leaguebot.core.services import hub_service
+    from leaguebot.core.services.modules import hub_service
 
     monkeypatch.setattr(hub_service, "refresh_panel", AsyncMock(return_value=None))
 
 
-def _make_cog(db_path: str, *, guild: bool = True) -> ModuleCog:
+async def _make_cog(db_path: str, *, guild: bool = True) -> ModuleCog:
     cog = ModuleCog.__new__(ModuleCog)
-    cog.bot = _make_bot(db_path, guild=guild)
+    cog.bot = await _make_bot(db_path, guild=guild)
     return cog
 
 
@@ -247,7 +241,7 @@ async def _seed(
             cur = await db.execute(
                 "INSERT INTO rounds (division_id, round_number, track_name, scheduled_at, "
                 "format, status) VALUES (?, ?, 'Bahrain', ?, 'NORMAL', ?)",
-                (division_id, number, f"2026-0{number}-01T12:00:00", status),
+                (division_id, number, f"2026-0{number}-01T12:00:00+00:00", status),
             )
             round_ids.append(cur.lastrowid)
         await db.commit()
@@ -385,7 +379,7 @@ async def _count(db_path: str, table: str) -> int:
 
 async def _disable(cog: ModuleCog) -> MagicMock:
     """Press the confirmation, as the admin who asked, and run the change queue to the end."""
-    attach_queue(cog.bot, cog.bot.db_path, now=NOW)
+    league_queue(cog.bot, cog.bot.db_path, now=NOW)
     view = _ConfirmDisableResultsView(cog, ACTOR_ID, cascade_attendance=False)
     interaction = member_interaction(cog.bot, user=member(ACTOR_ID))
     await type(view).confirm(view, interaction, view.confirm)
@@ -427,7 +421,7 @@ async def test_each_state_only_results_could_move_is_closed(tmp_path) -> None:
         db_path, division_id, (round_id,) = await _seed(
             directory, round_statuses=(status,)
         )
-        await _disable(_make_cog(db_path))
+        await _disable(await _make_cog(db_path))
 
         assert await _round_status(db_path, round_id) == "FINAL", status
         assert await _count(db_path, "session_results") == 0, status
@@ -445,7 +439,7 @@ async def test_a_round_still_waiting_on_the_clock_is_left_alone(tmp_path) -> Non
     db_path, division_id, (not_run, awaiting) = await _seed(
         tmp_path, round_statuses=("NOT_RUN", "AWAITING_RESULTS")
     )
-    await _disable(_make_cog(db_path))
+    await _disable(await _make_cog(db_path))
 
     assert await _round_status(db_path, not_run) == "NOT_RUN"
     assert await _round_status(db_path, awaiting) == "FINAL"
@@ -455,7 +449,7 @@ async def test_a_round_still_waiting_on_the_clock_is_left_alone(tmp_path) -> Non
 
 async def test_a_cancelled_round_is_left_alone(tmp_path) -> None:
     db_path, _, (cancelled,) = await _seed(tmp_path, round_statuses=("CANCELLED",))
-    await _disable(_make_cog(db_path))
+    await _disable(await _make_cog(db_path))
 
     assert await _round_status(db_path, cancelled) == "CANCELLED"
 
@@ -465,7 +459,7 @@ async def test_a_cancelled_division_s_rounds_are_left_alone(tmp_path) -> None:
     db_path, _, (round_id,) = await _seed(
         tmp_path, round_statuses=("AWAITING_RESULTS",), division_status="CANCELLED"
     )
-    await _disable(_make_cog(db_path))
+    await _disable(await _make_cog(db_path))
 
     assert await _round_status(db_path, round_id) == "AWAITING_RESULTS"
 
@@ -475,7 +469,7 @@ async def test_a_season_not_yet_running_has_nothing_closed_or_deleted(tmp_path) 
     db_path, _, (round_id,) = await _seed(
         tmp_path, round_statuses=("AWAITING_RESULTS",), season_status="SETUP"
     )
-    await _disable(_make_cog(db_path))
+    await _disable(await _make_cog(db_path))
 
     assert await _round_status(db_path, round_id) == "AWAITING_RESULTS"
     assert await _count(db_path, "session_results") == 1
@@ -485,7 +479,7 @@ async def test_every_closed_round_is_audited(tmp_path) -> None:
     db_path, _, _ = await _seed(
         tmp_path, round_statuses=("AWAITING_RESULTS", "AWAITING_APPEAL_VERDICTS")
     )
-    await _disable(_make_cog(db_path))
+    await _disable(await _make_cog(db_path))
 
     async with get_connection(db_path) as db:
         cur = await db.execute(
@@ -503,7 +497,7 @@ async def test_every_closed_round_is_audited(tmp_path) -> None:
 
 async def test_the_purge_is_audited_with_what_it_took(tmp_path) -> None:
     db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
-    await _disable(_make_cog(db_path))
+    await _disable(await _make_cog(db_path))
 
     async with get_connection(db_path) as db:
         cur = await db.execute(
@@ -529,7 +523,7 @@ async def test_every_result_of_the_season_is_deleted(tmp_path) -> None:
     db_path, _, _ = await _seed(
         tmp_path, round_statuses=("AWAITING_RESULTS", "AWAITING_APPEAL_VERDICTS")
     )
-    await _disable(_make_cog(db_path))
+    await _disable(await _make_cog(db_path))
 
     for table in (
         "session_results",
@@ -553,7 +547,7 @@ async def test_a_verdict_does_not_block_the_delete(tmp_path) -> None:
     db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_APPEAL_VERDICTS",))
     assert await _count(db_path, "penalty_records") == 1
 
-    interaction = await _disable(_make_cog(db_path))
+    interaction = await _disable(await _make_cog(db_path))
 
     assert "1 session result(s)" in updated_reply(interaction)
     assert await _count(db_path, "penalty_records") == 0
@@ -562,7 +556,7 @@ async def test_a_verdict_does_not_block_the_delete(tmp_path) -> None:
 
 async def test_the_posted_results_and_standings_are_unposted(tmp_path) -> None:
     db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
-    cog = _make_cog(db_path)
+    cog = await _make_cog(db_path)
     await _disable(cog)
 
     results_channel = cog.bot.channels[RESULTS_CHANNEL_ID]
@@ -581,7 +575,7 @@ async def test_announced_verdicts_are_taken_down(tmp_path) -> None:
     db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
     await _announce(db_path, "penalty_records", 5001)
     await _announce(db_path, "appeal_records", 6001)
-    cog = _make_cog(db_path)
+    cog = await _make_cog(db_path)
 
     interaction = await _disable(cog)
 
@@ -595,7 +589,7 @@ async def test_a_verdict_goes_by_every_chunk_it_recorded(tmp_path) -> None:
     """By the list written when it was posted, as every other posting is (#345)."""
     db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
     await _announce(db_path, "penalty_records", 5001, chunks=[5001, 5002])
-    cog = _make_cog(db_path)
+    cog = await _make_cog(db_path)
 
     interaction = await _disable(cog)
 
@@ -610,7 +604,7 @@ async def test_an_unreachable_verdicts_channel_still_erases_the_rows(tmp_path) -
     db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
     await _announce(db_path, "penalty_records", 5001, channel_id=9999)
     await _announce(db_path, "appeal_records", 6001)
-    cog = _make_cog(db_path)
+    cog = await _make_cog(db_path)
 
     interaction = await _disable(cog)
 
@@ -633,7 +627,7 @@ async def test_a_verdict_left_standing_is_linked_not_counted(tmp_path) -> None:
     db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
     await _announce(db_path, "penalty_records", 5001)
     await _announce(db_path, "appeal_records", 6001)
-    cog = _make_cog(db_path)
+    cog = await _make_cog(db_path)
     cog.bot.channels[VERDICTS_CHANNEL_ID].refuse = {5001}
 
     interaction, discarded = await _disable_discarding(cog)
@@ -650,7 +644,7 @@ async def test_a_results_message_left_standing_is_linked(tmp_path) -> None:
     """The results and standings messages go by the same rule as the verdicts: counted only
     where they went, and linked where they did not."""
     db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
-    cog = _make_cog(db_path)
+    cog = await _make_cog(db_path)
     cog.bot.channels[RESULTS_CHANNEL_ID].refuse = {1000}
 
     interaction, discarded = await _disable_discarding(cog)
@@ -667,7 +661,7 @@ async def test_a_standings_message_left_standing_is_linked(tmp_path) -> None:
     """The image flow posts the constructors' table as a message of its own, and it is named
     on its own where it stays."""
     db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
-    cog = _make_cog(db_path)
+    cog = await _make_cog(db_path)
     cog.bot.channels[STANDINGS_CHANNEL_ID].refuse = {3000}
 
     interaction, discarded = await _disable_discarding(cog)
@@ -684,7 +678,7 @@ async def test_a_message_deleted_by_hand_counts_as_removed(tmp_path) -> None:
     """A manager got there first. Nothing is left to remove, so nothing is named."""
     db_path, _, _ = await _seed(tmp_path, round_statuses=("FINAL",))
     await _announce(db_path, "penalty_records", 5001)
-    cog = _make_cog(db_path)
+    cog = await _make_cog(db_path)
     cog.bot.channels[VERDICTS_CHANNEL_ID].gone = {5001}
 
     reply = updated_reply(await _disable(cog))
@@ -699,7 +693,7 @@ async def test_a_banner_left_standing_keeps_its_record(tmp_path) -> None:
     would leave nothing to say it was ever there."""
     db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("FINAL",))
     await _banner(db_path, round_id, 7001)
-    cog = _make_cog(db_path)
+    cog = await _make_cog(db_path)
     cog.bot.channels[VERDICTS_CHANNEL_ID].refuse = {7001}
 
     interaction, discarded = await _disable_discarding(cog)
@@ -717,7 +711,7 @@ async def test_the_verdict_banner_is_taken_down_and_forgotten(tmp_path) -> None:
     db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("FINAL",))
     await _announce(db_path, "penalty_records", 5001)
     await _banner(db_path, round_id, 7001)
-    cog = _make_cog(db_path)
+    cog = await _make_cog(db_path)
 
     await _disable(cog)
 
@@ -730,7 +724,7 @@ async def test_a_banner_over_a_sanction_card_stays(tmp_path) -> None:
     where it is — so the banner over it stays too, as an amendment keeps it (2026-09-21)."""
     db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("FINAL",))
     await _banner(db_path, round_id, 7001, heads_sanctions=True)
-    cog = _make_cog(db_path)
+    cog = await _make_cog(db_path)
 
     await _disable(cog)
 
@@ -741,7 +735,7 @@ async def test_a_banner_over_a_sanction_card_stays(tmp_path) -> None:
 async def test_an_open_submission_channel_is_closed(tmp_path) -> None:
     """A wizard left running would go on collecting results into a module that is off."""
     db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
-    cog = _make_cog(db_path)
+    cog = await _make_cog(db_path)
     submission_channel = _FakeChannel(8000)
     cog.bot.channels[8000] = submission_channel
 
@@ -760,7 +754,7 @@ async def test_a_guild_out_of_cache_still_erases_the_rows(tmp_path) -> None:
     discards it.
     """
     db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
-    interaction, discarded = await _disable_discarding(_make_cog(db_path, guild=False))
+    interaction, discarded = await _disable_discarding(await _make_cog(db_path, guild=False))
 
     assert discarded == 4
     assert await _count(db_path, "session_results") == 0
@@ -778,7 +772,7 @@ async def test_a_guild_out_of_cache_still_erases_the_rows(tmp_path) -> None:
 async def test_a_missing_channel_does_not_abort_the_purge(tmp_path) -> None:
     """A results channel deleted by hand must not leave the standings behind."""
     db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
-    cog = _make_cog(db_path)
+    cog = await _make_cog(db_path)
     del cog.bot.channels[RESULTS_CHANNEL_ID]
 
     await _disable(cog)
@@ -790,7 +784,7 @@ async def test_a_missing_channel_does_not_abort_the_purge(tmp_path) -> None:
 async def test_the_configuration_survives(tmp_path) -> None:
     """Settings are not output. The bot has always promised these come back untouched."""
     db_path, division_id, _ = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
-    await _disable(_make_cog(db_path))
+    await _disable(await _make_cog(db_path))
 
     assert await _count(db_path, "points_config_store") == 1
     assert await _count(db_path, "season_points_entries") == 1
@@ -815,7 +809,7 @@ async def test_the_configuration_survives(tmp_path) -> None:
 async def test_a_running_season_is_confirmed_even_with_attendance_off(tmp_path) -> None:
     """The half that was silent: a league without attendance got no warning at all."""
     db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
-    cog = _make_cog(db_path)
+    cog = await _make_cog(db_path)
     interaction = _make_interaction()
 
     await cog._disable_results(interaction)
@@ -837,7 +831,7 @@ async def test_the_warning_says_verdicts_are_taken_down(tmp_path) -> None:
     db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
     interaction = _make_interaction()
 
-    await _make_cog(db_path)._disable_results(interaction)
+    await (await _make_cog(db_path))._disable_results(interaction)
 
     warning = interaction.response.send_message.await_args.args[0]
     assert "verdict already announced is removed from the verdicts channel" in warning
@@ -846,7 +840,7 @@ async def test_the_warning_says_verdicts_are_taken_down(tmp_path) -> None:
 
 async def test_cancelling_erases_nothing(tmp_path) -> None:
     db_path, _, (round_id,) = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
-    cog = _make_cog(db_path)
+    cog = await _make_cog(db_path)
     view = _ConfirmDisableResultsView(
         cog, ACTOR_ID, cascade_attendance=False
     )
@@ -861,7 +855,7 @@ async def test_cancelling_erases_nothing(tmp_path) -> None:
 
 async def test_the_reply_names_what_was_destroyed(tmp_path) -> None:
     db_path, _, _ = await _seed(tmp_path, round_statuses=("AWAITING_RESULTS",))
-    interaction = await _disable(_make_cog(db_path))
+    interaction = await _disable(await _make_cog(db_path))
 
     reply = updated_reply(interaction)
     assert "This season's results are gone" in reply
@@ -885,7 +879,7 @@ async def test_an_open_amendment_is_closed_with_the_season(tmp_path) -> None:
             (round_id,),
         )
         await db.commit()
-    cog = _make_cog(db_path)
+    cog = await _make_cog(db_path)
     amend_channel = _FakeChannel(9100)
     cog.bot.channels[9100] = amend_channel
 
@@ -909,6 +903,6 @@ async def test_an_open_amendment_is_forgotten_even_with_no_guild(tmp_path) -> No
         )
         await db.commit()
 
-    await _disable(_make_cog(db_path, guild=False))
+    await _disable(await _make_cog(db_path, guild=False))
 
     assert await _count(db_path, "round_amend_channels") == 0

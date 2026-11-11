@@ -14,9 +14,12 @@ switch-off, so that a switch-off discarded after the close's jobs ran still leav
 what they did.
 
 With the window closed the change has the one job, `switch_off`. Which of the two the change has is
-decided when it is asked, from the window the command read, and judged again as it comes up to
-run: a window opened or closed since, or reopened on another button, refuses the switch-off and
-nothing is changed, since the jobs the change planned would no longer be the ones that fit.
+decided when it is asked, from the window standing then (`fill`), and judged again as it comes up
+to run: a window opened or closed since, or reopened on another button, refuses the switch-off and
+nothing is changed, since the jobs the change planned would no longer be the ones that fit. The
+season's stage is read again too: the signup module is fixed from a season's configuration being
+confirmed to its end, so a switch-off asked before that and run after it is refused, in the words
+the ask already gives (`configuration_fixed_refusal`).
 
 The permission overwrites the bot applied to the signup channel are cleared by a job of this
 change, `clear_overwrites`, planned by the switch-off once it has turned the module off. They go
@@ -49,15 +52,19 @@ from leaguebot.core.models.change import (
     module_off,
 )
 from leaguebot.core.models.driver_profile import DriverState
-from leaguebot.core.services.change_queue import (
+from leaguebot.core.services.queue.change_types import (
     ChangeType,
     CheckContext,
     OutcomeContext,
     Step,
     StepContext,
 )
-from leaguebot.core.services.hub_service import HUB_REFRESH
-from leaguebot.core.services.season_lifecycle_service import advance_on_window_close_on
+from leaguebot.core.services.modules.hub_service import HUB_REFRESH
+from leaguebot.core.services.seasons.season_lifecycle_service import (
+    advance_on_window_close_on,
+    configuration_fixed,
+    configuration_fixed_refusal,
+)
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.signup.services.closing_steps import POST_CLOSED, closing_steps, window_close_steps
 from leaguebot.signup.services.window_changes import (
@@ -71,7 +78,7 @@ from leaguebot.signup.services.window_changes import (
 
 if TYPE_CHECKING:
     from leaguebot.core.models.server_config import ServerConfig
-    from leaguebot.core.services.module_service import ModuleService
+    from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.signup.services.signup_module_service import SignupModuleService
 
 log = logging.getLogger(__name__)
@@ -134,18 +141,28 @@ def signup_off_change(
 ) -> ChangeType:
     """The `module.off:signup` change type, for the builder to register.
 
-    The payload is ``window``: the Sign Up button message of the open window the command read, or
-    None where the window was closed. *signup_module_service* is a getter, so that the service is
-    the one the bot holds when the job runs. *returned_by_close* are the driver states the close
-    turns away, *cancel_timers* removes one driver's inactivity and deletion timers,
-    *cancel_close_timer* the window's close timer, *server_config* reads the league's roles for the
-    overwrites to clear, and *now* and *arm_once* are the queue's clock and the scheduler
-    service's one-off timer.
+    The payload starts empty: ``window``, the Sign Up button message of the window open when the
+    command was asked, or None where it was closed, is filled by *fill* (`ChangeType.fill`,
+    `change_queue`'s docstring) as the change is asked, so core's cog imports nothing of signup's
+    to read it. *signup_module_service* is a getter, so that the service is the one the bot holds
+    when the job runs. *returned_by_close* are the driver states the close turns away,
+    *cancel_timers* removes one driver's inactivity and deletion timers, *cancel_close_timer* the
+    window's close timer, *server_config* reads the league's roles for the overwrites to clear,
+    and *now* and *arm_once* are the queue's clock and the scheduler service's one-off timer.
     """
+
+    async def fill(ctx: CheckContext) -> None:
+        cfg = await signup_module_service().get_config()
+        ctx.payload["window"] = (
+            cfg.signup_button_message_id if cfg is not None and cfg.signups_open else None
+        )
 
     async def check(ctx: CheckContext) -> Verdict:
         if not await modules.is_signup_enabled():
             return Verdict.refuse(ALREADY_DISABLED)
+        season_number = await configuration_fixed(ctx.db_path)
+        if season_number is not None:
+            return Verdict.refuse(configuration_fixed_refusal(season_number, "disable"))
         cfg = await signup_module_service().get_config()
         window = cfg.signup_button_message_id if cfg is not None and cfg.signups_open else None
         if window != ctx.payload["window"]:
@@ -287,6 +304,7 @@ def signup_off_change(
         plan=plan,
         steps=steps,
         check=check,
+        fill=fill,
         key=lambda payload: KIND,
         doing=lambda payload: "Turning the signup module off",
         outcome=outcome,

@@ -47,7 +47,7 @@ async def _bootstrap(db_path: str):
         await seed_team_instances(db, division_id, 100, 200, 300)
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
-            "VALUES (?, 1, 'NORMAL', '2026-01-01T18:00:00')",
+            "VALUES (?, 1, 'NORMAL', '2026-01-01T18:00:00+00:00')",
             (division_id,),
         )
         round_id = cursor.lastrowid
@@ -307,7 +307,7 @@ async def test_test_mode_advance_blocked_until_results_are_final(tmp_path):
     await run_migrations(db_path)
     _, _, round_id = await _bootstrap(db_path)
 
-    from leaguebot.core.services.test_mode_service import round_result_status
+    from leaguebot.core.services.test_mode.test_mode_service import round_result_status
 
     assert await round_result_status(db_path, round_id) == "NOT_RUN"
 

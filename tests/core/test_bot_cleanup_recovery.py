@@ -27,7 +27,6 @@ each ask.
 """
 from __future__ import annotations
 
-import inspect
 import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -159,6 +158,36 @@ async def test_a_round_a_day_past_has_both_its_cleanups_run(tmp_path, seed):
     assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
 
 
+async def test_the_clean_ups_missed_are_asked_in_the_order_their_rounds_raced(tmp_path):
+    """Round 21 started 25 hours ago, and round 22, added after it, started 49 hours ago, each
+    with its Phase 3 forecast and its call standing and its moment stored in UTC with its offset.
+    The restart asks round 22's clean-ups before round 21's, for the forecasts and the check-ins
+    alike: the rounds are taken in the order they raced, not the order they were added."""
+    db_path = await _make_db(tmp_path)
+    earlier = (datetime.now(timezone.utc) - timedelta(hours=49)).isoformat()
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+            "scheduled_at, status) VALUES (?, ?, 2, 'NORMAL', 'Monza Circuit', ?, 'FINAL')",
+            (ROUND_ID + 1, DIVISION_ID, earlier),
+        )
+        await db.execute(
+            "INSERT INTO forecast_messages "
+            "(round_id, division_id, phase_number, message_id, posted_at) "
+            "VALUES (?, ?, 3, 900, ?)",
+            (ROUND_ID + 1, DIVISION_ID, earlier),
+        )
+        await db.execute(
+            "INSERT INTO rsvp_embed_messages "
+            "(round_id, division_id, message_id, channel_id, posted_at) "
+            "VALUES (?, ?, '901', '700', ?)",
+            (ROUND_ID + 1, DIVISION_ID, earlier),
+        )
+        await db.commit()
+
+    assert await _recover(_bot(db_path)) == ([ROUND_ID + 1, ROUND_ID], [ROUND_ID + 1, ROUND_ID])
+
+
 async def test_a_round_under_a_day_past_is_left_to_its_own_job(tmp_path):
     db_path = await _make_db(tmp_path, hours_since_start=23)
 
@@ -197,7 +226,7 @@ async def test_a_superseded_forecast_whose_deletion_was_discarded_is_caught_up_w
     W4)."""
     db_path = await _make_db(tmp_path, phases=(2, 3))
 
-    with caplog.at_level("INFO", logger=bot_module.__name__):
+    with caplog.at_level("INFO", logger="leaguebot"):
         assert await _recover(_bot(db_path)) == ([ROUND_ID], [ROUND_ID])
 
     lines = [record.getMessage() for record in caplog.records]
@@ -218,7 +247,7 @@ async def test_the_catch_up_s_log_line_names_the_forecast_it_deletes(
     standing, "deleting the Phase 2 forecast of round_id=21", never a phase that is not."""
     db_path = await _make_db(tmp_path, phases=phases)
 
-    with caplog.at_level("INFO", logger=bot_module.__name__):
+    with caplog.at_level("INFO", logger="leaguebot"):
         await _recover(_bot(db_path))
 
     lines = [record.getMessage() for record in caplog.records]
@@ -273,18 +302,3 @@ async def test_a_database_it_cannot_read_stops_the_recovery_quietly(tmp_path, ca
 
     assert await _recover(bot) == ([], [])
     assert "failed to read the messages still standing" in caplog.text
-
-
-# ---------------------------------------------------------------------------
-# Where it runs
-# ---------------------------------------------------------------------------
-
-
-def test_the_catch_up_runs_after_the_deadlines_are_caught_up():
-    """So a check-in whose deadline and cleanup both passed while the bot was down is
-    distributed before it is taken down. Read from the source, because both run inside
-    `on_ready` among a dozen start-up steps no test drives whole."""
-    source = inspect.getsource(bot_module.main)
-    deadlines = source.index("await _recover_rsvp_views_and_deadlines(bot)")
-    cleanups = source.index("await _recover_missed_cleanups(bot)")
-    assert deadlines < cleanups

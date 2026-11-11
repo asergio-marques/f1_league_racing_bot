@@ -1,4 +1,4 @@
-"""The running job's number, and the guard that refuses a post made outside a job (#439, 6b).
+"""The running job's number, and the guard that refuses a post made outside a job.
 
 Every message the bot posts, edits or deletes is a job of a change (`docs/design/architecture.md`,
 "Posting to Discord"). `current_job()` says whether the code running is inside one: the change

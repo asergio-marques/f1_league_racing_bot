@@ -182,7 +182,7 @@ async def test_compute_driver_standings_countback(db_path):
         await seed_team_instances(db, div_id, 998, 999)
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
-            "VALUES (?, 1, 'NORMAL', '2026-01-01T18:00:00')",
+            "VALUES (?, 1, 'NORMAL', '2026-01-01T18:00:00+00:00')",
             (div_id,),
         )
         round_id = cursor.lastrowid
@@ -208,7 +208,7 @@ async def test_compute_driver_standings_countback(db_path):
         # Round 2 — driver B gets 7, driver A gets 0 → both on 25
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
-            "VALUES (?, 2, 'NORMAL', '2026-02-01T18:00:00')",
+            "VALUES (?, 2, 'NORMAL', '2026-02-01T18:00:00+00:00')",
             (div_id,),
         )
         round2_id = cursor.lastrowid
@@ -269,7 +269,7 @@ async def _bootstrap(db, server_id: int = 1) -> tuple[int, int]:
 async def _round(db, div_id: int, n: int) -> int:
     cur = await db.execute(
         "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
-        "VALUES (?, ?, 'NORMAL', '2026-01-01T18:00:00')",
+        "VALUES (?, ?, 'NORMAL', '2026-01-01T18:00:00+00:00')",
         (div_id, n),
     )
     return cur.lastrowid
@@ -667,7 +667,7 @@ async def _division_with_rounds(db, count: int, *, cancelled: tuple[int, ...] = 
             "INSERT INTO rounds "
             "(division_id, round_number, format, scheduled_at, status) "
             "VALUES (?, ?, 'NORMAL', ?, ?)",
-            (division_id, number, f"2026-0{number}-01T18:00:00", status),
+            (division_id, number, f"2026-0{number}-01T18:00:00+00:00", status),
         )
         round_ids.append(cursor.lastrowid)
     return division_id, round_ids
@@ -836,7 +836,7 @@ async def _seat(db, div_id: int, team: str, drivers: list[tuple[int, str]],
     ti_id = cur.lastrowid
     if role_id is not None:
         await db.execute(
-            "INSERT INTO team_role_configs (team_name, role_id) VALUES (?, ?)",
+            "INSERT INTO team_role_configs (team_name, role_id, updated_at) VALUES (?, ?, '2031-03-04T05:06:07+00:00')",
             (team, role_id),
         )
     for seat_number, (user_id, _name) in enumerate(drivers, start=1):

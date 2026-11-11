@@ -13,10 +13,12 @@ run. A season is completed explicitly, by `/season complete`, and in no other wa
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.core.services.season_service import SeasonService
+from leaguebot.core.services.seasons.season_service import SeasonService
 
 
 async def _seed_server(db_path: str, server_id: int = 1) -> tuple[int, list[int]]:
@@ -45,7 +47,7 @@ async def _seed_server(db_path: str, server_id: int = 1) -> tuple[int, list[int]
 
         round_ids = []
         for i, scheduled_at in enumerate(
-            ["2026-04-01T12:00:00", "2026-05-01T12:00:00"], start=1
+            ["2026-04-01T12:00:00+00:00", "2026-05-01T12:00:00+00:00"], start=1
         ):
             await db.execute(
                 "INSERT INTO rounds "
@@ -63,16 +65,6 @@ async def _seed_server(db_path: str, server_id: int = 1) -> tuple[int, list[int]
     return season_id, round_ids
 
 
-async def _mark_all_phases_done(db_path: str, round_ids: list[int]) -> None:
-    async with get_connection(db_path) as db:
-        for rid in round_ids:
-            await db.execute(
-                "UPDATE rounds SET phase1_done = 1, phase2_done = 1, phase3_done = 1 WHERE id = ?",
-                (rid,),
-            )
-        await db.commit()
-
-
 # ---------------------------------------------------------------------------
 # SeasonService helper tests
 # ---------------------------------------------------------------------------
@@ -87,27 +79,17 @@ async def test_has_existing_season(seeded: bool, tmp_path) -> None:
     assert await svc.has_existing_season() is seeded
 
 
-@pytest.mark.parametrize("done", [False, True], ids=["pending", "done"])
-async def test_all_phases_complete(done: bool, tmp_path) -> None:
-    db_path = str(tmp_path / "bot.db")
-    await run_migrations(db_path)
-    _, round_ids = await _seed_server(db_path, server_id=1)
-    if done:
-        await _mark_all_phases_done(db_path, round_ids)
-    svc = SeasonService(db_path)
-    assert await svc.all_phases_complete() is done
-
-
 async def test_get_last_scheduled_at_returns_latest(tmp_path) -> None:
+    """The latest of the season's round moments, stored with their offset, comes back as an
+    aware UTC moment."""
     db_path = str(tmp_path / "bot.db")
     await run_migrations(db_path)
     await _seed_server(db_path, server_id=1)
     svc = SeasonService(db_path)
     last_at = await svc.get_last_scheduled_at()
-    assert last_at is not None
-    # The seeded rounds have scheduled_at '2026-04-01' and '2026-05-01'
-    assert last_at.year == 2026
-    assert last_at.month == 5
+    # The seeded rounds are at 2026-04-01 and 2026-05-01, 12:00 UTC.
+    assert last_at == datetime(2026, 5, 1, 12, 0, tzinfo=timezone.utc)
+    assert last_at.tzinfo is not None
 
 
 async def test_get_last_scheduled_at_returns_none_for_unknown_server(tmp_path) -> None:

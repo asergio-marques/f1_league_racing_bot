@@ -1,8 +1,8 @@
 """A round's check-in call on the change queue (#439, slice 6b, C26): asked by its timer, a restart
 or `/attendance post-check-in`, posted and recorded by the call's own jobs.
 
-The league is `ongoing_league`'s with attendance on, its queue rebuilt on a real
-`AttendanceService`: Pro (role 801) has Lewis and Max seated at Ferrari, its check-in channel is
+The league is `ongoing_league`'s with attendance on, its attendance service
+reading the database: Pro (role 801) has Lewis and Max seated at Ferrari, its check-in channel is
 603, and round 3's call already stands there as messages 7001 to 7003, Lewis having accepted.
 Pro's round 4 is moved to three days off, past the moment its call falls due (five days before)
 and before its check-in deadline (two hours before), with no call posted for it yet. A test asks
@@ -18,16 +18,15 @@ leaves alone a call already in hand; under test mode it asks none (the #429 rule
 from __future__ import annotations
 
 import inspect
-from datetime import timedelta
+from datetime import timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock
 
 import discord
 import pytest
 
-from leaguebot.attendance.services.attendance_service import AttendanceService
 from tests.support.change_queue import (
-    attach_queue,
+    acknowledgement,
     change_rows,
     discard_job,
     http_error,
@@ -35,6 +34,7 @@ from tests.support.change_queue import (
     run_queue,
     step_rows,
     stopped_job,
+    updated_reply,
 )
 from tests.support.season_league import (
     CALL_MESSAGES,
@@ -43,9 +43,11 @@ from tests.support.season_league import (
     MAX,
     PRO,
     SeasonLeague,
+    attendance_from_the_database,
     ongoing_league,
     profile_id,
     round_id,
+    run_attendance_channel_command,
 )
 
 KIND = "attendance.check_in.call"
@@ -67,8 +69,7 @@ COUNTS_NOTHING_GIVEN_UP = "the round counts nothing against anyone"
 async def _call_league(tmp_path: Any, *, images: bool = False) -> SeasonLeague:
     """The league of the module docstring: round 4 three days off, no call posted for it."""
     league = await ongoing_league(tmp_path, attendance=True, images=images)
-    league.bot.attendance_service = AttendanceService(league.db_path)
-    attach_queue(league.bot, league.db_path, now=league.clock)
+    attendance_from_the_database(league)
     await _round_4_in(league, timedelta(days=3))
     return league
 
@@ -76,7 +77,7 @@ async def _call_league(tmp_path: Any, *, images: bool = False) -> SeasonLeague:
 async def _round_4_in(league: SeasonLeague, delta: timedelta) -> None:
     when = league.clock.now + delta
     await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?",
-                       when.replace(tzinfo=None).isoformat(), ROUND_4)
+                       when.astimezone(timezone.utc).isoformat(), ROUND_4)
 
 
 async def _ask(league: SeasonLeague, round_: int = ROUND_4, **kwargs: Any) -> None:
@@ -112,9 +113,9 @@ async def _call_changes(league: SeasonLeague) -> list[dict[str, Any]]:
 async def _recover(league: SeasonLeague) -> None:
     """The restart's step for the calls that fell due while the bot was down; the queue is not
     started."""
-    from leaguebot.__main__ import _recover_missed_check_in_calls
+    from leaguebot.attendance.wiring import recover_missed_check_in_calls
 
-    await _recover_missed_check_in_calls(league.bot, now=league.clock.now)
+    await recover_missed_check_in_calls(league.bot, now=league.clock.now)
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +126,7 @@ async def _recover(league: SeasonLeague) -> None:
 async def test_the_timer_asks_for_the_call_and_the_queue_posts_it(tmp_path):
     """Nothing is posted as the call is asked; the queue posts it in Pro's check-in channel,
     pinging Pro's role. The check-in timer's callback asks the queue rather than posting."""
-    import leaguebot.__main__ as bot_module
+    from leaguebot.attendance import wiring
 
     league = await _call_league(tmp_path)
 
@@ -138,7 +139,7 @@ async def test_the_timer_asks_for_the_call_and_the_queue_posts_it(tmp_path):
     assert [row["kind"] for row in await _call_changes(league)] == [KIND]
     assert await stopped_job(league.db_path) is None
     assert posted in league.channel(CHECK_IN).messages
-    assert "ask_check_in_call(" in inspect.getsource(bot_module.main)
+    assert "ask_check_in_call(" in inspect.getsource(wiring.register_scheduler_callbacks)
 
 
 async def test_the_call_s_record_saves_its_message_and_the_no_rsvp_rows_with_its_mark(tmp_path):
@@ -231,6 +232,42 @@ async def test_a_call_whose_rsvp_channel_is_unset_stops_the_queue_naming_the_com
     assert "/attendance channel rsvp" in league.log()
     assert _sent(league) == []
     assert await _call_record(league) == []
+
+
+async def test_a_stopped_call_lands_once_the_rsvp_channel_is_set_and_retried(tmp_path):
+    """Set the channel, then Retry: the remedy the stop notice leads a manager to, end to end.
+
+    Pro's check-in channel is unset, and round 4's call stops the queue at its post. Alex runs
+    `/attendance channel rsvp` for Pro with channel 603 and is acknowledged; the queue runs. The
+    setting does not wait behind the stopped call: it runs past it, saves 603 as Pro's check-in
+    channel and tells Alex the channel was set, while the call still stops the league's lane.
+    Alex presses Retry: the call lands once in 603, its record is saved, and nothing stops the
+    queue."""
+    league = await _call_league(tmp_path)
+    await league.write(
+        "UPDATE attendance_division_config SET rsvp_channel_id = NULL WHERE division_id = ?", PRO,
+    )
+    await _ask(league)
+    await run_queue(league.bot)
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "post_call"
+
+    manager = await run_attendance_channel_command(league, "rsvp", CHECK_IN)
+    assert acknowledgement(manager).startswith("⏳ ")
+    await run_queue(league.bot)
+
+    assert "set to" in updated_reply(manager)
+    [row] = await league.rows(
+        "SELECT rsvp_channel_id FROM attendance_division_config WHERE division_id = ?", PRO,
+    )
+    assert int(row["rsvp_channel_id"]) == CHECK_IN
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "post_call", "setting the channel ran the job"
+    await retry_job(league.bot)
+
+    assert len(_sent(league)) == 1
+    assert len(await _call_record(league)) == 1
+    assert await stopped_job(league.db_path) is None
 
 
 async def test_a_call_whose_record_fails_removes_its_copy_before_the_next_try(tmp_path):
