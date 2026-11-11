@@ -134,6 +134,9 @@ EXEMPT = {
     # The amendment's session chooser: what the member ticked, read once when they press
     # Continue. It dies with the ephemeral view it belongs to (#345).
     ("results/cogs/results_cog.py", "selected"),
+    # What the test roster's recording judge was asked, in order: one judge is made for each check
+    # of a roster change and dies with it, so none outlives the call that asked.
+    ("core/services/drivers/template_capacity_service.py", "questions"),
     # One parsed SVG document's index of its own elements.
     ("image/utils/svg_document.py", "by_id"),
     ("image/utils/svg_document.py", "by_label"),
