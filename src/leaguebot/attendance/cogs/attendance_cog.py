@@ -594,6 +594,7 @@ class AttendanceCog(commands.Cog):
         round="Round number to recalculate from; every finalised round after it follows.",
     )
     @league_manager_only
+    @_after_the_catch_up
     async def sync(
         self, interaction: discord.Interaction, division: str, round: int
     ) -> None:
