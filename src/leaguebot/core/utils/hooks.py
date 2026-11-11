@@ -17,14 +17,20 @@ read or write the database. Where core holds a connection open at the moment (th
 the moment falls inside one), `call` hands it, and the subscribers read and write on it; the
 windows hook, whose subscribers open their own, hands none. Its `call` is a coroutine.
 
-The bot starting's steps are not this type: `start_up` contains each (architecture.md, "One sweep
-picks up the timed events that were missed").
+`StartingHook` is not this type. It holds core's own start-up steps, signed up by name, then each
+module's, signed up as one function giving that module's named steps in its own order, under the
+module's switch key. It is not called: the sweep reads it and runs each step contained, a module's
+only where its switch is on (architecture.md, "Timed work and restarts").
 """
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from typing import Any
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
+from typing import Any, overload
+
+#: A start-up step: its name, for the log and the log channel, and what it runs, handed nothing.
+StartUpStep = tuple[str, Callable[[], Awaitable[None]]]
 
 
 class Hook:
@@ -55,3 +61,58 @@ class AwaitedHook:
     async def call(self, *args: Any, **kwargs: Any) -> list[Any]:
         """Await each subscriber with what was handed; return what each handed back, in order."""
         return [await subscriber(*args, **kwargs) for subscriber in self._subscribers]
+
+
+@dataclass(frozen=True)
+class _CoreStep:
+    step: StartUpStep
+
+
+@dataclass(frozen=True)
+class _ModuleSteps:
+    module: str
+    steps: Callable[[], Sequence[StartUpStep]]
+
+
+class StartingHook:
+    """The bot's start-up steps: core's own, then each module's, in the order they signed up.
+
+    Core's steps are signed up by *name*, a module's as *steps*, the module's wiring function bound
+    to the bot (a `functools.partial`), handed nothing and giving the module's named steps in its
+    own order, under *module*, the module's switch key: the name its switch reader is signed up
+    under, which is `images` for the image module."""
+
+    def __init__(self) -> None:
+        self._subscribers: list[_CoreStep | _ModuleSteps] = []
+
+    @overload
+    def subscribe(self, step: Callable[[], Awaitable[None]], *, name: str) -> None: ...
+
+    @overload
+    def subscribe(self, step: Callable[[], Sequence[StartUpStep]], *, module: str) -> None: ...
+
+    def subscribe(
+        self,
+        step: Callable[[], Any],
+        *,
+        name: str | None = None,
+        module: str | None = None,
+    ) -> None:
+        """Sign up one of core's own steps (*name*), or a module's steps (*module*), after those
+        already signed up."""
+        if (name is None) == (module is None):
+            raise ValueError("a start-up sign-up names a core step or a module, not both or neither")
+        if name is not None:
+            self._subscribers.append(_CoreStep((name, step)))
+        else:
+            assert module is not None
+            self._subscribers.append(_ModuleSteps(module, step))
+
+    def core_steps(self) -> list[StartUpStep]:
+        """Core's own steps, in the order they signed up."""
+        return [entry.step for entry in self._subscribers if isinstance(entry, _CoreStep)]
+
+    def modules(self) -> list[tuple[str, Callable[[], Sequence[StartUpStep]]]]:
+        """Each module's switch key and its function giving its steps, in the order they signed up."""
+        return [(entry.module, entry.steps) for entry in self._subscribers
+                if isinstance(entry, _ModuleSteps)]

@@ -21,15 +21,13 @@ drop; the second call finds the guard spent, logs that start-up was skipped and 
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Sequence
 
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.scheduler_service import SchedulerService
+from leaguebot.core.utils.hooks import StartUpStep
 
 log = logging.getLogger(__name__)
-
-#: A start-up step: its name, for the log, and what it runs, handed nothing.
-StartUpStep = tuple[str, Callable[[], Awaitable[None]]]
 
 #: Spent by the first call to :func:`start_up`.
 _started = False
