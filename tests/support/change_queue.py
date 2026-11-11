@@ -871,6 +871,17 @@ def typed_message(channel: Any, author: Any, content: str = "", *,
     return message
 
 
+async def held_on(queue: Any, channel_id: int, *, timeout: float = 5.0) -> None:
+    """Wait until a message typed in *channel_id* is held by the catch-up after a restart: its
+    turn is asked and waits for the catch-up to end, the channel among the queue's held turn
+    channels (#440)."""
+    async def _held() -> None:
+        while channel_id not in queue.held_turn_channels():
+            await asyncio.sleep(0.01)
+
+    await asyncio.wait_for(_held(), timeout)
+
+
 def typed_message_deleted(message: Any) -> None:
     """*message* is deleted from its channel, by the member or by Discord."""
     message.gone = True
