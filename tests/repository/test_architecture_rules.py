@@ -3358,6 +3358,15 @@ CATCH_ALLS_ALLOWED = {
         "a stated exception: a calendar gate that cannot be read answers text, so none is lost",
     ("core/services/drivers/lineup_posting.py", "LineupPoster._refresh_lineup_post"):
         "place 5, a lineup that cannot be drawn is posted as text and its fault is the job's line",
+    ("results/services/publishing/results_post_service.py", "produce_session_results"):
+        "place 5, a results table that cannot be drawn is posted as text and its fault is the "
+        "job's line",
+    ("results/services/publishing/results_post_service.py", "produce_standings"):
+        "place 5, a standings table that cannot be drawn is posted as text and its fault is the "
+        "job's line",
+    ("results/services/review/verdict_announcement_service.py", "_send_verdict"):
+        "place 5, a verdict picture that cannot be drawn is announced as text and its fault is "
+        "the job's line",
     ("image/services/image_drawing.py", "ImageDrawing.lineup_wanted"):
         "a stated exception: a lineup gate that cannot be read answers text, so none is lost",
     ("image/services/image_drawing.py", "ImageDrawing.artwork_signature"):
@@ -3470,9 +3479,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/utils/font_metrics.py", "measure"): (1, PASS["image"]),
     ("image/utils/svg_document.py", "_contained"): (2, PASS["image"]),
     ("image/utils/svg_fill.py", "_mandatory_ids"): (1, PASS["image"]),
-    ("results/services/publishing/results_post_service.py", "produce_session_results"): (1, PASS["results"]),
-    ("results/services/publishing/results_post_service.py", "produce_standings"): (1, PASS["results"]),
-    ("results/services/review/verdict_announcement_service.py", "_send_verdict"): (1, PASS["results"]),
     ("signup/cogs/signup_cog.py", "ConfirmCloseView.on_timeout"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.on_member_remove"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, PASS["signup"]),
