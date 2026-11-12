@@ -445,9 +445,6 @@ def test_the_sweep_runs_often_enough_to_honour_the_deadline():
     assert AMENDMENT_SWEEP_MINUTES * 60 < AMENDMENT_STAGE_TIMEOUT_SECONDS
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#284: the amendment sweep is still armed with APScheduler's lateness limit",
-)
 def test_the_sweep_is_re_armed_by_the_scheduler_not_by_its_own_callback():
     """A job that re-arms itself from inside its body stops for good the first time it raises.
 

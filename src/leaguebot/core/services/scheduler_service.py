@@ -941,6 +941,12 @@ class SchedulerService:
         its own callback would put the survival of the schedule at the mercy of the job body —
         a sweep that raised would silently be the last.
 
+        It is a sweep that repeats, not one timer per amendment, because an amendment is left
+        abandoned by no event the bot sees: nobody carried it through. Each run re-reads the
+        amendments' rows and undoes those past their deadline, as architecture.md's standing sweep
+        is (a job that re-reads its rows each time it runs). It is armed with no lateness limit
+        (`misfire_grace_time=None`), so a run due while the bot was down is made when it is back.
+
         ``replace_existing=True`` so a restart re-arms rather than duplicates it.
         """
         self._scheduler.add_job(
@@ -948,6 +954,7 @@ class SchedulerService:
             trigger=IntervalTrigger(minutes=AMENDMENT_SWEEP_MINUTES),
             id=AMENDMENT_SWEEP_JOB_ID,
             replace_existing=True,
+            misfire_grace_time=None,
             name="Revert abandoned round amendments",
             kwargs={"kind": AMENDMENT_SWEEP_KIND},
         )
