@@ -548,8 +548,9 @@ async def test_under_test_mode_with_weather_on_a_round_start_after_the_restart_o
     """Test mode and weather are on, so round 3's `results` job stands (core specification, "What
     confirming placements does"). Round 3's start is an hour after the bot's clock when the bot comes
     up, and results' catch-up runs and asks nothing. The bot's clock then moves two hours on, past
-    round 3's start, and its `results` job fires on time. Round 3's opening is asked of the queue
-    once, and the queue opens it: round 3 awaits results, and one channel is made."""
+    round 3's start, and its `results` job fires while the bot is up, an hour after the start: the
+    handler holds back only a start that passed while the bot was down. Round 3's opening is asked
+    of the queue once, and the queue opens it: round 3 awaits results, and one channel is made."""
     league = await _league(tmp_path, test_mode=True, weather=True)
     await _start_passed(league, hours=-1)
 
