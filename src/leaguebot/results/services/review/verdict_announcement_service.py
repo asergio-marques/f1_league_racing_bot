@@ -696,8 +696,8 @@ async def announce_verdict(
         raise StepFailedOnDiscord("the verdict could not be posted")
     fallback = _fallback_line(
         sent.fault, ctx["division_name"], result_ctx["round_number"],
-        "fix the verdict template, then amend the round with /results rounds amend to "
-        "announce it again",
+        "fix the verdict template, then, once the round is final, amend the round with "
+        "`/results rounds amend` to announce it again",
     )
     return AnnouncedVerdict(int(getattr(sent.message, "id")), int(channel.id), fallback)
 

@@ -890,8 +890,8 @@ async def test_a_verdict_whose_picture_fails_is_announced_as_text_and_says_why_i
     [line] = faults
     assert "verdict" in line and ("picture" in line or "image" in line), line
     assert "text" in line and fault in line, line
-    assert ("to put it right: fix the verdict template, then amend the round with "
-            "/results rounds amend") in line, line
+    assert ("to put it right: fix the verdict template, then, once the round is final, amend "
+            "the round with `/results rounds amend`") in line, line
 
 
 async def test_a_sanction_card_whose_picture_fails_is_posted_as_text_and_says_why_in_the_log(

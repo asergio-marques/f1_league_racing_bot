@@ -1716,7 +1716,7 @@ def _says_why(line: str, picture: str) -> bool:
     sync = "rounds" if picture == "results" else "standings"
     return (picture in line and ("picture" in line or "image" in line)
             and "text" in line and PICTURE_FILE_FAULT in line
-            and f"to put it right: fix the {picture} template, then run /results {sync} sync"
+            and f"to put it right: fix the {picture} template, then run `/results {sync} sync`"
             in line)
 
 

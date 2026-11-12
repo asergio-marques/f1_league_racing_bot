@@ -287,7 +287,7 @@ def _put_right(picture: str, remedy: str) -> str:
     completion and the sync commands are refused (results spec :587, :589)."""
     if remedy == _AMEND:
         return f"fix the {picture} template, then amend the round with `{_AMEND}`"
-    return f"fix the {picture} template, then run {remedy}"
+    return f"fix the {picture} template, then run `{remedy}`"
 
 
 def _standings_job(
