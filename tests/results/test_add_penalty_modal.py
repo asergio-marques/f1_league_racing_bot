@@ -219,7 +219,7 @@ async def _submit(
     with patch(
         "leaguebot.results.services.review.penalty_wizard._refresh_prompt", new=AsyncMock(return_value=None)
     ), patch(
-        "leaguebot.results.services.review.penalty_wizard._refresh_appeals_prompt", new=AsyncMock(return_value=None)
+        "leaguebot.results.services.review.appeals_review_views._refresh_appeals_prompt", new=AsyncMock(return_value=None)
     ):
         await modal.on_submit(interaction)
         await run_queue(interaction.client)
@@ -379,7 +379,7 @@ async def test_the_prompt_is_refreshed_for_the_pass_being_staged_into(tmp_path):
     with patch(
         "leaguebot.results.services.review.penalty_wizard._refresh_prompt", new=AsyncMock(return_value=None)
     ) as penalty_refresh, patch(
-        "leaguebot.results.services.review.penalty_wizard._refresh_appeals_prompt", new=AsyncMock(return_value=None)
+        "leaguebot.results.services.review.appeals_review_views._refresh_appeals_prompt", new=AsyncMock(return_value=None)
     ) as appeals_refresh:
         interaction = _interaction(state.db_path)
         state.bot = interaction.client

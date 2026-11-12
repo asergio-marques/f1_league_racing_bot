@@ -127,7 +127,10 @@ async def send_appeals_prompt(
     The one place the appeals prompt is sent, which `_post_appeals_prompt` and the queue's
     `post_appeals_prompt` job both call (#439).
     """
-    from leaguebot.results.services.review.penalty_wizard import AppealsReviewView, _render_appeals_prompt_content
+    from leaguebot.results.services.review.appeals_review_views import (
+        AppealsReviewView,
+        _render_appeals_prompt_content,
+    )
 
     appeals_view = AppealsReviewView(state=state)
     content = await _render_appeals_prompt_content(state)

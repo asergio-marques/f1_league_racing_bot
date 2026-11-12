@@ -857,7 +857,10 @@ async def test_every_appeals_control_refuses_while_the_appeals_are_being_approve
     refused as the approval under way (results spec, stage two: "Once the approval is under way
     or done"): nothing is staged, removed, cleared or asked a second time, and one line records
     the refusal, naming the button, the review, Alex and the reason."""
-    from leaguebot.results.services.review.penalty_wizard import AppealsReviewView, _AppealsConfirmClearView
+    from leaguebot.results.services.review.appeals_review_views import (
+        AppealsReviewView,
+        _AppealsConfirmClearView,
+    )
     from leaguebot.results.services.review.review_state import (
         _APPEALS_BEING_APPROVED,
         PenaltyReviewState,
@@ -885,7 +888,7 @@ async def test_every_appeals_control_refuses_while_the_appeals_are_being_approve
         "leaguebot.results.services.review.penalty_wizard._is_league_manager",
         new=AsyncMock(return_value=True),
     ), patch(
-        "leaguebot.results.services.review.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
+        "leaguebot.results.services.review.appeals_review_views._refresh_appeals_prompt", new=AsyncMock()
     ) as refresh_appeals:
         await button.callback(interaction)
 
@@ -1696,7 +1699,8 @@ async def test_each_approve_control_of_an_amendment_asks_its_stage_of_the_queue(
     The press asks the queue for that stage's change, with the round, the division, the amended
     sessions and what is staged in its payload, and Alex is answered at once that it is under way,
     with its job number. The report stage's Approve is pressed on its approval message."""
-    from leaguebot.results.services.review.penalty_wizard import AppealsReviewView, ApprovalView
+    from leaguebot.results.services.review.penalty_wizard import ApprovalView
+    from leaguebot.results.services.review.appeals_review_views import AppealsReviewView
     from leaguebot.results.services.review.review_state import PenaltyReviewState
 
     league = await amend_league(tmp_path, reports_approved=stage == "appeals")

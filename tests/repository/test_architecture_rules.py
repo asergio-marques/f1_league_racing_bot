@@ -1035,8 +1035,8 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/publishing/results_post_service.py", "_delete_posting"): (1, PASS["results"]),
     ("results/services/publishing/results_post_service.py", "delete_round_channel"): (1, PASS["results"]),
     ("results/services/publishing/results_post_service.py", "produce_standings"): (1, PASS["results"]),
+    ("results/services/review/appeals_review_views.py", "_refresh_appeals_prompt"): (1, PASS["results"]),
     ("results/services/review/penalty_wizard.py", "_delete_review_message"): (1, PASS["results"]),
-    ("results/services/review/penalty_wizard.py", "_refresh_appeals_prompt"): (1, PASS["results"]),
     ("results/services/review/penalty_wizard.py", "_refresh_prompt"): (1, PASS["results"]),
     ("results/services/submission/result_submission_service.py", "take_down_cancel_message"): (1, PASS["results"]),
     ("weather/services/forecast_cleanup_service.py", "_discord_delete"): (1, PASS["weather"]),
@@ -1290,6 +1290,7 @@ CHANGE_QUEUE = "change_queue"
 #: the bot until results' pass moves them (#439 slice 6b, decision 20): the penalty review's
 #: buttons and forms, and the configuration picker.
 RESULTS_VIEW_FILES = frozenset({
+    "results/services/review/appeals_review_views.py",
     "results/services/review/penalty_wizard.py",
     "results/services/submission/result_submission_service.py",
 })
@@ -1336,11 +1337,12 @@ def _queue_reached_through_the_bot_among(nodes) -> Counter[tuple[str, str]]:
 #: message). They are the approve buttons, the configuration picker, Resubmit, the two forms, the
 #: Remove, clear-confirm and Make Changes buttons, and No Penalties.
 KNOWN_QUEUE_REACHED_THROUGH_THE_BOT: dict[tuple[str, str], tuple[int, str]] = {
+    ("results/services/review/appeals_review_views.py", "AppealsReviewView._make_remove_cb.cb"): (1, PASS["results"]),
+    ("results/services/review/appeals_review_views.py", "AppealsReviewView.approve_btn"): (1, PASS["results"]),
+    ("results/services/review/appeals_review_views.py", "AppealsReviewView.no_changes_btn"): (1, PASS["results"]),
+    ("results/services/review/appeals_review_views.py", "_AppealsConfirmClearView.confirm_btn"): (1, PASS["results"]),
     ("results/services/review/penalty_wizard.py", "AddPardonModal.on_submit"): (1, PASS["results"]),
     ("results/services/review/penalty_wizard.py", "AddPenaltyModal.on_submit"): (1, PASS["results"]),
-    ("results/services/review/penalty_wizard.py", "AppealsReviewView._make_remove_cb.cb"): (1, PASS["results"]),
-    ("results/services/review/penalty_wizard.py", "AppealsReviewView.approve_btn"): (1, PASS["results"]),
-    ("results/services/review/penalty_wizard.py", "AppealsReviewView.no_changes_btn"): (1, PASS["results"]),
     ("results/services/review/penalty_wizard.py", "ApprovalView.approve_btn"): (1, PASS["results"]),
     ("results/services/review/penalty_wizard.py", "ApprovalView.make_changes_btn"): (1, PASS["results"]),
     ("results/services/review/penalty_wizard.py", "PenaltyReviewView._make_pardon_remove_cb.cb"): (1, PASS["results"]),
@@ -1348,7 +1350,6 @@ KNOWN_QUEUE_REACHED_THROUGH_THE_BOT: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/review/penalty_wizard.py", "PenaltyReviewView.approve_btn"): (1, PASS["results"]),
     ("results/services/review/penalty_wizard.py", "PenaltyReviewView.no_penalties_btn"): (1, PASS["results"]),
     ("results/services/review/penalty_wizard.py", "PenaltyReviewView.resubmit_btn"): (1, PASS["results"]),
-    ("results/services/review/penalty_wizard.py", "_AppealsConfirmClearView.confirm_btn"): (1, PASS["results"]),
     ("results/services/review/penalty_wizard.py", "_ConfirmClearView.confirm_btn"): (1, PASS["results"]),
     ("results/services/submission/result_submission_service.py", "_ConfigSelectView.__init__._cb"): (1, PASS["results"]),
 }

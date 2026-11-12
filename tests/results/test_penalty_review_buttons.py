@@ -582,7 +582,7 @@ async def test_removing_a_pardon_takes_it_off_the_staged_list(amendment, tmp_pat
 
 
 async def test_the_appeals_review_draws_with_more_corrections_than_there_is_room_for():
-    from leaguebot.results.services.review.penalty_wizard import AppealsReviewView
+    from leaguebot.results.services.review.appeals_review_views import AppealsReviewView
 
     state = _state()
     state.staged_appeals = [_penalty(s) for s in range(1, 31)]

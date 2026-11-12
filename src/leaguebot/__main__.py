@@ -1184,7 +1184,8 @@ async def build(settings: Settings) -> LeagueBot:
         NoPreferenceTeammateView,
     )
     from leaguebot.signup.services.signup_views import AdminReviewView, CorrectionParameterView
-    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewView, ApprovalView, AppealsReviewView
+    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewView, ApprovalView
+    from leaguebot.results.services.review.appeals_review_views import AppealsReviewView
     from leaguebot.attendance.services.rsvp_service import RsvpView
 
     for _view in (

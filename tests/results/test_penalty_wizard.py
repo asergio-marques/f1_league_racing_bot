@@ -29,7 +29,6 @@ import discord
 from leaguebot.results.services.review.penalty_wizard import (
     PenaltyReviewView,
     ApprovalView,
-    AppealsReviewView,
     AddPenaltyModal,
     _CID_AR_ADD,
     _CID_AR_CONFIRM,
@@ -38,6 +37,7 @@ from leaguebot.results.services.review.penalty_wizard import (
     _CID_CONFIRM,
     _CID_APPROVE,
 )
+from leaguebot.results.services.review.appeals_review_views import AppealsReviewView
 from leaguebot.results.services.review.review_state import PenaltyReviewState
 from leaguebot.results.services.review.penalty_service import StagedPenalty
 from leaguebot.results.models.points_config import SessionType
