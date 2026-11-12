@@ -20,6 +20,7 @@ from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
+from leaguebot.core.services.seasons import season_service
 from leaguebot.results.services.review.penalty_service import StagedPenalty
 from leaguebot.core.utils.league_bot import LeagueBot
 
@@ -250,23 +251,21 @@ async def review_stage_refusal(
     prompt the channel records. Read from the database alone, so the approval's check and a
     control's check read one rule."""
     async with get_connection(db_path) as db:
+        facts = await season_service.round_facts_on(db, round_id)
         cursor = await db.execute(
-            """
-            SELECT r.status, rsc.resubmitting, rsc.prompt_message_id
-            FROM rounds r
-            JOIN round_submission_channels rsc ON rsc.round_id = r.id AND rsc.closed = 0
-            WHERE r.id = ?
-            """,
+            "SELECT resubmitting, prompt_message_id FROM round_submission_channels "
+            "WHERE round_id = ? AND closed = 0",
             (round_id,),
         )
         row = await cursor.fetchone()
-    if row is not None and row["status"] == RoundStatus.AWAITING_APPEAL_VERDICTS.value:
+    status = facts.status if facts is not None and row is not None else None
+    if status == RoundStatus.AWAITING_APPEAL_VERDICTS:
         return (
             "❌ This round's post-race penalties have already been approved, and its pardons "
             "with them. Its appeals are reviewed below; a decision already applied is changed "
             "with `/results rounds amend` once the round is final."
         )
-    if row is None or row["status"] != RoundStatus.AWAITING_REPORT_VERDICTS.value:
+    if row is None or status != RoundStatus.AWAITING_REPORT_VERDICTS:
         return "❌ This round's penalty review is over, so nothing here can be changed."
     if row["resubmitting"]:
         return (
@@ -320,15 +319,15 @@ async def appeals_stage_refusal(
     appeals prompt was recorded posted has none stored, and a state built without one carries none.
     """
     async with get_connection(db_path) as db:
+        facts = await season_service.round_facts_on(db, round_id)
         cursor = await db.execute(
-            "SELECT r.status, rsc.appeals_prompt_message_id FROM rounds r "
-            "LEFT JOIN round_submission_channels rsc ON rsc.round_id = r.id WHERE r.id = ?",
+            "SELECT appeals_prompt_message_id FROM round_submission_channels WHERE round_id = ?",
             (round_id,),
         )
         row = await cursor.fetchone()
-    if row is None or row["status"] != RoundStatus.AWAITING_APPEAL_VERDICTS.value:
+    if facts is None or facts.status != RoundStatus.AWAITING_APPEAL_VERDICTS:
         return "❌ This round's appeals review is over, so nothing here can be changed."
-    stored = row["appeals_prompt_message_id"]
+    stored = row["appeals_prompt_message_id"] if row is not None else None
     if stored is not None and prompt_message_id is not None and stored != prompt_message_id:
         return (
             "❌ This appeals review has been replaced by a newer one in this channel. "
