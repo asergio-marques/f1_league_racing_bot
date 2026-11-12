@@ -70,7 +70,7 @@ def _state(league: ReviewLeague, *, staged: Any = (), approval: int | None = Non
         round_id=ROUND_ID, division_id=DIVISION_ID, submission_channel_id=SUBMISSION_CHANNEL,
         session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path,
         bot=league.bot,
-        queue=league.bot.change_queue, server_config=league.bot.config_service.get_server_config, staged=list(staged), prompt_message_id=PROMPT,
+        queue=league.bot.change_queue, server_config=league.bot.config_service.get_server_config, router=league.bot.output_router, staged=list(staged), prompt_message_id=PROMPT,
         appeals_prompt_message_id=APPEALS_PROMPT if appeals else None,
         approval_message_id=approval, round_number=3, division_name="Pro",
     )

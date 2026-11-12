@@ -284,7 +284,7 @@ def test_the_state_carries_the_flags_and_defaults_to_a_first_pass():
     state = PenaltyReviewState(
         round_id=1, division_id=1, submission_channel_id=1,
         session_types_present=[], db_path=":memory:", bot=None,
-        queue=MagicMock(), server_config=AsyncMock(return_value=None),
+        queue=MagicMock(), server_config=AsyncMock(return_value=None), router=MagicMock(),
     )
 
     assert state.is_amendment is False

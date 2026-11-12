@@ -128,7 +128,7 @@ async def _run(db_path, channel=None, *, attendance=True):
     with in_a_job():
         state = await run_amendment_review_stages(
             db_path, ROUND_ID, DIVISION_ID, channel, bot, bot.change_queue,
-            bot.config_service.get_server_config,
+            bot.config_service.get_server_config, bot.output_router,
             round_number=3, division_name="Pro",
             session_types=[SessionType.FEATURE_RACE], **handed,
         )
@@ -286,7 +286,7 @@ async def test_the_review_asks_the_hook_and_never_reads_attendance_s_switch(tmp_
     with in_a_job():
         state = await run_amendment_review_stages(
             db_path, ROUND_ID, DIVISION_ID, _channel(), bot, bot.change_queue,
-            bot.config_service.get_server_config,
+            bot.config_service.get_server_config, bot.output_router,
             round_number=3, division_name="Pro",
             session_types=[SessionType.FEATURE_RACE], attendance=hook,
         )

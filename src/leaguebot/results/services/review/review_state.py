@@ -14,6 +14,7 @@ from typing import Any
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.server_config import ServerConfig
+from leaguebot.core.services.posting.output_router import OutputRouter
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.models.round import RoundStatus
@@ -88,6 +89,9 @@ class PenaltyReviewState:
     #: Reads the league's server configuration, handed in with the queue, which the tier check of
     #: every button reads the roles from, so that a view never looks the service up on the bot.
     server_config: ReadServerConfig
+    #: The output router the review's presses write their log lines through, handed in with the
+    #: queue, so that a view never looks it up on the interaction's client.
+    router: OutputRouter
     staged: list[StagedPenalty] = field(default_factory=list)
     staged_appeals: list[StagedPenalty] = field(default_factory=list)
     staged_pardons: list[StagedPardon] = field(default_factory=list)

@@ -441,12 +441,14 @@ def register_change_types(
     bot.change_queue.register(amend_close_change())
     bot.change_queue.register(
         review_open_change(
-            queue=bot.change_queue, server_config=bot.config_service.get_server_config
+            queue=bot.change_queue, server_config=bot.config_service.get_server_config,
+            router=bot.output_router,
         )
     )
     bot.change_queue.register(
         review_prompt_change(
-            queue=bot.change_queue, server_config=bot.config_service.get_server_config
+            queue=bot.change_queue, server_config=bot.config_service.get_server_config,
+            router=bot.output_router,
         )
     )
     bot.change_queue.register(review_stage_change())
@@ -463,7 +465,8 @@ def register_change_types(
     )
     bot.change_queue.register(
         appeals_open_change(
-            queue=bot.change_queue, server_config=bot.config_service.get_server_config
+            queue=bot.change_queue, server_config=bot.config_service.get_server_config,
+            router=bot.output_router,
         )
     )
     bot.change_queue.register(close_stale_change())
@@ -480,6 +483,7 @@ def register_change_types(
         now=lambda: bot.change_queue.now(),
         queue=bot.change_queue,
         server_config=bot.config_service.get_server_config,
+        router=bot.output_router,
     ):
         bot.change_queue.register(stage)
     bot.change_queue.register(

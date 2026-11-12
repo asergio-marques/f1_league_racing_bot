@@ -88,20 +88,19 @@ def _button(label: str | None, state: PenaltyReviewState | None, review: str = "
     return f"{named} of the {review} review of round {state.round_number} ({state.division_name})"
 
 
-async def _record_press(interaction: discord.Interaction, what: str, *detail: str) -> None:
+async def _record_press(
+    state: PenaltyReviewState, interaction: discord.Interaction, what: str, *detail: str
+) -> None:
     """Write the one line a review press leaves in the log channel (#482), in the success form.
 
     "Alex (<@77>) | the “Remove #2” button of the penalty review of round 3 (Division 1) |
     Success", with what was staged, removed or cleared beneath it. Every press that changes a
     review writes one, and only that one: the approval's own line is the record of an approval.
-    Written through the interaction's client, as a refusal's is.
+    Written through the output router the review's state is handed.
     """
-    router = getattr(getattr(interaction, "client", None), "output_router", None)
-    if router is None:
-        return
     lines = [f"{interaction_member(interaction)} | {what} | Success"]
     lines += [f"  {line}" for line in detail]
-    await router.post_log("\n".join(lines))
+    await state.router.post_log("\n".join(lines))
 
 
 def _clear_confirmation(state: PenaltyReviewState, review: str) -> str:

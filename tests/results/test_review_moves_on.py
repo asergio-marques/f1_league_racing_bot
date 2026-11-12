@@ -103,7 +103,7 @@ def _state(db_path: str, *, prompt_message_id: int | None = PROMPT_ID) -> Penalt
         session_types_present=[SessionType.FEATURE_RACE],
         db_path=db_path,
         bot=MagicMock(),
-        queue=MagicMock(), server_config=AsyncMock(return_value=None),
+        queue=MagicMock(), server_config=AsyncMock(return_value=None), router=MagicMock(),
         round_number=3,
         division_name="Pro",
     )
@@ -202,7 +202,7 @@ async def test_a_review_being_approved_has_moved_on(tmp_path):
     )
     state = PenaltyReviewState(
         round_id=LEAGUE_ROUND, division_id=LEAGUE_DIVISION, submission_channel_id=SUBMISSION_CHANNEL,
-        session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path, bot=league.bot, queue=league.bot.change_queue, server_config=league.bot.config_service.get_server_config,
+        session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path, bot=league.bot, queue=league.bot.change_queue, server_config=league.bot.config_service.get_server_config, router=league.bot.output_router,
         prompt_message_id=PROMPT, round_number=3, division_name="Pro",
     )
 

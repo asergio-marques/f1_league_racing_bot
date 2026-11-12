@@ -394,6 +394,7 @@ class _AppealsConfirmClearView(LeagueView):
         cleared = await _staged_named(self.state, self.state.staged_appeals)
         self.state.staged_appeals.clear()
         await _record_press(
+            self.state,
             interaction,
             _button(button.label, self.state, "appeals"),
             f"cleared: {cleared}",
