@@ -16,6 +16,7 @@ from leaguebot.core.services.seasons.season_service import (
     division_on,
     final_round_ids_among_on,
     round_facts_on,
+    rounds_from_on,
 )
 
 
@@ -117,3 +118,28 @@ async def test_a_division_that_is_not_there_is_none(tmp_path):
     await _seed(path)
     async with get_connection(path) as db:
         assert await division_on(db, 5) is None
+
+
+async def test_the_rounds_from_one_forward_are_read_in_round_order_with_their_status(tmp_path):
+    path = str(tmp_path / "league.db")
+    await _seed(path)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO rounds (division_id, round_number, format, track_name, scheduled_at, "
+            "status) VALUES (4, 7, 'NORMAL', 'Spa', '2026-03-01T18:00:00+00:00', 'FINAL'), "
+            "(4, 6, 'NORMAL', 'Imola', '2026-02-15T18:00:00+00:00', 'NOT_RUN'), "
+            "(4, 1, 'NORMAL', 'Baku', '2025-12-01T18:00:00+00:00', 'FINAL')"
+        )
+        from_id = (await (await db.execute("SELECT id FROM rounds WHERE round_number = 5")).fetchone())["id"]
+        rounds = await rounds_from_on(db, 4, from_id)
+        assert [(r.round_number, r.status) for r in rounds] == [
+            (5, "CANCELLED"), (6, "NOT_RUN"), (7, "FINAL"),
+        ]
+        assert [r.track_name for r in rounds] == ["Monza", "Imola", "Spa"]
+
+
+async def test_no_rounds_are_read_from_a_round_that_is_not_there(tmp_path):
+    path = str(tmp_path / "league.db")
+    round_id = await _seed(path)
+    async with get_connection(path) as db:
+        assert await rounds_from_on(db, 4, round_id + 50) == []

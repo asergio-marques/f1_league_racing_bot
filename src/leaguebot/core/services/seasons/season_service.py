@@ -1380,6 +1380,27 @@ async def division_rounds_on(db: aiosqlite.Connection, division_id: int) -> list
     return [int(row["id"]) for row in await cursor.fetchall()]
 
 
+async def rounds_from_on(
+    db: aiosqlite.Connection, division_id: int, from_round_id: int
+) -> list[Round]:
+    """*division_id*'s rounds from *from_round_id* forward, in round order, the round named
+    included, read on *db*; empty where *from_round_id* is no round.
+
+    For a module reading core's tables only through core's services (architecture.md, "The
+    database"): what it asks of the rounds after one (which are awaiting appeals, which are
+    cancelled) it reads off the status each carries, rather than join `rounds` in a query of its
+    own. It writes nothing and commits nothing.
+    """
+    cursor = await db.execute(
+        "SELECT id, division_id, round_number, format, track_name, scheduled_at, status "
+        "FROM rounds WHERE division_id = ? "
+        "AND round_number >= (SELECT round_number FROM rounds WHERE id = ?) "
+        "ORDER BY round_number",
+        (division_id, from_round_id),
+    )
+    return [_row_to_round(r) for r in await cursor.fetchall()]
+
+
 async def division_on(db: aiosqlite.Connection, division_id: int) -> Division | None:
     """The division *division_id*, or None where there is none, read on *db*.
 
