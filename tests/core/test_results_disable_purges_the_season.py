@@ -41,6 +41,10 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.services.publishing.results_post_service import (
+    STANDINGS_CONSTRUCTORS,
+    set_standings_message_id_on,
+)
 from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
 from tests.support.change_queue import (
     INTERACTION_CHANNEL_ID,
@@ -290,10 +294,13 @@ async def _seed_results_for_round(
         )
         await db.execute(
             "INSERT INTO driver_standings_snapshots "
-            "(round_id, division_id, driver_user_id, standing_position, total_points, "
-            " standings_message_id, constructor_standings_message_id) "
-            "VALUES (?, ?, 42, 1, 25, ?, ?)",
-            (round_id, division_id, 2000 + index, 3000 + index),
+            "(round_id, division_id, driver_user_id, standing_position, total_points) "
+            "VALUES (?, ?, 42, 1, 25)",
+            (round_id, division_id),
+        )
+        await set_standings_message_id_on(db, division_id, round_id, 2000 + index)
+        await set_standings_message_id_on(
+            db, division_id, round_id, 3000 + index, STANDINGS_CONSTRUCTORS
         )
         await db.execute(
             "INSERT INTO team_standings_snapshots "

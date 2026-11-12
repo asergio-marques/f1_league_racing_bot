@@ -959,8 +959,11 @@ async def test_the_producers_post_without_saving_or_deleting(tmp_path):
     from leaguebot.results.models.session_result import SessionResult
     from leaguebot.results.services.publishing.results_post_service import (
         PostedTable,
+        get_standings_message_id,
+        get_standings_message_ids,
         produce_session_results,
         produce_standings,
+        set_standings_message_id_on,
     )
     from tests.support.review_league import (
         DIVISION_ID,
@@ -981,10 +984,9 @@ async def test_the_producers_post_without_saving_or_deleting(tmp_path):
     )
     async with get_connection(db_path) as db:
         # The standings stand as two messages, the anchor and one continuation.
-        await db.execute(
-            "UPDATE driver_standings_snapshots SET standings_message_ids = ? "
-            "WHERE standings_message_id = ?",
-            (f"[{OLD_STANDINGS}, {continuation}]", OLD_STANDINGS),
+        await set_standings_message_id_on(
+            db, DIVISION_ID, ROUND_ID, OLD_STANDINGS,
+            message_ids=f"[{OLD_STANDINGS}, {continuation}]",
         )
         session_id = (await (await db.execute(
             "SELECT id FROM session_results WHERE round_id = ?", (ROUND_ID,))).fetchone())[0]
@@ -994,10 +996,11 @@ async def test_the_producers_post_without_saving_or_deleting(tmp_path):
         async with get_connection(db_path) as db:
             results = await (await db.execute(
                 "SELECT results_message_id, results_message_ids FROM session_results")).fetchone()
-            standings = await (await db.execute(
-                "SELECT standings_message_id, standings_message_ids "
-                "FROM driver_standings_snapshots WHERE round_id = ?", (ROUND_ID,))).fetchone()
-        return tuple(results), tuple(standings)
+        standings = (
+            await get_standings_message_id(db_path, DIVISION_ID, ROUND_ID),
+            await get_standings_message_ids(db_path, DIVISION_ID, ROUND_ID),
+        )
+        return tuple(results), standings
 
     stored = await _stored()
     events: list[tuple[str, int, int]] = []

@@ -24,6 +24,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
+from leaguebot.results.services.publishing.results_post_service import get_standings_message_id
 from tests.support.change_queue import in_a_job
 from tests.support.season_classification import (
     bot_on,
@@ -188,18 +189,6 @@ async def test_a_division_with_no_standings_channel_set_posts_no_opening_standin
 # ID recorded").
 
 
-async def _recorded_standings_ids(path, round_id: int) -> list:
-    async with get_connection(path) as db:
-        rows = await (
-            await db.execute(
-                "SELECT standings_message_id FROM driver_standings_snapshots "
-                "WHERE round_id = ? ORDER BY id",
-                (round_id,),
-            )
-        ).fetchall()
-    return [row["standings_message_id"] for row in rows]
-
-
 def _lewis(round_id: int, division_id: int):
     from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot
 
@@ -275,7 +264,7 @@ async def test_the_final_standings_stand_beside_the_last_round_s_and_replace_not
     old_message.edit.assert_not_awaited()
     old_message.delete.assert_not_awaited()
     channel.delete_messages.assert_not_awaited()
-    assert await _recorded_standings_ids(db_path, round_id) == [9100]
+    assert await get_standings_message_id(db_path, division_id, round_id) == 9100
 
 
 async def test_final_standings_whose_channel_was_deleted_raise(db_path):
@@ -324,7 +313,7 @@ async def test_the_final_standings_record_no_message_id(db_path):
     assert produce.await_args.args[2] == round_id
     assert produce.await_args.kwargs["fresh"] is True
     assert produce.await_args.kwargs["occasion"] is ClassificationOccasion.SEASON_FINAL
-    assert await _recorded_standings_ids(db_path, round_id) == [None]
+    assert await get_standings_message_id(db_path, division_id, round_id) is None
 
 
 async def test_a_part_posted_final_standings_is_kept_and_removed_by_the_next_try(db_path):

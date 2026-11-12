@@ -40,6 +40,7 @@ import pytest
 
 from leaguebot.attendance.services.attendance_after_review import sanction_card_texts
 from leaguebot.core.db.database import get_connection
+from leaguebot.results.services.publishing.results_post_service import set_standings_message_id_on
 from tests.support.change_queue import (
     acknowledgement,
     discard_job,
@@ -768,10 +769,12 @@ async def _seed_round(
             )
             await db.execute(
                 "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
-                "standing_position, total_points, standings_message_id, standings_message_ids) "
-                "VALUES (?, ?, ?, 1, 25, ?, ?)",
-                (round_id, DIVISION_ID, LEWIS, OLD_ROUND_STANDINGS[round_id],
-                 json.dumps([OLD_ROUND_STANDINGS[round_id]])),
+                "standing_position, total_points) VALUES (?, ?, ?, 1, 25)",
+                (round_id, DIVISION_ID, LEWIS),
+            )
+            await set_standings_message_id_on(
+                db, DIVISION_ID, round_id, OLD_ROUND_STANDINGS[round_id],
+                message_ids=json.dumps([OLD_ROUND_STANDINGS[round_id]]),
             )
         await db.commit()
     league.channel(RESULTS_CHANNEL).seed(OLD_ROUND_RESULTS[round_id], f"round {number} results")

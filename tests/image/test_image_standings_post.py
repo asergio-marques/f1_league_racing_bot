@@ -1119,6 +1119,7 @@ async def test_a_textual_fallback_reports_the_message_it_replaces_and_deletes_no
     from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot
     from leaguebot.results.services.publishing.results_post_service import (
         PostedTable,
+        get_standings_message_id,
         produce_standings,
         set_standings_message_id_on,
     )
@@ -1204,12 +1205,7 @@ async def test_a_textual_fallback_reports_the_message_it_replaces_and_deletes_no
 
     assert order == ["posted"]
     assert PostedTable([9999], [4321], championship="drivers") in tables
-    async with get_connection(db_path) as db:
-        row = await (await db.execute(
-            "SELECT standings_message_id FROM driver_standings_snapshots WHERE round_id = ?",
-            (round_id,),
-        )).fetchone()
-    assert row["standings_message_id"] == 4321
+    assert await get_standings_message_id(db_path, division_id, round_id) == 4321
 
 
 # ── The rendered files do not outlive the posting attempt ─────────────────

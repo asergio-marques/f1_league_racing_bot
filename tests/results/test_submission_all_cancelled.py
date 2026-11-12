@@ -827,6 +827,7 @@ async def _seed_later_round(league: Any) -> None:
     """Round 4 of Pro at Spa, final, won by Max alone for 25 points; its standings post
     `LATER_STANDINGS` stands, Max first on 43 points (18 + 25) and Lewis second on 25."""
     from leaguebot.core.db.database import get_connection
+    from leaguebot.results.services.publishing.results_post_service import set_standings_message_id_on
     from tests.results.test_review_open_change import DIVISION_ID, STANDINGS_CHANNEL
     from tests.support.review_league import LEWIS, MAX, MAX_PROFILE
 
@@ -846,15 +847,13 @@ async def _seed_later_round(league: Any) -> None:
             "driver_profile_id) VALUES (?, ?, 3001, 1, 'CLASSIFIED', 3601000, 25, ?)",
             (session.lastrowid, MAX, MAX_PROFILE),
         )
-        for driver, position, points, message_id in (
-            (MAX, 1, 43, LATER_STANDINGS), (LEWIS, 2, 25, None),
-        ):
+        for driver, position, points in ((MAX, 1, 43), (LEWIS, 2, 25)):
             await db.execute(
                 "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
-                "standing_position, total_points, standings_message_id) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (LATER_ROUND, DIVISION_ID, driver, position, points, message_id),
+                "standing_position, total_points) VALUES (?, ?, ?, ?, ?)",
+                (LATER_ROUND, DIVISION_ID, driver, position, points),
             )
+        await set_standings_message_id_on(db, DIVISION_ID, LATER_ROUND, LATER_STANDINGS)
         await db.commit()
     league.channel(STANDINGS_CHANNEL).seed(LATER_STANDINGS, "round 4 standings")
 
@@ -950,8 +949,9 @@ async def test_a_later_round_s_standings_are_recomputed_without_the_round_and_po
     out again without round 3, Max on 25 points, and posted again by the one standings job the
     change plans: round 4's standings post, the one standing or its replacement, shows Max on 25
     points (owner, check 1)."""
+    from leaguebot.results.services.publishing.results_post_service import get_standings_message_id
     from tests.results.test_resubmission_changes import _changes, _rows, _type
-    from tests.results.test_review_open_change import STANDINGS_CHANNEL
+    from tests.results.test_review_open_change import DIVISION_ID, STANDINGS_CHANNEL
     from tests.support.review_league import MAX
 
     league = await _resubmitting(tmp_path, monkeypatch)
@@ -962,7 +962,7 @@ async def test_a_later_round_s_standings_are_recomputed_without_the_round_and_po
 
     assert await stopped_job(league.db_path) is None
     [row] = await _rows(
-        league, "SELECT total_points, standings_message_id FROM driver_standings_snapshots "
+        league, "SELECT total_points FROM driver_standings_snapshots "
         "WHERE round_id = ? AND driver_user_id = ?", LATER_ROUND, MAX,
     )
     assert row["total_points"] == 25
@@ -971,7 +971,8 @@ async def test_a_later_round_s_standings_are_recomputed_without_the_round_and_po
     assert names.count("post_standings") == 1
     # The standings job edits the post in place where the new text fits in one message, and
     # replaces it otherwise: either way the post round 4's snapshot names shows Max on 25.
-    post = league.channel(STANDINGS_CHANNEL).messages[row["standings_message_id"]]
+    posted = await get_standings_message_id(league.db_path, DIVISION_ID, LATER_ROUND)
+    post = league.channel(STANDINGS_CHANNEL).messages[posted]
     assert f"<@{MAX}> — **25 pts**" in str(post.content), post.content
 
 
