@@ -33,6 +33,7 @@ from leaguebot.results.services.points.points_settings import (
     reserves_toggle_request,
 )
 from leaguebot.results.services.points.points_config_service import ConfigNotFoundError
+from leaguebot.results.services.points.points_paste import bulk_refusal, parse_bulk_lines
 from leaguebot.results.services.module.channel_settings import (
     NO_ACCESS,
     NOT_ENABLED,
@@ -93,66 +94,6 @@ _RACE_SESSION_CHOICES = [
 
 
 # ---------------------------------------------------------------------------
-# Bulk-parse helper (T012)
-# ---------------------------------------------------------------------------
-
-def _parse_bulk_lines(
-    text: str,
-) -> tuple[list[tuple[int, int]], list[str], list[str]]:
-    """Parse multi-line '<position>, <points>' text.
-
-    Rules:
-    - Blank lines are skipped.
-    - position must be a positive integer (>= 1).
-    - points must be a non-negative integer (>= 0).
-    - If a position appears more than once the last value wins; the duplicate is noted
-      among the overrides, which are not errors: an override never refuses a paste.
-    - Returns (valid_pairs_in_input_order_deduped, error_messages, override_notes).
-    """
-    seen: dict[int, int] = {}  # position -> points (last-wins tracking)
-    errors: list[str] = []
-    overrides: list[str] = []
-
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        parts = line.split(",", 1)
-        if len(parts) != 2:
-            errors.append(f"Malformed line (expected 'position, points'): {line!r}")
-            continue
-        pos_str, pts_str = parts[0].strip(), parts[1].strip()
-        try:
-            position = int(pos_str)
-            if pos_str != str(position):  # reject floats like "1.5"
-                raise ValueError
-        except ValueError:
-            errors.append(f"Invalid position {pos_str!r} on line: {line!r}")
-            continue
-        try:
-            points = int(pts_str)
-            if pts_str != str(points):
-                raise ValueError
-        except ValueError:
-            errors.append(f"Invalid points {pts_str!r} on line: {line!r}")
-            continue
-        if position < 1:
-            errors.append(f"Position must be >= 1, got {position} on line: {line!r}")
-            continue
-        if points < 0:
-            errors.append(f"Points must be >= 0, got {points} on line: {line!r}")
-            continue
-        if position in seen:
-            overrides.append(
-                f"Duplicate position {position}: previous value {seen[position]} overridden by {points}"
-            )
-        seen[position] = points
-
-    valid = list(seen.items())
-    return valid, errors, overrides
-
-
-# ---------------------------------------------------------------------------
 # Bulk modal classes (T013 / T014)
 # ---------------------------------------------------------------------------
 
@@ -182,17 +123,6 @@ _CHANNEL_KINDS = {
 
 #: A form's refusal when the results module has been switched off since it was shown.
 _MODULE_OFF = "\u274c The Results & Standings module is not enabled on this server."
-
-
-def _bulk_refusal(errors: list[str]) -> tuple[str, str]:
-    """The reply refusing a paste with bad lines, listing every one, and the line's reason."""
-    listed = "\n".join(f"  • {e}" for e in errors)
-    reply = (
-        f"\u274c Nothing was applied: {len(errors)} line(s) of the paste could not be read. "
-        f"Correct them and paste the whole table again.\n{listed}"
-    )
-    reason = f"{len(errors)} line(s) of the paste could not be read:\n{listed}"
-    return reply, reason
 
 
 async def _approval_holds_staging(
@@ -257,12 +187,12 @@ class BulkConfigSessionModal(LeagueModal, title="Bulk Set Session Points"):
             await refuse(interaction, _MODULE_OFF, what=what)
             return
 
-        valid, errors, overrides = _parse_bulk_lines(self.entries.value)
+        valid, errors, overrides = parse_bulk_lines(self.entries.value)
         if not valid and not errors:
             await refuse(interaction, "\u274c No entries provided.", what=what)
             return
         if errors:
-            reply, reason = _bulk_refusal(errors)
+            reply, reason = bulk_refusal(errors)
             await refuse(interaction, reply, what=what, reason=reason)
             return
 
@@ -326,12 +256,12 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
         if season is None:
             return
 
-        valid, errors, overrides = _parse_bulk_lines(self.entries.value)
+        valid, errors, overrides = parse_bulk_lines(self.entries.value)
         if not valid and not errors:
             await refuse(interaction, "\u274c No entries provided.", what=what)
             return
         if errors:
-            reply, reason = _bulk_refusal(errors)
+            reply, reason = bulk_refusal(errors)
             await refuse(interaction, reply, what=what, reason=reason)
             return
 
