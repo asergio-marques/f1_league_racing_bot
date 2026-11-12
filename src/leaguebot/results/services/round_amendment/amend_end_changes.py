@@ -493,7 +493,9 @@ def amend_lapse_change(*, now: Callable[[], datetime]) -> ChangeType:
     async def record_lapse(ctx: StepContext) -> StepResult:
         """Tell the log channel what became of the amendment: the round is back, and the
         league hears it whether or not the channel's deletion, the job after, goes through at
-        once. A log line is posted by the router, which tries it again on its own queue."""
+        once. The line is the step's own `lines`, which the queue saves with the job's mark and then
+        posts: a stop after the work and before the mark runs the job again and records the
+        line once, as every other step's does."""
         reverted_view = next(view for view in ctx.steps if view.name == REVERT)
         result = reverted_view.result or {}
         cause, reverted = ctx.payload["cause"], bool(result.get("reverted"))
@@ -530,8 +532,7 @@ def amend_lapse_change(*, now: Callable[[], datetime]) -> ChangeType:
                 named, what, lapsed=True,
                 detail=f"Nothing was written. {amendment_writes.AMENDMENT_RE_RUN}",
             )
-        await ctx.bot.output_router.post_log(line)
-        return StepResult(result={"recorded": True})
+        return StepResult(result={"recorded": True}, lines=(line,))
 
     async def describe_record(_ctx: StepContext) -> str:
         return "recording in the log channel that the amendment ended"

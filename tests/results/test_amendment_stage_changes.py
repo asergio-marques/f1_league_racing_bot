@@ -475,9 +475,6 @@ class _Killed(BaseException):
     """The bot's process killed: no handler of the bot's sees it, nothing more is saved."""
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "#284: the amendment lapse's log line is posted by its step, not saved with the job's mark"
-))
 async def test_a_lapse_run_again_after_a_stop_tells_the_log_channel_once(tmp_path, monkeypatch):
     """Alex's amendment of round 3 is past its half-hour, and the sweep asks for its lapse. The
     round is put back, then the bot is killed as the queue comes to save the lapse's

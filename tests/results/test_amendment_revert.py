@@ -124,8 +124,14 @@ def _bot(db_path):
     bot.db_path = db_path
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock()
-    # The queue delivers the lines each job saved through the router after the job; this one saves
-    # none, and there is nothing to deliver.
+    # The queue writes the lines each job saves through `queue_log_on` and delivers them after the
+    # job; the lapse's line is one of them. The double records such a line as a post to the log
+    # channel, so that a test reads every line the bot told the log channel in one place, and
+    # there is nothing to deliver.
+    async def _queued_log_line(_db, line):
+        await bot.output_router.post_log(line)
+
+    bot.output_router.queue_log_on = AsyncMock(side_effect=_queued_log_line)
     bot.output_router.deliver_queued = AsyncMock()
     bot.get_guild = MagicMock(return_value=None)
     bot.config_service.get_league_server_id = AsyncMock(return_value=1)
