@@ -897,11 +897,11 @@ async def _describe_announce(ctx: StepContext) -> str:
 async def _announce_sanction(ctx: StepContext, hook: AttendanceAfterReview) -> StepResult:
     payload = ctx.step_payload
     # Headed by the approved round's banner, not the round the thresholds were read at.
-    await hook.announce_sanction(
+    fallback = await hook.announce_sanction(
         int(payload.get("heading_round_id", payload["round_id"])), int(payload["division_id"]),
         payload["candidate"], as_text=ctx.tries > 0,
     )
-    return StepResult()
+    return StepResult(lines=() if fallback is None else (fallback(ctx.named, ctx.what),))
 
 
 async def _describe_lineup(ctx: StepContext) -> str:

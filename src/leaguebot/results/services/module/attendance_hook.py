@@ -20,7 +20,7 @@ raise** `StepFailedOnDiscord` where they could not post, for the queue to stop o
 """
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any, Protocol, TypeVar
 
@@ -164,10 +164,14 @@ class AttendanceAfterReview(Protocol):
 
     async def announce_sanction(
         self, round_id: int, division_id: int, candidate: dict[str, Any], *, as_text: bool
-    ) -> None:
+    ) -> Callable[[str, str], str] | None:
         """Announce one candidate's sanction in the verdicts channel, beneath the banner of
         *round_id*, which is the round whose verdicts it follows. Raises where it could not
-        post."""
+        post.
+
+        Gives the line the job writes to the log, from the member and the change it ran for,
+        where the card's picture went out as text in its place; None otherwise, and while
+        attendance is off."""
 
     async def refresh_lineup(
         self, division_id: int, *, as_text: bool

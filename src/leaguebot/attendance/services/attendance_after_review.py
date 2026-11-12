@@ -27,7 +27,7 @@ claimed or it is not in the cache the method raises `GuildUnavailable`.
 """
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any, TypeVar
 
@@ -269,9 +269,9 @@ class AttendanceAfterReview:
 
     async def announce_sanction(
         self, round_id: int, division_id: int, candidate: dict[str, Any], *, as_text: bool
-    ) -> None:
+    ) -> Callable[[str, str], str] | None:
         if not await self.enabled():
-            return
+            return None
         from leaguebot.results.services.review import verdict_announcement_service as vas
 
         autoreserve, autosack = await _att._thresholds(self._db_path)
@@ -284,7 +284,7 @@ class AttendanceAfterReview:
         label, description, justification = sanction_card_texts(
             sanction, driver_ref, (autosack if sanction == "AUTOSACK" else autoreserve) or 0
         )
-        await vas.announce_sanction(
+        return await vas.announce_sanction(
             self._bot, self._db_path, round_id, driver_discord_id, display_name,
             label, description, justification, as_text=as_text,
         )

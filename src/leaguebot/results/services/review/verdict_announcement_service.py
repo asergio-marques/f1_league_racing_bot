@@ -385,6 +385,20 @@ class SentVerdict(NamedTuple):
     fault: str | None = None
 
 
+def _fallback_line(
+    fault: str | None, division_name: str, round_number: int, put_right: str,
+) -> "Callable[[str, str], str] | None":
+    """The line a job writes to the log for a verdict *fault* ("the verdict picture could not
+    be drawn"), as the job's own member and change are given: ``None`` where the picture did not
+    fail (image specification, :1401)."""
+    if fault is None:
+        return None
+    return lambda named, what: picture_fallback_line(
+        named, what, picture="verdict", division=division_name, round_number=round_number,
+        fault=fault, put_right=put_right,
+    )
+
+
 class AnnouncedVerdict(NamedTuple):
     """What :func:`announce_verdict` posted: the message's id and its channel's, which the job's
     record saves, and *fallback*, the line the job writes to the log where the verdict's picture
@@ -520,7 +534,7 @@ async def announce_sanction(
     justification_text: str,
     *,
     as_text: bool = False,
-) -> None:
+) -> "Callable[[str, str], str] | None":
     """Post a sanction's card in the round's verdicts channel, raising where it cannot.
 
     The card's three texts are handed in: the sanction is attendance's, and so is its wording,
@@ -533,6 +547,9 @@ async def announce_sanction(
     penalty was applied) is headed by a job of its own, planned ahead of the first card; this
     posts no heading, so a card whose heading was discarded stands beneath none. *as_text*
     leaves the picture out of the card.
+
+    Gives the line the job writes to the log where the card's picture went out as text, as
+    :func:`announce_verdict` does (``None`` where it did not; image specification, :1401).
 
     A division with no verdicts channel set is a failure, not a card skipped: a verdicts
     channel is one the season cannot be approved without.
@@ -551,7 +568,7 @@ async def announce_sanction(
         )
 
     try:
-        await _send_verdict(
+        sent = await _send_verdict(
             bot,
             channel,
             db_path=db_path,
@@ -576,6 +593,11 @@ async def announce_sanction(
         )
     except discord.HTTPException as exc:
         raise StepFailedOnDiscord(f"the sanction's announcement could not be posted: {exc}") from exc
+    return _fallback_line(
+        sent.fault, ctx["division_name"], ctx["round_number"],
+        "fix the verdict template; no command posts a sanction's card again, and the text card "
+        "stands",
+    )
 
 
 async def announce_verdict(
@@ -672,14 +694,10 @@ async def announce_verdict(
         raise StepFailedOnDiscord(f"the verdict could not be posted: {exc}") from exc
     if sent.message is None:
         raise StepFailedOnDiscord("the verdict could not be posted")
-    fault = sent.fault
-    fallback = None if fault is None else (
-        lambda named, what: picture_fallback_line(
-            named, what, picture="verdict", division=ctx["division_name"],
-            round_number=result_ctx["round_number"], fault=fault,
-            put_right="fix the verdict template, then amend the round with "
-            "/results rounds amend to announce it again",
-        )
+    fallback = _fallback_line(
+        sent.fault, ctx["division_name"], result_ctx["round_number"],
+        "fix the verdict template, then amend the round with /results rounds amend to "
+        "announce it again",
     )
     return AnnouncedVerdict(int(getattr(sent.message, "id")), int(channel.id), fallback)
 
