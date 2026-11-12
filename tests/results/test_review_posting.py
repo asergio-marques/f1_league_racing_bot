@@ -866,6 +866,26 @@ async def test_standings_that_still_fit_are_edited_in_place_and_nothing_is_delet
     assert standings.messages[OLD_STANDINGS].content != "provisional standings"
 
 
+@pytest.mark.xfail(strict=True, reason="#284: a refused standings edit posts a second table")
+async def test_a_refused_standings_edit_stops_the_queue_and_posts_no_second_table(tmp_path):
+    """Round 3's standings stand as 8801, short enough to be edited in place, and Discord refuses
+    the edit (403). The queue stops at `post_standings`: no second table is sent, 8801 stands with
+    its old text, and the round's saved standings id is still 8801."""
+    league = await _league(tmp_path)
+    standings = league.channel(STANDINGS_CHANNEL)
+    standings.messages[OLD_STANDINGS].edit = AsyncMock(
+        side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    )
+    await _ask(league)
+    await run_queue(league.bot)
+
+    job = await stopped_job(league.db_path)
+    assert job is not None and job["name"] == "post_standings"
+    assert league.sent_to(STANDINGS_CHANNEL) == []
+    assert standings.messages[OLD_STANDINGS].content == "provisional standings"
+    assert (await _standings_ids(league.db_path))[0] == OLD_STANDINGS
+
+
 #: Round 3's interim standings as the picture posted them: a graphic per championship.
 DRIVERS_GRAPHIC = 8807
 CONSTRUCTORS_GRAPHIC = 8808
