@@ -46,7 +46,7 @@ import pytest
 
 from leaguebot.attendance.services.attendance_after_review import sanction_card_texts
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.results.services.penalty_wizard import StagedPardon
+from leaguebot.results.services.review.penalty_wizard import StagedPardon
 from tests.support.change_queue import http_error, in_a_job
 
 

@@ -86,7 +86,7 @@ from leaguebot.results.services.amend_turn_change import (
     KIND as TURN_KIND,
 )
 from leaguebot.results.services.amend_views import CANCEL_KIND
-from leaguebot.results.services.review_posting import (
+from leaguebot.results.services.review.review_posting import (
     DELETE_CHANNEL,
     NAMES,
     display_names,

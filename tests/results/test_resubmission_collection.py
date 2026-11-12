@@ -30,7 +30,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.round import RoundFormat
-from leaguebot.results.services import penalty_wizard
+from leaguebot.results.services.review import penalty_wizard
 from leaguebot.results.services.submission import result_submission_service, paste_reading
 from leaguebot.results.services.submission.result_submission_service import get_sessions_for_format
 from leaguebot.results.services.submission.paste_reading import DivisionValidationData

@@ -46,7 +46,7 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_service import StagedPenalty
+from leaguebot.results.services.review.penalty_service import StagedPenalty
 from tests.results.test_amendment_stage_changes import (
     AMEND_APPEALS_PROMPT,
     AMEND_APPROVAL,
@@ -328,7 +328,7 @@ async def test_a_second_press_while_the_first_is_approving_is_refused(tmp_path):
     the first had while the first drew its graphics. A second Approve pressed while the first is
     queued, and again while it is running, is refused and its refusal recorded (#482); the
     approval is carried out once."""
-    from leaguebot.results.services.penalty_wizard import _BEING_APPROVED
+    from leaguebot.results.services.review.penalty_wizard import _BEING_APPROVED
 
     league = await review_league(tmp_path)
     await _ask_reports(league, staged=[league_penalty(LEWIS)])
@@ -808,7 +808,7 @@ async def test_a_second_appeals_approval_while_the_first_runs_is_refused(tmp_pat
     double click applied every correction twice. Round 3 (Pro) awaits its appeal verdicts with one
     correction staged; Alex approves, and presses again while the first is queued and while it is
     running. Each second press is refused, its refusal recorded, and the correction applied once."""
-    from leaguebot.results.services.penalty_wizard import _APPEALS_BEING_APPROVED
+    from leaguebot.results.services.review.penalty_wizard import _APPEALS_BEING_APPROVED
 
     league = await _appeals_league(tmp_path)
     await _ask_appeals(league, staged=[league_penalty(LEWIS)])
@@ -857,7 +857,7 @@ async def test_every_appeals_control_refuses_while_the_appeals_are_being_approve
     refused as the approval under way (results spec, stage two: "Once the approval is under way
     or done"): nothing is staged, removed, cleared or asked a second time, and one line records
     the refusal, naming the button, the review, Alex and the reason."""
-    from leaguebot.results.services.penalty_wizard import (
+    from leaguebot.results.services.review.penalty_wizard import (
         _APPEALS_BEING_APPROVED,
         AppealsReviewView,
         PenaltyReviewState,
@@ -883,10 +883,10 @@ async def test_every_appeals_control_refuses_while_the_appeals_are_being_approve
     interaction = member_interaction(league.bot, user=_alex())
 
     with patch(
-        "leaguebot.results.services.penalty_wizard._is_league_manager",
+        "leaguebot.results.services.review.penalty_wizard._is_league_manager",
         new=AsyncMock(return_value=True),
     ), patch(
-        "leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
+        "leaguebot.results.services.review.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
     ) as refresh_appeals:
         await button.callback(interaction)
 
@@ -1697,7 +1697,7 @@ async def test_each_approve_control_of_an_amendment_asks_its_stage_of_the_queue(
     The press asks the queue for that stage's change, with the round, the division, the amended
     sessions and what is staged in its payload, and Alex is answered at once that it is under way,
     with its job number. The report stage's Approve is pressed on its approval message."""
-    from leaguebot.results.services.penalty_wizard import (
+    from leaguebot.results.services.review.penalty_wizard import (
         AppealsReviewView,
         ApprovalView,
         PenaltyReviewState,
@@ -1726,7 +1726,7 @@ async def test_each_approve_control_of_an_amendment_asks_its_stage_of_the_queue(
         interaction.message.id = AMEND_APPROVAL
 
     with patch(
-        "leaguebot.results.services.penalty_wizard._is_league_manager",
+        "leaguebot.results.services.review.penalty_wizard._is_league_manager",
         new=AsyncMock(return_value=True),
     ):
         await view.approve_btn.callback(interaction)

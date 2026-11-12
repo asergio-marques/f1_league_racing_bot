@@ -184,7 +184,7 @@ async def test_a_signup_review_refuses_when_the_config_cannot_be_read():
 
 
 async def _is_lm(member, config):
-    from leaguebot.results.services.penalty_wizard import _is_league_manager
+    from leaguebot.results.services.review.penalty_wizard import _is_league_manager
 
     bot = MagicMock()
     bot.config_service.get_server_config = AsyncMock(return_value=config)

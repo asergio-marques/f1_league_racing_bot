@@ -1,6 +1,6 @@
 """Approving a round's appeals through the change queue: `results.appeals.approve` (#439, slice 2).
 
-`results/services/appeals_approval_change.py` carries stage two of a round's penalty review as a
+`results/services/review/appeals_approval_change.py` carries stage two of a round's penalty review as a
 change: `names`, then `apply`, one save holding the corrections, the points, the appeal records,
 the standings snapshots from this round on, the round made FINAL with its former drivers marked,
 the division's status refreshed, the submission channel's row closed, and the season's wind-down
@@ -134,7 +134,7 @@ def _channel_deletions(league: ReviewLeague) -> list[int]:
 
 
 async def test_appeals_approved_then_asked_again_after_a_restart_are_applied_once(tmp_path):
-    from leaguebot.results.services.penalty_wizard import _APPEALS_BEING_APPROVED
+    from leaguebot.results.services.review.penalty_wizard import _APPEALS_BEING_APPROVED
 
     league = await _league(tmp_path)
     await _approve(league)
@@ -153,7 +153,7 @@ async def test_appeals_approved_then_asked_again_after_a_restart_are_applied_onc
 
 
 async def test_a_press_after_a_stopped_approval_does_not_apply_the_corrections_twice(tmp_path):
-    from leaguebot.results.services.penalty_wizard import _APPEALS_BEING_APPROVED
+    from leaguebot.results.services.review.penalty_wizard import _APPEALS_BEING_APPROVED
 
     league = await _league(tmp_path)
     league.channel(RESULTS_CHANNEL).send_fails = http_error(text="Discord is down")
@@ -443,7 +443,7 @@ async def test_no_changes_with_nothing_staged_finishes_the_round_through_the_que
 
 
 async def test_a_second_appeals_approval_while_the_first_is_in_hand_is_refused(tmp_path):
-    from leaguebot.results.services.penalty_wizard import _APPEALS_BEING_APPROVED
+    from leaguebot.results.services.review.penalty_wizard import _APPEALS_BEING_APPROVED
 
     league = await _league(tmp_path)
     await _approve(league)

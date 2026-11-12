@@ -50,8 +50,8 @@ from leaguebot.core.services.seasons.season_service import live_season
 from leaguebot.core.utils.season_gate import LIVE_STAGES, stage_refusal
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.amend_views import AmendCancelView
-from leaguebot.results.services.review_changes import division_job_in_hand
-from leaguebot.results.services.review_posting import DELETE_CHANNEL, posting_steps
+from leaguebot.results.services.review.review_changes import division_job_in_hand
+from leaguebot.results.services.review.review_posting import DELETE_CHANNEL, posting_steps
 from leaguebot.results.services.amendment_writes import open_amendment_in_division
 from leaguebot.results.services.submission.submission_steps import (
     CREATE_CHANNEL,

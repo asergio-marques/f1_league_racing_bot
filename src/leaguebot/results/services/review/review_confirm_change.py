@@ -40,12 +40,12 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.results.services import penalty_wizard
-from leaguebot.results.services.penalty_wizard import (
+from leaguebot.results.services.review import penalty_wizard
+from leaguebot.results.services.review.penalty_wizard import (
     approval_unreachable,
     held_review,
 )
-from leaguebot.results.services.review_stage_change import (
+from leaguebot.results.services.review.review_stage_change import (
     KIND as STAGE_KIND,
     approval_on_the_row,
     conversation_open,

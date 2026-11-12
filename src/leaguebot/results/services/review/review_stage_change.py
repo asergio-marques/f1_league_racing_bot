@@ -56,14 +56,14 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.db.database import get_connection
-from leaguebot.results.services.penalty_service import StagedPenalty
-from leaguebot.results.services import penalty_wizard
-from leaguebot.results.services.penalty_wizard import (
+from leaguebot.results.services.review.penalty_service import StagedPenalty
+from leaguebot.results.services.review import penalty_wizard
+from leaguebot.results.services.review.penalty_wizard import (
     PenaltyReviewState,
     StagedPardon,
     held_review,
 )
-from leaguebot.results.services import review_posting
+from leaguebot.results.services.review import review_posting
 
 __all__ = ["KIND", "review_stage_change"]
 

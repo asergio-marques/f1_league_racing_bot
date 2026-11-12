@@ -77,19 +77,19 @@ from leaguebot.core.services.queue.change_types import (
 from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
 from leaguebot.core.services.seasons import season_lifecycle_service, season_service
 from leaguebot.core.services.seasons.season_service import set_round_status_on
-from leaguebot.results.services.review_confirm_change import STAGING_IN_HAND, staging_in_hand
-from leaguebot.results.services import review_posting, review_verdicts
+from leaguebot.results.services.review.review_confirm_change import STAGING_IN_HAND, staging_in_hand
+from leaguebot.results.services.review import review_posting, review_verdicts
 from leaguebot.results.services.attendance_hook import AttendanceAfterReview
-from leaguebot.results.services.penalty_service import StagedPenalty
-from leaguebot.results.services.penalty_wizard import (
+from leaguebot.results.services.review.penalty_service import StagedPenalty
+from leaguebot.results.services.review.penalty_wizard import (
     _APPEALS_BEING_APPROVED,
     _pen_label,
     appeals_stage_refusal,
 )
 from leaguebot.results.services.submission.result_submission_service import recompute_former_drivers_for_round
-from leaguebot.results.services.review_prompts import _apply_staged_appeals_on, _snapshot_staged_drivers_on
+from leaguebot.results.services.review.review_prompts import _apply_staged_appeals_on, _snapshot_staged_drivers_on
 from leaguebot.results.services.amendment_writes import held_by_amendment
-from leaguebot.results.services.review_posting import (
+from leaguebot.results.services.review.review_posting import (
     DELETE_CHANNEL,
     NAMES,
     display_names,

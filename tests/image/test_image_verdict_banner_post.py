@@ -27,7 +27,7 @@ import contextlib
 import pytest
 
 from leaguebot.image.services import image_verdict_banner_post as banner
-from leaguebot.results.services import verdict_announcement_service as vas
+from leaguebot.results.services.review import verdict_announcement_service as vas
 from tests.support.change_queue import in_a_job
 
 

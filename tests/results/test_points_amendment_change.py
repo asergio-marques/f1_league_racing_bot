@@ -155,7 +155,7 @@ def _refuse_send(league: Any, cid: int, nth: int) -> None:
 
 def _names_fail_once() -> Any:
     """The first `names` job of the approval fails, as Discord failing would."""
-    from leaguebot.results.services import review_posting
+    from leaguebot.results.services.review import review_posting
 
     real = review_posting.standings_display_names
     calls = {"n": 0}

@@ -1,6 +1,6 @@
 """Approving a round's reports through the change queue: `results.reports.approve` (#439, slice 2).
 
-`results/services/report_approval_change.py` carries stage one of a round's penalty review as a
+`results/services/review/report_approval_change.py` carries stage one of a round's penalty review as a
 change: `names` resolves the drivers' display names, `apply` saves everything the approval writes
 in one save (the penalties and their records, the points, the round's attendance, the standings
 snapshots of this round and every later one, and the status), then the republication under
@@ -704,7 +704,7 @@ async def test_an_approval_whose_cascade_reaches_a_later_round_heads_its_sanctio
     banner posted for them, and round 4's banner is left as it was. The double's announcement
     posts the card as the real hook does, through `announce_sanction`, beneath the banner of the
     round it is handed."""
-    from leaguebot.results.services import verdict_announcement_service
+    from leaguebot.results.services.review import verdict_announcement_service
 
     league = await review_league(tmp_path, attendance=True)
     league.channel(VERDICTS_CHANNEL).seed(LATER_BANNER, "**Season 1 Pro Round 4**")
@@ -761,7 +761,7 @@ def _cards_posted_for_real(league: ReviewLeague) -> None:
     """Make the double's announcement post the card as the real hook does, through
     `announce_sanction`, beneath the banner of the round it is handed, and post nothing while
     attendance is off."""
-    from leaguebot.results.services import verdict_announcement_service
+    from leaguebot.results.services.review import verdict_announcement_service
 
     recorded = league.attendance.announce_sanction
 
@@ -1001,7 +1001,7 @@ async def test_a_sanction_the_hook_did_not_apply_plans_no_heading(tmp_path, appl
     banner recorded, the job plans the role change the hook named, then the heading over the
     cards; a sanction naming no roles (a test driver's) plans the heading alone."""
     from leaguebot.core.models.change import StepKind
-    from leaguebot.results.services import review_verdicts
+    from leaguebot.results.services.review import review_verdicts
     from tests.support.review_league import NOW
 
     league = await review_league(tmp_path, attendance=True)
@@ -1024,8 +1024,8 @@ async def test_a_fault_working_out_the_cards_heading_rolls_the_sanction_back(
     committed nothing, so the save is rolled back whole and the sanction is not applied: on Retry
     it is still owed, and its card is not lost."""
     from leaguebot.core.models.change import StepKind
-    from leaguebot.results.services import review_verdicts
-    from leaguebot.results.services import verdict_announcement_service
+    from leaguebot.results.services.review import review_verdicts
+    from leaguebot.results.services.review import verdict_announcement_service
     from tests.support.review_league import NOW
 
     league = await review_league(tmp_path, attendance=True)
@@ -1071,7 +1071,7 @@ async def test_a_failed_sanctions_plan_keeps_the_sync_hint_for_its_discard(tmp_p
     sheet's and a sanction's do: the failure keeps the hook's `attendance sync` hint on its kept
     result, for the line a Discard writes, and the fault stays its cause, which the stop notice
     names by its type."""
-    from leaguebot.results.services import review_verdicts
+    from leaguebot.results.services.review import review_verdicts
 
     league = await review_league(tmp_path, attendance=True)
     hook = MagicMock()
@@ -1646,7 +1646,7 @@ async def test_an_autosack_s_other_division_has_its_lineup_posted_as_a_job(tmp_p
 
 
 async def test_a_second_approval_while_the_first_is_queued_is_refused(tmp_path):
-    from leaguebot.results.services.penalty_wizard import _BEING_APPROVED
+    from leaguebot.results.services.review.penalty_wizard import _BEING_APPROVED
 
     league = await review_league(tmp_path)
     await _approve(league)
@@ -1657,7 +1657,7 @@ async def test_a_second_approval_while_the_first_is_queued_is_refused(tmp_path):
 
 
 async def test_a_second_approval_while_the_first_is_running_is_refused(tmp_path):
-    from leaguebot.results.services.penalty_wizard import _BEING_APPROVED
+    from leaguebot.results.services.review.penalty_wizard import _BEING_APPROVED
 
     league = await review_league(tmp_path)
     await _approve(league)
@@ -1670,7 +1670,7 @@ async def test_a_second_approval_while_the_first_is_running_is_refused(tmp_path)
 
 
 async def test_a_second_approval_while_the_first_is_stopped_is_refused(tmp_path):
-    from leaguebot.results.services.penalty_wizard import _BEING_APPROVED
+    from leaguebot.results.services.review.penalty_wizard import _BEING_APPROVED
 
     league = await review_league(tmp_path)
     with points_fail():
@@ -1684,7 +1684,7 @@ async def test_a_second_approval_while_the_first_is_stopped_is_refused(tmp_path)
 
 
 async def test_every_review_control_refuses_while_the_approval_is_in_hand(tmp_path):
-    from leaguebot.results.services.penalty_wizard import (
+    from leaguebot.results.services.review.penalty_wizard import (
         _BEING_APPROVED,
         PenaltyReviewState,
         _review_moved_on,

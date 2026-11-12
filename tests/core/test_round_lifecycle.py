@@ -315,5 +315,5 @@ async def test_is_channel_in_penalty_review_follows_the_round_status(tmp_path, s
         )
         await db.commit()
 
-    from leaguebot.results.services.review_prompts import is_channel_in_penalty_review
+    from leaguebot.results.services.review.review_prompts import is_channel_in_penalty_review
     assert await is_channel_in_penalty_review(db_path, 777) is expected

@@ -75,7 +75,7 @@ from leaguebot.results.services.results_purge_service import (
     message_link,
     take_down,
 )
-from leaguebot.results.services.verdict_announcement_service import _forget_banners_on
+from leaguebot.results.services.review.verdict_announcement_service import _forget_banners_on
 
 __all__ = ["results_off_change", "ALREADY_DISABLED"]
 

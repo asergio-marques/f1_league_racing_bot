@@ -64,7 +64,7 @@ def sanction_text(penalty_type: str | None, time_seconds: int | None) -> str:
     stroke, and the compact rendering a results graphic places in a sanction column is a
     different presentation of the same datum and is never substituted here.
     """
-    from leaguebot.results.services.verdict_announcement_service import describe_penalty
+    from leaguebot.results.services.review.verdict_announcement_service import describe_penalty
 
     return describe_penalty(penalty_type, time_seconds)
 

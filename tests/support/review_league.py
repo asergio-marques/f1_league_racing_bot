@@ -28,8 +28,8 @@ import discord
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_service import StagedPenalty
-from leaguebot.results.services.penalty_wizard import StagedPardon
+from leaguebot.results.services.review.penalty_service import StagedPenalty
+from leaguebot.results.services.review.penalty_wizard import StagedPardon
 from tests.support.change_queue import (
     change_rows,
     http_error,

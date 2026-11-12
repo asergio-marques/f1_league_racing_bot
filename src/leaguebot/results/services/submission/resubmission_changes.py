@@ -56,8 +56,8 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.services.seasons import season_service
 from leaguebot.results.services.submission import result_submission_service as submissions
-from leaguebot.results.services import review_open_change
-from leaguebot.results.services.review_posting import DELETE_MESSAGE, posting_steps
+from leaguebot.results.services.review import review_open_change
+from leaguebot.results.services.review.review_posting import DELETE_MESSAGE, posting_steps
 from leaguebot.results.services.submission.submission_changes import ALL_CANCELLED_KIND
 from leaguebot.results.services.submission.submission_turn_change import SWAP_KIND
 from leaguebot.results.services.submission.submission_steps import (

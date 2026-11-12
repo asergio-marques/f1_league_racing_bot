@@ -668,7 +668,7 @@ async def test_the_change_names_its_round_and_division(tmp_path, caplog, route):
     import json
     import logging
 
-    from leaguebot.results.services.review_open_change import (
+    from leaguebot.results.services.review.review_open_change import (
         APPEALS_OPEN_KIND,
         appeals_open_change,
         review_open_change,

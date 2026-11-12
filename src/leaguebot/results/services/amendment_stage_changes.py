@@ -83,17 +83,17 @@ from leaguebot.core.services.queue.change_types import (
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services import review_posting, review_verdicts
+from leaguebot.results.services.review import review_posting, review_verdicts
 from leaguebot.results.services.attendance_hook import AttendanceAfterReview
-from leaguebot.results.services.penalty_service import (
+from leaguebot.results.services.review.penalty_service import (
     StagedPenalty,
     apply_penalties_on,
     load_staged_from_records,
     reports_only,
 )
-from leaguebot.results.services.penalty_wizard import PenaltyReviewState, StagedPardon, _pen_label
-from leaguebot.results.services.report_approval_change import _latest_round
-from leaguebot.results.services.review_prompts import _apply_staged_appeals_on, send_appeals_prompt
+from leaguebot.results.services.review.penalty_wizard import PenaltyReviewState, StagedPardon, _pen_label
+from leaguebot.results.services.review.report_approval_change import _latest_round
+from leaguebot.results.services.review.review_prompts import _apply_staged_appeals_on, send_appeals_prompt
 from leaguebot.results.services.amendment_writes import (
     _AMENDMENT_NOT_OPEN,
     _clear_round_verdict_records_on,
@@ -103,7 +103,7 @@ from leaguebot.results.services.amendment_writes import (
 )
 from leaguebot.results.services.scoring import _recompute_session_points_on
 from leaguebot.results.services.results_post_service import _delete_posting, _parse_ids
-from leaguebot.results.services.review_posting import (
+from leaguebot.results.services.review.review_posting import (
     DELETE_BATCH_NOTICE,
     DELETE_CHANNEL,
     DELETE_MESSAGE,
@@ -113,14 +113,14 @@ from leaguebot.results.services.review_posting import (
     plan_division_posts,
     posting_steps,
 )
-from leaguebot.results.services.review_confirm_change import STAGING_IN_HAND, staging_in_hand
+from leaguebot.results.services.review.review_confirm_change import STAGING_IN_HAND, staging_in_hand
 from leaguebot.results.services.standings_service import cascade_recompute_from_round_on
-from leaguebot.results.services.verdict_announcement_service import (
+from leaguebot.results.services.review.verdict_announcement_service import (
     _banners_heading_sanctions_on,
     _banners_of_on,
     _forget_banners_on,
 )
-from leaguebot.results.services.verdict_records import VERDICT_TABLES, select_verdicts
+from leaguebot.results.services.review.verdict_records import VERDICT_TABLES, select_verdicts
 
 log = logging.getLogger(__name__)
 

@@ -160,9 +160,9 @@ async def _enforce(db_path, *, sack=None):
 
     with patch("leaguebot.attendance.services.attendance_service.post_attendance_sheet",
                new=AsyncMock()), _asking_for_sheets() as asked, \
-            patch("leaguebot.results.services.verdict_announcement_service.banner_for_round",
+            patch("leaguebot.results.services.review.verdict_announcement_service.banner_for_round",
                   return_value=None, create=True), \
-            patch("leaguebot.results.services.verdict_announcement_service.post_autosanction_announcement",
+            patch("leaguebot.results.services.review.verdict_announcement_service.post_autosanction_announcement",
                   # `[] += AsyncMock()` rebinds posting_faults to a MagicMock rather
                   # than extending it, which leaves SanctionOutcome.complete false
                   # for every run in this file. It must return a list (#237).

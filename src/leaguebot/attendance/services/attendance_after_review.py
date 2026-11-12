@@ -234,7 +234,7 @@ class AttendanceAfterReview:
     ) -> None:
         if not await self.enabled():
             return
-        from leaguebot.results.services import verdict_announcement_service as vas
+        from leaguebot.results.services.review import verdict_announcement_service as vas
 
         autoreserve, autosack = await _att._thresholds(self._db_path)
         sanction = candidate["sanction"]

@@ -39,7 +39,7 @@ from leaguebot.core.utils.league_server import CallbackButton, LeagueView
 from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.utils.member_names import interaction_member
 from leaguebot.results.services.results_post_service import _parse_ids
-from leaguebot.results.services.review_posting import DELETE_CHANNEL
+from leaguebot.results.services.review.review_posting import DELETE_CHANNEL
 from leaguebot.results.services.submission.paste_reading import ParsedQualifyingRow, ParsedRaceRow, _parse_time_to_ms
 from leaguebot.results.services.scoring import _apply_points_in_tx
 
@@ -1016,7 +1016,7 @@ class ResubmissionCancelView(LeagueView):
     async def cancel_btn(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        from leaguebot.results.services.penalty_wizard import _button, _require_lm
+        from leaguebot.results.services.review.penalty_wizard import _button, _require_lm
 
         if not await _require_lm(
             interaction, self.state, what=_button(button.label, self.state)

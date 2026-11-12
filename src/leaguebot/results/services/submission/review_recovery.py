@@ -59,9 +59,9 @@ from leaguebot.core.services.queue.queue_records import ever_asked, unfinished
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.log_lines import name_of_member
-from leaguebot.results.services import review_open_change
+from leaguebot.results.services.review import review_open_change
 from leaguebot.results.services.submission import resubmission_changes, submission_changes, submission_turn_change
-from leaguebot.results.services.review_changes import round_in_hand
+from leaguebot.results.services.review.review_changes import round_in_hand
 
 log = logging.getLogger(__name__)
 

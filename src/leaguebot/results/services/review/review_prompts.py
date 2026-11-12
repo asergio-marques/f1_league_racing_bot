@@ -15,7 +15,7 @@ from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.results.services.scoring import _recompute_session_points_on
 
 if TYPE_CHECKING:
-    from leaguebot.results.services.penalty_wizard import PenaltyReviewState
+    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewState
 
 
 async def is_channel_in_penalty_review(db_path: str, channel_id: int) -> bool:
@@ -49,13 +49,13 @@ async def _build_penalty_review_state(
     division_id: int,
     submission_channel_id: int,
 ) -> "PenaltyReviewState":
-    """Reconstruct a :class:`~leaguebot.results.services.penalty_wizard.PenaltyReviewState` from the DB.
+    """Reconstruct a :class:`~leaguebot.results.services.review.penalty_wizard.PenaltyReviewState` from the DB.
 
     Used by the changes that put a review's prompt up: the review-open and verdict changes
     (`review_open_change`, `review_verdicts`), which a restart also asks to put a review back,
     the appeals phase's included (``status = 'AWAITING_APPEAL_VERDICTS'``).
     """
-    from leaguebot.results.services.penalty_wizard import PenaltyReviewState
+    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewState
 
     db_path: str = bot.db_path
 
@@ -107,7 +107,7 @@ async def send_review_prompt(
 
     The one place the prompt is sent, which the review's `post_review_prompt` job calls (#439).
     """
-    from leaguebot.results.services.penalty_wizard import PenaltyReviewView, _render_prompt_content
+    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewView, _render_prompt_content
 
     view = PenaltyReviewView(state=state)
     content = await _render_prompt_content(state)
@@ -127,7 +127,7 @@ async def send_appeals_prompt(
     The one place the appeals prompt is sent, which `_post_appeals_prompt` and the queue's
     `post_appeals_prompt` job both call (#439).
     """
-    from leaguebot.results.services.penalty_wizard import AppealsReviewView, _render_appeals_prompt_content
+    from leaguebot.results.services.review.penalty_wizard import AppealsReviewView, _render_appeals_prompt_content
 
     appeals_view = AppealsReviewView(state=state)
     content = await _render_appeals_prompt_content(state)
@@ -216,7 +216,7 @@ async def _apply_staged_appeals_on(
     written, shaped as the verdict announcement reads them, in the order the corrections were
     staged.
     """
-    from leaguebot.results.services import penalty_service as _ps
+    from leaguebot.results.services.review import penalty_service as _ps
 
     if not staged_appeals:
         return []

@@ -82,7 +82,7 @@ def test_one_template_serves_all_three_kinds():
 
 def test_the_sanction_rendering_is_the_announcement_service_s():
     """XIV.7's one rendering: the graphic calls it and holds none of its own."""
-    from leaguebot.results.services import verdict_announcement_service  # noqa: PLC0415
+    from leaguebot.results.services.review import verdict_announcement_service  # noqa: PLC0415
 
     assert sanction_text.__module__ != verdict_announcement_service.__name__
     assert sanction_text("TIME_PENALTY", 5) == verdict_announcement_service.describe_penalty(

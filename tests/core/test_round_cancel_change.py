@@ -1478,7 +1478,7 @@ async def test_a_submission_channel_discord_will_not_delete_stops_the_queue_and_
     the job itself, never by its name."""
     job = "delete_channel"
     if cleared == "discarded under another name":
-        from leaguebot.results.services import review_posting
+        from leaguebot.results.services.review import review_posting
         from leaguebot.results.services.submission import result_submission_service
 
         rename_module_job(

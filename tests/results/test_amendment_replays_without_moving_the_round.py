@@ -136,8 +136,8 @@ async def test_each_stage_of_an_amendment_is_a_change_of_its_own_kind(tmp_path, 
 @pytest.mark.parametrize(
     "module",
     [
-        "results/services/report_approval_change.py",
-        "results/services/appeals_approval_change.py",
+        "results/services/review/report_approval_change.py",
+        "results/services/review/appeals_approval_change.py",
     ],
 )
 def test_the_first_pass_carries_no_amendment_branches_of_its_own(module):
@@ -242,7 +242,7 @@ async def test_a_settled_round_is_not_moved_on_by_the_first_pass(tmp_path, movin
     approval's check refuses a round no longer awaiting its appeal verdicts, and the moving calls
     appear in its save alone."""
     change_type = _change_type(tmp_path, "results.appeals.approve")
-    module = _module_code("results/services/appeals_approval_change.py")
+    module = _module_code("results/services/review/appeals_approval_change.py")
 
     assert "AWAITING_APPEAL_VERDICTS" in inspect.getsource(inspect.unwrap(change_type.check))
     assert moving_call in _job_source(change_type, "apply")
@@ -278,7 +278,7 @@ def test_the_revert_publishes_nothing_either():
 def test_the_state_carries_the_flags_and_defaults_to_a_first_pass():
     """Defaulting to False is what keeps every existing caller a first pass. Whether an
     amendment's reports are approved is read from its row's `reports_approved_at` (#439)."""
-    from leaguebot.results.services.penalty_wizard import PenaltyReviewState
+    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewState
 
     state = PenaltyReviewState(
         round_id=1, division_id=1, submission_channel_id=1,

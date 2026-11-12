@@ -49,7 +49,7 @@ from leaguebot.core.db.database import get_connection, run_migrations
 # and `result_submission_service` both import this one, and these are the values
 # `session_results.session_type` actually holds.
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_service import StagedPenalty
+from leaguebot.results.services.review.penalty_service import StagedPenalty
 from leaguebot.results.services.submission.result_submission_service import (
     ResubmissionCancelView,
 )
@@ -179,7 +179,7 @@ def _penalty(seconds: int = 5, penalty_type: str = "TIME") -> StagedPenalty:
 
 
 def _pardon(pardon_type: str = "ABSENT", justification: str = "Ill"):
-    from leaguebot.results.services.penalty_wizard import StagedPardon
+    from leaguebot.results.services.review.penalty_wizard import StagedPardon
 
     return StagedPardon(
         driver_user_id=DRIVER_A, driver_profile_id=31, attendance_id=41,

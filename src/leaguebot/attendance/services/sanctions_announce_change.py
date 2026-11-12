@@ -28,7 +28,7 @@ from leaguebot.core.services.queue.change_types import (
     OutcomeContext,
 )
 from leaguebot.results.services.attendance_hook import AttendanceAfterReview
-from leaguebot.results.services.review_verdicts import (
+from leaguebot.results.services.review.review_verdicts import (
     ANNOUNCE_HEADING,
     ANNOUNCE_SANCTION,
     not_done,

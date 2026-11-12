@@ -629,7 +629,7 @@ async def test_the_rebuild_goes_in_the_order_a_league_reads_it(tmp_path):
     them: the results, the standings, the attendance sheet, the round's report verdicts, then its
     appeal verdicts". Round 3's amendment, its reports approved (Lewis's and Max's) and attendance
     on, has its appeals stage approved by Alex with a 10-second correction for Max upheld."""
-    from leaguebot.results.services.penalty_service import StagedPenalty
+    from leaguebot.results.services.review.penalty_service import StagedPenalty
     from leaguebot.results.models.points_config import SessionType
 
     league = await _amend_league(tmp_path, reports_approved=True, attendance=True)
@@ -890,7 +890,7 @@ async def test_each_round_s_verdicts_are_announced_again_under_one_heading_of_it
     superseded banners leaves them standing. Round 3's amendment has its reports approved (Lewis's
     and Max's); round 4 holds Max's announced report; each round has its old banner."""
     from leaguebot.results.models.points_config import SessionType
-    from leaguebot.results.services.penalty_service import StagedPenalty
+    from leaguebot.results.services.review.penalty_service import StagedPenalty
 
     league = await _amend_league(tmp_path, reports_approved=True)
     later = await _seed_round(league, LATER_ROUND_ID, 4, "Spa")
@@ -1104,7 +1104,7 @@ async def test_an_amendment_that_sanctions_keeps_the_banner_its_card_stands_unde
     rebuild was planned. The other superseded banner and announcements come down. The double's
     announcement posts the card as the real hook does, through `announce_sanction`, beneath the
     banner of the round it is handed."""
-    from leaguebot.results.services import verdict_announcement_service
+    from leaguebot.results.services.review import verdict_announcement_service
 
     league = await _amend_league(tmp_path, reports_approved=True, attendance=True)
     await _seed_round(league, LATER_ROUND_ID, 4, "Spa")
@@ -1177,7 +1177,7 @@ async def test_a_stage_approval_is_refused_while_a_staging_is_in_hand(tmp_path):
     waiting to be shown. Alex presses Approve on the report stage: it is refused at the press,
     telling him a change to the review is still being shown, and the stage is not approved."""
     from leaguebot.results.models.points_config import SessionType
-    from leaguebot.results.services.penalty_wizard import PenaltyReviewState
+    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewState
     from tests.results.test_review_stage_change import _add_penalty, _alex
 
     league = await _amend_league(tmp_path)
@@ -1212,7 +1212,8 @@ async def test_the_report_stage_offers_the_pardons_the_builder_s_hook_gives(monk
     from types import SimpleNamespace
     from unittest.mock import MagicMock
 
-    from leaguebot.results.services import amendment_stage_changes as stages, review_posting, amendment_writes
+    from leaguebot.results.services import amendment_stage_changes as stages, amendment_writes
+    from leaguebot.results.services.review import review_posting
 
     hook = MagicMock()
     hook.pardons_to_review = AsyncMock(return_value=[])

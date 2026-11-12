@@ -28,7 +28,7 @@ from leaguebot.results.services.submission.result_submission_service import (
 if TYPE_CHECKING:
     from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.results.services.attendance_hook import AttendanceAfterReview
-    from leaguebot.results.services.penalty_wizard import PenaltyReviewState
+    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewState
 
 log = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ async def _verdicts_by_driver(
     recoverable through the row it points at: ``penalty_records`` and ``appeal_records`` store
     neither ``driver_user_id`` nor ``session_type``.
     """
-    from leaguebot.results.services.verdict_records import select_verdicts
+    from leaguebot.results.services.review.verdict_records import select_verdicts
 
     by_table: dict[str, dict[int, list[int]]] = {}
     for verdict_table in _VERDICT_TABLES:
@@ -197,7 +197,7 @@ async def _remember_superseded_announcements_on(
     Commits nothing: the amendment's report stage saves it with the clearing of the records
     and the writing of the approved set, so a stop between them cannot lose the list.
     """
-    from leaguebot.results.services.verdict_records import VERDICT_TABLES, select_verdicts
+    from leaguebot.results.services.review.verdict_records import VERDICT_TABLES, select_verdicts
 
     rows: list[dict] = []
     for table in VERDICT_TABLES:
@@ -239,7 +239,7 @@ async def _clear_round_verdict_records_on(
 
     Commits nothing, so the amendment's report stage clears and rewrites in one save.
     """
-    from leaguebot.results.services.verdict_records import delete_verdicts
+    from leaguebot.results.services.review.verdict_records import delete_verdicts
 
     # Scoped to the sessions given, because those are all an amendment replays: clearing the
     # whole round would drop the decisions of sessions whose reports are never re-approved,
@@ -316,7 +316,7 @@ async def snapshot_before_amendment_on(
     points follow from the driver rows, so restoring those and cascading again reproduces them.
     The amendment's half-hour runs from *now*, the queue's clock where it is handed.
     """
-    from leaguebot.results.services.verdict_records import VERDICT_TABLES, select_verdicts
+    from leaguebot.results.services.review.verdict_records import VERDICT_TABLES, select_verdicts
 
     sessions: list[dict] = []
     for session_type in session_types:
@@ -400,7 +400,7 @@ async def _restore_from_snapshot_on(db: aiosqlite.Connection, round_id: int) -> 
 
     snapshot = _json.loads(row["pre_amendment_state"])
 
-    from leaguebot.results.services.verdict_records import delete_verdicts
+    from leaguebot.results.services.review.verdict_records import delete_verdicts
 
     for state in snapshot["sessions"]:
         rows_table: str = state["rows_table"]
@@ -785,7 +785,7 @@ async def run_amendment_review_stages(
 
     **The round's decisions are read back out of the database first.** They were written when
     the round was originally reviewed and nothing has held them in memory since, so
-    :func:`~leaguebot.results.services.penalty_service.load_staged_from_records` turns the stored rows back into
+    :func:`~leaguebot.results.services.review.penalty_service.load_staged_from_records` turns the stored rows back into
     the staged entries the review screens already know how to draw. A manager who changes
     nothing approves exactly what was there before.
 
@@ -800,9 +800,9 @@ async def run_amendment_review_stages(
 
     Returns the state the screens share. The approvals happen through the screens themselves.
     """
-    from leaguebot.results.services.penalty_service import load_staged_from_records
-    from leaguebot.results.services.penalty_wizard import PenaltyReviewState, PenaltyReviewView
-    from leaguebot.results.services.penalty_wizard import _render_prompt_content
+    from leaguebot.results.services.review.penalty_service import load_staged_from_records
+    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewState, PenaltyReviewView
+    from leaguebot.results.services.review.penalty_wizard import _render_prompt_content
 
     # **Scoped to the sessions being amended** (#345). `apply_penalties_on` walks whatever
     # session types the staged set names, and stage one re-inserted only the amended sessions'

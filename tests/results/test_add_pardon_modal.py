@@ -47,7 +47,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_wizard import (
+from leaguebot.results.services.review.penalty_wizard import (
     AddPardonModal,
     PenaltyReviewState,
     StagedPardon,
@@ -199,7 +199,7 @@ async def _submit(
     modal.driver_id_input._value = driver_id  # type: ignore[attr-defined]
     modal.pardon_type_input._value = pardon_type  # type: ignore[attr-defined]
     modal.justification_input._value = justification  # type: ignore[attr-defined]
-    with patch("leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()) as refresh:
+    with patch("leaguebot.results.services.review.penalty_wizard._refresh_prompt", new=AsyncMock()) as refresh:
         await modal.on_submit(interaction)
         await run_queue(state.bot)
     return interaction, refresh
@@ -519,7 +519,7 @@ async def test_pardons_close_when_the_reports_are_approved(
 
     An amendment's report stage is approved once its row's `reports_approved_at` is set (#439):
     the database says so, not the review's memory, so the answer survives a restart."""
-    from leaguebot.results.services.penalty_wizard import _review_moved_on
+    from leaguebot.results.services.review.penalty_wizard import _review_moved_on
 
     db_path = await _make_db(tmp_path, name="pardons_closed", round_status=round_status)
     state = _state(db_path)

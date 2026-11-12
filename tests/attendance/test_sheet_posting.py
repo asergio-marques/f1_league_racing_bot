@@ -138,9 +138,9 @@ async def test_a_sync_s_sanctions_ask_for_the_sheet_of_each_division_a_sack_reac
     queue.ask = AsyncMock()
 
     with patch.object(attendance_service, "post_attendance_sheet", new=AsyncMock()) as posted, \
-            patch("leaguebot.results.services.verdict_announcement_service.banner_for_round",
+            patch("leaguebot.results.services.review.verdict_announcement_service.banner_for_round",
                   return_value=None, create=True), \
-            patch("leaguebot.results.services.verdict_announcement_service."
+            patch("leaguebot.results.services.review.verdict_announcement_service."
                   "post_autosanction_announcement", new=AsyncMock(return_value=[]),
                   create=True):
         await attendance_service.enforce_attendance_sanctions(

@@ -28,9 +28,9 @@ import pytest
 
 from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
 from leaguebot.core.db.database import get_connection
-from leaguebot.results.services.penalty_service import StagedPenalty
+from leaguebot.results.services.review.penalty_service import StagedPenalty
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.verdict_announcement_service import (
+from leaguebot.results.services.review.verdict_announcement_service import (
     NO_FURTHER_ACTION,
     describe_penalty,
 )

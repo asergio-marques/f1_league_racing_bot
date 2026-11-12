@@ -25,7 +25,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_service import StagedPenalty
+from leaguebot.results.services.review.penalty_service import StagedPenalty
 from tests.support.change_queue import in_a_job
 from tests.support.teams import seed_team_instances
 

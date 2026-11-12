@@ -24,7 +24,7 @@ import os
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_service import load_staged_from_records
+from leaguebot.results.services.review.penalty_service import load_staged_from_records
 from tests.support.teams import seed_team_instances
 
 ROUND_ID = 41

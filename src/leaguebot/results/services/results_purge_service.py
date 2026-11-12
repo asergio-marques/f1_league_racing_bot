@@ -125,12 +125,12 @@ async def erase_season_on(db: aiosqlite.Connection) -> SeasonErase:
         STANDINGS_DRIVERS,
         _parse_ids,
     )
-    from leaguebot.results.services.verdict_announcement_service import (
+    from leaguebot.results.services.review.verdict_announcement_service import (
         _banners_heading_sanctions_on,
         _banners_of_on,
         _parse_chunk_ids,
     )
-    from leaguebot.results.services.verdict_records import VERDICT_TABLES, select_verdicts
+    from leaguebot.results.services.review.verdict_records import VERDICT_TABLES, select_verdicts
 
     cursor = await db.execute(
         """

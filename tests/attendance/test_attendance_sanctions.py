@@ -245,10 +245,10 @@ def announcer():
     instead (#439, slice 6b), and the announcer it posted through until then is deleted.
     """
     with patch(
-        "leaguebot.results.services.verdict_announcement_service.post_autosanction_announcement",
+        "leaguebot.results.services.review.verdict_announcement_service.post_autosanction_announcement",
         new=AsyncMock(return_value=[]), create=True,
     ) as announce, patch(
-        "leaguebot.results.services.verdict_announcement_service.banner_for_round",
+        "leaguebot.results.services.review.verdict_announcement_service.banner_for_round",
         new=MagicMock(return_value="BANNER"), create=True,
     ) as banner:
         yield announce, banner

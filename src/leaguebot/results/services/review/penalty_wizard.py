@@ -23,7 +23,7 @@ from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.services.drivers.driver_service import accounts_of_in_division, current_account_map_for_division
-from leaguebot.results.services.penalty_service import StagedPenalty, validate_penalty_input
+from leaguebot.results.services.review.penalty_service import StagedPenalty, validate_penalty_input
 from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.input_validator import STEWARD_TEXT, parse_user, parse_user_id
 from leaguebot.core.utils.interaction_errors import describe_form
@@ -349,7 +349,7 @@ async def _review_moved_on(state: PenaltyReviewState) -> str | None:
             "can be changed any more. Its appeals are reviewed below."
         )
     from leaguebot.core.services.queue.queue_records import unfinished
-    from leaguebot.results.services.report_approval_change import KIND
+    from leaguebot.results.services.review.report_approval_change import KIND
 
     if any(p.get("round_id") == state.round_id for p in await unfinished(state.db_path, [KIND])):
         return _BEING_APPROVED
@@ -430,7 +430,7 @@ async def _appeals_review_moved_on(state: PenaltyReviewState) -> str | None:
     if state.is_amendment:
         return None
     from leaguebot.core.services.queue.queue_records import unfinished
-    from leaguebot.results.services.appeals_approval_change import KIND
+    from leaguebot.results.services.review.appeals_approval_change import KIND
 
     if any(p.get("round_id") == state.round_id for p in await unfinished(state.db_path, [KIND])):
         return _APPEALS_BEING_APPROVED
@@ -651,7 +651,7 @@ async def _ask_stage(
     *item* in the review (#439, C54, C55), the member told it is under way and then *reply* once it
     is staged. *log_what* and *log_detail* are the line the staging
     leaves in the log channel, written when it has happened."""
-    from leaguebot.results.services.review_stage_change import KIND
+    from leaguebot.results.services.review.review_stage_change import KIND
 
     hold_review(state, appeals=appeals)
     await queue.ask(
@@ -689,7 +689,7 @@ async def _ask_confirm(
     told it is under way. *actor* stands for the member where the press was answered by a staging
     asked just before (clearing), whose line is the press's. *log_what* and *log_detail* are the
     line the post leaves in the log channel, none where there are none."""
-    from leaguebot.results.services.review_confirm_change import KIND
+    from leaguebot.results.services.review.review_confirm_change import KIND
 
     hold_review(state, appeals=False)
     await queue.ask(
@@ -1560,7 +1560,7 @@ async def _ask_reports_approved(
             what=what,
         )
         return
-    from leaguebot.results.services.report_approval_change import KIND
+    from leaguebot.results.services.review.report_approval_change import KIND
 
     await queue.ask(
         KIND,
@@ -1615,7 +1615,7 @@ async def _ask_appeals_approved(
             what=what,
         )
         return
-    from leaguebot.results.services.appeals_approval_change import KIND
+    from leaguebot.results.services.review.appeals_approval_change import KIND
 
     await queue.ask(
         KIND,

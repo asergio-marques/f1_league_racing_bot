@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from leaguebot.results.services.verdict_announcement_service import (
+from leaguebot.results.services.review.verdict_announcement_service import (
     describe_penalty,
     translate_penalty,
 )
@@ -58,13 +58,13 @@ def test_a_disqualification_is_still_described_as_one():
 
 
 def test_a_round_label_names_the_round_as_a_league_numbers_it():
-    from leaguebot.results.services.verdict_announcement_service import _round_label
+    from leaguebot.results.services.review.verdict_announcement_service import _round_label
 
     assert _round_label(SimpleNamespace(round_number=3, division_name="Pro")) == "Round 3 (Pro)"
 
 
 def test_a_round_label_without_a_round_number_says_the_round():
-    from leaguebot.results.services.verdict_announcement_service import _round_label
+    from leaguebot.results.services.review.verdict_announcement_service import _round_label
 
     assert _round_label(SimpleNamespace()) == "The round"
     assert _round_label(SimpleNamespace(round_number="not a number")) == "The round"

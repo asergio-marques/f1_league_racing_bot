@@ -1,6 +1,6 @@
 """The shared posting jobs a round's review republishes its tables through (#439, slice 2).
 
-`results/services/review_posting.py` gives every change type of a round's review the same jobs:
+`results/services/review/review_posting.py` gives every change type of a round's review the same jobs:
 `post_session_results` and `post_standings` (each an `ACT`), `delete_message` (a `DELETE`), and
 `post_batch_notice` and `delete_batch_notice` bracketing a republication. These tests drive them
 through a real change queue on a database built by the migrations, with "now" pinned, by a change
@@ -278,7 +278,7 @@ def _posting_type(
     *label*."""
     from leaguebot.core.models.change import PlannedStep, StepKind, StepResult, Verdict
     from leaguebot.core.services.queue.change_types import ChangeType, Step
-    from leaguebot.results.services import review_posting
+    from leaguebot.results.services.review import review_posting
 
     async def plan(db: Any, ctx: Any) -> Any:
         planned = await review_posting.plan_posts(
@@ -1308,7 +1308,7 @@ async def test_names_go_unresolved_where_the_server_is_not_in_the_cache(tmp_path
     rather than stopping the queue: a post after the job stops it on the same fault."""
     from leaguebot.core.models.change import PlannedStep, Verdict
     from leaguebot.core.services.queue.change_types import ChangeType
-    from leaguebot.results.services import review_posting
+    from leaguebot.results.services.review import review_posting
 
     league = await _league(tmp_path)
     league.bot.get_guild = MagicMock(return_value=None)
@@ -1362,7 +1362,7 @@ async def test_names_are_read_back_by_division():
     the names of that division's job; for one whose job is not done, none; asked for no division,
     the first done, as slice 2's callers read it."""
     from leaguebot.core.services.queue.change_types import StepView
-    from leaguebot.results.services import review_posting
+    from leaguebot.results.services.review import review_posting
 
     ctx = _outcome_context(
         StepView(review_posting.NAMES, {"division_id": 11}, {"names": {"101": "Lewis"}}, True),
@@ -1382,7 +1382,7 @@ async def test_a_post_planned_with_its_division_names_it_when_discarded(tmp_path
     Pro were not posted."), the sync commands last. Planned with no name, as slice 2's rebuild
     plans them, the lines are today's."""
     from leaguebot.core.services.queue.change_types import StepView
-    from leaguebot.results.services import review_posting
+    from leaguebot.results.services.review import review_posting
 
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:

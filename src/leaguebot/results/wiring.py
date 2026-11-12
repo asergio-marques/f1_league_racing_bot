@@ -153,7 +153,7 @@ def sign_up_to_cancellation_notices(bot: "LeagueBot") -> None:
 def sign_up_to_cancellation_steps(bot: "LeagueBot") -> None:
     """Sign results' deletion of a submission channel up to the hook the steps a cancellation
     plans are gathered through."""
-    from leaguebot.results.services import review_posting
+    from leaguebot.results.services.review import review_posting
 
     bot.cancellation_steps.subscribe(review_posting.cancellation_steps)
 
@@ -276,7 +276,7 @@ def sign_up_to_season_completed(bot: "LeagueBot") -> None:
 def sign_up_to_in_memory_state_cleared(bot: "LeagueBot") -> None:
     """Sign up what results holds in memory to the hook the bot's in-memory state is cleared
     through (`/bot pack`, `/bot factory-reset`)."""
-    from leaguebot.results.services.penalty_wizard import clear_held_reviews
+    from leaguebot.results.services.review.penalty_wizard import clear_held_reviews
 
     bot.in_memory_state_cleared.subscribe(clear_held_reviews)
 
@@ -310,31 +310,31 @@ def register_change_types(
     )
     from leaguebot.results.services.amendment_settings import amendment_settings
     from leaguebot.results.services.amendment_stage_changes import amendment_stage_changes
-    from leaguebot.results.services.appeals_approval_change import appeals_approval_change
+    from leaguebot.results.services.review.appeals_approval_change import appeals_approval_change
     from leaguebot.results.services.channel_settings import results_channel_settings
     from leaguebot.results.services.module_switch_settings import module_on_results
     from leaguebot.results.services.points_amendment_change import points_amendment_change
     from leaguebot.results.services.points_settings import points_settings
-    from leaguebot.results.services.report_approval_change import report_approval_change
+    from leaguebot.results.services.review.report_approval_change import report_approval_change
     from leaguebot.results.services.results_off_change import results_off_change
     from leaguebot.results.services.submission.resubmission_changes import (
         resubmission_start_change,
         resubmission_swap_change,
     )
-    from leaguebot.results.services.review_confirm_change import review_confirm_change
-    from leaguebot.results.services.review_lock_change import (
+    from leaguebot.results.services.review.review_confirm_change import review_confirm_change
+    from leaguebot.results.services.review.review_lock_change import (
         TIMER,
         lock_change,
         lock_clear_change,
         lock_clear_timer,
     )
-    from leaguebot.results.services.review_open_change import (
+    from leaguebot.results.services.review.review_open_change import (
         appeals_open_change,
         close_stale_change,
         review_open_change,
         review_prompt_change,
     )
-    from leaguebot.results.services.review_stage_change import review_stage_change
+    from leaguebot.results.services.review.review_stage_change import review_stage_change
     from leaguebot.results.services.rounds_sync_change import rounds_sync_change
     from leaguebot.results.services.standings_sync_change import standings_sync_change
     from leaguebot.results.services.submission.submission_changes import (

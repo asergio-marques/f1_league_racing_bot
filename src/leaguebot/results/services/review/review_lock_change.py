@@ -44,7 +44,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.results.services.review_posting import DELETE_MESSAGE, delete_message_step
+from leaguebot.results.services.review.review_posting import DELETE_MESSAGE, delete_message_step
 from leaguebot.results.services.submission.submission_steps import post_step
 
 KIND = "results.review.lock"

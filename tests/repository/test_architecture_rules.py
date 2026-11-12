@@ -817,8 +817,8 @@ KNOWN_PRIVATE_NAMES_ACROSS_MODULES: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._nationalities"): (1, PASS["image"]),
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._nationality_collected"): (1, PASS["image"]),
     ("results/services/results_post_service.py", "leaguebot.image.services.image_results_post._driver_names"): (2, PASS["image"]),
+    ("results/services/review/verdict_announcement_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
     ("results/services/season_standings_posts.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
-    ("results/services/verdict_announcement_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
 }
 
 
@@ -1020,24 +1020,24 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_results_post.py", "try_post"): (1, PASS["image"]),
     ("image/services/image_standings_post.py", "post_championship"): (1, PASS["image"]),
     ("image/services/image_verdict_banner_post.py", "try_post"): (3, PASS["image"]),
-    ("results/services/penalty_wizard.py", "_show_approval_step"): (1, PASS["results"]),
-    ("results/services/review_prompts.py", "send_appeals_prompt"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "_show_approval_step"): (1, PASS["results"]),
+    ("results/services/review/review_prompts.py", "send_appeals_prompt"): (1, PASS["results"]),
     ("results/services/submission/result_submission_service.py", "send_cancelled_line"): (1, PASS["results"]),
-    ("results/services/review_prompts.py", "send_review_prompt"): (1, PASS["results"]),
+    ("results/services/review/review_prompts.py", "send_review_prompt"): (1, PASS["results"]),
     ("results/services/amendment_writes.py", "run_amendment_review_stages"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "_send_chunked"): (2, PASS["results"]),
     ("attendance/services/check_in_changes.py", "edit_check_in_message"): (1, PASS["attendance"]),
     ("attendance/services/check_in_changes.py", "post_check_in_message"): (1, PASS["attendance"]),
-    ("results/services/verdict_announcement_service.py", "_send_verdict"): (2, PASS["results"]),
+    ("results/services/review/verdict_announcement_service.py", "_send_verdict"): (2, PASS["results"]),
     ("signup/services/signup_posting.py", "delete_channel"): (1, PASS["signup"]),
     ("signup/services/signup_posting.py", "post"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.trigger_channel_hold"): (1, PASS["signup"]),
-    ("results/services/penalty_wizard.py", "_delete_review_message"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "_refresh_appeals_prompt"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "_refresh_prompt"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "_delete_posting"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "delete_round_channel"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "produce_standings"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "_delete_review_message"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "_refresh_appeals_prompt"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "_refresh_prompt"): (1, PASS["results"]),
     ("results/services/submission/result_submission_service.py", "take_down_cancel_message"): (1, PASS["results"]),
     ("weather/services/forecast_cleanup_service.py", "_discord_delete"): (1, PASS["weather"]),
 }
@@ -1290,7 +1290,7 @@ CHANGE_QUEUE = "change_queue"
 #: the bot until results' pass moves them (#439 slice 6b, decision 20): the penalty review's
 #: buttons and forms, and the configuration picker.
 RESULTS_VIEW_FILES = frozenset({
-    "results/services/penalty_wizard.py",
+    "results/services/review/penalty_wizard.py",
     "results/services/submission/result_submission_service.py",
 })
 
@@ -1336,20 +1336,20 @@ def _queue_reached_through_the_bot_among(nodes) -> Counter[tuple[str, str]]:
 #: message). They are the approve buttons, the configuration picker, Resubmit, the two forms, the
 #: Remove, clear-confirm and Make Changes buttons, and No Penalties.
 KNOWN_QUEUE_REACHED_THROUGH_THE_BOT: dict[tuple[str, str], tuple[int, str]] = {
-    ("results/services/penalty_wizard.py", "AddPardonModal.on_submit"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "AddPenaltyModal.on_submit"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "AppealsReviewView._make_remove_cb.cb"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "AppealsReviewView.approve_btn"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "AppealsReviewView.no_changes_btn"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "ApprovalView.approve_btn"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "ApprovalView.make_changes_btn"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "PenaltyReviewView._make_pardon_remove_cb.cb"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "PenaltyReviewView._make_remove_cb.cb"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "PenaltyReviewView.approve_btn"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "PenaltyReviewView.no_penalties_btn"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "PenaltyReviewView.resubmit_btn"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "_AppealsConfirmClearView.confirm_btn"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "_ConfirmClearView.confirm_btn"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "AddPardonModal.on_submit"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "AddPenaltyModal.on_submit"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "AppealsReviewView._make_remove_cb.cb"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "AppealsReviewView.approve_btn"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "AppealsReviewView.no_changes_btn"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "ApprovalView.approve_btn"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "ApprovalView.make_changes_btn"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "PenaltyReviewView._make_pardon_remove_cb.cb"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "PenaltyReviewView._make_remove_cb.cb"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "PenaltyReviewView.approve_btn"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "PenaltyReviewView.no_penalties_btn"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "PenaltyReviewView.resubmit_btn"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "_AppealsConfirmClearView.confirm_btn"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "_ConfirmClearView.confirm_btn"): (1, PASS["results"]),
     ("results/services/submission/result_submission_service.py", "_ConfigSelectView.__init__._cb"): (1, PASS["results"]),
 }
 
@@ -1645,7 +1645,7 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/amend_end_changes.py", "amend_lapse_change.record_lapse"): (1, PASS["results"]),
     ("results/services/amend_turn_change.py", "take_amended_paste"): (1, PASS["results"]),
     ("results/services/channel_settings.py", "_channel_setting.check"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "_is_league_manager"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "_is_league_manager"): (1, PASS["results"]),
     ("results/services/submission/paste_reading.py", "_build_division_validation_data"): (2, PASS["results"]),
     ("results/services/submission/submission_turn_change.py", "take_paste"): (1, PASS["results"]),
     ("signup/services/signup_views.py", "AdminReviewView._ask_for_reason"): (1, PASS["signup"]),
@@ -2026,7 +2026,7 @@ _SPLICED_WRITE = re.compile(
 TABLES_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/results_purge_service.py", "_delete_rows"):
         (2, "results' own result, standings and submission tables"),
-    ("results/services/verdict_announcement_service.py", "_record_announcement_on"):
+    ("results/services/review/verdict_announcement_service.py", "_record_announcement_on"):
         (1, "the penalty and appeal records, results' own"),
     ("results/services/amendment_writes.py", "_detach_verdicts"):
         (1, "the penalty and appeal records, results' own"),
@@ -2034,7 +2034,7 @@ TABLES_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
         (1, "the penalty and appeal records, results' own"),
     ("results/services/amendment_writes.py", "_restore_from_snapshot_on"):
         (3, "results' own session result tables, and the penalty and appeal records"),
-    ("results/services/verdict_records.py", "delete_verdicts"):
+    ("results/services/review/verdict_records.py", "delete_verdicts"):
         (1, "`VERDICT_TABLES`, the penalty and appeal records, results' own"),
 }
 
@@ -2525,15 +2525,15 @@ SPLICED_READS_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
         (1, "results' own session result tables"),
     ("results/services/amendment_writes.py", "snapshot_before_amendment_on"):
         (1, "results' own session result tables"),
-    ("results/services/review_posting.py", "withdraw_round_standings_on"):
+    ("results/services/review/review_posting.py", "withdraw_round_standings_on"):
         (1, "results' own standings snapshots"),
     ("results/services/season_points_service.py", "_points_table"):
         (2, "results' own live and staged points tables, handed by its callers"),
     ("results/services/standings_service.py", "previous_standing_positions"):
         (1, "results' own standings snapshots"),
-    ("results/services/verdict_records.py", "select_verdicts"):
+    ("results/services/review/verdict_records.py", "select_verdicts"):
         (2, "`VERDICT_TABLES` and the session result tables, results' own"),
-    ("results/services/verdict_records.py", "delete_verdicts"):
+    ("results/services/review/verdict_records.py", "delete_verdicts"):
         (1, "the session result tables, results' own"),
 }
 
@@ -2656,24 +2656,24 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/amend_views.py", "AmendCancelView.cancel_btn"): (1, PASS["results"]),
     ("results/services/amendment_stage_changes.py", "_plan_rebuild"): (3, PASS["results"]),
     ("results/services/amendment_stage_changes.py", "_round_names"): (3, PASS["results"]),
-    ("results/services/appeals_approval_change.py", "appeals_approval_change.apply"):
+    ("results/services/review/appeals_approval_change.py", "appeals_approval_change.apply"):
         (2, PASS["results"]),
-    ("results/services/penalty_service.py", "load_staged_from_records"): (3, PASS["results"]),
-    ("results/services/penalty_wizard.py", "AddPardonModal.on_submit"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "ApprovalView.approve_btn"): (3, PASS["results"]),
-    ("results/services/penalty_wizard.py", "_render_prompt_content"): (2, PASS["results"]),
-    ("results/services/penalty_wizard.py", "appeals_stage_refusal"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "review_stage_refusal"): (1, PASS["results"]),
+    ("results/services/review/penalty_service.py", "load_staged_from_records"): (3, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "AddPardonModal.on_submit"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "ApprovalView.approve_btn"): (3, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "_render_prompt_content"): (2, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "appeals_stage_refusal"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "review_stage_refusal"): (1, PASS["results"]),
     ("results/services/points_amendment_change.py", "_divisions"): (2, PASS["results"]),
     ("results/services/points_amendment_change.py", "points_amendment_change.apply"):
         (1, PASS["results"]),
     ("results/services/points_config_service.py", "remove_config_on"): (1, PASS["results"]),
     ("results/services/points_config_service.py", "setup_seasons_linking_on"): (1, PASS["results"]),
-    ("results/services/report_approval_change.py", "_latest_round"): (2, PASS["results"]),
-    ("results/services/report_approval_change.py", "report_approval_change.apply"):
+    ("results/services/review/report_approval_change.py", "_latest_round"): (2, PASS["results"]),
+    ("results/services/review/report_approval_change.py", "report_approval_change.apply"):
         (2, PASS["results"]),
     ("results/services/submission/result_submission_service.py", "<module>"): (2, PASS["results"]),
-    ("results/services/review_prompts.py", "_build_penalty_review_state"):
+    ("results/services/review/review_prompts.py", "_build_penalty_review_state"):
         (2, PASS["results"]),
     ("results/services/amendment_writes.py", "_restore_from_snapshot_on"):
         (1, PASS["results"]),
@@ -2686,7 +2686,7 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/submission/result_submission_service.py", "expected_resubmitted_session_on"):
         (1, PASS["results"]),
     ("results/services/submission/result_submission_service.py", "expected_session_on"): (1, PASS["results"]),
-    ("results/services/review_prompts.py", "is_channel_in_penalty_review"):
+    ("results/services/review/review_prompts.py", "is_channel_in_penalty_review"):
         (1, PASS["results"]),
     ("results/services/amendment_writes.py", "open_amendment_in_division"):
         (1, PASS["results"]),
@@ -2719,24 +2719,24 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/results_post_service.py", "standings_repost_status"): (1, PASS["results"]),
     ("results/services/scoring.py", "<module>"): (3, PASS["results"]),
     ("results/services/results_purge_service.py", "erase_season_on"): (4, PASS["results"]),
-    ("results/services/review_changes.py", "division_job_in_hand"): (2, PASS["results"]),
-    ("results/services/review_lock_change.py", "_in_review"): (1, PASS["results"]),
-    ("results/services/review_open_change.py", "_round_and_channel"): (2, PASS["results"]),
-    ("results/services/review_open_change.py", "appeals_open_change.plan"): (1, PASS["results"]),
-    ("results/services/review_open_change.py", "close_stale_change.close"): (2, PASS["results"]),
-    ("results/services/review_open_change.py", "review_open_change.close"): (2, PASS["results"]),
-    ("results/services/review_open_change.py", "review_open_change.open_review"):
+    ("results/services/review/review_changes.py", "division_job_in_hand"): (2, PASS["results"]),
+    ("results/services/review/review_lock_change.py", "_in_review"): (1, PASS["results"]),
+    ("results/services/review/review_open_change.py", "_round_and_channel"): (2, PASS["results"]),
+    ("results/services/review/review_open_change.py", "appeals_open_change.plan"): (1, PASS["results"]),
+    ("results/services/review/review_open_change.py", "close_stale_change.close"): (2, PASS["results"]),
+    ("results/services/review/review_open_change.py", "review_open_change.close"): (2, PASS["results"]),
+    ("results/services/review/review_open_change.py", "review_open_change.open_review"):
         (1, PASS["results"]),
-    ("results/services/review_open_change.py", "review_prompt_change.close"): (2, PASS["results"]),
-    ("results/services/review_posting.py", "_round_format"): (1, PASS["results"]),
-    ("results/services/review_posting.py", "_round_row"): (2, PASS["results"]),
-    ("results/services/review_posting.py", "_stored_standings"): (2, PASS["results"]),
-    ("results/services/review_posting.py", "plan_division_posts"): (2, PASS["results"]),
-    ("results/services/review_posting.py", "plan_posts"): (3, PASS["results"]),
-    ("results/services/review_posting.py", "withdraw_round_standings_on"): (1, PASS["results"]),
-    ("results/services/review_verdicts.py", "_division_name"): (1, PASS["results"]),
-    ("results/services/review_verdicts.py", "_latest_scored_round"): (2, PASS["results"]),
-    ("results/services/review_verdicts.py", "_sanction_heading_on"): (1, PASS["results"]),
+    ("results/services/review/review_open_change.py", "review_prompt_change.close"): (2, PASS["results"]),
+    ("results/services/review/review_posting.py", "_round_format"): (1, PASS["results"]),
+    ("results/services/review/review_posting.py", "_round_row"): (2, PASS["results"]),
+    ("results/services/review/review_posting.py", "_stored_standings"): (2, PASS["results"]),
+    ("results/services/review/review_posting.py", "plan_division_posts"): (2, PASS["results"]),
+    ("results/services/review/review_posting.py", "plan_posts"): (3, PASS["results"]),
+    ("results/services/review/review_posting.py", "withdraw_round_standings_on"): (1, PASS["results"]),
+    ("results/services/review/review_verdicts.py", "_division_name"): (1, PASS["results"]),
+    ("results/services/review/review_verdicts.py", "_latest_scored_round"): (2, PASS["results"]),
+    ("results/services/review/review_verdicts.py", "_sanction_heading_on"): (1, PASS["results"]),
     ("results/services/standings_service.py", "_rounds_from"): (2, PASS["results"]),
     ("results/services/standings_service.py", "compute_driver_standings_on"): (7, PASS["results"]),
     ("results/services/standings_service.py", "compute_team_standings_on"): (5, PASS["results"]),
@@ -2761,12 +2761,12 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/submission/submission_turn_change.py", "<module>"): (3, PASS["results"]),
     ("results/services/submission/submission_turn_change.py", "turn_steps.post_opening_review"):
         (2, PASS["results"]),
-    ("results/services/verdict_announcement_service.py", "_get_announcement_context"):
+    ("results/services/review/verdict_announcement_service.py", "_get_announcement_context"):
         (4, PASS["results"]),
-    ("results/services/verdict_announcement_service.py", "_get_result_context"):
+    ("results/services/review/verdict_announcement_service.py", "_get_result_context"):
         (2, PASS["results"]),
-    ("results/services/verdict_announcement_service.py", "_rounds_from"): (2, PASS["results"]),
-    ("results/services/verdict_announcement_service.py", "announce_verdict"): (1, PASS["results"]),
+    ("results/services/review/verdict_announcement_service.py", "_rounds_from"): (2, PASS["results"]),
+    ("results/services/review/verdict_announcement_service.py", "announce_verdict"): (1, PASS["results"]),
     ("signup/services/review_changes.py", "choices_change.open_"): (1, PASS["signup"]),
     ("signup/services/review_changes.py", "recollect_change.open_"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService._live_season_id"):
@@ -2967,7 +2967,7 @@ SPLICED_SOURCES: tuple[tuple[str, str], ...] = (
     ("core/services/settings/channel_registry_service.py", "SERVER_SOURCES"),
     ("core/services/settings/channel_registry_service.py", "DIVISION_SOURCES"),
     ("core/services/upkeep/factory_reset_service.py", "_OTHER_SOURCES"),
-    ("results/services/verdict_records.py", "VERDICT_TABLES"),
+    ("results/services/review/verdict_records.py", "VERDICT_TABLES"),
 )
 
 
@@ -3571,10 +3571,10 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/utils/svg_fill.py", "_mandatory_ids"): (1, PASS["image"]),
     ("results/services/results_post_service.py", "produce_session_results"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "produce_standings"): (1, PASS["results"]),
-    ("results/services/review_verdicts.py", "_sync_hint"): (1, PASS["results"]),
+    ("results/services/review/review_verdicts.py", "_sync_hint"): (1, PASS["results"]),
+    ("results/services/review/verdict_announcement_service.py", "_graphic_name"): (1, PASS["results"]),
+    ("results/services/review/verdict_announcement_service.py", "_send_verdict"): (1, PASS["results"]),
     ("results/services/submission/review_recovery.py", "recover_review"): (1, PASS["results"]),
-    ("results/services/verdict_announcement_service.py", "_graphic_name"): (1, PASS["results"]),
-    ("results/services/verdict_announcement_service.py", "_send_verdict"): (1, PASS["results"]),
     ("signup/cogs/signup_cog.py", "ConfirmCloseView.on_timeout"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.on_member_remove"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, PASS["signup"]),

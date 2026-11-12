@@ -293,7 +293,7 @@ async def test_every_kind_is_registered_before_the_scheduler_starts(tmp_path):
     amendment sweep) and every one-off timer kind."""
     from leaguebot.core.services.seasons import season_review_changes
     from leaguebot.results.services.amend_changes import TIMER as AMEND_TIMER
-    from leaguebot.results.services.review_lock_change import TIMER as LOCK_TIMER
+    from leaguebot.results.services.review.review_lock_change import TIMER as LOCK_TIMER
     from leaguebot.signup.services.closing_steps import DELETE_TIMER, INACTIVITY_TIMER
     from leaguebot.signup.services.review_changes import CORRECTION_TIMER
 
@@ -552,7 +552,7 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
 
     import leaguebot.__main__ as entry_point
     from leaguebot.core.models.cancellation import SCOPE_ROUND
-    from leaguebot.results.services import penalty_wizard
+    from leaguebot.results.services.review import penalty_wizard
     from leaguebot.signup.services import signup_views
     from leaguebot.weather.services import forecast_changes
 

@@ -159,14 +159,14 @@ async def test_a_second_sync_applies_nothing_twice(tmp_path):
     ), patch.object(
         attendance_service, "post_attendance_sheet", new=AsyncMock(return_value=None)
     ), _asking_for_sheets(), patch(
-        "leaguebot.results.services.verdict_announcement_service.post_autosanction_announcement",
+        "leaguebot.results.services.review.verdict_announcement_service.post_autosanction_announcement",
         # Returns the sanctions it could not announce (#237). `None` is not merely
         # inert here: the run does `posting_faults += <return>`, which raises inside
         # the per-driver try and is recorded as a bogus failed sanction. `create=True`
         # because the run asks the queue to announce instead, and the announcer is deleted.
         new=AsyncMock(return_value=[]), create=True,
     ) as announce, patch(
-        "leaguebot.results.services.verdict_announcement_service.banner_for_round",
+        "leaguebot.results.services.review.verdict_announcement_service.banner_for_round",
         new=MagicMock(return_value=None), create=True,
     ):
         first = await _sync(bot, db_path)
@@ -542,10 +542,10 @@ async def test_a_sync_asks_the_queue_to_announce_its_sanctions(tmp_path):
     ), _asking_for_sheets(), patch(
         # The announcer the sync posted through until now; `create=True` because the change
         # deletes it, which leaves nothing to call.
-        "leaguebot.results.services.verdict_announcement_service.post_autosanction_announcement",
+        "leaguebot.results.services.review.verdict_announcement_service.post_autosanction_announcement",
         new=AsyncMock(return_value=[]), create=True,
     ) as announce, patch(
-        "leaguebot.results.services.verdict_announcement_service.banner_for_round",
+        "leaguebot.results.services.review.verdict_announcement_service.banner_for_round",
         new=MagicMock(return_value=None), create=True,
     ):
         outcome = await _sync(bot, db_path)
@@ -586,7 +586,7 @@ async def test_the_sync_s_reply_lists_the_sanctions_applied_and_says_the_announc
 # sanction applied, as the candidate the sanctions were owed as (`review_league.candidate`).
 
 from leaguebot.core.models.change import StepFailedOnDiscord  # noqa: E402
-from leaguebot.results.services import verdict_announcement_service as vas  # noqa: E402
+from leaguebot.results.services.review import verdict_announcement_service as vas  # noqa: E402
 from tests.support import review_league as rl  # noqa: E402
 from tests.support.change_queue import (  # noqa: E402
     change_rows,

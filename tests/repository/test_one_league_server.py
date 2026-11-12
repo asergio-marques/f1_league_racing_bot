@@ -447,7 +447,7 @@ async def test_the_penalty_review_lock_ignores_another_server(monkeypatch):
     """The lock is results' listener (#439, slice 6b, C39): a message typed in another server
     is never looked up, nor deleted."""
     from leaguebot.results.cogs.results_cog import ResultsCog
-    from leaguebot.results.services import review_prompts
+    from leaguebot.results.services.review import review_prompts
 
     asked = AsyncMock(return_value=True)
     monkeypatch.setattr(review_prompts, "is_channel_in_penalty_review", asked)

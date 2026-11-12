@@ -64,7 +64,7 @@ from leaguebot.results.services.amend_changes import (
     record_prompt_posted,
 )
 from leaguebot.results.services.amendment_stage_changes import PROMPT_KIND
-from leaguebot.results.services.review_posting import (
+from leaguebot.results.services.review.review_posting import (
     DELETE_CHANNEL,
     DELETE_MESSAGE,
     NAMES,

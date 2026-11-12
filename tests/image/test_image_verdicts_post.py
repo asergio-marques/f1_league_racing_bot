@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from leaguebot.results.services import verdict_announcement_service as vas
+from leaguebot.results.services.review import verdict_announcement_service as vas
 from leaguebot.image.services.image_verdict_service import VerdictKind
 from tests.support.change_queue import in_a_job
 

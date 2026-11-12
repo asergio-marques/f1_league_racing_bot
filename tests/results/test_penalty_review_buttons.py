@@ -41,11 +41,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
-import leaguebot.results.services.penalty_wizard as pw
+import leaguebot.results.services.review.penalty_wizard as pw
 from leaguebot.core.db.database import run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_service import StagedPenalty
-from leaguebot.results.services.penalty_wizard import (
+from leaguebot.results.services.review.penalty_service import StagedPenalty
+from leaguebot.results.services.review.penalty_wizard import (
     ApprovalView,
     PenaltyReviewState,
     PenaltyReviewView,
@@ -235,7 +235,7 @@ def _current(monkeypatch):
 
 
 def _approval_step():
-    return patch("leaguebot.results.services.penalty_wizard._show_approval_step", new=AsyncMock(return_value=None))
+    return patch("leaguebot.results.services.review.penalty_wizard._show_approval_step", new=AsyncMock(return_value=None))
 
 
 async def _press(view, name: str, interaction):
@@ -334,7 +334,7 @@ async def test_confirming_the_clear_discards_the_staged_list(tmp_path):
     interaction = await _on_the_queue(state, tmp_path)
 
     with _approval_step() as approval, patch(
-        "leaguebot.results.services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
+        "leaguebot.results.services.review.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
     ):
         await type(view).confirm_btn(view, interaction, MagicMock())
         await run_queue(state.bot)
@@ -360,13 +360,13 @@ async def test_confirming_the_clear_redraws_the_prompt_with_nothing_staged(tmp_p
         order.append("approval question posted")
 
     with patch(
-        "leaguebot.results.services.penalty_wizard._refresh_prompt",
+        "leaguebot.results.services.review.penalty_wizard._refresh_prompt",
         new=AsyncMock(side_effect=_redrawn),
     ), patch(
-        "leaguebot.results.services.penalty_wizard._show_approval_step",
+        "leaguebot.results.services.review.penalty_wizard._show_approval_step",
         new=AsyncMock(side_effect=_asked),
     ), patch(
-        "leaguebot.results.services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
+        "leaguebot.results.services.review.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
     ):
         await type(view).confirm_btn(view, interaction, MagicMock())
         await run_queue(state.bot)
@@ -503,7 +503,7 @@ async def test_the_pardon_button_opens_the_pardon_modal():
 
 
 def _pardon(idx: int = 0):
-    from leaguebot.results.services.penalty_wizard import StagedPardon
+    from leaguebot.results.services.review.penalty_wizard import StagedPardon
 
     return StagedPardon(
         driver_user_id=DRIVER + idx, driver_profile_id=31 + idx, attendance_id=41 + idx,
@@ -583,9 +583,9 @@ async def test_removing_a_pardon_takes_it_off_the_staged_list(amendment, tmp_pat
     button = next(c for c in view.children if c.custom_id == "pw_pardon_remove_0")
     interaction = await _on_the_queue(state, tmp_path)
 
-    with patch("leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()), patch(
-        "leaguebot.results.services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
-    ), patch("leaguebot.results.services.penalty_wizard._review_moved_on", new=AsyncMock(return_value=None)):
+    with patch("leaguebot.results.services.review.penalty_wizard._refresh_prompt", new=AsyncMock()), patch(
+        "leaguebot.results.services.review.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
+    ), patch("leaguebot.results.services.review.penalty_wizard._review_moved_on", new=AsyncMock(return_value=None)):
         await button.callback(interaction)
         await run_queue(state.bot)
 
@@ -594,7 +594,7 @@ async def test_removing_a_pardon_takes_it_off_the_staged_list(amendment, tmp_pat
 
 
 async def test_the_appeals_review_draws_with_more_corrections_than_there_is_room_for():
-    from leaguebot.results.services.penalty_wizard import AppealsReviewView
+    from leaguebot.results.services.review.penalty_wizard import AppealsReviewView
 
     state = _state()
     state.staged_appeals = [_penalty(s) for s in range(1, 31)]
@@ -637,7 +637,7 @@ async def test_every_control_refuses_once_the_review_has_moved_on(monkeypatch, c
     refresh = AsyncMock()
 
     with _approval_step() as approval, patch(
-        "leaguebot.results.services.penalty_wizard._refresh_prompt", new=refresh
+        "leaguebot.results.services.review.penalty_wizard._refresh_prompt", new=refresh
     ), patch(
         "leaguebot.results.services.submission.result_submission_service.enter_resubmit_flow", new=AsyncMock(),
         create=True,
@@ -673,7 +673,7 @@ async def test_the_steps_on_the_way_to_approval_refuse_too(monkeypatch, view_cla
     refresh = AsyncMock()
 
     with _approval_step() as approval, patch(
-        "leaguebot.results.services.penalty_wizard._refresh_prompt", new=refresh
+        "leaguebot.results.services.review.penalty_wizard._refresh_prompt", new=refresh
     ):
         await getattr(type(view), button)(view, interaction, MagicMock())
 
@@ -916,9 +916,9 @@ async def test_every_press_of_the_penalty_review_writes_one_line(kind, label, st
     interaction = await _pressed_by_alex(state, channel, tmp_path)
 
     with patch(
-        "leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()
+        "leaguebot.results.services.review.penalty_wizard._refresh_prompt", new=AsyncMock()
     ), patch(
-        "leaguebot.results.services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
+        "leaguebot.results.services.review.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
     ):
         await button.callback(interaction)
         await run_queue(state.bot)
@@ -947,7 +947,7 @@ async def test_no_penalties_with_the_channel_unreachable_is_answered_and_recorde
     interaction = await _pressed_by_alex(state, None, tmp_path)
 
     with patch(
-        "leaguebot.results.services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
+        "leaguebot.results.services.review.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
     ):
         await _press(view, "no_penalties_btn", interaction)
         await run_queue(state.bot)

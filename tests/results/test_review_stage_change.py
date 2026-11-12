@@ -64,7 +64,7 @@ APPEALS_PROMPT = 8902
 def _state(league: ReviewLeague, *, staged: Any = (), approval: int | None = None,
            appeals: bool = False) -> Any:
     """Round 3's review as it is held in memory, its prompt the one the channel records."""
-    from leaguebot.results.services.penalty_wizard import PenaltyReviewState
+    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewState
 
     return PenaltyReviewState(
         round_id=ROUND_ID, division_id=DIVISION_ID, submission_channel_id=SUBMISSION_CHANNEL,
@@ -89,7 +89,7 @@ def _alex(league: ReviewLeague, *, message: int | None = None) -> Any:
 async def _add_penalty(state: Any, interaction: Any, *, driver: int = LEWIS,
                        appeals: bool = False) -> None:
     """Alex fills in Add Penalty (or Add Correction) for *driver*: +5s, and submits it."""
-    from leaguebot.results.services.penalty_wizard import AddPenaltyModal
+    from leaguebot.results.services.review.penalty_wizard import AddPenaltyModal
 
     modal = AddPenaltyModal(state, SessionType.FEATURE_RACE, use_appeals_staging=appeals)
     modal.driver_input._value = f"<@{driver}>"
@@ -277,7 +277,7 @@ async def test_a_pardon_and_an_appeal_correction_are_staged_alike(tmp_path):
     Remove Pardon button when it runs. In a second league whose round 3 awaits its appeal
     verdicts, Alex adds a correction for Lewis: it too is a staging change on the round's lane,
     and the appeals prompt is redrawn when it runs."""
-    from leaguebot.results.services.penalty_wizard import AddPardonModal
+    from leaguebot.results.services.review.penalty_wizard import AddPardonModal
 
     league = await review_league(tmp_path, attendance=True)
     async with get_connection(league.db_path) as db:
@@ -322,7 +322,7 @@ async def test_remove_clear_and_make_changes_are_staged_and_redrawn_as_jobs(tmp_
     and changes nothing until it runs: Make Changes withdraws the approval message and redraws
     the prompt; Remove #2 leaves only Remove #1; the clear leaves no Remove button and the
     approval question is posted again."""
-    from leaguebot.results.services.penalty_wizard import (
+    from leaguebot.results.services.review.penalty_wizard import (
         ApprovalView,
         PenaltyReviewView,
         _ConfirmClearView,
@@ -370,7 +370,7 @@ async def test_confirm_posts_the_approval_message_as_a_job_and_keeps_its_id(tmp_
     """Nothing is staged in round 3's review when Alex presses No Penalties / Confirm. He is
     answered at once and nothing is posted yet; the confirmation is a change on round 3's lane,
     whose job posts the approval message and saves its id on the submission's row."""
-    from leaguebot.results.services.penalty_wizard import PenaltyReviewView
+    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewView
 
     league = await review_league(tmp_path)
     state = _state(league)
@@ -397,7 +397,7 @@ async def test_a_refused_approval_message_stops_the_queue(tmp_path):
     """Discord refuses the approval message Alex's No Penalties / Confirm posts in round 3's
     submission channel. Round 3's lane stops at that post, the league lane running on, and no id
     is saved; Retry posts it and saves its id."""
-    from leaguebot.results.services.penalty_wizard import PenaltyReviewView
+    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewView
 
     league = await review_league(tmp_path)
     league.channel(SUBMISSION_CHANNEL).fail_when = (
@@ -427,7 +427,7 @@ async def test_the_approval_message_s_id_is_saved_on_the_submission_row_and_read
     its id saved on the submission's row. A second review of round 3, built afresh in memory with
     no approval message of its own, then stages a penalty for Lewis: its staging reads the
     approval message from the row and withdraws it, and the row no longer names it."""
-    from leaguebot.results.services.penalty_wizard import PenaltyReviewView
+    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewView
 
     league = await review_league(tmp_path)
     await _press(PenaltyReviewView(_state(league)), "No Penalties / Confirm",

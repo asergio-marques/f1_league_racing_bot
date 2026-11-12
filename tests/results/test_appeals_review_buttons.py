@@ -44,7 +44,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_wizard import (
+from leaguebot.results.services.review.penalty_wizard import (
     AppealsReviewView,
     ApprovalView,
     PenaltyReviewState,
@@ -255,7 +255,7 @@ def _press(view, name, interaction):
 
 def _manager(is_manager: bool = True):
     return patch(
-        "leaguebot.results.services.penalty_wizard._is_league_manager",
+        "leaguebot.results.services.review.penalty_wizard._is_league_manager",
         new=AsyncMock(return_value=is_manager),
     )
 
@@ -275,8 +275,8 @@ def _finalisers():
             "leaguebot.results.services.submission.result_submission_service.finalize_appeals_review",
             new=AsyncMock(), create=True,
         ),
-        patch("leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()),
-        patch("leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()),
+        patch("leaguebot.results.services.review.penalty_wizard._refresh_prompt", new=AsyncMock()),
+        patch("leaguebot.results.services.review.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()),
     )
 
 
@@ -332,7 +332,7 @@ async def test_make_changes_returns_to_staging_with_the_list_intact(tmp_path):
     interaction = _staging_press(state)
 
     with _manager(), patch(
-        "leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()
+        "leaguebot.results.services.review.penalty_wizard._refresh_prompt", new=AsyncMock()
     ) as refresh:
         await _press(view, "make_changes_btn", interaction)
         await run_queue(state.bot)
@@ -427,7 +427,7 @@ async def test_removing_a_correction_takes_it_off_the_list(tmp_path):
     interaction = _staging_press(state)
 
     with _manager(), patch(
-        "leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
+        "leaguebot.results.services.review.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
     ) as refresh:
         await view._make_remove_cb(0)(interaction)
         await run_queue(state.bot)
@@ -445,7 +445,7 @@ async def test_removing_a_correction_says_which_one_went(tmp_path):
     interaction = _staging_press(state)
 
     with _manager(), patch(
-        "leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
+        "leaguebot.results.services.review.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
     ):
         await view._make_remove_cb(0)(interaction)
         await run_queue(state.bot)
@@ -462,7 +462,7 @@ async def test_a_remove_button_past_the_end_is_answered(tmp_path):
     interaction = _staging_press(state)
 
     with _manager(), patch(
-        "leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
+        "leaguebot.results.services.review.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
     ):
         await view._make_remove_cb(3)(interaction)
         await run_queue(state.bot)

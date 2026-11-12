@@ -38,9 +38,9 @@ import pytest
 # `session_results.session_type` actually holds.
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_service import StagedPenalty
+from leaguebot.results.services.review.penalty_service import StagedPenalty
 from tests.support.change_queue import in_a_job
-from leaguebot.results.services.penalty_wizard import (
+from leaguebot.results.services.review.penalty_wizard import (
     PenaltyReviewState,
     _refresh_appeals_prompt,
     _render_appeals_prompt_content,
@@ -81,7 +81,7 @@ def _no_driver_changed_account(monkeypatch):
     The state points at no real database; the account map the prompt reads is the one query
     it makes, and naming by the current account is pinned in `test_add_penalty_modal.py`.
     """
-    import leaguebot.results.services.penalty_wizard as penalty_wizard
+    import leaguebot.results.services.review.penalty_wizard as penalty_wizard
 
     monkeypatch.setattr(
         penalty_wizard, "current_account_map_for_division", AsyncMock(return_value={})

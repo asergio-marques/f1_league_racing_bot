@@ -520,7 +520,7 @@ def test_format_time_ms(ms, expected_str):
 async def test_channel_not_in_penalty_review_when_flag_zero(tmp_path):
     """is_channel_in_penalty_review returns False when in_penalty_review=0."""
     from leaguebot.core.db.database import get_connection, run_migrations
-    from leaguebot.results.services.review_prompts import is_channel_in_penalty_review
+    from leaguebot.results.services.review.review_prompts import is_channel_in_penalty_review
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)

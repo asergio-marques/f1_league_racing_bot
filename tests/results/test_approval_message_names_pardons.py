@@ -29,8 +29,8 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_service import StagedPenalty
-from leaguebot.results.services.penalty_wizard import (
+from leaguebot.results.services.review.penalty_service import StagedPenalty
+from leaguebot.results.services.review.penalty_wizard import (
     PenaltyReviewState,
     PenaltyReviewView,
     StagedPardon,
@@ -181,7 +181,7 @@ def _interaction(state: PenaltyReviewState) -> MagicMock:
 
 def _a_league_manager():
     return patch(
-        "leaguebot.results.services.penalty_wizard._is_league_manager", new=AsyncMock(return_value=True)
+        "leaguebot.results.services.review.penalty_wizard._is_league_manager", new=AsyncMock(return_value=True)
     )
 
 
@@ -271,7 +271,7 @@ async def test_clearing_the_penalties_keeps_the_pardons_on_the_approval_message(
     view = _ConfirmClearView(state)
 
     with _a_league_manager(), patch(
-        "leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()
+        "leaguebot.results.services.review.penalty_wizard._refresh_prompt", new=AsyncMock()
     ):
         await type(view).confirm_btn(view, _interaction(state), MagicMock())
         await run_queue(state.bot)
