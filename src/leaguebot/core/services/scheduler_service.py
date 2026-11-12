@@ -962,6 +962,11 @@ class SchedulerService:
             "Scheduled %s every %d minutes", AMENDMENT_SWEEP_JOB_ID, AMENDMENT_SWEEP_MINUTES
         )
 
+    def cancel_amendment_sweep(self) -> None:
+        """Remove the standing sweep `schedule_amendment_sweep` arms (no-op where it is not armed),
+        as turning results off undoes what turning it on set up."""
+        self.cancel_job(AMENDMENT_SWEEP_JOB_ID)
+
     def cancel_portrait_refresh(self) -> None:
         """Remove the daily portrait refresh if it exists."""
         job_id = PORTRAIT_REFRESH_JOB_ID

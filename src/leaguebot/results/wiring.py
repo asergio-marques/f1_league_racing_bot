@@ -347,6 +347,7 @@ def register_change_types(
             attendance_off_on=attendance_off_on,
             attendance_enabled=bot.module_service.is_attendance_enabled,
             rounds_made_final=bot.rounds_made_final,
+            disarm_amendment_sweep=bot.scheduler_service.cancel_amendment_sweep,
         )
     )
     bot.change_queue.register(submission_open_change(now=lambda: bot.change_queue.now()))

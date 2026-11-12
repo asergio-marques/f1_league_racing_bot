@@ -13,7 +13,11 @@ and resumes after a stop:
    to mark former drivers by. It also asks, as changes of the bot's, for the hub's panel to be
    refreshed and for the season to be wound down, as changes of their own, which run after the
    take-downs and the close, in the queue's order (`hub_service.hub_refresh_change`, `season_lifecycle_service.wind_down_change`).
-2. **`take_down`**, one for each message or channel: `results_purge_service.take_down`. **Each is
+2. **`disarm_sweep`**, first of what follows: the standing sweep that undoes an amendment nobody
+   carried through, which turning results on arms (`module_switch_settings.ARM_SWEEP`), is
+   removed through the scheduler service the builder hands in, as a switch-off undoes what the
+   switch-on set up.
+3. **`take_down`**, one for each message or channel: `results_purge_service.take_down`. **Each is
    a job like any other**, so a removal that fails stops the queue until it is cleared (decided with
    the owner, 2026-10-02, withdrawing the earlier "tried once"): the bot tries it again on the
    queue's schedule, and a league manager may Retry it. A league admin may Discard it, and the
@@ -21,7 +25,7 @@ and resumes after a stop:
    as removed (the results specification). A failure's ``left`` is kept on the job, so a discard
    names only the messages still standing. A channel is named by its link, in the stop and, once
    discarded, in the reply and the closing line, for deletion by hand.
-3. **`close`**, one save: it counts what went, forgets the banners taken down so that one left
+4. **`close`**, one save: it counts what went, forgets the banners taken down so that one left
    standing keeps its record, and writes the closing line. A message left standing is one in a
    discarded job's ``left``, or every message of an item whose job was discarded with none (the
    server out of the cache), linked from the ids the item carries.
@@ -98,6 +102,7 @@ CASCADE_CHANGED = (
 )
 
 _SWITCH_OFF = "switch_off"
+_DISARM_SWEEP = "disarm_sweep"
 _TAKE_DOWN = "take_down"
 _CLOSE = "close"
 
@@ -107,6 +112,7 @@ def results_off_change(
     attendance_off_on: Callable[[aiosqlite.Connection], Awaitable[bool]],
     attendance_enabled: Callable[[], Awaitable[bool]],
     rounds_made_final: AwaitedHook,
+    disarm_amendment_sweep: Callable[[], None],
 ) -> ChangeType:
     """The change that turns Results & Standings off, with attendance where the payload asks.
 
@@ -115,7 +121,8 @@ def results_off_change(
     on now, read the same way the cog reads it at the ask (`ModuleService.is_attendance_enabled`,
     handed rather than read from attendance's own table directly, so this module still imports
     none of attendance's). *rounds_made_final* is the hook the closing of the rounds waiting on
-    results calls with the rounds it made FINAL. The payload is ``{"cascade_attendance": bool}``.
+    results calls with the rounds it made FINAL. *disarm_amendment_sweep* removes the amendment
+    sweep from the scheduler (`SchedulerService.cancel_amendment_sweep`). The payload is ``{"cascade_attendance": bool}``.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -175,7 +182,8 @@ def results_off_change(
         if erased.rounds:
             audits.append(AuditRecord("RESULTS_SEASON_PURGED", {}, counts))
 
-        then = [PlannedStep(_TAKE_DOWN, {"item": item}) for item in erased.items]
+        then = [PlannedStep(_DISARM_SWEEP)]
+        then += [PlannedStep(_TAKE_DOWN, {"item": item}) for item in erased.items]
         if erased.items:
             then.append(PlannedStep(_CLOSE))
         return StepResult(
@@ -192,6 +200,13 @@ def results_off_change(
                 FollowOn(WIND_DOWN, {}, f"Winding the season down after {ctx.what}"),
             ),
         )
+
+    async def disarm_sweep(_ctx: StepContext) -> StepResult:
+        disarm_amendment_sweep()
+        return StepResult()
+
+    async def describe_disarm_sweep(_ctx: StepContext) -> str:
+        return "removing the amendment sweep"
 
     async def take_down_step(ctx: StepContext) -> StepResult:
         return StepResult(result=await take_down(ctx.bot, ctx.step_payload["item"]))
@@ -277,6 +292,9 @@ def results_off_change(
         opening=(PlannedStep(_SWITCH_OFF),),
         steps={
             _SWITCH_OFF: Step(_SWITCH_OFF, StepKind.SAVE, switch_off, describe=describe_switch_off),
+            _DISARM_SWEEP: Step(
+                _DISARM_SWEEP, StepKind.ACT, disarm_sweep, describe=describe_disarm_sweep
+            ),
             _TAKE_DOWN: Step(
                 _TAKE_DOWN, StepKind.DELETE, take_down_step, describe=describe_take_down
             ),
