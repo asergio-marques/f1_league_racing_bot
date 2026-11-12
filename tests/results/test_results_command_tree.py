@@ -4,9 +4,12 @@ Every group and command under `/results`, with its description, and every option
 description, type, whether it is required and the choices it offers. The cog is composed from
 one class per subgroup (`docs/design/architecture.md`, the cog bullet), and composing it is
 meant to change nothing a league sees: this is the test that says so, written from the tree as
-it stood before the split and read off the cog class, with no bot and no gateway.
+it stood before the split. It is read off a cog built on a stand-in bot, which is what discord.py
+syncs: the copies it makes for the instance, each bound to that instance. No gateway is needed.
 """
 from __future__ import annotations
+
+from unittest.mock import MagicMock
 
 from discord import app_commands
 
@@ -228,9 +231,9 @@ def _walk(objects):
             yield from _walk(obj.commands)
 
 
-def _read() -> list[tuple]:
+def _read(cog: ResultsCog) -> list[tuple]:
     rows = []
-    for obj in sorted(_walk(ResultsCog.__cog_app_commands__), key=lambda c: c.qualified_name):
+    for obj in sorted(_walk(cog.get_app_commands()), key=lambda c: c.qualified_name):
         if isinstance(obj, app_commands.Group):
             rows.append((obj.qualified_name, "group", obj.description, ()))
         else:
@@ -250,5 +253,13 @@ def _read() -> list[tuple]:
 
 def test_the_results_command_tree_is_what_a_league_sees():
     """Every command and group keeps its name, description and options as listed."""
-    assert _read() == list(TREE)
+    assert _read(ResultsCog(MagicMock())) == list(TREE)
+
+
+def test_every_results_command_is_bound_to_the_cog_that_is_loaded():
+    """A subgroup's command is bound to the cog instance, so it runs with its bot and gates."""
+    cog = ResultsCog(MagicMock())
+    commands = [obj for obj in _walk(cog.get_app_commands()) if not isinstance(obj, app_commands.Group)]
+    assert commands
+    assert all(command.binding is cog for command in commands)
 
