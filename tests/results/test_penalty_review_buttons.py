@@ -339,6 +339,8 @@ async def test_confirming_the_clear_discards_the_staged_list(tmp_path):
 
     with _approval_step() as approval, patch(
         "leaguebot.results.services.review.penalty_review_views._shown", new=AsyncMock(return_value=DRIVER)
+    ), patch(
+        "leaguebot.results.services.review.review_state._shown", new=AsyncMock(return_value=DRIVER)
     ):
         await type(view).confirm_btn(view, interaction, MagicMock())
         await run_queue(state.bot)
@@ -371,6 +373,8 @@ async def test_confirming_the_clear_redraws_the_prompt_with_nothing_staged(tmp_p
         new=AsyncMock(side_effect=_asked),
     ), patch(
         "leaguebot.results.services.review.penalty_review_views._shown", new=AsyncMock(return_value=DRIVER)
+    ), patch(
+        "leaguebot.results.services.review.review_state._shown", new=AsyncMock(return_value=DRIVER)
     ):
         await type(view).confirm_btn(view, interaction, MagicMock())
         await run_queue(state.bot)
@@ -901,6 +905,8 @@ async def test_every_press_of_the_penalty_review_writes_one_line(kind, label, st
         "leaguebot.results.services.review.penalty_review_views._refresh_prompt", new=AsyncMock()
     ), patch(
         "leaguebot.results.services.review.penalty_review_views._shown", new=AsyncMock(return_value=DRIVER)
+    ), patch(
+        "leaguebot.results.services.review.review_state._shown", new=AsyncMock(return_value=DRIVER)
     ):
         await button.callback(interaction)
         await run_queue(state.bot)
