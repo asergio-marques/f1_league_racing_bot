@@ -1703,30 +1703,46 @@ async def test_a_picture_sent_before_a_later_failure_is_removed_before_the_next_
 # ---------------------------------------------------------------------------
 
 PICTURE_FAULT_NOT_LOGGED = (
-    "#284: a picture that fails falls back to text with no line in the log channel"
+    "#284: a picture whose posting step raises falls back to text with no line in the log channel"
 )
 
+#: What the image module's posting step raises in these tests: a fault its own catches let
+#: through (the drawn picture's file cannot be opened to attach), where a fault in drawing or
+#: rasterising is caught there and already reported in the log channel by the image module.
+PICTURE_FILE_FAULT = "the drawn picture could not be opened"
 
-def _fault_lines(league: _League) -> list[str]:
-    """The log channel's lines naming round 3 of Pro, the posting's own."""
-    return [line for line in league.bot.log_channel.sent
-            if "Pro" in line and "round 3" in line.lower()]
+
+def _fault_line(league: _League) -> str:
+    """The one line the log channel gained naming round 3 of Pro, the posting's own, in lower
+    case."""
+    lines = [line for line in league.bot.log_channel.sent
+             if "Pro" in line and "round 3" in line.lower()]
+    assert len(lines) == 1, league.bot.log_channel.sent
+    return lines[0].lower()
+
+
+def _says_why(line: str, picture: str) -> bool:
+    """*line* names the *picture* that failed ("results", "standings"), says the post went out
+    as text in its place, and gives the fault. How it words what puts it right is left open."""
+    return (picture in line and ("picture" in line or "image" in line)
+            and "text" in line and PICTURE_FILE_FAULT in line)
 
 
 @pytest.mark.xfail(strict=True, reason=PICTURE_FAULT_NOT_LOGGED)
 async def test_a_results_picture_that_fails_posts_the_table_as_text_and_says_why_in_the_log(
     tmp_path,
 ):
-    """Round 3's results are posted again with image generation on, and drawing the picture
-    fails: the table goes out as text in the results channel, the queue runs to the end, and the
-    log channel gains one line naming round 3 of Pro, the posting that fell back."""
-    from leaguebot.image.services.image_results_service import ResultsDataError
-
+    """Round 3's results are posted again with image generation on, and the image module's
+    posting step for the results picture raises a fault its own catches let through (the drawn
+    picture cannot be opened). Today the results module logs that on the host alone. The table
+    goes out as text in the results channel, the queue runs to the end, and the log channel
+    gains one line naming round 3 of Pro, the results picture, the fault, and that the table
+    went out as text."""
     league = await _league(tmp_path)
     league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
     with patch(
         "leaguebot.image.services.image_results_post.try_post",
-        new=AsyncMock(side_effect=ResultsDataError("the drawing failed")),
+        new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
     ), patch(
         "leaguebot.image.services.image_standings_post.try_post",
         new=AsyncMock(return_value=MagicMock(applicable=False, rejects=False)),
@@ -1737,18 +1753,20 @@ async def test_a_results_picture_that_fails_posts_the_table_as_text_and_says_why
     assert await stopped_job(league.db_path) is None
     [new] = league.sent_to(RESULTS_CHANNEL)
     assert "Round 3" in league.channel(RESULTS_CHANNEL).messages[new].content
-    assert len(_fault_lines(league)) == 1, league.bot.log_channel.sent
+    line = _fault_line(league)
+    assert _says_why(line, "results"), line
 
 
 @pytest.mark.xfail(strict=True, reason=PICTURE_FAULT_NOT_LOGGED)
 async def test_a_standings_picture_that_fails_posts_the_standings_as_text_and_says_why_in_the_log(
     tmp_path,
 ):
-    """Round 3's standings are posted again with image generation on, and drawing their
-    pictures fails: the standings stand as text in the standings channel, the queue runs to
-    the end, and the log channel gains one line naming round 3 of Pro."""
-    from leaguebot.image.services.image_standings_service import StandingsDataError
-
+    """Round 3's standings are posted again with image generation on, and the image module's
+    posting step for the standings pictures raises a fault its own catches let through (the
+    drawn picture cannot be opened). Today the results module logs that on the host alone. The
+    standings stand as text in the standings channel, the queue runs to the end, and the log
+    channel gains one line naming round 3 of Pro, the standings picture, the fault, and that the
+    standings went out as text."""
     league = await _league(tmp_path)
     league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
     with patch(
@@ -1756,7 +1774,7 @@ async def test_a_standings_picture_that_fails_posts_the_standings_as_text_and_sa
         new=AsyncMock(return_value=MagicMock(applicable=False, message_id=None)),
     ), patch(
         "leaguebot.image.services.image_standings_post.try_post",
-        new=AsyncMock(side_effect=StandingsDataError("the drawing failed")),
+        new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
     ):
         await _ask(league)
         await run_queue(league.bot)
@@ -1766,4 +1784,5 @@ async def test_a_standings_picture_that_fails_posts_the_standings_as_text_and_sa
     texts = [standings.messages[mid].content for kind, ch, mid in league.events
              if ch == STANDINGS_CHANNEL and kind in ("send", "edit") and mid in standings.messages]
     assert texts and all("Round 3" in text for text in texts)
-    assert len(_fault_lines(league)) == 1, league.bot.log_channel.sent
+    line = _fault_line(league)
+    assert _says_why(line, "standings"), line

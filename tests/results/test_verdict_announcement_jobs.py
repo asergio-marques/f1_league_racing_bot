@@ -861,21 +861,27 @@ async def test_a_review_s_sanction_whose_role_change_discord_refuses_stops_the_q
 
 @pytest.mark.xfail(
     strict=True,
-    reason="#284: a verdict picture that fails falls back to text with no line in the log channel",
+    reason="#284: a verdict picture whose building raises falls back to text with no line in the "
+    "log channel",
 )
 async def test_a_verdict_whose_picture_fails_is_announced_as_text_and_says_why_in_the_log(
     tmp_path, drawn, monkeypatch,
 ):
     """Alex approves a five-second penalty for Lewis in round 3, the verdict graphic switched on,
-    and rasterising the picture fails: the verdict is announced as text naming Lewis, the queue
-    runs to the end, and the log channel gains one line naming round 3 of Pro."""
+    and the image module's step that builds the verdict picture raises a fault it does not catch
+    itself (a file it reads cannot be opened); a fault in rasterising is caught there and already
+    reported in the log channel by the image module. Today the results module logs this one on
+    the host alone. The verdict is announced as text naming Lewis, the queue runs to the end, and
+    the log channel gains one line naming round 3 of Pro, the verdict picture, the fault, and
+    that the verdict went out as text."""
     from leaguebot.image.services import image_verdict_post
-    from leaguebot.image.services.image_render_service import RasterisationError
 
-    async def _fails(_bot: Any, _drawing: Any, **_kwargs: Any) -> Any:
-        raise RasterisationError("the rasteriser failed")
+    fault = "the verdict picture's file could not be opened"
 
-    monkeypatch.setattr(image_verdict_post, "render_verdict", _fails)
+    async def _fails(*_args: Any, **_kwargs: Any) -> Any:
+        raise OSError(fault)
+
+    monkeypatch.setattr(image_verdict_post, "build_drawing", _fails)
     league = await review_league(tmp_path)
     await _approve_reports(league, [penalty(LEWIS)])
     await run_queue(league.bot)
@@ -883,6 +889,9 @@ async def test_a_verdict_whose_picture_fails_is_announced_as_text_and_says_why_i
     assert await stopped_at(league) is None
     [verdict] = _verdicts(league)
     assert f"**Driver**: <@{LEWIS}>" in verdict
-    faults = [line for line in league.bot.log_channel.sent
+    faults = [line.lower() for line in league.bot.log_channel.sent
               if "Pro" in line and "round 3" in line.lower()]
     assert len(faults) == 1, league.bot.log_channel.sent
+    [line] = faults
+    assert "verdict" in line and ("picture" in line or "image" in line), line
+    assert "text" in line and fault in line, line
