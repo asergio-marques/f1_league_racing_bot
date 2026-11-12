@@ -2,8 +2,8 @@
 
 Restart recovery decides here, per round, and the results wiring only reads the rows
 (`recover_orphaned_submission_channels`) and calls it, so the wiring gains no rule. A review is
-put back by asking the change queue, as the bot, for the change that does it (``results.review.open``, ``results.appeals.open``,
-``results.review.close_stale``): recovery posts nothing and deletes nothing of a review itself.
+put back by asking the change queue, as the bot, for the change that does it
+(``results.review.open``, ``results.appeals.open``, ``results.review.close_stale``): recovery posts nothing and deletes nothing of a review itself.
 
 **A round whose review, or whose submission, a change is carrying out is left alone**, a stopped
 one included: a paste's turn, the cancelled sessions' lines or the closing of the channel they

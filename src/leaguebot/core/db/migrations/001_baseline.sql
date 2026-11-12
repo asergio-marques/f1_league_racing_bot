@@ -378,7 +378,7 @@ CREATE TABLE "penalty_records" (
     -- announcement_message_id: the verdict announcement itself, so an amendment can
     -- replace it rather than leaving a decision that contradicts the classification it
     -- was applied to. NULL where no announcement id was recorded; such a verdict
-    -- cannot be replaced and is announced afresh, which the log says.
+    -- cannot be replaced, and a takedown passes over it.
     announcement_message_id TEXT,
     -- The chunk list of that announcement, as elsewhere.
     announcement_message_ids TEXT
@@ -400,7 +400,7 @@ CREATE TABLE "appeal_records" (
     -- announcement_message_id: the verdict announcement itself, so an amendment can
     -- replace it rather than leaving a decision that contradicts the classification it
     -- was applied to. NULL where no announcement id was recorded; such a verdict
-    -- cannot be replaced and is announced afresh, which the log says.
+    -- cannot be replaced, and a takedown passes over it.
     announcement_message_id TEXT,
     -- The chunk list of that announcement, as elsewhere.
     announcement_message_ids TEXT
