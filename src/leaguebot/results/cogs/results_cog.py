@@ -1225,12 +1225,7 @@ class ResultsCog(commands.Cog):
             return
         await interaction.response.defer(ephemeral=True)
 
-        from leaguebot.core.services.rounds.amendment_service import approval_faults
-        from leaguebot.results.services.points.amendment_mode_service import (
-            get_amendment_state,
-            get_modification_store_diff,
-            validate_modification_ordering,
-        )
+        from leaguebot.results.services.points.amendment_mode_service import review_panel
 
         season = await season_for_command(
             interaction, self.bot.season_service, "results amend review"
@@ -1238,61 +1233,16 @@ class ResultsCog(commands.Cog):
         if season is None:
             return
 
-        state = await get_amendment_state(self.bot.db_path, season.id)
-        if state is None or not state.amendment_active:
+        diff = await review_panel(
+            self.bot.db_path, season, bot=self.bot, module_service=self.bot.module_service
+        )
+        if diff is None:
             await refuse(
                 interaction, "\u274c Amendment mode is not active.", what=describe(interaction)
             )
             return
 
-        diff = await get_modification_store_diff(self.bot.db_path, season.id)
-
-        # The ordering is shown in the panel, not saved for the press. A manager asked to
-        # approve a change should be able to see what is wrong with it while deciding,
-        # rather than press Approve and be refused — the diff is the whole basis for the
-        # decision, and this is part of what the diff means.
-        ordering_errors = await validate_modification_ordering(self.bot.db_path, season.id)
-        if ordering_errors:
-            bullet_list = "\n\u2022 ".join(ordering_errors)
-            diff += (
-                f"\n\n\u26a0\ufe0f **These changes cannot be approved \u2014 the points would be "
-                f"out of order:**\n\u2022 {bullet_list}\n"
-                f"A lower position cannot be worth as much as the one above it. Repair the "
-                f"staged table, or `/results amend revert` to start again from the season's own."
-            )
-
-        # Shown in the panel for the same reason the ordering is, and read again at the
-        # press: an approval that cannot be published is refused entire rather than
-        # half-made (#187), and a manager should meet that while deciding rather than
-        # after pressing Approve.
-        channel_faults = await approval_faults(
-            self.bot.db_path, season.id, self.bot, module_service=self.bot.module_service
-        )
-        if channel_faults:
-            bullet_list = "\n• ".join(channel_faults)
-            diff += (
-                f"\n\n⛔ **These changes cannot be approved — the result could not "
-                f"be published:**\n• {bullet_list}\n"
-                f"Approving rescores every round of every division and reposts each one, so "
-                f"it is refused entire while any of that cannot be done — nothing would "
-                f"be changed. Repair the channels with `/results channel results`, "
-                f"`/results channel standings`, `/attendance channel attendance` or "
-                f"`/results channel verdicts`, then run `/results amend review` again."
-            )
-
-        # **Not while a round is being amended** (#345, decided 2026-09-21). An amendment's
-        # first stage writes its corrections and recalculates its division, publishing nothing
-        # until its last stage is approved; approving here reposts every round of every
-        # division from the same database, and would publish them unapproved. Shown in the
-        # panel and read again at the press, as the two refusals above are.
-        from leaguebot.results.services.points.points_amendment_change import KIND, held_text
-        from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_season
-
-        held = await open_amendment_in_season(self.bot.db_path, season.id)
-        if held is not None:
-            diff += (
-                "\n\n\u23f8\ufe0f **These changes cannot be approved yet.** " + held_text(held)
-            )
+        from leaguebot.results.services.points.points_amendment_change import KIND
 
         # The season the panel was drawn for, bound where it is known not to be None.
         staged_for = season

@@ -49,11 +49,6 @@ import discord
 import pytest
 
 from leaguebot.core.models.season import SeasonStage
-
-# Imported here, before any test patches `open_amendment_in_season`: the review imports this
-# module lazily, inside the patch, and its `from ... import open_amendment_in_season` would
-# otherwise bind the mock for the rest of the session and break every later test of the change.
-import leaguebot.results.services.points.points_amendment_change  # noqa: F401
 from leaguebot.results.cogs.results_cog import ResultsCog
 from tests.support.undecorate import undecorate
 
@@ -245,10 +240,10 @@ async def _review(
             "leaguebot.results.services.points.amendment_mode_service.validate_modification_ordering",
             new=AsyncMock(return_value=panel_errors or []),
         ) as validate, patch(
-            "leaguebot.core.services.rounds.amendment_service.approval_faults",
+            "leaguebot.results.services.points.amendment_mode_service.approval_faults",
             new=AsyncMock(return_value=panel_faults or []),
         ) as faults, patch(
-            "leaguebot.results.services.round_amendment.amendment_writes.open_amendment_in_season",
+            "leaguebot.results.services.points.amendment_mode_service.open_amendment_in_season",
             new=AsyncMock(side_effect=list(held)),
         ):
             await undecorate(ResultsCog.amend_review)(cog, interaction)

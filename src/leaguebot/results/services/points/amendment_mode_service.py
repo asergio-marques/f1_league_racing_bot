@@ -16,14 +16,22 @@ writers'.
 from __future__ import annotations
 
 from itertools import groupby
+from typing import TYPE_CHECKING
 
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import AuditRecord
+from leaguebot.core.models.season import Season
 from leaguebot.core.services.queue.setting_change import Saved
+from leaguebot.core.services.rounds.amendment_service import approval_faults
 from leaguebot.results.models.amendment_state import SeasonAmendmentState
+from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_season
 from leaguebot.results.utils.points_ordering import ordering_message, ordering_violations
+
+if TYPE_CHECKING:
+    from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.core.utils.league_bot import LeagueBot
 
 
 async def get_amendment_state(db_path: str, season_id: int) -> SeasonAmendmentState | None:
@@ -151,6 +159,72 @@ async def get_modification_store_diff(db_path: str, season_id: int) -> str:
         return "No changes in modification store."
     header = f"**{changed} change{'s' if changed != 1 else ''} staged:**"
     return header + "\n" + "\n".join(lines)
+
+
+async def review_panel(
+    db_path: str, season: Season, *, bot: LeagueBot, module_service: ModuleService
+) -> str | None:
+    """The text of the amend review panel, or None where the season is not in amendment mode.
+
+    The staged changes' diff, then what would refuse an approval, each shown while a manager
+    is deciding: the points out of order, the channels that could not publish, an amendment of
+    a round still open. The same three are read again at the press, by the change that
+    approves.
+    """
+    state = await get_amendment_state(db_path, season.id)
+    if state is None or not state.amendment_active:
+        return None
+
+    diff = await get_modification_store_diff(db_path, season.id)
+
+    # The ordering is shown in the panel, not saved for the press. A manager asked to
+    # approve a change should be able to see what is wrong with it while deciding,
+    # rather than press Approve and be refused — the diff is the whole basis for the
+    # decision, and this is part of what the diff means.
+    ordering_errors = await validate_modification_ordering(db_path, season.id)
+    if ordering_errors:
+        bullet_list = "\n\u2022 ".join(ordering_errors)
+        diff += (
+            f"\n\n\u26a0\ufe0f **These changes cannot be approved \u2014 the points would be "
+            f"out of order:**\n\u2022 {bullet_list}\n"
+            f"A lower position cannot be worth as much as the one above it. Repair the "
+            f"staged table, or `/results amend revert` to start again from the season's own."
+        )
+
+    # Shown in the panel for the same reason the ordering is, and read again at the
+    # press: an approval that cannot be published is refused entire rather than
+    # half-made (#187), and a manager should meet that while deciding rather than
+    # after pressing Approve.
+    channel_faults = await approval_faults(
+        db_path, season.id, bot, module_service=module_service
+    )
+    if channel_faults:
+        bullet_list = "\n• ".join(channel_faults)
+        diff += (
+            f"\n\n⛔ **These changes cannot be approved — the result could not "
+            f"be published:**\n• {bullet_list}\n"
+            f"Approving rescores every round of every division and reposts each one, so "
+            f"it is refused entire while any of that cannot be done — nothing would "
+            f"be changed. Repair the channels with `/results channel results`, "
+            f"`/results channel standings`, `/attendance channel attendance` or "
+            f"`/results channel verdicts`, then run `/results amend review` again."
+        )
+
+    # **Not while a round is being amended** (#345, decided 2026-09-21). An amendment's
+    # first stage writes its corrections and recalculates its division, publishing nothing
+    # until its last stage is approved; approving here reposts every round of every
+    # division from the same database, and would publish them unapproved. Shown in the
+    # panel and read again at the press, as the two refusals above are.
+    # Imported here: the change that approves imports this module.
+    from leaguebot.results.services.points.points_amendment_change import held_text
+
+    held = await open_amendment_in_season(db_path, season.id)
+    if held is not None:
+        diff += (
+            "\n\n\u23f8\ufe0f **These changes cannot be approved yet.** " + held_text(held)
+        )
+
+    return diff
 
 
 async def _state_on(db: aiosqlite.Connection, season_id: int) -> tuple[bool, bool]:
