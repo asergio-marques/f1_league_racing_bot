@@ -57,6 +57,7 @@ from tests.support.change_queue import (
     run_queue,
     updated_reply,
 )
+from tests.support.review_league import attendance_after_review_of
 from tests.support.teams import seed_team_instances
 
 SERVER_ID = 11008
@@ -153,8 +154,10 @@ NOW = datetime(2026, 6, 1, 20, 0, tzinfo=timezone.utc)
 def _state(db_path: str, *, staged_pardons=None) -> PenaltyReviewState:
     """Round 3's review, held by a bot carrying a real change queue on *db_path* and the
     league's log channel: a pardon staged is a change of its own (#439, slice 6b, C54), applied
-    when `_submit` runs the queue."""
+    when `_submit` runs the queue. The driver's attendance row is read through attendance's own
+    share of the review, as the builder attaches it to the bot (#284)."""
     bot = league_double(db_path)
+    bot.attendance_after_review = attendance_after_review_of(db_path)
     attach_queue(bot, db_path, now=NOW)
     return PenaltyReviewState(
         round_id=ROUND_ID,
@@ -482,6 +485,26 @@ async def test_a_driver_with_no_attendance_row_is_refused(tmp_path):
     replied = _replied(interaction)
     assert "No attendance row found" in replied
     assert "results have been submitted" in replied
+
+
+@pytest.mark.xfail(strict=True, reason="#284: the pardon form reads attendance's own table, "
+                   "not the driver's attendance row through attendance's share of the review")
+async def test_the_form_reads_the_driver_s_attendance_row_through_attendance(tmp_path):
+    """Round 3 holds no attendance row for the driver in the database, but attendance's share
+    of the review, on the review's bot, answers row 99 with no RSVP. The steward stages a
+    NO_RSVP pardon: attendance is asked once, for round 3, Pro and the driver's profile, and the
+    pardon is staged against row 99."""
+    db_path = await _make_db(tmp_path, name="pardon_through_hook", attendance_row=False)
+    state = _state(db_path)
+    attendance = MagicMock()
+    attendance.attendance_row_of = AsyncMock(return_value={"id": 99, "rsvp_status": "NO_RSVP"})
+    state.bot.attendance_after_review = attendance
+
+    interaction, _ = await _submit(state)
+
+    attendance.attendance_row_of.assert_awaited_once_with(ROUND_ID, DIVISION_ID, PROFILE_ID)
+    assert [(p.pardon_type, p.attendance_id) for p in state.staged_pardons] == [("NO_RSVP", 99)]
+    assert "Pardon staged" in _replied(interaction)
 
 
 async def test_a_finalised_round_takes_no_more_pardons(tmp_path):

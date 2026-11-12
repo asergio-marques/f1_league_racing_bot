@@ -192,7 +192,8 @@ class AttendanceDouble:
     by `sanction_candidates` while attendance is on, each on every call while it is set.
     `sync_hint` is attendance's own, naming the division and the round it is handed, so a test
     reads the hint the league would, and so is `recalculation_faults`, attendance's reading of an
-    amendment's channels. `pardons_of_on` keeps no pardons, and `put_back_pardons_on` writes
+    amendment's channels. `attendance_row_of` reads the driver's attendance row of the round as
+    attendance's own does, whatever the switch, a read writing nothing. `pardons_of_on` keeps no pardons, and `put_back_pardons_on` writes
     none, `rewrite_pardons_on` having written none to put back. `lineup_as_text` holds, call by
     call, whether
     `refresh_lineup` was asked for the text. `record_sheet_on` records that the sheet's id was
@@ -239,6 +240,19 @@ class AttendanceDouble:
 
     async def rewrite_pardons_on(self, db: Any, round_id: int, pardons: Any, now: Any) -> None:
         self.calls.append(("rewrite_pardons_on", round_id))
+
+    async def attendance_row_of(self, round_id: int, division_id: int,
+                                profile_id: int) -> dict[str, Any] | None:
+        """The driver's attendance row of the round, its ``id`` and ``rsvp_status``; None where
+        the driver has none."""
+        self.calls.append(("attendance_row_of", round_id, division_id, profile_id))
+        async with get_connection(self.league.db_path) as db:
+            row = await (await db.execute(
+                "SELECT id, rsvp_status FROM driver_round_attendance "
+                "WHERE round_id = ? AND division_id = ? AND driver_profile_id = ?",
+                (round_id, division_id, profile_id),
+            )).fetchone()
+        return None if row is None else {"id": row["id"], "rsvp_status": row["rsvp_status"]}
 
     async def pardons_of_on(self, db: Any, round_id: int) -> list[Any]:
         return []
