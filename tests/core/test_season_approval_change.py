@@ -377,13 +377,19 @@ async def test_a_second_approval_from_another_review_is_refused_at_once_without_
     assert len(_confirmed_lines(league)) == 1
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#284: the opening classification's message ids are not recorded"
+)
 async def test_the_opening_standings_are_posted_in_each_division_s_standings_channel(
     tmp_path, monkeypatch,
 ):
     """Results on and attendance off, Pro's standings channel 602 and Am's 702 set in
     `division_results_config`: each is sent the opening classification, the drivers' and the
     teams' championships. Pro's and Am's attendance channels, set too, are sent no opening
-    sheet while attendance is off."""
+    sheet while attendance is off. The message each division's classification went out as is
+    recorded against the division as its opening classification, as a round's standings are
+    recorded, so that switching results off can find it; posted as text, both championships
+    share that one message and no constructors' message is recorded."""
     league = await _league_for(tmp_path, monkeypatch, results=True)
     await _pressed(league)
 
@@ -394,6 +400,17 @@ async def test_the_opening_standings_are_posted_in_each_division_s_standings_cha
     assert league.texts(PRO_CH.attendance) == []
     assert league.texts(AM_CH.attendance) == []
     assert await _stopped_at(league) is None
+    recorded = {row["division_id"]: row for row in await league.rows(
+        "SELECT * FROM classification_posts WHERE occasion = 'SEASON_OPENING'"
+    )}
+    assert set(recorded) == {PRO, AM}
+    for division, chans in ((PRO, PRO_CH), (AM, AM_CH)):
+        posted = [message_id for message_id, message in league.channel(chans.standings)
+                  .messages.items() if "Opening Classification" in message.content]
+        assert len(posted) == 1, posted
+        assert recorded[division]["standings_message_id"] == posted[0]
+        assert json.loads(recorded[division]["standings_message_ids"]) == posted
+        assert recorded[division]["constructor_standings_message_id"] is None
 
 
 async def test_a_role_discord_refuses_stops_the_queue_and_once_discarded_is_named(

@@ -1211,9 +1211,17 @@ async def test_a_discarded_end_save_completes_nothing_and_says_to_run_it_again(t
     assert await driver_state(league, MAX) == "ASSIGNED"
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#284: the final classification's message ids are not recorded"
+)
 async def test_each_division_s_final_classification_is_drawn_against_its_last_round_with_results(
     tmp_path,
 ):
+    """Pro's last round with results is its round 2 and Am's its round 1: each division's final
+    classification is drawn against that round and posted in its standings channel. The message
+    it went out as is recorded against the division as its final classification, as the opening
+    one's is; posted as text, both championships share that one message and no constructors'
+    message is recorded."""
     league = await pending_completion_league(tmp_path)
     await _asked(league)
 
@@ -1223,6 +1231,17 @@ async def test_each_division_s_final_classification_is_drawn_against_its_last_ro
               for job in await _jobs(league) if job["name"] == "final_standings"}
     assert rounds == {PRO: round_id(PRO, 2), AM: round_id(AM, 1)}
     assert league.texts(PRO_CH.standings) and league.texts(AM_CH.standings)
+    recorded = {row["division_id"]: row for row in await league.rows(
+        "SELECT * FROM classification_posts WHERE occasion = 'SEASON_FINAL'"
+    )}
+    assert set(recorded) == {PRO, AM}
+    for division, chans in ((PRO, PRO_CH), (AM, AM_CH)):
+        posted = [message_id for message_id, message in league.channel(chans.standings)
+                  .messages.items() if "Final Classification" in message.content]
+        assert len(posted) == 1, posted
+        assert recorded[division]["standings_message_id"] == posted[0]
+        assert json.loads(recorded[division]["standings_message_ids"]) == posted
+        assert recorded[division]["constructor_standings_message_id"] is None
 
 
 async def test_a_division_that_ran_no_round_gets_no_final_classification(tmp_path):
