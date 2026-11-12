@@ -705,7 +705,7 @@ async def _seed_division_with_rounds(path: str, season_id: int):
         for round_number in (1, 2):
             cursor = await db.execute(
                 "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
-                "VALUES (?, ?, 'STANDARD', 'FINAL', '2026-06-01T18:00:00+00:00')",
+                "VALUES (?, ?, 'NORMAL', 'FINAL', '2026-06-01T18:00:00+00:00')",
                 (division_id, round_number),
             )
             round_id = cursor.lastrowid
@@ -717,7 +717,7 @@ async def _seed_division_with_rounds(path: str, season_id: int):
             )
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
-            "VALUES (?, 3, 'STANDARD', 'NOT_RUN', '2026-09-01T18:00:00+00:00')",
+            "VALUES (?, 3, 'NORMAL', 'NOT_RUN', '2026-09-01T18:00:00+00:00')",
             (division_id,),
         )
         unraced_round_id = cursor.lastrowid
