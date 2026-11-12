@@ -137,11 +137,20 @@ async def test_a_division_s_team_is_found_by_its_shorthand(tmp_path):
 
 async def test_a_division_s_teams_are_read_with_their_names_and_the_reserve_last(tmp_path):
     """The seeded division holds RBR and its reserve team: both come back, the reserve last, with
-    the ids, names and flags they hold; a division with no team reads an empty list."""
+    the ids, names and flags they hold, and none of another division's teams, though that division
+    holds teams of the same names; a division with no team reads an empty list."""
     db_path = await _make_db(tmp_path)
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, tier, mention_role_id) "
+            "VALUES (2, 1, 'Am', 2, 901)"
+        )
+        await TeamService(db_path).seed_division_teams_on(db, 2)
+        await db.commit()
 
     async with get_connection(db_path) as db:
         teams = await division_team_references(db, 1)
+        others = await division_team_references(db, 2)
         none = await division_team_references(db, 99)
 
     assert [(t["name"], t["full_name"], t["is_reserve"], t["role_id"]) for t in teams] == [
@@ -149,6 +158,7 @@ async def test_a_division_s_teams_are_read_with_their_names_and_the_reserve_last
         ("Reserve", "Reserve", True, None),
     ]
     assert all(isinstance(t["id"], int) for t in teams)
+    assert others and not {t["id"] for t in teams} & {t["id"] for t in others}
     assert none == []
 
 
