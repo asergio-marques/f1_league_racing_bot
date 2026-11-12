@@ -55,7 +55,7 @@ import dataclasses
 import json
 import logging
 from collections.abc import Awaitable, Callable, Iterable
-from typing import Any
+from typing import Any, TypedDict
 
 import aiosqlite
 import discord
@@ -68,7 +68,9 @@ from leaguebot.core.models.change import (
     StepKind,
     StepResult,
 )
+from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.models.season import SeasonStage
+from leaguebot.core.services.seasons import season_service
 from leaguebot.core.services.queue.change_types import OutcomeContext, Step, StepContext
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.utils.league_server import league_guild
@@ -201,24 +203,22 @@ async def plan_posts(
     (`/results rounds amend` while the season is pending completion, where the sync commands are
     refused), since an outcome is formed with nothing awaited.
     """
-    row = await (
-        await db.execute(
-            "SELECT r.division_id, r.round_number, drc.results_channel_id, "
-            "       drc.standings_channel_id "
-            "FROM rounds r LEFT JOIN division_results_config drc "
-            "     ON drc.division_id = r.division_id WHERE r.id = ?",
-            (round_id,),
-        )
-    ).fetchone()
-    if row is None:
+    facts = await season_service.round_facts_on(db, round_id)
+    if facts is None:
         return []
-    stage = await (
+    config = await (
         await db.execute(
-            "SELECT stage FROM seasons WHERE status IN ('SETUP', 'ACTIVE') "
-            "ORDER BY id DESC LIMIT 1"
+            "SELECT results_channel_id, standings_channel_id FROM division_results_config "
+            "WHERE division_id = ?",
+            (facts.division_id,),
         )
     ).fetchone()
-    pending = stage is not None and stage["stage"] == SeasonStage.PENDING_COMPLETION.value
+    row: dict[str, Any] = {
+        "division_id": facts.division_id, "round_number": facts.round_number,
+        "results_channel_id": None if config is None else config["results_channel_id"],
+        "standings_channel_id": None if config is None else config["standings_channel_id"],
+    }
+    pending = await _pending_completion(db)
     planned: list[PlannedStep] = []
 
     notice_channel = notice_channel_id
@@ -258,27 +258,42 @@ async def plan_posts(
             planned.append(_standings_job(round_id, row["round_number"], label, pending))
 
     if later_rounds and row["standings_channel_id"]:
-        later = await (
-            await db.execute(
-                "SELECT r.id, r.round_number, r.status FROM rounds r "
-                "WHERE r.division_id = ? AND r.round_number > ? AND r.status != 'CANCELLED' "
-                "  AND EXISTS (SELECT 1 FROM round_standings_posts p "
-                "              WHERE p.round_id = r.id AND p.division_id = r.division_id "
-                "                AND (p.standings_message_id IS NOT NULL "
-                "                     OR p.constructor_standings_message_id IS NOT NULL)) "
-                "ORDER BY r.round_number",
-                (row["division_id"], row["round_number"]),
-            )
-        ).fetchall()
-        for rnd in later:
-            planned.append(_standings_job(
-                int(rnd["id"]), rnd["round_number"], _label_from_status(rnd["status"] or ""),
-                pending,
-            ))
+        after = [
+            r for r in await season_service.rounds_from_on(db, facts.division_id, round_id)
+            if r.id != round_id and r.status != RoundStatus.CANCELLED.value
+        ]
+        posted = await _with_standings_posted(db, facts.division_id, [r.id for r in after])
+        for rnd in after:
+            if rnd.id in posted:
+                planned.append(_standings_job(
+                    rnd.id, rnd.round_number, _label_from_status(rnd.status), pending,
+                ))
 
     if notice and notice_channel is not None:
         planned.append(PlannedStep(DELETE_BATCH_NOTICE, {"channel_id": notice_channel}))
     return planned
+
+
+async def _pending_completion(db: aiosqlite.Connection) -> bool:
+    """Whether the live season is in its Pending completion stage, read on *db*."""
+    season = await season_service.live_season_on(db)
+    return season is not None and season.stage == SeasonStage.PENDING_COMPLETION
+
+
+async def _with_standings_posted(
+    db: aiosqlite.Connection, division_id: int, round_ids: list[int]
+) -> set[int]:
+    """Those of *round_ids* of *division_id* that have standings posted, read on *db*."""
+    if not round_ids:
+        return set()
+    marks = ", ".join("?" for _ in round_ids)
+    cursor = await db.execute(
+        f"SELECT round_id FROM round_standings_posts WHERE division_id = ? "  # noqa: S608
+        f"AND round_id IN ({marks}) "
+        "AND (standings_message_id IS NOT NULL OR constructor_standings_message_id IS NOT NULL)",
+        (division_id, *round_ids),
+    )
+    return {int(r["round_id"]) for r in await cursor.fetchall()}
 
 
 def _put_right(picture: str, remedy: str) -> str:
@@ -335,20 +350,13 @@ async def plan_division_posts(
     ).fetchone()
     if config is None:
         return []
-    stage = await (
-        await db.execute(
-            "SELECT stage FROM seasons WHERE status IN ('SETUP', 'ACTIVE') ORDER BY id DESC LIMIT 1"
-        )
-    ).fetchone()
-    pending = stage is not None and stage["stage"] == SeasonStage.PENDING_COMPLETION.value
-    rounds = await (
-        await db.execute(
-            "SELECT DISTINCT r.id, r.round_number, r.status FROM rounds r "
-            "JOIN session_results sr ON sr.round_id = r.id "
-            "WHERE r.division_id = ? AND sr.status = 'ACTIVE' ORDER BY r.round_number",
-            (division_id,),
-        )
-    ).fetchall()
+    pending = await _pending_completion(db)
+    held = await season_service.division_rounds_in_order_on(db, division_id)
+    raced = await _rounds_with_active_session(db, [r.id for r in held])
+    rounds: list[dict[str, Any]] = [
+        {"id": r.id, "round_number": r.round_number, "status": r.status}
+        for r in held if r.id in raced
+    ]
     results: list[PlannedStep] = []
     standings: list[PlannedStep] = []
     for rnd in rounds:
@@ -380,6 +388,19 @@ async def plan_division_posts(
     return planned
 
 
+async def _rounds_with_active_session(db: aiosqlite.Connection, round_ids: list[int]) -> set[int]:
+    """Those of *round_ids* with an ACTIVE session of results, read on *db*."""
+    if not round_ids:
+        return set()
+    marks = ", ".join("?" for _ in round_ids)
+    cursor = await db.execute(
+        f"SELECT DISTINCT round_id FROM session_results "  # noqa: S608
+        f"WHERE status = 'ACTIVE' AND round_id IN ({marks})",
+        tuple(round_ids),
+    )
+    return {int(r["round_id"]) for r in await cursor.fetchall()}
+
+
 async def withdraw_round_standings_on(
     db: aiosqlite.Connection, round_id: int
 ) -> tuple[bool, int | None, list[int]]:
@@ -391,13 +412,13 @@ async def withdraw_round_standings_on(
     carried the round's standings, drivers' and constructors', for the caller to plan the
     deletion of once the round's notes stand. The ids are read before their row is deleted.
     """
-    row = await (await db.execute(
-        "SELECT r.division_id, c.standings_channel_id FROM rounds r "
-        "LEFT JOIN division_results_config c ON c.division_id = r.division_id WHERE r.id = ?",
-        (round_id,),
-    )).fetchone()
-    if row is None:
+    facts = await season_service.round_facts_on(db, round_id)
+    if facts is None:
         return False, None, []
+    row = await (await db.execute(
+        "SELECT standings_channel_id FROM division_results_config WHERE division_id = ?",
+        (facts.division_id,),
+    )).fetchone()
     held = False
     ids: list[int] = []
     for table in ("driver_standings_snapshots", "team_standings_snapshots"):
@@ -422,7 +443,7 @@ async def withdraw_round_standings_on(
     await db.execute("DELETE FROM round_standings_posts WHERE round_id = ?", (round_id,))
     await db.execute("DELETE FROM driver_standings_snapshots WHERE round_id = ?", (round_id,))
     await db.execute("DELETE FROM team_standings_snapshots WHERE round_id = ?", (round_id,))
-    channel = row["standings_channel_id"]
+    channel = None if row is None else row["standings_channel_id"]
     return True, (int(channel) if channel else None), ids
 
 
@@ -561,22 +582,41 @@ async def _league_guild(bot: LeagueBot) -> discord.Guild:
     return guild
 
 
-async def _round_row(db_path: str, round_id: int) -> aiosqlite.Row:
+class _RoundRow(TypedDict):
+    """A round as core reads it with its division's results configuration as results reads it;
+    the configuration's fields are None where the division has none."""
+
+    id: int
+    division_id: int
+    round_number: int
+    track_name: str | None
+    status: str
+    division_name: str
+    results_channel_id: int | None
+    standings_channel_id: int | None
+    reserves_in_standings: int | None
+
+
+async def _round_row(db_path: str, round_id: int) -> _RoundRow:
     async with get_connection(db_path) as db:
-        row = await (
+        facts = await season_service.round_facts_on(db, round_id)
+        if facts is None:
+            raise LookupError(f"round {round_id} is not in the database")
+        config = await (
             await db.execute(
-                "SELECT r.id, r.division_id, r.round_number, r.track_name, r.status, "
-                "       d.name AS division_name, drc.results_channel_id, "
-                "       drc.standings_channel_id, drc.reserves_in_standings "
-                "FROM rounds r JOIN divisions d ON d.id = r.division_id "
-                "LEFT JOIN division_results_config drc ON drc.division_id = r.division_id "
-                "WHERE r.id = ?",
-                (round_id,),
+                "SELECT results_channel_id, standings_channel_id, reserves_in_standings "
+                "FROM division_results_config WHERE division_id = ?",
+                (facts.division_id,),
             )
         ).fetchone()
-    if row is None:
-        raise LookupError(f"round {round_id} is not in the database")
-    return row
+    return {
+        "id": facts.round_id, "division_id": facts.division_id,
+        "round_number": facts.round_number, "track_name": facts.track_name,
+        "status": facts.status.value, "division_name": facts.division_name,
+        "results_channel_id": None if config is None else config["results_channel_id"],
+        "standings_channel_id": None if config is None else config["standings_channel_id"],
+        "reserves_in_standings": None if config is None else config["reserves_in_standings"],
+    }
 
 
 def _channel(guild: discord.Guild, channel_id: int, setting: str) -> discord.TextChannel:
@@ -683,6 +723,8 @@ async def _post_session_results(ctx: StepContext) -> StepResult:
         raise LookupError(f"session result {payload['session_id']} is not in the database")
     rnd = await _round_row(ctx.db_path, row["round_id"])
     guild = await _league_guild(ctx.bot)
+    if rnd["results_channel_id"] is None:
+        raise LookupError(f"round {rnd['id']}'s division has no results channel")
     channel_id = int(rnd["results_channel_id"])
     channel = _channel(guild, channel_id, "results")
     await _remove_kept(guild, ctx.kept)
@@ -740,10 +782,8 @@ async def _post_session_results(ctx: StepContext) -> StepResult:
 
 async def _round_format(db_path: str, round_id: int) -> str:
     async with get_connection(db_path) as db:
-        row = await (
-            await db.execute("SELECT format FROM rounds WHERE id = ?", (round_id,))
-        ).fetchone()
-    return "" if row is None else str(row["format"])
+        facts = await season_service.round_facts_on(db, round_id)
+    return "" if facts is None else facts.format.value
 
 
 async def _record_session_post(
@@ -867,19 +907,19 @@ async def _stored_standings(
             "WHERE round_id = ? AND division_id = ? ORDER BY standing_position",
             (round_id, division_id),
         )).fetchall()
+        division_rounds = await season_service.division_rounds_on(db, division_id)
+        marks = ", ".join("?" for _ in division_rounds)
         raced = {
             int(r["driver_user_id"]) for r in await (await db.execute(
-                "SELECT rsr.driver_user_id FROM race_session_results rsr "
+                "SELECT rsr.driver_user_id FROM race_session_results rsr "  # noqa: S608
                 "JOIN session_results sr ON sr.id = rsr.session_result_id "
-                "JOIN rounds r ON r.id = sr.round_id "
-                "WHERE r.division_id = ? AND sr.status = 'ACTIVE' "
+                f"WHERE sr.round_id IN ({marks}) AND sr.status = 'ACTIVE' "
                 "UNION SELECT qsr.driver_user_id FROM qualifying_session_results qsr "
                 "JOIN session_results sr ON sr.id = qsr.session_result_id "
-                "JOIN rounds r ON r.id = sr.round_id "
-                "WHERE r.division_id = ? AND sr.status = 'ACTIVE'",
-                (division_id, division_id),
+                f"WHERE sr.round_id IN ({marks}) AND sr.status = 'ACTIVE'",
+                (*division_rounds, *division_rounds),
             )).fetchall()
-        }
+        } if division_rounds else set()
     if drivers:
         driver_snaps = [
             DriverStandingsSnapshot(
