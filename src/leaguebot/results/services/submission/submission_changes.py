@@ -131,6 +131,7 @@ from leaguebot.results.utils import results_formatter
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.image_drawing import ImageDrawing
     from leaguebot.core.services.seasons.season_service import SeasonService
+    from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 
 KIND = "results.submission.open"
 START_ROUND = "start_round"
@@ -599,7 +600,7 @@ async def _submission_standing(ctx: CheckContext) -> Verdict:
 
 
 def submission_all_cancelled_change(
-    *, seasons: "SeasonService", drawing: "ImageDrawing", round_ended_not_held: AwaitedHook,
+    *, seasons: "SeasonService", drawing: "ImageDrawing", attendance: "AttendanceAfterReview",
     cancellation_notices: AwaitedHook, cancellation_steps: dict[str, Step],
     now: Callable[[], datetime],
 ) -> ChangeType:
@@ -611,13 +612,13 @@ def submission_all_cancelled_change(
     running order. A resubmission's adds ``resubmission`` and ``old_tables``, the ids of the
     earlier results tables the new sessions could not carry. *seasons* posts the calendar, drawn
     through *drawing*, the image module's own answer to core's drawing protocol (#283),
-    *round_ended_not_held* is the hook attendance's reading of the round's check-in is planned
-    through, called inside the save on its connection, *cancellation_notices* is the hook each
+    *attendance* is attendance's share of a round's review, asked inside the save, on its
+    connection, to plan the reading of the round's check-in, *cancellation_notices* is the hook each
     module's own notice is planned through, called inside the same save, *cancellation_steps*
     holds every step definition the modules hand back to core's `cancellation_steps` hook (the
     same the three cancellations register: the modules' own notices among them, attendance's
     check-in reading, and review posting's and attendance's take-down of the call) so this
-    change carries the jobs *round_ended_not_held* and *cancellation_notices* plan, and *now* is
+    change carries the jobs *attendance* and *cancellation_notices* plan, and *now* is
     the queue's clock, read when the round's ending is audited.
 
     Its first job, ``end_round`` (a save, **never to be discarded**: without it the round would
@@ -709,11 +710,7 @@ def submission_all_cancelled_change(
             for planned in await cancellation_notices.call(db, SCOPE_ROUND, target)
             for step in (*planned.steps, *planned.after_with_division)
         ]
-        check_in_read = [
-            step
-            for planned in await round_ended_not_held.call(db, target)
-            for step in planned
-        ]
+        check_in_read = await attendance.check_in_read_on(db, target)
         return StepResult(
             result={"ended": True, "previous": previous, **target},
             then=(
@@ -774,7 +771,7 @@ def submission_all_cancelled_change(
     }
 
     def check_in_record_line(ctx: OutcomeContext) -> str:
-        """The round's check-in, read by the job *round_ended_not_held* planned, from its own
+        """The round's check-in, read by the job attendance planned, from its own
         result (`{"record": text}`), never by its name."""
         return "".join(
             str(view.result["record"])

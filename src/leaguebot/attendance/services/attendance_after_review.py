@@ -35,9 +35,10 @@ import aiosqlite
 import discord
 
 from leaguebot.attendance.services import attendance_service as _att
+from leaguebot.attendance.services import check_in_record
 from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord
+from leaguebot.core.models.change import GuildUnavailable, PlannedStep, StepFailedOnDiscord
 from leaguebot.core.models.refusal import Refused
 from leaguebot.core.services.drivers import lineup_posting
 from leaguebot.core.services.drivers.lineup_posting import LineupPoster
@@ -149,6 +150,13 @@ class AttendanceAfterReview:
         await _att._recalculate_forward(
             self._db_path, round_id, division_id, recompute="round", db=db
         )
+
+    async def check_in_read_on(
+        self, db: aiosqlite.Connection, target: dict[str, Any]
+    ) -> list[PlannedStep]:
+        if not await attendance_enabled_on(db):
+            return []
+        return list(await check_in_record.read_check_in_on(db, target))
 
     async def post_sheet(
         self, round_id: int, division_id: int, *, sanctioned: set[int], as_text: bool

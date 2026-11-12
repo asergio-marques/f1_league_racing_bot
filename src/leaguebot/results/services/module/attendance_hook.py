@@ -23,6 +23,8 @@ from typing import Any, Protocol, TypeVar
 import aiosqlite
 import discord
 
+from leaguebot.core.models.change import PlannedStep
+
 _Pardon = TypeVar("_Pardon")
 
 
@@ -139,6 +141,17 @@ class AttendanceAfterReview(Protocol):
         Gives the message posted and the one it replaces (`new`, `old`, `channel_id`,
         `division_name`, `form`), for the job to save and to plan the old one's deletion; None
         while attendance is off."""
+
+    async def check_in_read_on(
+        self, db: aiosqlite.Connection, target: dict[str, Any]
+    ) -> list[PlannedStep]:
+        """Plan the reading of the check-in of the round *target* names (`division_id`,
+        `division_name`, `round_id` and `round_number`), for a round ended with every session
+        entered as not held: called inside the save that ends it, on its connection *db*, and
+        planning nothing while attendance is off.
+
+        Only the plan is attendance's here: the job's step definition reaches the change through
+        core's `cancellation_steps`, where attendance registers it."""
 
     async def sync_hint(self, division_id: int, round_id: int) -> str:
         """The line telling a manager how to finish sanctions that did not all apply."""

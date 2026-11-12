@@ -746,9 +746,6 @@ async def test_no_check_in_record_is_written_while_attendance_is_off(tmp_path):
     assert "check-in, Pro" not in line
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#284: the check-in read is planned through a hook core declares"
-)
 async def test_a_round_ending_cancelled_asks_attendance_for_its_check_in_read(tmp_path):
     """Attendance is on. Round 3 ends cancelled when the admin types CANCELLED for its race.
     Inside the save that ends it, on that save's own connection, attendance's share of a round's

@@ -357,7 +357,7 @@ def register_change_types(
         submission_all_cancelled_change(
             seasons=bot.season_service,
             drawing=bot.image_drawing,
-            round_ended_not_held=bot.round_ended_not_held,
+            attendance=attendance,
             cancellation_notices=bot.cancellation_notices,
             cancellation_steps=steps_of_the_modules(bot.cancellation_steps),
             now=lambda: bot.change_queue.now(),

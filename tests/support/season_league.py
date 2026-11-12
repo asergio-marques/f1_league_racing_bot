@@ -266,6 +266,7 @@ class SeasonLeague:
         set_guilds(bot, [guild])
         _attach_amendment_service(bot, db_path)
         bot.attendance_service.get_or_create_config = AsyncMock(side_effect=self._attendance)
+        bot.attendance_after_review.check_in_read_on = self._check_in_read_on
         bot.image_config_service.get_config = AsyncMock(return_value=None)
         bot.image_config_service.get_toggles = AsyncMock(return_value={})
         bot.image_validity_service.colour_shortfall = AsyncMock(return_value={})
@@ -358,6 +359,18 @@ class SeasonLeague:
             self.armed.append((which, [r.id for r in handed]))
 
         return _record
+
+    @staticmethod
+    async def _check_in_read_on(db: Any, target: dict[str, Any]) -> list[Any]:
+        """Attendance's plan for the reading of a round's check-in, as its own hook plans it
+        (`AttendanceAfterReview.check_in_read_on`), while the league's attendance is on: this
+        league's hook is a double for everything else."""
+        from leaguebot.attendance.services import check_in_record
+        from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
+
+        if not await attendance_enabled_on(db):
+            return []
+        return list(await check_in_record.read_check_in_on(db, target))
 
     async def _attendance(self) -> Any:
         async with get_connection(self.db_path) as db:
