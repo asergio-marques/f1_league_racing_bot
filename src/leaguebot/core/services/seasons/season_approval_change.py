@@ -57,7 +57,7 @@ from leaguebot.core.models.change import (
     VerdictKind,
 )
 from leaguebot.core.models.round import RoundFormat
-from leaguebot.core.services.rounds.round_moments import read_round_windows
+from leaguebot.core.services.rounds.round_moments import read_round_windows, results_left_to_advance
 from leaguebot.core.utils.hooks import AwaitedHook, Hook
 from leaguebot.core.services.seasons import approval_checks
 from leaguebot.core.services.drivers import lineup_posting
@@ -528,10 +528,10 @@ def season_approval_change(
             )
         else:
             server = await config.get_server_config()
-            by_hand = (
-                server is not None
-                and server.test_mode_active
-                and await modules.is_results_enabled()
+            by_hand = results_left_to_advance(
+                test_mode=server is not None and server.test_mode_active,
+                results_on=await modules.is_results_enabled(),
+                weather_on=False,
             )
             if not by_hand:
                 scheduler.schedule_result_submission_jobs(rounds, division_meta=meta)

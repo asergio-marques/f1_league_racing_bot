@@ -59,9 +59,6 @@ from tests.support.season_league import (
 )
 from tests.support.mentions import NOBODY, notified
 
-#: Why the amendment's arming under test mode is not yet as the season's approval's.
-ARMED_UNDER_TEST_MODE = "#284: an amended round under test mode is still armed with a results job"
-
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 R3, R4 = round_id(PRO, 3), round_id(PRO, 4)
@@ -2043,7 +2040,6 @@ async def test_a_call_given_up_after_its_take_down_clears_the_round_s_answers_an
     assert row["checkin_cleared"] == 1
 
 
-@pytest.mark.xfail(strict=True, reason=ARMED_UNDER_TEST_MODE)
 async def test_under_test_mode_a_round_whose_moment_passed_while_its_save_stood_stopped_is_left_to_test_mode_advance(
     tmp_path,
 ):
@@ -2069,7 +2065,6 @@ async def test_under_test_mode_a_round_whose_moment_passed_while_its_save_stood_
     assert league.bot.scheduler_service.run_result_submission_now.call_args_list == []
 
 
-@pytest.mark.xfail(strict=True, reason=ARMED_UNDER_TEST_MODE)
 async def test_under_test_mode_an_amended_round_whose_moment_is_ahead_is_left_to_test_mode_advance(
     tmp_path,
 ):
