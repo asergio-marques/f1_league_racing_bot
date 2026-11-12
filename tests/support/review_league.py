@@ -193,12 +193,12 @@ class AttendanceDouble:
     `sync_hint` is attendance's own, naming the division and the round it is handed, so a test
     reads the hint the league would, and so is `recalculation_faults`, attendance's reading of an
     amendment's channels. `attendance_row_of` reads the driver's attendance row of the round,
-    `latest_scored_round` a division's latest round with a recorded total, and
-    `recorded_pardons` the round's pardons for the staged review, as attendance's own do,
-    whatever the switch, a read writing nothing. `pardons_of_on` keeps no pardons, and `put_back_pardons_on` writes
-    none, `rewrite_pardons_on` having written none to put back. `lineup_as_text` holds, call by
-    call, whether
-    `refresh_lineup` was asked for the text. `record_sheet_on` records that the sheet's id was
+    `latest_scored_round` a division's latest round with a recorded total, and `recorded_pardons`
+    the round's pardons for the staged review, as attendance's own do, whatever the switch, a read
+    writing nothing. `pardons_of_on` keeps no pardons, and `put_back_pardons_on` writes none,
+    `rewrite_pardons_on` having written none to put back. `lineup_as_text` holds, call by call,
+    whether `refresh_lineup` was asked for the text. `record_sheet_on` records that the sheet's id
+    was
     to be saved, and writes nothing.
     """
 

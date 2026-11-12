@@ -514,13 +514,14 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     attendance's reading of a round's check-in record, then attendance's check-in notice, weather's
     forecast note and results' results note. A round's timing windows read: attendance's window,
     then weather's, each handed whether the round is being amended. A round amended: inside the
-    save, weather's withdrawal of the forecasts the amendment withdraws, then attendance's
-    reopening of its check-in; as the round is armed again, the posts each owes, attendance's
-    then weather's, then the clean-ups due a day after the round, weather's then attendance's; the steps each defines, weather's then attendance's, under
-    the names the amendment gives them today; and the words an outcome gives a step that was not
-    done, weather's for a forecast. A season's end: what stands in its way, results' refusal while a
-    round is being amended; the drivers it returns, signup's ending of their wizards in the save,
-    and the jobs signup plans for a driver returned; the jobs that close what a module holds open,
+    save, weather's withdrawal of the forecasts the amendment withdraws, then attendance's reopening
+    of its check-in; as the round is armed again, the posts each owes, attendance's then weather's,
+    then the clean-ups due a day after the round, weather's then attendance's; the steps each
+    defines, weather's then attendance's, under the names the amendment gives them today; and the
+    words an outcome gives a step that was not done, weather's for a forecast. A season's end: what
+    stands in its way, results' refusal while a round is being amended; the drivers it returns,
+    signup's ending of their wizards in the save, and the jobs signup plans for a driver returned;
+    the jobs that close what a module holds open,
     signup's close of its window; the steps each module defines for it, signup's notice and close,
     its window's close, the Sign Up button's deletion and the closed post, then weather's deletion
     of a forecast; the jobs that clear what test mode posted, weather's; and the drivers deleted,
