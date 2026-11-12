@@ -432,9 +432,9 @@ async def test_each_state_only_results_could_move_is_closed(tmp_path) -> None:
 async def test_a_round_still_waiting_on_the_clock_is_left_alone(tmp_path) -> None:
     """NOT_RUN waits on its own moment, not on results.
 
-    `run_result_submission_job` closes it as FINAL when that moment arrives with the module
-    off, and it still has its weather and its check-in to run first. Closing it here would end
-    rounds that have not been raced.
+    The `results.submission.open` change's `start_round` step closes it as FINAL when that
+    moment arrives with the module off, and it still has its weather and its check-in to run
+    first. Closing it here would end rounds that have not been raced.
     """
     db_path, division_id, (not_run, awaiting) = await _seed(
         tmp_path, round_statuses=("NOT_RUN", "AWAITING_RESULTS")

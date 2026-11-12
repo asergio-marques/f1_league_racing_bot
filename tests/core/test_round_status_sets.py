@@ -35,9 +35,10 @@ def test_the_results_module_owns_the_three_awaiting_states() -> None:
 def test_not_run_is_not_the_results_module_s_to_close() -> None:
     """It waits on the clock, not on results — issue #167.
 
-    `run_result_submission_job` closes a NOT_RUN round as FINAL when its moment arrives with
-    the module off, and the round still has its weather and its check-in to run first. Adding
-    NOT_RUN here would have disabling the module end rounds that have not been raced.
+    The `results.submission.open` change's `start_round` step closes a NOT_RUN round as FINAL
+    when its moment arrives with the module off, and the round still has its weather and its
+    check-in to run first. Adding NOT_RUN here would have disabling the module end rounds that
+    have not been raced.
     """
     assert RoundStatus.NOT_RUN.value not in ROUND_AWAITING_RESULTS_MODULE
 

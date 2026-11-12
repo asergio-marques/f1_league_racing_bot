@@ -1,7 +1,7 @@
 """Restarting a round's result submission after the results turned out to be wrong.
 
-Issue #208. `enter_resubmit_flow` is what a league manager reaches by pressing **Resubmit** in
-the penalty review, and it was unexecuted. It throws away every penalty staged against the
+Issue #208. The **Resubmit** press in the penalty review, which a league manager reaches
+through `ask_resubmission_start`, was unexecuted. It throws away every penalty staged against the
 round's results and asks for the results again.
 
 **Everything discarded is logged before it is discarded.** The staged penalties are written

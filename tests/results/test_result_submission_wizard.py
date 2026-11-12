@@ -1,7 +1,8 @@
 """The results submission wizard: from a round's start time to penalty review.
 
-Issue #208. `run_result_submission_job` was three-quarters untested. Every raced round of every
-season passes through it. This file drives the whole flow — the channel, the paste for each
+Issue #208. The submission's opening (`results.submission.open`, asked by the round's timer)
+and its session-by-session wizard were three-quarters untested. Every raced round of every
+season passes through them. This file drives the whole flow — the channel, the paste for each
 session, the points configuration and the handover — with the real validator and the real
 session write, so a paste that would be refused in production is refused here, and one that
 would be saved is saved.
