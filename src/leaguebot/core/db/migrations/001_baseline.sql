@@ -247,6 +247,24 @@ CREATE TABLE round_standings_posts (
     constructor_standings_message_ids TEXT
 );
 
+-- classification_posts: the opening and final classifications a division's standings channel was
+-- posted, one row for each occasion, so that switching results off can take down the opening one
+-- (a final classification belongs to a completed season, which the purge never reads). Neither
+-- classification replaces a round's standings or is reached by a standings sync, and neither has
+-- a round to key it by: the row is keyed by the division and the occasion. The ids are kept as
+-- round_standings_posts' are.
+CREATE TABLE classification_posts (
+    division_id INTEGER NOT NULL
+                    REFERENCES divisions(id),
+    occasion    TEXT NOT NULL
+                    CHECK (occasion IN ('SEASON_OPENING', 'SEASON_FINAL')),
+    standings_message_id              INTEGER,
+    constructor_standings_message_id  INTEGER,
+    standings_message_ids             TEXT,
+    constructor_standings_message_ids TEXT,
+    PRIMARY KEY (division_id, occasion)
+);
+
 -- called_off_notes: the note results posted of a round or a division called off, kept so that
 -- switching results off can take it down. One row for the posting, keyed by what was called off:
 -- a division's (round_id NULL) or a round's (both set). A season's note is not recorded, the

@@ -324,9 +324,6 @@ _MUST_GO = {
     "season": {"classification_posts"},
 }
 
-#: Why a delete does not yet reach the classifications' postings.
-_NO_CLASSIFICATION_POSTS = "#284: no table records the opening and final classifications' ids"
-
 #: What each delete lets go of rather than takes, and takes where the schema's key would let go.
 _LET_GO = {
     _DRIVER_KEEPING_HISTORY: {"let_go": {*LET_GO_OF_A_DRIVER, HISTORY}},
@@ -335,10 +332,8 @@ _LET_GO = {
 
 
 @pytest.mark.parametrize("deleted", [
-    pytest.param("season", marks=pytest.mark.xfail(strict=True, reason=_NO_CLASSIFICATION_POSTS)),
-    pytest.param(
-        "division", marks=pytest.mark.xfail(strict=True, reason=_NO_CLASSIFICATION_POSTS)
-    ),
+    pytest.param("season"),
+    pytest.param("division"),
     pytest.param("round"),
     pytest.param(_DRIVER_KEEPING_HISTORY),
     pytest.param(_DRIVER_LOSING_HISTORY),

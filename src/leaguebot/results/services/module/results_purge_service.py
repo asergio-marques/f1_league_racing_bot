@@ -375,10 +375,15 @@ async def rounds_deleted_on(db: aiosqlite.Connection, round_ids: list[int]) -> N
 
 async def divisions_deleted_on(db: aiosqlite.Connection, division_ids: list[int]) -> None:
     """Delete results' rows of *division_ids* on *db*, committing nothing: each division's
-    results, standings and verdicts channels, and the note of the division called off."""
+    results, standings and verdicts channels, the note of the division called off and the postings
+    of its opening and final classifications."""
     marks = ",".join("?" * len(division_ids))
     await db.execute(
         f"DELETE FROM called_off_notes WHERE division_id IN ({marks})",  # noqa: S608
+        division_ids,
+    )
+    await db.execute(
+        f"DELETE FROM classification_posts WHERE division_id IN ({marks})",  # noqa: S608
         division_ids,
     )
     await db.execute(
