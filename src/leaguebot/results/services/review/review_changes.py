@@ -31,6 +31,7 @@ from leaguebot.core.services.seasons.season_end_changes import (
     SEASON_CANCEL,
     SEASON_COMPLETE,
 )
+from leaguebot.core.services.seasons.season_service import division_on, division_rounds_on
 from leaguebot.results.services.points import points_amendment_change
 from leaguebot.results.services.round_amendment import amendment_stage_changes
 from leaguebot.results.services.review import appeals_approval_change, report_approval_change, review_open_change
@@ -67,11 +68,9 @@ async def division_job_in_hand(db_path: str, division_id: int) -> int | None:
     job done and only its close left gives 0, which still holds the division.
     """
     async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT id FROM rounds WHERE division_id = ?", (division_id,))
-        rounds = {int(row["id"]) for row in await cursor.fetchall()}
-        cursor = await db.execute("SELECT season_id FROM divisions WHERE id = ?", (division_id,))
-        found = await cursor.fetchone()
-    season_id = int(found["season_id"]) if found else None
+        rounds = set(await division_rounds_on(db, division_id))
+        division = await division_on(db, division_id)
+    season_id = division.season_id if division else None
     for payload, job in await in_hand(
         db_path,
         (
