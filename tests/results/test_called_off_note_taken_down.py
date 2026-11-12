@@ -12,18 +12,24 @@ presses the confirmation `/module disable results` shows, as admin 77, and runs 
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 from unittest.mock import AsyncMock
 
+import discord
 import pytest
 
 from tests.support.change_queue import (
     MANAGER_ROLE_ID,
+    SERVER_ID,
+    discard_job,
+    http_error,
     member_interaction,
     run_queue,
     stopped_job,
     tier_member,
     typed_message,
+    updated_reply,
 )
 from tests.support.season_league import (
     ADMIN_ID,
@@ -90,8 +96,9 @@ def _notes(league: SeasonLeague) -> list[int]:
             if (message.content or "").startswith("📢")]
 
 
-async def _switch_results_off(league: SeasonLeague) -> None:
-    """Press the confirmation `/module disable results` showed, as admin 77, and run the queue."""
+async def _switch_results_off(league: SeasonLeague) -> Any:
+    """Press the confirmation `/module disable results` showed, as admin 77, and run the queue.
+    Gives the press, whose reply the switch-off's outcome updates."""
     from leaguebot.core.cogs.module_cog import ModuleCog, _ConfirmDisableResultsView
 
     cog = ModuleCog.__new__(ModuleCog)
@@ -103,6 +110,7 @@ async def _switch_results_off(league: SeasonLeague) -> None:
     interaction.guild = league.guild
     await type(view).confirm(view, interaction, view.confirm)
     await run_queue(league.bot)
+    return interaction
 
 
 @pytest.mark.parametrize(
@@ -127,3 +135,38 @@ async def test_turning_results_off_takes_down_the_called_off_note(tmp_path, call
 
     assert await stopped_job(league.db_path) is None
     assert note not in league.channel(PRO_RESULTS).messages
+
+
+@pytest.mark.xfail(strict=True, reason=NOTE_NOT_KEPT)
+async def test_a_called_off_note_discord_refuses_to_delete_stops_the_switch_off_and_is_linked(
+    tmp_path,
+):
+    """Round 3 is called off, and results posts its note in Pro's results channel. Results is
+    switched off, and Discord refuses to delete the note (403): the queue stops at its removal,
+    the note still standing. Admin 77 discards the stopped job: the switch-off's reply says one
+    message could not be removed and links the note, for removal by hand (results spec, line
+    16)."""
+    league = await ongoing_league(tmp_path)
+    await _round_called_off(league)
+    await run_queue(league.bot)
+    [note] = _notes(league)
+    league.channel(PRO_RESULTS).messages[note].delete = AsyncMock(
+        side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    )
+
+    interaction = await _switch_results_off(league)
+
+    assert await stopped_job(league.db_path) is not None
+    assert note in league.channel(PRO_RESULTS).messages
+
+    discarded = 0
+    while await stopped_job(league.db_path) is not None and discarded < 10:
+        await discard_job(league.bot)
+        discarded += 1
+    reply = updated_reply(interaction)
+
+    assert discarded == 1
+    assert "1 message(s) could not be removed" in reply
+    assert re.findall(r"https://discord\.com/channels/\S+", reply) == [
+        f"https://discord.com/channels/{SERVER_ID}/{PRO_RESULTS}/{note}"
+    ]
