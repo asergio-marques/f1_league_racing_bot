@@ -491,17 +491,30 @@ async def test_a_round_whose_start_is_ahead_by_the_bot_s_clock_is_not_opened_at_
     assert league.created == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_CATCH_UP)
-async def test_under_test_mode_a_missed_round_start_is_left_to_the_advance(tmp_path):
-    """Test mode is on, with results on and weather off, so round 3's submission is opened by
-    `/test-mode advance` in its turn and no job is armed for it (core specification, "Test mode";
-    a test season's results submissions are left to the advance). Round 3's start fell two hours
-    before the bot's clock. At the restart results' catch-up asks nothing: round 3 stays not run,
-    and no channel is made."""
-    league = await _league(tmp_path, test_mode=True)
+@pytest.mark.parametrize("weather", [
+    pytest.param(False, id="weather off",
+                 marks=pytest.mark.xfail(strict=True, reason=_NO_CATCH_UP)),
+    pytest.param(True, id="weather on, its late job fired too",
+                 marks=pytest.mark.xfail(strict=True, reason=_NO_CATCH_UP)),
+])
+async def test_under_test_mode_a_missed_round_start_is_left_to_the_advance(
+    tmp_path, monkeypatch, weather: bool,
+):
+    """Test mode is on, with results on and weather off or on. Round 3's submission is left to
+    `/test-mode advance` to open in its turn: with weather off no job is armed for it (core
+    specification, "What confirming placements does": each round's results job is armed "save where
+    the results module is on and the weather module off under test mode, whose advance then opens it
+    by hand"), and with weather on its job stands but a late firing opens nothing, as the
+    amendment's catch-up opens a passed round "at once, outside test mode". Round 3's start fell two
+    hours before the bot's clock. At the restart results' catch-up runs and, with weather on, round
+    3's late `results` job fires too: neither asks an opening, round 3 stays not run, and no channel
+    is made."""
+    league = await _league(tmp_path, test_mode=True, weather=weather)
     await _start_passed(league, hours=2)
 
     await _catch_up(league)
+    if weather:
+        await _fire_job(league, monkeypatch)
     await run_queue(league.bot)
 
     assert await _opened_rounds(league) == []
