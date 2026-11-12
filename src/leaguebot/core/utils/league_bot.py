@@ -253,6 +253,12 @@ class LeagueBot(commands.Bot):
     #: configurations). The builder makes it and hands it to the toggle's change
     #: (`test_mode_toggle_change`).
     test_mode_turned_on: AwaitedHook
+    #: A season's approval saved, given the save's connection and the season's id: each module
+    #: signing up what it keeps for the season from this moment (results' snapshot of the server's
+    #: points configurations). The builder makes it and hands it to the approval, which calls it
+    #: inside its save, after the rounds' sessions are made and before the placements are
+    #: committed.
+    season_approved: AwaitedHook
     #: Placements confirmed (the season's approval), given the save's connection and a division's
     #: id and name: each module signing up its own opening post, handing back the jobs it plans
     #: for that division (results' opening standings, then attendance's opening sheet). The

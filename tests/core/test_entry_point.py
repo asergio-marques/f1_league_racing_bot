@@ -1211,10 +1211,6 @@ async def test_the_builder_signs_every_module_up_to_the_review_sections(tmp_path
     ]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#284: the builder hands results' snapshot to the approval by name, not to a hook",
-)
 async def test_the_builder_signs_results_up_to_a_season_approved(tmp_path, monkeypatch):
     """Straight after `build`, results' points snapshot is signed up to the hook a season's
     approval is saved through, nothing called yet: handed the save's connection, then the

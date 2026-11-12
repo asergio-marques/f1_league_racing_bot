@@ -599,6 +599,7 @@ which each `_sign_up_to_*` docstring states where it matters.
 | `season_end_steps` | P | signup, weather | `season_lifecycle_service` |
 | `drivers_deleted` | A | image | `season_end_service` |
 | `test_mode_turned_on` | A | results | `test_mode_toggle_change` |
+| `season_approved` | A | results | `season_approval_change` |
 | `test_mode_flushed` | A | weather | `season_end_service` |
 | `pending_steps_read` | A | weather, attendance, results | `test_mode_service` |
 | `review_marks_read` | A | weather, results, attendance | `test_mode_service` |

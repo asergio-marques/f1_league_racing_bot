@@ -221,7 +221,7 @@ opening rules). Stewarding adds a second [STW-MOD-007].
 (below).** Where something in core has to let the modules act (the bot starting, a timed event
 falling due, a round amended or its timed work armed again, a round's timing windows read, a round,
 a division or a season cancelled, a round's results made final, placements confirmed, a season's
-configuration confirmed, a review gathering its lines, the placements review gathering each
+approval saved, a season's configuration confirmed, a review gathering its lines, the placements review gathering each
 division's lines, a division's channel faults read, a channel's uses read as a command sets it, the
 factory reset gathering the channels each module holds, a round's drawn phases read, a driver's name
 read, the divisions a driver's accounts raced in read, a driver's standing in a division read for

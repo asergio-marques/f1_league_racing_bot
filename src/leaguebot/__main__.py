@@ -151,6 +151,7 @@ def _make_hooks(bot: LeagueBot) -> None:
     bot.cancellation_refused = AwaitedHook()
     bot.rounds_made_final = AwaitedHook()
     bot.test_mode_turned_on = AwaitedHook()
+    bot.season_approved = AwaitedHook()
     bot.divisions_raced_read = AwaitedHook()
     bot.season_standing_read = AwaitedHook()
     bot.final_round_read = AwaitedHook()
@@ -587,7 +588,6 @@ def register_change_types(bot: LeagueBot) -> None:
         wind_down_change,
     )
     from leaguebot.image.services.image_render_service import discard_render
-    from leaguebot.results.services.points.season_points_service import snapshot_configs_to_season_on
     from leaguebot.core.services.queue.setting_change import setting_change
 
     bot.change_queue.register(hub_refresh_change(
@@ -753,7 +753,7 @@ def register_change_types(bot: LeagueBot) -> None:
             division_channel_faults_read=bot.division_channel_faults_read,
             fingerprint_areas_read=bot.fingerprint_areas_read,
             rasteriser_fault=bot.image_drawing.rasteriser_fault,
-            snapshot_points_on=snapshot_configs_to_season_on,
+            season_approved=bot.season_approved,
             now=lambda: bot.change_queue.now(),
         )
     )

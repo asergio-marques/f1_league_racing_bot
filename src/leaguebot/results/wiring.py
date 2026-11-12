@@ -40,6 +40,7 @@ def sign_up(bot: "LeagueBot") -> None:
     sign_up_to_cancellation_refused(bot)
     sign_up_to_rounds_made_final(bot)
     sign_up_to_test_mode_turned_on(bot)
+    sign_up_to_season_approved(bot)
     sign_up_to_divisions_raced_read(bot)
     sign_up_to_season_standing_read(bot)
     sign_up_to_final_round_read(bot)
@@ -83,6 +84,15 @@ def sign_up_to_test_mode_turned_on(bot: "LeagueBot") -> None:
     from leaguebot.results.services.points import points_config_service
 
     bot.test_mode_turned_on.subscribe(points_config_service.seed_test_configs_on)
+
+
+def sign_up_to_season_approved(bot: "LeagueBot") -> None:
+    """Sign results' snapshot of the server's points configurations up to the hook a season's
+    approval is saved through, on the save's connection, given the season's id (architecture.md,
+    "How modules and core fit together"). The snapshot reads results' own switch itself."""
+    from leaguebot.results.services.points import season_points_service
+
+    bot.season_approved.subscribe(season_points_service.snapshot_configs_to_season_on)
 
 
 def sign_up_to_divisions_raced_read(bot: "LeagueBot") -> None:

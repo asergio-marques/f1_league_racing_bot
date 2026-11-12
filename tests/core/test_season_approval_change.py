@@ -589,12 +589,6 @@ async def test_the_manager_is_told_at_once_and_the_reply_is_updated_when_the_sea
     assert NOT_EVERYTHING not in reply(press)
 
 
-#: The reason a test of the season approved hook fails until core's approval calls it.
-NO_SEASON_APPROVED = (
-    "#284: the approval's save calls results' snapshot by name, through no season approved hook"
-)
-
-
 def _failing_placements(league: Any) -> ExitStack:
     """The save's commitment of the placements raises, as a fault of the database would."""
     return _failing_save()
@@ -611,8 +605,7 @@ def _failing_subscriber(league: Any) -> ExitStack:
 
 @pytest.mark.parametrize("fault", [
     pytest.param(_failing_placements, id="the placements' commitment"),
-    pytest.param(_failing_subscriber, id="a season approved subscriber",
-                 marks=pytest.mark.xfail(strict=True, reason=NO_SEASON_APPROVED)),
+    pytest.param(_failing_subscriber, id="a season approved subscriber"),
 ])
 async def test_the_sessions_placements_points_and_season_are_saved_in_one_save(
     tmp_path, monkeypatch, fault,
@@ -635,7 +628,6 @@ async def test_the_sessions_placements_points_and_season_are_saved_in_one_save(
     assert (season["status"], season["stage"]) == ("SETUP", "PLACEMENTS")
 
 
-@pytest.mark.xfail(strict=True, reason=NO_SEASON_APPROVED)
 async def test_the_save_calls_season_approved_once_on_its_connection_before_the_placements(
     tmp_path, monkeypatch,
 ):

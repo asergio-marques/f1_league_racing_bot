@@ -36,7 +36,7 @@ and what a league admin discarded. A job tried again posts as text (Constitution
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -289,7 +289,7 @@ def season_approval_change(
     division_channel_faults_read: AwaitedHook,
     fingerprint_areas_read: AwaitedHook,
     rasteriser_fault: Callable[[], str | None],
-    snapshot_points_on: Callable[[aiosqlite.Connection, int], Awaitable[None]],
+    season_approved: AwaitedHook,
     now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that approves a season's placements; see the module.
@@ -305,8 +305,9 @@ def season_approval_change(
     name), *division_channel_faults_read* (the hook each module names its own channels' faults
     through), *fingerprint_areas_read* (the hook each module's own areas of the fingerprint are
     asked through), *rasteriser_fault* (what is wrong with the host's drawing program, None where
-    nothing is), results' *snapshot_points_on* (the points snapshot on a handed save, which reads
-    results' own switch) and *now* (the queue's clock).
+    nothing is), *season_approved* (the hook each module's keeping for the season is called
+    through, inside the save, handed its connection and the season's id) and *now* (the queue's
+    clock).
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -421,7 +422,7 @@ def season_approval_change(
         )
         for each in await cursor.fetchall():
             await create_sessions_for_round_on(db, int(each["id"]), RoundFormat(each["format"]))
-        await snapshot_points_on(db, season_id)
+        await season_approved.call(db, season_id)
         committed = await commit_placements_on(db, season_id)
         if not await transition_to_active_on(db, season_id):
             raise RuntimeError(f"season {season_id} could not be moved to Ongoing")
