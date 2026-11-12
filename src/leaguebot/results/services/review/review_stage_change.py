@@ -57,7 +57,7 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.services.review.penalty_service import StagedPenalty
-from leaguebot.results.services.review import penalty_wizard, review_state, appeals_review_views
+from leaguebot.results.services.review import penalty_wizard, review_state, appeals_review_views, penalty_review_views
 from leaguebot.results.services.review.review_state import PenaltyReviewState, StagedPardon, held_review
 from leaguebot.results.services.review import review_posting
 
@@ -182,7 +182,7 @@ async def _redraw(ctx: StepContext) -> StepResult:
     if ctx.payload.get("appeals"):
         await appeals_review_views._refresh_appeals_prompt(state)
     else:
-        await penalty_wizard._refresh_prompt(state)
+        await penalty_review_views._refresh_prompt(state)
     return StepResult(result={"drawn": True})
 
 

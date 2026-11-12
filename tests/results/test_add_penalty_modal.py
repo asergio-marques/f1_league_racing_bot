@@ -53,7 +53,7 @@ from leaguebot.core.db.database import get_connection, run_migrations
 # `session_results.session_type` actually holds.
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.review.penalty_service import StagedPenalty
-from leaguebot.results.services.review.penalty_wizard import AddPenaltyModal
+from leaguebot.results.services.review.penalty_review_views import AddPenaltyModal
 from leaguebot.results.services.review.review_state import PenaltyReviewState
 from tests.support.change_queue import (
     acknowledgement,
@@ -217,7 +217,7 @@ async def _submit(
     state.bot = interaction.client
 
     with patch(
-        "leaguebot.results.services.review.penalty_wizard._refresh_prompt", new=AsyncMock(return_value=None)
+        "leaguebot.results.services.review.penalty_review_views._refresh_prompt", new=AsyncMock(return_value=None)
     ), patch(
         "leaguebot.results.services.review.appeals_review_views._refresh_appeals_prompt", new=AsyncMock(return_value=None)
     ):
@@ -377,7 +377,7 @@ async def test_the_prompt_is_refreshed_for_the_pass_being_staged_into(tmp_path):
     modal.justification_input._value = "j"
 
     with patch(
-        "leaguebot.results.services.review.penalty_wizard._refresh_prompt", new=AsyncMock(return_value=None)
+        "leaguebot.results.services.review.penalty_review_views._refresh_prompt", new=AsyncMock(return_value=None)
     ) as penalty_refresh, patch(
         "leaguebot.results.services.review.appeals_review_views._refresh_appeals_prompt", new=AsyncMock(return_value=None)
     ) as appeals_refresh:
@@ -570,7 +570,7 @@ async def test_either_account_finds_a_result_stood_under_the_old_one(tmp_path, t
 
 
 async def test_the_prompt_names_the_staged_driver_by_the_current_account(tmp_path):
-    from leaguebot.results.services.review.penalty_wizard import _render_prompt_content
+    from leaguebot.results.services.review.penalty_review_views import _render_prompt_content
 
     db_path = await _make_db(tmp_path)
     await _driver_moved_on(db_path)

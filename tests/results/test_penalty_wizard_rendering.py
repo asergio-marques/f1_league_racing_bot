@@ -35,11 +35,8 @@ from leaguebot.core.db.database import get_connection, run_migrations
 # `session_results.session_type` actually holds.
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.review.penalty_service import StagedPenalty
-from leaguebot.results.services.review.penalty_wizard import (
-    _is_league_manager,
-    _render_prompt_content,
-    _require_lm,
-)
+from leaguebot.results.services.review.penalty_wizard import _is_league_manager, _require_lm
+from leaguebot.results.services.review.penalty_review_views import _render_prompt_content
 from leaguebot.results.services.review.review_state import PenaltyReviewState, StagedPardon, _pen_label
 from tests.support.teams import seed_team_instances
 

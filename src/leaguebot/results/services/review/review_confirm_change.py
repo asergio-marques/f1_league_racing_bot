@@ -40,8 +40,8 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.results.services.review import penalty_wizard, review_state
-from leaguebot.results.services.review.penalty_wizard import approval_unreachable
+from leaguebot.results.services.review import review_state, penalty_review_views
+from leaguebot.results.services.review.penalty_review_views import approval_unreachable
 from leaguebot.results.services.review.review_state import held_review
 from leaguebot.results.services.review.review_stage_change import (
     KIND as STAGE_KIND,
@@ -119,7 +119,7 @@ async def _post_approval(ctx: StepContext) -> StepResult:
         return StepResult(result={"dropped": True})
     if state.approval_message_id is None and not ctx.payload.get("amendment"):
         state.approval_message_id = await approval_on_the_row(ctx.db_path, state.round_id)
-    message_id = await penalty_wizard._show_approval_step(None, state)
+    message_id = await penalty_review_views._show_approval_step(None, state)
     if message_id is None:
         return StepResult(result={"unreachable": True})
     log = ctx.payload.get("log")

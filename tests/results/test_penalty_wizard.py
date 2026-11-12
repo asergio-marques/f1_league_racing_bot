@@ -27,15 +27,17 @@ import pytest
 import discord
 
 from leaguebot.results.services.review.penalty_wizard import (
-    PenaltyReviewView,
-    ApprovalView,
-    AddPenaltyModal,
     _CID_AR_ADD,
     _CID_AR_CONFIRM,
     _CID_AR_APPROVE,
     _CID_ADD,
     _CID_CONFIRM,
     _CID_APPROVE,
+)
+from leaguebot.results.services.review.penalty_review_views import (
+    PenaltyReviewView,
+    ApprovalView,
+    AddPenaltyModal,
 )
 from leaguebot.results.services.review.appeals_review_views import AppealsReviewView
 from leaguebot.results.services.review.review_state import PenaltyReviewState

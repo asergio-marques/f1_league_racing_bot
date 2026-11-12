@@ -801,9 +801,9 @@ async def run_amendment_review_stages(
     Returns the state the screens share. The approvals happen through the screens themselves.
     """
     from leaguebot.results.services.review.penalty_service import load_staged_from_records
-    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewView
+    from leaguebot.results.services.review.penalty_review_views import PenaltyReviewView
     from leaguebot.results.services.review.review_state import PenaltyReviewState
-    from leaguebot.results.services.review.penalty_wizard import _render_prompt_content
+    from leaguebot.results.services.review.penalty_review_views import _render_prompt_content
 
     # **Scoped to the sessions being amended** (#345). `apply_penalties_on` walks whatever
     # session types the staged set names, and stage one re-inserted only the amended sessions'

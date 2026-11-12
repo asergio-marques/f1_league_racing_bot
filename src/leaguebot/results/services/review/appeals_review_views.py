@@ -24,8 +24,6 @@ from leaguebot.results.services.review.penalty_wizard import (
     _CID_AR_ADD,
     _CID_AR_APPROVE,
     _CID_AR_CONFIRM,
-    _SessionSelectView,
-    _add_remove_buttons,
     _ask_stage,
     _button,
     _clear_confirmation,
@@ -34,6 +32,7 @@ from leaguebot.results.services.review.penalty_wizard import (
     _require_lm,
     _take_down_confirmation,
 )
+from leaguebot.results.services.review.penalty_review_views import _SessionSelectView, _add_remove_buttons
 from leaguebot.results.services.review.review_state import (
     PenaltyReviewState,
     _pen_label,

@@ -1699,7 +1699,7 @@ async def test_each_approve_control_of_an_amendment_asks_its_stage_of_the_queue(
     The press asks the queue for that stage's change, with the round, the division, the amended
     sessions and what is staged in its payload, and Alex is answered at once that it is under way,
     with its job number. The report stage's Approve is pressed on its approval message."""
-    from leaguebot.results.services.review.penalty_wizard import ApprovalView
+    from leaguebot.results.services.review.penalty_review_views import ApprovalView
     from leaguebot.results.services.review.appeals_review_views import AppealsReviewView
     from leaguebot.results.services.review.review_state import PenaltyReviewState
 

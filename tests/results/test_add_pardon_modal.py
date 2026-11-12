@@ -47,7 +47,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.review.penalty_wizard import AddPardonModal
+from leaguebot.results.services.review.penalty_review_views import AddPardonModal
 from leaguebot.results.services.review.review_state import PenaltyReviewState, StagedPardon
 from tests.support.change_queue import (
     acknowledgement,
@@ -196,7 +196,7 @@ async def _submit(
     modal.driver_id_input._value = driver_id  # type: ignore[attr-defined]
     modal.pardon_type_input._value = pardon_type  # type: ignore[attr-defined]
     modal.justification_input._value = justification  # type: ignore[attr-defined]
-    with patch("leaguebot.results.services.review.penalty_wizard._refresh_prompt", new=AsyncMock()) as refresh:
+    with patch("leaguebot.results.services.review.penalty_review_views._refresh_prompt", new=AsyncMock()) as refresh:
         await modal.on_submit(interaction)
         await run_queue(state.bot)
     return interaction, refresh

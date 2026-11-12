@@ -44,7 +44,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.review.penalty_wizard import ApprovalView
+from leaguebot.results.services.review.penalty_review_views import ApprovalView
 from leaguebot.results.services.review.appeals_review_views import AppealsReviewView, _AppealsConfirmClearView
 from leaguebot.results.services.review.penalty_service import StagedPenalty
 from leaguebot.results.services.review.review_state import PenaltyReviewState
@@ -261,7 +261,7 @@ def _refreshers():
     """Patch the two prompt refreshers, so that a press that reaches one fails on what it asks of
     the queue, never on a refresh run against a stub bot."""
     return (
-        patch("leaguebot.results.services.review.penalty_wizard._refresh_prompt", new=AsyncMock()),
+        patch("leaguebot.results.services.review.penalty_review_views._refresh_prompt", new=AsyncMock()),
         patch("leaguebot.results.services.review.appeals_review_views._refresh_appeals_prompt", new=AsyncMock()),
     )
 
@@ -316,7 +316,7 @@ async def test_make_changes_returns_to_staging_with_the_list_intact(tmp_path):
     interaction = _staging_press(state)
 
     with _manager(), patch(
-        "leaguebot.results.services.review.penalty_wizard._refresh_prompt", new=AsyncMock()
+        "leaguebot.results.services.review.penalty_review_views._refresh_prompt", new=AsyncMock()
     ) as refresh:
         await _press(view, "make_changes_btn", interaction)
         await run_queue(state.bot)

@@ -107,7 +107,10 @@ async def send_review_prompt(
 
     The one place the prompt is sent, which the review's `post_review_prompt` job calls (#439).
     """
-    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewView, _render_prompt_content
+    from leaguebot.results.services.review.penalty_review_views import (
+        PenaltyReviewView,
+        _render_prompt_content,
+    )
 
     view = PenaltyReviewView(state=state)
     content = await _render_prompt_content(state)
