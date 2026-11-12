@@ -82,6 +82,11 @@ from tests.support.review_league import (
     verdict_headings,
 )
 
+_NOT_MOVED = (
+    "#284: results' start-up recovery is not yet moved out of its wiring "
+    "into its services"
+)
+
 REPORTS = "results.amendment.reports.approve"
 APPEALS = "results.amendment.appeals.approve"
 
@@ -512,8 +517,11 @@ async def test_a_discarded_stage_past_its_deadline_names_the_undoing_and_one_bef
         assert "undone" not in reply.lower()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_recovery_leaves_alone_an_amendment_whose_stage_is_in_hand(tmp_path):
-    from leaguebot.results.wiring import recover_orphaned_amend_channels
+    from leaguebot.results.services.round_amendment.amend_end_changes import (
+        recover_orphaned_amend_channels,
+    )
 
     league = await _amend_league(tmp_path)
     await block_queue(league)

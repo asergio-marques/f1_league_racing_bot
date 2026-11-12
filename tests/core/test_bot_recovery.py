@@ -2,8 +2,9 @@
 
 Issue #208. `__main__.py` was the worst-covered file in core at 26.7%. Most of it is `main()`, which
 needs a real gateway connection and is out of scope for this suite (`CLAUDE.md`: no test may
-require a live bot). The recovery helpers it ran are not, now each in its module's wiring — they
-take a bot and a database and put the world back the way it should be, and none was executed.
+require a live bot). The recovery helpers it ran are not, now each in its module's wiring or
+services — they take a bot and a database and put the world back the way it should be, and none
+was executed.
 
 This file takes `recover_orphaned_amend_channels` and `recover_portrait_refresh_job`, which
 re-arms the daily portrait refresh.
@@ -28,17 +29,25 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 
+_NOT_MOVED = (
+    "#284: results' start-up recovery is not yet moved out of its wiring "
+    "into its services"
+)
+
 # ---------------------------------------------------------------------------
 # The sweep
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_each_orphan_is_reported_separately(tmp_path):
     """Two abandoned amendments are two commands to re-run, and a single summary would leave a
     manager guessing which. Rounds 3 and 4 of Pro were each being amended when the bot stopped:
     the restart asks one lapse for each, as the bot, and once the queue has run them each writes
     its own line in the log channel."""
-    from leaguebot.results.wiring import recover_orphaned_amend_channels
+    from leaguebot.results.services.round_amendment.amend_end_changes import (
+        recover_orphaned_amend_channels,
+    )
 
     from tests.support import review_league as league_of
     from tests.support.change_queue import change_rows, run_queue
@@ -115,11 +124,14 @@ async def test_a_refresh_that_cannot_be_armed_does_not_stop_the_start(tmp_path):
     await recover_portrait_refresh_job(bot)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_an_amendment_whose_stage_is_queued_is_not_reverted_on_restart(tmp_path):
     """**A restart with an approval in hand finishes it** (#439). An amendment whose report stage
     was asked for and not yet carried out when the bot stopped is left by recovery: its row and
     channel stand, and the queue, brought back up, approves the stage."""
-    from leaguebot.results.wiring import recover_orphaned_amend_channels
+    from leaguebot.results.services.round_amendment.amend_end_changes import (
+        recover_orphaned_amend_channels,
+    )
 
     from tests.support import review_league as league_of
     from tests.support.change_queue import member_interaction, restart_queue, run_queue

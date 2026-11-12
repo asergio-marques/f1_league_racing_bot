@@ -25,6 +25,11 @@ import pytest
 
 from leaguebot.core.db.database import get_connection
 
+_NOT_MOVED = (
+    "#284: results' start-up recovery is not yet moved out of its wiring "
+    "into its services"
+)
+
 ROUND_ID = 21
 STARTER_ID = 4242
 
@@ -91,7 +96,9 @@ async def _amend_league(tmp_path, *, amended: bool = False):
 
 async def _restart(league) -> list[dict]:
     """The restart's sweep, then the lapses it asked of the queue."""
-    from leaguebot.results.wiring import recover_orphaned_amend_channels
+    from leaguebot.results.services.round_amendment.amend_end_changes import (
+        recover_orphaned_amend_channels,
+    )
 
     from tests.support.change_queue import change_rows
 
@@ -134,6 +141,7 @@ async def _winner(league) -> int:
     return next(driver for driver, row in rows.items() if row["finishing_position"] == 1)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_second_restart_leaves_a_lapse_in_hand_alone(tmp_path):
     """The bot stops again before the queue has run the lapse the first restart asked for. The
     second restart finds that lapse in hand and asks no other (core :133): one lapse, one line."""
@@ -149,6 +157,7 @@ async def test_a_second_restart_leaves_a_lapse_in_hand_alone(tmp_path):
     assert len(_amend_lines(league)) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_an_amendment_cannot_outlive_its_round(tmp_path):
     """A round deleted while an amendment was open, as `/round delete` deletes it, takes the
     amendment's row with it: the results module deletes its own rows through the round's delete
@@ -170,6 +179,7 @@ async def test_an_amendment_cannot_outlive_its_round(tmp_path):
     assert _amend_lines(league) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_channel_already_deleted_still_clears_the_row(tmp_path):
     """Someone deleted the amendment channel by hand while the bot was down. The lapse's
     deletion finds it gone and completes: the queue does not stop, the row is closed and the
@@ -188,6 +198,7 @@ async def test_a_channel_already_deleted_still_clears_the_row(tmp_path):
     assert len(_amend_lines(league)) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_restart_with_no_amendments_open_does_nothing(tmp_path):
     """No amendment is open: the restart asks no lapse and nothing is written."""
     from tests.support.change_queue import run_queue
@@ -204,6 +215,7 @@ async def test_a_restart_with_no_amendments_open_does_nothing(tmp_path):
     assert _amend_lines(league) == []
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_an_abandoned_amendment_is_put_back_as_it_was(tmp_path):
     """Stage one commits, so abandoning an amendment is not a no-op (#345).
 
@@ -228,6 +240,7 @@ async def test_an_abandoned_amendment_is_put_back_as_it_was(tmp_path):
     assert "re-run /results rounds amend" in line
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_an_amendment_put_back_at_a_restart_is_recorded_as_a_lapse(tmp_path):
     """Alex started `/results rounds amend` of round 3 (Pro) and entered the corrections; the
     bot restarted before the amendment was approved, and the queue's lapse puts the round back.
@@ -252,6 +265,7 @@ async def test_an_amendment_put_back_at_a_restart_is_recorded_as_a_lapse(tmp_pat
     assert "Feature Race" in "\n".join(detail), detail
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_an_amendment_with_nothing_to_put_back_is_recorded_neutrally(tmp_path):
     """Alex started `/results rounds amend` of round 3 (Pro); at the restart there is nothing to
     put back, so the bot cannot tell whether the corrections were never entered or the
@@ -286,6 +300,7 @@ async def test_an_amendment_with_nothing_to_put_back_is_recorded_neutrally(tmp_p
     assert row is not None and row["closed_at"] is not None
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_revert_that_fails_stops_the_queue_keeping_the_snapshot(tmp_path):
     """**The snapshot is the only way back, so a failed revert keeps it** (#345).
 

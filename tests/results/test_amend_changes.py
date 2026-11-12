@@ -76,6 +76,11 @@ from tests.support.review_league import (
 )
 from tests.support.undecorate import undecorate
 
+_NOT_MOVED = (
+    "#284: results' start-up recovery is not yet moved out of its wiring "
+    "into its services"
+)
+
 OPEN = "results.amend.open"
 TURN = "results.amend.turn"
 CONFIG = "results.amend.config"
@@ -469,6 +474,7 @@ async def test_a_refused_deletion_after_a_refused_paste_stops_only_the_amendment
     assert not _deleted(league)
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_restart_leaves_a_refused_deletion_to_the_amendment_s_own_lane(
     tmp_path, monkeypatch,
 ):
@@ -476,7 +482,9 @@ async def test_a_restart_leaves_a_refused_deletion_to_the_amendment_s_own_lane(
     amendment's lane is stopped. The bot restarts: the recovery asks the lapse of the closed
     amendment, but its channel's deletion is in hand on the amendment's lane, so the lapse is not
     due and the league lane is not stopped by a second try at the same refusal."""
-    from leaguebot.results.wiring import recover_orphaned_amend_channels
+    from leaguebot.results.services.round_amendment.amend_end_changes import (
+        recover_orphaned_amend_channels,
+    )
 
 
     league = await _league(tmp_path, monkeypatch)
@@ -1172,13 +1180,16 @@ async def test_the_half_hour_lapse_is_held_while_the_stage_two_prompt_is_in_hand
     assert row["closed_at"] is None
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_restart_asks_the_lapse_of_each_abandoned_amendment_before_the_queue_starts(
     tmp_path, monkeypatch,
 ):
     """The bot stops with Alex's amendment of round 3 open and nothing pasted. At the restart the
     recovery asks the queue for its lapse, as the bot, and deletes nothing itself; when the queue
     runs, the channel is deleted and the row closed."""
-    from leaguebot.results.wiring import recover_orphaned_amend_channels
+    from leaguebot.results.services.round_amendment.amend_end_changes import (
+        recover_orphaned_amend_channels,
+    )
 
 
     league = await _league(tmp_path, monkeypatch)

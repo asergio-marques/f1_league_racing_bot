@@ -850,12 +850,13 @@ _MODULE_STEPS = {
 }
 
 
-#: The module steps whose recovery is a function of its module's wiring handed the bot alone, with
-#: where that function lives and its name.
+#: The module steps whose recovery is a function handed the bot alone, with where that function
+#: lives and its name: in its module's wiring, or, for results' two recoveries, its services.
 _RECOVERIES_OF_THE_STEPS = {
     "portrait refresh job": ("leaguebot.image.wiring", "recover_portrait_refresh_job"),
-    "orphaned amend channels": ("leaguebot.results.wiring", "recover_orphaned_amend_channels"),
-    "orphaned submission channels": ("leaguebot.results.wiring",
+    "orphaned amend channels": ("leaguebot.results.services.round_amendment.amend_end_changes",
+                                "recover_orphaned_amend_channels"),
+    "orphaned submission channels": ("leaguebot.results.services.submission.submission_recovery",
                                      "recover_orphaned_submission_channels"),
     "missed phases": ("leaguebot.weather.wiring", "recover_missed_phases"),
     "missed forecast clean-ups": ("leaguebot.weather.wiring",
@@ -868,6 +869,8 @@ _RECOVERIES_OF_THE_STEPS = {
 }
 
 
+@pytest.mark.xfail(strict=True, reason="#284: results' start-up recoveries are not yet moved "
+                                       "out of its wiring into its services")
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     """`build` on paths under `tmp_path` signs core's start-up steps and each module's up to
     `bot.starting`, and the sweep is then run over it with every module on, so the order is read
@@ -895,7 +898,8 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     close still ahead on record, re-arms it on the bot's scheduler (the step reads the host's clock
     and takes no `now`, so the close is set a day after that clock); the wizards are recovered by
     the bot's wizard service; the amendment sweep arms the bot's scheduler's sweep; and each other
-    step hands its recovery, in its module's wiring, the bot. Nothing is posted to the log channel.
+    step hands its recovery the bot: results' two in results' services, each of the
+    others in its module's wiring. Nothing is posted to the log channel.
     """
     import importlib
     from contextlib import asynccontextmanager

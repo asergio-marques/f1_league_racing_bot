@@ -58,6 +58,11 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 
+_NOT_MOVED = (
+    "#284: results' start-up recovery is not yet moved out of its wiring "
+    "into its services"
+)
+
 SERVER_ID = 11708
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -178,7 +183,9 @@ def _bot(db_path: str, *, guild_missing: bool = False, channel=None):
 
 async def _recover(stub):
     """Run recovery; the queue's requests are recorded on the bot's stand-in queue."""
-    from leaguebot.results.wiring import recover_orphaned_submission_channels
+    from leaguebot.results.services.submission.submission_recovery import (
+        recover_orphaned_submission_channels,
+    )
 
     await recover_orphaned_submission_channels(stub)
 
@@ -218,6 +225,7 @@ def _logged(stub) -> str:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_closed_channel_is_left_alone(tmp_path):
     """It was closed in an orderly way by the run that opened it — there is nothing
     interrupted about it, and recovering it would destroy a completed round's results."""
@@ -244,6 +252,7 @@ def _asked_restart(stub) -> dict:
     return payload
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_the_submission_wizard_is_reopened(tmp_path):
     """Production has no `/test-mode advance` to fall back on, so without this the round is
     silently abandoned and nobody submits its results at all. Recovery asks the queue, as the
@@ -266,6 +275,7 @@ async def test_the_submission_wizard_is_reopened(tmp_path):
     assert await _rows(db_path, "round_submission_channels") == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_guild_missing_from_the_cache_still_clears_the_row(tmp_path):
     """The database half can be put right without Discord, and leaving the row would have
     the round recovered again on every later restart. With the league's server missing from the
@@ -279,6 +289,7 @@ async def test_a_guild_missing_from_the_cache_still_clears_the_row(tmp_path):
     assert [kind for kind, _ in _asked(stub)] == ["results.submission.restart"]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_channel_already_gone_still_reopens_the_wizard(tmp_path):
     """Someone deleted it by hand between the crash and the restart, which changes nothing
     about the round needing its results: recovery still asks the queue for round 3's restart, and
@@ -297,6 +308,7 @@ async def test_a_channel_already_gone_still_reopens_the_wizard(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_round_in_review_keeps_its_channel_and_its_results(tmp_path):
     """The results are complete; the stewards' work is what was interrupted. Deleting the
     channel here would take a completed race's results with it."""
@@ -311,6 +323,7 @@ async def test_a_round_in_review_keeps_its_channel_and_its_results(tmp_path):
     channel.delete.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_the_penalty_review_prompt_is_re_posted(tmp_path):
     """Recovery asks the queue, as the bot, to open the review again; it posts nothing itself."""
     db_path = await _make_db(tmp_path, name="recover_reprompt", in_penalty_review=1)
@@ -324,6 +337,7 @@ async def test_the_penalty_review_prompt_is_re_posted(tmp_path):
     channel.send.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_interim_results_already_posted_are_not_posted_again(tmp_path):
     """Otherwise every restart adds another copy of the same provisional table to the
     channel a league is reading."""
@@ -337,6 +351,7 @@ async def test_interim_results_already_posted_are_not_posted_again(tmp_path):
     assert _asked_once(stub, "results.review.open")["publish"] is False
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_interim_results_never_posted_are_posted_now(tmp_path):
     """The crash came before they went out, so the division has seen nothing."""
     db_path = await _make_db(
@@ -349,6 +364,7 @@ async def test_interim_results_never_posted_are_posted_now(tmp_path):
     assert _asked_once(stub, "results.review.open")["publish"] is True
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_the_old_prompt_is_deleted_once_the_new_one_stands(tmp_path):
     """Two live prompts over one round mean two staged lists, and whichever is approved
     second overwrites the first. Recovery hands the old prompt's id to the change, which deletes
@@ -369,6 +385,7 @@ async def test_the_old_prompt_is_deleted_once_the_new_one_stands(tmp_path):
     channel._old.delete.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_prompt_already_gone_does_not_stop_the_re_post(tmp_path):
     """Deleted by hand, or by a previous partial recovery — either way the new prompt is
     what matters."""
@@ -385,6 +402,7 @@ async def test_a_prompt_already_gone_does_not_stop_the_re_post(tmp_path):
     _asked_once(stub, "results.review.open")
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_round_with_no_recorded_prompt_fetches_nothing(tmp_path):
     """A crash before the id was stored; asking Discord for message `None` would raise."""
     db_path = await _make_db(
@@ -431,6 +449,7 @@ async def test_a_review_put_back_asks_the_queue_it_was_handed(tmp_path):
     ["AWAITING_RESULTS", "AWAITING_APPEAL_VERDICTS"],
     ids=["penalty review", "appeals"],
 )
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_review_whose_guild_is_missing_is_left_intact(tmp_path, round_status: str):
     """Nothing can be posted without the guild, and clearing the row would lose the round's
     place in the review or in its appeals — so it is left for the next restart to find."""
@@ -448,6 +467,7 @@ async def test_a_review_whose_guild_is_missing_is_left_intact(tmp_path, round_st
     assert await _rows(db_path, "session_results") == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_review_whose_channel_is_missing_is_left_intact(tmp_path):
     db_path = await _make_db(tmp_path, name="recover_review_nochannel", in_penalty_review=1)
     stub = _bot(db_path, channel=None)
@@ -458,6 +478,7 @@ async def test_a_review_whose_channel_is_missing_is_left_intact(tmp_path):
     assert await _rows(db_path, "session_results") == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_failing_re_prompt_does_not_stop_the_start_up(tmp_path):
     """This runs inside start-up: one unrecoverable round must not stop the rest being
     recovered, nor stop the bot finishing its start-up at all."""
@@ -473,6 +494,7 @@ async def test_a_failing_re_prompt_does_not_stop_the_start_up(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_round_awaiting_appeals_gets_the_appeals_prompt_back(tmp_path):
     """A different prompt from the penalty one: the penalties are settled and what is
     outstanding is the appeals against them. Recovery asks the queue for it, as the bot, and
@@ -493,6 +515,7 @@ async def test_a_round_awaiting_appeals_gets_the_appeals_prompt_back(tmp_path):
     channel.send.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_an_appeals_round_keeps_its_results(tmp_path):
     """They are final but for the appeals, and deleting them would destroy a raced round."""
     db_path = await _make_db(
@@ -508,6 +531,7 @@ async def test_an_appeals_round_keeps_its_results(tmp_path):
     assert await _rows(db_path, "session_results") == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_failing_appeals_re_post_does_not_stop_the_start_up(tmp_path):
     db_path = await _make_db(
         tmp_path,
@@ -603,6 +627,7 @@ def _lapse_lines(league) -> list[str]:
     return [_plain(line) for line in league.bot.log_channel.sent if line.startswith("⌛")]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_restart_mid_resubmission_keeps_the_results_and_restores_the_review(tmp_path):
     """The bot restarts while round 3 is resubmitting. The round's results stay, its channel is
     not deleted, and its review is asked back without publishing, returning from a restart; once
@@ -628,6 +653,7 @@ async def test_a_restart_mid_resubmission_keeps_the_results_and_restores_the_rev
     assert len(_prompts(league)) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_restart_mid_resubmission_says_the_earlier_results_stand(tmp_path):
     """The manager was part-way through pasting; the prompt coming back unexplained would
     look as though the pastes had been accepted. The review opening's `post_restart_notice` job
@@ -643,6 +669,7 @@ async def test_a_restart_mid_resubmission_says_the_earlier_results_stand(tmp_pat
                for text in _contents(league, SUBMISSION_CHANNEL))
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_restart_mid_resubmission_is_recorded_as_a_lapse(tmp_path):
     """Alex (id 4242) pressed 🔄 Resubmit Initial Results on round 3 (Pro) and was part-way
     through pasting when the bot restarted. Once the queue has run the review's opening, one
@@ -666,6 +693,7 @@ async def test_a_restart_mid_resubmission_is_recorded_as_a_lapse(tmp_path):
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_restart_mid_resubmission_takes_down_the_cancel_button(tmp_path):
     """The view was not persistent, so after a restart pressing it would only fail. The review
     opening's `take_down_cancel` job edits the announcement (6100) without its button."""
@@ -679,6 +707,7 @@ async def test_a_restart_mid_resubmission_takes_down_the_cancel_button(tmp_path)
     assert league.channel(SUBMISSION_CHANNEL).messages[ANNOUNCEMENT].view is None
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_resubmission_announcement_already_gone_does_not_stop_the_recovery(tmp_path):
     """The announcement (6100) was deleted by hand before the restart. Its take-down completes,
     the queue does not stop, the flag comes down and the review is asked back once."""
@@ -693,6 +722,7 @@ async def test_a_resubmission_announcement_already_gone_does_not_stop_the_recove
     assert await _resubmitting_flag(league.db_path) == 0
 
 
+@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_restart_mid_resubmission_with_its_channel_gone_is_still_closed_out(tmp_path):
     """Alex (id 4242) pressed 🔄 Resubmit Initial Results on round 3 (Pro), and the bot
     restarted part-way through; meanwhile the submission channel was deleted. There is nowhere
