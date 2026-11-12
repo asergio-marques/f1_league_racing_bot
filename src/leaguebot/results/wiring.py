@@ -2,33 +2,27 @@
 
 It signs results up to the hooks core declares, registers results' switch reader, change types and
 settings, the handlers of its kinds of timed job with the steps `/test-mode advance` runs for them,
-and holds the start-up steps it runs: the arming of the amendment sweep and the recoveries. It is
+and names the start-up steps it runs: the arming of the amendment sweep and the recoveries. It is
 under the entry point's rules, not a service's (architecture.md, "How the code is laid out"): it
 reads the bot as the builder does, so each function below is handed the bot (or what the builder
 hands results of another module) and reads a service off it when it signs up or, where a lambda
 reads it, when it runs, which the tests that replace a service on the bot after registering rely
-on. It holds no rule of results' and no database code of its own: the two recoveries that still
-read a table here are listed under results' pass in `test_architecture_rules.py`, to become
-handlers of the start-up sweep. Nothing imports it but the entry point.
+on. It holds no rule of results' and no database code of its own: each start-up step stands for a
+function of results' services, which reads and decides. Nothing imports it but the entry point.
 """
 from __future__ import annotations
 
-import logging
 from collections.abc import Awaitable, Callable
 from functools import partial
 from typing import TYPE_CHECKING
 
 import aiosqlite
 
-from leaguebot.core.utils.league_server import league_guild
-
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.utils.hooks import StartUpStep
     from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
     from leaguebot.core.utils.league_bot import LeagueBot
-
-log = logging.getLogger(__name__)
 
 
 def register_switch(modules: "ModuleService") -> None:
@@ -515,6 +509,9 @@ def start_up_steps(bot: "LeagueBot") -> "tuple[StartUpStep, ...]":
     """Results' start-up steps, named and in the order they run in results' turn of the start-up
     sweep (the entry point signs them up to `bot.starting` under results' switch key). Each
     recovery is looked up when its step runs, so a step stands for that function and no other."""
+    from leaguebot.results.services.round_amendment.amend_end_changes import recover_orphaned_amend_channels
+    from leaguebot.results.services.submission.submission_recovery import recover_orphaned_submission_channels
+
     return (
         ("amendment sweep", lambda: arm_amendment_sweep(bot)),
         # Results-amend channels left open by a previous run. **Before the submission channels,
@@ -538,106 +535,3 @@ async def arm_amendment_sweep(bot: "LeagueBot") -> None:
     leave a round half-amended, and the sweep is what makes that recoverable without anybody
     noticing it happened."""
     bot.scheduler_service.schedule_amendment_sweep()
-
-
-async def recover_orphaned_submission_channels(bot: "LeagueBot") -> None:
-    """Clear any submission channels left open by a previous bot process, through the queue.
-
-    When the bot restarts, the paste a submission was waiting for is lost: the row remains
-    closed=0 and the Discord channel still stands, but nothing is listening.
-
-    A mid-submission orphan (in_penalty_review=0) is asked of the queue as
-    `results.submission.restart`: it clears the round's sessions (so the round is not mistaken
-    for complete by get_next_pending_phase) and the submission row, deletes the channel, tells the
-    log channel to re-submit and opens the submission afresh. A paste whose turn is in hand on the
-    queue is left to it. This runs before the queue starts.
-
-    Reviews are not decided here: `review_recovery.recover_review` leaves a round whose review a
-    change on the queue is carrying out to it, and otherwise asks the queue to put the review
-    back. A resubmission a restart cut short is ended by the review's opening, its collection
-    being lost though the round's results are not.
-    """
-    from leaguebot.core.db.database import get_connection
-
-    async with get_connection(bot.db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT rsc.round_id, rsc.channel_id, rsc.in_penalty_review,
-                   rsc.results_posted, rsc.prompt_message_id, rsc.appeals_prompt_message_id,
-                   rsc.resubmitting, rsc.resubmit_prompt_message_id, rsc.resubmit_started_by,
-                   r.division_id, r.status, r.round_number, d.name AS division_name
-            FROM round_submission_channels rsc
-            JOIN rounds r    ON r.id  = rsc.round_id
-            JOIN divisions d ON d.id  = r.division_id
-            JOIN seasons s   ON s.id  = d.season_id
-            WHERE rsc.closed = 0
-            """
-        )
-        orphans = await cursor.fetchall()
-
-    from leaguebot.results.services.submission.review_recovery import recover_review
-
-    for row in orphans:
-        round_id: int = row["round_id"]
-
-        guild = await league_guild(bot)
-
-        # A round that is a review is put back, or left to the change carrying it out, by the
-        # results service. What is left is a first paste cut short, which is no review.
-        if await recover_review(
-            bot, row, guild, queue=bot.change_queue,
-        ):
-            continue
-
-        # A first paste cut short is cleared, its channel deleted and its submission opened
-        # afresh by the change queue's `results.submission.restart`, before the queue starts. A
-        # round with a change of its submission in hand is left to it above.
-        from leaguebot.results.services.submission.submission_changes import ask_submission_restart
-
-        log.info("Recovery: asking the queue to clear and reopen round %s's submission", round_id)
-        try:
-            await ask_submission_restart(
-                bot.change_queue, bot.db_path, round_id, int(row["channel_id"]),
-            )
-        except Exception:
-            log.exception("Recovery: could not ask for round %s's submission restart", round_id)
-
-
-async def recover_orphaned_amend_channels(bot: "LeagueBot") -> None:
-    """Ask the change queue to end every amendment left open by a previous bot process.
-
-    An amendment's pastes are turns on the queue, so an amendment open at a restart has, at
-    most, its waiting turns and its timer; but it was abandoned all the same, and a league manager
-    whose amendment vanished needs to know to run the command again. Each amendment row is asked for
-    as a ``results.amend.lapse`` of the restart's kind, as the bot, **before the queue starts**
-    (core specification, "What survives a restart"): its jobs put the round back where stage one had
-    written, delete the channel and close the row, and write the line, each amendment's own.
-    Nothing is put back, deleted or written here.
-
-    What the line says depends on what the restart found, and the row cannot always say:
-
-    - Where the round was **put back**, the amendment lapsed unconfirmed, and the record is the
-      lapse of `/results rounds amend`, naming who started it, with the sessions being amended
-      and the wording of what happened and what to run beneath it.
-    - Where there was **nothing to put back**, the corrections were either never entered or had
-      already been approved and were being rebuilt when the bot stopped, and the row cannot say
-      which. That is not a lapse, so the line is a neutral one — who started it, that a restart
-      ended it — with the explanation of both cases and what to run in each beneath it.
-
-    An amendment whose stage is in hand on the queue, stopped included, is finished by the queue
-    ("Leave it while stuck"), and one whose lapse is already in hand from an earlier restart is
-    asked for once: the lapse's check and the queue's repeat rule leave both alone. A failure to
-    ask for one amendment is logged and does not stop the rest.
-    """
-    from leaguebot.core.db.database import get_connection
-    from leaguebot.results.services.round_amendment.amend_end_changes import RESTART, ask_lapse
-
-    async with get_connection(bot.db_path) as db:
-        cursor = await db.execute("SELECT id FROM round_amend_channels ORDER BY id")
-        orphans = [int(row["id"]) for row in await cursor.fetchall()]
-
-    for amend_id in orphans:
-        try:
-            await ask_lapse(bot.change_queue, bot.db_path, amend_id, cause=RESTART)
-        except Exception:
-            log.exception("Recovery: could not ask the lapse of amendment %s", amend_id)

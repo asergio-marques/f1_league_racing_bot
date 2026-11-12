@@ -24,7 +24,7 @@ amendment of the round find it so, and the channel's deletion does not forget it
 the league's lane, asked by `ask_lapse` for one of three causes: the five minutes a paste or a
 choice of configuration has from when its prompt appeared (`TIMER`, whose callback is
 `amend_lapse_timer`), the half-hour the stages have (`SWEEP`, `sweep_expired_amendments`) and a
-restart that found the amendment open (`RESTART`, `recover_orphaned_amend_channels`). Its jobs are
+restart that found the amendment open (`RESTART`, asked by `recover_orphaned_amend_channels`). Its jobs are
 the cancel's, ending with `record_lapse`, which names who started the amendment in the line the lapse
 leaves in the log channel; the cancel's save and the lapse's differ in the wording of that line (a
 restart that found nothing to put back says it ended the amendment, not that it lapsed, for the row
@@ -77,6 +77,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
+from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.log_lines import abandoned_line, name_of_member
 from leaguebot.results.services.round_amendment import amendment_writes
 from leaguebot.results.services.round_amendment.amend_changes import COMMAND, LAPSE_KIND, WAIT, lapse_key
@@ -119,7 +120,7 @@ STAGE_IN_HAND = (
 __all__ = [
     "FORGET_CHANNEL", "KIND", "LAPSE_KIND", "RECORD_LAPSE", "RESTART", "REVERT", "STAGE_IN_HAND",
     "SWEEP", "TIMER", "TOO_LATE", "amend_cancel_change", "amend_lapse_change", "amend_lapse_timer",
-    "ask_lapse",
+    "ask_lapse", "recover_orphaned_amend_channels",
 ]
 
 
@@ -296,6 +297,43 @@ async def ask_lapse(
         ),
         origin=ChangeOrigin.BOT,
     )
+
+
+async def recover_orphaned_amend_channels(bot: LeagueBot) -> None:
+    """Ask the change queue to end every amendment left open by a previous bot process.
+
+    An amendment's pastes are turns on the queue, so an amendment open at a restart has, at
+    most, its waiting turns and its timer; but it was abandoned all the same, and a league manager
+    whose amendment vanished needs to know to run the command again. Each amendment row is asked for
+    as a ``results.amend.lapse`` of the restart's kind, as the bot, **before the queue starts**
+    (core specification, "What survives a restart"): its jobs put the round back where stage one had
+    written, delete the channel and close the row, and write the line, each amendment's own.
+    Nothing is put back, deleted or written here.
+
+    What the line says depends on what the restart found, and the row cannot always say:
+
+    - Where the round was **put back**, the amendment lapsed unconfirmed, and the record is the
+      lapse of `/results rounds amend`, naming who started it, with the sessions being amended
+      and the wording of what happened and what to run beneath it.
+    - Where there was **nothing to put back**, the corrections were either never entered or had
+      already been approved and were being rebuilt when the bot stopped, and the row cannot say
+      which. That is not a lapse, so the line is a neutral one — who started it, that a restart
+      ended it — with the explanation of both cases and what to run in each beneath it.
+
+    An amendment whose stage is in hand on the queue, stopped included, is finished by the queue
+    ("Leave it while stuck"), and one whose lapse is already in hand from an earlier restart is
+    asked for once: the lapse's check and the queue's repeat rule leave both alone. A failure to
+    ask for one amendment is logged and does not stop the rest.
+    """
+    async with get_connection(bot.db_path) as db:
+        cursor = await db.execute("SELECT id FROM round_amend_channels ORDER BY id")
+        orphans = [int(row["id"]) for row in await cursor.fetchall()]
+
+    for amend_id in orphans:
+        try:
+            await ask_lapse(bot.change_queue, bot.db_path, amend_id, cause=RESTART)
+        except Exception:
+            log.exception("Recovery: could not ask the lapse of amendment %s", amend_id)
 
 
 def amend_lapse_timer(

@@ -76,10 +76,6 @@ from tests.support.review_league import (
 )
 from tests.support.undecorate import undecorate
 
-_NOT_MOVED = (
-    "#284: results' start-up recovery is not yet moved out of its wiring "
-    "into its services"
-)
 
 OPEN = "results.amend.open"
 TURN = "results.amend.turn"
@@ -474,7 +470,6 @@ async def test_a_refused_deletion_after_a_refused_paste_stops_only_the_amendment
     assert not _deleted(league)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_restart_leaves_a_refused_deletion_to_the_amendment_s_own_lane(
     tmp_path, monkeypatch,
 ):
@@ -1180,7 +1175,6 @@ async def test_the_half_hour_lapse_is_held_while_the_stage_two_prompt_is_in_hand
     assert row["closed_at"] is None
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_a_restart_asks_the_lapse_of_each_abandoned_amendment_before_the_queue_starts(
     tmp_path, monkeypatch,
 ):

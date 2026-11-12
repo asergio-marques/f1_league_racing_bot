@@ -1382,6 +1382,41 @@ async def round_called(db_path: str, round_id: int) -> str:
     return f"round {row['round_number']} in **{row['name']}**"
 
 
+@dataclass(frozen=True)
+class RoundInDivision:
+    """A round with the division it belongs to, as core's own read of both gives it."""
+
+    round_id: int
+    division_id: int
+    division_name: str
+    round_number: int
+    status: str
+
+
+async def round_in_division(db_path: str, round_id: int) -> RoundInDivision | None:
+    """*round_id* with its division, or None where the round is no longer there.
+
+    For a module reading core's tables only through core's services (architecture.md, "How
+    modules and core fit together"), where the caller has the database path and no `SeasonService`
+    of its own: results' restart recovery of a submission channel finds its own row for the round
+    and asks core what the round is.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT r.id, r.division_id, r.round_number, r.status, d.name AS division_name "
+            "FROM rounds r JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
+            (round_id,),
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return None
+    return RoundInDivision(
+        round_id=int(row["id"]), division_id=int(row["division_id"]),
+        division_name=str(row["division_name"]), round_number=int(row["round_number"]),
+        status=str(row["status"]),
+    )
+
+
 # ------------------------------------------------------------------
 # Row mappers
 # ------------------------------------------------------------------

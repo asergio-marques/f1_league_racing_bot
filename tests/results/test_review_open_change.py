@@ -75,10 +75,6 @@ from tests.support.review_league import (
 )
 from tests.support.teams import seed_team_instances
 
-_NOT_MOVED = (
-    "#284: results' start-up recovery is not yet moved out of its wiring "
-    "into its services"
-)
 
 KIND = "results.review.open"
 SEASON_ID = 1
@@ -660,9 +656,8 @@ async def test_the_state_carries_the_round_and_division_it_describes(tmp_path):
     [
         "reports-approve",
         "reports-approve-bare",
-        pytest.param("recovery", marks=pytest.mark.xfail(strict=True, reason=_NOT_MOVED)),
-        pytest.param("appeals-recovery",
-                     marks=pytest.mark.xfail(strict=True, reason=_NOT_MOVED)),
+        "recovery",
+        "appeals-recovery",
     ],
 )
 async def test_the_change_names_its_round_and_division(tmp_path, caplog, route):
@@ -1152,7 +1147,6 @@ async def _ask_report_approval(league: ReviewLeague) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_recovery_leaves_alone_a_round_whose_review_is_in_hand(tmp_path):
     from leaguebot.results.services.submission.submission_recovery import (
         recover_orphaned_submission_channels,
@@ -1171,7 +1165,6 @@ async def test_recovery_leaves_alone_a_round_whose_review_is_in_hand(tmp_path):
     assert PROMPT in league.channel(SUBMISSION_CHANNEL).messages
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_recovery_leaves_alone_a_round_whose_approval_is_stopped(tmp_path):
     """The session is scored by a points configuration, so the approval's recalculation is
     reached and its failure stops the approval at `apply` (a session with none is skipped)."""
@@ -1193,7 +1186,6 @@ async def test_recovery_leaves_alone_a_round_whose_approval_is_stopped(tmp_path)
     assert _prompts(league) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_recovery_leaves_alone_a_round_whose_paste_is_queued_or_stopped(tmp_path):
     """The last paste of round 3 has asked for its review, every session's results in and the
     review flag still down, and the open waits behind an earlier job the queue is stopped at. A
@@ -1226,7 +1218,6 @@ async def test_recovery_leaves_alone_a_round_whose_paste_is_queued_or_stopped(tm
     assert len(await changes_of(league.db_path, KIND)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_recovery_reopens_a_report_stage_through_the_queue_replacing_the_old_prompt(
     tmp_path,
 ):
@@ -1258,7 +1249,6 @@ async def test_recovery_reopens_a_report_stage_through_the_queue_replacing_the_o
     assert league.sent_to(RESULTS_CHANNEL) == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_recovery_reopens_a_review_whose_open_was_discarded(tmp_path):
     """The paste asked for the review, its `open` save failed and was discarded, and the review
     `close` asked for again was discarded at its check (the channel was gone then): nothing is in
@@ -1291,7 +1281,6 @@ async def test_recovery_reopens_a_review_whose_open_was_discarded(tmp_path):
         assert (await cursor.fetchone())[0] == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_recovery_reposts_the_appeals_prompt_replacing_the_old_one(tmp_path):
     """The appeals prompt is posted again as a change, its id saved for the next restart and its
     view registered so its buttons keep working across the next restart too."""
@@ -1327,7 +1316,6 @@ async def _ask_appeals_approval(league: ReviewLeague) -> None:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_recovery_leaves_alone_a_round_whose_appeals_approval_is_in_hand(tmp_path):
     """Round 3 awaits its appeal verdicts, its appeals prompt standing, and Approve on it waits
     on the queue when the bot restarts. Restart recovery asks no reopening of the appeals review,
@@ -1350,7 +1338,6 @@ async def test_recovery_leaves_alone_a_round_whose_appeals_approval_is_in_hand(t
     assert OLD_APPEALS_PROMPT in league.channel(SUBMISSION_CHANNEL).messages
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_recovery_leaves_alone_a_round_whose_appeals_approval_is_stopped(tmp_path):
     """Round 3's appeals approval stopped at its save, the points failing to recalculate (the
     session scored by a points configuration, so the recalculation is reached). Restart recovery
@@ -1382,7 +1369,6 @@ APPEALS_OPEN = "results.appeals.open"
     pytest.param("open", id="open"),
     pytest.param("close", id="close"),
 ])
-@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_the_appeals_reopening_s_jobs_cannot_be_discarded(tmp_path, job):
     """Round 3 was awaiting its appeal verdicts, its appeals prompt 8950 standing, when the bot
     stopped. At the restart the prompt is asked for again, and the save of the reopening's first
@@ -1421,7 +1407,6 @@ async def test_the_appeals_reopening_s_jobs_cannot_be_discarded(tmp_path, job):
     assert change["state"] == "DONE"
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_an_appeals_reopening_whose_round_moved_on_is_dropped_on_retry(tmp_path):
     """Round 3 was awaiting its appeal verdicts, its appeals prompt 8950 standing, when the bot
     stopped. At the restart the prompt is asked for again, and the save of the reopening's first
@@ -1454,7 +1439,6 @@ async def test_an_appeals_reopening_whose_round_moved_on_is_dropped_on_retry(tmp
     assert change["state"] == "DONE"
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_recovery_closes_a_final_round_left_with_an_open_channel(tmp_path):
     """Only a run from before #439 can leave a final round with its channel open. It is closed,
     with a line, rather than its dead review posted again at every restart."""
@@ -1472,7 +1456,6 @@ async def test_recovery_closes_a_final_round_left_with_an_open_channel(tmp_path)
     assert "round 3" in league.log().lower()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_recovery_no_longer_warns_of_penalties_already_applied(tmp_path):
     """The queue carries what was staged, so "already applied" can no longer happen: the
     warning is gone, and the column it read with it."""

@@ -1,7 +1,7 @@
 """What a restart does to a round whose submission channel was left open (#439, slice 2).
 
-Restart recovery decides here, per round, and the results wiring only reads the rows
-(`recover_orphaned_submission_channels`) and calls it, so the wiring gains no rule. A review is
+Restart recovery decides here, per round: `recover_orphaned_submission_channels`
+(`submission_recovery`) reads the rows of the open channels and calls it, so the wiring gains no rule. A review is
 put back by asking the change queue, as the bot, for the change that does it
 (``results.review.open``, ``results.appeals.open``, ``results.review.close_stale``): recovery posts nothing and deletes nothing of a review itself.
 
@@ -32,7 +32,7 @@ no change in hand is put back by the stage it was left at:
   paste cut short, whose results recovery deletes.
 
 Anything else is a first paste cut short and is not a review: :func:`recover_review` says so by
-returning ``False``, and the wiring asks the queue for it as `results.submission.restart`.
+returning ``False``, and `submission_recovery` asks the queue for it as `results.submission.restart`.
 
 A resubmission a restart cut short is ended by the review's opening itself. Its collection lived
 in memory; recovery asks ``results.review.open`` returning from a restart, whose own jobs clear the
@@ -47,9 +47,8 @@ Nothing here raises: this runs inside start-up, and one round unrecoverable must
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Protocol
 
-import aiosqlite
 import discord
 
 from leaguebot.core.models.change import ChangeOrigin
@@ -64,6 +63,14 @@ from leaguebot.results.services.submission import resubmission_changes, submissi
 from leaguebot.results.services.review.review_changes import round_in_hand
 
 log = logging.getLogger(__name__)
+
+
+class OpenChannelRow(Protocol):
+    """A round's open submission channel row with its round's facts: what `recover_review` reads
+    of it by column name, as a row of the channel table or a dict of it with the round's."""
+
+    def __getitem__(self, key: str, /) -> Any: ...
+
 
 _BOT = ChangeOrigin.BOT
 
@@ -98,7 +105,7 @@ __all__ = ["recover_review"]
 
 async def recover_review(
     bot: LeagueBot,
-    row: aiosqlite.Row,
+    row: OpenChannelRow,
     guild: discord.Guild | None,
     *,
     queue: ChangeQueue,
@@ -131,7 +138,7 @@ async def recover_review(
     return True
 
 
-async def _stage(db_path: str, row: aiosqlite.Row) -> str | None:
+async def _stage(db_path: str, row: OpenChannelRow) -> str | None:
     """The stage a round with no change in hand was left at: ``"final"``, ``"cancelled"``,
     ``"appeals"``, ``"report"`` or ``"opening"``, or ``None`` where it is a first paste cut short.
 
@@ -153,7 +160,7 @@ async def _stage(db_path: str, row: aiosqlite.Row) -> str | None:
     return None
 
 
-async def _restart_payload(bot: LeagueBot, row: aiosqlite.Row, round_label: str) -> dict[str, Any]:
+async def _restart_payload(bot: LeagueBot, row: OpenChannelRow, round_label: str) -> dict[str, Any]:
     """What the review's opening needs to end a resubmission a restart cut short: the round, the
     announcement whose Cancel button comes down, and who started it (named now, as a save may
     not wait on Discord) with the round's name, for the lapse line."""
@@ -170,7 +177,7 @@ async def _restart_payload(bot: LeagueBot, row: aiosqlite.Row, round_label: str)
 
 async def _put_back(
     bot: LeagueBot,
-    row: aiosqlite.Row,
+    row: OpenChannelRow,
     guild: discord.Guild | None,
     stage: str,
     queue: ChangeQueue,

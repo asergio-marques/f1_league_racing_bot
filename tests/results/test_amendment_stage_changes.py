@@ -83,10 +83,6 @@ from tests.support.review_league import (
     verdict_headings,
 )
 
-_NOT_MOVED = (
-    "#284: results' start-up recovery is not yet moved out of its wiring "
-    "into its services"
-)
 
 #: Only the half-hour lapse's log line says this: the amendment's stages were not approved in time.
 LAPSED = "were not approved in time"
@@ -559,7 +555,6 @@ async def test_a_discarded_stage_past_its_deadline_names_the_undoing_and_one_bef
         assert "undone" not in reply.lower()
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_recovery_leaves_alone_an_amendment_whose_stage_is_in_hand(tmp_path):
     from leaguebot.results.services.round_amendment.amend_end_changes import (
         recover_orphaned_amend_channels,

@@ -33,10 +33,6 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 
-_NOT_MOVED = (
-    "#284: results' start-up recovery is not yet moved out of its wiring "
-    "into its services"
-)
 _NOT_REPORTED = (
     "#284: an amendment results' start-up recovery fails on is logged on the host alone, "
     "not raised for the start-up sweep to report"
@@ -47,7 +43,6 @@ _NOT_REPORTED = (
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_each_orphan_is_reported_separately(tmp_path):
     """Two abandoned amendments are two commands to re-run, and a single summary would leave a
     manager guessing which. Rounds 3 and 4 of Pro were each being amended when the bot stopped:
@@ -176,7 +171,6 @@ async def test_a_refresh_that_cannot_be_armed_does_not_stop_the_start(tmp_path):
     await recover_portrait_refresh_job(bot)
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_MOVED)
 async def test_an_amendment_whose_stage_is_queued_is_not_reverted_on_restart(tmp_path):
     """**A restart with an approval in hand finishes it** (#439). An amendment whose report stage
     was asked for and not yet carried out when the bot stopped is left by recovery: its row and
