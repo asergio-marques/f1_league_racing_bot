@@ -76,6 +76,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
+from leaguebot.core.services.seasons import season_service
 from leaguebot.core.services.seasons.season_service import round_called, set_round_status_on
 from leaguebot.results.services.review import review_posting, review_verdicts
 from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
@@ -111,16 +112,12 @@ def _discarded(result: dict[str, Any] | None) -> bool:
 async def _latest_round(db: aiosqlite.Connection, round_id: int, division_id: int) -> int:
     """The last round the attendance cascade from *round_id* reaches: the division's latest round
     after it that is awaiting appeals or final, or *round_id* where there is none."""
-    row = await (
-        await db.execute(
-            "SELECT id FROM rounds WHERE division_id = ? "
-            "AND status IN ('AWAITING_APPEAL_VERDICTS', 'FINAL') "
-            "AND round_number > (SELECT round_number FROM rounds WHERE id = ?) "
-            "ORDER BY round_number DESC LIMIT 1",
-            (division_id, round_id),
-        )
-    ).fetchone()
-    return round_id if row is None else int(row["id"])
+    later = [
+        r for r in await season_service.rounds_from_on(db, division_id, round_id)
+        if r.id != round_id
+        and r.status in (RoundStatus.AWAITING_APPEAL_VERDICTS.value, RoundStatus.FINAL.value)
+    ]
+    return later[-1].id if later else round_id
 
 
 def _plural(count: int, one: str, many: str) -> str:
@@ -168,18 +165,15 @@ def report_approval_change(
         when = now()
         actor_id = ctx.actor_id or 0
 
-        row = await (
+        facts = await season_service.round_facts_on(db, round_id)
+        channel = await (
             await db.execute(
-                "SELECT r.round_number, d.name AS division_name, rsc.channel_id "
-                "FROM rounds r JOIN divisions d ON d.id = r.division_id "
-                "LEFT JOIN round_submission_channels rsc ON rsc.round_id = r.id "
-                "WHERE r.id = ?",
-                (round_id,),
+                "SELECT channel_id FROM round_submission_channels WHERE round_id = ?", (round_id,)
             )
         ).fetchone()
-        if row is None or row["channel_id"] is None:
+        if facts is None or channel is None or channel["channel_id"] is None:
             raise LookupError(f"round {round_id} has no submission channel to approve in")
-        round_number, division_name = int(row["round_number"]), str(row["division_name"])
+        round_number, division_name = facts.round_number, facts.division_name
 
         before = await _snapshot_staged_drivers_on(db, round_id, division_id, staged)
         records: list[dict[str, Any]] = []
