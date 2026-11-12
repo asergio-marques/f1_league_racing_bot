@@ -1,14 +1,15 @@
-"""`sync_attendance` — what `/attendance sync` does (decided 2026-09-18, issue #239).
+"""`/attendance sync` — the command's gate (decided 2026-09-18, issue #239).
 
 A sanction that did not apply used to be recoverable only by hand, through `/driver sack` or
 `/driver move`, which post no verdict and mark no sheet. The sync is the recovery: every
-finalised round from the one named on is recomputed from its results in one transaction, the
-division's sheet is posted for the latest of them, and the sanctions are enforced against that
-latest round, where the running totals stand.
+finalised round from the one named on is recomputed from its results, the division's sheet is
+posted for the latest of them, and the sanctions are enforced against that latest round, where
+the running totals stand.
 
-**Safe to run twice** is the property the whole recovery rests on, and is pinned through the
-real placement service rather than a double: a driver already sacked holds no seat and so is
-no longer a candidate, which a double that recorded calls would never show.
+The sync is one change on the queue (#285): what it does, and that a second run and a stop part
+way through are harmless, is pinned through the queue in `test_attendance_sync_change.py`. Here
+are the command's refusals, each answered and recorded with no change asked of the queue, and
+the cards of the sanctions announced by the change the sync asks for them.
 """
 from __future__ import annotations
 
@@ -17,19 +18,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.attendance.services import attendance_service
-from leaguebot.attendance.services.attendance_service import SanctionOutcome, sync_attendance
 from tests.attendance.test_attendance_sanctions import (
     DIVISION_ID,
-    FULL_TIME_PROFILE,
     ROUND_ID,
     SEASON_ID,
-    _make_bot,
     _make_db,
-    _asking_for_sheets,
-    _seed_totals,
 )
-from tests.attendance.test_attendance_tracking import _awarded, _make_two_round_db
 
 
 #: The change the sync asks for the verdicts and banner its sanctions owe.
@@ -50,218 +44,6 @@ async def _add_rounds(db_path: str, statuses: dict[int, str]) -> None:
                 (number, DIVISION_ID, number, status),
             )
         await db.commit()
-
-
-@pytest.fixture
-def pipeline():
-    """Stub the recalculation, the sheet and the sanctions, so what reaches each is tested."""
-    with patch.object(
-        attendance_service,
-        "record_attendance_from_results_full_recompute",
-        new=AsyncMock(return_value=None),
-    ) as recompute, patch.object(
-        attendance_service, "distribute_attendance_points", new=AsyncMock(return_value=None)
-    ) as distribute, patch.object(
-        attendance_service, "post_attendance_sheet", new=AsyncMock(return_value=None)
-    ) as sheet, patch.object(
-        attendance_service,
-        "enforce_attendance_sanctions",
-        new=AsyncMock(return_value=SanctionOutcome()),
-    ) as sanctions:
-        yield recompute, distribute, sheet, sanctions
-
-
-async def _sync(bot, db_path: str, from_round_id: int = ROUND_ID) -> SanctionOutcome:
-    return await sync_attendance(
-        bot, MagicMock(), db_path, DIVISION_ID, from_round_id, SEASON_ID,
-        queue=bot.change_queue,
-    )
-
-
-async def test_sync_recalculates_from_the_input_round_forward(tmp_path, pipeline):
-    """Every round from the one named on is recomputed from its results, not merely
-    redistributed — a later round whose recording failed is repaired too."""
-    recompute, distribute, _, _ = pipeline
-    db_path = await _make_db(tmp_path, autosack=20)
-    await _add_rounds(db_path, {2: "FINAL", 3: "AWAITING_APPEAL_VERDICTS"})
-
-    await _sync(_make_bot(db_path), db_path)
-
-    assert [c.args[1] for c in recompute.await_args_list] == [1, 2, 3]
-    assert [c.args[1] for c in distribute.await_args_list] == [1, 2, 3]
-
-
-async def test_sync_leaves_earlier_rounds_and_unfinished_ones_alone(tmp_path, pipeline):
-    recompute, distribute, _, _ = pipeline
-    db_path = await _make_db(tmp_path, autosack=20)
-    await _add_rounds(db_path, {2: "FINAL", 3: "FINAL", 4: "NOT_RUN"})
-
-    await _sync(_make_bot(db_path), db_path, from_round_id=2)
-
-    assert [c.args[1] for c in recompute.await_args_list] == [2, 3]
-    assert [c.args[1] for c in distribute.await_args_list] == [2, 3]
-
-
-async def test_sync_posts_the_sheet_and_enforces_against_the_latest_round(
-    tmp_path, pipeline
-):
-    """The running totals are carried forward, so the latest round is where they stand —
-    and the channel holds one sheet, which is that round's."""
-    _, _, _, sanctions = pipeline
-    db_path = await _make_db(tmp_path, autosack=20)
-    await _add_rounds(db_path, {2: "FINAL", 3: "FINAL"})
-    bot = _make_bot(db_path)
-
-    with _asking_for_sheets() as asked:
-        await _sync(bot, db_path)
-
-    assert asked == [(DIVISION_ID, 3, set())]
-    assert sanctions.await_args.args[3] == 3
-    assert sanctions.await_args.kwargs["queue"] is bot.change_queue
-
-
-async def test_sync_returns_what_the_sanctions_did(tmp_path, pipeline):
-    _, _, _, sanctions = pipeline
-    outcome = SanctionOutcome(failed=[("<@5>", "autosack", "no")])
-    sanctions.return_value = outcome
-    db_path = await _make_db(tmp_path, autosack=20)
-    await _add_rounds(db_path, {})
-
-    assert await _sync(_make_bot(db_path), db_path) is outcome
-
-
-async def test_a_second_sync_applies_nothing_twice(tmp_path):
-    """The recovery is to run it again, so running it again must be harmless: the driver
-    sacked by the first run is not attempted by the second. The first asks the change queue,
-    once, for the sack's announcement, and the second asks for none."""
-    from leaguebot.core.services.drivers.placement_service import PlacementService
-
-    db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
-    await _add_rounds(db_path, {})
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE driver_profiles SET current_state = 'ASSIGNED' WHERE id = ?",
-            (FULL_TIME_PROFILE,),
-        )
-        await db.commit()
-    await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
-    bot = _make_bot(db_path)
-    placement = PlacementService(db_path)
-    bot.lineup_poster._refresh_lineup_post = AsyncMock(return_value=None)
-    bot.placement_service = placement
-
-    with patch.object(
-        attendance_service,
-        "record_attendance_from_results_full_recompute",
-        new=AsyncMock(return_value=None),
-    ), patch.object(
-        attendance_service, "distribute_attendance_points", new=AsyncMock(return_value=None)
-    ), patch.object(
-        attendance_service, "post_attendance_sheet", new=AsyncMock(return_value=None)
-    ), _asking_for_sheets():
-        first = await _sync(bot, db_path)
-        second = await _sync(bot, db_path)
-
-    assert [sanction for _, sanction in first.applied] == ["autosack"]
-    assert second.applied == [] and second.complete
-    asked = [call for call in bot.change_queue.ask.await_args_list
-             if call.args[0] == ANNOUNCE_KIND]
-    assert len(asked) == 1, "the second sync asks for no announcement"
-
-
-async def test_sync_still_applies_a_sanction_whose_role_change_discord_refuses(tmp_path, caplog):
-    """`/attendance sync` keeps today's role behaviour (#439 slice 8, Part C): a driver over the
-    autosack threshold, placed in Alpha, is sacked, Discord refuses to take any of their roles (Missing
-    Permissions), the refusal is logged on the host, and the sack is applied all the same."""
-    import logging
-
-    import discord
-
-    from leaguebot.core.services.drivers.placement_service import PlacementService
-    from leaguebot.core.services.drivers.team_role_service import TeamRoleService
-
-    db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
-    await _add_rounds(db_path, {})
-    async with get_connection(db_path) as db:
-        # A real driver, not a test one, placed in Alpha: a sack takes their roles back.
-        await db.execute(
-            "UPDATE driver_profiles SET current_state = 'ASSIGNED', is_test_driver = 0 "
-            "WHERE id = ?",
-            (FULL_TIME_PROFILE,),
-        )
-        await db.execute(
-            "INSERT INTO driver_season_assignments (driver_profile_id, season_id, division_id, "
-            "team_seat_id, committed) VALUES (?, ?, ?, 20, 1)",
-            (FULL_TIME_PROFILE, SEASON_ID, DIVISION_ID),
-        )
-        await db.commit()
-    await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
-    bot = _make_bot(db_path)
-    placement = PlacementService(db_path, roles=TeamRoleService(db_path))
-    bot.lineup_poster._refresh_lineup_post = AsyncMock(return_value=None)
-    bot.placement_service = placement
-    guild = MagicMock()
-    guild.get_role = MagicMock(side_effect=lambda role_id: MagicMock(id=role_id))
-    member = MagicMock()
-    member.guild = guild
-    member.roles = MagicMock()
-    member.roles.__contains__ = MagicMock(return_value=True)  # holds every role asked of it
-    member.remove_roles = AsyncMock(
-        side_effect=discord.Forbidden(MagicMock(status=403), "Missing Permissions")
-    )
-    guild.get_member = MagicMock(return_value=member)
-    guild.fetch_member = AsyncMock(return_value=member)
-
-    with patch.object(
-        attendance_service,
-        "record_attendance_from_results_full_recompute",
-        new=AsyncMock(return_value=None),
-    ), patch.object(
-        attendance_service, "distribute_attendance_points", new=AsyncMock(return_value=None)
-    ), patch.object(
-        attendance_service, "post_attendance_sheet", new=AsyncMock(return_value=None)
-    ), _asking_for_sheets(), caplog.at_level(logging.WARNING):
-        outcome = await sync_attendance(
-            bot, guild, db_path, DIVISION_ID, ROUND_ID, SEASON_ID, queue=bot.change_queue,
-        )
-
-    assert [sanction for _, sanction in outcome.applied] == ["autosack"]
-    member.remove_roles.assert_awaited()
-    assert "failed to remove role" in caplog.text
-    async with get_connection(db_path) as db:
-        row = await (await db.execute(
-            "SELECT COUNT(*) AS n FROM team_seats WHERE driver_profile_id = ?",
-            (FULL_TIME_PROFILE,),
-        )).fetchone()
-    assert row["n"] == 0, "the sack was not saved"
-
-
-async def test_sync_is_one_transaction(tmp_path, monkeypatch):
-    """#187's rule holds for the sync as for an amendment: a failure part-way through the
-    rounds writes nothing, rather than leaving the division scored to two rules."""
-    db_file, division_id, round_ids = await _make_two_round_db(tmp_path)
-    real = attendance_service.record_attendance_from_results_full_recompute
-    calls: list[int] = []
-
-    async def failing_on_the_second(db_path, round_id, division_id, *, db=None):
-        calls.append(round_id)
-        if len(calls) > 1:
-            raise RuntimeError("the recompute failed part-way through")
-        return await real(db_path, round_id, division_id, db=db)
-
-    monkeypatch.setattr(
-        attendance_service, "record_attendance_from_results_full_recompute",
-        failing_on_the_second,
-    )
-    monkeypatch.setattr(attendance_service, "post_attendance_sheet", AsyncMock())
-    monkeypatch.setattr(attendance_service, "enforce_attendance_sanctions", AsyncMock())
-
-    with pytest.raises(RuntimeError):
-        await sync_attendance(None, None, db_file, division_id, round_ids[0], 1,
-                              queue=MagicMock())
-
-    assert calls == round_ids
-    assert await _awarded(db_file, round_ids[0]) is None
 
 
 # ---------------------------------------------------------------------------
@@ -286,6 +68,8 @@ def _cog(db_path: str, *, stage=SeasonStage.ONGOING) -> AttendanceCog:
         return_value=[SimpleNamespace(id=DIVISION_ID, name="Division 1")]
     )
     bot.output_router.post_log = AsyncMock()
+    # The queue the sync is asked of, recording what it is asked.
+    bot.change_queue.ask = AsyncMock(return_value=1)
     return AttendanceCog(bot)
 
 
@@ -305,18 +89,16 @@ def _interaction() -> MagicMock:
     return interaction
 
 
-async def _invoke(cog, interaction, *, division="division 1", round=1,
-                  faults=(), outcome=None):
+async def _invoke(cog, interaction, *, division="division 1", round=1, faults=()):
+    """Run the command; give the queue's `ask`, which records any change the sync asked for."""
     interaction.command = AttendanceCog.sync
     interaction.client = cog.bot
     with patch(
-        "leaguebot.attendance.cogs.attendance_cog.recalculation_faults", new=AsyncMock(return_value=list(faults))
-    ), patch(
-        "leaguebot.attendance.cogs.attendance_cog.sync_attendance",
-        new=AsyncMock(return_value=outcome or SanctionOutcome()),
-    ) as synced:
+        "leaguebot.attendance.cogs.attendance_cog.recalculation_faults",
+        new=AsyncMock(return_value=list(faults)),
+    ):
         await undecorate(AttendanceCog.sync)(cog, interaction, division, round)
-    return synced
+    return cog.bot.change_queue.ask
 
 
 def _replied(interaction) -> str:
@@ -341,14 +123,14 @@ async def _amendment_open(db_path) -> None:
 async def test_it_waits_while_a_round_of_the_division_is_amended(tmp_path):
     """#345, decided 2026-09-21. The recalculation reads the amendment's corrections before
     they are approved; the sheet it posts and the sanctions it applies would stand even if the
-    amendment were then cancelled."""
+    amendment were then cancelled. No change is asked of the queue."""
     db_path = await _make_db(tmp_path, autosack=20)
     await _amendment_open(db_path)
     interaction = _interaction()
 
-    synced = await _invoke(_cog(db_path), interaction)
+    asked = await _invoke(_cog(db_path), interaction)
 
-    synced.assert_not_awaited()
+    asked.assert_not_awaited()
     replied = _replied(interaction)
     assert "of **Division 1** is being amended in <#8200>" in replied
     assert "Run this again then." in replied
@@ -359,48 +141,14 @@ async def test_a_channel_fault_refuses_it_with_nothing_changed(tmp_path):
     await _add_rounds(db_path, {})
     interaction = _interaction()
 
-    synced = await _invoke(
+    asked = await _invoke(
         _cog(db_path), interaction, faults=["Division 1: the attendance channel is gone"]
     )
 
-    synced.assert_not_awaited()
+    asked.assert_not_awaited()
     replied = _replied(interaction)
     assert "Nothing was changed" in replied
     assert "the attendance channel is gone" in replied
-
-
-async def test_it_syncs_from_the_named_round_and_lists_what_applied_and_failed(tmp_path):
-    db_path = await _make_db(tmp_path, autosack=20)
-    await _add_rounds(db_path, {2: "FINAL"})
-    interaction = _interaction()
-    cog = _cog(db_path)
-    outcome = SanctionOutcome(
-        applied=[("<@4> (Four)", "autosack")],
-        failed=[("<@5> (Five)", "autoreserve", "the division has no Reserve team")],
-    )
-
-    synced = await _invoke(cog, interaction, round=2, outcome=outcome)
-
-    assert synced.await_args.args[3:] == (DIVISION_ID, 2, SEASON_ID)
-    assert synced.await_args.kwargs["queue"] is cog.bot.change_queue
-    replied = _replied(interaction)
-    assert "• <@4> (Four) — autosack" in replied
-    assert "Still not applied" in replied
-    assert "• <@5> (Five) — autoreserve: the division has no Reserve team" in replied
-    logged = cog.bot.output_router.post_log.await_args.args[0]
-    assert "/attendance sync | Incomplete" in logged
-
-
-async def test_a_clean_sync_with_nothing_owed_says_so(tmp_path):
-    db_path = await _make_db(tmp_path, autosack=20)
-    await _add_rounds(db_path, {})
-    interaction = _interaction()
-    cog = _cog(db_path)
-
-    await _invoke(cog, interaction)
-
-    assert "No sanction was owed." in _replied(interaction)
-    assert "/attendance sync | Success" in cog.bot.output_router.post_log.await_args.args[0]
 
 
 # ---------------------------------------------------------------------------
@@ -476,15 +224,15 @@ async def _refused_for_a_channel_fault(tmp_path):
     ],
 )
 async def test_every_refusal_of_the_sync_is_recorded(tmp_path, arrange, reason, via):
-    """A5: each refusal is answered once, by the reply *via* names, carrying its reason, and
-    writes one "⛔ `/attendance sync` refused" line, giving the reason; a channel fault's line
-    names the channel at fault."""
+    """A5: each refusal asks no change of the queue, is answered once, by the reply *via* names,
+    carrying its reason, and writes one "⛔ `/attendance sync` refused" line, giving the reason;
+    a channel fault's line names the channel at fault."""
     cog, kwargs = await arrange(tmp_path)
     interaction = _interaction()
 
-    synced = await _invoke(cog, interaction, **kwargs)
+    asked = await _invoke(cog, interaction, **kwargs)
 
-    synced.assert_not_awaited()
+    asked.assert_not_awaited()
     replies = (
         interaction.response.send_message.await_args_list
         + interaction.followup.send.await_args_list
@@ -505,58 +253,6 @@ async def test_every_refusal_of_the_sync_is_recorded(tmp_path, arrange, reason, 
 # ---------------------------------------------------------------------------
 # The sync's announcements follow on the change queue (#439, slice 6b, C37)
 # ---------------------------------------------------------------------------
-
-async def test_a_sync_asks_the_queue_to_announce_its_sanctions(tmp_path):
-    """Division 1's full-time driver has 25 attendance points against an autosack threshold of
-    20, and round 1 is final. A manager syncs from round 1: the driver is sacked as today, but
-    no verdict is posted by the sync itself; it asks the change queue, once, for the
-    announcement of the round's sanctions."""
-    db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
-    await _add_rounds(db_path, {})
-    async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE driver_profiles SET current_state = 'ASSIGNED' WHERE id = ?",
-            (FULL_TIME_PROFILE,),
-        )
-        await db.commit()
-    await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
-    bot = _make_bot(db_path)
-
-    with patch.object(
-        attendance_service,
-        "record_attendance_from_results_full_recompute",
-        new=AsyncMock(return_value=None),
-    ), patch.object(
-        attendance_service, "distribute_attendance_points", new=AsyncMock(return_value=None)
-    ), _asking_for_sheets():
-        outcome = await _sync(bot, db_path)
-
-    assert [sanction for _, sanction in outcome.applied] == ["autosack"]
-    asked = [call for call in bot.change_queue.ask.await_args_list
-             if call.args[0] == ANNOUNCE_KIND]
-    assert len(asked) == 1
-    assert asked[0].args[1]["round_id"] == ROUND_ID
-
-
-async def test_the_sync_s_reply_lists_the_sanctions_applied_and_says_the_announcements_follow(
-    tmp_path,
-):
-    """A manager syncs Division 1 from round 1, and the sync sacks <@4> (Four). The reply lists
-    the sanction applied and says its announcement follows on the change queue, with no line
-    saying a sanction was applied but not announced."""
-    db_path = await _make_db(tmp_path, autosack=20)
-    await _add_rounds(db_path, {})
-    interaction = _interaction()
-    cog = _cog(db_path)
-    outcome = SanctionOutcome(applied=[("<@4> (Four)", "autosack")])
-
-    await _invoke(cog, interaction, outcome=outcome)
-
-    replied = _replied(interaction)
-    assert "• <@4> (Four) — autosack" in replied
-    assert "queue" in replied
-    assert "not announced" not in replied
-
 
 # The announcement's own jobs, run by a real queue. The league is `review_league`'s: Pro's
 # round 3 at Silverstone, its verdicts channel 704 with no heading standing, attendance on, and
