@@ -156,19 +156,16 @@ def appeals_approval_change(
         when = now()
         actor_id = ctx.actor_id or 0
 
-        row = await (
+        facts = await season_service.round_facts_on(db, round_id)
+        channel_row = await (
             await db.execute(
-                "SELECT r.round_number, d.name AS division_name, rsc.channel_id "
-                "FROM rounds r JOIN divisions d ON d.id = r.division_id "
-                "LEFT JOIN round_submission_channels rsc ON rsc.round_id = r.id "
-                "WHERE r.id = ?",
-                (round_id,),
+                "SELECT channel_id FROM round_submission_channels WHERE round_id = ?", (round_id,)
             )
         ).fetchone()
-        if row is None or row["channel_id"] is None:
+        if facts is None or channel_row is None or channel_row["channel_id"] is None:
             raise LookupError(f"round {round_id} has no submission channel to approve in")
-        round_number, division_name = int(row["round_number"]), str(row["division_name"])
-        channel_id = int(row["channel_id"])
+        round_number, division_name = facts.round_number, facts.division_name
+        channel_id = int(channel_row["channel_id"])
 
         before = await _snapshot_staged_drivers_on(db, round_id, division_id, staged)
         # The corrections, the points they move (raising where a session cannot be scored: the
