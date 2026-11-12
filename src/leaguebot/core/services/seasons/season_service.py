@@ -1520,6 +1520,7 @@ class RoundFacts:
     division_id: int
     division_name: str
     division_tier: int
+    division_status: DivisionStatus
     season_id: int
     season_number: int
     season_status: SeasonStatus
@@ -1537,7 +1538,7 @@ async def round_facts_on(db: aiosqlite.Connection, round_id: int) -> RoundFacts 
     """
     cursor = await db.execute(
         "SELECT r.id, r.round_number, r.status, r.format, r.track_name, r.scheduled_at, "
-        "r.not_held, d.id AS division_id, d.name AS division_name, d.tier AS division_tier, "
+        "r.not_held, d.id AS division_id, d.name AS division_name, d.tier AS division_tier, d.status AS division_status, "
         "s.id AS season_id, s.season_number, s.status AS season_status "
         "FROM rounds r JOIN divisions d ON d.id = r.division_id "
         "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?",
@@ -1552,7 +1553,7 @@ async def round_facts_on(db: aiosqlite.Connection, round_id: int) -> RoundFacts 
         track_name=row["track_name"], scheduled_at=read_scheduled_at(row["scheduled_at"]),
         not_held=bool(row["not_held"]), division_id=int(row["division_id"]),
         division_name=str(row["division_name"]), division_tier=int(row["division_tier"]),
-        season_id=int(row["season_id"]), season_number=int(row["season_number"]),
+        division_status=DivisionStatus(row["division_status"]), season_id=int(row["season_id"]), season_number=int(row["season_number"]),
         season_status=SeasonStatus(row["season_status"]),
     )
 

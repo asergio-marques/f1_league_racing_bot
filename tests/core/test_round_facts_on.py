@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.models.season import SeasonStage, SeasonStatus
 from leaguebot.core.services.seasons.season_service import (
@@ -51,7 +52,7 @@ async def test_the_round_is_read_with_its_division_and_season(tmp_path):
         round_id=round_id, round_number=5, status=RoundStatus.CANCELLED,
         format=RoundFormat.SPRINT, track_name="Monza",
         scheduled_at=datetime(2026, 2, 1, 18, tzinfo=timezone.utc), not_held=True,
-        division_id=4, division_name="Pro", division_tier=2, season_id=7, season_number=3,
+        division_id=4, division_name="Pro", division_tier=2, division_status=DivisionStatus.SETUP, season_id=7, season_number=3,
         season_status=SeasonStatus.ACTIVE,
     )
 
@@ -69,10 +70,11 @@ async def test_what_the_handed_connection_has_written_is_read_back(tmp_path):
     async with get_connection(path) as db:
         await db.execute("UPDATE rounds SET status = 'FINAL', not_held = 0 WHERE id = ?", (round_id,))
         await db.execute("UPDATE seasons SET status = 'COMPLETED' WHERE id = 7")
+        await db.execute("UPDATE divisions SET status = 'CANCELLED' WHERE id = 4")
         facts = await round_facts_on(db, round_id)
     assert facts is not None
-    assert (facts.status, facts.not_held, facts.season_status) == (
-        RoundStatus.FINAL, False, SeasonStatus.COMPLETED,
+    assert (facts.status, facts.not_held, facts.season_status, facts.division_status) == (
+        RoundStatus.FINAL, False, SeasonStatus.COMPLETED, DivisionStatus.CANCELLED,
     )
 
 
