@@ -744,13 +744,7 @@ class SeasonService:
     ) -> list[Round]:
         """`get_division_rounds` on *db*, a connection the caller holds: what a save has written
         there is read back with the rest."""
-        cursor = await db.execute(
-            "SELECT id, division_id, round_number, format, track_name, scheduled_at, "
-            "status FROM rounds "
-            "WHERE division_id = ? ORDER BY round_number",
-            (division_id,),
-        )
-        return [_row_to_round(r) for r in await cursor.fetchall()]
+        return await division_rounds_in_order_on(db, division_id)
 
     async def add_round_on(
         self,
@@ -1385,6 +1379,23 @@ async def division_rounds_on(db: aiosqlite.Connection, division_id: int) -> list
         (division_id,),
     )
     return [int(row["id"]) for row in await cursor.fetchall()]
+
+
+async def division_rounds_in_order_on(db: aiosqlite.Connection, division_id: int) -> list[Round]:
+    """*division_id*'s rounds in round order, with their status, read on *db*; empty for none.
+
+    `SeasonService.get_division_rounds_on` as a function, for a module reading core's tables only
+    through core's services (architecture.md, "The database") that has the connection of its own
+    save and no service: what it asks of the rounds (which have results, which are cancelled) it
+    reads off the rounds this returns, rather than join `rounds` in a query of its own. It writes
+    nothing and commits nothing.
+    """
+    cursor = await db.execute(
+        "SELECT id, division_id, round_number, format, track_name, scheduled_at, status "
+        "FROM rounds WHERE division_id = ? ORDER BY round_number",
+        (division_id,),
+    )
+    return [_row_to_round(r) for r in await cursor.fetchall()]
 
 
 async def rounds_from_on(

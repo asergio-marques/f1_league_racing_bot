@@ -14,6 +14,7 @@ from leaguebot.core.models.season import SeasonStage, SeasonStatus
 from leaguebot.core.services.seasons.season_service import (
     RoundFacts,
     division_on,
+    division_rounds_in_order_on,
     final_round_ids_among_on,
     live_season_on,
     round_facts_on,
@@ -164,3 +165,18 @@ async def test_no_live_season_is_none(tmp_path):
     async with get_connection(path) as db:
         await db.execute("UPDATE seasons SET status = 'COMPLETED' WHERE id = 7")
         assert await live_season_on(db) is None
+
+
+async def test_the_division_rounds_are_read_in_round_order_with_their_status(tmp_path):
+    path = str(tmp_path / "league.db")
+    await _seed(path)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO rounds (division_id, round_number, format, scheduled_at, status) "
+            "VALUES (4, 2, 'NORMAL', '2026-01-01T18:00:00+00:00', 'FINAL')"
+        )
+        rounds = await division_rounds_in_order_on(db, 4)
+        assert [(r.round_number, r.status) for r in rounds] == [
+            (2, RoundStatus.FINAL), (5, RoundStatus.CANCELLED),
+        ]
+        assert await division_rounds_in_order_on(db, 99) == []
