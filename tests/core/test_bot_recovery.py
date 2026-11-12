@@ -33,10 +33,6 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 
-_NOT_REPORTED = (
-    "#284: an amendment results' start-up recovery fails on is logged on the host alone, "
-    "not raised for the start-up sweep to report"
-)
 
 # ---------------------------------------------------------------------------
 # The sweep
@@ -76,7 +72,6 @@ async def test_each_orphan_is_reported_separately(tmp_path):
     assert len(lines) == 2
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_REPORTED)
 async def test_an_amendment_that_cannot_be_recovered_is_reported_and_the_others_still_are(
     tmp_path,
 ):

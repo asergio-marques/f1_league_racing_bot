@@ -79,6 +79,7 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.log_lines import abandoned_line, name_of_member
+from leaguebot.results.models.recovery_failed import RecoveryFailed
 from leaguebot.results.services.round_amendment import amendment_writes
 from leaguebot.results.services.round_amendment.amend_changes import COMMAND, LAPSE_KIND, WAIT, lapse_key
 from leaguebot.results.services.round_amendment.amend_turn_change import (
@@ -323,17 +324,23 @@ async def recover_orphaned_amend_channels(bot: LeagueBot) -> None:
     An amendment whose stage is in hand on the queue, stopped included, is finished by the queue
     ("Leave it while stuck"), and one whose lapse is already in hand from an earlier restart is
     asked for once: the lapse's check and the queue's repeat rule leave both alone. A failure to
-    ask for one amendment is logged and does not stop the rest.
+    ask for one amendment stops none of the others: once every amendment has been asked for, a
+    failure for any is raised as one `RecoveryFailed` naming each amendment's round and its error,
+    which the start-up sweep reports to the log channel in one line.
     """
     async with get_connection(bot.db_path) as db:
-        cursor = await db.execute("SELECT id FROM round_amend_channels ORDER BY id")
-        orphans = [int(row["id"]) for row in await cursor.fetchall()]
+        cursor = await db.execute("SELECT id, round_id FROM round_amend_channels ORDER BY id")
+        orphans = [(int(row["id"]), int(row["round_id"])) for row in await cursor.fetchall()]
 
-    for amend_id in orphans:
+    failures: dict[int, BaseException] = {}
+    for amend_id, round_id in orphans:
         try:
             await ask_lapse(bot.change_queue, bot.db_path, amend_id, cause=RESTART)
-        except Exception:
+        except Exception as error:
             log.exception("Recovery: could not ask the lapse of amendment %s", amend_id)
+            failures[round_id] = error
+    if failures:
+        raise RecoveryFailed(failures)
 
 
 def amend_lapse_timer(

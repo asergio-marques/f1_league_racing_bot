@@ -17,6 +17,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.seasons.season_service import round_in_division
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
+from leaguebot.results.models.recovery_failed import RecoveryFailed
 from leaguebot.results.services.submission.review_recovery import recover_review
 from leaguebot.results.services.submission.submission_changes import ask_submission_restart
 
@@ -41,6 +42,10 @@ async def recover_orphaned_submission_channels(bot: LeagueBot) -> None:
     change on the queue is carrying out to it, and otherwise asks the queue to put the review
     back. A resubmission a restart cut short is ended by the review's opening, its collection
     being lost though the round's results are not.
+
+    A round that cannot be recovered stops none of the others. Once every round has been gone
+    through, a failure for any is raised as one `RecoveryFailed` naming each round and its error,
+    which the start-up sweep reports to the log channel in one line.
     """
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute(
@@ -66,25 +71,29 @@ async def recover_orphaned_submission_channels(bot: LeagueBot) -> None:
                 "round_number": found.round_number, "division_name": found.division_name,
             })
 
+    failures: dict[int, BaseException] = {}
     for row in orphans:
         round_id: int = row["round_id"]
-
-        guild = await league_guild(bot)
-
-        # A round that is a review is put back, or left to the change carrying it out, by the
-        # results service. What is left is a first paste cut short, which is no review.
-        if await recover_review(
-            bot, row, guild, queue=bot.change_queue,
-        ):
-            continue
-
-        # A first paste cut short is cleared, its channel deleted and its submission opened
-        # afresh by the change queue's `results.submission.restart`, before the queue starts. A
-        # round with a change of its submission in hand is left to it above.
-        log.info("Recovery: asking the queue to clear and reopen round %s's submission", round_id)
         try:
+            guild = await league_guild(bot)
+
+            # A round that is a review is put back, or left to the change carrying it out, by the
+            # results service. What is left is a first paste cut short, which is no review.
+            if await recover_review(
+                bot, row, guild, queue=bot.change_queue,
+            ):
+                continue
+
+            # A first paste cut short is cleared, its channel deleted and its submission opened
+            # afresh by the change queue's `results.submission.restart`, before the queue starts.
+            # A round with a change of its submission in hand is left to it above.
+            log.info("Recovery: asking the queue to clear and reopen round %s's submission",
+                     round_id)
             await ask_submission_restart(
                 bot.change_queue, bot.db_path, round_id, int(row["channel_id"]),
             )
-        except Exception:
-            log.exception("Recovery: could not ask for round %s's submission restart", round_id)
+        except Exception as error:
+            log.exception("Recovery: could not recover round %s's submission channel", round_id)
+            failures[round_id] = error
+    if failures:
+        raise RecoveryFailed(failures)

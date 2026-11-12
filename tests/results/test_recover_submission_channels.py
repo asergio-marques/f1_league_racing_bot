@@ -62,10 +62,6 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from tests.support.start_up_sweep import round_failures, run_results_start_up_step
 
-_NOT_REPORTED = (
-    "#284: a round results' start-up recovery fails on is logged on the host alone, "
-    "not raised for the start-up sweep to report"
-)
 
 SERVER_ID = 11708
 SEASON_ID = 1
@@ -469,7 +465,6 @@ async def test_a_review_whose_channel_is_missing_is_left_intact(tmp_path):
     assert await _rows(db_path, "session_results") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_REPORTED)
 async def test_a_failing_re_prompt_does_not_stop_the_start_up(tmp_path):
     """This runs inside start-up: one unrecoverable round must not stop the rest being
     recovered, nor stop the bot finishing its start-up at all, and the league is told. Round 21,
@@ -487,7 +482,6 @@ async def test_a_failing_re_prompt_does_not_stop_the_start_up(tmp_path):
     assert round_failures(raised.value) == {ROUND_ID: refused}
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_REPORTED)
 async def test_a_round_that_cannot_be_recovered_is_reported_and_the_others_still_are(tmp_path):
     """Rounds 3 (id 21) and 4 (id 22) of Pro were each mid-submission when the bot stopped. At the
     restart the queue refuses round 21's request for its submission restart. Run through the
@@ -567,7 +561,6 @@ async def test_an_appeals_round_keeps_its_results(tmp_path):
     assert await _rows(db_path, "session_results") == 1
 
 
-@pytest.mark.xfail(strict=True, reason=_NOT_REPORTED)
 async def test_a_failing_appeals_re_post_does_not_stop_the_start_up(tmp_path):
     """As a failing re-prompt: round 21, awaiting appeals, cannot be put back because the queue
     refuses the request, and the recovery raises one error of results' own naming round 21 and the

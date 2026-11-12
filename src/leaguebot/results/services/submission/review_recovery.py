@@ -41,7 +41,9 @@ nothing, where the channel is gone).
 The "penalties already applied" warning is gone with the column it read: the queue carries what was
 staged, so a penalty applied and unannounced cannot happen.
 
-Nothing here raises: this runs inside start-up, and one round unrecoverable must not stop the rest.
+A failure to put a review back is raised to the caller, `submission_recovery`, which records it
+against the round and goes on with the rest (it runs inside start-up, and one round unrecoverable
+must not stop the others).
 """
 
 from __future__ import annotations
@@ -111,7 +113,7 @@ async def recover_review(
     queue: ChangeQueue,
 ) -> bool:
     """Put round ``row["round_id"]``'s review back, or leave it to the queue; give ``False`` where
-    the round is no review but a first paste cut short.
+    the round is no review but a first paste cut short. A failure is raised, not swallowed.
 
     *queue* is the change queue the review is put back through, handed by whoever calls the
     recovery and never looked up on the bot (architecture.md, "Services stay attached to the bot,
@@ -123,18 +125,15 @@ async def recover_review(
     for the next restart to find.
     """
     round_id = int(row["round_id"])
-    try:
-        if await round_in_hand(bot.db_path, round_id) or await _submission_in_hand(
-            bot.db_path, round_id, int(row["channel_id"])
-        ):
-            log.info("Recovery: round %s's review is in hand on the queue, left to it", round_id)
-            return True
-        stage = await _stage(bot.db_path, row)
-        if stage is None:
-            return False
-        await _put_back(bot, row, guild, stage, queue)
-    except Exception:
-        log.exception("Recovery: failed to restore the review of round %s", round_id)
+    if await round_in_hand(bot.db_path, round_id) or await _submission_in_hand(
+        bot.db_path, round_id, int(row["channel_id"])
+    ):
+        log.info("Recovery: round %s's review is in hand on the queue, left to it", round_id)
+        return True
+    stage = await _stage(bot.db_path, row)
+    if stage is None:
+        return False
+    await _put_back(bot, row, guild, stage, queue)
     return True
 
 

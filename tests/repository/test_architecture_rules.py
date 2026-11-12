@@ -3572,7 +3572,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/review/review_verdicts.py", "_sync_hint"): (1, PASS["results"]),
     ("results/services/review/verdict_announcement_service.py", "_graphic_name"): (1, PASS["results"]),
     ("results/services/review/verdict_announcement_service.py", "_send_verdict"): (1, PASS["results"]),
-    ("results/services/submission/review_recovery.py", "recover_review"): (1, PASS["results"]),
     ("signup/cogs/signup_cog.py", "ConfirmCloseView.on_timeout"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.on_member_remove"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, PASS["signup"]),
