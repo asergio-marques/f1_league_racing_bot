@@ -76,8 +76,10 @@ def _interaction(member: MagicMock) -> MagicMock:
 async def _press_config_select(member, config):
     from leaguebot.results.services.submission.result_submission_service import _ConfigSelectView
 
-    view = _ConfigSelectView(["Standard", "Sprint"], config)
     interaction = _interaction(member)
+    view = _ConfigSelectView(
+        ["Standard", "Sprint"], config, router=interaction.client.output_router
+    )
     await view.children[0].callback(interaction)
     return view, interaction
 
@@ -112,8 +114,10 @@ async def _choose_as(member, config):
     from leaguebot.results.services.submission.result_submission_service import _ConfigSelectView
 
     member.display_name = "Alex"
-    view = _ConfigSelectView(["Standard", "Sprint"], config, session=_SESSION)
     interaction = _interaction(member)
+    view = _ConfigSelectView(
+        ["Standard", "Sprint"], config, session=_SESSION, router=interaction.client.output_router
+    )
     await view.children[0].callback(interaction)
     return view, [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
 

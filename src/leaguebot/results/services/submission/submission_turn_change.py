@@ -244,6 +244,7 @@ def turn_steps(
     queue: ChangeQueue,
     server_config: ServerConfig,
     teams: TeamService,
+    router: OutputRouter,
     *,
     now: Callable[[], datetime],
     resubmission: bool = False,
@@ -660,7 +661,7 @@ def turn_steps(
                 RESUBMISSION_CONFIG_KIND if resubmission else CONFIG_KIND,
                 dict(payload["settle"]),
             ),
-            text=str(payload["text"]),
+            text=str(payload["text"]), router=router,
         )
 
     async def describe_judge(_ctx: StepContext) -> str:
@@ -741,6 +742,7 @@ def submission_turn_change(
     queue: ChangeQueue,
     server_config: ServerConfig,
     teams: TeamService,
+    router: OutputRouter,
     now: Callable[[], datetime],
     resubmission: bool = False,
 ) -> ChangeType:
@@ -762,7 +764,7 @@ def submission_turn_change(
     return ChangeType(
         kind=kind,
         opening=(PlannedStep(JUDGE),),
-        steps=turn_steps(queue, server_config, teams, now=now, resubmission=resubmission),
+        steps=turn_steps(queue, server_config, teams, router, now=now, resubmission=resubmission),
         check=_checking(resubmission, turn=True),
         key=lambda payload: f"{kind}:{payload['message_id']}",
         doing=lambda _payload: (
@@ -781,6 +783,7 @@ def submission_config_change(
     queue: ChangeQueue,
     server_config: ServerConfig,
     teams: TeamService,
+    router: OutputRouter,
     now: Callable[[], datetime],
     resubmission: bool = False,
 ) -> ChangeType:
@@ -820,7 +823,7 @@ def submission_config_change(
         kind=kind,
         opening=(),
         plan=plan,
-        steps=turn_steps(queue, server_config, teams, now=now, resubmission=resubmission),
+        steps=turn_steps(queue, server_config, teams, router, now=now, resubmission=resubmission),
         check=_checking(resubmission),
         key=lambda payload: f"{kind}:{payload['channel_id']}:{payload['session_type']}",
         doing=lambda payload: (

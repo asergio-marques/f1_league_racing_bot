@@ -1082,5 +1082,5 @@ async def test_a_picker_asking_the_queue_is_built_with_the_text_it_is_put_back_t
     so it cannot be built without one."""
     with pytest.raises(TypeError):
         result_submission_service._ConfigSelectView(
-            [HEAVY, STANDARD], None, ask=(MagicMock(), CONFIG_KIND, {}),
+            [HEAVY, STANDARD], None, ask=(MagicMock(), CONFIG_KIND, {}), router=MagicMock(),
         )

@@ -191,6 +191,7 @@ def turn_steps(
     queue: ChangeQueue,
     server_config: ServerConfig,
     teams: TeamService,
+    router: OutputRouter,
     *,
     now: Callable[[], datetime],
     arm_once: Callable[[str, int | str, datetime], None],
@@ -407,7 +408,7 @@ def turn_steps(
             list(payload["config_names"]), await server_config(),
             session=str(payload["session"]),
             ask=(queue, CONFIG_KIND, dict(payload["draft"])),
-            text=str(payload["text"]),
+            text=str(payload["text"]), router=router,
         )
 
     async def describe_judge(_ctx: StepContext) -> str:
@@ -483,6 +484,7 @@ def amend_turn_change(
     queue: ChangeQueue,
     server_config: ServerConfig,
     teams: TeamService,
+    router: OutputRouter,
     now: Callable[[], datetime],
     arm_once: Callable[[str, int | str, datetime], None],
 ) -> ChangeType:
@@ -498,7 +500,7 @@ def amend_turn_change(
     return ChangeType(
         kind=KIND,
         opening=(PlannedStep(JUDGE),),
-        steps=turn_steps(queue, server_config, teams, now=now, arm_once=arm_once),
+        steps=turn_steps(queue, server_config, teams, router, now=now, arm_once=arm_once),
         check=_amendment_standing,
         key=lambda payload: f"{KIND}:{payload['message_id']}",
         doing=lambda _payload: "Taking an amended results paste",
@@ -515,6 +517,7 @@ def amend_config_change(
     queue: ChangeQueue,
     server_config: ServerConfig,
     teams: TeamService,
+    router: OutputRouter,
     now: Callable[[], datetime],
     arm_once: Callable[[str, int | str, datetime], None],
 ) -> ChangeType:
@@ -547,7 +550,7 @@ def amend_config_change(
         kind=CONFIG_KIND,
         opening=(),
         plan=plan,
-        steps=turn_steps(queue, server_config, teams, now=now, arm_once=arm_once),
+        steps=turn_steps(queue, server_config, teams, router, now=now, arm_once=arm_once),
         check=_amendment_standing,
         key=lambda payload: f"{CONFIG_KIND}:{payload['channel_id']}:{payload['session_type']}",
         doing=lambda payload: (
@@ -567,6 +570,7 @@ def amend_stage_one_change(
     queue: ChangeQueue,
     server_config: ServerConfig,
     teams: TeamService,
+    router: OutputRouter,
     now: Callable[[], datetime],
     arm_once: Callable[[str, int | str, datetime], None],
 ) -> ChangeType:
@@ -589,7 +593,7 @@ def amend_stage_one_change(
     records them. The drafts are kept once recorded: the amendment expects its next session by
     them.
     """
-    steps = turn_steps(queue, server_config, teams, now=now, arm_once=arm_once)
+    steps = turn_steps(queue, server_config, teams, router, now=now, arm_once=arm_once)
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         return (

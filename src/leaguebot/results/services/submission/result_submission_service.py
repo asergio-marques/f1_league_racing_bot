@@ -27,6 +27,7 @@ from leaguebot.core.models.cancellation import (
     CancellationRound,
 )
 from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord, VerdictKind
+from leaguebot.core.services.posting.output_router import OutputRouter
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.results.models.points_config import SessionType
@@ -588,6 +589,9 @@ class _ConfigSelectView(LeagueView):
     *ask* is the queue, the change's kind and its payload, the queue being the one its builder was
     handed, which the view never looks up on the bot.
 
+    *router* is the output router the press's log line is written through, handed by the builder
+    as the queue is, and not looked up on the bot.
+
     *text* is required with *ask*, as only a submission's picker is put back and the text it was
     posted with is what it is put back to.
     """
@@ -600,6 +604,7 @@ class _ConfigSelectView(LeagueView):
         session: str | None = None,
         ask: tuple[ChangeQueue, str, dict[str, Any]] | None = None,
         text: str | None = None,
+        router: OutputRouter,
     ) -> None:
         if ask is not None and text is None:
             raise TypeError("a picker asking the queue needs the text it is put back to")
@@ -613,6 +618,7 @@ class _ConfigSelectView(LeagueView):
         self._config = config
         self._session = session
         self._ask = ask
+        self._router = router
         for name in config_names:
             async def _cb(
                 interaction: discord.Interaction,
@@ -730,10 +736,7 @@ class _ConfigSelectView(LeagueView):
         self, interaction: discord.Interaction, what: str, name: str
     ) -> None:
         """Write the one line a choice leaves in the log channel, in the success form."""
-        router = getattr(getattr(interaction, "client", None), "output_router", None)
-        if router is None:
-            return
-        await router.post_log(
+        await self._router.post_log(
             f"{interaction_member(interaction)} | {what} | Success\n"
             f"  configuration: {name}"
         )
