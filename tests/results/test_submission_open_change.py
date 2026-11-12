@@ -381,12 +381,31 @@ async def _catch_up(league: SeasonLeague) -> None:
 
 
 async def _fire_job(league: SeasonLeague, monkeypatch: Any, round_: int = ROUND_3) -> None:
-    """Fire *round_*'s `results` job late, as APScheduler runs it: through the one runner, which
-    looks up the handler the builder registered on the bot's scheduler."""
+    """Fire *round_*'s `results` job, as APScheduler runs it: through the one runner, which looks
+    up the handler the builder registered for `results`. The league's scheduler is a double, so
+    the runner is handed the handlers the builder signed up on it through `register_timer`; the
+    runner swallows a handler's fault, so one that raises is raised again here."""
+    from types import SimpleNamespace
+
     from leaguebot.core.services import scheduler_service
 
-    monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE", league.bot.scheduler_service)
+    handlers = {
+        call.args[0]: call.args[1]
+        for call in league.bot.scheduler_service.register_timer.call_args_list
+    }
+    faults: list[BaseException] = []
+
+    async def _handler(key: int) -> None:
+        try:
+            await handlers["results"](key)
+        except Exception as fault:  # noqa: BLE001 — raised again below, past the runner
+            faults.append(fault)
+
+    monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE",
+                        SimpleNamespace(_timer_callbacks={"results": _handler}))
     await scheduler_service._one_off_timer_job("results", round_)
+    if faults:
+        raise faults[0]
 
 
 async def _opened_rounds(league: SeasonLeague) -> list[int]:
