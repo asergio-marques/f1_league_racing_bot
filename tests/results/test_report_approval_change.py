@@ -1453,6 +1453,44 @@ async def test_a_sacked_driver_s_other_division_sheet_is_posted_again_as_a_job(t
         assert divisions == [DIVISION_ID, DIVISION_ID]
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the sanctions' planning reads attendance's own "
+                   "table for another division's latest scored round, not attendance's share "
+                   "of the review")
+async def test_another_division_s_sheet_round_is_asked_of_attendance(tmp_path):
+    """Max, over the autosack threshold, also sat in division 12 (Am), whose round 5 is final but
+    holds no recorded attendance total in the database. Attendance's share of the review answers
+    that Am's latest scored round is round 5. Approving the reports asks attendance once, for
+    Am, and Am's sheet is posted again as at round 5, marking Max's sack."""
+    league = await review_league(tmp_path, attendance=True)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, "
+            "track_name, status) VALUES (?, ?, 5, '2026-03-01T18:00:00+00:00', 'NORMAL', "
+            "'Monza', 'FINAL')",
+            (OTHER_ROUND_ID, OTHER_DIVISION_ID),
+        )
+        await db.commit()
+    league.attendance.candidates = [
+        candidate(MAX_PROFILE, MAX, "AUTOSACK", other_divisions=(OTHER_DIVISION_ID,)),
+    ]
+    league.attendance.latest_scored_round = AsyncMock(return_value=OTHER_ROUND_ID)
+    drawn: list[tuple[int, int, set[int]]] = []
+    recorded = league.attendance.post_sheet
+
+    async def _post_sheet(round_id: int, division_id: int, *, sanctioned: Any,
+                          as_text: bool) -> None:
+        drawn.append((division_id, round_id, set(sanctioned)))
+        await recorded(round_id, division_id, sanctioned=sanctioned, as_text=as_text)
+
+    league.attendance.post_sheet = _post_sheet
+    await _approve(league)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    league.attendance.latest_scored_round.assert_awaited_once_with(OTHER_DIVISION_ID)
+    assert (OTHER_DIVISION_ID, OTHER_ROUND_ID, {MAX_PROFILE}) in drawn
+
+
 async def test_a_discarded_sanction_announcement_names_the_driver_as_applied_but_not_announced(
     tmp_path,
 ):

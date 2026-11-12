@@ -192,8 +192,9 @@ class AttendanceDouble:
     by `sanction_candidates` while attendance is on, each on every call while it is set.
     `sync_hint` is attendance's own, naming the division and the round it is handed, so a test
     reads the hint the league would, and so is `recalculation_faults`, attendance's reading of an
-    amendment's channels. `attendance_row_of` reads the driver's attendance row of the round as
-    attendance's own does, whatever the switch, a read writing nothing. `pardons_of_on` keeps no pardons, and `put_back_pardons_on` writes
+    amendment's channels. `attendance_row_of` reads the driver's attendance row of the round,
+    and `latest_scored_round` a division's latest round with a recorded total, as attendance's
+    own do, whatever the switch, a read writing nothing. `pardons_of_on` keeps no pardons, and `put_back_pardons_on` writes
     none, `rewrite_pardons_on` having written none to put back. `lineup_as_text` holds, call by
     call, whether
     `refresh_lineup` was asked for the text. `record_sheet_on` records that the sheet's id was
@@ -253,6 +254,20 @@ class AttendanceDouble:
                 (round_id, division_id, profile_id),
             )).fetchone()
         return None if row is None else {"id": row["id"], "rsvp_status": row["rsvp_status"]}
+
+    async def latest_scored_round(self, division_id: int) -> int | None:
+        """The division's latest round with a recorded attendance total; None where it has
+        none."""
+        self.calls.append(("latest_scored_round", division_id))
+        async with get_connection(self.league.db_path) as db:
+            row = await (await db.execute(
+                "SELECT r.id FROM rounds r JOIN driver_round_attendance dra "
+                "ON dra.round_id = r.id WHERE r.division_id = ? "
+                "AND dra.total_points_after IS NOT NULL "
+                "ORDER BY r.round_number DESC LIMIT 1",
+                (division_id,),
+            )).fetchone()
+        return None if row is None else int(row["id"])
 
     async def pardons_of_on(self, db: Any, round_id: int) -> list[Any]:
         return []
