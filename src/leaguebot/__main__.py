@@ -1017,8 +1017,8 @@ async def build(settings: Settings) -> LeagueBot:
     from leaguebot.core.services.queue.change_queue import ChangeQueue
 
     bot.change_queue = ChangeQueue(settings.db_path, bot, bot.output_router, bot.config_service)
-    # The moment the bot came up, by the queue's clock; the start-up catch-up of a round's start
-    # takes it again as it runs (`recover_missed_round_starts`).
+    # The moment the bot came up, by the queue's clock, which the wiring hands to a module's
+    # handler of a timed job to tell one fired late at a restart from one fired on time.
     bot.came_up_at = bot.change_queue.now()
     bot.driver_service = DriverService(settings.db_path)
     bot.team_service = TeamService(settings.db_path)

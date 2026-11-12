@@ -33,7 +33,8 @@ async def ask_round_start(
     late job and the catch-up both firing, in either order, ask for it once.
 
     **Under test mode a start that passed before the bot came up is left to `/test-mode advance`.**
-    *came_up_at* is the queue's moment as the start-up catch-up took it (`bot.came_up_at`). A
+    *came_up_at* is the moment the bot came up, which the wiring hands in (the catch-up, which runs
+    in the start-up sweep, hands in the queue's clock as it runs). A
     round whose start is before it, under test mode, is asked nothing here and nothing is recorded
     as skipped, so the advance opens it in its turn, as it does for a round with weather off,
     whose job is not armed at all. A start at or after it fires while the bot is up and opens on

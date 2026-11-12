@@ -122,15 +122,14 @@ async def recover_missed_round_starts(bot: LeagueBot, *, queue: ChangeQueue) -> 
     submission one of them cleared and asked open again being then in hand on the queue.
 
     **Under test mode it asks nothing**, `/test-mode advance` opening each round in its turn: the
-    moment taken here as the bot's coming up is set on `bot.came_up_at`, which `ask_round_start`
-    reads to hold back a late `results` job the same way.
+    queue's moment taken here is handed to `ask_round_start` as the bot's coming up, which holds
+    back a late `results` job the same way.
 
     A round that cannot be asked for stops none of the others. Once every round has been gone
     through, a failure for any is raised as one `RecoveryFailed` naming each round and its error,
     which the start-up sweep reports to the log channel in one line.
     """
     now = queue.now()
-    bot.came_up_at = now
     failures: dict[int, BaseException] = {}
     for rnd in await rounds_still_to_run_by(bot.db_path, now):
         try:
