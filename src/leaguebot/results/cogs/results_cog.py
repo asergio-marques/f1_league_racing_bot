@@ -12,7 +12,6 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from leaguebot.core.models.season import Season
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.points import points_config_service, season_points_service
 from leaguebot.results.services.points.amendment_settings import (
@@ -32,6 +31,7 @@ from leaguebot.results.services.points.points_settings import (
     RESERVES,
     reserves_toggle_request,
 )
+from leaguebot.results.services.points.points_amendment_change import refuse_while_approval_in_hand
 from leaguebot.results.services.points.points_config_service import ConfigNotFoundError
 from leaguebot.results.services.points.points_paste import bulk_refusal, parse_bulk_lines
 from leaguebot.results.services.module.channel_settings import (
@@ -123,28 +123,6 @@ _CHANNEL_KINDS = {
 
 #: A form's refusal when the results module has been switched off since it was shown.
 _MODULE_OFF = "\u274c The Results & Standings module is not enabled on this server."
-
-
-async def _approval_holds_staging(
-    interaction: discord.Interaction, db_path: str, season: Season, *, what: str
-) -> bool:
-    """Refuse a command that stages points changes where the season's approval is in hand.
-
-    While `/results amend review`'s approval is waiting, running or stopped on the queue, nothing
-    outside it may put back or undo what it approves (architecture.md, "How a change is carried
-    out"), so the six staging commands leave the working copy and amendment mode alone, naming the
-    job. True where *interaction* was refused (#439, slice 3).
-    """
-    from leaguebot.results.services.points.points_amendment_change import (
-        approval_in_hand,
-        staging_refusal,
-    )
-
-    job = await approval_in_hand(db_path, season.id)
-    if job is None:
-        return False
-    await refuse(interaction, staging_refusal(season.season_number, job), what=what)
-    return True
 
 
 class BulkConfigSessionModal(LeagueModal, title="Bulk Set Session Points"):
@@ -1279,7 +1257,7 @@ class ResultsCog(commands.Cog):
         )
         if season is None:
             return
-        if await _approval_holds_staging(
+        if await refuse_while_approval_in_hand(
             interaction, self.bot.db_path, season, what=describe(interaction)
         ):
             return

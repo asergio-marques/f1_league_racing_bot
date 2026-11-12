@@ -48,7 +48,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
@@ -73,7 +73,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.services.seasons.season_service import live_season
-from leaguebot.core.utils.log_lines import refusal_line, reply_reason
+from leaguebot.core.utils.log_lines import refusal_line, refuse, reply_reason
 from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.services.review import review_posting, review_verdicts
 from leaguebot.results.services.points.amendment_mode_service import (
@@ -91,7 +91,19 @@ from leaguebot.results.services.points.season_points_service import (
 )
 from leaguebot.results.services.standings.standings_service import cascade_recompute_from_round_on
 
-__all__ = ["KIND", "approval_in_hand", "held_text", "points_amendment_change", "staging_refusal"]
+__all__ = [
+    "KIND",
+    "approval_in_hand",
+    "held_text",
+    "points_amendment_change",
+    "refuse_while_approval_in_hand",
+    "staging_refusal",
+]
+
+if TYPE_CHECKING:
+    import discord
+
+    from leaguebot.core.models.season import Season
 
 KIND = "results.points_amendment.approve"
 
@@ -169,6 +181,23 @@ def staging_refusal(season_number: int, job: int) -> str:
         "finish, or press **Retry** or **Discard** on its notice if it has stopped, then try "
         "again."
     )
+
+
+async def refuse_while_approval_in_hand(
+    interaction: discord.Interaction, db_path: str, season: Season, *, what: str
+) -> bool:
+    """Refuse a command that stages points changes where the season's approval is in hand.
+
+    While `/results amend review`'s approval is waiting, running or stopped on the queue, nothing
+    outside it may put back or undo what it approves (architecture.md, "How a change is carried
+    out"), so the six staging commands leave the working copy and amendment mode alone, naming the
+    job. True where *interaction* was refused (#439, slice 3).
+    """
+    job = await approval_in_hand(db_path, season.id)
+    if job is None:
+        return False
+    await refuse(interaction, staging_refusal(season.season_number, job), what=what)
+    return True
 
 
 async def _divisions(db: aiosqlite.Connection, season_id: int) -> list[aiosqlite.Row]:
