@@ -142,6 +142,22 @@ async def produce_stranding(what: str, channel_id, posting) -> "list[PostedTable
         raise
 
 
+async def standings_channel_of(db_path: str, division_id: int) -> int | None:
+    """The standings channel *division_id* was given in `division_results_config`, or None where
+    it never was."""
+    from leaguebot.core.db.database import get_connection
+
+    async with get_connection(db_path) as db:
+        config = await (
+            await db.execute(
+                "SELECT standings_channel_id FROM division_results_config WHERE division_id = ?",
+                (division_id,),
+            )
+        ).fetchone()
+    channel_id = config["standings_channel_id"] if config is not None else None
+    return int(channel_id) if channel_id else None
+
+
 async def post_opening_standings(
     bot: LeagueBot,
     guild,
@@ -167,7 +183,6 @@ async def post_opening_standings(
     copy removed. *as_text* leaves the graphic out, which is how a job retries (Constitution XIV
     rule 8).
     """
-    from leaguebot.core.db.database import get_connection
     from leaguebot.core.models.change import StepFailedOnDiscord
     from leaguebot.image.services.image_results_post import _driver_names
     from leaguebot.results.services.standings import standings_service
@@ -181,15 +196,7 @@ async def post_opening_standings(
         return []
     removed = await remove_earlier_try(guild, kept)
     async with keeping(removed, "opening"):
-        async with get_connection(db_path) as db:
-            config = await (
-                await db.execute(
-                    "SELECT standings_channel_id FROM division_results_config "
-                    "WHERE division_id = ?",
-                    (division_id,),
-                )
-            ).fetchone()
-        channel_id = config["standings_channel_id"] if config is not None else None
+        channel_id = await standings_channel_of(db_path, division_id)
         if not channel_id:
             return []
         channel = guild.get_channel(int(channel_id))
@@ -320,7 +327,6 @@ async def post_final_standings(
     posts both again, as the opening standings do. *as_text* leaves the graphic out, which is
     how a job retries (Constitution XIV rule 8).
     """
-    from leaguebot.core.db.database import get_connection
     from leaguebot.core.models.change import StepFailedOnDiscord
     from leaguebot.results.services.standings import standings_service
     from leaguebot.results.services.publishing.results_post_service import (
@@ -334,15 +340,7 @@ async def post_final_standings(
         return []
     removed = await remove_earlier_try(guild, kept)
     async with keeping(removed, "final"):
-        async with get_connection(db_path) as db:
-            config = await (
-                await db.execute(
-                    "SELECT standings_channel_id FROM division_results_config "
-                    "WHERE division_id = ?",
-                    (division_id,),
-                )
-            ).fetchone()
-        channel_id = config["standings_channel_id"] if config is not None else None
+        channel_id = await standings_channel_of(db_path, division_id)
         if not channel_id:
             return []
         channel = guild.get_channel(int(channel_id))
@@ -382,14 +380,25 @@ async def post_final_standings(
 
 
 def posted_result(
-    division_id: int, occasion: ClassificationOccasion, tables: "Sequence[PostedTable]"
+    division_id: int,
+    occasion: ClassificationOccasion,
+    tables: "Sequence[PostedTable]",
+    channel_id: int | None,
 ) -> dict[str, Any]:
     """What a classification step's job carries for `record_posted`: the division and occasion,
     and for each table put up the championship it carries and the messages it went out as, the
-    anchor first."""
+    anchor first.
+
+    Beside them go every table's new ids, flattened, and the channel posted to (`new` and
+    `channel_id`, as a round's standings carry them), so that where the save marking the step
+    done fails, the job keeps what was sent and the next try, or `not_done` on a discard, reaches
+    it, the ids not yet being recorded.
+    """
     return {
         "division_id": division_id,
         "occasion": occasion.value,
+        "new": [each_id for each in tables for each_id in each.new],
+        "channel_id": channel_id,
         "tables": [
             {"championship": each.championship, "new": list(each.new)} for each in tables
         ],
@@ -450,10 +459,14 @@ def opening_steps(modules: ModuleService) -> dict[str, Step]:
     async def run(ctx: StepContext) -> StepResult:
         guild = await require_guild(ctx.bot)
         division_id = int(ctx.step_payload["division_id"])
+        channel_id = await standings_channel_of(ctx.db_path, division_id)
         tables = await post_opening_standings(
             ctx.bot, guild, ctx.db_path, division_id, as_text=ctx.tries > 0, kept=ctx.kept,
         )
-        return StepResult(result=posted_result(division_id, ClassificationOccasion.SEASON_OPENING, tables))
+        return StepResult(result=posted_result(
+            division_id, ClassificationOccasion.SEASON_OPENING, tables,
+            channel_id,
+        ))
 
     async def still_due(_ctx: StepContext) -> bool:
         return await modules.is_results_enabled()
@@ -500,11 +513,15 @@ def final_steps(modules: ModuleService) -> dict[str, Step]:
         guild = await require_guild(ctx.bot)
         each = ctx.step_payload
         division_id = int(each["division_id"])
+        channel_id = await standings_channel_of(ctx.db_path, division_id)
         tables = await post_final_standings(
             ctx.bot, guild, ctx.db_path, division_id, int(each["round_id"]),
             as_text=ctx.tries > 0, kept=ctx.kept,
         )
-        return StepResult(result=posted_result(division_id, ClassificationOccasion.SEASON_FINAL, tables))
+        return StepResult(result=posted_result(
+            division_id, ClassificationOccasion.SEASON_FINAL, tables,
+            channel_id,
+        ))
 
     async def still_due(_ctx: StepContext) -> bool:
         return await modules.is_results_enabled()
