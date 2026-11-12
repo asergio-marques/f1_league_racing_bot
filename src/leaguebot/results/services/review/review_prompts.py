@@ -15,6 +15,7 @@ from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.results.services.points.scoring import _recompute_session_points_on
 
 if TYPE_CHECKING:
+    from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.results.services.review.review_state import PenaltyReviewState
 
 
@@ -45,6 +46,7 @@ async def is_channel_in_penalty_review(db_path: str, channel_id: int) -> bool:
 
 async def _build_penalty_review_state(
     bot: LeagueBot,
+    queue: ChangeQueue,
     round_id: int,
     division_id: int,
     submission_channel_id: int,
@@ -93,6 +95,7 @@ async def _build_penalty_review_state(
         session_types_present=session_types_present,
         db_path=db_path,
         bot=bot,
+        queue=queue,
         round_number=round_number,
         division_name=division_name,
     )

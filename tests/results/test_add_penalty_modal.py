@@ -153,6 +153,7 @@ def _state(db_path: str, *, staged=(), appeals=()):
         session_types_present=[SessionType.FEATURE_RACE],
         db_path=db_path,
         bot=MagicMock(),
+        queue=MagicMock(),
     )
     state.round_number = 3
     state.division_name = "Division 1"
@@ -215,6 +216,7 @@ async def _submit(
     modal.justification_input._value = justification
     interaction = _interaction(state.db_path)
     state.bot = interaction.client
+    state.queue = interaction.client.change_queue
 
     with patch(
         "leaguebot.results.services.review.penalty_review_views._refresh_prompt", new=AsyncMock(return_value=None)
@@ -383,6 +385,7 @@ async def test_the_prompt_is_refreshed_for_the_pass_being_staged_into(tmp_path):
     ) as appeals_refresh:
         interaction = _interaction(state.db_path)
         state.bot = interaction.client
+        state.queue = interaction.client.change_queue
         await modal.on_submit(interaction)
         await run_queue(interaction.client)
 

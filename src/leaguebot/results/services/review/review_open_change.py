@@ -87,6 +87,7 @@ again at every restart. Both are dropped, not stopped, where they are no longer 
 from __future__ import annotations
 
 from dataclasses import replace
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import aiosqlite
@@ -103,6 +104,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundStatus
+from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.queue.queue_records import (
     unfinished,
 )
@@ -235,7 +237,7 @@ async def _round_and_channel(db_path: str, round_id: int) -> aiosqlite.Row | Non
         ).fetchone()
 
 
-async def _post_review_prompt(ctx: StepContext) -> StepResult:
+async def _post_review_prompt(ctx: StepContext, queue: ChangeQueue) -> StepResult:
     round_id = int(ctx.payload["round_id"])
     row = await _round_and_channel(ctx.db_path, round_id)
     if row is None or row["channel_id"] is None:
@@ -248,10 +250,19 @@ async def _post_review_prompt(ctx: StepContext) -> StepResult:
         await _delete_posting(channel, int(kept), [int(kept)], label="penalty review prompt",
                               failures=[])
     state = await _build_penalty_review_state(
-        ctx.bot, round_id, int(row["division_id"]), channel.id
+        ctx.bot, queue, round_id, int(row["division_id"]), channel.id
     )
     message = await send_review_prompt(ctx.bot, channel, state)
     return StepResult(result={"message_id": message.id, "channel_id": channel.id})
+
+
+def _post_prompt_job(queue: ChangeQueue) -> Callable[[StepContext], Awaitable[StepResult]]:
+    """The `post_review_prompt` job, handed the queue its prompt's buttons ask their changes of."""
+
+    async def post(ctx: StepContext) -> StepResult:
+        return await _post_review_prompt(ctx, queue)
+
+    return post
 
 
 async def _record_prompt(
@@ -489,8 +500,9 @@ def _marked_channel(payload: dict[str, Any]) -> int | None:
     return int(mark["channel_id"]) if mark else None
 
 
-def review_open_change() -> ChangeType:
-    """The change that opens a round's penalty review; see the module."""
+def review_open_change(*, queue: ChangeQueue) -> ChangeType:
+    """The change that opens a round's penalty review; see the module. *queue* is the one its
+    prompt's buttons ask their changes of."""
 
     async def check(ctx: CheckContext) -> Verdict:
         member = ctx.origin is ChangeOrigin.MEMBER
@@ -723,7 +735,7 @@ def review_open_change() -> ChangeType:
             describe=describe_open,
         ),
         _POST_REVIEW_PROMPT: Step(
-            _POST_REVIEW_PROMPT, StepKind.ACT, _post_review_prompt,
+            _POST_REVIEW_PROMPT, StepKind.ACT, _post_prompt_job(queue),
             describe=_describe_prompt, record=_record_prompt,
         ),
         _TAKE_DOWN_CANCEL: Step(
@@ -751,7 +763,7 @@ def review_open_change() -> ChangeType:
     )
 
 
-def review_prompt_change() -> ChangeType:
+def review_prompt_change(*, queue: ChangeQueue) -> ChangeType:
     """The change that puts a round's penalty review prompt up, on the round's lane (C44a).
 
     Asked by `results.review.open` in its last save where a conversation handed the review over (a
@@ -910,9 +922,9 @@ def review_prompt_change() -> ChangeType:
 
     steps: dict[str, Step] = {
         DELETE_MESSAGE: posting_steps()[DELETE_MESSAGE],
-        review_verdicts.POST_APPEALS_PROMPT: review_verdicts.appeals_prompt_step(),
+        review_verdicts.POST_APPEALS_PROMPT: review_verdicts.appeals_prompt_step(queue),
         _POST_REVIEW_PROMPT: Step(
-            _POST_REVIEW_PROMPT, StepKind.ACT, _post_review_prompt,
+            _POST_REVIEW_PROMPT, StepKind.ACT, _post_prompt_job(queue),
             describe=_describe_prompt, record=_record_prompt,
         ),
         _TAKE_DOWN_CANCEL: Step(
@@ -973,7 +985,7 @@ def _refusal(ctx: CheckContext, reason: str) -> Verdict:
     return Verdict.not_due(reason)
 
 
-def appeals_open_change() -> ChangeType:
+def appeals_open_change(*, queue: ChangeQueue) -> ChangeType:
     """The change that posts a round's appeals prompt again, as the bot, after a restart or a
     Discard; see the module. Its payload is ``round_id``, ``division_id`` and ``old_prompt_id``,
     the prompt it replaces once the new one stands."""
@@ -1083,7 +1095,7 @@ def appeals_open_change() -> ChangeType:
 
     steps: dict[str, Step] = {
         **posting_steps(),
-        review_verdicts.POST_APPEALS_PROMPT: review_verdicts.appeals_prompt_step(),
+        review_verdicts.POST_APPEALS_PROMPT: review_verdicts.appeals_prompt_step(queue),
         _OPEN: Step(
             _OPEN, StepKind.SAVE, plan, still_due=still_awaiting_appeals,
             describe=describe_plan, undiscardable=would_have_no_prompt,

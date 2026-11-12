@@ -70,6 +70,7 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
+from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.queue.queue_records import (
     unfinished,
 )
@@ -264,11 +265,12 @@ def _doing(stage: str) -> Callable[[dict[str, Any]], str]:
 
 
 def amendment_stage_changes(
-    *, attendance: AttendanceAfterReview, now: Callable[[], datetime]
+    *, attendance: AttendanceAfterReview, now: Callable[[], datetime], queue: ChangeQueue
 ) -> tuple[ChangeType, ChangeType, ChangeType]:
     """The change types of an amendment's stages, the report stage's, the appeals stage's and the
     amendment's lane's prompt (`results.amend.prompt`); see the module. *attendance* is the hook
-    the builder hands every change type of the review, and *now* the queue's clock."""
+    the builder hands every change type of the review, *now* the queue's clock and *queue* the queue
+    the review's buttons ask their changes of."""
 
     async def _in_hand(ctx: CheckContext, kind: str, round_id: int) -> bool:
         others = await unfinished(ctx.db_path, [kind], excluding=ctx.change_id)
@@ -525,6 +527,7 @@ def amendment_stage_changes(
             session_types_present=session_types,
             db_path=ctx.db_path,
             bot=ctx.bot,
+            queue=queue,
             staged=reports,
             staged_appeals=corrections,
             staged_pardons=[StagedPardon.from_payload(p) for p in ctx.payload["pardons"]],
@@ -554,6 +557,7 @@ def amendment_stage_changes(
             )
         state = await run_amendment_review_stages(
             ctx.db_path, int(payload["round_id"]), int(payload["division_id"]), channel, ctx.bot,
+            queue,
             round_number=int(payload["round_number"]), division_name=str(payload["division_name"]),
             session_types=[SessionType(value) for value in payload["session_types"]],
             attendance=attendance,

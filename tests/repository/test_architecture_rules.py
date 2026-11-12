@@ -1332,20 +1332,6 @@ def _queue_reached_through_the_bot_among(nodes) -> Counter[tuple[str, str]]:
 #: message). They are the approve buttons, the configuration picker, Resubmit, the two forms, the
 #: Remove, clear-confirm and Make Changes buttons, and No Penalties.
 KNOWN_QUEUE_REACHED_THROUGH_THE_BOT: dict[tuple[str, str], tuple[int, str]] = {
-    ("results/services/review/appeals_review_views.py", "AppealsReviewView._make_remove_cb.cb"): (1, PASS["results"]),
-    ("results/services/review/appeals_review_views.py", "AppealsReviewView.approve_btn"): (1, PASS["results"]),
-    ("results/services/review/appeals_review_views.py", "AppealsReviewView.no_changes_btn"): (1, PASS["results"]),
-    ("results/services/review/appeals_review_views.py", "_AppealsConfirmClearView.confirm_btn"): (1, PASS["results"]),
-    ("results/services/review/penalty_review_views.py", "AddPardonModal.on_submit"): (1, PASS["results"]),
-    ("results/services/review/penalty_review_views.py", "AddPenaltyModal.on_submit"): (1, PASS["results"]),
-    ("results/services/review/penalty_review_views.py", "ApprovalView.approve_btn"): (1, PASS["results"]),
-    ("results/services/review/penalty_review_views.py", "ApprovalView.make_changes_btn"): (1, PASS["results"]),
-    ("results/services/review/penalty_review_views.py", "PenaltyReviewView._make_pardon_remove_cb.cb"): (1, PASS["results"]),
-    ("results/services/review/penalty_review_views.py", "PenaltyReviewView._make_remove_cb.cb"): (1, PASS["results"]),
-    ("results/services/review/penalty_review_views.py", "PenaltyReviewView.approve_btn"): (1, PASS["results"]),
-    ("results/services/review/penalty_review_views.py", "PenaltyReviewView.no_penalties_btn"): (1, PASS["results"]),
-    ("results/services/review/penalty_review_views.py", "PenaltyReviewView.resubmit_btn"): (1, PASS["results"]),
-    ("results/services/review/penalty_review_views.py", "_ConfirmClearView.confirm_btn"): (1, PASS["results"]),
     ("results/services/submission/result_submission_service.py", "_ConfigSelectView.__init__._cb"): (1, PASS["results"]),
 }
 

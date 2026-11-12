@@ -103,6 +103,7 @@ def _state(db_path: str, *, prompt_message_id: int | None = PROMPT_ID) -> Penalt
         session_types_present=[SessionType.FEATURE_RACE],
         db_path=db_path,
         bot=MagicMock(),
+        queue=MagicMock(),
         round_number=3,
         division_name="Pro",
     )
@@ -201,7 +202,7 @@ async def test_a_review_being_approved_has_moved_on(tmp_path):
     )
     state = PenaltyReviewState(
         round_id=LEAGUE_ROUND, division_id=LEAGUE_DIVISION, submission_channel_id=SUBMISSION_CHANNEL,
-        session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path, bot=league.bot,
+        session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path, bot=league.bot, queue=league.bot.change_queue,
         prompt_message_id=PROMPT, round_number=3, division_name="Pro",
     )
 

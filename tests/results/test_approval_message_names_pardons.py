@@ -124,13 +124,15 @@ def _bot(db_path: str):
 
 
 def _state(db_path: str, *, pardons: list[StagedPardon] | None = None) -> PenaltyReviewState:
+    bot = _bot(db_path)
     state = PenaltyReviewState(
         round_id=ROUND_ID,
         division_id=DIVISION_ID,
         submission_channel_id=CHANNEL_ID,
         session_types_present=[SessionType.FEATURE_RACE],
         db_path=db_path,
-        bot=_bot(db_path),
+        bot=bot,
+        queue=bot.change_queue,
         staged_pardons=pardons or [],
         round_number=3,
         division_name="Pro",

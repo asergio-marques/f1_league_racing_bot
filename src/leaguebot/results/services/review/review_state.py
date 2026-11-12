@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
@@ -75,6 +76,9 @@ class PenaltyReviewState:
     session_types_present: list[SessionType]
     db_path: str
     bot: LeagueBot
+    #: The change queue the review's buttons and forms ask their changes of, handed in by whoever
+    #: builds the state, so that a view never looks it up on the bot.
+    queue: ChangeQueue
     staged: list[StagedPenalty] = field(default_factory=list)
     staged_appeals: list[StagedPenalty] = field(default_factory=list)
     staged_pardons: list[StagedPardon] = field(default_factory=list)

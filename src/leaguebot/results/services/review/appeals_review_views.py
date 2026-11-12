@@ -17,7 +17,6 @@ from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
-from leaguebot.core.utils.league_bot import bot_of
 from leaguebot.core.utils.league_server import LeagueView
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.results.services.review.penalty_wizard import (
@@ -211,7 +210,7 @@ class AppealsReviewView(LeagueView):
                 shown = await _shown(self.state, removed.driver_user_id)
                 what = _button(f"Remove #{idx + 1}", self.state, "appeals")
                 await _ask_stage(
-                    bot_of(interaction).change_queue,
+                    self.state.queue,
                     interaction,
                     self.state,
                     {"op": "remove", "list": "appeals", "entry": removed.to_payload()},
@@ -292,7 +291,7 @@ class AppealsReviewView(LeagueView):
             await _ask_appeals_approved(
                 interaction,
                 self.state,
-                queue=bot_of(interaction).change_queue,
+                queue=self.state.queue,
                 what=_button(button.label, self.state, "appeals"),
             )
         else:
@@ -341,7 +340,7 @@ class AppealsReviewView(LeagueView):
         await _ask_appeals_approved(
             interaction,
             self.state,
-            queue=bot_of(interaction).change_queue,
+            queue=self.state.queue,
             what=_button(button.label, self.state, "appeals"),
         )
 
@@ -402,7 +401,7 @@ class _AppealsConfirmClearView(LeagueView):
         await _ask_appeals_approved(
             interaction,
             self.state,
-            queue=bot_of(interaction).change_queue,
+            queue=self.state.queue,
             what=_button(button.label, self.state, "appeals"),
         )
 

@@ -69,7 +69,8 @@ def _state(league: ReviewLeague, *, staged: Any = (), approval: int | None = Non
     return PenaltyReviewState(
         round_id=ROUND_ID, division_id=DIVISION_ID, submission_channel_id=SUBMISSION_CHANNEL,
         session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path,
-        bot=league.bot, staged=list(staged), prompt_message_id=PROMPT,
+        bot=league.bot,
+        queue=league.bot.change_queue, staged=list(staged), prompt_message_id=PROMPT,
         appeals_prompt_message_id=APPEALS_PROMPT if appeals else None,
         approval_message_id=approval, round_number=3, division_name="Pro",
     )

@@ -1694,7 +1694,8 @@ async def test_every_review_control_refuses_while_the_approval_is_in_hand(tmp_pa
     state = PenaltyReviewState(
         round_id=ROUND_ID, division_id=DIVISION_ID, submission_channel_id=SUBMISSION_CHANNEL,
         session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path,
-        bot=league.bot, prompt_message_id=PROMPT, round_number=3, division_name="Pro",
+        bot=league.bot,
+        queue=league.bot.change_queue, prompt_message_id=PROMPT, round_number=3, division_name="Pro",
     )
     assert await _review_moved_on(state) is None
 

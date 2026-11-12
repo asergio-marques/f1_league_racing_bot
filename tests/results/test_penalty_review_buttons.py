@@ -113,6 +113,7 @@ def _state(*, staged=()) -> PenaltyReviewState:
         session_types_present=[SessionType.FEATURE_RACE],
         db_path=":memory:",
         bot=bot,
+        queue=bot.change_queue,
     )
     state.round_number = 3
     state.division_name = "Division 1"
@@ -169,6 +170,7 @@ async def _on_the_queue(state: PenaltyReviewState, tmp_path) -> MagicMock:
     bot = league_double(db_path)
     attach_queue(bot, db_path, now=PRESSED_AT)
     state.bot = bot
+    state.queue = bot.change_queue
     state.db_path = db_path
     user = MagicMock(spec=discord.Member)
     user.id = 77
@@ -426,6 +428,7 @@ async def test_approving_with_penalties_finalises_the_review():
     state = _state(staged=[_penalty()])
     interaction = _interaction()
     state.bot.change_queue = interaction.client.change_queue
+    state.queue = interaction.client.change_queue
     view = PenaltyReviewView(state)
 
     await _press(view, "approve_btn", interaction)
@@ -464,6 +467,7 @@ async def test_resubmit_asks_the_queue_to_start_the_resubmission():
     state = _state(staged=[_penalty()])
     interaction = _interaction()
     state.bot.change_queue = interaction.client.change_queue
+    state.queue = interaction.client.change_queue
     view = PenaltyReviewView(state)
 
     await _press(view, "resubmit_btn", interaction)

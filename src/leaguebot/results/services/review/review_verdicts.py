@@ -81,6 +81,7 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.services.drivers import lineup_posting
 from leaguebot.core.services.posting import standing_posts
+from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.queue.change_types import OutcomeContext, Step, StepContext
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.image.services import image_verdict_banner_post
@@ -162,7 +163,6 @@ def verdict_steps(
         )
 
     return {
-        POST_APPEALS_PROMPT: appeals_prompt_step(),
         ANNOUNCE_HEADING: Step(
             ANNOUNCE_HEADING, StepKind.ACT, _announce_heading,
             still_due=bound(_heading_still_due), describe=_describe_heading,
@@ -453,10 +453,14 @@ async def _take_down_kept(channel: Any, ctx: StepContext) -> None:
 # ---------------------------------------------------------------------------
 
 
-def appeals_prompt_step() -> Step:
+def appeals_prompt_step(queue: ChangeQueue) -> Step:
     """The `post_appeals_prompt` job on its own, for a change type whose whole business is the
     prompt (`results.appeals.open`) as well as for those that open the appeals stage after their
-    verdicts. It is planned with a payload naming the ``round_id`` and ``division_id``."""
+    verdicts. It is planned with a payload naming the ``round_id`` and ``division_id``. *queue* is the
+    queue the prompt's buttons ask their changes of, which the prompt's state carries."""
+
+    async def post(ctx: StepContext) -> StepResult:
+        return await _post_appeals_prompt(ctx, queue)
 
     async def record(db: Any, ctx: StepContext, result: StepResult) -> None:
         await db.execute(
@@ -466,11 +470,9 @@ def appeals_prompt_step() -> Step:
         )
 
     return Step(
-        POST_APPEALS_PROMPT, StepKind.ACT, _post_appeals_prompt,
+        POST_APPEALS_PROMPT, StepKind.ACT, post,
         describe=_describe_appeals_prompt, record=record,
     )
-
-
 
 
 async def _submission_channel_id(db_path: str, round_id: int) -> int | None:
@@ -490,7 +492,7 @@ async def _describe_appeals_prompt(ctx: StepContext) -> str:
     return f"posting the appeals review prompt{where}"
 
 
-async def _post_appeals_prompt(ctx: StepContext) -> StepResult:
+async def _post_appeals_prompt(ctx: StepContext, queue: ChangeQueue) -> StepResult:
     """Open the appeals stage in the channel the report stage ran in. Raises where it cannot."""
     payload = ctx.step_payload
     round_id, division_id = int(payload["round_id"]), int(payload["division_id"])
@@ -504,7 +506,7 @@ async def _post_appeals_prompt(ctx: StepContext) -> StepResult:
     if kept is not None:
         await _delete_posting(channel, int(kept), [int(kept)], label="appeals review prompt",
                               failures=[])
-    state = await _build_penalty_review_state(ctx.bot, round_id, division_id, channel.id)
+    state = await _build_penalty_review_state(ctx.bot, queue, round_id, division_id, channel.id)
     message = await send_appeals_prompt(ctx.bot, channel, state)
     return StepResult(result={"message_id": message.id, "channel_id": channel.id})
 

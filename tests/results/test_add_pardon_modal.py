@@ -163,6 +163,7 @@ def _state(db_path: str, *, staged_pardons=None) -> PenaltyReviewState:
         session_types_present=[SessionType.FEATURE_RACE],
         db_path=db_path,
         bot=bot,
+        queue=bot.change_queue,
         staged_pardons=list(staged_pardons or []),
         round_number=3,
         division_name="Pro",

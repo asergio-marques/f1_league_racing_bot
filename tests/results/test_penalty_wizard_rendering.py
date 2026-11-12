@@ -115,6 +115,7 @@ def _state(bot, db_path: str = ":memory:") -> PenaltyReviewState:
         session_types_present=[SessionType.FEATURE_RACE],
         db_path=db_path,
         bot=bot,
+        queue=bot.change_queue,
     )
 
 

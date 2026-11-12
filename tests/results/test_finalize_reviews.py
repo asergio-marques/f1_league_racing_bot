@@ -871,7 +871,8 @@ async def test_every_appeals_control_refuses_while_the_appeals_are_being_approve
     state = PenaltyReviewState(
         round_id=ROUND_ID, division_id=DIVISION_ID, submission_channel_id=SUBMISSION_CHANNEL,
         session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path,
-        bot=league.bot, staged_appeals=[league_penalty(LEWIS)],
+        bot=league.bot,
+        queue=league.bot.change_queue, staged_appeals=[league_penalty(LEWIS)],
         appeals_prompt_message_id=APPEALS_PROMPT, round_number=3, division_name="Pro",
     )
     assert await _appeals_review_moved_on(state) is None
@@ -1707,7 +1708,8 @@ async def test_each_approve_control_of_an_amendment_asks_its_stage_of_the_queue(
     state = PenaltyReviewState(
         round_id=ROUND_ID, division_id=DIVISION_ID, submission_channel_id=AMENDMENT_CHANNEL,
         session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path,
-        bot=league.bot, round_number=3, division_name="Pro", is_amendment=True,
+        bot=league.bot,
+        queue=league.bot.change_queue, round_number=3, division_name="Pro", is_amendment=True,
     )
     if stage == "reports":
         state.staged = [league_penalty(LEWIS)]

@@ -24,7 +24,6 @@ from leaguebot.core.services.drivers.driver_service import accounts_of_in_divisi
 from leaguebot.results.services.review.penalty_service import validate_penalty_input
 from leaguebot.core.utils.input_validator import STEWARD_TEXT, parse_user, parse_user_id
 from leaguebot.core.utils.interaction_errors import describe_form
-from leaguebot.core.utils.league_bot import bot_of
 from leaguebot.core.utils.league_server import CallbackButton, LeagueModal, LeagueView
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.results.services.review.penalty_wizard import (
@@ -453,7 +452,7 @@ class AddPenaltyModal(LeagueModal, title="Add Penalty"):
         action = "Correction" if self.use_appeals_staging else "Penalty"
         review = "appeals" if self.use_appeals_staging else "penalty"
         await _ask_stage(
-            bot_of(interaction).change_queue,
+            self.state.queue,
             interaction,
             self.state,
             {"op": "penalty", "penalty": result.to_payload()},
@@ -662,7 +661,7 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
         )
         # --- Ask the round's lane to stage it (FR-010: the justification goes to the log) ---
         await _ask_stage(
-            bot_of(interaction).change_queue,
+            self.state.queue,
             interaction,
             self.state,
             {"op": "pardon", "pardon": pardon.to_payload()},
@@ -736,7 +735,7 @@ class _ConfirmClearView(LeagueView):
             await _approval_not_posted(interaction, self.state, what=what)
             return
         cleared = await _staged_named(self.state, self.state.staged)
-        queue = bot_of(interaction).change_queue
+        queue = self.state.queue
         # Staged before the question is posted, not after: the staging withdraws any approval
         # question standing, and would withdraw the one about to be posted. Both are on the
         # round's lane, in this order; the press is answered by the first.
@@ -1035,7 +1034,7 @@ class PenaltyReviewView(LeagueView):
                 shown = await _shown(self.state, removed.driver_user_id)
                 what = _button(f"Remove #{idx + 1}", self.state)
                 await _ask_stage(
-                    bot_of(interaction).change_queue,
+                    self.state.queue,
                     interaction,
                     self.state,
                     {"op": "remove", "list": "staged", "entry": removed.to_payload()},
@@ -1078,7 +1077,7 @@ class PenaltyReviewView(LeagueView):
                 shown = await _shown(self.state, removed.driver_user_id)
                 what = _button(f"Remove Pardon #{idx + 1}", self.state)
                 await _ask_stage(
-                    bot_of(interaction).change_queue,
+                    self.state.queue,
                     interaction,
                     self.state,
                     {"op": "remove", "list": "pardons", "entry": removed.to_payload()},
@@ -1155,7 +1154,7 @@ class PenaltyReviewView(LeagueView):
             # a change on the round's lane, which refuses the press where the channel is out of reach.
             what = _button("No Penalties / Confirm", self.state)
             await _ask_confirm(
-                bot_of(interaction).change_queue,
+                self.state.queue,
                 interaction,
                 self.state,
                 what=what,
@@ -1204,7 +1203,7 @@ class PenaltyReviewView(LeagueView):
         await _ask_reports_approved(
             interaction,
             self.state,
-            queue=bot_of(interaction).change_queue,
+            queue=self.state.queue,
             what=_button(button.label, self.state),
         )
 
@@ -1237,7 +1236,7 @@ class PenaltyReviewView(LeagueView):
         await ask_resubmission_start(
             interaction,
             self.state,
-            queue=bot_of(interaction).change_queue,
+            queue=self.state.queue,
             what=_button(button.label, self.state),
         )
 
@@ -1334,7 +1333,7 @@ class ApprovalView(LeagueView):
             return
         what = _button(button.label, self.state)
         await _ask_stage(
-            bot_of(interaction).change_queue,
+            self.state.queue,
             interaction,
             self.state,
             {"op": "make_changes"},
@@ -1399,6 +1398,6 @@ class ApprovalView(LeagueView):
         await _ask_reports_approved(
             interaction,
             self.state,
-            queue=bot_of(interaction).change_queue,
+            queue=self.state.queue,
             what=_button(button.label, self.state),
         )

@@ -428,8 +428,8 @@ def register_change_types(
         )
     )
     bot.change_queue.register(amend_close_change())
-    bot.change_queue.register(review_open_change())
-    bot.change_queue.register(review_prompt_change())
+    bot.change_queue.register(review_open_change(queue=bot.change_queue))
+    bot.change_queue.register(review_prompt_change(queue=bot.change_queue))
     bot.change_queue.register(review_stage_change())
     bot.change_queue.register(review_confirm_change())
     bot.change_queue.register(
@@ -442,7 +442,7 @@ def register_change_types(
     bot.scheduler_service.register_timer(
         TIMER, lock_clear_timer(bot.db_path, lambda: bot.change_queue)
     )
-    bot.change_queue.register(appeals_open_change())
+    bot.change_queue.register(appeals_open_change(queue=bot.change_queue))
     bot.change_queue.register(close_stale_change())
     # The review's change types stamp what they write with the queue's own clock, read when they
     # run, as the getters above are, and reach attendance through the hook alone.
@@ -452,7 +452,9 @@ def register_change_types(
     bot.change_queue.register(
         appeals_approval_change(attendance=attendance, now=lambda: bot.change_queue.now())
     )
-    for stage in amendment_stage_changes(attendance=attendance, now=lambda: bot.change_queue.now()):
+    for stage in amendment_stage_changes(
+        attendance=attendance, now=lambda: bot.change_queue.now(), queue=bot.change_queue
+    ):
         bot.change_queue.register(stage)
     bot.change_queue.register(
         points_amendment_change(

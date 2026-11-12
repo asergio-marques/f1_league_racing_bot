@@ -1227,7 +1227,8 @@ async def test_a_stage_approval_is_refused_while_a_staging_is_in_hand(tmp_path):
     state = PenaltyReviewState(
         round_id=ROUND_ID, division_id=DIVISION_ID, submission_channel_id=AMEND_CHANNEL,
         session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path,
-        bot=league.bot, prompt_message_id=AMEND_PROMPT, approval_message_id=AMEND_APPROVAL,
+        bot=league.bot,
+        queue=league.bot.change_queue, prompt_message_id=AMEND_PROMPT, approval_message_id=AMEND_APPROVAL,
         round_number=3, division_name="Pro", is_amendment=True,
     )
     await _add_penalty(state, _alex(league), driver=MAX)
@@ -1259,7 +1260,9 @@ async def test_the_report_stage_offers_the_pardons_the_builder_s_hook_gives(monk
 
     hook = MagicMock()
     hook.pardons_to_review = AsyncMock(return_value=[])
-    *_, prompt = stages.amendment_stage_changes(attendance=hook, now=lambda: NOW)
+    *_, prompt = stages.amendment_stage_changes(
+        attendance=hook, now=lambda: NOW, queue=MagicMock()
+    )
     review = AsyncMock(return_value=SimpleNamespace(prompt_message_id=8990))
     monkeypatch.setattr(amendment_writes, "run_amendment_review_stages", review)
     channel = SimpleNamespace(id=AMEND_CHANNEL)
