@@ -34,7 +34,6 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import ChangeOrigin, PlannedStep, StepKind, StepResult, Verdict
-from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
 )
@@ -45,7 +44,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.seasons import season_service
+from leaguebot.results.services.review.review_prompts import channel_in_penalty_review_on
 from leaguebot.results.services.review.review_posting import DELETE_MESSAGE, delete_message_step
 from leaguebot.results.services.submission.submission_steps import post_step
 
@@ -76,22 +75,6 @@ def _lane(payload: dict[str, Any]) -> str:
     return f"channel:{int(payload['channel_id'])}"
 
 
-async def _in_review(db: aiosqlite.Connection, channel_id: int) -> bool:
-    """Whether *channel_id* is a round's open submission channel in penalty review (the guard's
-    rule: not closed, not being resubmitted, the round not final)."""
-    row = await (
-        await db.execute(
-            "SELECT round_id FROM round_submission_channels "
-            "WHERE channel_id = ? AND closed = 0 AND in_penalty_review = 1 AND resubmitting = 0",
-            (channel_id,),
-        )
-    ).fetchone()
-    if row is None:
-        return False
-    facts = await season_service.round_facts_on(db, int(row["round_id"]))
-    return facts is not None and facts.status != RoundStatus.FINAL
-
-
 async def _conversation_open(db: aiosqlite.Connection, payload: dict[str, Any]) -> bool:
     """Whether the channel's submission is still open: a final approval closes it and keeps its
     row, so a lock stopped across that finds itself no longer due, as the review's own does."""
@@ -106,7 +89,7 @@ async def _conversation_open(db: aiosqlite.Connection, payload: dict[str, Any]) 
 
 async def _check_in_review(ctx: CheckContext) -> Verdict:
     async with get_connection(ctx.db_path) as db:
-        if await _in_review(db, int(ctx.payload["channel_id"])):
+        if await channel_in_penalty_review_on(db, int(ctx.payload["channel_id"])):
             return Verdict.go()
     return Verdict.not_due("the channel is no longer in penalty review")
 

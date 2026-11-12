@@ -24,31 +24,38 @@ if TYPE_CHECKING:
     from leaguebot.results.services.review.review_state import PenaltyReviewState, ReadServerConfig
 
 
-async def is_channel_in_penalty_review(db_path: str, channel_id: int) -> bool:
-    """Return True if *channel_id* belongs to an open submission channel in
-    penalty-review state (all sessions submitted/cancelled, round not yet finalized).
+async def channel_in_penalty_review_on(db: aiosqlite.Connection, channel_id: int) -> bool:
+    """Whether *channel_id* is an open submission channel in penalty review, on a handed
+    connection: not closed, not being resubmitted, and a round not yet final (the one reading
+    of the rule the typing guard and the lock change share).
 
     A channel resubmitting is not: the round is still in review, but the manager is pasting
     its results again and the guard would delete every paste.
     """
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT round_id
-            FROM round_submission_channels
-            WHERE channel_id = ?
-              AND closed = 0
-              AND in_penalty_review = 1
-              AND resubmitting = 0
-            """,
-            (channel_id,),
-        )
-        round_ids = [row["round_id"] for row in await cursor.fetchall()]
-        for round_id in round_ids:
-            facts = await season_service.round_facts_on(db, round_id)
-            if facts is not None and facts.status != RoundStatus.FINAL:
-                return True
+    cursor = await db.execute(
+        """
+        SELECT round_id
+        FROM round_submission_channels
+        WHERE channel_id = ?
+          AND closed = 0
+          AND in_penalty_review = 1
+          AND resubmitting = 0
+        """,
+        (channel_id,),
+    )
+    round_ids = [row["round_id"] for row in await cursor.fetchall()]
+    for round_id in round_ids:
+        facts = await season_service.round_facts_on(db, round_id)
+        if facts is not None and facts.status != RoundStatus.FINAL:
+            return True
     return False
+
+
+async def is_channel_in_penalty_review(db_path: str, channel_id: int) -> bool:
+    """Return True if *channel_id* belongs to an open submission channel in
+    penalty-review state (all sessions submitted/cancelled, round not yet finalized)."""
+    async with get_connection(db_path) as db:
+        return await channel_in_penalty_review_on(db, channel_id)
 
 
 async def _build_penalty_review_state(

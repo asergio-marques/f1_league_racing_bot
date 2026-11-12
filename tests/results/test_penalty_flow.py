@@ -13,7 +13,10 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.review.penalty_service import StagedPenalty, apply_penalties_on
-from leaguebot.results.services.review.review_prompts import is_channel_in_penalty_review
+from leaguebot.results.services.review.review_prompts import (
+    channel_in_penalty_review_on,
+    is_channel_in_penalty_review,
+)
 from tests.support.teams import seed_team_instances
 
 
@@ -286,6 +289,40 @@ async def test_penalty_review_flag_lifecycle(tmp_path):
 
     # After close → False
     assert await is_channel_in_penalty_review(db_path, channel_id) is False
+
+
+async def test_a_channel_in_review_is_found_whichever_of_its_rows_comes_first(tmp_path):
+    """A channel reused for a second round holds one row per round: the earlier row's round is
+    final, the later one's is not, and the channel is still in review (the guard and the lock
+    change read it alike, through `channel_in_penalty_review_on`)."""
+    db_path = str(tmp_path / "test.db")
+    await run_migrations(db_path)
+    _, division_id, first_round = await _bootstrap(db_path)
+    channel_id = 9002
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "INSERT INTO rounds (division_id, round_number, format, scheduled_at) "
+            "VALUES (?, 2, 'NORMAL', '2026-01-08T18:00:00+00:00')",
+            (division_id,),
+        )
+        second_round = cursor.lastrowid
+        await db.execute("UPDATE rounds SET status = 'FINAL' WHERE id = ?", (first_round,))
+        for round_id in (first_round, second_round):
+            await db.execute(
+                "INSERT INTO round_submission_channels "
+                "(round_id, channel_id, created_at, closed, in_penalty_review) "
+                "VALUES (?, ?, '2026-01-01T18:00:00', 0, 1)",
+                (round_id, channel_id),
+            )
+        await db.commit()
+
+        assert await channel_in_penalty_review_on(db, channel_id) is True
+
+        await db.execute("UPDATE rounds SET status = 'FINAL' WHERE id = ?", (second_round,))
+        await db.commit()
+
+        assert await channel_in_penalty_review_on(db, channel_id) is False
 
 
 # ---------------------------------------------------------------------------
