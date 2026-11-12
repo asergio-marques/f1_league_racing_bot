@@ -1210,6 +1210,31 @@ async def test_the_builder_signs_every_module_up_to_the_review_sections(tmp_path
     ]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#284: the builder hands results' snapshot to the approval by name, not to a hook",
+)
+async def test_the_builder_signs_results_up_to_a_season_approved(tmp_path, monkeypatch):
+    """Straight after `build`, results' points snapshot is signed up to the hook a season's
+    approval is saved through, nothing called yet: handed the save's connection, then the
+    season's id."""
+    from leaguebot.results.services.points import season_points_service
+
+    called: list[tuple] = []
+
+    async def snapshot_spy(*args, **kwargs):
+        called.append((args, kwargs))
+
+    monkeypatch.setattr(season_points_service, "snapshot_configs_to_season_on", snapshot_spy)
+
+    bot = await built_bot(tmp_path, now=_NOW)
+    assert called == []
+
+    await bot.season_approved.call(None, 7)
+
+    assert called == [((None, 7), {})]
+
+
 async def test_the_builder_signs_results_up_to_a_confirmation_refused(tmp_path, monkeypatch):
     """Straight after `build`, results' refusals are signed up to the hook a season's confirmation
     is refused through, nothing called yet: handed the league's modules and the database, then

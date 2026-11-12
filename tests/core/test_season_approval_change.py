@@ -589,13 +589,41 @@ async def test_the_manager_is_told_at_once_and_the_reply_is_updated_when_the_sea
     assert NOT_EVERYTHING not in reply(press)
 
 
+#: The reason a test of the season approved hook fails until core's approval calls it.
+NO_SEASON_APPROVED = (
+    "#284: the approval's save calls results' snapshot by name, through no season approved hook"
+)
+
+
+def _failing_placements(league: Any) -> ExitStack:
+    """The save's commitment of the placements raises, as a fault of the database would."""
+    return _failing_save()
+
+
+def _failing_subscriber(league: Any) -> ExitStack:
+    """A subscriber to the season approved hook raises, after results' points snapshot."""
+    async def failing(db: Any, season_id: int) -> None:
+        raise RuntimeError("disk I/O error")
+
+    league.bot.season_approved.subscribe(failing)
+    return ExitStack()
+
+
+@pytest.mark.parametrize("fault", [
+    pytest.param(_failing_placements, id="the placements' commitment"),
+    pytest.param(_failing_subscriber, id="a season approved subscriber",
+                 marks=pytest.mark.xfail(strict=True, reason=NO_SEASON_APPROVED)),
+])
 async def test_the_sessions_placements_points_and_season_are_saved_in_one_save(
-    tmp_path, monkeypatch,
+    tmp_path, monkeypatch, fault,
 ):
+    """Results on. A fault in the save, in the placements' commitment or in a module's part of
+    the season approved, stops the queue at the save, and none of the save is kept: no sessions,
+    no points on the season, no placements committed, and the season still in Placements."""
     league = await _league_for(tmp_path, monkeypatch, results=True)
     await _pressed(league)
 
-    with _failing_save():
+    with fault(league):
         await run_queue(league.bot)
 
     assert await _stopped_at(league) == "apply"
@@ -605,6 +633,37 @@ async def test_the_sessions_placements_points_and_season_are_saved_in_one_save(
     assert await _committed(league) == 0
     season = await league.season()
     assert (season["status"], season["stage"]) == ("SETUP", "PLACEMENTS")
+
+
+@pytest.mark.xfail(strict=True, reason=NO_SEASON_APPROVED)
+async def test_the_save_calls_season_approved_once_on_its_connection_before_the_placements(
+    tmp_path, monkeypatch,
+):
+    """Results on, Pro and Am with four rounds each. As the approval's save runs, the season
+    approved hook is called once, on the save's own connection with its transaction still open,
+    handed the season's id, after every round has its sessions and before any placement is
+    committed or the season moved on: where results' points snapshot ran by name until now."""
+    league = await _league_for(tmp_path, monkeypatch, results=True)
+    handed: list[tuple[Any, ...]] = []
+
+    async def watching(db: Any, season_id: int) -> None:
+        cursor = await db.execute("SELECT COUNT(*) AS n FROM sessions")
+        sessions = (await cursor.fetchone())["n"]
+        cursor = await db.execute(
+            "SELECT COUNT(*) AS n FROM driver_season_assignments WHERE committed = 1"
+        )
+        committed = (await cursor.fetchone())["n"]
+        cursor = await db.execute("SELECT stage FROM seasons WHERE id = ?", (season_id,))
+        stage = (await cursor.fetchone())["stage"]
+        handed.append((db.in_transaction, season_id, sessions, committed, stage))
+
+    league.bot.season_approved.subscribe(watching)
+    await _pressed(league)
+
+    await run_queue(league.bot)
+
+    assert handed == [(True, SEASON_ID, 2 * len(_all_rounds()), 0, "PLACEMENTS")]
+    assert (await league.season())["stage"] == "ONGOING"
 
 
 async def test_the_save_reads_nothing_but_its_own_connection(tmp_path, monkeypatch):
