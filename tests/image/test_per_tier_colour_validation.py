@@ -216,10 +216,9 @@ async def test_the_aspect_toggle_passes_the_shortfall_through(monkeypatch):
     """
     import leaguebot.image.services.image_render_service as render
 
-    monkeypatch.setattr(render, "converter_available", lambda: True)
     from leaguebot.image.services import image_settings
 
-    monkeypatch.setattr(image_settings, "converter_available", lambda: True, raising=False)
+    monkeypatch.setattr(render, "converter_available", lambda: True)
     config = MagicMock()
     config.get_toggles = AsyncMock(return_value={"calendar": False})
     validity = MagicMock()

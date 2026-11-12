@@ -92,11 +92,6 @@ def _rasteriser_present(monkeypatch):
     import leaguebot.image.services.image_render_service as render
 
     monkeypatch.setattr(render, "converter_available", lambda: True)
-    try:
-        import leaguebot.image.services.image_settings as image_settings
-    except ImportError:
-        return
-    monkeypatch.setattr(image_settings, "converter_available", lambda: True, raising=False)
 
 
 async def _league(tmp_path, *, modules=("images",), tier_colours=(), no_configuration=False,
@@ -212,12 +207,6 @@ async def test_a_long_refusal_of_a_folder_is_sent_whole_in_parts(tmp_path, monke
         return list(problems)
 
     monkeypatch.setattr(validity, "blocking_template_problems", survey)
-    try:
-        import leaguebot.image.services.image_settings as image_settings
-    except ImportError:
-        pass
-    else:
-        monkeypatch.setattr(image_settings, "blocking_template_problems", survey, raising=False)
     league = await _league(tmp_path)
 
     asked = await _run_with(league, "images config template-directory", SHIPPED_TEMPLATES)
