@@ -9,6 +9,7 @@ import aiosqlite
 from leaguebot.core.db.database import get_connection, sole_row
 from leaguebot.core.models.change import AuditRecord
 from leaguebot.core.services.queue.setting_change import Saved
+from leaguebot.core.services.seasons.season_service import setup_seasons_among_on
 from leaguebot.results.models.points_config import (
     PointsConfigEntry,
     PointsConfigFastestLap,
@@ -150,16 +151,10 @@ async def setup_seasons_linking_on(
     """The ``(season_id, season_number)`` of every season in setup attached to this name, read
     on *db*."""
     cursor = await db.execute(
-        """
-        SELECT s.id AS id, s.season_number AS season_number
-        FROM season_points_links AS l
-        JOIN seasons AS s ON s.id = l.season_id
-        WHERE l.config_name = ? AND s.status = 'SETUP'
-        ORDER BY s.season_number, s.id
-        """,
-        (config_name,),
+        "SELECT season_id FROM season_points_links WHERE config_name = ?", (config_name,)
     )
-    return [(r["id"], r["season_number"]) for r in await cursor.fetchall()]
+    linked = [int(r["season_id"]) for r in await cursor.fetchall()]
+    return [(s.id, s.season_number) for s in await setup_seasons_among_on(db, linked)]
 
 
 async def setup_seasons_linking(
@@ -224,18 +219,16 @@ async def remove_config_on(db: aiosqlite.Connection, config_name: str) -> Saved:
         fastest_laps[row["session_type"]] = {
             "fl_points": row["fl_points"], "fl_position_limit": row["fl_position_limit"],
         }
-    detached_from = [number for _, number in await setup_seasons_linking_on(db, config_name)]
+    detaching = await setup_seasons_linking_on(db, config_name)
+    detached_from = [number for _, number in detaching]
     await db.execute("DELETE FROM points_config_store WHERE id = ?", (config_id,))
-    await db.execute(
-        """
-        DELETE FROM season_points_links
-        WHERE config_name = ?
-          AND season_id IN (
-              SELECT id FROM seasons WHERE status = 'SETUP'
-          )
-        """,
-        (config_name,),
-    )
+    if detaching:
+        marks = ", ".join("?" for _ in detaching)
+        await db.execute(
+            "DELETE FROM season_points_links "  # noqa: S608 -- marks are placeholders only
+            f"WHERE config_name = ? AND season_id IN ({marks})",
+            (config_name, *(season_id for season_id, _ in detaching)),
+        )
     return Saved(
         changed=True,
         audits=(AuditRecord(

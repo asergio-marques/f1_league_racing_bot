@@ -2563,8 +2563,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_verdict_post.py", "_driver_nationality"): (5, PASS["image"]),
     ("image/services/image_verdict_post.py", "_round_context"): (3, PASS["image"]),
     ("image/services/image_weather_post.py", "build_drawing_for_round"): (6, PASS["image"]),
-    ("results/services/points/points_config_service.py", "remove_config_on"): (1, PASS["results"]),
-    ("results/services/points/points_config_service.py", "setup_seasons_linking_on"): (1, PASS["results"]),
     ("results/services/points/scoring.py", "<module>"): (3, PASS["results"]),
     ("signup/services/review_changes.py", "choices_change.open_"): (1, PASS["signup"]),
     ("signup/services/review_changes.py", "recollect_change.open_"): (1, PASS["signup"]),
