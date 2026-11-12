@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
+from typing import Any
 
 import pytest
 
@@ -698,6 +699,30 @@ async def _not_held(db) -> list[int]:
     return [row["not_held"] for row in await cursor.fetchall()]
 
 
+#: Why the not-held writer's tests fail until core's writer calls the notices itself.
+NOTICES_IN_CORE = "#284: end_round_not_held_on neither takes nor calls cancellation_notices"
+
+
+def _notices_hook() -> tuple[Any, list[tuple[Any, ...]], Any]:
+    """A hook with one subscriber of the test's own, as `cancellation_notices` is made: it records
+    what it is handed (the connection, the scope and the round's target) and hands back one
+    module's notice of its own. Returns the hook, the record, and that notice."""
+    from leaguebot.core.models.cancellation import CancellationNotices
+    from leaguebot.core.models.change import PlannedStep
+    from leaguebot.core.utils.hooks import AwaitedHook
+
+    planned = CancellationNotices(steps=(PlannedStep("notify_test", {"round": 1}),))
+    handed: list[tuple[Any, ...]] = []
+
+    async def subscriber(db: Any, scope: str, target: dict[str, Any]) -> Any:
+        handed.append((db, scope, dict(target)))
+        return planned
+
+    hook = AwaitedHook()
+    hook.subscribe(subscriber)
+    return hook, handed, planned
+
+
 @pytest.mark.parametrize(
     "statuses,ended,moves",
     [
@@ -713,6 +738,7 @@ async def _not_held(db) -> list[int]:
                      id="the middle of three rounds"),
     ],
 )
+@pytest.mark.xfail(strict=True, reason=NOTICES_IN_CORE)
 async def test_end_round_not_held_on_moves_only_a_round_awaiting_results_or_report_verdicts(
     tmp_path, statuses, ended, moves
 ):
@@ -720,16 +746,29 @@ async def test_end_round_not_held_on_moves_only_a_round_awaiting_results_or_repo
     moves it to CANCELLED, marked not held and audited, only where it awaited its results (a
     first submission) or its report verdicts (a resubmission), answering that status, every
     other round untouched and unmarked, and Pro stays active, its last round being still to run.
-    Ending the middle of three rounds, round 1 final, marks that round alone. From any other
-    status it answers None and writes nothing: the round keeps its status, unmarked, and no audit
-    is written."""
+    Ending the middle of three rounds, round 1 final, marks that round alone. Where it moves the
+    round it calls the notices hook it is handed once, on its own connection, for the round scope
+    and the round (its id and number, Pro's id and name, the season's id and number, and its
+    track), and answers what the hook's subscribers planned beside the status. From any other
+    status it answers None, writes nothing and calls no subscriber: the round keeps its status,
+    unmarked, and no audit is written."""
     from leaguebot.core.services.seasons.season_service import end_round_not_held_on
 
+    hook, handed, planned = _notices_hook()
     db_path = await _ongoing_db(tmp_path, statuses)
     async with get_connection(db_path) as db:
-        answer = await end_round_not_held_on(db, ROUND_ID + ended, **ACTOR)
+        answer = await end_round_not_held_on(
+            db, ROUND_ID + ended, cancellation_notices=hook, **ACTOR
+        )
         if moves:
-            assert answer == statuses[ended]
+            assert answer is not None
+            assert answer.previous == statuses[ended]
+            assert answer.notices == [planned]
+            assert handed == [(db, "round", {
+                "round_id": ROUND_ID + ended, "division_id": DIVISION_ID, "division_name": "Pro",
+                "season_id": SEASON_ID, "season_number": 3, "round_number": ended + 1,
+                "track_name": None,
+            })]
             assert await _round_statuses(db) == [
                 "CANCELLED" if n == ended else status for n, status in enumerate(statuses)
             ]
@@ -738,21 +777,29 @@ async def test_end_round_not_held_on_moves_only_a_round_awaiting_results_or_repo
             assert await _division_status(db) == "ACTIVE", "the last round is still to run"
         else:
             assert answer is None
+            assert handed == []
             assert await _round_statuses(db) == list(statuses)
             assert await _not_held(db) == [0] * len(statuses)
             assert await _round_audits(db) == []
 
 
+@pytest.mark.xfail(strict=True, reason=NOTICES_IN_CORE)
 async def test_end_round_not_held_on_commits_nothing(tmp_path):
     """Pro, the season's only division, has round 1 final and round 2 awaiting its report verdicts.
-    Ending round 2 as not held on a connection finishes Pro and moves the season to Pending
-    completion on that same connection; a rollback leaves round 2 awaiting its verdicts and
-    unmarked, no audit, Pro active and the season ongoing."""
+    Ending round 2 as not held on a connection, its notices hook signed up to by nobody, finishes
+    Pro and moves the season to Pending completion on that same connection, answering the status
+    it ended from and no notices; a rollback leaves round 2 awaiting its verdicts and unmarked, no
+    audit, Pro active and the season ongoing."""
     from leaguebot.core.services.seasons.season_service import end_round_not_held_on
+    from leaguebot.core.utils.hooks import AwaitedHook
 
     db_path = await _ongoing_db(tmp_path, ("FINAL", "AWAITING_REPORT_VERDICTS"))
     async with get_connection(db_path) as db:
-        assert await end_round_not_held_on(db, ROUND_ID + 1, **ACTOR) == "AWAITING_REPORT_VERDICTS"
+        answer = await end_round_not_held_on(
+            db, ROUND_ID + 1, cancellation_notices=AwaitedHook(), **ACTOR
+        )
+        assert answer is not None
+        assert (answer.previous, answer.notices) == ("AWAITING_REPORT_VERDICTS", [])
         assert await _division_status(db) == "FINISHED"
         assert await _season(db) == ("ACTIVE", "PENDING_COMPLETION")
         await db.rollback()

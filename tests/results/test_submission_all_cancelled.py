@@ -746,6 +746,62 @@ async def test_no_check_in_record_is_written_while_attendance_is_off(tmp_path):
     assert "check-in, Pro" not in line
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#284: the check-in read is planned through a hook core declares"
+)
+async def test_a_round_ending_cancelled_asks_attendance_for_its_check_in_read(tmp_path):
+    """Attendance is on. Round 3 ends cancelled when the admin types CANCELLED for its race.
+    Inside the save that ends it, on that save's own connection, attendance's share of a round's
+    review (`AttendanceAfterReview`, as the builder hands it) is asked once for the reading of
+    round 3's check-in, handed Pro's round 3: its id and number, Pro's id and name, the season's
+    id and number, and its track. The reading it plans is the change's first job after the
+    ending, where it stood before."""
+    from leaguebot.attendance.services import check_in_record
+
+    league = await _league(tmp_path, attendance=True)
+    handed: list[tuple[bool, dict[str, Any]]] = []
+
+    async def check_in_read_on(db: Any, target: dict[str, Any]) -> Any:
+        handed.append((db.in_transaction, dict(target)))
+        return list(await check_in_record.read_check_in_on(db, target))
+
+    with patch.object(league.bot.attendance_after_review, "check_in_read_on", check_in_read_on,
+                      create=True):
+        await _cancel_the_race(league)
+        await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert handed == [(True, {
+        "round_id": ROUND_3, "division_id": PRO, "division_name": "Pro", "season_id": SEASON_ID,
+        "season_number": 3, "round_number": 3, "track_name": "Silverstone",
+    })]
+    [change] = [row for row in await change_rows(league.db_path)
+                if row["kind"] == ALL_CANCELLED_KIND]
+    names = [row["name"] for row in await step_rows(league.db_path, change["id"])]
+    assert names[:2] == ["end_round", READ_CHECK_IN]
+
+
+async def test_a_round_ending_cancelled_plans_its_jobs_in_today_s_order(tmp_path):
+    """Weather and attendance are on. Round 3 ends cancelled when the admin types CANCELLED for
+    its race. Its change runs, in this order: the ending, the reading of its check-in, the
+    qualifying's and the race's cancelled lines, the check-in notice, the forecast note, the
+    results note, the calendar struck through, the deletion of the calendar it replaces, and the
+    asking for the channel's closing."""
+    league = await _league(tmp_path, weather=True, attendance=True)
+
+    await _cancel_the_race(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [change] = [row for row in await change_rows(league.db_path)
+                if row["kind"] == ALL_CANCELLED_KIND]
+    assert [row["name"] for row in await step_rows(league.db_path, change["id"])] == [
+        "end_round", READ_CHECK_IN, "post_session_results", "post_session_results",
+        "notify_checkin", "notify_forecast", "notify_results", "post_calendar", "delete_replaced",
+        "ask_close",
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Its standings, withdrawn after a resubmission (Part E, E5; owner, check 1, "Fold all three in")
 # ---------------------------------------------------------------------------
