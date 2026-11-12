@@ -9,6 +9,8 @@ import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.round import RoundStatus
+from leaguebot.core.services.seasons import season_service
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.services.posting.owned_channel_handler import post_in_owned_channel
 from leaguebot.results.models.points_config import SessionType
@@ -32,19 +34,21 @@ async def is_channel_in_penalty_review(db_path: str, channel_id: int) -> bool:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT rsc.round_id
-            FROM round_submission_channels rsc
-            JOIN rounds r ON r.id = rsc.round_id
-            WHERE rsc.channel_id = ?
-              AND rsc.closed = 0
-              AND rsc.in_penalty_review = 1
-              AND rsc.resubmitting = 0
-              AND r.status != 'FINAL'
+            SELECT round_id
+            FROM round_submission_channels
+            WHERE channel_id = ?
+              AND closed = 0
+              AND in_penalty_review = 1
+              AND resubmitting = 0
             """,
             (channel_id,),
         )
-        row = await cursor.fetchone()
-    return row is not None
+        round_ids = [row["round_id"] for row in await cursor.fetchall()]
+        for round_id in round_ids:
+            facts = await season_service.round_facts_on(db, round_id)
+            if facts is not None and facts.status != RoundStatus.FINAL:
+                return True
+    return False
 
 
 async def _build_penalty_review_state(
@@ -68,16 +72,7 @@ async def _build_penalty_review_state(
     db_path: str = bot.db_path
 
     async with get_connection(db_path) as db:
-        ctx_cursor = await db.execute(
-            """
-            SELECT r.round_number, d.name AS division_name
-            FROM rounds r
-            JOIN divisions d ON d.id = r.division_id
-            WHERE r.id = ?
-            """,
-            (round_id,),
-        )
-        ctx = await ctx_cursor.fetchone()
+        facts = await season_service.round_facts_on(db, round_id)
 
         sr_cursor = await db.execute(
             "SELECT session_type FROM session_results WHERE round_id = ? AND status = 'ACTIVE'",
@@ -85,8 +80,8 @@ async def _build_penalty_review_state(
         )
         sr_rows = await sr_cursor.fetchall()
 
-    round_number: int = ctx["round_number"] if ctx else 0
-    division_name: str = ctx["division_name"] if ctx else ""
+    round_number: int = facts.round_number if facts else 0
+    division_name: str = facts.division_name if facts else ""
 
     _stype_order = list(SessionType)
     session_types_present = sorted(
