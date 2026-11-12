@@ -32,6 +32,16 @@ class TeamInstance:
     is_reserve: bool
 
 
+@dataclass(frozen=True)
+class SeatedDriver:
+    """A driver holding a seat of a division, with the team's full name and whether it is the
+    reserve team."""
+
+    discord_user_id: int
+    team_name: str
+    is_reserve: bool
+
+
 @dataclass
 class TeamRoleConfig:
     """Server-scoped mapping of team name → Discord role ID."""
