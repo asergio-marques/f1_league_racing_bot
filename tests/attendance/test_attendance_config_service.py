@@ -145,6 +145,22 @@ async def test_get_or_create_writes_the_packaged_defaults(tmp_path):
     assert await service.get_config() is not None
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#285: reading a round's window still creates the configuration row"
+)
+async def test_reading_a_round_s_window_writes_nothing(tmp_path):
+    """A round's timing windows are read while a season is approved or a round amended, and a
+    read writes nothing: with attendance reported on and no configuration row stored, the read
+    leaves the table as it found it rather than creating the row."""
+    db_path = await _make_db(tmp_path)
+    modules = MagicMock()
+    modules.is_attendance_enabled = AsyncMock(return_value=True)
+
+    await attendance_service.round_window(AttendanceService(db_path), modules, amending=False)
+
+    assert await _row(db_path) == {}
+
+
 async def test_get_or_create_is_idempotent(tmp_path):
     """Called on every config command. A second row for the same server would make which
     settings the league gets depend on row order."""
