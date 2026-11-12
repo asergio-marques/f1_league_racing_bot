@@ -639,7 +639,7 @@ async def open_amendment_in_season(db_path: str, season_id: int) -> dict[str, An
     highest division is named; each is refused until none is left.
     """
     async with get_connection(db_path) as db:
-        for division in await season_service.SeasonService(db_path).get_divisions_on(db, season_id):
+        for division in await season_service.season_divisions_on(db, season_id):
             rounds = await season_service.division_rounds_in_order_on(db, division.id)
             open_on = await _open_amendments_among_on(db, (each.id for each in rounds))
             for each in rounds:
