@@ -48,7 +48,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import aiosqlite
 
@@ -60,6 +60,7 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
+from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.modules.module_service import ModuleService
 from leaguebot.core.services.queue.queue_records import (
     in_hand,
@@ -71,7 +72,11 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.seasons.season_service import live_season
+from leaguebot.core.services.seasons.season_service import (
+    division_rounds_in_order_on,
+    live_season,
+    season_divisions_on,
+)
 from leaguebot.core.utils.log_lines import refusal_line, refuse, reply_reason
 from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.services.review import review_posting, review_verdicts
@@ -200,16 +205,34 @@ async def refuse_while_approval_in_hand(
     return True
 
 
-async def _divisions(db: aiosqlite.Connection, season_id: int) -> list[aiosqlite.Row]:
+class _Division(NamedTuple):
+    """One division of the season as the approval reads it."""
+
+    id: int
+    name: str
+    #: The first round that was not cancelled, None where it has none.
+    first_round_id: int | None
+    #: The latest round awaiting appeal verdicts or final, None where it has none.
+    latest_round_id: int | None
+
+
+async def _divisions(db: aiosqlite.Connection, season_id: int) -> list[_Division]:
     """The season's divisions in tier order, a cancelled one included, each with its first round
-    that was not cancelled (None where it has none)."""
-    cursor = await db.execute(
-        "SELECT d.id, d.name, (SELECT r.id FROM rounds r WHERE r.division_id = d.id "
-        "AND r.status != 'CANCELLED' ORDER BY r.round_number LIMIT 1) AS first_round_id "
-        "FROM divisions d WHERE d.season_id = ? ORDER BY d.tier, d.id",
-        (season_id,),
-    )
-    return list(await cursor.fetchall())
+    that was not cancelled and its latest round awaiting appeals or final (None where it has
+    none), read through core's services."""
+    divisions: list[_Division] = []
+    for division in await season_divisions_on(db, season_id):
+        rounds = await division_rounds_in_order_on(db, division.id)
+        first = next((r.id for r in rounds if r.status != RoundStatus.CANCELLED), None)
+        latest = next(
+            (
+                r.id for r in reversed(rounds)
+                if r.status in (RoundStatus.AWAITING_APPEAL_VERDICTS, RoundStatus.FINAL)
+            ),
+            None,
+        )
+        divisions.append(_Division(division.id, division.name, first, latest))
+    return divisions
 
 
 def _applied(ctx: OutcomeContext) -> bool:
@@ -309,8 +332,8 @@ def points_amendment_change(
         return StepResult(
             result={"divisions": len(divisions)},
             then=tuple(
-                PlannedStep(NAMES, {"division_id": int(d["id"])})
-                for d in divisions if d["first_round_id"] is not None
+                PlannedStep(NAMES, {"division_id": d.id})
+                for d in divisions if d.first_round_id is not None
             ),
         )
 
@@ -331,42 +354,33 @@ def points_amendment_change(
 
         divisions = await _divisions(db, season_id)
         for division in divisions:
-            if division["first_round_id"] is not None:
+            if division.first_round_id is not None:
                 await cascade_recompute_from_round_on(
-                    db, int(division["id"]), int(division["first_round_id"]),
-                    display_names(ctx, int(division["id"])),
+                    db, division.id, division.first_round_id, display_names(ctx, division.id),
                 )
         # Each division's attendance, as at its latest round awaiting appeals or final, which is
         # the hook's to do and does nothing while attendance is off.
         latest: dict[int, int] = {}
         for division in divisions:
-            row = await (
-                await db.execute(
-                    "SELECT id FROM rounds WHERE division_id = ? "
-                    "AND status IN ('AWAITING_APPEAL_VERDICTS', 'FINAL') "
-                    "ORDER BY round_number DESC LIMIT 1",
-                    (division["id"],),
-                )
-            ).fetchone()
-            if row is not None:
-                latest[int(division["id"])] = int(row["id"])
-                await attendance.recalculate_on(db, int(row["id"]), int(division["id"]))
+            if division.latest_round_id is not None:
+                latest[division.id] = division.latest_round_id
+                await attendance.recalculate_on(db, division.latest_round_id, division.id)
 
         then: list[PlannedStep] = []
         reposted: set[int] = set()
         posted_in: set[int] = set()
         for division in divisions:
             posts = await review_posting.plan_division_posts(
-                db, int(division["id"]), division_name=str(division["name"])
+                db, division.id, division_name=division.name
             )
             then.extend(posts)
             for post in posts:
                 reposted.add(int(post.payload["round_id"]))
-                posted_in.add(int(division["id"]))
+                posted_in.add(division.id)
         for division in divisions:
-            if int(division["id"]) in latest:
+            if division.id in latest:
                 then.extend(review_verdicts.plan_attendance(
-                    latest[int(division["id"])], int(division["id"]), str(division["name"])
+                    latest[division.id], division.id, division.name
                 ))
         audit = AuditRecord(
             "POINTS_AMENDMENT_APPROVED",
