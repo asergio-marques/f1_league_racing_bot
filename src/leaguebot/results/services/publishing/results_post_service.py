@@ -46,6 +46,11 @@ log = logging.getLogger(__name__)
 
 _MSG_MAX = 1990  # Leave a small margin under Discord's 2000-char limit
 
+#: Whom a results or standings table posted as text may notify: the drivers it names, as it
+#: always has, and no role and not @everyone. A table drawn as a picture carries no mention text,
+#: so it notifies nobody.
+_TABLE_MENTIONS = discord.AllowedMentions(users=True, roles=False, everyone=False)
+
 
 class PostedTable(NamedTuple):
     """What posting one table put up, and what it leaves standing for the caller to take down.
@@ -125,7 +130,7 @@ def _split_content(text: str) -> list[str]:
 @posts_in_a_job
 async def _send_chunked(channel: discord.TextChannel, content: str) -> list[int]:
     """Send *content* to *channel*, splitting into multiple messages if needed, through core's
-    standing-post handler, notifying nobody.
+    standing-post handler, notifying the drivers it names.
 
     Returns **every** message's id, the anchor first, so that all of them can be recorded.
 
@@ -140,7 +145,7 @@ async def _send_chunked(channel: discord.TextChannel, content: str) -> list[int]
     sent: list[int] = []
     try:
         for chunk in chunks:
-            sent.append(await post_standing(channel, chunk, mentions=discord.AllowedMentions.none()))
+            sent.append(await post_standing(channel, chunk, mentions=_TABLE_MENTIONS))
     except Exception as failure:
         # **A posting is whole or absent** (#345). The chunks already sent are recorded nowhere
         # until the whole posting is, so leaving them would strand the start of a table in the
@@ -944,9 +949,7 @@ async def produce_standings(
             # Only edit in-place when the content fits in a single message; otherwise
             # fall through to send afresh so we can chunk across multiple messages.
             if len(content) <= _MSG_MAX:
-                await edit_standing(
-                    existing_msg, mentions=discord.AllowedMentions.none(), content=content
-                )
+                await edit_standing(existing_msg, mentions=_TABLE_MENTIONS, content=content)
                 sent_msg = existing_msg
                 # **A shorter table leaves the chunks it no longer fills** (#345). Editing the
                 # anchor in place is the cheap path, but a posting that was three messages and

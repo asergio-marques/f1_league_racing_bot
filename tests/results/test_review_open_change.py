@@ -73,7 +73,7 @@ from tests.support.review_league import (
     run_until_done,
     stopped_at,
 )
-from tests.support.mentions import NOBODY, notified
+from tests.support.mentions import NOBODY, USERS_ONLY, notified
 from tests.support.teams import seed_team_instances
 
 
@@ -371,7 +371,7 @@ async def test_a_round_in_review_can_no_longer_be_cancelled(tmp_path):
 
 async def test_the_interim_results_and_standings_are_posted(tmp_path):
     """Round 3's review opens: its results table and its standings are each posted for the first
-    time, notifying nobody."""
+    time, notifying the drivers they name."""
     league = await _league(tmp_path, name="open_posts")
 
     await _open(league)
@@ -380,7 +380,7 @@ async def test_the_interim_results_and_standings_are_posted(tmp_path):
     assert len(league.sent_to(STANDINGS_CHANNEL)) == 1
     for channel_id in (RESULTS_CHANNEL, STANDINGS_CHANNEL):
         [sent] = league.channel(channel_id).send.await_args_list
-        assert notified(sent.kwargs.get("allowed_mentions")) == NOBODY
+        assert notified(sent.kwargs.get("allowed_mentions")) == USERS_ONLY
     assert (await _channel_row(league.db_path))["results_posted"] == 1
 
 

@@ -59,7 +59,7 @@ from tests.support.change_queue import (
     updated_reply,
 )
 from tests.support.channel_uses import sign_up_channel_uses_read
-from tests.support.mentions import NOBODY, notified
+from tests.support.mentions import NOBODY, USERS_ONLY, notified
 from tests.support.season_league import set_module_flag
 from tests.support.undecorate import undecorate
 
@@ -359,7 +359,7 @@ async def _stop_notice(league: _League) -> str:
 
 
 async def test_a_replacement_is_posted_before_the_old_message_is_deleted(tmp_path):
-    """Round 3's results table is posted again: the new table goes out, notifying nobody,
+    """Round 3's results table is posted again: the new table goes out, notifying the drivers it names,
     before the old one (8800) is deleted."""
     league = await _league(tmp_path)
     await _ask(league)
@@ -374,7 +374,7 @@ async def test_a_replacement_is_posted_before_the_old_message_is_deleted(tmp_pat
     )
     assert set(league.channel(RESULTS_CHANNEL).messages) == {new[0]}
     [sent] = league.channel(RESULTS_CHANNEL).send.await_args_list
-    assert notified(sent.kwargs.get("allowed_mentions")) == NOBODY
+    assert notified(sent.kwargs.get("allowed_mentions")) == USERS_ONLY
 
 
 async def test_the_new_message_id_is_saved_with_the_post(tmp_path):
@@ -863,7 +863,7 @@ async def test_an_old_message_already_gone_completes_its_delete(tmp_path):
 
 async def test_standings_that_still_fit_are_edited_in_place_and_nothing_is_deleted(tmp_path):
     """Round 3's standings (8801) still fit one message: they are edited in place, notifying
-    nobody, and nothing is posted or deleted."""
+    the drivers it names, and nothing is posted or deleted."""
     league = await _league(tmp_path)
     await _ask(league)
     await run_queue(league.bot)
@@ -875,7 +875,7 @@ async def test_standings_that_still_fit_are_edited_in_place_and_nothing_is_delet
     assert OLD_STANDINGS in standings.messages
     assert standings.messages[OLD_STANDINGS].content != "provisional standings"
     edit = standings.messages[OLD_STANDINGS].edit.await_args
-    assert notified(edit.kwargs.get("allowed_mentions")) == NOBODY
+    assert notified(edit.kwargs.get("allowed_mentions")) == USERS_ONLY
 
 
 async def test_a_refused_standings_edit_stops_the_queue_and_posts_no_second_table(tmp_path):

@@ -13,6 +13,9 @@ import discord
 #: What a post that notifies nobody lets through.
 NOBODY: dict[str, Any] = {"everyone": False, "users": set(), "roles": set()}
 
+#: What a post that notifies the members it names, and no role and not @everyone, lets through.
+USERS_ONLY: dict[str, Any] = {"everyone": False, "users": "any", "roles": set()}
+
 
 def notified(allowed: Any) -> dict[str, Any]:
     """Whom *allowed*, a send's ``allowed_mentions``, lets the post notify.
