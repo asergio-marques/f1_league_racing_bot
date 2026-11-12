@@ -569,15 +569,7 @@ class SeasonService:
     async def get_division(self, division_id: int) -> Division | None:
         """Return the division *division_id*, or None where there is none."""
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT id, season_id, name, mention_role_id, status, tier, "
-                "lineup_channel_id, calendar_channel_id, lineup_message_id, "
-                "calendar_message_id "
-                "FROM divisions WHERE id = ?",
-                (division_id,),
-            )
-            row = await cursor.fetchone()
-        return _row_to_division(row) if row is not None else None
+            return await division_on(db, division_id)
 
     async def capacity_counts(self, season_id: int) -> SeasonCapacityCounts:
         """What the season review's warnings ask of the image module: the division holding
@@ -1386,6 +1378,25 @@ async def division_rounds_on(db: aiosqlite.Connection, division_id: int) -> list
         (division_id,),
     )
     return [int(row["id"]) for row in await cursor.fetchall()]
+
+
+async def division_on(db: aiosqlite.Connection, division_id: int) -> Division | None:
+    """The division *division_id*, or None where there is none, read on *db*.
+
+    For a module reading core's tables only through core's services (architecture.md, "The
+    database"), handed the connection of its own save or read: what it asks of `divisions` (its
+    season, its name) comes from here rather than from a query of its own. It writes nothing and
+    commits nothing.
+    """
+    cursor = await db.execute(
+        "SELECT id, season_id, name, mention_role_id, status, tier, "
+        "lineup_channel_id, calendar_channel_id, lineup_message_id, "
+        "calendar_message_id "
+        "FROM divisions WHERE id = ?",
+        (division_id,),
+    )
+    row = await cursor.fetchone()
+    return _row_to_division(row) if row is not None else None
 
 
 async def round_by_id(db_path: str, division_id: int, round_id: int) -> Round | None:

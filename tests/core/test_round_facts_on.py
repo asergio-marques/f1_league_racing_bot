@@ -13,6 +13,7 @@ from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.models.season import SeasonStatus
 from leaguebot.core.services.seasons.season_service import (
     RoundFacts,
+    division_on,
     final_round_ids_among_on,
     round_facts_on,
 )
@@ -97,3 +98,22 @@ async def test_no_final_round_among_those_asked_returns_the_empty_set(tmp_path):
     async with get_connection(path) as db:
         assert await final_round_ids_among_on(db, [cancelled, cancelled + 50]) == set()
         assert await final_round_ids_among_on(db, []) == set()
+
+
+async def test_the_division_is_read_on_the_handed_connection(tmp_path):
+    path = str(tmp_path / "league.db")
+    await _seed(path)
+    async with get_connection(path) as db:
+        division = await division_on(db, 4)
+        assert division is not None
+        assert (division.id, division.season_id, division.name, division.tier) == (4, 7, "Pro", 2)
+        await db.execute("UPDATE divisions SET name = 'Elite' WHERE id = 4")
+        renamed = await division_on(db, 4)
+        assert renamed is not None and renamed.name == "Elite"
+
+
+async def test_a_division_that_is_not_there_is_none(tmp_path):
+    path = str(tmp_path / "league.db")
+    await _seed(path)
+    async with get_connection(path) as db:
+        assert await division_on(db, 5) is None
