@@ -51,6 +51,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
+from leaguebot.core.services.seasons.season_service import RoundFacts, round_facts_on
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line
 from leaguebot.core.utils.member_names import member_named
@@ -103,15 +104,70 @@ __all__ = [
     "take_amended_paste", "turn_steps",
 ]
 
-#: The amendment held in a channel, with what its turns need to know of it.
-_AMENDMENT = (
-    "SELECT rac.id AS amend_id, rac.round_id, rac.channel_id, rac.session_types, rac.started_by, "
-    "r.division_id, r.round_number, r.format, d.name AS division_name, s.id AS season_id, "
-    "s.season_number "
-    "FROM round_amend_channels rac JOIN rounds r ON r.id = rac.round_id "
-    "JOIN divisions d ON d.id = r.division_id JOIN seasons s ON s.id = d.season_id "
-    "WHERE rac.channel_id = ? AND rac.closed_at IS NULL"
+#: An amendment's own record, as its turns need it, by the channel it is held open in and by its id.
+_OPEN_IN_CHANNEL = (
+    "SELECT id, round_id, channel_id, session_types, started_by FROM round_amend_channels "
+    "WHERE channel_id = ? AND closed_at IS NULL"
 )
+_BY_ID = (
+    "SELECT id, round_id, channel_id, session_types, started_by FROM round_amend_channels "
+    "WHERE id = ?"
+)
+
+
+@dataclasses.dataclass(frozen=True)
+class _Amendment:
+    """An amendment held in a channel, with the round it amends as core reads it."""
+
+    amend_id: int
+    round_id: int
+    channel_id: int
+    session_types: str
+    started_by: int
+    round: RoundFacts
+
+    @property
+    def division_id(self) -> int:
+        return self.round.division_id
+
+    @property
+    def round_number(self) -> int:
+        return self.round.round_number
+
+    @property
+    def division_name(self) -> str:
+        return self.round.division_name
+
+    @property
+    def season_id(self) -> int:
+        return self.round.season_id
+
+    @property
+    def season_number(self) -> int:
+        return self.round.season_number
+
+
+async def _amendment_from(
+    db: aiosqlite.Connection, sql: str, value: int
+) -> _Amendment | None:
+    """The amendment *sql* picks out, with its round read through core on the same connection,
+    or None where there is none or its round is gone."""
+    row = await (await db.execute(sql, (value,))).fetchone()
+    if row is None:
+        return None
+    facts = await round_facts_on(db, int(row["round_id"]))
+    if facts is None:
+        return None
+    return _Amendment(
+        amend_id=int(row["id"]), round_id=int(row["round_id"]), channel_id=int(row["channel_id"]),
+        session_types=str(row["session_types"]), started_by=int(row["started_by"]), round=facts,
+    )
+
+
+async def _open_amendment_in(db: aiosqlite.Connection, channel_id: int) -> _Amendment | None:
+    """The amendment held open in *channel_id*."""
+    return await _amendment_from(db, _OPEN_IN_CHANNEL, channel_id)
+
 
 #: The tables a turn's saves may write.
 _WRITES = ("amend_drafts", "round_amend_channels")
@@ -137,9 +193,9 @@ async def _conversation_open(db: aiosqlite.Connection, payload: dict[str, Any]) 
     return row is not None
 
 
-def _covered(row: aiosqlite.Row) -> list[SessionType]:
+def _covered(row: _Amendment) -> list[SessionType]:
     """The sessions the amendment covers, in the order its record lists them."""
-    return [SessionType(each) for each in json.loads(row["session_types"])]
+    return [SessionType(each) for each in json.loads(row.session_types)]
 
 
 async def take_amended_paste(
@@ -151,12 +207,12 @@ async def take_amended_paste(
     amendment's, so that the cog hears it no further. *router* is the output router the refusal is
     logged through, handed by the cog."""
     async with get_connection(bot.db_path) as db:
-        row = await (await db.execute(_AMENDMENT, (message.channel.id,))).fetchone()
+        row = await _open_amendment_in(db, message.channel.id)
         if row is None:
             return False
-        if message.author.id != row["started_by"]:
+        if message.author.id != row.started_by:
             return True
-        expected = await submissions.expected_amended_session_on(db, int(row["amend_id"]))
+        expected = await submissions.expected_amended_session_on(db, row.amend_id)
     if await typed_turns.turn_waiting(
         bot.db_path, queue.types, message.channel.id, held=queue.held_turn_channels()
     ):
@@ -166,7 +222,7 @@ async def take_amended_paste(
             refusal_line(
                 member_named(message.author.display_name, message.author.id),
                 "A results paste",
-                f"Round {row['round_number']} ({row['division_name']}) is still waiting on an "
+                f"Round {row.round_number} ({row.division_name}) is still waiting on an "
                 f"earlier paste for {waiting}",
             )
         )
@@ -183,7 +239,7 @@ async def take_amended_paste(
             "typed_at": message.created_at.isoformat(),
         },
         actor=message.author,
-        what=f"an amended results paste for round {row['round_number']}",
+        what=f"an amended results paste for round {row.round_number}",
     )
     return True
 
@@ -206,18 +262,18 @@ def turn_steps(
         clear = (PlannedStep(typed_turns.CLEAR_MARK, mark),)
         delete_paste = PlannedStep(DELETE_MESSAGE, {**mark, "what": "an amended results paste", "kind": "owned"})
         async with get_connection(ctx.db_path) as db:
-            row = await (await db.execute(_AMENDMENT, (channel_id,))).fetchone()
+            row = await _open_amendment_in(db, channel_id)
             expected = None if row is None else await submissions.expected_amended_session_on(
-                db, int(row["amend_id"])
+                db, row.amend_id
             )
             drafted = [] if row is None else await amendment_writes.amend_drafts_on(
-                db, int(row["amend_id"])
+                db, row.amend_id
             )
         if row is None or expected is None:
             return StepResult(result={"judged": False}, then=clear)
         covered = _covered(row)
-        round_id = int(row["round_id"])
-        what = f"`{COMMAND}` of round {row['round_number']} ({row['division_name']})"
+        round_id = row.round_id
+        what = f"`{COMMAND}` of round {row.round_number} ({row.division_name})"
         label = label_of(expected)
 
         lines_raw = [
@@ -235,7 +291,7 @@ def turn_steps(
             ctx.db_path, round_id, expected,
             also_exclude=[each for each in covered if each is not expected],
         ))
-        data = await paste_reading._build_division_validation_data(int(row["division_id"]), teams)
+        data = await paste_reading._build_division_validation_data(row.division_id, teams)
         errors, parsed = paste_reading.split_validation(
             paste_reading.validate_submission_block(
                 lines_raw, expected, data.division_driver_ids, data.team_of_role,
@@ -256,7 +312,7 @@ def turn_steps(
                     delete_paste,
                     PlannedStep(POST, {"channel_id": channel_id, "text": reply}),
                     PlannedStep(END_AMENDMENT, {
-                        "channel_id": channel_id, "amend_id": int(row["amend_id"]),
+                        "channel_id": channel_id, "amend_id": row.amend_id,
                         "round_id": round_id,
                     }),
                     *clear,
@@ -290,13 +346,13 @@ def turn_steps(
                 for r in paste_reading._rows_of_kind(parsed, paste_reading.ParsedRaceRow)
             ]
         draft = {
-            "channel_id": channel_id, "amend_id": int(row["amend_id"]), "round_id": round_id,
-            "division_id": int(row["division_id"]), "session_type": expected.value, "label": label,
-            "round_number": int(row["round_number"]),
+            "channel_id": channel_id, "amend_id": row.amend_id, "round_id": round_id,
+            "division_id": row.division_id, "session_type": expected.value, "label": label,
+            "round_number": row.round_number,
             "rows": driver_rows, "fl_override": fl_override, "mark": mark,
             "several": len(covered) > 1,
         }
-        config_names = await _attached_configs(ctx.db_path, int(row["season_id"]))
+        config_names = await _attached_configs(ctx.db_path, row.season_id)
         existing = await _existing_config(ctx.db_path, round_id, expected)
         if len(config_names) == 1:
             config_name: str | None = config_names[0]
@@ -316,8 +372,8 @@ def turn_steps(
                         "text": f"Select the points configuration for {label}:",
                         "config_names": config_names,
                         "draft": {**draft, "mark": None},
-                        "session": f"the {label} of round {row['round_number']} "
-                                   f"({row['division_name']})",
+                        "session": f"the {label} of round {row.round_number} "
+                                   f"({row.division_name})",
                     }),
                     PlannedStep(ARM_LAPSE, {"channel_id": channel_id}),
                     *clear,
@@ -622,16 +678,7 @@ def amend_stage_one_change(
         payload = ctx.payload
         amend_id, round_id = int(payload["amend_id"]), int(payload["round_id"])
         division_id, channel_id = int(payload["division_id"]), int(payload["channel_id"])
-        row = await (
-            await db.execute(
-                "SELECT rac.started_by, rac.session_types, r.round_number, "
-                "d.name AS division_name, s.season_number "
-                "FROM round_amend_channels rac JOIN rounds r ON r.id = rac.round_id "
-                "JOIN divisions d ON d.id = r.division_id JOIN seasons s ON s.id = d.season_id "
-                "WHERE rac.id = ?",
-                (amend_id,),
-            )
-        ).fetchone()
+        row = await _amendment_from(db, _BY_ID, amend_id)
         assert row is not None  # the check found the amendment standing
         drafted = await amendment_writes.amend_drafts_on(db, amend_id)
         sessions = [
@@ -640,11 +687,11 @@ def amend_stage_one_change(
             )
             for each in drafted
         ]
-        what = f"`{COMMAND}` of round {row['round_number']} ({row['division_name']})"
+        what = f"`{COMMAND}` of round {row.round_number} ({row.division_name})"
         await db.execute("SAVEPOINT stage_one")
         try:
             await amendment_writes.amend_round_results_on(
-                db, round_id, division_id, sessions, int(row["started_by"]),
+                db, round_id, division_id, sessions, row.started_by,
                 display_names(ctx, division_id), now=now(), attendance=attendance,
             )
         except amendment_writes.AmendmentWouldOrphanVerdictError as exc:
@@ -664,8 +711,8 @@ def amend_stage_one_change(
         covered = _covered(row)
         line = (
             f"{ctx.named} | AMEND_STAGE_1 | Recorded\n"
-            f"  season: {row['season_number']}, division: {row['division_name']!r}\n"
-            f"  round: {row['round_number']}, sessions: "
+            f"  season: {row.season_number}, division: {row.division_name!r}\n"
+            f"  round: {row.round_number}, sessions: "
             + ", ".join(f"{each.session_type.value}={each.config_name}" for each in sessions)
             + "\n"
             "  Corrected classification recorded. Nothing is published until the report and "
@@ -679,10 +726,10 @@ def amend_stage_one_change(
                 {
                     "stage": "reports", "round_id": round_id, "division_id": division_id,
                     "channel_id": channel_id, "session_types": [each.value for each in covered],
-                    "round_number": int(row["round_number"]),
-                    "division_name": row["division_name"],
+                    "round_number": row.round_number,
+                    "division_name": row.division_name,
                 },
-                f"the stage-two prompt of round {row['round_number']}'s amendment",
+                f"the stage-two prompt of round {row.round_number}'s amendment",
             ),),
         )
 
