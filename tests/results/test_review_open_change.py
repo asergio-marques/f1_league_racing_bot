@@ -73,6 +73,7 @@ from tests.support.review_league import (
     run_until_done,
     stopped_at,
 )
+from tests.support.mentions import NOBODY, notified
 from tests.support.teams import seed_team_instances
 
 
@@ -368,13 +369,21 @@ async def test_a_round_in_review_can_no_longer_be_cancelled(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#284: the results and standings tables do not yet say whom they may notify"
+)
 async def test_the_interim_results_and_standings_are_posted(tmp_path):
+    """Round 3's review opens: its results table and its standings are each posted for the first
+    time, notifying nobody."""
     league = await _league(tmp_path, name="open_posts")
 
     await _open(league)
 
     assert len(league.sent_to(RESULTS_CHANNEL)) == 1
     assert len(league.sent_to(STANDINGS_CHANNEL)) == 1
+    for channel_id in (RESULTS_CHANNEL, STANDINGS_CHANNEL):
+        [sent] = league.channel(channel_id).send.await_args_list
+        assert notified(sent.kwargs.get("allowed_mentions")) == NOBODY
     assert (await _channel_row(league.db_path))["results_posted"] == 1
 
 
@@ -868,6 +877,10 @@ async def test_a_resubmission_is_published_as_amended(tmp_path):
     assert len(_prompts(league)) == 1
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#284: the review prompt and the cancelled line do not yet say whom they may notify",
+)
 async def test_a_cancelled_resubmission_is_recorded_once_the_review_is_back(tmp_path):
     """A cancel puts the review back first: its line in the channel and in the log come after
     the prompt stands, never while the prompt is still owed. The cancel button is taken off."""
@@ -900,6 +913,11 @@ async def test_a_cancelled_resubmission_is_recorded_once_the_review_is_back(tmp_
     assert _at(league, "send", SUBMISSION_CHANNEL, prompt) < _at(
         league, "send", SUBMISSION_CHANNEL, cancel_lines[0]
     )
+    sent = [call for call in submission.send.await_args_list
+            if type(call.kwargs.get("view")).__name__ == "PenaltyReviewView"
+            or "Resubmission cancelled" in (call.args[0] if call.args else "")]
+    assert len(sent) == 3  # the prompt refused, the prompt, the line
+    assert all(notified(call.kwargs.get("allowed_mentions")) == NOBODY for call in sent)
     assert league.log().count("resubmission of round 3") == 1
     lines = league.bot.log_channel.sent
     [cancel] = [line for line in lines if "cancelled by" in line]

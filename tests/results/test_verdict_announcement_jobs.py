@@ -44,6 +44,7 @@ from tests.support.change_queue import (
     tier_member,
     updated_reply,
 )
+from tests.support.mentions import notified
 from tests.support.review_league import (
     AMEND_CHANNEL,
     DIVISION_ID,
@@ -178,6 +179,9 @@ def drawn(monkeypatch: Any, tmp_path: Any) -> list[dict[str, Any]]:
 async def test_a_report_verdict_names_the_round_the_driver_the_penalty_and_the_incident(
     tmp_path,
 ):
+    """Alex approves a five-second penalty for Lewis in round 3. The verdict names the round,
+    Lewis, the penalty and the incident, and may notify the members it mentions, never
+    @everyone nor a role."""
     league = await review_league(tmp_path)
     await _approve_reports(league, [penalty(LEWIS)])
     await run_queue(league.bot)
@@ -189,6 +193,11 @@ async def test_a_report_verdict_names_the_round_the_driver_the_penalty_and_the_i
     assert f"**Penalty**: {describe_penalty('TIME', 5)}" in verdict
     assert "**Description**: Corner cutting" in verdict
     assert "**Justification**: Turn 4, lap 12" in verdict
+    [sent] = [call for call in league.channel(VERDICTS_CHANNEL).send.await_args_list
+              if f"<@{LEWIS}>" in (call.args[0] if call.args else "")]
+    assert notified(sent.kwargs.get("allowed_mentions")) == {
+        "everyone": False, "users": "any", "roles": set()
+    }
 
 
 async def test_no_further_action_is_announced_as_no_penalty(tmp_path):

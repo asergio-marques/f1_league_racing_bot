@@ -27,6 +27,7 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.review.penalty_service import StagedPenalty
 from tests.support.change_queue import in_a_job
+from tests.support.mentions import NOBODY, notified
 from tests.support.teams import seed_team_instances
 
 SEASON_ID = 31
@@ -179,8 +180,12 @@ async def test_the_amendment_channel_is_the_review_channel(tmp_path):
     assert state.submission_channel_id == CHANNEL_ID
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#284: the amendment's prompt does not yet say whom it may notify"
+)
 async def test_the_screen_is_posted_with_its_view(tmp_path):
-    """A prompt with no view is a message the manager cannot act on."""
+    """A prompt with no view is a message the manager cannot act on. Stage two's prompt for
+    round 3 of Pro is posted with its view, saying it is stage 2 of 3, and notifies nobody."""
     db_path, result_id = await _db(tmp_path, "stage_posted")
     await _penalty(db_path, result_id)
 
@@ -189,6 +194,8 @@ async def test_the_screen_is_posted_with_its_view(tmp_path):
     content, view = channel._sent[0]
     assert view is not None
     assert "Stage 2 of 3" in content
+    [sent] = channel.send.await_args_list
+    assert notified(sent.kwargs.get("allowed_mentions")) == NOBODY
     bot.add_view.assert_called_once()
 
 

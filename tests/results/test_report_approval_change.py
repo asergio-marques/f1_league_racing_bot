@@ -44,6 +44,7 @@ from tests.support.change_queue import (
     tier_member,
     updated_reply,
 )
+from tests.support.mentions import NOBODY, notified
 from tests.support.review_league import (
     attendance_after_review_of,
     APPROVAL,
@@ -1909,11 +1910,14 @@ async def test_the_save_awaits_nothing_but_its_connection(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#284: the appeals prompt does not yet say whom it may notify"
+)
 async def test_the_appeals_prompt_is_posted_on_the_round_s_lane(tmp_path):
     """Round 3's reports are approved by Alex while Discord refuses the appeals prompt. The
     approval finishes on the league lane, the round moved on to its appeals; round 3's lane, not
-    the league's, stops at the appeals prompt's post. Retry on the round's lane posts it and saves
-    its id."""
+    the league's, stops at the appeals prompt's post. Retry on the round's lane posts it, notifying
+    nobody, and saves its id."""
     lane = f"channel:{SUBMISSION_CHANNEL}"
     league = await review_league(tmp_path)
     league.channel(SUBMISSION_CHANNEL).fail_when = is_appeals_prompt
@@ -1935,6 +1939,10 @@ async def test_the_appeals_prompt_is_posted_on_the_round_s_lane(tmp_path):
 
     assert await stopped_job(league.db_path) is None
     [prompt] = appeals_prompts(league)
+    sent = [call for call in league.channel(SUBMISSION_CHANNEL).send.await_args_list
+            if type(call.kwargs.get("view")).__name__ == "AppealsReviewView"]
+    assert len(sent) == 2  # the prompt refused, then the prompt
+    assert all(notified(call.kwargs.get("allowed_mentions")) == NOBODY for call in sent)
     assert await one(
         league.db_path, "SELECT appeals_prompt_message_id FROM round_submission_channels"
     ) == prompt
