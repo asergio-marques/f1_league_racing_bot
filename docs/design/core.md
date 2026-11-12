@@ -509,7 +509,7 @@ files; this section says what core posts through them.
 | A review's expiry notice | notice | as above | `season.review.take_down`'s `post_expiry` | not kept |
 | The approval's batch notice | notice | the review's channel | `season.approve`'s `post_batch_notice` | its job's result, read by the job that deletes it |
 | A line to the review's channel | notice | the review's channel | `season.approve.tell`, `channel.tell` | not kept |
-| A module's cancellation notice | notice | the module's channel | `cancellation_notice_service.post_cancellation_notice`, which the modules' jobs call and which hands the message back | the module's own, where it takes the note down (results' `called_off_notes`) |
+| A module's cancellation notice | notice | the module's channel | `cancellation_notice_service`: `post_cancellation_notice`, which attendance's and weather's jobs call and which drops the message, and `post_cancellation_message`, which results' job calls and which hands the message back | not kept, except results', in `called_off_notes`, where its switch-off finds it again |
 | A log line | log line | `server_configs.log_channel_id` | `OutputRouter.post_log`, or `queue_log_on` in a step's save | `pending_messages`, until delivered |
 | The stop notice | log line with buttons | the log channel | `ChangeQueue._post_notice` → `OutputRouter.post_notice` | `queued_change_steps.notice_message_id` |
 
@@ -529,7 +529,8 @@ and the calendar's post job ask for text on every try after the first (`as_text`
 who that is, is the core specification's ("The record of what changed", "How a change is
 carried out"). The stop notice's mention is decided by `ChangeQueue._admins_to_notify`, and a log
 line's mentions are wrapped by the router (`test_every_mention_in_a_log_line_is_written_as_code`).
-`post_cancellation_notice` posts with the mentions its caller, a module's notice job, hands it.
+`post_cancellation_notice` and `post_cancellation_message` post with the mentions their caller, a
+module's notice job, hands them.
 
 **Core's posts off the queue** are `architecture.md`'s exceptions ("Every post is made in a
 job"), in `OutputRouter`, `ChangeQueue._update_reply`, `typed_turns` and `BotCog`'s factory reset.
