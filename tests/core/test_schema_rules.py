@@ -461,6 +461,9 @@ def _clock_defaults(db: sqlite3.Connection) -> list[str]:
     ]
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#284: `classification_posts` is owned in TABLE_OWNER but not yet built"
+)
 async def test_every_table_has_an_owner(db_path):
     """A table added to the schema is given its owner in `TABLE_OWNER`, so the rule on writes in
     `test_architecture_rules.py` covers it."""

@@ -315,9 +315,17 @@ _TABLE_OF = {
 }
 
 #: Tables a delete must reach, beyond what the schema happens to hold: a round's standings posting
-#: is a row of its own, keyed by the round, and goes with it (architecture.md, "Posting to
-#: Discord").
-_MUST_GO = {"round": {"round_standings_posts"}}
+#: is a row of its own, keyed by the round, and goes with it, and a division's opening and final
+#: classifications' postings, keyed by the division, go with the division and its season
+#: (architecture.md, "Posting to Discord").
+_MUST_GO = {
+    "round": {"round_standings_posts"},
+    "division": {"classification_posts"},
+    "season": {"classification_posts"},
+}
+
+#: Why a delete does not yet reach the classifications' postings.
+_NO_CLASSIFICATION_POSTS = "#284: no table records the opening and final classifications' ids"
 
 #: What each delete lets go of rather than takes, and takes where the schema's key would let go.
 _LET_GO = {
@@ -327,8 +335,10 @@ _LET_GO = {
 
 
 @pytest.mark.parametrize("deleted", [
-    pytest.param("season"),
-    pytest.param("division"),
+    pytest.param("season", marks=pytest.mark.xfail(strict=True, reason=_NO_CLASSIFICATION_POSTS)),
+    pytest.param(
+        "division", marks=pytest.mark.xfail(strict=True, reason=_NO_CLASSIFICATION_POSTS)
+    ),
     pytest.param("round"),
     pytest.param(_DRIVER_KEEPING_HISTORY),
     pytest.param(_DRIVER_LOSING_HISTORY),

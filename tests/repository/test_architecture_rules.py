@@ -1793,6 +1793,7 @@ TABLE_OWNER: dict[str, str] = {
     "session_results": "results", "qualifying_session_results": "results",
     "race_session_results": "results", "driver_standings_snapshots": "results",
     "round_standings_posts": "results", "called_off_notes": "results",
+    "classification_posts": "results",
     "team_standings_snapshots": "results", "round_submission_channels": "results",
     "round_amend_channels": "results", "resubmission_drafts": "results",
     "amend_drafts": "results", "review_lock_warnings": "results", "penalty_records": "results", "appeal_records": "results",
