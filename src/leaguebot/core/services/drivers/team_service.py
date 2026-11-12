@@ -408,35 +408,6 @@ class TeamService:
             return await self.teams_with_roles_on(db)
 
     @staticmethod
-    async def reserve_user_ids_on(db: aiosqlite.Connection, division_id: int) -> set[int]:
-        """The accounts of the drivers seated in *division_id*'s reserve team, read on *db*.
-
-        A seat held by a driver whose placement is not yet confirmed counts as empty (the
-        uncommitted-placement rule). For a module reading core's tables only through core's
-        services (architecture.md, "The database"), handed the connection of its own read: the
-        reserves a query of its own took off a join of `team_seats`, `team_instances` and
-        `driver_profiles` come from here. It writes nothing and commits nothing.
-        """
-        from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
-
-        cursor = await db.execute(
-            f"""
-            SELECT dp.discord_user_id
-            FROM team_seats ts
-            JOIN team_instances ti ON ti.id = ts.team_instance_id
-            JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
-            WHERE ti.division_id = ? AND ti.is_reserve = 1
-              AND ts.driver_profile_id IS NOT NULL
-              AND {uncommitted_seat_excluded("ts")}
-            """,
-            (division_id,),
-        )
-        return {
-            int(row["discord_user_id"])
-            for row in await cursor.fetchall() if row["discord_user_id"]
-        }
-
-    @staticmethod
     async def division_teams_on(db: aiosqlite.Connection, division_id: int) -> list[TeamInstance]:
         """*division_id*'s teams, the reserve team included, in the order they were added, read on
         *db*; empty for a division with none.

@@ -1168,7 +1168,8 @@ async def set_standings_message_id_on(
 async def _get_reserve_user_ids(db_path: str, division_id: int) -> set[int]:
     """Return discord_user_ids of all drivers seated in a reserve team for this division."""
     async with get_connection(db_path) as db:
-        return await TeamService.reserve_user_ids_on(db, division_id)
+        seated = await TeamService.seated_drivers_on(db, division_id)
+    return {s.discord_user_id for s in seated if s.is_reserve}
 
 
 # ---------------------------------------------------------------------------
