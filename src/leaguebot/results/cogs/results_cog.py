@@ -14,24 +14,23 @@ channels, and the gates the subgroups' commands call.
 """
 from __future__ import annotations
 
-import logging
-
 import discord
 from discord.ext import commands
 
-from leaguebot.results.cogs.channel_commands import ChannelCommands
+from leaguebot.results.cogs.results_group import RESULTS_GROUP
+
+# A subgroup joins `/results` as its file is imported, and Discord is sent them in that order, so
+# these imports stand in the order the subgroups are listed, not alphabetically.
 from leaguebot.results.cogs.config_commands import ConfigCommands
 from leaguebot.results.cogs.points_amend_commands import PointsAmendCommands
 from leaguebot.results.cogs.reserves_commands import ReservesCommands
-from leaguebot.results.cogs.results_group import RESULTS_GROUP
-from leaguebot.results.cogs.rounds_commands import RoundsCommands
 from leaguebot.results.cogs.standings_commands import StandingsCommands
+from leaguebot.results.cogs.rounds_commands import RoundsCommands
+from leaguebot.results.cogs.channel_commands import ChannelCommands
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import is_foreign_guild
 from leaguebot.core.utils.log_lines import refuse
-
-log = logging.getLogger(__name__)
 
 
 class ResultsCog(

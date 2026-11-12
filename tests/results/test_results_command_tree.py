@@ -14,6 +14,7 @@ from unittest.mock import MagicMock
 from discord import app_commands
 
 from leaguebot.results.cogs.results_cog import ResultsCog
+from leaguebot.results.cogs.results_group import RESULTS_GROUP
 
 #: Each as (qualified name, kind, description, options), an option being (name, description,
 #: type, required, choices as (name, value)).
@@ -263,3 +264,11 @@ def test_every_results_command_is_bound_to_the_cog_that_is_loaded():
     assert commands
     assert all(command.binding is cog for command in commands)
 
+
+
+def test_the_results_subgroups_are_sent_in_their_listed_order():
+    """Discord is sent `/results`'s subgroups in the order they joined the group, which is the
+    order `results_cog.py` imports their files: the order a league has always seen them in."""
+    assert [command.name for command in RESULTS_GROUP.commands] == [
+        "config", "amend", "reserves", "standings", "rounds", "channel",
+    ]
