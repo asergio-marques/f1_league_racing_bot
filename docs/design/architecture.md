@@ -136,20 +136,20 @@ point, which would then hold every module's registrations and grow with each mod
 
 **What each part may do:**
 
-- **A cog** turns a command, button or form into a call to one service, and replies, unless it
-  hands a button's press to a service's workflow, which answers through the interaction. It holds no
+- **A cog** turns a command, button or form into a call to one service, and replies, unless it hands
+  a button's press to a service's workflow, which answers through the interaction. It holds no
   database code and no league rule, so every rule a league relies on can be tested by calling a
   service with no Discord interaction involved. A cog holds one command group; when one grows too
   large, its workflows move into services before it is split. The split keeps the group in one cog:
   the cog class is composed from one file per subgroup, which discord.py allows because it collects
   a cog's commands across the classes the cog derives from. A base class that has one subclass and
   shares no behaviour is the price, accepted for keeping each file to one subgroup. A module's
-  commands sit under its own top-level group, never under one of core's: `/weather channel`, not `/division weather-channel`.
-  So do its tools for test mode, which sit under the module's group and work only while test mode is
-  on, rather than under `/test-mode`. A command's name then says which module owns it, and the
-  module's code stays in its folder. discord.py binds a subcommand only to the cog that declares its
-  group (`steward_module.md` §5), so a module's command under core's group would have to be written
-  in core's cog, or bound to the module by hand.
+  commands sit under its own top-level group, never under one of core's: `/weather channel`, not
+  `/division weather-channel`. So do its tools for test mode, which sit under the module's group and
+  work only while test mode is on, rather than under `/test-mode`. A command's name then says which
+  module owns it, and the module's code stays in its folder. discord.py binds a subcommand only to
+  the cog that declares its group (`steward_module.md` §5), so a module's command under core's group
+  would have to be written in core's cog, or bound to the module by hand.
 
   *Rejected:* core's cog holding a module's commands and handing the work to the module through a
   hook, which puts part of every module in core. *Rejected:* a module binding its own commands to
@@ -165,17 +165,16 @@ point, which would then hold every module's registrations and grow with each mod
 - **Buttons live beside the code that posts them:** with the cog when a command posts them, with
   the service when a service does. A service never reaches into a cog for a view.
 - **Shared helpers in core** are of two kinds. Those used by cogs (the base classes, the guards,
-  autocomplete) reach core's own services through the bot, as a cog does. Plain helpers
-  (formatting, parsing, time) use no service at all. Neither imports a service, and core uses no
-  module; the one exception to both is the bot's type, which names every service for the type
-  checker (below). Each handler for a kind of post is a service in core, not a helper. Some helpers a
-  service may call reach the bot, each for one thing. `league_guild(bot)`
-  (`core/utils/league_server.py`) is the one route from a job or a service to the league's server,
-  which it finds through the configuration service. `report_failure`, `refuse` (through
-  `record_refusal`) and `record_abandoned` write a failure, a refusal, or a cancellation or a lapse,
-  through the bot's log writer
-  ("Errors and failures"). Handing the configuration service or the router instead to every
-  service that calls them would add a parameter to each, for no rule gained.
+  autocomplete) reach core's own services through the bot, as a cog does. Plain helpers (formatting,
+  parsing, time) use no service at all. Neither imports a service, and core uses no module; the one
+  exception to both is the bot's type, which names every service for the type checker (below). Each
+  handler for a kind of post is a service in core, not a helper. Some helpers a service may call
+  reach the bot, each for one thing. `league_guild(bot)` (`core/utils/league_server.py`) is the one
+  route from a job or a service to the league's server, which it finds through the configuration
+  service. `report_failure`, `refuse` (through `record_refusal`) and `record_abandoned` write a
+  failure, a refusal, or a cancellation or a lapse, through the bot's log writer ("Errors and
+  failures"). Handing the configuration service or the router instead to every service that calls
+  them would add a parameter to each, for no rule gained.
 - **A module's own helpers** sit in its `utils/` folder, beside its services, under the same rules.
 - **A model** is plain data. It uses no Discord and no database, and no service or cog.
 - **The database code in core** opens connections, lends them again, closes them and applies
@@ -186,12 +185,12 @@ point, which would then hold every module's registrations and grow with each mod
 
 **Services stay attached to the bot, and are built in one place.** The bot object keeps a typed
 attribute for each service object. Most services are plain functions and need none. The builder
-makes every service object, handing each the other services it needs, and a service is complete
-once it is built: nothing is wired into it after the bot starts. A test can call the builder to
-get the real set of services. A service that needs Discord itself, to post or to find a channel,
-is given the bot for that and nothing more. It does not use the bot to look up other services, the
-router or a hook, bar the helpers above, and a service that is a plain function is handed the
-services it needs by whoever calls it. Looking services up on the bot is what lets a hand-made fake bot in a
+makes every service object, handing each the other services it needs, and a service is complete once
+it is built: nothing is wired into it after the bot starts. A test can call the builder to get the
+real set of services. A service that needs Discord itself, to post or to find a channel, is given
+the bot for that and nothing more. It does not use the bot to look up other services, the router or
+a hook, bar the helpers above, and a service that is a plain function is handed the services it
+needs by whoever calls it. Looking services up on the bot is what lets a hand-made fake bot in a
 test decide which code runs.
 
 *Rejected:* a separate container object holding the services, since the services still need the
@@ -394,11 +393,11 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   of the kinds asked for that are queued, running or stopped on a failure, leaving out the one
   whose check is running (`CheckContext.change_id`).
   What a change type refuses is read from the database and the queue, never from a flag kept in
-  memory, so it holds across a restart. State that may be held in memory is state a module's
-  specification lets a restart lose: the change it feeds reads it, and finds its work no longer due
-  after a restart, as results' penalty-review staging does. A bot's request that this check finds no
-  longer due (a review reopened for a round that has since gone final) is dropped, not stopped: only
-  a channel missing or unusable stops its lane.
+  memory, so it holds across a restart. State a change reads that may be held in memory is state a
+  module's specification lets a restart lose: the change it feeds reads it, and finds its work no
+  longer due after a restart, as results' penalty-review staging does. A bot's request that this
+  check finds no longer due (a review reopened for a round that has since gone final) is dropped,
+  not stopped: only a channel missing or unusable stops its lane.
 - **All or nothing in one step.** Where a change must be all or nothing (as the results
   specification's "Changing points system mid-season" requires of an approval), everything it
   saves is saved in one step behind the gate, and only its posts come after, as
@@ -750,15 +749,15 @@ another module's table in the same step, it calls that module's service with the
 handed, so the step still happens all at once.
 
 **While a save is open, the bot waits on nothing but that save's own connection.** Not on Discord,
-and not on a second connection. SQLite lets one writer in at a time, so a post made in the middle
-of a save holds up every other save in the bot for as long as Discord takes to answer, and a second
-connection that tried to write would be kept waiting by the first until it gave up and failed.
-The rule holds as much for a save run on a connection it was handed as for one a function opens
-itself. A function given a save's connection, or run as a change type's save step or as a step's
-record, awaits only that connection, a cursor from it, or a call it hands the connection on to; one
-that takes a connection optionally may open its own where it is handed none. A read it needs is given
-a form that takes the connection.
-Save first, then post, then record what was posted in a save of its own.
+and not on a second connection. SQLite lets one writer in at a time, so a post made in the middle of
+a save holds up every other save in the bot for as long as Discord takes to answer, and a second
+connection that tried to write would be kept waiting by the first until it gave up and failed. The
+rule holds as much for a save run on a connection it was handed as for one a function opens itself.
+A function given a save's connection, or run as a change type's save step or as a step's record,
+awaits only that connection, a cursor from it, or a call it hands the connection on to; one that
+takes a connection optionally may open its own where it is handed none. A read it needs is given a
+form that takes the connection. Save first, then post, then record what was posted in a save of its
+own.
 
 **Each table is read and written by its owner alone.** Every statement that reads or changes a table
 lives in the module that owns it, core included, and every other module asks the owner: a module
@@ -1458,51 +1457,53 @@ later on its own.
   nothing but the entry point imports a module's wiring. The same test checks that core's services
   sit only in the named topic folders, each named as plumbing or as league rules, with the
   scheduler's file alone loose.
-- **`tests/repository/test_architecture_rules.py`** checks the rest: database code outside services,
-  awaiting anything but the connection mid-save (in a function that opens it and in one handed
-  it), cogs handling their own errors, catch-all handlers that lose the error details, background tasks nobody keeps, code reaching past the scheduler
-  service, the entry point subscribing a module to a hook only that module joins (that module's
-  wiring signs it up), jobs armed with a lateness limit, private names used across modules, a new
-  place naming the log channel (the check lists the six allowed, with their reasons), posting
-  outside the handlers (the four handler files are passed over, `POSTING_ALLOWED`, as is a function
-  named in `POSTS_OFF_THE_QUEUE`), a post made outside a job by a function that is neither decorated
-  nor named off the queue with its reason (`POSTS_OFF_THE_QUEUE`, which fails too on an entry with
-  no reason or no function; the router is exempt, `JOB_CHECK_ALLOWED`, and `NOT_A_POST` names the
-  two calls that are not posts, under "Every post is made in a job"), a service or helper reaching
-  the change queue through the bot, a service looking a service, the router or a hook up on the bot
+- **`tests/repository/test_architecture_rules.py`** checks the rest: database code outside
+  services, awaiting anything but the connection mid-save (in a function that opens it and in one
+  handed it), cogs handling their own errors, catch-all handlers that lose the error details,
+  background tasks nobody keeps, code reaching past the scheduler service, the entry point
+  subscribing a module to a hook only that module joins (that module's wiring signs it up), jobs
+  armed with a lateness limit, private names used across modules, a new place naming the log
+  channel (the check lists the six allowed, with their reasons), posting outside the handlers (the
+  four handler files are passed over, `POSTING_ALLOWED`, as is a function named in
+  `POSTS_OFF_THE_QUEUE`), a post made outside a job by a function that is neither decorated nor
+  named off the queue with its reason (`POSTS_OFF_THE_QUEUE`, which fails too on an entry with no
+  reason or no function; the router is exempt, `JOB_CHECK_ALLOWED`, and `NOT_A_POST` names the two
+  calls that are not posts, under "Every post is made in a job"), a service or helper reaching the
+  change queue through the bot, a service looking a service, the router or a hook up on the bot
   (every one `LeagueBot` declares but the change queue and what the bot itself holds; a helper the
-  cogs use may, as a cog does, and so may the bot's handler of an event's error, which the builder
-  attaches as a cog's `on_error` is, and the helpers a service calls that are named for good with
-  their reasons, `LOOKUPS_ALLOWED`), a table written by a module that does not own it, a table read
-  outside its owner (core's tables too; the scan sees
+  cogs use may, as a cog does, and so may the bot's handler of an event's error
+  (`on_event_error`), which the builder attaches to the bot as its `on_error`, and the helpers a
+  service calls that are named for good with their reasons, `LOOKUPS_ALLOWED`), a table written by
+  a module that does not own it, a table read outside its owner (core's tables too; the scan sees
   tables, not columns, so a module's read of its own columns on a core table is named for good,
   `READS_OF_OWN_COLUMNS`; a table whose name is spliced into an f-string after `FROM` or `JOIN`
-  cannot be told, so each counts unless its function was read by hand and found to name only its own
-  module's tables, `SPLICED_READS_READ_BY_HAND`, which holds the count exactly, the tuples of table
-  names those functions iterate checked to name their own module's tables alone), a module's own
-  column on a core table named in a file outside that module, the entry point's and another module's
-  wiring included (`KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER`; the check counts the column's name in any
-  string outside a docstring, in SQL or as a row's key, and each attribute named for it, read or
-  set), core reading a module's service on the bot (an attribute `LeagueBot` types from a module's
-  package, read from a file of core), SQLite's clock in a statement, a service reading the wall
-  clock (the change queue's own default clock is the one place allowed, `WALL_CLOCK_ALLOWED`), a
-  catch-all handler outside the five places (one that raises again, calls `report_failure` as a
-  statement directly in its body, or sits directly in the body of a `for` loop, is in a place by its
-  shape; `CATCH_ALLS_ALLOWED` names for good the failure paths of place 1, the stated exceptions,
-  place 3's guards around reporting and writing a log line and the fifth place's handlers), and a
-  save outside a queued change. The job check and the check of cogs handling their own errors are
-  absolute, with no list of breaches left to grow, and the log channel's check holds its six places
-  for good; every other check lists today's breaches, each under the work that removes it. The check
-  of a save outside a queued change counts each function's `.commit()` and `.executescript()` calls,
-  and a function writing on a handed connection commits nothing and is not counted. It allows for
-  good the migrations run at start-up (`run_migrations` and `_enable_wal`, the journal mode set on
-  the database file itself), the queue's own records, the retry queue for log lines, `/bot pack`
-  (above), and `backup_service._write_empty_database`, which writes the scheduler's empty file and
-  not the league's. The connection-state check refuses, outside the database code, a SQL function
-  added with `create_function`, an authoriser, an assignment to `row_factory` or `isolation_level`,
-  and a PRAGMA, ATTACH or temporary table
-  (`test_a_lent_connection_carries_only_what_the_database_code_sets`); the few functions that set up
-  a connection of their own, opened with `sqlite3.connect` and never lent, are named for good.
+  cannot be told, so each counts unless its function was read by hand and found to name only its
+  own module's tables, `SPLICED_READS_READ_BY_HAND`, which holds the count exactly, the tuples of
+  table names those functions iterate checked to name their own module's tables alone), a module's
+  own column on a core table named in a file outside that module, the entry point's and another
+  module's wiring included (`KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER`; the check counts the column's
+  name in any string outside a docstring, in SQL or as a row's key, and each attribute named for
+  it, read or set), core reading a module's service on the bot (an attribute `LeagueBot` types
+  from a module's package, read from a file of core), SQLite's clock in a statement, a service
+  reading the wall clock (the change queue's own default clock is the one place allowed,
+  `WALL_CLOCK_ALLOWED`), a catch-all handler outside the five places (one that raises again, calls
+  `report_failure` as a statement directly in its body, or sits directly in the body of a `for`
+  loop, is in a place by its shape; `CATCH_ALLS_ALLOWED` names for good the failure paths of place
+  1, the stated exceptions, place 3's guards around reporting and writing a log line and the fifth
+  place's handlers), and a save outside a queued change. The job check and the check of cogs
+  handling their own errors are absolute, with no list of breaches left to grow, and the log
+  channel's check holds its six places for good; every other check lists today's breaches, each
+  under the work that removes it. The check of a save outside a queued change counts each
+  function's `.commit()` and `.executescript()` calls, and a function writing on a handed
+  connection commits nothing and is not counted. It allows for good the migrations run at start-up
+  (`run_migrations` and `_enable_wal`, the journal mode set on the database file itself), the
+  queue's own records, the retry queue for log lines, `/bot pack` (above), and
+  `backup_service._write_empty_database`, which writes the scheduler's empty file and not the
+  league's. The connection-state check refuses, outside the database code, a SQL function added
+  with `create_function`, an authoriser, an assignment to `row_factory` or `isolation_level`, and
+  a PRAGMA, ATTACH or temporary table
+  (`test_a_lent_connection_carries_only_what_the_database_code_sets`); the few functions that set
+  up a connection of their own, opened with `sqlite3.connect` and never lent, are named for good.
 - **`tests/repository/test_one_league_server.py`**, **`tests/core/test_schema_rules.py`** and
   **`tests/repository/test_import_roots.py`** check the one-league rule, the schema's own rules, and
   that the bot is imported from one place: the installed package, never through `src`. The schema's

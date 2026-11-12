@@ -1526,7 +1526,7 @@ def _locals_bound_to_the_bot(nodes) -> dict[tuple[str, str], set[str]]:
 #: (architecture.md, "How the code is laid out"), by file and function, what a function nests
 #: included: the tier guards on a command, the autocomplete, the checks that admit an
 #: interaction to the league's server, and the bot's handler of an event's error, which the builder
-#: attaches to the bot as a cog's `on_error` is. The lookup check does not count them.
+#: attaches to the bot as its `on_error`. The lookup check does not count them.
 COG_FACING_HELPERS = frozenset({
     ("core/utils/autocomplete.py", "team_autocomplete"),
     ("core/utils/channel_guard.py", "_tier_guard"),
