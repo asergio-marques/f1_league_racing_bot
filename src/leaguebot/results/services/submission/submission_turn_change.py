@@ -43,6 +43,7 @@ from __future__ import annotations
 import dataclasses
 import json
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -54,7 +55,7 @@ from leaguebot.core.models.change import FollowOn, PlannedStep, StepKind, StepRe
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.services.drivers.team_service import TeamService
 from leaguebot.core.services.posting.output_router import OutputRouter
-from leaguebot.core.services.queue import typed_turns
+from leaguebot.core.services.queue import queue_records, typed_turns
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
 )
@@ -65,6 +66,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
+from leaguebot.core.services.seasons import season_service
 from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 from leaguebot.core.utils.member_names import member_named
@@ -106,14 +108,45 @@ __all__ = [
 #: season with nothing to choose stores this, and the swap saves the session with none.
 NO_CONFIG = ""
 
-#: The round whose submission is held in a channel, with what its turns need to know of it.
-_ROUND = (
-    "SELECT rsc.round_id, rsc.channel_id, rsc.closed, rsc.resubmitting, r.division_id, "
-    "r.round_number, r.format, d.name AS division_name, s.id AS season_id, s.season_number "
-    "FROM round_submission_channels rsc JOIN rounds r ON r.id = rsc.round_id "
-    "JOIN divisions d ON d.id = r.division_id JOIN seasons s ON s.id = d.season_id "
-    "WHERE rsc.channel_id = ?"
-)
+
+@dataclass(frozen=True)
+class _Held:
+    """The round whose submission is held in a channel, with what its turns need to know of it:
+    results' own row of the channel and core's facts of the round."""
+
+    round_id: int
+    closed: bool
+    resubmitting: bool
+    division_id: int
+    round_number: int
+    format: RoundFormat
+    division_name: str
+    season_id: int
+    season_number: int
+
+
+async def _round_held_in(db: aiosqlite.Connection, channel_id: int) -> _Held | None:
+    """The round whose submission *channel_id* holds, read on *db*: results' row of the channel,
+    and the round it names as core reads it. None where no row names the channel, or the round is
+    gone."""
+    held = await (
+        await db.execute(
+            "SELECT round_id, closed, resubmitting FROM round_submission_channels "
+            "WHERE channel_id = ?",
+            (channel_id,),
+        )
+    ).fetchone()
+    if held is None:
+        return None
+    facts = await season_service.round_facts_on(db, int(held["round_id"]))
+    if facts is None:
+        return None
+    return _Held(
+        round_id=int(held["round_id"]), closed=bool(held["closed"]),
+        resubmitting=bool(held["resubmitting"]), division_id=facts.division_id,
+        round_number=facts.round_number, format=facts.format, division_name=facts.division_name,
+        season_id=facts.season_id, season_number=facts.season_number,
+    )
 
 #: The tables a turn's saves may write.
 _WRITES = (
@@ -124,9 +157,9 @@ _WRITES = (
 ServerConfig = Callable[[], Awaitable[Any]]
 
 
-def _label(session: SessionType, row: aiosqlite.Row) -> str:
+def _label(session: SessionType, row: _Held) -> str:
     return results_formatter.format_session_label(
-        session, is_sprint=RoundFormat(row["format"]) is RoundFormat.SPRINT
+        session, is_sprint=row.format is RoundFormat.SPRINT
     )
 
 
@@ -159,18 +192,18 @@ async def take_paste(
     *router* is the output router the turn-away refusal is logged through, handed by the cog.
     """
     async with get_connection(bot.db_path) as db:
-        row = await (await db.execute(_ROUND, (message.channel.id,))).fetchone()
-        if row is None or row["closed"]:
+        row = await _round_held_in(db, message.channel.id)
+        if row is None or row.closed:
             return
         if not isinstance(message.author, discord.Member) or config is None or not (
             is_league_manager(config, message.author)
         ):
             return
-        resubmitting = bool(row["resubmitting"])
+        resubmitting = row.resubmitting
         expected = await (
             submissions.expected_resubmitted_session_on if resubmitting
             else submissions.expected_session_on
-        )(db, int(row["round_id"]))
+        )(db, row.round_id)
     if await typed_turns.turn_waiting(
         bot.db_path, queue.types, message.channel.id, held=queue.held_turn_channels()
     ):
@@ -180,8 +213,8 @@ async def take_paste(
             refusal_line(
                 member_named(message.author.display_name, message.author.id),
                 "A results paste",
-                f"Round {row['round_number']} of season {row['season_number']} "
-                f"({row['division_name']}) is still waiting on an "
+                f"Round {row.round_number} of season {row.season_number} "
+                f"({row.division_name}) is still waiting on an "
                 f"earlier paste for {waiting}",
             )
         )
@@ -199,8 +232,8 @@ async def take_paste(
         },
         actor=message.author,
         what=(
-            f"a resubmitted results paste for round {row['round_number']}" if resubmitting
-            else f"a results paste for round {row['round_number']}"
+            f"a resubmitted results paste for round {row.round_number}" if resubmitting
+            else f"a results paste for round {row.round_number}"
         ),
     )
 
@@ -263,21 +296,21 @@ def turn_steps(
         mark = {"channel_id": channel_id, "message_id": int(payload["message_id"])}
         clear = (PlannedStep(typed_turns.CLEAR_MARK, mark),)
         async with get_connection(ctx.db_path) as db:
-            row = await (await db.execute(_ROUND, (channel_id,))).fetchone()
-            if row is not None and bool(row["resubmitting"]) != resubmission:
+            row = await _round_held_in(db, channel_id)
+            if row is not None and row.resubmitting != resubmission:
                 row = None
             expected = None if row is None else await (
                 submissions.expected_resubmitted_session_on if resubmission
                 else submissions.expected_session_on
-            )(db, int(row["round_id"]))
+            )(db, row.round_id)
         if row is None or expected is None:
             return StepResult(result={"judged": False}, then=clear)
-        round_id = int(row["round_id"])
+        round_id = row.round_id
         label = _label(expected, row)
         content = str(payload["content"]).strip()
         session_value = expected.value
-        season_number, division_name = row["season_number"], row["division_name"]
-        round_number = row["round_number"]
+        season_number, division_name = row.season_number, row.division_name
+        round_number = row.round_number
 
         def refused(reason: str | None = None) -> str:
             return _refused_paste_line(
@@ -294,11 +327,11 @@ def turn_steps(
         base: dict[str, Any] = {
             "channel_id": channel_id,
             "round_id": round_id,
-            "division_id": int(row["division_id"]),
-            "season_id": int(row["season_id"]),
-            "season_number": int(row["season_number"]),
-            "round_number": int(row["round_number"]),
-            "division_name": row["division_name"],
+            "division_id": row.division_id,
+            "season_id": row.season_id,
+            "season_number": row.season_number,
+            "round_number": row.round_number,
+            "division_name": row.division_name,
             "session_type": expected.value,
             "input": content[:500],
             "label": label,
@@ -328,7 +361,7 @@ def turn_steps(
             other = paste_reading.collected_team_assignments(drafted, expected)
         else:
             other = await paste_reading.other_active_team_assignments(ctx.db_path, round_id, expected)
-        data = await paste_reading._build_division_validation_data(int(row["division_id"]), teams)
+        data = await paste_reading._build_division_validation_data(row.division_id, teams)
         errors, parsed = paste_reading.split_validation(
             paste_reading.validate_submission_block(
                 lines, expected, data.division_driver_ids, data.team_of_role,
@@ -376,8 +409,8 @@ def turn_steps(
             ]
         accepted = (
             f"{ctx.named} | RESULT_SUBMISSION_ACCEPTED | Success\n"
-            f"  season: {row['season_number']}, division: {row['division_name']!r}\n"
-            f"  round: {row['round_number']}, session: {expected.value}\n"
+            f"  season: {row.season_number}, division: {row.division_name!r}\n"
+            f"  round: {row.round_number}, session: {expected.value}\n"
             f"  input:\n```\n{content[:500]}\n```"
         )
         settle_paste = {
@@ -389,7 +422,7 @@ def turn_steps(
         # What the configuration's choice has to say is said with the save, in one post.
         said = f"✅ **{label}** results {held_verb}."
         config_names = await season_points_service.get_attached_config_names(
-            ctx.db_path, int(row["season_id"])
+            ctx.db_path, row.season_id
         )
         if len(config_names) == 1:
             return StepResult(
@@ -412,8 +445,8 @@ def turn_steps(
                         "text": "🔧 Select the points configuration for this session:",
                         "config_names": config_names,
                         "settle": {**settle_paste, "mark": None},
-                        "session": f"the {label} of round {row['round_number']} "
-                                   f"({row['division_name']})",
+                        "session": f"the {label} of round {row.round_number} "
+                                   f"({row.division_name})",
                     }),
                     *clear,
                 ),
@@ -624,24 +657,13 @@ def turn_steps(
         """Say in the channel that the review is being opened, with its first job's number and,
         where the league's queue is stopped, the job it is stopped at (results spec :382)."""
         payload = ctx.step_payload
-        async with get_connection(ctx.db_path) as db:
-            change = await (
-                await db.execute(
-                    "SELECT id FROM queued_changes WHERE kind = ? "
-                    "AND json_extract(payload, '$.round_id') = ? ORDER BY id DESC LIMIT 1",
-                    (review_open_change.KIND, int(payload["round_id"])),
-                )
-            ).fetchone()
-            first_row = None if change is None else await (
-                await db.execute(
-                    "SELECT MIN(id) AS first FROM queued_change_steps WHERE change_id = ?",
-                    (change["id"],),
-                )
-            ).fetchone()
-        first = None if first_row is None else first_row["first"]
-        if change is None or first is None:
+        change = await queue_records.latest_change_for_round(
+            ctx.db_path, review_open_change.KIND, int(payload["round_id"])
+        )
+        if change is None or change.first_job is None:
             return StepResult(result={"line": None})
-        _, stopped_at = await queue.job_numbers(int(change["id"]))
+        first = change.first_job
+        _, stopped_at = await queue.job_numbers(change.change_id)
         line = f"⏳ The penalty review is being opened (job #{first})."
         if stopped_at is not None:
             line += (

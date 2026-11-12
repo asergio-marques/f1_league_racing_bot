@@ -2651,9 +2651,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/standings/standings_service.py", "opening_team_standings"): (1, PASS["results"]),
     ("results/services/standings/standings_service.py", "persist_snapshots_on"): (1, PASS["results"]),
     ("results/services/standings/standings_service.py", "reference_round_id"): (2, PASS["results"]),
-    ("results/services/submission/submission_turn_change.py", "<module>"): (3, PASS["results"]),
-    ("results/services/submission/submission_turn_change.py", "turn_steps.post_opening_review"):
-        (2, PASS["results"]),
     ("signup/services/review_changes.py", "choices_change.open_"): (1, PASS["signup"]),
     ("signup/services/review_changes.py", "recollect_change.open_"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService._live_season_id"):
