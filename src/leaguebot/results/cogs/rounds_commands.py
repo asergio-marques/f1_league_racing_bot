@@ -1,8 +1,6 @@
-"""`RoundsCommands`: the `/results reserves`, `/results standings` and `/results rounds` subgroups.
+"""`RoundsCommands`: the `/results rounds` subgroup, the rounds repost and the round amendment.
 
-The three act on a division's rounds or standings, and are small, so they share one file: the
-reserves toggle; the standings repost; the rounds repost and the round amendment, with the
-session picker the amendment posts (`_AmendSessionsView`).
+The session picker the amendment posts (`_AmendSessionsView`) is here with it.
 """
 from __future__ import annotations
 
@@ -13,7 +11,6 @@ from discord import app_commands
 
 from leaguebot.results.cogs.results_group import RESULTS_GROUP, ResultsSubgroup
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.points.points_settings import RESERVES, reserves_toggle_request
 from leaguebot.core.utils.channel_guard import league_admin_only, league_manager_only
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_server import (
@@ -107,105 +104,6 @@ class _AmendSessionsView(LeagueView):
 
 
 class RoundsCommands(ResultsSubgroup):
-    # ------------------------------------------------------------------
-    # /results reserves group — T026
-    # ------------------------------------------------------------------
-
-    reserves_group = app_commands.Group(
-        name="reserves", description="Reserve driver visibility in standings", parent=RESULTS_GROUP
-    )
-
-    @reserves_group.command(name="toggle", description="Toggle reserve driver visibility in division standings.")
-    @app_commands.describe(division="Division name")
-    @league_manager_only
-    async def reserves_toggle(self, interaction: discord.Interaction, division: str) -> None:
-        if not await self._module_gate(interaction):
-            return
-        season = await season_for_command(
-            interaction, self.bot.season_service, "results reserves toggle"
-        )
-        if season is None:
-            return
-
-        divisions = await self.bot.season_service.get_divisions(season.id)
-        div = next((d for d in divisions if d.name.lower() == division.lower()), None)
-        if div is None:
-            await refuse(
-                interaction, f"\u274c Division '{division}' not found.", what=describe(interaction)
-            )
-            return
-
-        await self.bot.change_queue.ask(
-            RESERVES,
-            await reserves_toggle_request(self.bot.db_path, div.id, division),
-            interaction=interaction,
-            what=describe(interaction),
-        )
-
-    # ------------------------------------------------------------------
-    # /results standings group — T013 (US3)
-    # ------------------------------------------------------------------
-
-    standings_group = app_commands.Group(
-        name="standings", description="Standings commands", parent=RESULTS_GROUP
-    )
-
-    @standings_group.command(name="sync", description="Force a standings repost for a division.")
-    @app_commands.describe(division="Division name")
-    @league_manager_only
-    async def standings_sync(self, interaction: discord.Interaction, division: str) -> None:
-        if not await self._module_gate(interaction):
-            return
-        await interaction.response.defer(ephemeral=True)
-
-        season = await season_for_command(
-            interaction, self.bot.season_service, "results standings sync"
-        )
-        if season is None:
-            return
-
-        divisions = await self.bot.season_service.get_divisions(season.id)
-        div = next((d for d in divisions if d.name.lower() == division.lower()), None)
-        if div is None:
-            await refuse(
-                interaction, f"\u274c Division '{division}' not found.", what=describe(interaction)
-            )
-            return
-        if not await self._sync_gate(interaction, div, what=describe(interaction)):
-            return
-
-        from leaguebot.results.services.publishing.results_post_service import standings_repost_status
-        from leaguebot.results.services.standings.standings_sync_change import STANDINGS_SYNC
-
-        # The channel and the rounds are read here to answer at once, as the command always has;
-        # the repost itself is a change on the queue, which checks them again when it runs.
-        status = await standings_repost_status(self.bot.db_path, div.id, guild_of(interaction))
-
-        if status == "ok":
-            await self.bot.change_queue.ask(
-                STANDINGS_SYNC, {"division_id": div.id, "division_name": div.name},
-                interaction=interaction, what="`/results standings sync`",
-                refusal_what=describe(interaction),
-            )
-        elif status == "no_rounds":
-            await self._answer_nothing_changed(
-                interaction,
-                "results standings sync",
-                f"No completed rounds found for **{division}**. No standings to post.",
-                f"division: {div.name}",
-                "reason: no completed rounds, so nothing was posted",
-            )
-        else:  # no_channel
-            await refuse(
-                interaction,
-                f"\u274c Division '{division}' has no standings channel configured.",
-                what=describe(interaction),
-            )
-
-    # ------------------------------------------------------------------
-    # /results rounds group
-    # ------------------------------------------------------------------
-
     rounds_group = app_commands.Group(
         name="rounds", description="Round results commands", parent=RESULTS_GROUP
     )

@@ -1,11 +1,12 @@
 """`ResultsCog`: the `/results` group, composed from one class for each of its subgroups.
 
 The subgroups' commands live in `config_commands.py`, `points_amend_commands.py`,
-`rounds_commands.py` (reserves, standings and rounds) and `channel_commands.py`, each under the
-one `/results` group declared in `results_group.py`. The cog stays one cog for one group: the
-class derives from them, which discord.py allows because it collects a cog's commands across the
-classes the cog derives from, and a cog too large to read in one file is split by subgroup rather
-than into a cog for each, as the architecture's cog bullet gives it (`docs/design/architecture.md`).
+`reserves_commands.py`, `standings_commands.py`, `rounds_commands.py` and `channel_commands.py`,
+one file for each subgroup, under the one `/results` group declared in `results_group.py`. The
+cog stays one cog for one group: the class derives from them, which discord.py allows because it
+collects a cog's commands across the classes the cog derives from, and a cog too large to read in
+one file is split by subgroup rather than into a cog for each, as the architecture's cog bullet
+gives it (`docs/design/architecture.md`).
 
 What is left here is what the subgroups share: the cog's bot, the listener that guards a round's
 channels, and the gates the subgroups' commands call.
@@ -20,8 +21,10 @@ from discord.ext import commands
 from leaguebot.results.cogs.channel_commands import ChannelCommands
 from leaguebot.results.cogs.config_commands import ConfigCommands
 from leaguebot.results.cogs.points_amend_commands import PointsAmendCommands
+from leaguebot.results.cogs.reserves_commands import ReservesCommands
 from leaguebot.results.cogs.results_group import RESULTS_GROUP
 from leaguebot.results.cogs.rounds_commands import RoundsCommands
+from leaguebot.results.cogs.standings_commands import StandingsCommands
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import is_foreign_guild
@@ -31,7 +34,13 @@ log = logging.getLogger(__name__)
 
 
 class ResultsCog(
-    ConfigCommands, PointsAmendCommands, RoundsCommands, ChannelCommands, commands.Cog
+    ConfigCommands,
+    PointsAmendCommands,
+    ReservesCommands,
+    StandingsCommands,
+    RoundsCommands,
+    ChannelCommands,
+    commands.Cog,
 ):
     results_group = RESULTS_GROUP
 
