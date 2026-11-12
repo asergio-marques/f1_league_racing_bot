@@ -67,6 +67,10 @@ class LeagueBot(commands.Bot):
     #: The version and date of the copy of the bot this process loaded; see `core/utils/version.py`.
     running_version: str | None
     running_version_date: datetime | None
+    #: The queue's moment when the bot came up: the build's, and again the start-up catch-up of a
+    #: round's start as it runs. It tells a `results` job fired late at a restart from one fired on
+    #: time while the bot is up (`ask_round_start`).
+    came_up_at: datetime
 
     config_service: ConfigService
     season_service: SeasonService

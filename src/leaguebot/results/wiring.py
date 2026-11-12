@@ -486,12 +486,15 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
 
     Each asks the change queue, read from the bot when it fires. The bot keeps the one queue
     `build` made; a test that replaces the queue must register these handlers again."""
-    from leaguebot.results.services.submission.submission_changes import advance_step, ask_submission_open
+    from leaguebot.results.services.submission.round_start import ask_round_start
+    from leaguebot.results.services.submission.submission_changes import advance_step
 
     scheduler = bot.scheduler_service
 
     async def _result_submission_cb(round_id: int) -> None:
-        await ask_submission_open(bot.change_queue, bot.db_path, round_id)
+        await ask_round_start(
+            bot.change_queue, bot.db_path, round_id, came_up_at=bot.came_up_at,
+        )
 
     scheduler.register_timer("results", _result_submission_cb)
     bot.advance_steps.register_step("results", advance_step(bot.change_queue, bot.db_path))
@@ -510,7 +513,10 @@ def start_up_steps(bot: "LeagueBot") -> "tuple[StartUpStep, ...]":
     sweep (the entry point signs them up to `bot.starting` under results' switch key). Each
     recovery is looked up when its step runs, so a step stands for that function and no other."""
     from leaguebot.results.services.round_amendment.amend_end_changes import recover_orphaned_amend_channels
-    from leaguebot.results.services.submission.submission_recovery import recover_orphaned_submission_channels
+    from leaguebot.results.services.submission.submission_recovery import (
+        recover_missed_round_starts,
+        recover_orphaned_submission_channels,
+    )
 
     return (
         ("amendment sweep", lambda: arm_amendment_sweep(bot)),
@@ -524,6 +530,10 @@ def start_up_steps(bot: "LeagueBot") -> "tuple[StartUpStep, ...]":
         # with the process, so each is asked of the queue as a review put back or a submission
         # restarted, which asks `results.submission.open` afresh as a follow-on.
         ("orphaned submission channels", lambda: recover_orphaned_submission_channels(bot, queue=bot.change_queue)),
+        # Rounds whose start passed while the bot was down, opened late. **After both recoveries
+        # above**: a round whose submission one of them cleared and asked open again is then in
+        # hand on the queue, and is left to that opening rather than asked a second time.
+        ("missed round starts", lambda: recover_missed_round_starts(bot, queue=bot.change_queue)),
     )
 
 

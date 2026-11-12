@@ -712,6 +712,10 @@ class SchedulerService:
         amendment), or a mystery round was amended inside its first horizon. The round still
         needs this job to leave Not run.
 
+        Armed with no lateness limit (`misfire_grace_time=None`): a job whose moment passed while
+        the bot was down fires once it is back, and the handler results signs up for it decides
+        what becomes of a late one (`ask_round_start`).
+
         Args:
             division_meta: Mapping of ``division_id`` →
                 ``(season_number, division_tier)`` used to build human-readable
@@ -728,6 +732,7 @@ class SchedulerService:
                 trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
                 id=job_id,
                 replace_existing=True,
+                misfire_grace_time=None,
                 name=f"Result submission s{season_number} d{division_tier} r{rnd.round_number}",
                 kwargs={"kind": "results", "key": rnd.id},
             )

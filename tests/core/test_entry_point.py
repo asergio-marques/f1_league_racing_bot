@@ -879,9 +879,6 @@ _RECOVERIES_GIVEN_THE_QUEUE = frozenset(
 )
 
 
-@pytest.mark.xfail(strict=True, reason="#284: results' start-up recoveries are not yet moved "
-                                       "out of its wiring into its services, and no step yet "
-                                       "catches up the round starts missed")
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     """`build` on paths under `tmp_path` signs core's start-up steps and each module's up to
     `bot.starting`, and the sweep is then run over it with every module on, so the order is read

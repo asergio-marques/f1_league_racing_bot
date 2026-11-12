@@ -15,16 +15,20 @@ from typing import Any
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.queue.change_queue import ChangeQueue
-from leaguebot.core.services.seasons.season_service import round_in_division
+from leaguebot.core.services.seasons.season_service import (
+    round_in_division,
+    rounds_still_to_run_by,
+)
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.results.models.recovery_failed import RecoveryFailed
 from leaguebot.results.services.submission.review_recovery import recover_review
+from leaguebot.results.services.submission.round_start import ask_round_start
 from leaguebot.results.services.submission.submission_changes import ask_submission_restart
 
 log = logging.getLogger(__name__)
 
-__all__ = ["recover_orphaned_submission_channels"]
+__all__ = ["recover_missed_round_starts", "recover_orphaned_submission_channels"]
 
 
 async def recover_orphaned_submission_channels(bot: LeagueBot, *, queue: ChangeQueue) -> None:
@@ -98,5 +102,41 @@ async def recover_orphaned_submission_channels(bot: LeagueBot, *, queue: ChangeQ
         except Exception as error:
             log.exception("Recovery: could not recover round %s's submission channel", round_id)
             failures[round_id] = error
+    if failures:
+        raise RecoveryFailed(failures)
+
+
+async def recover_missed_round_starts(bot: LeagueBot, *, queue: ChangeQueue) -> None:
+    """Open the results submission of every round whose start passed while the bot was down.
+
+    The core specification's "When the bot stops" has a restart recover what a stop interrupted,
+    and the results specification has a restart reopen a submission left unopened as the queue
+    does on reaching it. A round's `results` job is armed with no lateness limit, so the job store
+    keeps one whose moment passed and fires it at start-up; this is the step that covers a job the
+    store lost, and asks for the round the same way, through `ask_round_start`, so that a round
+    reached by both is asked for once.
+
+    Each round of the live season still to be run whose start is at or before the queue's clock is
+    handed to `ask_round_start`, which asks nothing for one that is no longer due: opened,
+    cancelled or in hand on the queue. It runs after the two recoveries above, a round whose
+    submission one of them cleared and asked open again being then in hand on the queue.
+
+    **Under test mode it asks nothing**, `/test-mode advance` opening each round in its turn: the
+    moment taken here as the bot's coming up is set on `bot.came_up_at`, which `ask_round_start`
+    reads to hold back a late `results` job the same way.
+
+    A round that cannot be asked for stops none of the others. Once every round has been gone
+    through, a failure for any is raised as one `RecoveryFailed` naming each round and its error,
+    which the start-up sweep reports to the log channel in one line.
+    """
+    now = queue.now()
+    bot.came_up_at = now
+    failures: dict[int, BaseException] = {}
+    for rnd in await rounds_still_to_run_by(bot.db_path, now):
+        try:
+            await ask_round_start(queue, bot.db_path, rnd.id, came_up_at=now)
+        except Exception as error:
+            log.exception("Recovery: could not open round %s's results submission", rnd.id)
+            failures[rnd.id] = error
     if failures:
         raise RecoveryFailed(failures)

@@ -1391,6 +1391,7 @@ class RoundInDivision:
     division_name: str
     round_number: int
     status: str
+    scheduled_at: datetime
 
 
 async def round_in_division(db_path: str, round_id: int) -> RoundInDivision | None:
@@ -1403,7 +1404,8 @@ async def round_in_division(db_path: str, round_id: int) -> RoundInDivision | No
     """
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT r.id, r.division_id, r.round_number, r.status, d.name AS division_name "
+            "SELECT r.id, r.division_id, r.round_number, r.status, r.scheduled_at, "
+            "d.name AS division_name "
             "FROM rounds r JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
             (round_id,),
         )
@@ -1413,8 +1415,32 @@ async def round_in_division(db_path: str, round_id: int) -> RoundInDivision | No
     return RoundInDivision(
         round_id=int(row["id"]), division_id=int(row["division_id"]),
         division_name=str(row["division_name"]), round_number=int(row["round_number"]),
-        status=str(row["status"]),
+        status=str(row["status"]), scheduled_at=read_scheduled_at(row["scheduled_at"]),
     )
+
+
+async def rounds_still_to_run_by(db_path: str, now: datetime) -> list[Round]:
+    """Each round of the ACTIVE season still to be run (NOT_RUN) whose start is at or before
+    *now*, earliest first.
+
+    For a module catching up what came due while the bot was down: results' round starts. *now* is
+    handed in by the caller, the change queue's clock at start-up, so that "passed" is the bot's
+    moment and never the host's. The stored moments are ISO 8601 text in UTC written with their
+    offset (`stored_scheduled_at`), so text order is time order and the comparison is made in SQL.
+    A cancelled round is no longer to be run, and a round of a division that was cancelled is
+    cancelled with it.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT r.id, r.division_id, r.round_number, r.format, r.track_name, r.scheduled_at, "
+            "r.status FROM rounds r JOIN divisions d ON d.id = r.division_id "
+            "JOIN seasons s ON s.id = d.season_id "
+            "WHERE s.status = 'ACTIVE' AND d.status != 'CANCELLED' AND r.status = ? "
+            "AND r.scheduled_at <= ? "
+            "ORDER BY r.scheduled_at, r.id",
+            (RoundStatus.NOT_RUN.value, stored_scheduled_at(now)),
+        )
+        return [_row_to_round(row) for row in await cursor.fetchall()]
 
 
 # ------------------------------------------------------------------

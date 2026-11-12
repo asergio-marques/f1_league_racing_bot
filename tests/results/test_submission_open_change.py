@@ -353,11 +353,6 @@ async def test_a_round_cancelled_while_its_start_stood_stopped_is_dropped_on_ret
 # A round start missed while the bot was down (#450)
 # ---------------------------------------------------------------------------
 
-_NO_CATCH_UP = (
-    "#284: no start-up step of results' yet opens a round whose start passed while the bot was "
-    "down"
-)
-
 #: The name of results' start-up step that catches up the round starts missed while the bot was
 #: down, as `start_up_steps(bot)` gives it.
 MISSED_STARTS = "missed round starts"
@@ -415,7 +410,6 @@ async def _opened_rounds(league: SeasonLeague) -> list[int]:
     return [json.loads(row["payload"])["round_id"] for row in await _open_changes(league)]
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_CATCH_UP)
 async def test_a_round_whose_start_passed_while_the_bot_was_down_opens_at_the_restart(tmp_path):
     """Round 3's start fell two hours before the bot's clock, while the bot was down, and its
     `results` job was lost with the stop. At the restart results' catch-up asks the queue to open
@@ -460,12 +454,9 @@ async def _stopped_id(league: SeasonLeague) -> int | None:
 @pytest.mark.parametrize(
     ("before", "opened", "channels"),
     [
-        pytest.param(_opened_before_the_stop, [ROUND_3], 1, id="opened before the stop",
-                     marks=pytest.mark.xfail(strict=True, reason=_NO_CATCH_UP)),
-        pytest.param(_cancelled, [], 0, id="cancelled",
-                     marks=pytest.mark.xfail(strict=True, reason=_NO_CATCH_UP)),
-        pytest.param(_in_hand, [ROUND_3], 0, id="its opening in hand on a stopped queue",
-                     marks=pytest.mark.xfail(strict=True, reason=_NO_CATCH_UP)),
+        pytest.param(_opened_before_the_stop, [ROUND_3], 1, id="opened before the stop"),
+        pytest.param(_cancelled, [], 0, id="cancelled"),
+        pytest.param(_in_hand, [ROUND_3], 0, id="its opening in hand on a stopped queue"),
     ],
 )
 async def test_a_round_whose_start_passed_is_not_opened_again_at_the_restart(
@@ -490,7 +481,6 @@ async def test_a_round_whose_start_passed_is_not_opened_again_at_the_restart(
     assert len(league.created) == channels
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_CATCH_UP)
 async def test_a_round_whose_start_is_ahead_by_the_bot_s_clock_is_not_opened_at_the_restart(
     tmp_path,
 ):
@@ -511,10 +501,8 @@ async def test_a_round_whose_start_is_ahead_by_the_bot_s_clock_is_not_opened_at_
 
 
 @pytest.mark.parametrize("weather", [
-    pytest.param(False, id="weather off",
-                 marks=pytest.mark.xfail(strict=True, reason=_NO_CATCH_UP)),
-    pytest.param(True, id="weather on, its late job fired too",
-                 marks=pytest.mark.xfail(strict=True, reason=_NO_CATCH_UP)),
+    pytest.param(False, id="weather off"),
+    pytest.param(True, id="weather on, its late job fired too"),
 ])
 async def test_under_test_mode_a_missed_round_start_is_left_to_the_advance(
     tmp_path, monkeypatch, weather: bool,
@@ -541,7 +529,6 @@ async def test_under_test_mode_a_missed_round_start_is_left_to_the_advance(
     assert league.created == []
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_CATCH_UP)
 async def test_under_test_mode_with_weather_on_a_round_start_after_the_restart_opens_on_time(
     tmp_path, monkeypatch,
 ):
@@ -566,10 +553,8 @@ async def test_under_test_mode_with_weather_on_a_round_start_after_the_restart_o
 
 
 @pytest.mark.parametrize("job_first", [
-    pytest.param(True, id="the job first",
-                 marks=pytest.mark.xfail(strict=True, reason=_NO_CATCH_UP)),
-    pytest.param(False, id="the catch-up first",
-                 marks=pytest.mark.xfail(strict=True, reason=_NO_CATCH_UP)),
+    pytest.param(True, id="the job first"),
+    pytest.param(False, id="the catch-up first"),
 ])
 async def test_the_late_job_and_the_catch_up_both_firing_open_the_round_once(
     tmp_path, monkeypatch, job_first: bool,
