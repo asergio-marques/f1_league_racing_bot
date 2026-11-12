@@ -11,7 +11,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.round import RoundStatus
-from leaguebot.core.services.drivers.team_service import TeamService
+from leaguebot.core.services.drivers.team_service import TeamService, division_team_references
 from leaguebot.core.services.seasons import season_service
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.results.models.session_result import DriverSessionResult, OutcomeModifier
@@ -478,14 +478,14 @@ async def compute_team_standings_on(
     # teams join the standings without having scored, and every team supplies the name the
     # final tiebreak orders on — a reserve team whose driver scored is in the set already.
     # That name is the full name, the one a reader sees the table ordered by (#381).
-    team_rows = await TeamService.division_teams_on(db, division_id)
+    team_rows = await division_team_references(db, division_id)
     # team id -> (team rank, team name). Rank 0 a named team, 1 the reserve team; a team of
     # another division, which no result should name, gets 2 below and ranks after both.
     team_meta: dict[int, tuple[int, str]] = {}
     for team in team_rows:
-        tid = team.id
-        team_meta[tid] = (1 if team.is_reserve else 0, team.full_name or "")
-        if team.is_reserve:
+        tid = team["id"]
+        team_meta[tid] = (1 if team["is_reserve"] else 0, team["full_name"] or "")
+        if team["is_reserve"]:
             continue
         if tid not in total_points:
             total_points[tid] = 0
@@ -593,9 +593,9 @@ async def opening_team_standings(
     added, as they do there.
     """
     async with get_connection(db_path) as db:
-        team_rows = await TeamService.division_teams_on(db, division_id)
+        team_rows = await division_team_references(db, division_id)
 
-    teams = [(team.id, team.full_name or "") for team in team_rows if not team.is_reserve]
+    teams = [(team["id"], team["full_name"] or "") for team in team_rows if not team["is_reserve"]]
 
     return [
         TeamStandingsSnapshot(
