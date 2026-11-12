@@ -46,7 +46,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.core.services.seasons.season_service import live_season
+from leaguebot.core.services.seasons.season_service import live_season, round_facts_on
 from leaguebot.core.utils.season_gate import LIVE_STAGES, stage_refusal
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.round_amendment.amend_views import AmendCancelView
@@ -63,6 +63,7 @@ from leaguebot.results.services.submission.submission_steps import (
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
+    from leaguebot.core.services.settings.config_service import ConfigService
 
 KIND = "results.amend.open"
 PLAN_OPEN = "plan_open"
@@ -200,6 +201,7 @@ def prompt_steps(
 def amend_open_change(
     *,
     modules: ModuleService,
+    config: ConfigService,
     server_config: ServerConfig,
     now: Callable[[], datetime],
     arm_once: Callable[[str, int | str, datetime], None],
@@ -207,7 +209,8 @@ def amend_open_change(
 ) -> ChangeType:
     """The `results.amend.open` change type, for the builder to register.
 
-    *modules* tells whether results are on, *server_config* reads the server configuration the
+    *modules* tells whether results are on, *config* reads the league's roles and channels on the
+    save's own connection (the opening channel is named and opened to them), *server_config* reads the server configuration the
     Cancel button checks its presser against, *now* is the queue's clock (read when the prompt's
     time is recorded), *arm_once* the scheduler service's and *queue_of* the change queue the
     Cancel button asks, handed here so that no job looks either up on the bot. The payload is ``{"round_id", "division_id", "session_types"}``, the
@@ -227,15 +230,8 @@ def amend_open_change(
         if refusal is not None or season is None:
             return Verdict.refuse(refusal or "")
         async with get_connection(ctx.db_path) as db:
-            row = await (
-                await db.execute(
-                    "SELECT r.status, r.round_number, d.name AS division_name "
-                    "FROM rounds r JOIN divisions d ON d.id = r.division_id "
-                    "WHERE r.id = ? AND d.id = ? AND d.season_id = ?",
-                    (round_id, division_id, season.id),
-                )
-            ).fetchone()
-            if row is None:
+            row = await round_facts_on(db, round_id)
+            if row is None or row.division_id != division_id or row.season_id != season.id:
                 return Verdict.refuse("❌ Round not found.")
             held = await (
                 await db.execute(
@@ -244,7 +240,7 @@ def amend_open_change(
                     (round_id,),
                 )
             ).fetchall()
-        if row["status"] != RoundStatus.FINAL.value:
+        if row.status != RoundStatus.FINAL:
             return Verdict.refuse(
                 "❌ This round cannot be amended yet. Round results must reach **FINAL** status "
                 "(approved through the full penalty review and appeals process) before they can "
@@ -256,7 +252,7 @@ def amend_open_change(
             # job a manager could Retry or Discard to name.
             naming = f" (job #{waiting_on})" if waiting_on else ""
             return Verdict.refuse(
-                f"⏸️ A round of {row['division_name']} has a job on the change queue{naming}, so "
+                f"⏸️ A round of {row.division_name} has a job on the change queue{naming}, so "
                 "it cannot be amended until that is done. Let it finish, or "
                 "press **Retry** or **Discard** on its notice if it has stopped, then amend "
                 "again."
@@ -269,28 +265,16 @@ def amend_open_change(
                 return Verdict.refuse(f"❌ No {chosen} session found for this round.")
         other = await open_amendment_in_division(ctx.db_path, division_id)
         if other is not None:
-            return Verdict.refuse(amendment_open_refusal(row["division_name"], other))
+            return Verdict.refuse(amendment_open_refusal(row.division_name, other))
         return Verdict.go()
 
     async def plan_open(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         payload = ctx.payload
         round_id = int(payload["round_id"])
-        row = await (
-            await db.execute(
-                "SELECT r.round_number, r.format, d.name AS division_name, s.season_number "
-                "FROM rounds r JOIN divisions d ON d.id = r.division_id "
-                "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?",
-                (round_id,),
-            )
-        ).fetchone()
+        row = await round_facts_on(db, round_id)
         if row is None:
             raise LookupError(f"round {round_id} is not there to amend")
-        server = await (
-            await db.execute(
-                "SELECT interaction_role_id, interaction_channel_id, league_admin_role_id "
-                "FROM server_configs WHERE server_id IS NOT NULL"
-            )
-        ).fetchone()
+        server = await config.get_server_config_on(db)
         stale = await (
             await db.execute(
                 "SELECT channel_id FROM round_amend_channels "
@@ -302,13 +286,13 @@ def amend_open_change(
         # taken in that order, and the first prompt asks for the first of them.
         order = list(SessionType)
         sessions = sorted((SessionType(each) for each in payload["session_types"]), key=order.index)
-        slug = re.sub(r"[^a-z0-9-]", "", str(row["division_name"]).lower().replace(" ", "-"))[:20]
+        slug = re.sub(r"[^a-z0-9-]", "", row.division_name.lower().replace(" ", "-"))[:20]
         # The league admin role is opened to the amendment channel on the same terms as the
         # interaction role: a league admin holds the league manager tier within their own, and a
         # channel opened to one role and not the other would leave them able to cancel an
         # amendment they cannot see (issue #116).
         roles = [] if server is None else [
-            each for each in (server["interaction_role_id"], server["league_admin_role_id"])
+            each for each in (server.interaction_role_id, server.league_admin_role_id)
             if each
         ]
         planned: list[PlannedStep] = []
@@ -319,12 +303,12 @@ def amend_open_change(
                 "reason": "Finished amendment channel left behind",
             }))
         planned.append(PlannedStep(CREATE_CHANNEL, {
-            "name": f"amend-S{row['season_number']}-{slug}-R{row['round_number']}",
-            "beside_channel_id": None if server is None else server["interaction_channel_id"],
+            "name": f"amend-S{row.season_number}-{slug}-R{row.round_number}",
+            "beside_channel_id": None if server is None else server.interaction_channel_id,
             "role_ids": roles,
             "round_id": round_id,
-            "round_number": int(row["round_number"]),
-            "division_name": row["division_name"],
+            "round_number": row.round_number,
+            "division_name": row.division_name,
             "session_types": [each.value for each in sessions],
             "opener_id": ctx.actor_id,
         }))

@@ -417,7 +417,8 @@ def register_change_types(
     # over would both follow; the getter is kept for the signature's sake.
     bot.change_queue.register(
         amend_open_change(
-            modules=bot.module_service, server_config=bot.config_service.get_server_config,
+            modules=bot.module_service, config=bot.config_service,
+            server_config=bot.config_service.get_server_config,
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
             queue_of=lambda: bot.change_queue,
         )
