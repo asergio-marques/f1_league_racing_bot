@@ -804,7 +804,7 @@ async def run_amendment_review_stages(
     # doubling a sanction in a session the manager never touched. To review a session's
     # decisions, the manager includes that session in the amendment.
     staged, staged_appeals, staged_pardons = await load_staged_from_records(
-        db_path, round_id, session_types=session_types
+        db_path, round_id, attendance=attendance, session_types=session_types
     )
     # **The pardons only while attendance is on, as attendance's hook says.** The appeal stage
     # writes them back only then, so offering them with the module off let a manager remove one,

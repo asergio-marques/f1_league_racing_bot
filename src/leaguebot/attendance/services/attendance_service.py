@@ -1295,6 +1295,34 @@ async def latest_scored_round(db, division_id: int) -> int | None:
     return None
 
 
+async def recorded_pardons(db_path: str, round_id: int) -> list[dict[str, Any]]:
+    """The round's recorded pardons, oldest first: each with its attendance row
+    (``attendance_id``), ``pardon_type``, ``justification``, ``granted_by``, ``granted_at``, the
+    driver's profile (``driver_profile_id``) and their current Discord account
+    (``discord_user_id``), which core names (`driver_names_for_profiles`).
+
+    What the review's staged pardons are rebuilt from (`AttendanceAfterReview.recorded_pardons`).
+    Reads only.
+    """
+    from leaguebot.core.services.drivers.driver_service import driver_names_for_profiles
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT p.attendance_id, p.pardon_type, p.justification, p.granted_by, p.granted_at, "
+            "a.driver_profile_id AS driver_profile_id FROM attendance_pardons p "
+            "JOIN driver_round_attendance a ON a.id = p.attendance_id "
+            "WHERE a.round_id = ? ORDER BY p.id",
+            (round_id,),
+        )
+        rows = [dict(row) for row in await cursor.fetchall()]
+    names = await driver_names_for_profiles(db_path, [row["driver_profile_id"] for row in rows])
+    return [
+        {**row, "discord_user_id": names[row["driver_profile_id"]][0]}
+        for row in rows
+        if row["driver_profile_id"] in names
+    ]
+
+
 async def pardons_of_on(db, round_id: int) -> list[dict[str, Any]]:
     """The round's pardons whole, ``id`` and ``granted_at`` included, oldest first, on *db*.
 

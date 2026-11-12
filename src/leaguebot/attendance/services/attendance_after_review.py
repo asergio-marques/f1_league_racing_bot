@@ -162,6 +162,9 @@ class AttendanceAfterReview:
         async with get_connection(self._db_path) as db:
             return await _att.latest_scored_round(db, division_id)
 
+    async def recorded_pardons(self, round_id: int) -> list[dict[str, Any]]:
+        return await _att.recorded_pardons(self._db_path, round_id)
+
     async def recalculate_on(
         self, db: aiosqlite.Connection, round_id: int, division_id: int
     ) -> None:

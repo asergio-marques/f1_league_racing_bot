@@ -528,7 +528,8 @@ def amendment_stage_changes(
             )
         session_types = [SessionType(value) for value in ctx.payload["session_types"]]
         reports, corrections, _stored = await load_staged_from_records(
-            ctx.db_path, int(payload["round_id"]), session_types=session_types
+            ctx.db_path, int(payload["round_id"]), attendance=attendance,
+            session_types=session_types,
         )
         async with get_connection(ctx.db_path) as db:
             round_number, division_name, _season = await _round_names(db, int(payload["round_id"]))

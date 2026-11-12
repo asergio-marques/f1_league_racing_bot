@@ -83,6 +83,12 @@ class AttendanceAfterReview(Protocol):
         current attendance sheet stands; None where it has none, and so has no sheet to correct.
         A read writing nothing, so it acts whatever attendance's switch says."""
 
+    async def recorded_pardons(self, round_id: int) -> list[dict[str, Any]]:
+        """The pardons the round has recorded, oldest first, as rows the review's staged pardons
+        are rebuilt from: ``attendance_id``, ``pardon_type``, ``justification``, ``granted_by``,
+        ``granted_at``, ``driver_profile_id`` and ``discord_user_id``, the driver's current
+        account. A read writing nothing, so it acts whatever attendance's switch says."""
+
     async def recalculate_on(
         self, db: aiosqlite.Connection, round_id: int, division_id: int
     ) -> None:

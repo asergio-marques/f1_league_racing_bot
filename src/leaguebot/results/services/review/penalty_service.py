@@ -20,6 +20,7 @@ from leaguebot.core.utils.input_validator import (
 )
 
 if TYPE_CHECKING:
+    from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
     from leaguebot.results.services.review.review_state import StagedPardon
 
 log = logging.getLogger(__name__)
@@ -451,7 +452,8 @@ async def apply_penalties_on(
 
 
 async def load_staged_from_records(
-    db_path: str, round_id: int, *, session_types: list[SessionType] | None = None
+    db_path: str, round_id: int, *, attendance: AttendanceAfterReview,
+    session_types: list[SessionType] | None = None,
 ) -> tuple[list[StagedPenalty], list[StagedPenalty], list["StagedPardon"]]:
     """Rebuild a round's decided reports, appeals and pardons as staged entries.
 
@@ -473,7 +475,7 @@ async def load_staged_from_records(
     and sanction accounts for it — matched once each, so two identical penalties are not both
     swallowed by one appeal.
 
-    *session_types* narrows the read to those sessions, which is what an amendment wants: it
+    *attendance* reads the round's pardons, which attendance records. *session_types* narrows the read to those sessions, which is what an amendment wants: it
     replays the sessions it re-entered, and re-applying a report belonging to another would add
     to penalty columns that already hold it — the rows of an unamended session were never
     re-inserted at zero.
@@ -514,36 +516,23 @@ async def load_staged_from_records(
         ):
             reports.append(_staged_from_record(row))
 
-        cursor = await db.execute(
-            """
-            SELECT p.attendance_id, p.pardon_type, p.justification, p.granted_by,
-                   p.granted_at,
-                   a.driver_profile_id AS driver_profile_id,
-                   d.discord_user_id AS discord_user_id
-            FROM attendance_pardons p
-            JOIN driver_round_attendance a ON a.id = p.attendance_id
-            JOIN driver_profiles d ON d.id = a.driver_profile_id
-            WHERE a.round_id = ?
-            ORDER BY p.id
-            """,
-            (round_id,),
-        )
-        for pardon_row in await cursor.fetchall():
-            try:
-                driver_user_id = int(pardon_row["discord_user_id"])
-            except (TypeError, ValueError):
-                driver_user_id = 0
-            pardons.append(
-                StagedPardon(
-                    driver_user_id=driver_user_id,
-                    driver_profile_id=pardon_row["driver_profile_id"],
-                    attendance_id=pardon_row["attendance_id"],
-                    pardon_type=pardon_row["pardon_type"],
-                    justification=pardon_row["justification"] or "",
-                    grantor_id=int(pardon_row["granted_by"]) if pardon_row["granted_by"] else 0,
-                    granted_at=pardon_row["granted_at"],
-                )
+    # The pardons are attendance's to read, on a connection of its own.
+    for pardon_row in await attendance.recorded_pardons(round_id):
+        try:
+            driver_user_id = int(pardon_row["discord_user_id"])
+        except (TypeError, ValueError):
+            driver_user_id = 0
+        pardons.append(
+            StagedPardon(
+                driver_user_id=driver_user_id,
+                driver_profile_id=pardon_row["driver_profile_id"],
+                attendance_id=pardon_row["attendance_id"],
+                pardon_type=pardon_row["pardon_type"],
+                justification=pardon_row["justification"] or "",
+                grantor_id=int(pardon_row["granted_by"]) if pardon_row["granted_by"] else 0,
+                granted_at=pardon_row["granted_at"],
             )
+        )
 
     return reports, appeals, pardons
 

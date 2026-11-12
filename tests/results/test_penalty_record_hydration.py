@@ -35,11 +35,6 @@ ROUND_ID = 41
 DIVISION_ID = 21
 SEASON_ID = 11
 
-#: Every read hands the loader attendance's share of the review, which reads the round's pardons.
-ATTENDANCE_NOT_HANDED = (
-    "#284: load_staged_from_records reads attendance's tables itself and takes no attendance"
-)
-
 
 async def _seed(tmp_path, name: str = "hydrate") -> tuple[str, dict]:
     """A round with a feature race and a feature qualifying, two drivers in each."""
@@ -122,7 +117,6 @@ async def _appeal(db_path, result_id, *, column="race_result_id", penalty_type="
         return cursor.lastrowid
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_a_report_comes_back_with_every_field_it_was_given(tmp_path):
     """The staged entry is what a steward would have typed to produce the record."""
     db_path, ids = await _seed(tmp_path, "hydrate_report")
@@ -146,7 +140,6 @@ async def test_a_report_comes_back_with_every_field_it_was_given(tmp_path):
     assert staged.justification == "Wholly at fault."
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_a_qualifying_report_recovers_its_own_session(tmp_path):
     """The session is read through `session_results`, not guessed from the column used."""
     db_path, ids = await _seed(tmp_path, "hydrate_quali")
@@ -163,7 +156,6 @@ async def test_a_qualifying_report_recovers_its_own_session(tmp_path):
     assert reports[0].penalty_seconds is None
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_an_appeal_is_read_as_an_appeal_and_not_also_as_a_report(tmp_path):
     """`apply_penalties_on` writes a `penalty_records` row on the appeal phase too.
 
@@ -182,7 +174,6 @@ async def test_an_appeal_is_read_as_an_appeal_and_not_also_as_a_report(tmp_path)
     assert appeals[0].driver_user_id == 101
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_a_report_and_an_appeal_on_one_driver_both_come_back(tmp_path):
     """A driver penalised in review and again on appeal carries two distinct sanctions.
 
@@ -201,7 +192,6 @@ async def test_a_report_and_an_appeal_on_one_driver_both_come_back(tmp_path):
     assert [a.penalty_seconds for a in appeals] == [3]
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_two_identical_reports_are_not_both_claimed_by_one_appeal(tmp_path):
     """The pairing is one-for-one.
 
@@ -222,7 +212,6 @@ async def test_two_identical_reports_are_not_both_claimed_by_one_appeal(tmp_path
     assert len(appeals) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_a_pardon_comes_back_staged(tmp_path):
     """Pardons are amendable in the replay's report stage, so they hydrate with the rest."""
     db_path, _ = await _seed(tmp_path, "hydrate_pardon")
@@ -260,7 +249,6 @@ async def test_a_pardon_comes_back_staged(tmp_path):
     assert pardons[0].granted_at == "2026-02-02T00:00:00+00:00"
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_the_pardons_are_read_through_attendance(tmp_path):
     """Round 41 holds no pardon in the database, but attendance's share of the review answers
     one: a NO_RSVP pardon on attendance row 7 for driver 31 (user 101), granted by 77 "Away with
@@ -282,7 +270,6 @@ async def test_the_pardons_are_read_through_attendance(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_a_round_that_was_never_penalised_hydrates_to_nothing(tmp_path):
     """The ordinary case, so an empty result cannot be read as a failure to find anything."""
     db_path, _ = await _seed(tmp_path, "hydrate_empty")
@@ -292,7 +279,6 @@ async def test_a_round_that_was_never_penalised_hydrates_to_nothing(tmp_path):
     ) == ([], [], [])
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_another_rounds_verdicts_are_not_picked_up(tmp_path):
     """The scope is the round, reached through `session_results`."""
     db_path, ids = await _seed(tmp_path, "hydrate_scope")
@@ -324,7 +310,6 @@ async def test_another_rounds_verdicts_are_not_picked_up(tmp_path):
     assert [(r.driver_user_id, r.penalty_seconds) for r in reports] == [(102, 7)]
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_the_pairing_holds_because_both_rows_come_from_one_staged_appeal(tmp_path):
     """Why matching on shape is sound rather than lucky.
 
@@ -352,7 +337,6 @@ async def test_the_pairing_holds_because_both_rows_come_from_one_staged_appeal(t
     assert appeals[0].penalty_seconds == 8
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_a_report_of_a_different_shape_is_never_claimed_by_an_appeal(tmp_path):
     """A genuine report survives beside an appeal, which is the failure mode that matters.
 
@@ -372,7 +356,6 @@ async def test_a_report_of_a_different_shape_is_never_claimed_by_an_appeal(tmp_p
     assert [(a.driver_user_id, a.penalty_type) for a in appeals] == [(101, "TIME")]
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_a_report_and_an_appeal_of_the_same_size_for_different_incidents_both_survive(
     tmp_path,
 ):
@@ -405,7 +388,6 @@ async def test_a_report_and_an_appeal_of_the_same_size_for_different_incidents_b
     assert [a.description for a in appeals] == ["Track limits, lap 12"]
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_a_decision_comes_back_with_its_author_and_its_time(tmp_path):
     """**Who decided it and when survive an amendment** (#345). The report and appeal stages
     write a session's decisions out again; without these, every kept verdict would name the
@@ -426,7 +408,6 @@ async def test_a_decision_comes_back_with_its_author_and_its_time(tmp_path):
     )
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_several_sessions_are_read_back_together(tmp_path):
     """An amendment may re-enter several of a round's sessions, and their reports are reviewed
     together — while a session it leaves alone keeps its decisions out of the review (#345)."""
@@ -448,7 +429,6 @@ async def test_several_sessions_are_read_back_together(tmp_path):
     assert [r.description for r in race_only] == ["Race"]
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_no_further_action_comes_back_as_no_further_action(tmp_path):
     """It carries no seconds, as a DSQ does, and must not be read back as one: an amendment
     re-applies what it reads, and a cleared driver would come out of it disqualified (#138)."""
@@ -466,7 +446,6 @@ async def test_no_further_action_comes_back_as_no_further_action(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_an_appeal_closed_with_no_further_action_is_paired_off_its_penalty_row(tmp_path):
     """The appeal phase writes it to both tables like any correction, and it is read back
     once, as the appeal it was (#138)."""
