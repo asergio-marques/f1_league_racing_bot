@@ -1694,10 +1694,6 @@ async def test_a_picture_sent_before_a_later_failure_is_removed_before_the_next_
 # A picture that falls back to text says why in the log channel (image spec :822, :1035)
 # ---------------------------------------------------------------------------
 
-PICTURE_FAULT_NOT_LOGGED = (
-    "#284: a picture whose posting step raises falls back to text with no line in the log channel"
-)
-
 #: What the image module's posting step raises in these tests: a fault its own catches let
 #: through (the drawn picture's file cannot be opened to attach), where a fault in drawing or
 #: rasterising is caught there and already reported in the log channel by the image module.
@@ -1715,12 +1711,15 @@ def _fault_line(league: _League) -> str:
 
 def _says_why(line: str, picture: str) -> bool:
     """*line* names the *picture* that failed ("results", "standings"), says the post went out
-    as text in its place, and gives the fault. How it words what puts it right is left open."""
+    as text in its place, gives the fault, and says what puts it right: to fix the template, then
+    run the sync command that posts it again."""
+    sync = "rounds" if picture == "results" else "standings"
     return (picture in line and ("picture" in line or "image" in line)
-            and "text" in line and PICTURE_FILE_FAULT in line)
+            and "text" in line and PICTURE_FILE_FAULT in line
+            and f"to put it right: fix the {picture} template, then run /results {sync} sync"
+            in line)
 
 
-@pytest.mark.xfail(strict=True, reason=PICTURE_FAULT_NOT_LOGGED)
 async def test_a_results_picture_that_fails_posts_the_table_as_text_and_says_why_in_the_log(
     tmp_path,
 ):
@@ -1749,7 +1748,6 @@ async def test_a_results_picture_that_fails_posts_the_table_as_text_and_says_why
     assert _says_why(line, "results"), line
 
 
-@pytest.mark.xfail(strict=True, reason=PICTURE_FAULT_NOT_LOGGED)
 async def test_a_standings_picture_that_fails_posts_the_standings_as_text_and_says_why_in_the_log(
     tmp_path,
 ):

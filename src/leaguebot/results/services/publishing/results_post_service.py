@@ -61,7 +61,10 @@ class PostedTable(NamedTuple):
     continuations a shorter table no longer fills. *drawn* is true where the picture was
     posted, which replaces what stood before as a text table does: *new* is its one message and
     *old* what it replaces. *championship* names the standings column the
-    ids belong to, ``None`` for a session's results.
+    ids belong to, ``None`` for a session's results. *fault* is what kept a picture from posting
+    where this table went out as text in its place: the job returns it as a line of the log
+    (:func:`picture_fallback_line`), the image module having reported only the faults it
+    catches itself.
     """
 
     new: list[int]
@@ -69,6 +72,34 @@ class PostedTable(NamedTuple):
     edited: bool = False
     drawn: bool = False
     championship: str | None = None
+    fault: str | None = None
+
+
+def picture_fallback_line(
+    named: str,
+    what: str,
+    *,
+    picture: str,
+    division: str,
+    round_number: int,
+    fault: str,
+    put_right: str,
+) -> str:
+    """The line a job writes to the log where a *picture* ("results", "standings", "verdict")
+    went out as text, as the calendar's and the lineup's do (image specification, :822, :1035
+    and :1401): the member and the change it ran for, then the division, what failed and what
+    puts it right. *put_right* is the remedy, which differs by picture."""
+    return (
+        f"{named} | {what} | {picture.capitalize()} posted as text\n"
+        f"  division: {division}\n"
+        f"  problem: round {round_number}'s {picture} picture could not be posted: {fault}\n"
+        f"  to put it right: {put_right}"
+    )
+
+
+def _fault_of(error: BaseException) -> str:
+    """What to say of *error* in a log line: its message, else its type."""
+    return str(error) or type(error).__name__
 
 
 def _split_content(text: str) -> list[str]:
@@ -598,6 +629,7 @@ async def produce_session_results(
         previous = _parse_ids(stored["results_message_ids"]) or [int(stored["results_message_id"])]
 
     # ── The image path (039) ──────────────────────────────────────────────
+    fault: str | None = None
     if bot is not None:
         try:
             from leaguebot.image.services.image_results_post import try_post
@@ -623,11 +655,14 @@ async def produce_session_results(
             )
             if outcome.applicable and outcome.message_id is not None:
                 return PostedTable([outcome.message_id], previous, drawn=True)
-        except Exception as exc:  # noqa: BLE001 — never block a posting on the image path
+        except Exception as exc:  # noqa: BLE001 — a graphic never blocks a posting (XIV.4)
+            # A fault the image module reports itself is answered there; this one it let
+            # through, so it goes on the table for the job to say why the text stands.
             log.error("results: image path failed for session %s: %s", session_result.id, exc, exc_info=True)
+            fault = _fault_of(exc)
 
     sent = await _send_chunked(results_channel, f"{heading}\n{label}\n{table}")
-    return PostedTable(sent, previous)
+    return PostedTable(sent, previous, fault=fault)
 
 
 async def produce_cancelled_session_line(
@@ -798,6 +833,7 @@ async def produce_standings(
     # A round recorded as cancelled produces no standings posting. A season-boundary sheet
     # is not about a round and no round can cancel it, so the guard stands down there.
     cancelled = occasion.names_a_round and await _round_is_cancelled(db_path, round_id)
+    fault: str | None = None
     if bot is not None and not cancelled:
         try:
             from leaguebot.image.services.image_standings_post import try_post
@@ -823,12 +859,13 @@ async def produce_standings(
                 race_name=track_name,
                 occasion=occasion,
             )
-        except Exception:  # noqa: BLE001 — a graphic never gates the standings
+        except Exception as exc:  # noqa: BLE001 — a graphic never gates the standings (XIV.4)
             log.exception(
                 "post_standings: the image path failed for round %s; "
                 "the textual standings stand",
                 round_id,
             )
+            fault = _fault_of(exc)
         else:
             if outcome.rejects:
                 # A commanded posting that would not draw posts nothing at all (XIV.7).
@@ -937,14 +974,16 @@ async def produce_standings(
 
     if sent_msg is None:
         sent = await _send_chunked(standings_channel, content)
-        tables = [PostedTable(sent, stale, championship=STANDINGS_DRIVERS)]
+        tables = [PostedTable(sent, stale, championship=STANDINGS_DRIVERS, fault=fault)]
         if constructors_old:
             # Nothing new carries the constructors now: the table forgets its id and loses its
             # messages with the drivers' (see `review_posting._record_standings_post`).
             tables.append(PostedTable([], constructors_old, championship=STANDINGS_CONSTRUCTORS))
         return tables
     # Edited in place, so it is the one message it always was and occupies no others.
-    return [PostedTable([sent_msg.id], stale, edited=True, championship=STANDINGS_DRIVERS)]
+    return [PostedTable(
+        [sent_msg.id], stale, edited=True, championship=STANDINGS_DRIVERS, fault=fault
+    )]
 
 
 async def _round_is_cancelled(db_path: str, round_id: int) -> bool:

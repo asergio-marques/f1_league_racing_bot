@@ -90,6 +90,7 @@ from leaguebot.results.services.publishing.results_post_service import (
     delete_round_channel,
     driver_standings_for_display,
     load_driver_rows,
+    picture_fallback_line,
     produce_cancelled_session_line,
     produce_session_results,
     produce_standings,
@@ -715,7 +716,12 @@ async def _post_session_results(ctx: StepContext) -> StepResult:
         "new": posted.new, "old": posted.old,
         "drawn": posted.drawn, "channel_id": channel_id,
     }
-    return StepResult(result=result, then=_deletes(channel_id, posted.old, what))
+    lines = () if posted.fault is None else (picture_fallback_line(
+        ctx.named, ctx.what, picture="results", division=rnd["division_name"],
+        round_number=rnd["round_number"], fault=posted.fault,
+        put_right=f"fix the results template, then run {_RESULTS_SYNC}",
+    ),)
+    return StepResult(result=result, lines=lines, then=_deletes(channel_id, posted.old, what))
 
 
 async def _round_format(db_path: str, round_id: int) -> str:
@@ -810,7 +816,13 @@ async def _post_standings(ctx: StepContext, *, recompute: bool = False) -> StepR
         "new": new, "channel_id": channel_id,
         "division_id": division_id, "round_id": round_id,
     }
-    return StepResult(result=result, then=tuple(then))
+    fault = next((t.fault for t in tables if t.fault is not None), None)
+    lines = () if fault is None else (picture_fallback_line(
+        ctx.named, ctx.what, picture="standings", division=rnd["division_name"],
+        round_number=rnd["round_number"], fault=fault,
+        put_right=f"fix the standings template, then run {_STANDINGS_SYNC}",
+    ),)
+    return StepResult(result=result, lines=lines, then=tuple(then))
 
 
 async def _post_standings_afresh(ctx: StepContext) -> StepResult:
