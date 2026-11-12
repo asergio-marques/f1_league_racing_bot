@@ -643,7 +643,7 @@ class ResultsCog(commands.Cog):
             return
         if await is_foreign_guild(self.bot, message.guild.id):
             return
-        from leaguebot.results.services.result_submission_service import is_channel_in_penalty_review
+        from leaguebot.results.services.review_prompts import is_channel_in_penalty_review
 
         if await is_channel_in_penalty_review(self.bot.db_path, message.channel.id):
             # Deleted and warned by jobs on the round's lane, not at once (#439).

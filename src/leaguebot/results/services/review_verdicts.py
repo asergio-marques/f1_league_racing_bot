@@ -86,10 +86,7 @@ from leaguebot.core.services.settings.channel_registry_service import as_text_ch
 from leaguebot.image.services import image_verdict_banner_post
 from leaguebot.results.services import verdict_announcement_service as vas
 from leaguebot.results.services.attendance_hook import AttendanceAfterReview
-from leaguebot.results.services.result_submission_service import (
-    _build_penalty_review_state,
-    send_appeals_prompt,
-)
+from leaguebot.results.services.review_prompts import _build_penalty_review_state, send_appeals_prompt
 from leaguebot.results.services.results_post_service import _delete_posting
 from leaguebot.results.services.review_posting import _channel, _deletes, _league_guild
 

@@ -663,7 +663,7 @@ async def test_apply_penalties_on_stamps_with_the_handed_time_and_commits_nothin
 
     from leaguebot.core.db.database import get_connection
     from leaguebot.results.services.penalty_service import apply_penalties_on
-    from leaguebot.results.services.result_submission_service import _apply_staged_appeals_on
+    from leaguebot.results.services.review_prompts import _apply_staged_appeals_on
     from leaguebot.results.services.verdict_announcement_service import (
         _mark_banner_over_sanction_on,
         _record_announcement_on,

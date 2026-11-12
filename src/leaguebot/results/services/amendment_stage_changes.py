@@ -93,7 +93,7 @@ from leaguebot.results.services.penalty_service import (
 )
 from leaguebot.results.services.penalty_wizard import PenaltyReviewState, StagedPardon, _pen_label
 from leaguebot.results.services.report_approval_change import _latest_round
-from leaguebot.results.services.result_submission_service import _apply_staged_appeals_on, send_appeals_prompt
+from leaguebot.results.services.review_prompts import _apply_staged_appeals_on, send_appeals_prompt
 from leaguebot.results.services.amendment_writes import (
     _AMENDMENT_NOT_OPEN,
     _clear_round_verdict_records_on,

@@ -1021,9 +1021,9 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_standings_post.py", "post_championship"): (1, PASS["image"]),
     ("image/services/image_verdict_banner_post.py", "try_post"): (3, PASS["image"]),
     ("results/services/penalty_wizard.py", "_show_approval_step"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "send_appeals_prompt"): (1, PASS["results"]),
+    ("results/services/review_prompts.py", "send_appeals_prompt"): (1, PASS["results"]),
     ("results/services/result_submission_service.py", "send_cancelled_line"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "send_review_prompt"): (1, PASS["results"]),
+    ("results/services/review_prompts.py", "send_review_prompt"): (1, PASS["results"]),
     ("results/services/amendment_writes.py", "run_amendment_review_stages"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "_send_chunked"): (2, PASS["results"]),
     ("attendance/services/check_in_changes.py", "edit_check_in_message"): (1, PASS["attendance"]),
@@ -2673,7 +2673,7 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/report_approval_change.py", "report_approval_change.apply"):
         (2, PASS["results"]),
     ("results/services/result_submission_service.py", "<module>"): (2, PASS["results"]),
-    ("results/services/result_submission_service.py", "_build_penalty_review_state"):
+    ("results/services/review_prompts.py", "_build_penalty_review_state"):
         (2, PASS["results"]),
     ("results/services/amendment_writes.py", "_restore_from_snapshot_on"):
         (1, PASS["results"]),
@@ -2686,7 +2686,7 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/result_submission_service.py", "expected_resubmitted_session_on"):
         (1, PASS["results"]),
     ("results/services/result_submission_service.py", "expected_session_on"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "is_channel_in_penalty_review"):
+    ("results/services/review_prompts.py", "is_channel_in_penalty_review"):
         (1, PASS["results"]),
     ("results/services/amendment_writes.py", "open_amendment_in_division"):
         (1, PASS["results"]),
