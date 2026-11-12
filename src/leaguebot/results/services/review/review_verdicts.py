@@ -82,6 +82,7 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.services.drivers import lineup_posting
 from leaguebot.core.services.posting import standing_posts
+from leaguebot.core.services.seasons import season_service
 from leaguebot.core.services.posting.notice_handler import delete_notice
 from leaguebot.core.services.posting.owned_channel_handler import delete_in_owned_channel
 from leaguebot.core.services.posting.output_router import OutputRouter
@@ -668,10 +669,8 @@ async def _attendance_sheet(ctx: StepContext, hook: AttendanceAfterReview) -> St
 
 async def _division_name(db_path: str, division_id: int) -> str:
     async with get_connection(db_path) as db:
-        row = await (
-            await db.execute("SELECT name FROM divisions WHERE id = ?", (division_id,))
-        ).fetchone()
-    return "the division" if row is None else str(row["name"])
+        division = await season_service.division_on(db, division_id)
+    return "the division" if division is None else division.name
 
 
 async def _describe_plan(ctx: StepContext) -> str:
@@ -820,12 +819,10 @@ async def _sanction_heading_on(db: Any, ctx: StepContext) -> tuple[PlannedStep, 
         return ()
     if await vas._banners_of_on(db, round_id):
         return ()
-    row = await (
-        await db.execute("SELECT round_number FROM rounds WHERE id = ?", (round_id,))
-    ).fetchone()
+    facts = await season_service.round_facts_on(db, round_id)
     heading: dict[str, Any] = {"round_id": round_id, "over": _OVER_SANCTIONS}
-    if row is not None:
-        heading["round_number"] = row["round_number"]
+    if facts is not None:
+        heading["round_number"] = facts.round_number
     return (PlannedStep(ANNOUNCE_HEADING, heading),)
 
 
