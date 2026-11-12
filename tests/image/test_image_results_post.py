@@ -41,7 +41,7 @@ async def _seeded(tmp_path, *, result_status="AWAITING_REPORT_VERDICTS", message
         division_id = cur.lastrowid
         cur = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, status, "
-            "scheduled_at) VALUES (?, 5, 'STANDARD', ?, '2026-06-01T18:00:00+00:00')",
+            "scheduled_at) VALUES (?, 5, 'NORMAL', ?, '2026-06-01T18:00:00+00:00')",
             (division_id, result_status),
         )
         round_id = cur.lastrowid

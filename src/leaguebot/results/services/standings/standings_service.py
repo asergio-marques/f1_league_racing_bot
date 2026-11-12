@@ -5,11 +5,14 @@ import json
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Collection, Iterable, Mapping
+from typing import Any, Collection, Iterable, Mapping
 
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.round import RoundStatus
+from leaguebot.core.services.drivers.team_service import TeamService
+from leaguebot.core.services.seasons import season_service
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.results.models.session_result import DriverSessionResult, OutcomeModifier
 from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
@@ -260,6 +263,54 @@ def order_teams(
 # Driver standings
 # ---------------------------------------------------------------------------
 
+async def _scored_rows_up_to(
+    db: aiosqlite.Connection, division_id: int, up_to_round_id: int
+) -> list[dict[str, Any]]:
+    """The active race rows, then the active qualifying rows, of the division's rounds up to
+    *up_to_round_id*, in round order; none where that round does not exist.
+
+    A round is up to it where its id and its round number are both no later than its own. The
+    rounds are core's to say, read through core on the same connection; the rows are results'
+    own, read by round id. Each row carries ``round_id`` and ``round_number``.
+    """
+    up_to = await season_service.round_facts_on(db, up_to_round_id)
+    if up_to is None:
+        return []
+    number_of = {
+        r.id: r.round_number
+        for r in await season_service.division_rounds_in_order_on(db, division_id)
+        if r.id <= up_to_round_id and r.round_number <= up_to.round_number
+    }
+    if not number_of:
+        return []
+    marks = ", ".join("?" for _ in number_of)
+    race = await db.execute(
+        f"""
+        SELECT x.driver_user_id, x.team_instance_id, x.finishing_position,
+               x.points_awarded, x.fastest_lap_bonus, x.outcome, sr.session_type, sr.round_id
+        FROM race_session_results x
+        JOIN session_results sr ON sr.id = x.session_result_id
+        WHERE sr.round_id IN ({marks}) AND sr.status = 'ACTIVE'
+        """,
+        tuple(number_of),
+    )
+    qualifying = await db.execute(
+        f"""
+        SELECT x.driver_user_id, x.team_instance_id, x.finishing_position,
+               x.points_awarded, 0 AS fastest_lap_bonus, x.outcome, sr.session_type, sr.round_id
+        FROM qualifying_session_results x
+        JOIN session_results sr ON sr.id = x.session_result_id
+        WHERE sr.round_id IN ({marks}) AND sr.status = 'ACTIVE'
+        """,
+        tuple(number_of),
+    )
+    rows = [
+        {**dict(row), "round_number": number_of[row["round_id"]]}
+        for row in [*await race.fetchall(), *await qualifying.fetchall()]
+    ]
+    return sorted(rows, key=lambda row: row["round_number"])
+
+
 async def compute_driver_standings(
     db_path: str,
     division_id: int,
@@ -293,41 +344,7 @@ async def compute_driver_standings_on(
     Returns snapshots with standing_position assigned from 1.
     """
     names = display_names or {}
-    cursor = await db.execute(
-        """
-        SELECT driver_user_id, finishing_position, points_awarded,
-               fastest_lap_bonus, outcome, session_type, round_id, round_number
-        FROM (
-            SELECT rsr.driver_user_id, rsr.finishing_position,
-                   rsr.points_awarded, rsr.fastest_lap_bonus, rsr.outcome,
-                   sr.session_type, r.id AS round_id, r.round_number
-            FROM race_session_results rsr
-            JOIN session_results sr ON sr.id = rsr.session_result_id
-            JOIN rounds r ON r.id = sr.round_id
-            WHERE r.division_id = ?
-              AND r.id <= ?
-              AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
-              AND sr.status = 'ACTIVE'
-            UNION ALL
-            SELECT qsr.driver_user_id, qsr.finishing_position,
-                   qsr.points_awarded, 0 AS fastest_lap_bonus, qsr.outcome,
-                   sr.session_type, r.id AS round_id, r.round_number
-            FROM qualifying_session_results qsr
-            JOIN session_results sr ON sr.id = qsr.session_result_id
-            JOIN rounds r ON r.id = sr.round_id
-            WHERE r.division_id = ?
-              AND r.id <= ?
-              AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
-              AND sr.status = 'ACTIVE'
-        )
-        ORDER BY round_number
-        """,
-        (
-            division_id, up_to_round_id, up_to_round_id,
-            division_id, up_to_round_id, up_to_round_id,
-        ),
-    )
-    rows = await cursor.fetchall()
+    rows = await _scored_rows_up_to(db, division_id, up_to_round_id)
     # A result keeps the account it was recorded under, and a driver who changed account
     # mid-season stands under two. Both are theirs and are counted as one driver, under
     # the account they use now (issue #243).
@@ -359,34 +376,19 @@ async def compute_driver_standings_on(
     finish_counts, first_finish_rounds = tally_feature_finishes(tallied)
     all_drivers = set(total_points) | set(finish_counts)
 
-    # Every seat in the division, reserves included. Two jobs, one query: the non-reserve
+    # Every seat in the division, reserves included. Two jobs, one read: the non-reserve
     # seats decide who joins the standings without having scored, and every seat supplies the
-    # team the final tiebreak orders on — a reserve who raced is in the set already.
-    from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
-
-    # A driver whose placement is not yet confirmed is not in the standings (issue #220).
-    cursor = await db.execute(
-        f"""
-        SELECT dp.discord_user_id, ti.full_name AS team_name, ti.is_reserve
-        FROM team_seats ts
-        JOIN team_instances ti ON ti.id = ts.team_instance_id
-        JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
-        WHERE ti.division_id = ?
-          AND ts.driver_profile_id IS NOT NULL
-          AND {uncommitted_seat_excluded("ts")}
-        """,
-        (division_id,),
-    )
-    seated_rows = await cursor.fetchall()
+    # team the final tiebreak orders on — a reserve who raced is in the set already. A driver
+    # whose placement is not yet confirmed holds no seat (issue #220).
+    seated_rows = await TeamService.seated_drivers_on(db, division_id)
     # uid -> (team rank, team name). Rank 0 a named team, 1 the reserve team; a driver with
     # no seat at all gets 2 below, ranking after the reserves — their points stand but they
     # are no longer of a team (decided 2026-09-15).
     seats: dict[int, tuple[int, str]] = {}
-    for r in seated_rows:
-        uid = int(r["discord_user_id"])
-        is_reserve = bool(r["is_reserve"])
-        seats[uid] = (1 if is_reserve else 0, r["team_name"] or "")
-        if is_reserve:
+    for seat in seated_rows:
+        uid = seat.discord_user_id
+        seats[uid] = (1 if seat.is_reserve else 0, seat.team_name)
+        if seat.is_reserve:
             continue
         if uid not in total_points:
             total_points[uid] = 0
@@ -453,41 +455,7 @@ async def compute_team_standings_on(
 
     Returns snapshots with standing_position assigned from 1.
     """
-    cursor = await db.execute(
-        """
-        SELECT team_instance_id, finishing_position, points_awarded,
-               fastest_lap_bonus, outcome, session_type, round_number
-        FROM (
-            SELECT rsr.team_instance_id, rsr.finishing_position,
-                   rsr.points_awarded, rsr.fastest_lap_bonus, rsr.outcome,
-                   sr.session_type, r.round_number
-            FROM race_session_results rsr
-            JOIN session_results sr ON sr.id = rsr.session_result_id
-            JOIN rounds r ON r.id = sr.round_id
-            WHERE r.division_id = ?
-              AND r.id <= ?
-              AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
-              AND sr.status = 'ACTIVE'
-            UNION ALL
-            SELECT qsr.team_instance_id, qsr.finishing_position,
-                   qsr.points_awarded, 0 AS fastest_lap_bonus, qsr.outcome,
-                   sr.session_type, r.round_number
-            FROM qualifying_session_results qsr
-            JOIN session_results sr ON sr.id = qsr.session_result_id
-            JOIN rounds r ON r.id = sr.round_id
-            WHERE r.division_id = ?
-              AND r.id <= ?
-              AND r.round_number <= (SELECT round_number FROM rounds WHERE id = ?)
-              AND sr.status = 'ACTIVE'
-        )
-        ORDER BY round_number
-        """,
-        (
-            division_id, up_to_round_id, up_to_round_id,
-            division_id, up_to_round_id, up_to_round_id,
-        ),
-    )
-    rows = await cursor.fetchall()
+    rows = await _scored_rows_up_to(db, division_id, up_to_round_id)
 
     total_points: dict[int, int] = defaultdict(int)
     for row in rows:
@@ -506,24 +474,18 @@ async def compute_team_standings_on(
     )
     all_teams = set(total_points) | set(finish_counts)
 
-    # Every team of the division, reserves included. Two jobs, one query: the non-reserve
+    # Every team of the division, reserves included. Two jobs, one read: the non-reserve
     # teams join the standings without having scored, and every team supplies the name the
     # final tiebreak orders on — a reserve team whose driver scored is in the set already.
     # That name is the full name, the one a reader sees the table ordered by (#381).
-    cursor = await db.execute(
-        "SELECT id, full_name AS team_name, is_reserve FROM team_instances "
-        "WHERE division_id = ?",
-        (division_id,),
-    )
-    team_rows = await cursor.fetchall()
+    team_rows = await TeamService.division_teams_on(db, division_id)
     # team id -> (team rank, team name). Rank 0 a named team, 1 the reserve team; a team of
     # another division, which no result should name, gets 2 below and ranks after both.
     team_meta: dict[int, tuple[int, str]] = {}
-    for r in team_rows:
-        tid = int(r["id"])
-        is_reserve = bool(r["is_reserve"])
-        team_meta[tid] = (1 if is_reserve else 0, r["team_name"] or "")
-        if is_reserve:
+    for team in team_rows:
+        tid = team.id
+        team_meta[tid] = (1 if team.is_reserve else 0, team.full_name or "")
+        if team.is_reserve:
             continue
         if tid not in total_points:
             total_points[tid] = 0
@@ -592,30 +554,10 @@ async def opening_driver_standings(
     """
     names = display_names or {}
 
-    from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
-
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            f"""
-            SELECT dp.discord_user_id, ti.full_name AS team_name
-            FROM team_seats ts
-            JOIN team_instances ti ON ti.id = ts.team_instance_id
-            JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
-            WHERE ti.division_id = ?
-              AND ti.is_reserve = 0
-              AND ts.driver_profile_id IS NOT NULL
-              AND {uncommitted_seat_excluded("ts")}
-            """,
-            (division_id,),
-        )
-        rows = await cursor.fetchall()
+        seats = await TeamService.seated_drivers_on(db, division_id)
 
-    seated: list[tuple[int, str]] = []
-    for row in rows:
-        try:
-            seated.append((int(row["discord_user_id"]), row["team_name"] or ""))
-        except (TypeError, ValueError):
-            continue
+    seated = [(seat.discord_user_id, seat.team_name) for seat in seats if not seat.is_reserve]
 
     def _order(entry: tuple[int, str]) -> tuple[str, str]:
         user_id, team_name = entry
@@ -651,14 +593,9 @@ async def opening_team_standings(
     added, as they do there.
     """
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT id, full_name AS team_name FROM team_instances "
-            "WHERE division_id = ? AND is_reserve = 0",
-            (division_id,),
-        )
-        rows = await cursor.fetchall()
+        team_rows = await TeamService.division_teams_on(db, division_id)
 
-    teams = [(int(row["id"]), row["team_name"] or "") for row in rows]
+    teams = [(team.id, team.full_name or "") for team in team_rows if not team.is_reserve]
 
     return [
         TeamStandingsSnapshot(
@@ -738,10 +675,9 @@ async def persist_snapshots_on(
 
     for snap in driver_snaps:
         if snap.division_id not in _division_known:
-            cursor = await db.execute(
-                "SELECT 1 FROM divisions WHERE id = ?", (snap.division_id,)
+            _division_known[snap.division_id] = (
+                await season_service.division_on(db, snap.division_id) is not None
             )
-            _division_known[snap.division_id] = await cursor.fetchone() is not None
         snap_profile_id: int | None = None
         if _division_known[snap.division_id]:
             snap_profile_id = await resolve_driver_profile_id(
@@ -829,19 +765,11 @@ async def _rounds_from(
     db: aiosqlite.Connection, division_id: int, from_round_id: int
 ) -> list[int]:
     """The ids of the division's rounds from *from_round_id* on, in round order, cancelled ones out."""
-    cursor = await db.execute(
-        """
-        SELECT id FROM rounds
-        WHERE division_id = ?
-          AND round_number >= (
-              SELECT round_number FROM rounds WHERE id = ?
-          )
-          AND status != 'CANCELLED'
-        ORDER BY round_number
-        """,
-        (division_id, from_round_id),
-    )
-    return [int(row["id"]) for row in await cursor.fetchall()]
+    return [
+        r.id
+        for r in await season_service.rounds_from_on(db, division_id, from_round_id)
+        if r.status != RoundStatus.CANCELLED.value
+    ]
 
 
 async def cascade_recompute_from_round_on(
@@ -943,25 +871,19 @@ async def reference_round_id(
     division, or one every earlier round of which was cancelled.
     """
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT r.id
-            FROM rounds r
-            WHERE r.division_id = ?
-              AND r.round_number < (
-                  SELECT round_number FROM rounds WHERE id = ?
-              )
-              AND EXISTS (
-                  SELECT 1 FROM driver_standings_snapshots s
-                  WHERE s.round_id = r.id AND s.division_id = r.division_id
-              )
-            ORDER BY r.round_number DESC
-            LIMIT 1
-            """,
-            (division_id, round_id),
-        )
-        row = await cursor.fetchone()
-    return row["id"] if row else None
+        facts = await season_service.round_facts_on(db, round_id)
+        if facts is None:
+            return None
+        for earlier in reversed(await season_service.division_rounds_in_order_on(db, division_id)):
+            if earlier.round_number >= facts.round_number:
+                continue
+            cursor = await db.execute(
+                "SELECT 1 FROM driver_standings_snapshots WHERE round_id = ? AND division_id = ?",
+                (earlier.id, division_id),
+            )
+            if await cursor.fetchone() is not None:
+                return earlier.id
+    return None
 
 
 async def previous_standing_positions(
