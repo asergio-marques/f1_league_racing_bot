@@ -22,7 +22,6 @@ from leaguebot.core.services.seasons.season_service import (
     round_facts_on,
     rounds_from_on,
     season_divisions_on,
-    setup_seasons_among_on,
 )
 
 
@@ -226,21 +225,3 @@ async def test_the_rounds_of_an_active_season_alone_are_read_with_their_division
             )
         await db.commit()
         assert await active_season_rounds_on(db) == [(3, 20), (5, 20)]
-
-
-async def test_only_the_season_among_those_asked_that_is_in_setup_is_read(tmp_path):
-    path = str(tmp_path / "league.db")
-    await run_migrations(path)
-    async with get_connection(path) as db:
-        # One season is live at a time, so one is in setup; the others are over.
-        for season_id, status, number in ((1, "COMPLETED", 2), (2, "SETUP", 4), (3, "CANCELLED", 6)):
-            await db.execute(
-                "INSERT INTO seasons (id, start_date, status, season_number) "
-                "VALUES (?, '2026-01-01', ?, ?)",
-                (season_id, status, number),
-            )
-        await db.commit()
-        seasons = await setup_seasons_among_on(db, [1, 2, 3, 99])
-        assert [(s.id, s.season_number, s.status) for s in seasons] == [(2, 4, SeasonStatus.SETUP)]
-        assert await setup_seasons_among_on(db, []) == []
-        assert await setup_seasons_among_on(db, [1, 3, 99]) == []

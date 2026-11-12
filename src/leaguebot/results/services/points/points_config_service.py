@@ -8,8 +8,9 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection, sole_row
 from leaguebot.core.models.change import AuditRecord
+from leaguebot.core.models.season import SeasonStatus
 from leaguebot.core.services.queue.setting_change import Saved
-from leaguebot.core.services.seasons.season_service import setup_seasons_among_on
+from leaguebot.core.services.seasons.season_service import live_season_on
 from leaguebot.results.models.points_config import (
     PointsConfigEntry,
     PointsConfigFastestLap,
@@ -154,7 +155,10 @@ async def setup_seasons_linking_on(
         "SELECT season_id FROM season_points_links WHERE config_name = ?", (config_name,)
     )
     linked = [int(r["season_id"]) for r in await cursor.fetchall()]
-    return [(s.id, s.season_number) for s in await setup_seasons_among_on(db, linked)]
+    live = await live_season_on(db)
+    if live is None or live.status is not SeasonStatus.SETUP or live.id not in linked:
+        return []
+    return [(live.id, live.season_number)]
 
 
 async def setup_seasons_linking(
