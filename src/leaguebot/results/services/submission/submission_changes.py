@@ -63,7 +63,6 @@ from typing import TYPE_CHECKING, Any
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.cancellation import SCOPE_ROUND
 from leaguebot.core.models.change import (
     ChangeOrigin,
     FollowOn,
@@ -613,19 +612,19 @@ def submission_all_cancelled_change(
     earlier results tables the new sessions could not carry. *seasons* posts the calendar, drawn
     through *drawing*, the image module's own answer to core's drawing protocol (#283),
     *attendance* is attendance's share of a round's review, asked inside the save, on its
-    connection, to plan the reading of the round's check-in, *cancellation_notices* is the hook each
-    module's own notice is planned through, called inside the same save, *cancellation_steps*
-    holds every step definition the modules hand back to core's `cancellation_steps` hook (the
+    connection, to plan the reading of the round's check-in, *cancellation_notices* is the hook
+    each module's own notice is planned through, which core's writer calls inside the same save,
+    *cancellation_steps* holds every step definition the modules hand back to core's `cancellation_steps` hook (the
     same the three cancellations register: the modules' own notices among them, attendance's
     check-in reading, and review posting's and attendance's take-down of the call) so this
-    change carries the jobs *attendance* and *cancellation_notices* plan, and *now* is
-    the queue's clock, read when the round's ending is audited.
+    change carries the jobs *attendance* and *cancellation_notices* plan, and *now* is the
+    queue's clock, read when the round's ending is audited.
 
     Its first job, ``end_round`` (a save, **never to be discarded**: without it the round would
     never finish and its season could never be completed), ends the round CANCELLED through core's
-    ``end_round_not_held_on``: the status and its audit, the division's refresh and the season's
-    move on, in one save. A resubmission leaves the standings its first submission posted, so that
-    save withdraws them too: their rows are deleted and the later rounds' worked out again without
+    ``end_round_not_held_on``: the status and its audit, the division's refresh, the season's
+    move on and the notices' planning, in one save. A resubmission leaves the standings its first
+    submission posted, so that save withdraws them too: their rows are deleted and the later rounds' worked out again without
     the round, on the names the ``names`` job resolved first. It then plans, in this order, the
     reading of the check-in, one posting job for each session (the line, in the results channel,
     saved as the session's results message; a division with no results channel has none to post),
@@ -654,12 +653,13 @@ def submission_all_cancelled_change(
             or await expected_session_on(db, round_id) is not None
         ):
             return StepResult(result={"ended": False})
-        previous = await season_service.end_round_not_held_on(
+        ended = await season_service.end_round_not_held_on(
             db, round_id, actor_id=ctx.actor_id or 0, actor_name=ctx.actor_name or "System",
-            now=now(),
+            now=now(), cancellation_notices=cancellation_notices,
         )
-        if previous is None:
+        if ended is None:
             return StepResult(result={"ended": False})
+        previous = ended.previous
         row = await (await db.execute(
             "SELECT r.division_id, r.round_number, r.track_name, d.name AS division_name, "
             "d.season_id, s.season_number, c.results_channel_id FROM rounds r "
@@ -707,7 +707,7 @@ def submission_all_cancelled_change(
         )
         by_notices = [
             step
-            for planned in await cancellation_notices.call(db, SCOPE_ROUND, target)
+            for planned in ended.notices
             for step in (*planned.steps, *planned.after_with_division)
         ]
         check_in_read = await attendance.check_in_read_on(db, target)

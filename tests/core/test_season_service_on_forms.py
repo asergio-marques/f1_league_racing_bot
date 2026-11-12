@@ -699,10 +699,6 @@ async def _not_held(db) -> list[int]:
     return [row["not_held"] for row in await cursor.fetchall()]
 
 
-#: Why the not-held writer's tests fail until core's writer calls the notices itself.
-NOTICES_IN_CORE = "#284: end_round_not_held_on neither takes nor calls cancellation_notices"
-
-
 def _notices_hook() -> tuple[Any, list[tuple[Any, ...]], Any]:
     """A hook with one subscriber of the test's own, as `cancellation_notices` is made: it records
     what it is handed (the connection, the scope and the round's target) and hands back one
@@ -738,7 +734,6 @@ def _notices_hook() -> tuple[Any, list[tuple[Any, ...]], Any]:
                      id="the middle of three rounds"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=NOTICES_IN_CORE)
 async def test_end_round_not_held_on_moves_only_a_round_awaiting_results_or_report_verdicts(
     tmp_path, statuses, ended, moves
 ):
@@ -783,7 +778,6 @@ async def test_end_round_not_held_on_moves_only_a_round_awaiting_results_or_repo
             assert await _round_audits(db) == []
 
 
-@pytest.mark.xfail(strict=True, reason=NOTICES_IN_CORE)
 async def test_end_round_not_held_on_commits_nothing(tmp_path):
     """Pro, the season's only division, has round 1 final and round 2 awaiting its report verdicts.
     Ending round 2 as not held on a connection, its notices hook signed up to by nobody, finishes

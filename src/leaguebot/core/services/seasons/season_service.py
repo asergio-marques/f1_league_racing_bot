@@ -9,7 +9,8 @@ from datetime import date, datetime, timedelta
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection, inserted_id
+from leaguebot.core.db.database import get_connection, inserted_id, sole_row
+from leaguebot.core.models.cancellation import SCOPE_ROUND, CancellationNotices
 from leaguebot.core.models.division import Division, DivisionStatus
 from leaguebot.core.models.refusal import Refused
 from leaguebot.core.models.round import (
@@ -1001,6 +1002,15 @@ async def cancel_round_on(
     return previous
 
 
+@dataclass(frozen=True)
+class RoundEndedNotHeld:
+    """What ending a round as not held gave: *previous*, the status it ended from, and *notices*,
+    what each subscriber to `cancellation_notices` planned for it, in the order they signed up."""
+
+    previous: str
+    notices: list[CancellationNotices]
+
+
 async def end_round_not_held_on(
     db: aiosqlite.Connection,
     round_id: int,
@@ -1008,7 +1018,8 @@ async def end_round_not_held_on(
     actor_id: int,
     actor_name: str,
     now: datetime,
-) -> str | None:
+    cancellation_notices: AwaitedHook,
+) -> RoundEndedNotHeld | None:
     """End a round CANCELLED because every session was entered as not held, committing nothing.
 
     A round whose every session is entered as CANCELLED takes no results and no review, so it
@@ -1024,7 +1035,14 @@ async def end_round_not_held_on(
     season moved on where this was the last round it waited on, are `cancel_round_on`'s, all
     written on *db* in the caller's save.
 
-    Returns the status the round ended from, or ``None`` where nothing was moved.
+    Where it moved the round it calls *cancellation_notices*, the hook each module's own notice
+    of a round called off is planned through, on *db*, for the round's scope and the round
+    (``round_id``, ``division_id``, ``division_name``, ``season_id``, ``season_number``,
+    ``round_number`` and ``track_name``), as the three cancellations call it, and gives what its
+    subscribers planned beside the status the round ended from. The caller turns the notices
+    into jobs; this plans none.
+
+    Returns None where nothing was moved, and calls no subscriber.
     """
     cursor = await db.execute(
         "SELECT r.division_id, r.status FROM rounds r WHERE r.id = ?", (round_id,)
@@ -1054,7 +1072,21 @@ async def end_round_not_held_on(
         ),
     )
     await refresh_division_status_on(db, division_id)
-    return previous
+    cursor = await db.execute(
+        "SELECT r.division_id, r.round_number, r.track_name, d.name AS division_name, "
+        "d.season_id, s.season_number FROM rounds r JOIN divisions d ON d.id = r.division_id "
+        "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?",
+        (round_id,),
+    )
+    ended = await sole_row(cursor)
+    target = {
+        "round_id": round_id, "division_id": int(ended["division_id"]),
+        "division_name": str(ended["division_name"]), "season_id": int(ended["season_id"]),
+        "season_number": int(ended["season_number"]), "round_number": int(ended["round_number"]),
+        "track_name": ended["track_name"],
+    }
+    notices = await cancellation_notices.call(db, SCOPE_ROUND, target)
+    return RoundEndedNotHeld(previous, notices)
 
 
 async def cancel_division_on(

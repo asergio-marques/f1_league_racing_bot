@@ -75,9 +75,6 @@ def test_the_windows_hook_is_declared_and_made_by_the_builder():
     assert not {"approval_windows", "amendment_windows"} & (_declared() | _attached_in_bot_py())
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#284: round_ended_not_held is still declared and signed up"
-)
 def test_no_hook_is_declared_for_a_round_ended_not_held():
     """A round ended not held asks attendance's reading of its check-in through
     `AttendanceAfterReview`, not through a hook core declares and only results calls

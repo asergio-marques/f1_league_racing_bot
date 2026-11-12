@@ -155,7 +155,6 @@ def _make_hooks(bot: LeagueBot) -> None:
     bot.season_standing_read = AwaitedHook()
     bot.final_round_read = AwaitedHook()
     bot.season_end_refused = AwaitedHook()
-    bot.round_ended_not_held = AwaitedHook()
     bot.base_role_changed = AwaitedHook()
     bot.phases_drawn_read = AwaitedHook()
     bot.amendment_step_failure = Hook()
@@ -246,8 +245,7 @@ def _sign_up_to_cancellations(bot: LeagueBot) -> None:
     and the steps a module plans (results' deletion of a submission channel, attendance's
     take-down of a call, attendance's reading of a round's check-in record, then each module's
     own notice, attendance's, weather's, then results'). Results' not-held round end is handed
-    `round_ended_not_held` too, to which attendance signs up the reading of a round's check-in
-    record."""
+    `cancellation_notices` too, which core's writer of it calls."""
     bot.rounds_called_off = AwaitedHook()
     results_wiring.sign_up_to_rounds_called_off(bot)
     attendance_wiring.sign_up_to_rounds_called_off(bot)

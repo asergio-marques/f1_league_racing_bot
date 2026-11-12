@@ -37,17 +37,9 @@ def register_switch(modules: "ModuleService") -> None:
 
 
 def sign_up(bot: "LeagueBot") -> None:
-    """Sign attendance up to each hook only attendance joins. The hooks several modules join are
-    signed up by the entry point, in the order they are called, through the functions below."""
-    sign_up_to_round_ended_not_held(bot)
-
-
-def sign_up_to_round_ended_not_held(bot: "LeagueBot") -> None:
-    """Sign attendance's reading of a round's check-in record up to the hook a round ended
-    not held (every session entered as not held) declares, handed to results' not-held round end."""
-    from leaguebot.attendance.services import check_in_record
-
-    bot.round_ended_not_held.subscribe(check_in_record.read_check_in_on)
+    """Sign attendance up to each hook only attendance joins: none at present. The hooks several
+    modules join are signed up by the entry point, in the order they are called, through the
+    functions below."""
 
 
 def sign_up_to_round_windows(bot: "LeagueBot") -> None:

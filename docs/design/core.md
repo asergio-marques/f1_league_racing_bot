@@ -575,9 +575,8 @@ which each `_sign_up_to_*` docstring states where it matters.
 | `amendment_step_failure` | P | weather | `round_amend_change` |
 | `cancellation_refused` | A | results | `cancellation_changes` |
 | `rounds_called_off` | A | results, attendance | `cancellation_changes` |
-| `cancellation_notices` | A | attendance, weather, results | `cancellation_changes`; results' not-held round end calls it too |
+| `cancellation_notices` | A | attendance, weather, results | `cancellation_changes`, and `season_service.end_round_not_held_on`, results' not-held round end's writer |
 | `cancellation_steps` | P | results, attendance (three), weather, results | `cancellation_changes` |
-| `round_ended_not_held` | A | attendance | — (results' not-held round end calls it) |
 | `rounds_made_final` | A | results | `season_service` (`end_rounds_awaiting_results_on`, `close_raced_rounds_on`) |
 | `placements_confirmed`, `placements_confirmed_steps` | A, P | results, attendance | `season_approval_change` |
 | `configuration_confirmed` | A | signup | `configuration_confirm_change` |
