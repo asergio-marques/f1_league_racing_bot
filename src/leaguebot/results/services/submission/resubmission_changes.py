@@ -36,7 +36,9 @@ from __future__ import annotations
 
 import dataclasses
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 import aiosqlite
@@ -276,7 +278,7 @@ def resubmission_start_change(*, queue: ChangeQueue) -> ChangeType:
     )
 
 
-def resubmission_swap_change() -> ChangeType:
+def resubmission_swap_change(*, now: Callable[[], datetime]) -> ChangeType:
     """The `results.resubmission.swap` change type, for the builder to register, on the league
     lane: the last resubmitted paste, handed over by the round's lane.
 
@@ -284,7 +286,8 @@ def resubmission_swap_change() -> ChangeType:
     ``division_name``, ``cancel_message_id`` (the announcement, None where unrecorded),
     ``all_cancelled`` and the last paste's ``mark``. Its one job, ``swap``, is one save: the
     round's results replaced by the drafts (`replace_round_results_on`, which clears the
-    resubmission's flag), the drafts deleted, and the next request asked in the same save. With a
+    resubmission's flag), the drafts deleted, and the next request asked in the same save. *now* is
+    the queue's clock, which dates the sessions it saves (`ChangeQueue.now`). With a
     session held the review is asked again, publishing the new results as "Provisional Results
     (amended)"; with every session cancelled the cancelled sessions are asked posted and the
     channel closed (`results.submission.all_cancelled`), told that it follows a resubmission, so
@@ -309,7 +312,8 @@ def resubmission_swap_change() -> ChangeType:
         round_id = int(payload["round_id"])
         held = await submissions.resubmission_drafts_on(db, round_id)
         unplaced = await submissions.replace_round_results_on(
-            db, round_id, int(payload["division_id"]), int(payload["season_id"]), held
+            db, round_id, int(payload["division_id"]), int(payload["season_id"]), held,
+            now=now(),
         )
         await db.execute("DELETE FROM resubmission_drafts WHERE round_id = ?", (round_id,))
         number = payload["round_number"]

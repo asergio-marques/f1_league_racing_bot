@@ -43,6 +43,7 @@ from __future__ import annotations
 import dataclasses
 import json
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from typing import Any
 
 import aiosqlite
@@ -237,12 +238,17 @@ def _refusal_of(named: str, payload: dict[str, Any], told: str) -> str:
 
 
 def turn_steps(
-    queue: ChangeQueue, server_config: ServerConfig, *, resubmission: bool = False
+    queue: ChangeQueue,
+    server_config: ServerConfig,
+    *,
+    now: Callable[[], datetime],
+    resubmission: bool = False,
 ) -> dict[str, Step]:
     """The jobs a dialogue's turn and its configuration change share, keyed by their names.
 
     With *resubmission* the turn judges against the session a resubmission expects and holds an
     accepted one as a draft (`save_draft`), in place of a first submission's `save_session`.
+    *now* is the queue's clock, which dates the session `save_session` saves.
     """
     held_verb = "received" if resubmission else "saved"
 
@@ -471,7 +477,7 @@ def turn_steps(
         saved_id = await submissions._save_session_result_in_tx(
             db, round_id, int(payload["division_id"]), session, str(payload["status"]),
             payload["config_name"], int(payload["submitted_by"]), list(payload["rows"]),
-            payload["fl_override"],
+            payload["fl_override"], now=now(),
         )
         if payload["config_name"] is not None:
             await scoring._apply_points_in_tx(
@@ -726,13 +732,18 @@ def _checking(
 
 
 def submission_turn_change(
-    *, queue: ChangeQueue, server_config: ServerConfig, resubmission: bool = False
+    *,
+    queue: ChangeQueue,
+    server_config: ServerConfig,
+    now: Callable[[], datetime],
+    resubmission: bool = False,
 ) -> ChangeType:
     """The `results.submission.turn` change type, for the builder to register; with
     *resubmission*, `results.resubmission.turn`, a resubmission's paste held as a draft.
 
     *queue* is the change queue, which tells the review's stopped job; *server_config* reads the
-    server configuration the points-configuration picker checks its presser against. The payload
+    server configuration the points-configuration picker checks its presser against; *now* is the
+    queue's clock, which dates the session saved. The payload
     is ``channel_id``, ``message_id``, ``author_id``, ``content``, ``attachments`` and
     ``typed_at`` of the pasted message.
     """
@@ -744,7 +755,7 @@ def submission_turn_change(
     return ChangeType(
         kind=kind,
         opening=(PlannedStep(JUDGE),),
-        steps=turn_steps(queue, server_config, resubmission=resubmission),
+        steps=turn_steps(queue, server_config, now=now, resubmission=resubmission),
         check=_checking(resubmission, turn=True),
         key=lambda payload: f"{kind}:{payload['message_id']}",
         doing=lambda _payload: (
@@ -759,14 +770,18 @@ def submission_turn_change(
 
 
 def submission_config_change(
-    *, queue: ChangeQueue, server_config: ServerConfig, resubmission: bool = False
+    *,
+    queue: ChangeQueue,
+    server_config: ServerConfig,
+    now: Callable[[], datetime],
+    resubmission: bool = False,
 ) -> ChangeType:
     """The `results.submission.config` change type, for the builder to register: a session pasted
     and judged, saved with the configuration its press chose; with *resubmission*,
     `results.resubmission.config`, held as a draft.
 
     The payload is the session's (`judge`'s ``settle``) with ``config_name`` and the press's
-    ``choice_line``.
+    ``choice_line``. *now* is the queue's clock, which dates the session saved.
     """
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
@@ -797,7 +812,7 @@ def submission_config_change(
         kind=kind,
         opening=(),
         plan=plan,
-        steps=turn_steps(queue, server_config, resubmission=resubmission),
+        steps=turn_steps(queue, server_config, now=now, resubmission=resubmission),
         check=_checking(resubmission),
         key=lambda payload: f"{kind}:{payload['channel_id']}:{payload['session_type']}",
         doing=lambda payload: (

@@ -3234,16 +3234,6 @@ KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/drivers/placement_service.py", "PlacementService.move_on"): (1, PASS["attendance"]),
     ("core/services/drivers/placement_service.py", "PlacementService.sack_on"): (1, PASS["attendance"]),
     ("image/services/driver_portrait_service.py", "refresh_portraits"): (1, PASS["image"]),
-    ("results/services/module/results_off_change.py", "results_off_change.switch_off"):
-        (1, PASS["results"]),
-    ("results/services/round_amendment/amendment_writes.py", "amend_round_results_on"):
-        (1, PASS["results"]),
-    ("results/services/round_amendment/amendment_writes.py", "snapshot_before_amendment_on"):
-        (1, PASS["results"]),
-    ("results/services/round_amendment/amendment_writes.py", "sweep_expired_amendments"):
-        (1, PASS["results"]),
-    ("results/services/submission/result_submission_service.py", "_save_session_result_in_tx"):
-        (1, PASS["results"]),
     ("signup/services/wizard_service.py", "WizardService._lock_channel"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.recover_wizards"): (1, PASS["signup"]),
 }

@@ -12,7 +12,7 @@ import json as _json
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Iterable, NamedTuple
 
 import aiosqlite
@@ -479,8 +479,11 @@ async def _save_session_result_in_tx(
     submitted_by: int | None,
     driver_rows: list[dict],
     fl_driver_override: int | None = None,
+    *,
+    now: datetime,
 ) -> int:
     """Save one session's results with its driver rows on the caller's connection, committing nothing.
+    The session is recorded as submitted at *now*, the queue's clock handed in by the caller.
 
     A resubmission's swap writes every session of a round in the same transaction as the delete
     of the results they replace.
@@ -488,7 +491,7 @@ async def _save_session_result_in_tx(
     from leaguebot.core.services.seasons.season_service import SeasonImmutableError
     from leaguebot.core.services.drivers.driver_service import resolve_driver_profile_id
 
-    submitted_at = datetime.now(timezone.utc).isoformat()
+    submitted_at = now.isoformat()
     cursor = await db.execute(
         """
         SELECT s.status AS season_status
@@ -896,6 +899,8 @@ async def replace_round_results_on(
     division_id: int,
     season_id: int,
     collected: list[CollectedSession],
+    *,
+    now: datetime,
 ) -> list[int]:
     """Replace every session of a round with a resubmission's on the connection handed, committing
     nothing: the resubmission's swap does it in a save of its own (#439).
@@ -911,7 +916,8 @@ async def replace_round_results_on(
     message it replaces: the posting then takes the old table down once the new one stands, so an
     amended table replaces the original rather than standing beside it (results spec :412). The
     message ids of an old session whose type the resubmission does not enter are returned, for the
-    caller to take down; they are otherwise lost with the old row."""
+    caller to take down; they are otherwise lost with the old row. *now* is the time the new
+    sessions are recorded as submitted at, the queue's clock handed in by the swap."""
     earlier = {
         each["session_type"]: each
         for each in await (await db.execute(
@@ -924,7 +930,7 @@ async def replace_round_results_on(
         session_result_id = await _save_session_result_in_tx(
             db, round_id, division_id, session.session_type, session.status,
             session.config_name, session.submitted_by, session.driver_rows,
-            fl_driver_override=session.fl_driver_override,
+            fl_driver_override=session.fl_driver_override, now=now,
         )
         if session.config_name is not None:
             await _apply_points_in_tx(

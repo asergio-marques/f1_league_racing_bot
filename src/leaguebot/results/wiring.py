@@ -348,6 +348,7 @@ def register_change_types(
             attendance_enabled=bot.module_service.is_attendance_enabled,
             rounds_made_final=bot.rounds_made_final,
             disarm_amendment_sweep=bot.scheduler_service.cancel_amendment_sweep,
+            now=lambda: bot.change_queue.now(),
         )
     )
     bot.change_queue.register(submission_open_change(now=lambda: bot.change_queue.now()))
@@ -364,27 +365,29 @@ def register_change_types(
     )
     bot.change_queue.register(submission_close_change())
     bot.change_queue.register(resubmission_start_change(queue=bot.change_queue))
-    bot.change_queue.register(resubmission_swap_change())
+    bot.change_queue.register(resubmission_swap_change(now=lambda: bot.change_queue.now()))
     bot.change_queue.register(
         submission_turn_change(
             queue=bot.change_queue, server_config=bot.config_service.get_server_config,
-            resubmission=True,
+            now=lambda: bot.change_queue.now(), resubmission=True,
         )
     )
     bot.change_queue.register(
         submission_config_change(
             queue=bot.change_queue, server_config=bot.config_service.get_server_config,
-            resubmission=True,
+            now=lambda: bot.change_queue.now(), resubmission=True,
         )
     )
     bot.change_queue.register(
         submission_turn_change(
-            queue=bot.change_queue, server_config=bot.config_service.get_server_config
+            queue=bot.change_queue, server_config=bot.config_service.get_server_config,
+            now=lambda: bot.change_queue.now(),
         )
     )
     bot.change_queue.register(
         submission_config_change(
-            queue=bot.change_queue, server_config=bot.config_service.get_server_config
+            queue=bot.change_queue, server_config=bot.config_service.get_server_config,
+            now=lambda: bot.change_queue.now(),
         )
     )
     # A change type or timer helper whose parameter is a getter of the queue (`queue_of`, `queue`
@@ -503,7 +506,9 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
     # The standing sweep that undoes an amendment nobody carried through; start-up arms it.
     async def _amendment_sweep_cb() -> None:
         from leaguebot.results.services.round_amendment.amendment_writes import sweep_expired_amendments
-        await sweep_expired_amendments(bot, queue=bot.change_queue)
+        await sweep_expired_amendments(
+            bot, queue=bot.change_queue, now=bot.change_queue.now()
+        )
 
     scheduler.register_timer("amendment_sweep", _amendment_sweep_cb)
 

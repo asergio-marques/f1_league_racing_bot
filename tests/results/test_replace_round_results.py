@@ -26,7 +26,6 @@ from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 from tests.support.session_writes import replace_round_results
 from tests.support.teams import seed_team_instances
 
-_NO_CLOCK = "#284: the results save does not yet take the clock it is handed (now)"
 
 SERVER_ID = 14210
 SEASON_ID = 1
@@ -158,7 +157,6 @@ async def _flags(db_path: str) -> tuple[int, int, int]:
         return tuple(await cursor.fetchone())
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_CLOCK)
 async def test_the_new_results_replace_the_old_in_one_go(tmp_path):
     """The round's Feature Race was posted as message 8800. Its results are replaced by a
     resubmission's qualifying and race: both new sessions stand, scored, and the new race carries
@@ -187,7 +185,6 @@ async def test_the_new_results_replace_the_old_in_one_go(tmp_path):
     assert carried == {"FEATURE_QUALIFYING": (None, None), "FEATURE_RACE": (8800, "[8800]")}
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_CLOCK)
 async def test_the_channel_stops_resubmitting_and_the_new_results_await_posting(tmp_path):
     """The round stays in penalty review. `results_posted` is cleared so a crash after the
     swap posts the new results on restart instead of assuming the old posting covers them."""
@@ -198,7 +195,6 @@ async def test_the_channel_stops_resubmitting_and_the_new_results_await_posting(
     assert await _flags(db_path) == (1, 0, 0)
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_CLOCK)
 async def test_a_cancelled_session_is_saved_without_points(tmp_path):
     db_path = await _make_db(tmp_path, name="replace_cancelled")
 
@@ -209,7 +205,6 @@ async def test_a_cancelled_session_is_saved_without_points(tmp_path):
     assert ("FEATURE_QUALIFYING", "CANCELLED") in await _sessions(db_path)
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_CLOCK)
 async def test_an_archived_season_refuses_the_swap_and_keeps_the_old_results(tmp_path):
     db_path = await _make_db(tmp_path, name="replace_archived", season_status="COMPLETED")
 
@@ -220,7 +215,6 @@ async def test_an_archived_season_refuses_the_swap_and_keeps_the_old_results(tmp
     assert await _flags(db_path) == (1, 1, 1)
 
 
-@pytest.mark.xfail(strict=True, reason=_NO_CLOCK)
 async def test_a_failure_part_way_keeps_the_old_results(tmp_path):
     """The qualifying session is written and scored before the race fails. Nothing of it may
     survive, and the round must still hold exactly what it held before."""

@@ -305,7 +305,7 @@ def amendment_wait_text() -> str:
 
 async def snapshot_before_amendment_on(
     db: aiosqlite.Connection, round_id: int, session_types: list[SessionType],
-    *, now: datetime | None = None,
+    *, now: datetime,
 ) -> None:
     """Record the round as it stands, so an abandoned amendment can be undone, on the connection
     handed and committing nothing: stage one writes it in its own save (#439).
@@ -314,7 +314,7 @@ async def snapshot_before_amendment_on(
     driver rows, and its verdict records, and the round's attendance pardons — which is the
     whole of what the amendment changes that a revert cannot recompute. The standings and the
     points follow from the driver rows, so restoring those and cascading again reproduces them.
-    The amendment's half-hour runs from *now*, the queue's clock where it is handed.
+    The amendment's half-hour runs from *now*, the queue's clock, handed in by the caller.
     """
     from leaguebot.results.services.review.verdict_records import VERDICT_TABLES, select_verdicts
 
@@ -371,10 +371,7 @@ async def snapshot_before_amendment_on(
     )
     pardons = [dict(row) for row in await cursor.fetchall()]
 
-    expires = (
-        (now or datetime.now(timezone.utc))
-        + timedelta(seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS)
-    ).isoformat()
+    expires = (now + timedelta(seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS)).isoformat()
     await db.execute(
         "UPDATE round_amend_channels SET pre_amendment_state = ?, expires_at = ? "
         "WHERE round_id = ?",
@@ -863,7 +860,7 @@ async def amend_round_results_on(
     amended_by: int,
     display_names: Mapping[int, str] | None = None,
     *,
-    now: datetime | None = None,
+    now: datetime,
 ) -> None:
     """Supersede the chosen sessions' results with their corrected classifications, on the
     connection handed and committing nothing.
@@ -882,7 +879,7 @@ async def amend_round_results_on(
     """
     from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 
-    submitted_at = (now or datetime.now(timezone.utc)).isoformat()
+    submitted_at = now.isoformat()
     # The round as it stands, before any of it is overwritten (#345). Stage one commits, so an
     # amendment abandoned before its last stage is approved would otherwise leave the round
     # scored from the corrected classification and posted from the old one, for ever.
@@ -1094,7 +1091,7 @@ async def amend_drafts_on(db: aiosqlite.Connection, amend_id: int) -> list[Colle
 
 
 async def sweep_expired_amendments(
-    bot: LeagueBot, *, queue: "ChangeQueue", now: datetime | None = None
+    bot: LeagueBot, *, queue: "ChangeQueue", now: datetime
 ) -> int:
     """Ask the change queue to end every amendment whose stages went unapproved past their
     deadline (`results.amend.lapse`, as the bot), and give how many it was asked of.
@@ -1107,15 +1104,16 @@ async def sweep_expired_amendments(
     one lapse of an amendment at a time, so a lapse already asked is not asked again.
 
     *queue* is the change queue, handed by whoever sweeps (a service does not look it up on the
-    bot). *now* is taken as a parameter so a test can pin it alongside the deadline it seeds; left out
-    it is the wall clock.
+    bot). *now* is the moment the deadlines are judged against, handed in by whoever sweeps (the
+    scheduler's callback reads it off the queue), so that a test can pin it alongside the deadline
+    it seeds.
     """
     from leaguebot.results.services.round_amendment.amend_end_changes import SWEEP, ask_lapse
 
     # Normalised to UTC-aware, because the stored deadline always is: comparing it against a
     # naive *now* raises `TypeError` outside the guard below and aborts the whole sweep, leaving
     # every lapsed amendment unreverted rather than one (#345).
-    moment = now or datetime.now(timezone.utc)
+    moment = now
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
     async with get_connection(bot.db_path) as db:

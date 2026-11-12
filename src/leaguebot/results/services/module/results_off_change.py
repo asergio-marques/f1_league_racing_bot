@@ -40,7 +40,7 @@ attendance switches itself off on a connection, so that this module imports none
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Awaitable, Callable
 
 import aiosqlite
@@ -113,6 +113,7 @@ def results_off_change(
     attendance_enabled: Callable[[], Awaitable[bool]],
     rounds_made_final: AwaitedHook,
     disarm_amendment_sweep: Callable[[], None],
+    now: Callable[[], datetime],
 ) -> ChangeType:
     """The change that turns Results & Standings off, with attendance where the payload asks.
 
@@ -122,7 +123,8 @@ def results_off_change(
     handed rather than read from attendance's own table directly, so this module still imports
     none of attendance's). *rounds_made_final* is the hook the closing of the rounds waiting on
     results calls with the rounds it made FINAL. *disarm_amendment_sweep* removes the amendment
-    sweep from the scheduler (`SchedulerService.cancel_amendment_sweep`). The payload is ``{"cascade_attendance": bool}``.
+    sweep from the scheduler (`SchedulerService.cancel_amendment_sweep`). *now* is the queue's clock, which dates the closing of
+    the rounds (`ChangeQueue.now`). The payload is ``{"cascade_attendance": bool}``.
     """
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -160,7 +162,7 @@ def results_off_change(
             db,
             actor_id=ctx.actor_id,
             actor_name=ctx.actor_name,
-            now=datetime.now(timezone.utc),
+            now=now(),
             rounds_made_final=rounds_made_final,
         )
 
