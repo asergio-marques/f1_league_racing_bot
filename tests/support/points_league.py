@@ -459,7 +459,8 @@ async def run_staging(league: PointsLeague, command: str, **args: Any) -> Staged
     "1, 27"). `name` defaults to `Standard` and `session` to the Feature Race; `session` takes
     `position` and `points`, `fl` takes `points`, `fl-plimit` takes `limit`.
     """
-    from leaguebot.results.cogs.results_cog import BulkAmendSessionModal, ResultsCog
+    from leaguebot.results.cogs.points_amend_commands import BulkAmendSessionModal
+    from leaguebot.results.cogs.results_cog import ResultsCog
 
     cog = ResultsCog(league.bot)
     form = command == "bulk-session-form"

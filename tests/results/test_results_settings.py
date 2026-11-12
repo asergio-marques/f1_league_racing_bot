@@ -188,14 +188,14 @@ def _form(kind: str, value: str, *, name: str = CONFIG) -> Ask:
     """Submit a form as Admin: the config bulk paste ("config"), the amend one ("amend") or the
     XML import ("xml"), with *value* typed into it; the queue is not run."""
     async def ask(league: Any) -> Any:
-        from leaguebot.results.cogs import config_commands, results_cog
+        from leaguebot.results.cogs import config_commands, points_amend_commands
 
         if kind == "xml":
             modal = config_commands.XmlImportModal(name, league.db_path)
             modal.xml_payload._value = value  # type: ignore[attr-defined]
         else:
             cls = {"config": config_commands.BulkConfigSessionModal,
-                   "amend": results_cog.BulkAmendSessionModal}[kind]
+                   "amend": points_amend_commands.BulkAmendSessionModal}[kind]
             modal = cls(name, FEATURE_RACE, league.db_path)
             modal.entries._value = value  # type: ignore[attr-defined]
         asked = interaction(league.bot)

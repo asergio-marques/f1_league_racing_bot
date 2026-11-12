@@ -110,7 +110,7 @@ async def _form(league: Any, form: str, text: str, *, config: str = CONFIG) -> A
     """Submit the config ("config") or amend ("amend") bulk form for CONFIG's Feature Race as
     Admin, with *text* pasted into it, then run the queue."""
     from leaguebot.results.cogs.config_commands import BulkConfigSessionModal
-    from leaguebot.results.cogs.results_cog import BulkAmendSessionModal
+    from leaguebot.results.cogs.points_amend_commands import BulkAmendSessionModal
 
     cls = BulkConfigSessionModal if form == "config" else BulkAmendSessionModal
     modal = cls(config, RACE, league.db_path)
@@ -681,7 +681,7 @@ async def test_a_bulk_paste_fault_undoes_the_whole_paste(tmp_path, form):
         )
         await db.commit()
     from leaguebot.results.cogs.config_commands import BulkConfigSessionModal
-    from leaguebot.results.cogs.results_cog import BulkAmendSessionModal
+    from leaguebot.results.cogs.points_amend_commands import BulkAmendSessionModal
 
     modal = (BulkConfigSessionModal if form == "config" else BulkAmendSessionModal)(
         CONFIG, RACE, league.db_path
