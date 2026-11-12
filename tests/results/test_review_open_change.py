@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import os
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
@@ -1185,8 +1185,8 @@ async def test_recovery_leaves_alone_a_round_whose_paste_is_queued_or_stopped(tm
     """The last paste of round 3 has asked for its review, every session's results in and the
     review flag still down, and the open waits behind an earlier job the queue is stopped at. A
     restart finds the round with no review open, as a first paste cut short would look, but the
-    open is in hand on the queue: the results and the submission channel are kept, the wizard is
-    not run again and the review is not asked for twice. Once the stopped job is retried, the
+    open is in hand on the queue: the results and the submission channel are kept and the review
+    is not asked for twice. Once the stopped job is retried, the
     review opens."""
     league = await _league(tmp_path, name="recover_queued_paste")
     holder = await block_queue(league)
@@ -1194,13 +1194,8 @@ async def test_recovery_leaves_alone_a_round_whose_paste_is_queued_or_stopped(tm
     assert await stopped_at(league) == "block"
     assert (await _channel_row(league.db_path))["in_penalty_review"] == 0
 
-    with patch(
-        "leaguebot.results.services.submission.result_submission_service.run_result_submission_job",
-        new=AsyncMock(), create=True,
-    ) as wizard:
-        await _recover(league)
+    await _recover(league)
 
-    wizard.assert_not_called()
     assert len(await changes_of(league.db_path, KIND)) == 1
     assert ("delete_channel", SUBMISSION_CHANNEL, SUBMISSION_CHANNEL) not in league.events
     assert (await _channel_row(league.db_path))["closed"] == 0

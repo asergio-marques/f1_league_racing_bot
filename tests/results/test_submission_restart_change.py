@@ -26,7 +26,6 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.results.services.submission import result_submission_service
 from tests.support.change_queue import (
     MANAGER_ROLE_ID,
     acknowledgement,
@@ -92,27 +91,16 @@ async def _league(tmp_path: Any) -> SeasonLeague:
 
 async def _restart(league: SeasonLeague, *, run: bool = True) -> None:
     """The bot restarts: a fresh queue on the same database, the start-up's recovery of the
-    submission channels left open, and then, where *run*, the queue run. The submission job the
-    results module has today, where it still has one, is stubbed, so that what it would open
-    off the queue does not run behind the test. Where the queue is not to run, its worker is
-    stopped before it ever runs: left running, it would carry out what the test means to find
-    still in hand, as soon as the recovery waits on the database, on a slow host."""
+    submission channels left open, and then, where *run*, the queue run. Where the queue is not to
+    run, its worker is stopped before it ever runs: left running, it would carry out what the test
+    means to find still in hand, as soon as the recovery waits on the database, on a slow host."""
     from leaguebot.results.wiring import recover_orphaned_submission_channels
 
 
     queue = await restart_queue(league.bot)
     if not run:
         await queue.stop()
-    stub = AsyncMock(name="run_result_submission_job")
-    had = hasattr(result_submission_service, "run_result_submission_job")
-    if had:
-        real = result_submission_service.run_result_submission_job
-        result_submission_service.run_result_submission_job = stub
-    try:
-        await recover_orphaned_submission_channels(league.bot)
-    finally:
-        if had:
-            result_submission_service.run_result_submission_job = real
+    await recover_orphaned_submission_channels(league.bot)
     if run:
         await run_queue(league.bot)
 

@@ -260,21 +260,10 @@ def _manager(is_manager: bool = True):
     )
 
 
-def _finalisers():
-    """Patch both terminal calls and the two prompt refreshers.
-
-    The finalisers are stubbed while they stand and created where they are gone (#439), so that
-    a press that reaches one fails on what it asks of the queue, never on a finaliser run against
-    a stub bot."""
+def _refreshers():
+    """Patch the two prompt refreshers, so that a press that reaches one fails on what it asks of
+    the queue, never on a refresh run against a stub bot."""
     return (
-        patch(
-            "leaguebot.results.services.submission.result_submission_service.finalize_penalty_review",
-            new=AsyncMock(), create=True,
-        ),
-        patch(
-            "leaguebot.results.services.submission.result_submission_service.finalize_appeals_review",
-            new=AsyncMock(), create=True,
-        ),
         patch("leaguebot.results.services.review.penalty_wizard._refresh_prompt", new=AsyncMock()),
         patch("leaguebot.results.services.review.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()),
     )
@@ -304,14 +293,12 @@ async def test_only_a_league_manager_may_press(tmp_path, view_cls, button):
     state = _state(db_path)
     view = view_cls(state=state)
     interaction = _interaction()
-    p1, p2, p3, p4 = _finalisers()
+    p1, p2 = _refreshers()
 
-    with _manager(False), p1 as penalty, p2 as appeals, p3, p4:
+    with _manager(False), p1, p2:
         await _press(view, button, interaction)
 
     assert "Only league managers" in _replied(interaction)
-    penalty.assert_not_awaited()
-    appeals.assert_not_awaited()
     assert _asked(interaction, state) == []
 
 
@@ -354,9 +341,9 @@ async def test_approving_finalises_the_review(tmp_path):
     state.staged.append(_penalty())
     view = ApprovalView(state=state)
     interaction = _interaction()
-    p1, p2, p3, p4 = _finalisers()
+    p1, p2 = _refreshers()
 
-    with _manager(), p1, p2, p3, p4:
+    with _manager(), p1, p2:
         await _press(view, "approve_btn", interaction)
 
     payload = _asked_once(interaction, state, "results.reports.approve")
@@ -373,13 +360,12 @@ async def test_an_archived_season_cannot_be_approved_into(tmp_path):
     view = ApprovalView(state=_state(db_path))
     interaction = _interaction()
 
-    p1, p2, p3, p4 = _finalisers()
+    p1, p2 = _refreshers()
 
-    with _manager(), p1 as finalise, p2, p3, p4:
+    with _manager(), p1, p2:
         await _press(view, "approve_btn", interaction)
 
     assert "archived" in _replied(interaction)
-    finalise.assert_not_awaited()
     assert _asked(interaction, view.state) == []
 
 
@@ -392,9 +378,9 @@ async def test_a_round_with_no_season_row_is_still_approvable(tmp_path):
     state.round_id = 9999
     view = ApprovalView(state=state)
     interaction = _interaction()
-    p1, p2, p3, p4 = _finalisers()
+    p1, p2 = _refreshers()
 
-    with _manager(), p1, p2, p3, p4:
+    with _manager(), p1, p2:
         await _press(view, "approve_btn", interaction)
 
     payload = _asked_once(interaction, state, "results.reports.approve")
@@ -503,9 +489,9 @@ async def test_confirming_with_nothing_staged_finalises_at_once(tmp_path):
     # Each queue gets its own stub, so the one ask is counted once by `_asked_once`.
     interaction.client.change_queue.ask = AsyncMock(side_effect=_approved)
     state.bot.change_queue.ask = AsyncMock(side_effect=_approved)
-    p1, p2, p3, p4 = _finalisers()
+    p1, p2 = _refreshers()
 
-    with _manager(), p1, p2, p3, p4:
+    with _manager(), p1, p2:
         await _press(view, "no_changes_btn", interaction)
 
     payload = _asked_once(interaction, state, "results.appeals.approve")
@@ -523,9 +509,9 @@ async def test_approving_the_appeals_asks_for_the_corrections_staged(tmp_path):
     state = _state(db_path, appeals=[_penalty()])
     view = AppealsReviewView(state=state)
     interaction = _interaction()
-    p1, p2, p3, p4 = _finalisers()
+    p1, p2 = _refreshers()
 
-    with _manager(), p1, p2, p3, p4:
+    with _manager(), p1, p2:
         await _press(view, "approve_btn", interaction)
 
     payload = _asked_once(interaction, state, "results.appeals.approve")
@@ -540,12 +526,11 @@ async def test_confirming_with_corrections_staged_asks_first(tmp_path):
     db_path = await _make_db(tmp_path, name="appeals_confirm_staged")
     view = AppealsReviewView(state=_state(db_path, appeals=[_penalty(), _penalty(102)]))
     interaction = _interaction()
-    p1, p2, p3, p4 = _finalisers()
+    p1, p2 = _refreshers()
 
-    with _manager(), p1, p2 as finalise, p3, p4:
+    with _manager(), p1, p2:
         await _press(view, "no_changes_btn", interaction)
 
-    finalise.assert_not_awaited()
     assert _asked(interaction, view.state) == []
     assert "**2** staged correction(s)" in _replied(interaction)
 
@@ -577,9 +562,9 @@ async def test_confirming_the_clear_discards_and_finalises(tmp_path):
     state = _state(db_path, appeals=[_penalty()])
     view = _AppealsConfirmClearView(state=state)
     interaction = _interaction()
-    p1, p2, p3, p4 = _finalisers()
+    p1, p2 = _refreshers()
 
-    with _manager(), p1, p2, p3, p4:
+    with _manager(), p1, p2:
         await _press(view, "confirm_btn", interaction)
 
     assert state.staged_appeals == []
@@ -601,13 +586,12 @@ async def test_going_back_keeps_the_corrections(tmp_path):
     view = _AppealsConfirmClearView(state=state)
     interaction = _interaction()
 
-    p1, p2, p3, p4 = _finalisers()
+    p1, p2 = _refreshers()
 
-    with _manager(True), p1, p2 as finalise, p3, p4:
+    with _manager(True), p1, p2:
         await _press(view, "cancel_btn", interaction)
 
     assert len(state.staged_appeals) == 1
-    finalise.assert_not_awaited()
     assert _asked(interaction, state) == []
     (line,) = _all_lines(interaction, state)
     _assert_appeals_clear_abandoned(line, "cancelled by Alex (<@77>)")
@@ -691,13 +675,11 @@ async def test_every_refused_press_of_the_appeals_review_is_recorded(
     if remaining is not None:
         del state.staged_appeals[remaining:]
     interaction = _interaction()
-    p1, p2, p3, p4 = _finalisers()
+    p1, p2 = _refreshers()
 
-    with _manager(manager), p1 as penalty, p2 as appeals, p3 as refresh, p4 as refresh_appeals:
+    with _manager(manager), p1 as refresh, p2 as refresh_appeals:
         await press(interaction)
 
-    penalty.assert_not_awaited()
-    appeals.assert_not_awaited()
     assert _asked(interaction, state) == []
     refresh.assert_not_awaited()
     refresh_appeals.assert_not_awaited()
@@ -742,13 +724,11 @@ async def test_every_appeals_control_refuses_once_the_appeals_are_approved(
     )
     button = next(item for item in view.children if getattr(item, "label", None) == label)
     interaction = _interaction()
-    p1, p2, p3, p4 = _finalisers()
+    p1, p2 = _refreshers()
 
-    with _manager(True), p1 as penalty, p2 as appeals, p3 as refresh, p4 as refresh_appeals:
+    with _manager(True), p1 as refresh, p2 as refresh_appeals:
         await button.callback(interaction)
 
-    penalty.assert_not_awaited()
-    appeals.assert_not_awaited()
     assert _asked(interaction, state) == []
     refresh.assert_not_awaited()
     refresh_appeals.assert_not_awaited()
@@ -806,9 +786,9 @@ async def test_every_press_of_the_appeals_review_writes_one_line(tmp_path, kind,
     # whose line reaches the log channel; the clear asks the approval, stubbed.
     queued = kind == "review"
     interaction = _staging_press(state) if queued else _interaction()
-    p1, p2, p3, p4 = _finalisers()
+    p1, p2 = _refreshers()
 
-    with _manager(True), p1, p2, p3, p4:
+    with _manager(True), p1, p2:
         await button.callback(interaction)
         if queued:
             await run_queue(state.bot)
@@ -862,14 +842,13 @@ async def test_an_appeals_clear_confirmation_left_to_lapse_is_recorded(tmp_path)
     interaction = _interaction()
     interaction.edit_original_response = AsyncMock()
 
-    p1, p2, p3, p4 = _finalisers()
+    p1, p2 = _refreshers()
 
-    with _manager(True), p1, p2 as finalise, p3, p4:
+    with _manager(True), p1, p2:
         await _press(view, "no_changes_btn", interaction)
         await _sent_view(interaction).on_timeout()
 
     assert len(state.staged_appeals) == 1
-    finalise.assert_not_awaited()
     assert _asked(interaction, state) == []
     (line,) = _all_lines(interaction, state)
     assert line.startswith("⌛ "), line

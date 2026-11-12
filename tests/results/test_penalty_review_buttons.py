@@ -419,20 +419,13 @@ async def test_the_clear_confirmation_checks_the_tier_too(monkeypatch, button):
 
 async def test_approving_with_penalties_finalises_the_review():
     """Alex presses ✅ Approve on round 3's review with one 5-second penalty staged. The press
-    asks the change queue for `results.reports.approve` of round 3, the penalty in its payload.
-
-    The finaliser is stubbed while it stands (`create=True` once it is gone), so that the press
-    fails on what it asks rather than on a finaliser run against a stub bot."""
+    asks the change queue for `results.reports.approve` of round 3, the penalty in its payload."""
     state = _state(staged=[_penalty()])
     interaction = _interaction()
     state.bot.change_queue = interaction.client.change_queue
     view = PenaltyReviewView(state)
 
-    with patch(
-        "leaguebot.results.services.submission.result_submission_service.finalize_penalty_review",
-        new=AsyncMock(return_value=None), create=True,
-    ):
-        await _press(view, "approve_btn", interaction)
+    await _press(view, "approve_btn", interaction)
 
     ask = interaction.client.change_queue.ask
     ask.assert_awaited_once()
@@ -464,20 +457,13 @@ async def test_approving_with_nothing_staged_is_refused():
 
 async def test_resubmit_asks_the_queue_to_start_the_resubmission():
     """Alex presses 🔄 Resubmit Initial Results on round 3's review with a penalty staged. The
-    press asks the change queue for `results.resubmission.start` of round 3.
-
-    The off-queue flow is stubbed while it stands (`create=True` once it is gone), so that the
-    press fails on what it asks rather than on a flow run against a stub bot."""
+    press asks the change queue for `results.resubmission.start` of round 3."""
     state = _state(staged=[_penalty()])
     interaction = _interaction()
     state.bot.change_queue = interaction.client.change_queue
     view = PenaltyReviewView(state)
 
-    with patch(
-        "leaguebot.results.services.submission.result_submission_service.enter_resubmit_flow",
-        new=AsyncMock(return_value=None), create=True,
-    ):
-        await _press(view, "resubmit_btn", interaction)
+    await _press(view, "resubmit_btn", interaction)
 
     ask = interaction.client.change_queue.ask
     ask.assert_awaited_once()
@@ -638,10 +624,7 @@ async def test_every_control_refuses_once_the_review_has_moved_on(monkeypatch, c
 
     with _approval_step() as approval, patch(
         "leaguebot.results.services.review.penalty_wizard._refresh_prompt", new=refresh
-    ), patch(
-        "leaguebot.results.services.submission.result_submission_service.enter_resubmit_flow", new=AsyncMock(),
-        create=True,
-    ) as resubmit:
+    ):
         if control.startswith("pw_"):
             await next(c for c in view.children if c.custom_id == control).callback(interaction)
         else:
@@ -652,7 +635,6 @@ async def test_every_control_refuses_once_the_review_has_moved_on(monkeypatch, c
     assert len(state.staged) == 1 and len(state.staged_pardons) == 1
     approval.assert_not_awaited()
     refresh.assert_not_awaited()
-    resubmit.assert_not_awaited()
     interaction.response.send_modal.assert_not_awaited()
     interaction.response.defer.assert_not_awaited()
 
@@ -836,17 +818,13 @@ async def test_every_refused_press_of_the_penalty_review_is_recorded(
     interaction = _interaction()
     interaction.message.id = _APPROVAL_MESSAGE if on_message else _APPROVAL_MESSAGE + 1
 
-    with _approval_step() as approval, patch(
-        "leaguebot.results.services.submission.result_submission_service.enter_resubmit_flow",
-        new=AsyncMock(return_value=None), create=True,
-    ) as resubmit:
+    with _approval_step() as approval:
         await button.callback(interaction)
 
     approval.assert_not_awaited()
     interaction.client.change_queue.ask.assert_not_awaited()
     if state is not None:
         assert not state.bot.change_queue.ask.called
-    resubmit.assert_not_awaited()
     interaction.response.send_modal.assert_not_awaited()
     (replied,) = [
         call.args[0] for call in interaction.response.send_message.await_args_list

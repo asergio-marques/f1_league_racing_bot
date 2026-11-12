@@ -260,8 +260,7 @@ async def _advance(cog, interaction, entry, *, passed=None, sign_up: bool = True
     as the builder signs it up (`_advancing`). A weather step has no runner to stub: advance asks
     the change queue for it (#439). Nor, once the check-in steps are asked of the queue too, has
     a check-in step: the check-in runners are stubbed only while the attendance module still has
-    them, so that a test asserting an ask fails on the runner's call rather than on a post. The
-    submission job is stubbed likewise, only while the results module still has it."""
+    them, so that a test asserting an ask fails on the runner's call rather than on a post."""
     from leaguebot.attendance.services import rsvp_service
 
     defaults = {
@@ -269,12 +268,6 @@ async def _advance(cog, interaction, entry, *, passed=None, sign_up: bool = True
         for name in _CHECK_IN_RUNNERS
         if hasattr(rsvp_service, name)
     }
-    from leaguebot.results.services.submission import result_submission_service
-
-    if hasattr(result_submission_service, "run_result_submission_job"):
-        defaults["leaguebot.results.services.submission.result_submission_service.run_result_submission_job"] = (
-            AsyncMock(return_value=None)
-        )
     defaults.update(patches)
 
     with ExitStack() as stack:
@@ -494,7 +487,7 @@ async def test_advancing_a_round_start_replies_on_the_change_queue(tmp_path):
     cog = _make_cog(await _make_db(tmp_path))
     interaction = _interaction()
 
-    mocks = await _advance(cog, interaction, _entry(4))
+    await _advance(cog, interaction, _entry(4))
 
     assert _asked(cog) == [(
         "results.submission.open", {"round_id": ROUND_ID},
@@ -504,8 +497,6 @@ async def test_advancing_a_round_start_replies_on_the_change_queue(tmp_path):
         "⏩ The result submission of **Division 1** — **Round 3** (**Silverstone Circuit**) is "
         "on the change queue: its submission channel appears as soon as the queue reaches it."
     )
-    if "run_result_submission_job" in mocks:
-        mocks["run_result_submission_job"].assert_not_awaited()
 
 
 async def test_an_opened_submission_is_recorded_as_asked_of_the_queue(tmp_path):
@@ -619,11 +610,9 @@ async def test_an_open_submission_blocks_the_next_advance(tmp_path):
     interaction = _interaction()
     interaction.client = cog.bot
 
-    mocks = await _advance(cog, interaction, _entry(4))
+    await _advance(cog, interaction, _entry(4))
 
     assert _asked(cog) == []
-    if "run_result_submission_job" in mocks:
-        mocks["run_result_submission_job"].assert_not_awaited()
     _assert_refused(
         cog, interaction,
         "⏸️ **Division 1** — **Round 3** is awaiting penalty review approval. Please complete "
