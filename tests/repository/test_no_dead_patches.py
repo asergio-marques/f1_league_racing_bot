@@ -9,8 +9,8 @@ while the patch stubbed nothing and an assertion on its mock (`assert_not_awaite
 fail. A test that reads as isolating a call it never isolated hides what it covers.
 
 So this walks every test file, finds those three forms, and resolves each *statically named*
-target: a string path starting `leaguebot.`, or a name bound by an import in the test file to a
-`leaguebot` module or class. Where the target lacks the name (`hasattr`, so for a class a
+target: a string path starting `leaguebot.`, a name bound by an import in the test file to a
+`leaguebot` module or class, or a class reached through such a module (`module.Class`). Where the target lacks the name (`hasattr`, so for a class a
 method or class attribute it carries, not one its `__init__` sets), it fails, naming file and
 line. A patch that really creates something the module reads (a `getattr` with a default) is not
 what `create=True` is for in this suite: say what is stubbed with a name the target has.

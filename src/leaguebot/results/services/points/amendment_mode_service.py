@@ -11,7 +11,8 @@ hands them, commit nothing, and answer what they did as a `Saved`: whether anyth
 the audit entries the queue saves with it. A request for what the store already holds changes
 nothing, leaves the modified flag as it stood and records nothing. That the mode is on, that the
 season is the live one and that no approval is in hand are the settings' checks to judge, not the
-writers'.
+writers'. `review_panel` composes the text of `/results amend review`'s panel: the change's diff,
+what keeps it from being approved, and the hold of an open round amendment.
 """
 from __future__ import annotations
 

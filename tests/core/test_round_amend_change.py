@@ -140,9 +140,8 @@ class _Reposts:
 
 @pytest.fixture
 def reposts(monkeypatch):
-    """The check-in call posted as attendance posts it, by whichever of the bot's code posts it
-    (#439, slice 6b, C28: today `run_rsvp_notice` and `repost_rsvp_call` whole, then the call's
-    own job), and recorded from what Discord was sent, so that no test leans on either.
+    """The check-in call posted as attendance posts it, by its own job, and recorded from what
+    Discord was sent, so that no test leans on which code posts it.
 
     It wraps this module's `ongoing_league`: the league each test builds gets attendance's own
     service, its writers included (`_attendance_as_it_is`), and the fixture keeps it. `posted`

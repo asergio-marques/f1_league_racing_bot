@@ -21,6 +21,9 @@ parsed, with the `notes` its repeated positions earned; the points of an import 
 `{session: [[position, points], …]}`, `fastest_laps`, `{session: [bonus, limit or None]}` and
 the parser's `warnings`. A fastest-lap change carries the one column it sets, `fl_points` or
 `fl_position_limit`, and is named by it.
+
+`run_xml_import` is the XML import's flow: it reads and validates the payload, refuses what
+cannot be read or is out of order in the standard refusal form, and asks the import as a change.
 """
 
 from __future__ import annotations

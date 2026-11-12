@@ -1,4 +1,4 @@
-"""Unit tests for results_cog.parse_bulk_lines — T003.
+"""Unit tests for points_paste.parse_bulk_lines — T003.
 
 Tests the module-level helper that parses multi-line '<position>, <points>' text. Its rules
 are pinned one by one in `test_bulk_points_parsing.py`; this keeps a paste that mixes valid
