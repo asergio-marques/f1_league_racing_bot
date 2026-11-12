@@ -1692,3 +1692,74 @@ async def test_a_picture_sent_before_a_later_failure_is_removed_before_the_next_
         ("send", STANDINGS_CHANNEL, retried[0])
     )
     assert set(standings.messages) == {*retried, OLD_LATER_STANDINGS}
+
+
+# ---------------------------------------------------------------------------
+# A picture that falls back to text says why in the log channel (image spec :822, :1035)
+# ---------------------------------------------------------------------------
+
+PICTURE_FAULT_NOT_LOGGED = (
+    "#284: a picture that fails falls back to text with no line in the log channel"
+)
+
+
+def _fault_lines(league: _League) -> list[str]:
+    """The log channel's lines naming round 3 of Pro, the posting's own."""
+    return [line for line in league.bot.log_channel.sent
+            if "Pro" in line and "round 3" in line.lower()]
+
+
+@pytest.mark.xfail(strict=True, reason=PICTURE_FAULT_NOT_LOGGED)
+async def test_a_results_picture_that_fails_posts_the_table_as_text_and_says_why_in_the_log(
+    tmp_path,
+):
+    """Round 3's results are posted again with image generation on, and drawing the picture
+    fails: the table goes out as text in the results channel, the queue runs to the end, and the
+    log channel gains one line naming round 3 of Pro, the posting that fell back."""
+    from leaguebot.image.services.image_results_service import ResultsDataError
+
+    league = await _league(tmp_path)
+    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    with patch(
+        "leaguebot.image.services.image_results_post.try_post",
+        new=AsyncMock(side_effect=ResultsDataError("the drawing failed")),
+    ), patch(
+        "leaguebot.image.services.image_standings_post.try_post",
+        new=AsyncMock(return_value=MagicMock(applicable=False, rejects=False)),
+    ):
+        await _ask(league)
+        await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [new] = league.sent_to(RESULTS_CHANNEL)
+    assert "Round 3" in league.channel(RESULTS_CHANNEL).messages[new].content
+    assert len(_fault_lines(league)) == 1, league.bot.log_channel.sent
+
+
+@pytest.mark.xfail(strict=True, reason=PICTURE_FAULT_NOT_LOGGED)
+async def test_a_standings_picture_that_fails_posts_the_standings_as_text_and_says_why_in_the_log(
+    tmp_path,
+):
+    """Round 3's standings are posted again with image generation on, and drawing their
+    pictures fails: the standings stand as text in the standings channel, the queue runs to
+    the end, and the log channel gains one line naming round 3 of Pro."""
+    from leaguebot.image.services.image_standings_service import StandingsDataError
+
+    league = await _league(tmp_path)
+    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    with patch(
+        "leaguebot.image.services.image_results_post.try_post",
+        new=AsyncMock(return_value=MagicMock(applicable=False, message_id=None)),
+    ), patch(
+        "leaguebot.image.services.image_standings_post.try_post",
+        new=AsyncMock(side_effect=StandingsDataError("the drawing failed")),
+    ):
+        await _ask(league)
+        await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    standings = league.channel(STANDINGS_CHANNEL)
+    texts = [standings.messages[mid].content for kind, ch, mid in league.events
+             if ch == STANDINGS_CHANNEL and kind in ("send", "edit") and mid in standings.messages]
+    assert texts and all("Round 3" in text for text in texts)
+    assert len(_fault_lines(league)) == 1, league.bot.log_channel.sent

@@ -852,3 +852,37 @@ async def test_a_review_s_sanction_whose_role_change_discord_refuses_stops_the_q
     assert row["is_reserve"] == 1, "Lewis's autoreserve was not saved"
     # The stop notice is a log line, whose mentions are wrapped in code to name without notifying.
     assert f"changing `<@{LEWIS}>`'s roles for their autoreserve in **Pro**" in _sheet_stop(league)
+
+
+# ---------------------------------------------------------------------------
+# A verdict whose picture fails says why in the log channel (image spec :1401)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="#284: a verdict picture that fails falls back to text with no line in the log channel",
+)
+async def test_a_verdict_whose_picture_fails_is_announced_as_text_and_says_why_in_the_log(
+    tmp_path, drawn, monkeypatch,
+):
+    """Alex approves a five-second penalty for Lewis in round 3, the verdict graphic switched on,
+    and rasterising the picture fails: the verdict is announced as text naming Lewis, the queue
+    runs to the end, and the log channel gains one line naming round 3 of Pro."""
+    from leaguebot.image.services import image_verdict_post
+    from leaguebot.image.services.image_render_service import RasterisationError
+
+    async def _fails(_bot: Any, _drawing: Any, **_kwargs: Any) -> Any:
+        raise RasterisationError("the rasteriser failed")
+
+    monkeypatch.setattr(image_verdict_post, "render_verdict", _fails)
+    league = await review_league(tmp_path)
+    await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    [verdict] = _verdicts(league)
+    assert f"**Driver**: <@{LEWIS}>" in verdict
+    faults = [line for line in league.bot.log_channel.sent
+              if "Pro" in line and "round 3" in line.lower()]
+    assert len(faults) == 1, league.bot.log_channel.sent
