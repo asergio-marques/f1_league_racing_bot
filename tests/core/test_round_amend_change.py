@@ -59,6 +59,9 @@ from tests.support.season_league import (
 )
 from tests.support.mentions import NOBODY, notified
 
+#: Why the amendment's arming under test mode is not yet as the season's approval's.
+ARMED_UNDER_TEST_MODE = "#284: an amended round under test mode is still armed with a results job"
+
 
 PRO_CH, AM_CH = DIVISIONS[PRO][3], DIVISIONS[AM][3]
 R3, R4 = round_id(PRO, 3), round_id(PRO, 4)
@@ -2040,14 +2043,16 @@ async def test_a_call_given_up_after_its_take_down_clears_the_round_s_answers_an
     assert row["checkin_cleared"] == 1
 
 
+@pytest.mark.xfail(strict=True, reason=ARMED_UNDER_TEST_MODE)
 async def test_under_test_mode_a_round_whose_moment_passed_while_its_save_stood_stopped_is_left_to_test_mode_advance(
     tmp_path,
 ):
-    """Test mode on. Pro's round 3 is two hours and five minutes out; it is moved thirty minutes
-    later and the save stops. Ten minutes past its old moment a league admin discards the save:
-    the round stands at its old moment, gone by, and still to be run. Its results submission is
-    armed with it, but not run at once, `/test-mode advance` running a test season's rounds in
-    their turn (owner, 2026-10-09: "Leave it to /test-mode advance")."""
+    """Test mode on, results on, weather off. Pro's round 3 is two hours and five minutes out; it
+    is moved thirty minutes later and the save stops. Ten minutes past its old moment a league
+    admin discards the save: the round stands at its old moment, gone by, and still to be run.
+    Neither is its results submission armed nor is it run at once, `/test-mode advance` running a
+    test season's rounds in their turn (owner, 2026-10-09: "Leave it to /test-mode advance"), as
+    the season's approval leaves them (core specification, "What confirming placements does")."""
     league = await ongoing_league(tmp_path)
     await league.set_test_mode(True)
     await _place_r3(league, hours=2, minutes=5)
@@ -2060,20 +2065,43 @@ async def test_under_test_mode_a_round_whose_moment_passed_while_its_save_stood_
 
     assert await stopped_job(league.db_path) is None
     assert await _status(league) == "NOT_RUN"
-    assert league.armed == [("results", [R3])]
+    assert league.armed == []
+    assert league.bot.scheduler_service.run_result_submission_now.call_args_list == []
+
+
+@pytest.mark.xfail(strict=True, reason=ARMED_UNDER_TEST_MODE)
+async def test_under_test_mode_an_amended_round_whose_moment_is_ahead_is_left_to_test_mode_advance(
+    tmp_path,
+):
+    """Test mode on, results on, weather off. Pro's round 3 is moved to a hundred and fifty days
+    out, and the amendment goes through. The season's approval armed no results job for its
+    rounds, leaving each to `/test-mode advance` (core specification, "What confirming placements
+    does"): the amendment arms none either, though the round's moment is still ahead, so that the
+    round does not open on time by the clock while its neighbours wait for the advance. Outside
+    test mode it is armed (`test_a_stop_after_the_amendment_is_saved_arms_the_round_again_on_restart`)."""
+    league = await ongoing_league(tmp_path)
+    await league.set_test_mode(True)
+    await _amended(league, scheduled_at=_at(league, days=150))
+
+    await run_queue(league.bot)
+
+    assert (await _change(league))["state"] == "DONE"
+    assert await _moment(league) == _when(league, days=150)
+    assert league.armed == []
     assert league.bot.scheduler_service.run_result_submission_now.call_args_list == []
 
 
 async def test_under_test_mode_an_amendment_armed_after_its_round_s_moment_takes_the_results_job_down(
     tmp_path,
 ):
-    """Test mode on. Pro's round 3 is two hours and five minutes out; it is moved thirty minutes
-    later and the save stops. Ten minutes past its old moment a league admin discards the save,
-    and the round is armed again at its old moment, gone by, while the bot stays up. Its `results`
-    job, armed with no lateness limit, would run at once and open the submission, which
+    """Test mode on, results off, so that the round is armed with its `results` job as the
+    season's approval arms it. Pro's round 3 is two hours and five minutes out; it is moved thirty
+    minutes later and the save stops. Ten minutes past its old moment a league admin discards the
+    save, and the round is armed again at its old moment, gone by, while the bot stays up. Its
+    `results` job, armed with no lateness limit, would run at once and open the submission, which
     `/test-mode advance` is to do in its turn: so the arming takes the round's `results` job down
     again, and no submission is run at once."""
-    league = await ongoing_league(tmp_path)
+    league = await ongoing_league(tmp_path, results=False)
     await league.set_test_mode(True)
     await _place_r3(league, hours=2, minutes=5)
     await _amended(league, scheduled_at=_at(league, hours=2, minutes=35))
