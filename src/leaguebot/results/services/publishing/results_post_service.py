@@ -18,7 +18,19 @@ from leaguebot.core.services.posting.standing_post_handler import (
 )
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
-from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
+from leaguebot.core.models.round import RoundFormat, RoundStatus
+from leaguebot.core.services.drivers.driver_service import (
+    current_account_map_for_division,
+    driver_test_names_on,
+)
+from leaguebot.core.services.drivers.team_service import TeamService
+from leaguebot.core.services.seasons.season_lifecycle_service import season_stage_on
+from leaguebot.core.services.seasons.season_service import (
+    division_on,
+    division_rounds_in_order_on,
+    round_facts_on,
+    season_divisions_on,
+)
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.core.models.change import AuditRecord
@@ -280,20 +292,8 @@ async def _build_test_driver_display(
     if not user_ids:
         return {}
     async with get_connection(db_path) as db:
-        placeholders = ",".join("?" * len(user_ids))
-        cursor = await db.execute(
-            f"SELECT discord_user_id, test_display_name FROM driver_profiles"
-            f" WHERE is_test_driver = 1 AND discord_user_id IN ({placeholders})",
-            [str(uid) for uid in user_ids],
-        )
-        rows = await cursor.fetchall()
-    result: dict[int, str] = {}
-    for r in rows:
-        uid = int(r["discord_user_id"])
-        name = r["test_display_name"]
-        if name:
-            result[uid] = f"<@{uid}> ({name})"
-    return result
+        names = await driver_test_names_on(db, user_ids)
+    return {uid: f"<@{uid}> ({name})" for uid, name in names.items() if name}
 
 
 async def _build_member_display(
@@ -373,20 +373,12 @@ async def standings_display_names(
         return None
 
     async with get_connection(db_path) as db:
-        row = await (
-            await db.execute(
-                """
-                SELECT id FROM rounds
-                WHERE division_id = ? AND status != 'CANCELLED'
-                ORDER BY round_number DESC LIMIT 1
-                """,
-                (division_id,),
-            )
-        ).fetchone()
-    if row is None:
+        rounds = await division_rounds_in_order_on(db, division_id)
+    last = next((r for r in reversed(rounds) if r.status != RoundStatus.CANCELLED), None)
+    if last is None:
         return None
 
-    snaps = await standings_service.compute_driver_standings(db_path, division_id, row["id"])
+    snaps = await standings_service.compute_driver_standings(db_path, division_id, last.id)
     if not snaps:
         return None
 
@@ -424,16 +416,19 @@ async def rescore_season(db: aiosqlite.Connection, season_id: int) -> None:
     """
     from leaguebot.results.services.points import scoring
 
-    cursor = await db.execute(
-        "SELECT sr.id AS session_result_id, sr.config_name, sr.session_type "
-        "FROM session_results sr "
-        "JOIN rounds r ON r.id = sr.round_id "
-        "JOIN divisions d ON d.id = r.division_id "
-        "WHERE d.season_id = ? AND sr.status = 'ACTIVE' AND sr.config_name IS NOT NULL "
-        "ORDER BY d.id, r.round_number, sr.id",
-        (season_id,),
-    )
-    sessions = await cursor.fetchall()
+    # Core names the season's divisions and each one's rounds; the sessions are results' own.
+    # Ordered division id, round number, session id, as the one query ordered them.
+    sessions: list[aiosqlite.Row] = []
+    for division in sorted(await season_divisions_on(db, season_id), key=lambda d: d.id):
+        for rnd in await division_rounds_in_order_on(db, division.id):
+            cursor = await db.execute(
+                "SELECT id AS session_result_id, config_name, session_type "
+                "FROM session_results "
+                "WHERE round_id = ? AND status = 'ACTIVE' AND config_name IS NOT NULL "
+                "ORDER BY id",
+                (rnd.id,),
+            )
+            sessions.extend(await cursor.fetchall())
     for row in sessions:
         await scoring._apply_points_in_tx(
             db,
@@ -449,20 +444,10 @@ async def _get_heading_context(
 ) -> tuple[int | None, str]:
     """Return (season_number, division_name) for building result headings."""
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT s.season_number, d.name AS division_name
-            FROM rounds r
-            JOIN divisions d ON d.id = r.division_id
-            JOIN seasons s ON s.id = d.season_id
-            WHERE r.id = ?
-            """,
-            (round_id,),
-        )
-        row = await cursor.fetchone()
-    if row is None:
+        facts = await round_facts_on(db, round_id)
+    if facts is None:
         return None, "Unknown"
-    return row["season_number"], row["division_name"]
+    return facts.season_number, facts.division_name
 
 
 async def _get_primary_session_label(db_path: str, round_id: int) -> str:
@@ -470,41 +455,34 @@ async def _get_primary_session_label(db_path: str, round_id: int) -> str:
     async with get_connection(db_path) as db:
         cursor = await db.execute(
             """
-            SELECT sr.session_type, r.format
-            FROM session_results sr
-            JOIN rounds r ON r.id = sr.round_id
-            WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
-            ORDER BY sr.id DESC
+            SELECT session_type FROM session_results
+            WHERE round_id = ? AND status = 'ACTIVE'
+            ORDER BY id DESC
             LIMIT 1
             """,
             (round_id,),
         )
         row = await cursor.fetchone()
-    if row is None:
+        facts = None if row is None else await round_facts_on(db, round_id)
+    if row is None or facts is None:
         return "Results"
     st = SessionType(row["session_type"])
-    is_sprint = str(row["format"]).upper() == "SPRINT"
+    is_sprint = facts.format == RoundFormat.SPRINT
     return results_formatter.format_session_label(st, is_sprint=is_sprint)
 
 
 async def _get_result_status(db_path: str, round_id: int) -> str:
     """The round's results lifecycle stage, from which both phase closures follow (039)."""
     async with get_connection(db_path) as db:
-        row = await (
-            await db.execute("SELECT status FROM rounds WHERE id = ?", (round_id,))
-        ).fetchone()
-    if row is None or not row["status"]:
-        return ""
-    return row["status"]
+        facts = await round_facts_on(db, round_id)
+    return "" if facts is None else facts.status.value
 
 
 async def _get_division_tier(db_path: str, division_id: int) -> int | None:
     """The division's tier, an optional field of the results graphic."""
     async with get_connection(db_path) as db:
-        row = await (
-            await db.execute("SELECT tier FROM divisions WHERE id = ?", (division_id,))
-        ).fetchone()
-    return None if row is None else row["tier"]
+        division = await division_on(db, division_id)
+    return None if division is None else division.tier
 
 
 def _label_from_status(result_status: str) -> str:
@@ -1002,16 +980,8 @@ async def _round_is_cancelled(db_path: str, round_id: int) -> bool:
     only decides whether the image branch is entered.
     """
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT status FROM rounds WHERE id = ?", (round_id,)
-        )
-        row = await cursor.fetchone()
-    if row is None:
-        return False
-    try:
-        return (row["status"] or "").upper() == "CANCELLED"
-    except (IndexError, KeyError, TypeError):
-        return False
+        facts = await round_facts_on(db, round_id)
+    return facts is not None and facts.status == RoundStatus.CANCELLED
 
 
 async def _produce_standings_sections(
@@ -1197,23 +1167,8 @@ async def set_standings_message_id_on(
 
 async def _get_reserve_user_ids(db_path: str, division_id: int) -> set[int]:
     """Return discord_user_ids of all drivers seated in a reserve team for this division."""
-    from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
-
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            f"""
-            SELECT dp.discord_user_id
-            FROM team_seats ts
-            JOIN team_instances ti ON ti.id = ts.team_instance_id
-            JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
-            WHERE ti.division_id = ? AND ti.is_reserve = 1
-              AND ts.driver_profile_id IS NOT NULL
-              AND {uncommitted_seat_excluded("ts")}
-            """,
-            (division_id,),
-        )
-        rows = await cursor.fetchall()
-    return {int(r["discord_user_id"]) for r in rows if r["discord_user_id"]}
+        return await TeamService.reserve_user_ids_on(db, division_id)
 
 
 # ---------------------------------------------------------------------------
@@ -1433,18 +1388,20 @@ async def repost_channel_faults(
         return faults
 
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT d.id, d.name,
-                   drc.results_channel_id, drc.standings_channel_id
-            FROM divisions d
-            LEFT JOIN division_results_config drc ON drc.division_id = d.id
-            WHERE d.season_id = ?
-            ORDER BY d.tier, d.id
-            """,
-            (season_id,),
-        )
-        division_rows = await cursor.fetchall()
+        division_rows = []
+        for division in sorted(await season_divisions_on(db, season_id), key=lambda d: (d.tier, d.id)):
+            cursor = await db.execute(
+                "SELECT results_channel_id, standings_channel_id "
+                "FROM division_results_config WHERE division_id = ?",
+                (division.id,),
+            )
+            config = await cursor.fetchone()
+            division_rows.append({
+                "id": division.id,
+                "name": division.name,
+                "results_channel_id": None if config is None else config["results_channel_id"],
+                "standings_channel_id": None if config is None else config["standings_channel_id"],
+            })
 
     return await _channel_faults_for_rows(division_rows, guild, bot_member, bot)
 
@@ -1541,16 +1498,10 @@ async def results_sync_hint(db_path: str, division_id: int) -> str:
     callers has to know the rule.
     """
     async with get_connection(db_path) as db:
-        row = await (
-            await db.execute(
-                "SELECT d.name AS name, s.stage AS stage FROM divisions d "
-                "JOIN seasons s ON s.id = d.season_id WHERE d.id = ?",
-                (division_id,),
-            )
-        ).fetchone()
-    name = (row["name"] if row is not None else None) or f"division {division_id}"
-    stage = row["stage"] if row is not None else None
-    if stage == SeasonStage.PENDING_COMPLETION.value:
+        division = await division_on(db, division_id)
+        stage = None if division is None else await season_stage_on(db, division.season_id)
+    name = (division.name if division is not None else None) or f"division {division_id}"
+    if stage == SeasonStage.PENDING_COMPLETION:
         return (
             f"Repair the cause, then amend the round again with `/results rounds amend "
             f"division_name:{name}` — every division of this season is done, so the sync "
@@ -1622,6 +1573,19 @@ async def set_reserves_in_standings_on(
     )
 
 
+async def _division_has_active_results(db: aiosqlite.Connection, division_id: int) -> bool:
+    """True where a round of *division_id* holds a session with results on *db*: the rounds are
+    core's to name, the sessions are results' own."""
+    for rnd in await division_rounds_in_order_on(db, division_id):
+        row = await (await db.execute(
+            "SELECT 1 FROM session_results WHERE round_id = ? AND status = 'ACTIVE' LIMIT 1",
+            (rnd.id,),
+        )).fetchone()
+        if row is not None:
+            return True
+    return False
+
+
 async def division_repost_status(
     db_path: str, division_id: int, guild: discord.Guild | None
 ) -> str:
@@ -1634,25 +1598,20 @@ async def division_repost_status(
     (`rounds_sync_change`).
     """
     async with get_connection(db_path) as db:
-        div_row = await (await db.execute(
-            "SELECT d.id, drc.results_channel_id FROM divisions d "
-            "LEFT JOIN division_results_config drc ON drc.division_id = d.id WHERE d.id = ?",
+        if await division_on(db, division_id) is None:
+            return "no_rounds"
+        config_row = await (await db.execute(
+            "SELECT results_channel_id FROM division_results_config WHERE division_id = ?",
             (division_id,),
         )).fetchone()
-        if div_row is None:
-            return "no_rounds"
-        results_ch_id: int | None = div_row["results_channel_id"]
+        results_ch_id: int | None = None if config_row is None else config_row["results_channel_id"]
         if not results_ch_id:
             return "no_channel"
         if guild is not None and as_text_channel(guild.get_channel(results_ch_id)) is None:
             log.warning("division_repost_status: results channel %s not found in guild", results_ch_id)
             return "no_channel"
-        found = await (await db.execute(
-            "SELECT 1 FROM rounds r JOIN session_results sr ON sr.round_id = r.id "
-            "WHERE r.division_id = ? AND sr.status = 'ACTIVE' LIMIT 1",
-            (division_id,),
-        )).fetchone()
-    return "ok" if found is not None else "no_rounds"
+        found = await _division_has_active_results(db, division_id)
+    return "ok" if found else "no_rounds"
 
 
 async def standings_repost_status(
@@ -1667,16 +1626,13 @@ async def standings_repost_status(
     *guild* to look in, a channel that is set is taken as on the server.
     """
     async with get_connection(db_path) as db:
-        found = await (await db.execute(
-            "SELECT drc.standings_channel_id FROM rounds r "
-            "JOIN session_results sr ON sr.round_id = r.id "
-            "LEFT JOIN division_results_config drc ON drc.division_id = r.division_id "
-            "WHERE r.division_id = ? AND sr.status = 'ACTIVE' LIMIT 1",
+        if not await _division_has_active_results(db, division_id):
+            return "no_rounds"
+        config_row = await (await db.execute(
+            "SELECT standings_channel_id FROM division_results_config WHERE division_id = ?",
             (division_id,),
         )).fetchone()
-    if found is None:
-        return "no_rounds"
-    channel_id = found["standings_channel_id"]
+    channel_id = None if config_row is None else config_row["standings_channel_id"]
     if not channel_id:
         return "no_channel"
     if guild is not None and as_text_channel(guild.get_channel(int(channel_id))) is None:

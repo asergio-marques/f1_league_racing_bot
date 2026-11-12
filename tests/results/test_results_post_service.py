@@ -67,7 +67,7 @@ async def test_session_results_include_heading_and_label(tmp_path):
         division_id = cursor.lastrowid
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
-            "VALUES (?, 5, 'STANDARD', 'AWAITING_REPORT_VERDICTS', '2026-06-01T18:00:00+00:00')",
+            "VALUES (?, 5, 'NORMAL', 'AWAITING_REPORT_VERDICTS', '2026-06-01T18:00:00+00:00')",
             (division_id,),
         )
         round_id = cursor.lastrowid
@@ -159,7 +159,7 @@ async def test_session_results_label_appears_for_all_status_values(tmp_path):
         division_id = cursor.lastrowid
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
-            "VALUES (?, 1, 'STANDARD', 'FINAL', '2026-06-01T18:00:00+00:00')",
+            "VALUES (?, 1, 'NORMAL', 'FINAL', '2026-06-01T18:00:00+00:00')",
             (division_id,),
         )
         round_id = cursor.lastrowid
@@ -244,7 +244,7 @@ async def test_produce_standings_includes_heading_and_label(tmp_path):
         division_id = cursor.lastrowid
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
-            "VALUES (?, 3, 'STANDARD', 'FINAL', '2026-06-01T18:00:00+00:00')",
+            "VALUES (?, 3, 'NORMAL', 'FINAL', '2026-06-01T18:00:00+00:00')",
             (division_id,),
         )
         round_id = cursor.lastrowid
