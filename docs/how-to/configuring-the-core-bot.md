@@ -493,7 +493,7 @@ Read it properly. It is the last look you get at the season as a whole before it
 
 > **A calendar with dates behind you takes the button away.** Two things can be wrong with a season's dates, and each division's calendar in the review carries its own:
 >
-> - **A round that has already run.** It would never open its result submission, so it could never take results at all. This applies **whatever modules you run** — a league with neither weather nor attendance has no windows to miss, but it has this one.
+> - **A round that has already run.** Its result submission would be opened late, at once, and not at the round's start. This applies **whatever modules you run** — a league with neither weather nor attendance has no windows to miss, but it has this one.
 > - **A round already inside one of its windows** — its check-in call or a weather phase deadline fell due before you ran the review. See [Configuring the attendance module](configuring-the-attendance-module.md) and [Configuring the weather module](configuring-the-weather-module.md) for the timings this applies to.
 >
 > Only the **latest** round of each kind is named, beside that division's calendar. Every earlier round is implied by it: put that round right and you have put all of them right. Move the round with `/round amend`, or for a window shorten the window instead, then review again. Either way you get no **Approve** button until it is settled.

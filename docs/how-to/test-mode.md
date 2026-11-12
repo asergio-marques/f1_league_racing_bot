@@ -97,13 +97,15 @@ That database detection is load-bearing rather than a fallback. With the weather
 >
 > **Nor with every module switched off** (decided 2026-09-14). The windows above are contributed by the modules that configure them, so a test server running neither weather nor attendance offered none at all and a season built wholly in the past was approved in silence. A round's **own moment** is judged too, whatever the modules, and each division's calendar in the review names the latest round of it that has gone by.
 >
-> **Nor is `/round amend` a route to one any longer** (decided 2026-09-14). A round is never moved to a moment that has already passed, whatever the modules enabled — its result submission would be armed in the past, thrown away by the misfire grace, and the round could never take results at all. Moving a round *forward* is untouched.
+> **Nor is `/round amend` a route to one any longer** (decided 2026-09-14). A round is never moved to a moment that has already passed, whatever the modules enabled — its result submission would be armed in the past and opened late, at once, not at the round's moment. Moving a round *forward* is untouched.
 >
 > The database fallback above is still load-bearing all the same. A past-dated round arrives by a restored save whose rounds have since gone by, and the misfire-grace evictions it covers have nothing to do with approval at all.
 
 > **A restart posts no check-in call late in test mode** (decided 2026-09-24, #429). Outside test mode a call that fell due while the bot was down goes out when it starts again, deadline permitting. Under test mode `advance` posts it in its turn: a restored save's past-dated rounds would otherwise each be given up, logged and marked done at the first start, and `advance` could no longer walk their check-ins.
 >
-> **An amendment's catch-up is not a restart** (decided 2026-10-09). A `/round amend` that stood stopped on the queue catches up what fell due meanwhile as the start-up recovery does, but it posts a missed check-in call under test mode too, where the start-up recovery leaves it to `advance`. It does not open a passed round's result submission under test mode, though: that is left to `advance`, which runs the season's rounds in their turn.
+> **An amendment's catch-up is not a restart** (decided 2026-10-09). A `/round amend` that stood stopped on the queue catches up what fell due meanwhile as the start-up recovery does, but it posts a missed check-in call under test mode too, where the start-up recovery leaves it to `advance`. It does not open a passed round's result submission under test mode, though: that is left to `advance`, which runs the season's rounds in their turn. With results on and weather off it arms no results job for the round at all, as the season's approval arms none, whatever the round's new moment (decided 2026-11-13).
+
+> **A restart under test mode opens no missed round start.** Outside test mode a round whose start came while the bot was down has its submission opened when it starts again. Under test mode `advance` opens it in its turn, so a restored save's past-dated rounds stay walkable.
 
 When there is nothing left, `advance` says so and points at `/season complete`.
 

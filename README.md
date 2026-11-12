@@ -701,7 +701,7 @@ The image subsection also lists the eight **asset directories** and the path eac
 
 > **A calendar with dates already behind you withholds the button.** Two things can be wrong with a season's dates, and each division's calendar in the review says which of them it has.
 >
-> **A round that has already run.** A round's result submission opens at the round's own moment, and one armed in the past is thrown away rather than opened — the round would never take results at all, and no command opens a submission by hand. This counts **whatever modules you run**: a league with neither weather nor attendance has no windows to miss, but it has this.
+> **A round that has already run.** A round's result submission opens at the round's own moment, and one armed in the past would be opened late, at once, and not at the round's moment. This counts **whatever modules you run**: a league with neither weather nor attendance has no windows to miss, but it has this.
 >
 > **A round already inside one of its windows.** Every scheduled thing a season does happens a configured distance *before* the round — the check-in call five days out, the last notice a day out, the check-in deadline two hours out, and each weather phase at its own deadline. Review on the Thursday before Sunday's race and the five-day call is two days behind you.
 >
@@ -845,7 +845,7 @@ At least one optional field must be provided. Amending `scheduled_at` automatica
 
 > **Past the check-in deadline, the check-in is settled.** Amend a round whose deadline has gone by and the call is neither reposted nor taken down, and no answer can be changed: the reserves have been distributed against it and reopening it would unsettle a grid already told who is racing. Moving such a round far enough out puts its check-in back in play.
 
-> **A round cannot be moved into the past**, whatever modules you run. A round's result submission opens at the round's own moment, and one armed in the past is thrown away rather than opened — the round would never take results at all, and no command opens a submission by hand. Give it a moment still to come. Moving a round *forward* is untouched, and is how you correct a circuit or a format late.
+> **A round cannot be moved into the past**, whatever modules you run. A round's result submission opens at the round's own moment, and one armed in the past would be opened late, at once, and not at the round's moment. Give it a moment still to come. Moving a round *forward* is untouched, and is how you correct a circuit or a format late.
 
 > **A round cannot be moved inside its own check-in deadline.** With the default two-hour deadline, moving a round to less than two hours away is refused outright — the check-in would open and close in the same instant, and the round would read afterwards as perfect attendance for a division nobody asked. Move it further out, or shorten the deadline first.
 
@@ -1804,7 +1804,7 @@ Each position and fastest-lap bonus the import changes is recorded from what to 
 
 #### Round Results Commands
 
-**A round's submission channel is opened by a job of the change queue** when the round's start comes, with the first session asked for in it. A round whose start falls while the queue is stopped stays not run, and can be cancelled, until the queue reaches it; a restart reopens a submission left unopened the same way. That job cannot be discarded, only retried, since without it the round would never take results; nor can the clearing of a submission cut short, at a restart, since without it the round would take no results until the bot next restarted.
+**A round's submission channel is opened by a job of the change queue** when the round's start comes, with the first session asked for in it. A round whose start falls while the queue is stopped stays not run, and can be cancelled, until the queue reaches it; a restart reopens a submission left unopened the same way, and opens late the submission of a round whose start came while the bot was stopped (under test mode it is left to `/test-mode advance`). That job cannot be discarded, only retried, since without it the round would never take results; nor can the clearing of a submission cut short, at a restart, since without it the round would take no results until the bot next restarted.
 
 **A paste is marked ⏳ at once** and answered on its turn on the round's lane: the next session is asked for, or the refusal given, when the queue reaches it. A paste typed in time counts though its turn waits, and while the round's lane is stopped the submission waits. A second paste typed while an earlier one waits is not taken: a note says the earlier one is still waiting, and the message is deleted. A paste turned away or refused is written to the log channel with the season, division and round.
 
