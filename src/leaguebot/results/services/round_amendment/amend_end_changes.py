@@ -77,6 +77,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
+from leaguebot.core.services.seasons.season_service import round_facts_on
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.log_lines import abandoned_line, name_of_member
 from leaguebot.results.models.recovery_failed import RecoveryFailed
@@ -180,13 +181,7 @@ def amend_cancel_change(
         payload = ctx.payload
         amend_id, round_id = int(payload["amend_id"]), int(payload["round_id"])
         division_id, channel_id = int(payload["division_id"]), int(payload["channel_id"])
-        row = await (
-            await db.execute(
-                "SELECT r.round_number, d.name AS division_name "
-                "FROM rounds r JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
-                (round_id,),
-            )
-        ).fetchone()
+        row = await round_facts_on(db, round_id)
         assert row is not None  # the check found the amendment standing
         reverted = await amendment_writes.revert_abandoned_amendment_on(
             db, round_id, display_names(ctx, division_id), attendance=attendance
@@ -196,7 +191,7 @@ def amend_cancel_change(
             "UPDATE round_amend_channels SET closed_at = ? WHERE id = ? AND closed_at IS NULL",
             (now().isoformat(), amend_id),
         )
-        what = f"`/{COMMAND}` of round {row['round_number']} ({row['division_name']})"
+        what = f"`/{COMMAND}` of round {row.round_number} ({row.division_name})"
         detail = (
             amendment_writes.ROUND_PUT_BACK if reverted
             else "Nothing was written. " + amendment_writes.AMENDMENT_RE_RUN
@@ -263,11 +258,8 @@ EXPIRED = (
 )
 
 _AMENDMENT_FOR_LAPSE = (
-    "SELECT rac.id, rac.round_id, rac.channel_id, rac.started_by, rac.session_types, "
-    "rac.closed_at, rac.pre_amendment_state, rac.prompt_posted_at, r.division_id, "
-    "r.round_number, d.name AS division_name "
-    "FROM round_amend_channels rac JOIN rounds r ON r.id = rac.round_id "
-    "JOIN divisions d ON d.id = r.division_id WHERE rac.id = ?"
+    "SELECT id, round_id, channel_id, started_by, session_types, closed_at, "
+    "pre_amendment_state, prompt_posted_at FROM round_amend_channels WHERE id = ?"
 )
 
 #: Why a lapse was asked, as the log channel's lines about the queue say it.
@@ -287,17 +279,20 @@ async def ask_lapse(
     was armed for it."""
     async with get_connection(db_path) as db:
         row = await (await db.execute(_AMENDMENT_FOR_LAPSE, (amend_id,))).fetchone()
-    if row is None:
+        facts = (
+            await round_facts_on(db, int(row["round_id"])) if row is not None else None
+        )
+    if row is None or facts is None:
         return None
     payload: dict[str, Any] = {
         "amend_id": amend_id, "round_id": int(row["round_id"]),
-        "division_id": int(row["division_id"]), "channel_id": int(row["channel_id"]),
+        "division_id": facts.division_id, "channel_id": int(row["channel_id"]),
         "started_by": row["started_by"], "cause": cause, "armed_for": armed_for,
     }
     return await queue.ask(
         LAPSE_KIND, payload,
         what=(
-            f"ending the amendment of round {row['round_number']} ({row['division_name']}): "
+            f"ending the amendment of round {facts.round_number} ({facts.division_name}): "
             f"{_BECAUSE[cause]}"
         ),
         origin=ChangeOrigin.BOT,
@@ -461,15 +456,12 @@ def amend_lapse_change(
         cause = payload["cause"]
         row = await (
             await db.execute(
-                "SELECT rac.closed_at, rac.session_types, r.round_number, "
-                "d.name AS division_name, s.season_number "
-                "FROM round_amend_channels rac JOIN rounds r ON r.id = rac.round_id "
-                "JOIN divisions d ON d.id = r.division_id JOIN seasons s ON s.id = d.season_id "
-                "WHERE rac.id = ?",
+                "SELECT closed_at, session_types FROM round_amend_channels WHERE id = ?",
                 (amend_id,),
             )
         ).fetchone()
-        assert row is not None  # the check found the amendment standing
+        facts = await round_facts_on(db, round_id)
+        assert row is not None and facts is not None  # the check found the amendment standing
         delete = {
             "channel_id": channel_id, "round_id": round_id, "what": "amendment channel",
             "reason": "Amendment abandoned",
@@ -488,11 +480,11 @@ def amend_lapse_change(
             "UPDATE round_amend_channels SET closed_at = ? WHERE id = ? AND closed_at IS NULL",
             (now().isoformat(), amend_id),
         )
-        what = f"`/{COMMAND}` of round {row['round_number']} ({row['division_name']})"
+        what = f"`/{COMMAND}` of round {facts.round_number} ({facts.division_name})"
         return StepResult(
             result={
                 "reverted": reverted, "what": what, "sessions": _sessions_of(row),
-                "season_number": int(row["season_number"]),
+                "season_number": facts.season_number,
             },
             then=(PlannedStep(RECORD_LAPSE), PlannedStep(DELETE_CHANNEL, delete)),
         )
