@@ -749,8 +749,8 @@ def _announcements_asked(bot) -> list[dict]:
 
 async def test_an_announced_sanction_leaves_the_run_complete(tmp_path, sheet):
     """The full-time driver has 25 attendance points against an autosack threshold of 20, and is
-    sacked. The run is complete, nothing announced by the run itself, and the announcement of
-    the sack is asked of the change queue, once."""
+    sacked. The run is complete, and the announcement of the sack is asked of the change queue,
+    once."""
     db_path = await _make_db(tmp_path, autoreserve=10, autosack=20)
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
     bot = _make_bot(db_path)
