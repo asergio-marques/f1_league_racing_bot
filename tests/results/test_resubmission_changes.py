@@ -32,12 +32,12 @@ import pytest
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.round import RoundFormat
-from leaguebot.results.services import penalty_wizard, result_submission_service
+from leaguebot.results.services import penalty_wizard, result_submission_service, paste_reading
 from leaguebot.results.services.result_submission_service import (
-    DivisionValidationData,
     ResubmissionCancelView,
     get_sessions_for_format,
 )
+from leaguebot.results.services.paste_reading import DivisionValidationData
 from leaguebot.results.utils import results_formatter
 from tests.results.test_review_open_change import (
     RESULTS_CHANNEL,
@@ -102,7 +102,7 @@ async def _reviewing(tmp_path: Any, monkeypatch: Any) -> ReviewLeague:
     sub.posted = []
     monkeypatch.setattr(penalty_wizard, "_is_league_manager", AsyncMock(return_value=True))
     monkeypatch.setattr(
-        result_submission_service, "_build_division_validation_data",
+        paste_reading, "_build_division_validation_data",
         AsyncMock(return_value=_SEATED),
     )
     return league

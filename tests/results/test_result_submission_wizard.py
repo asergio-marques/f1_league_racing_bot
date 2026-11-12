@@ -56,11 +56,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.core.models.round import RoundFormat
-from leaguebot.results.services import result_submission_service
-from leaguebot.results.services.result_submission_service import (
-    DivisionValidationData,
-    get_sessions_for_format,
-)
+from leaguebot.results.services import result_submission_service, paste_reading
+from leaguebot.results.services.result_submission_service import get_sessions_for_format
+from leaguebot.results.services.paste_reading import DivisionValidationData
 from leaguebot.results.utils import results_formatter
 from tests.support.change_queue import (
     ADMIN_ROLE_ID,
@@ -359,7 +357,7 @@ async def _paste_league(tmp_path: Any, monkeypatch: Any, *, fmt: str = "NORMAL")
     if not isinstance(getattr(sub, "posted", None), list):
         sub.posted = []
     monkeypatch.setattr(
-        result_submission_service, "_build_division_validation_data",
+        paste_reading, "_build_division_validation_data",
         AsyncMock(return_value=_SEATED),
     )
     return league

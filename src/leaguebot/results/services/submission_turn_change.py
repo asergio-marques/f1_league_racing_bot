@@ -66,7 +66,7 @@ from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 from leaguebot.core.utils.member_names import member_named
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services import result_submission_service as submissions
+from leaguebot.results.services import result_submission_service as submissions, paste_reading
 from leaguebot.results.services import review_open_change, season_points_service
 from leaguebot.results.services.submission_changes import ALL_CANCELLED_KIND
 from leaguebot.results.services.submission_steps import (
@@ -304,19 +304,19 @@ def turn_steps(
             )
 
         lines = content.splitlines()
-        current_of = await submissions.current_accounts(ctx.db_path)
-        fl_override, lines = submissions.extract_current_fl_override(lines, expected, current_of)
+        current_of = await paste_reading.current_accounts(ctx.db_path)
+        fl_override, lines = paste_reading.extract_current_fl_override(lines, expected, current_of)
         if resubmission:
             # Checked against the resubmission's own drafts, not the stored results being
             # replaced: those may be wrong in exactly the way that made the manager resubmit.
             async with get_connection(ctx.db_path) as db:
                 drafted = await submissions.resubmission_drafts_on(db, round_id)
-            other = submissions.collected_team_assignments(drafted, expected)
+            other = paste_reading.collected_team_assignments(drafted, expected)
         else:
-            other = await submissions.other_active_team_assignments(ctx.db_path, round_id, expected)
-        data = await submissions._build_division_validation_data(int(row["division_id"]), ctx.bot)
-        errors, parsed = submissions.split_validation(
-            submissions.validate_submission_block(
+            other = await paste_reading.other_active_team_assignments(ctx.db_path, round_id, expected)
+        data = await paste_reading._build_division_validation_data(int(row["division_id"]), ctx.bot)
+        errors, parsed = paste_reading.split_validation(
+            paste_reading.validate_submission_block(
                 lines, expected, data.division_driver_ids, data.team_of_role,
                 data.reserve_team_role_id, data.driver_team_map, data.reserve_driver_ids,
                 other_active_assignments=other, current_of=current_of,
@@ -353,12 +353,12 @@ def turn_steps(
         if expected.is_qualifying:
             driver_rows = [
                 submissions._row_dict_from_qualifying(r)
-                for r in submissions._rows_of_kind(parsed, submissions.ParsedQualifyingRow)
+                for r in paste_reading._rows_of_kind(parsed, paste_reading.ParsedQualifyingRow)
             ]
         else:
             driver_rows = [
                 submissions._row_dict_from_race(r)
-                for r in submissions._rows_of_kind(parsed, submissions.ParsedRaceRow)
+                for r in paste_reading._rows_of_kind(parsed, paste_reading.ParsedRaceRow)
             ]
         accepted = (
             f"{ctx.named} | RESULT_SUBMISSION_ACCEPTED | Success\n"

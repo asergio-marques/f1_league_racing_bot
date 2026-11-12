@@ -41,8 +41,8 @@ import pytest
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.seasons.season_service import SeasonService
-from leaguebot.results.services import result_submission_service
-from leaguebot.results.services.result_submission_service import DivisionValidationData
+from leaguebot.results.services import result_submission_service, paste_reading
+from leaguebot.results.services.paste_reading import DivisionValidationData
 from tests.support.change_queue import (
     MARK,
     MEMBER_ID,
@@ -150,7 +150,7 @@ async def _league(
     league.bot.module_service.is_results_enabled = AsyncMock(return_value=True)
     league.bot.season_service = SeasonService(league.db_path)
     monkeypatch.setattr(
-        result_submission_service, "_build_division_validation_data",
+        paste_reading, "_build_division_validation_data",
         AsyncMock(return_value=_SEATED),
     )
     return league

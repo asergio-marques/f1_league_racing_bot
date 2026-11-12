@@ -53,7 +53,7 @@ from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line
 from leaguebot.core.utils.member_names import member_named
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services import result_submission_service as submissions
+from leaguebot.results.services import result_submission_service as submissions, paste_reading
 from leaguebot.results.services.amend_changes import (
     ARM_LAPSE,
     COMMAND,
@@ -213,21 +213,21 @@ def turn_steps(
         lines_raw = [
             each.strip() for each in str(payload["content"]).strip().splitlines() if each.strip()
         ]
-        current_of = await submissions.current_accounts(ctx.db_path)
-        fl_override, lines_raw = submissions.extract_current_fl_override(
+        current_of = await paste_reading.current_accounts(ctx.db_path)
+        fl_override, lines_raw = paste_reading.extract_current_fl_override(
             lines_raw, expected, current_of
         )
         # A driver's team must agree across the round's sessions. The sessions being replaced are
         # read from their new pastes, never their old rows: the correction would otherwise be held
         # against the very classification it corrects.
-        others = submissions.collected_team_assignments(drafted, expected)
-        others.update(await submissions.other_active_team_assignments(
+        others = paste_reading.collected_team_assignments(drafted, expected)
+        others.update(await paste_reading.other_active_team_assignments(
             ctx.db_path, round_id, expected,
             also_exclude=[each for each in covered if each is not expected],
         ))
-        data = await submissions._build_division_validation_data(int(row["division_id"]), ctx.bot)
-        errors, parsed = submissions.split_validation(
-            submissions.validate_submission_block(
+        data = await paste_reading._build_division_validation_data(int(row["division_id"]), ctx.bot)
+        errors, parsed = paste_reading.split_validation(
+            paste_reading.validate_submission_block(
                 lines_raw, expected, data.division_driver_ids, data.team_of_role,
                 data.reserve_team_role_id, data.driver_team_map, data.reserve_driver_ids,
                 other_active_assignments=others, current_of=current_of,
@@ -272,12 +272,12 @@ def turn_steps(
         if expected.is_qualifying:
             driver_rows = [
                 submissions._row_dict_from_qualifying(r)
-                for r in submissions._rows_of_kind(parsed, submissions.ParsedQualifyingRow)
+                for r in paste_reading._rows_of_kind(parsed, paste_reading.ParsedQualifyingRow)
             ]
         else:
             driver_rows = [
                 submissions._row_dict_from_race(r)
-                for r in submissions._rows_of_kind(parsed, submissions.ParsedRaceRow)
+                for r in paste_reading._rows_of_kind(parsed, paste_reading.ParsedRaceRow)
             ]
         draft = {
             "channel_id": channel_id, "amend_id": int(row["amend_id"]), "round_id": round_id,

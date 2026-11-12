@@ -32,7 +32,7 @@ async def test_the_team_listing_still_shows_every_seat_by_default(db_path):
 
 
 async def test_the_submission_roster_does_not_admit_an_uncommitted_driver(db_path):
-    from leaguebot.results.services.result_submission_service import _build_division_validation_data
+    from leaguebot.results.services.paste_reading import _build_division_validation_data
 
     bot = SimpleNamespace(
         team_service=TeamService(db_path),

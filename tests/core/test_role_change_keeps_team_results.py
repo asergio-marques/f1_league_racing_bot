@@ -24,9 +24,11 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.models.session_result import SessionResult
 from leaguebot.results.services.result_submission_service import (
-    _build_division_validation_data,
     _row_dict_from_qualifying,
     _row_dict_from_race,
+)
+from leaguebot.results.services.paste_reading import (
+    _build_division_validation_data,
     other_active_team_assignments,
     validate_submission_block,
 )

@@ -1646,7 +1646,7 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/amend_turn_change.py", "take_amended_paste"): (1, PASS["results"]),
     ("results/services/channel_settings.py", "_channel_setting.check"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "_is_league_manager"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "_build_division_validation_data"): (2, PASS["results"]),
+    ("results/services/paste_reading.py", "_build_division_validation_data"): (2, PASS["results"]),
     ("results/services/submission_turn_change.py", "take_paste"): (1, PASS["results"]),
     ("signup/services/signup_views.py", "AdminReviewView._ask_for_reason"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "AdminReviewView._guard"): (1, PASS["signup"]),
@@ -2692,7 +2692,7 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
         (1, PASS["results"]),
     ("results/services/result_submission_service.py", "open_amendment_in_season"):
         (2, PASS["results"]),
-    ("results/services/result_submission_service.py", "other_active_team_assignments"):
+    ("results/services/paste_reading.py", "other_active_team_assignments"):
         (3, PASS["results"]),
     ("results/services/result_submission_service.py", "resubmission_drafts_on"):
         (1, PASS["results"]),
