@@ -571,7 +571,9 @@ def _round_change(
         check-in is not over, is posted where it has fallen due (`call_fell_due`).
 
         Under test mode the results submission is not run at once: `/test-mode advance` runs a
-        test season's rounds in their turn. Its call is still posted (`post_call`)."""
+        test season's rounds in their turn, so the round's `results` job is taken down again where
+        its moment has passed, which a job armed with no lateness limit would run at once. Its call
+        is still posted (`post_call`)."""
         judgement = judged(ctx) or {}
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:
@@ -646,6 +648,10 @@ def _round_change(
             scheduler.run_result_submission_now(
                 rnd, season_number=season_number, division_tier=tier
             )
+        elif rnd.status == RoundStatus.NOT_RUN.value and result_at <= now():
+            # Test mode: the arming above made a job for a moment already past, which the
+            # scheduler runs at once, so it comes down again and the advance opens the round.
+            scheduler.cancel_round(rnd.id, only=frozenset({"results"}))
         return StepResult(result={"armed": True, "round_number": rnd.round_number}, then=planned)
 
     async def plan_clean_ups(

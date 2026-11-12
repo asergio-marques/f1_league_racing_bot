@@ -27,7 +27,7 @@ from collections.abc import Callable
 from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import discord
 import pytest
@@ -2061,6 +2061,30 @@ async def test_under_test_mode_a_round_whose_moment_passed_while_its_save_stood_
     assert await stopped_job(league.db_path) is None
     assert await _status(league) == "NOT_RUN"
     assert league.armed == [("results", [R3])]
+    assert league.bot.scheduler_service.run_result_submission_now.call_args_list == []
+
+
+async def test_under_test_mode_an_amendment_armed_after_its_round_s_moment_takes_the_results_job_down(
+    tmp_path,
+):
+    """Test mode on. Pro's round 3 is two hours and five minutes out; it is moved thirty minutes
+    later and the save stops. Ten minutes past its old moment a league admin discards the save,
+    and the round is armed again at its old moment, gone by, while the bot stays up. Its `results`
+    job, armed with no lateness limit, would run at once and open the submission, which
+    `/test-mode advance` is to do in its turn: so the arming takes the round's `results` job down
+    again, and no submission is run at once."""
+    league = await ongoing_league(tmp_path)
+    await league.set_test_mode(True)
+    await _place_r3(league, hours=2, minutes=5)
+    await _amended(league, scheduled_at=_at(league, hours=2, minutes=35))
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        league.clock.advance(hours=2, minutes=15)
+        await discard_job(league.bot)
+
+    taken_down = league.bot.scheduler_service.cancel_round.call_args_list
+    assert call(R3, only=frozenset({"results"})) in taken_down
     assert league.bot.scheduler_service.run_result_submission_now.call_args_list == []
 
 
