@@ -336,7 +336,7 @@ async def test_an_expired_amendment_is_reverted(tmp_path):
     )
     bot = _queued(db_path, later)
 
-    await sweep_expired_amendments(bot, queue=bot.change_queue, now=later)
+    await sweep_expired_amendments(db_path, queue=bot.change_queue, now=later)
 
     [lapse] = await _lapses(db_path)
     assert lapse["origin"] == "BOT"
@@ -359,7 +359,7 @@ async def test_an_amendment_still_within_its_deadline_is_left_alone(tmp_path):
 
     bot = _queued(db_path, now)
 
-    await sweep_expired_amendments(bot, queue=bot.change_queue, now=now)
+    await sweep_expired_amendments(db_path, queue=bot.change_queue, now=now)
 
     assert await _lapses(db_path) == []
     assert await _drivers(db_path) == [(102, 1)]
@@ -379,7 +379,7 @@ async def test_the_revert_is_announced(tmp_path):
 
     bot = _queued(db_path, later)
 
-    await sweep_expired_amendments(bot, queue=bot.change_queue, now=later)
+    await sweep_expired_amendments(db_path, queue=bot.change_queue, now=later)
     assert len(await _lapses(db_path)) == 1
     with _cascade():
         await run_queue(bot)
@@ -410,7 +410,7 @@ async def test_a_round_with_no_deadline_is_not_swept(tmp_path):
 
     bot = _queued(db_path, later)
 
-    await sweep_expired_amendments(bot, queue=bot.change_queue, now=later)
+    await sweep_expired_amendments(db_path, queue=bot.change_queue, now=later)
 
     assert await _lapses(db_path) == []
 
@@ -488,7 +488,7 @@ async def test_a_naive_now_does_not_abort_the_whole_sweep(tmp_path):
 
     bot = _queued(db_path, naive.replace(tzinfo=timezone.utc))
 
-    await sweep_expired_amendments(bot, queue=bot.change_queue, now=naive)
+    await sweep_expired_amendments(db_path, queue=bot.change_queue, now=naive)
     with _cascade():
         await run_queue(bot)
 
@@ -556,7 +556,7 @@ async def test_the_sweep_leaves_an_amendment_a_stage_has_claimed(tmp_path):
 
     bot = _queued(db_path, later)
 
-    await sweep_expired_amendments(bot, queue=bot.change_queue, now=later)
+    await sweep_expired_amendments(db_path, queue=bot.change_queue, now=later)
 
     assert await _lapses(db_path) == []
     assert await _drivers(db_path) == [(102, 1)]
@@ -671,7 +671,7 @@ async def _lapse(tmp_path, name: str, *, member_name: str | None):
     later = datetime.now(timezone.utc) + timedelta(seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60)
     attach_queue(bot, db_path, now=later)
 
-    await sweep_expired_amendments(bot, queue=bot.change_queue, now=later)
+    await sweep_expired_amendments(db_path, queue=bot.change_queue, now=later)
     assert len(await _lapses(db_path)) == 1
     with _cascade():
         await run_queue(bot)
@@ -727,7 +727,7 @@ async def test_the_sweep_skips_an_amendment_whose_stage_is_in_hand(tmp_path):
         interaction=member_interaction(league.bot), what="✅ Approve on the amendment's reports",
     )
 
-    await sweep_expired_amendments(league.bot, queue=league.bot.change_queue, now=deadline + timedelta(hours=2))
+    await sweep_expired_amendments(league.bot.db_path, queue=league.bot.change_queue, now=deadline + timedelta(hours=2))
 
     assert await league_of.one(
         league.db_path, "SELECT pre_amendment_state FROM round_amend_channels"

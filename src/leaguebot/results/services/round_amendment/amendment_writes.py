@@ -1095,7 +1095,7 @@ async def amend_drafts_on(db: aiosqlite.Connection, amend_id: int) -> list[Colle
 
 
 async def sweep_expired_amendments(
-    bot: LeagueBot, *, queue: "ChangeQueue", now: datetime
+    db_path: str, *, queue: "ChangeQueue", now: datetime
 ) -> int:
     """Ask the change queue to end every amendment whose stages went unapproved past their
     deadline (`results.amend.lapse`, as the bot), and give how many it was asked of.
@@ -1107,8 +1107,8 @@ async def sweep_expired_amendments(
     next sweep asks again, once the stage is done or an admin has discarded it. The queue carries
     one lapse of an amendment at a time, so a lapse already asked is not asked again.
 
-    *queue* is the change queue, handed by whoever sweeps (a service does not look it up on the
-    bot). *now* is the moment the deadlines are judged against, handed in by whoever sweeps (the
+    *db_path* is the database the amendments are read from and *queue* the change queue, both
+    handed by whoever sweeps (a service does not look them up on the bot). *now* is the moment the deadlines are judged against, handed in by whoever sweeps (the
     scheduler's callback reads it off the queue), so that a test can pin it alongside the deadline
     it seeds.
     """
@@ -1120,7 +1120,7 @@ async def sweep_expired_amendments(
     moment = now
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
-    async with get_connection(bot.db_path) as db:
+    async with get_connection(db_path) as db:
         cursor = await db.execute(
             "SELECT id, expires_at FROM round_amend_channels WHERE expires_at IS NOT NULL"
         )
@@ -1135,7 +1135,7 @@ async def sweep_expired_amendments(
         if deadline > moment:
             continue
         try:
-            change_id = await ask_lapse(queue, bot.db_path, int(row["id"]), cause=SWEEP)
+            change_id = await ask_lapse(queue, db_path, int(row["id"]), cause=SWEEP)
         except Exception:  # noqa: BLE001 — one stuck amendment must not stop the rest
             log.exception("sweep_expired_amendments: could not ask the lapse of amendment %s", row["id"])
             continue

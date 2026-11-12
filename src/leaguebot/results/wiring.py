@@ -536,7 +536,7 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
     async def _amendment_sweep_cb() -> None:
         from leaguebot.results.services.round_amendment.amendment_writes import sweep_expired_amendments
         await sweep_expired_amendments(
-            bot, queue=bot.change_queue, now=bot.change_queue.now()
+            bot.db_path, queue=bot.change_queue, now=bot.change_queue.now()
         )
 
     scheduler.register_timer("amendment_sweep", _amendment_sweep_cb)
