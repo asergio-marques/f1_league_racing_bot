@@ -8,7 +8,7 @@ Two things make this module unlike the five before it.
 
 **It posts two messages from one call.** The textual standings are a single message carrying
 both championships; the graphics are two, the driver standings first and the constructors
-second, each with its own id column on the top-ranked driver's snapshot row. Every other
+second, each with its own id column on the round's row in `round_standings_posts`. Every other
 post module produces one attachment per call and lets its caller loop.
 
 **Failure is per championship** (Constitution XIV.4). A drivers graphic that will not draw
@@ -609,8 +609,8 @@ async def _post_one(
     if message is None:
         return outcome
 
-    # A standings message id is keyed by round, on the top-ranked driver's snapshot row.
-    # A season-boundary sheet has no round and no snapshot row to carry one, replaces
+    # A standings message id is keyed by round, on the round's row in `round_standings_posts`.
+    # A season-boundary sheet has no round and no such row to carry one, replaces
     # nothing, and will never be reposted — so it names nothing it replaces. See
     # `leaguebot.core.models.classification_occasion`, which is where that reasoning is kept.
     if occasion.names_a_round:

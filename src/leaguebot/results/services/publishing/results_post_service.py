@@ -916,7 +916,7 @@ async def produce_standings(
         [standings_section(name, sections_by_championship[name]) for name in championships],
     )
 
-    # Look for existing standings message (stored in the top-ranked driver snapshot)
+    # Look for existing standings message (kept on the round's row in `round_standings_posts`)
     existing_msg_id = await get_standings_message_id(db_path, division_id, round_id)
 
     # **A text table posted over standings that also stand as a constructors message** (a graphic

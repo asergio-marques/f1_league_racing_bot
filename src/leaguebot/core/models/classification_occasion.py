@@ -13,7 +13,7 @@ The word and the numeral are now one addressable ``classification_label`` field,
 here.
 
 **Standings postings need no slot bookkeeping, and this enum deliberately offers none.** A
-standings message id is keyed by round, on the top-ranked driver's snapshot row
+standings message id is keyed by round, on the round's row in ``round_standings_posts``
 (``results_post_service.get_standings_message_id``), so a division's standings channel
 accumulates one message per round rather than keeping a single live one. Neither season-boundary
 occasion has a round, so neither collides with a slot, neither has anywhere to record an id, and
