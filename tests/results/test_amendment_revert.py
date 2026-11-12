@@ -34,6 +34,11 @@ from tests.support.change_queue import attach_queue, change_rows, run_queue
 from tests.support.review_league import claim_amendment, revert_amendment, snapshot_amendment
 from tests.support.teams import seed_team_instances
 
+#: Why a test of the amendment's snapshot or revert fails until #284 hands it attendance's share.
+ATTENDANCE_NOT_HANDED = (
+    "#284: the amendment's snapshot and revert do not yet take attendance's share of the review"
+)
+
 LAPSE = "results.amend.lapse"
 SEASON_ID = 91
 DIVISION_ID = 92
@@ -159,6 +164,7 @@ def _cascade():
 # ── The snapshot ──────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_the_round_is_snapshotted_before_it_is_overwritten(tmp_path):
     db_path = await _db(tmp_path, "snap_taken")
 
@@ -170,6 +176,7 @@ async def test_the_round_is_snapshotted_before_it_is_overwritten(tmp_path):
     assert [r["driver_user_id"] for r in session["driver_rows"]] == [101, 102]
 
 
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_the_snapshot_carries_a_deadline(tmp_path):
     """Without one nothing would ever revert it."""
     db_path = await _db(tmp_path, "snap_deadline")
@@ -191,6 +198,7 @@ async def test_the_timeout_leaves_room_to_work_through_two_stages(tmp_path):
 # ── The revert ────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_the_classification_is_put_back(tmp_path):
     """The league keeps the round it raced rather than a half-amended one."""
     db_path = await _db(tmp_path, "revert_rows")
@@ -204,6 +212,7 @@ async def test_the_classification_is_put_back(tmp_path):
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
 
 
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_the_standings_put_back_settle_a_full_tie_by_name(tmp_path):
     """As the posting does (decided 2026-09-15). Recomputed by user id instead, the stored order
     disagrees with the posted one, and the next round's movement arrows show a driver moving
@@ -221,6 +230,7 @@ async def test_the_standings_put_back_settle_a_full_tie_by_name(tmp_path):
     assert _names_handed(cascade) == names
 
 
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_standings_names_that_cannot_be_had_still_leave_the_cascade_running(tmp_path):
     """Ordering a full tie by id is the lesser fault; not recomputing at all is the greater. Where
     the names could not be had, none are handed, and the cascade runs on ids. The standings
@@ -263,11 +273,15 @@ async def _pardons(db_path) -> list[tuple]:
         return [tuple(row) for row in await cursor.fetchall()]
 
 
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_the_rounds_pardons_come_back_as_they_were(tmp_path):
     """The appeal stage rewrites them before it releases the snapshot; a revert from there —
-    a failure, or a restart — put back the classification and left the new pardons on it."""
+    a failure, or a restart — put back the classification and left the new pardons on it.
+    Attendance on: the pardons are kept and put back by attendance's own share of the review,
+    their ids and the time each was granted included."""
     db_path = await _db(tmp_path, "revert_pardons")
     async with get_connection(db_path) as db:
+        await db.execute("INSERT INTO attendance_config (id, module_enabled) VALUES (1, 1)")
         await db.execute(
             "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
             "VALUES (31, '101', 'ASSIGNED')"
@@ -300,6 +314,62 @@ async def test_the_rounds_pardons_come_back_as_they_were(tmp_path):
     assert await _pardons(db_path) == before
 
 
+class _AttendanceKeeping:
+    """Attendance's share of a round's review, as a double: the round's pardons it keeps for a
+    snapshot are its own opaque value, and each question it is asked is recorded."""
+
+    KEPT = {"attendance's own": [7]}
+
+    def __init__(self) -> None:
+        self.asked: list[tuple] = []
+
+    async def pardons_of_on(self, db, round_id):
+        self.asked.append(("pardons_of_on", db.in_transaction is not None, round_id))
+        return self.KEPT
+
+    async def put_back_pardons_on(self, db, round_id, saved):
+        self.asked.append(("put_back_pardons_on", db.in_transaction is not None, round_id, saved))
+
+
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
+async def test_the_round_s_pardons_are_kept_and_put_back_through_attendance(tmp_path):
+    """Round 4 at Spa carries a pardon of attendance's. The amendment's snapshot asks attendance
+    for the round's pardons, once, on the snapshot's connection, and keeps what it is given as it
+    is; the revert hands that back to attendance to put back, once, on the revert's connection.
+    Results writes no pardon itself: the pardon standing before is standing after."""
+    db_path = await _db(tmp_path, "revert_through_attendance")
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (31, '101', 'ASSIGNED')"
+        )
+        await db.execute(
+            "INSERT INTO driver_round_attendance (id, round_id, division_id, driver_profile_id, "
+            "rsvp_status) VALUES (41, ?, ?, 31, 'NO_RSVP')",
+            (ROUND_ID, DIVISION_ID),
+        )
+        await db.execute(
+            "INSERT INTO attendance_pardons (id, attendance_id, pardon_type, justification, "
+            "granted_by, granted_at) VALUES (7, 41, 'NO_RSVP', 'Ill', 55, "
+            "'2026-02-01T20:00:00+00:00')"
+        )
+        await db.commit()
+    before = await _pardons(db_path)
+    snapshotting, reverting = _AttendanceKeeping(), _AttendanceKeeping()
+
+    await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE],
+                             attendance=snapshotting)
+    with _cascade():
+        assert await revert_amendment(db_path, ROUND_ID, attendance=reverting) is True
+
+    assert snapshotting.asked == [("pardons_of_on", True, ROUND_ID)]
+    assert reverting.asked == [
+        ("put_back_pardons_on", True, ROUND_ID, _AttendanceKeeping.KEPT)
+    ]
+    assert await _pardons(db_path) == before
+
+
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_the_snapshot_is_cleared_once_it_has_been_used(tmp_path):
     """A snapshot left behind would let a later sweep undo the round a second time."""
     db_path = await _db(tmp_path, "revert_clears")
@@ -311,6 +381,7 @@ async def test_the_snapshot_is_cleared_once_it_has_been_used(tmp_path):
     assert (await _snapshot_row(db_path))["pre_amendment_state"] is None
 
 
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_an_amendment_abandoned_before_stage_one_has_nothing_to_undo(tmp_path):
     """Cancelled at the paste, or a restart before it landed. Reverting nothing must be safe."""
     db_path = await _db(tmp_path, "revert_nothing")
@@ -324,6 +395,7 @@ async def test_an_amendment_abandoned_before_stage_one_has_nothing_to_undo(tmp_p
 # ── The sweep ─────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_an_expired_amendment_is_reverted(tmp_path):
     """Round 4's amendment is past stage one, the Feature Race overwritten, and its half-hour has
     run. The sweep asks the queue for its lapse, as the bot, and puts nothing back itself; once the
@@ -348,6 +420,7 @@ async def test_an_expired_amendment_is_reverted(tmp_path):
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
 
 
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_an_amendment_still_within_its_deadline_is_left_alone(tmp_path):
     """**The one that matters**: a manager mid-review must not have it pulled from under them.
     Round 4's amendment is past stage one and within its half-hour: the sweep asks no lapse and
@@ -365,6 +438,7 @@ async def test_an_amendment_still_within_its_deadline_is_left_alone(tmp_path):
     assert await _drivers(db_path) == [(102, 1)]
 
 
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_the_revert_is_announced(tmp_path):
     """An amendment quietly undone would be worse than one left hanging. It is announced in the
     standard lapse form; a row that recorded nobody names "a member", with no mention. The league
@@ -473,6 +547,7 @@ def test_the_sweep_is_re_armed_by_the_scheduler_not_by_its_own_callback():
     assert armed.kwargs["misfire_grace_time"] is None
 
 
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_a_naive_now_does_not_abort_the_whole_sweep(tmp_path):
     """The stored deadline is UTC-aware, so comparing it with a naive *now* raises `TypeError`.
 
@@ -497,6 +572,7 @@ async def test_a_naive_now_does_not_abort_the_whole_sweep(tmp_path):
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
 
 
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_the_verdict_records_come_back_whole(tmp_path):
     """Not merely re-pointed (#345).
 
@@ -543,6 +619,7 @@ async def test_the_verdict_records_come_back_whole(tmp_path):
 # ── Nothing acts on an amendment another is already acting on ──────────────
 
 
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_the_sweep_leaves_an_amendment_a_stage_has_claimed(tmp_path):
     """**A stage being approved at the moment the sweep runs is left to finish.** Reverting from
     under it would restore the round and then let the stage write its reports on top — doubling
@@ -562,6 +639,7 @@ async def test_the_sweep_leaves_an_amendment_a_stage_has_claimed(tmp_path):
     assert await _drivers(db_path) == [(102, 1)]
 
 
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_only_one_claim_on_an_amendment_succeeds(tmp_path):
     db_path = await _db(tmp_path, "claim_once")
     await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
@@ -599,6 +677,7 @@ async def test_an_amendment_with_no_snapshot_cannot_be_claimed(tmp_path):
 # ── Several sessions (#345, decided 2026-09-21) ────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_every_amended_session_is_snapshotted_and_put_back(tmp_path):
     """One amendment may re-enter several of a round's sessions, and undoing it puts back each
     of them — not only the first the snapshot happened to hold."""
@@ -680,6 +759,7 @@ async def _lapse(tmp_path, name: str, *, member_name: str | None):
     return next(line for line in lines if line.startswith("⌛ "))
 
 
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_a_timed_amendment_revert_names_the_member_who_started_it(tmp_path):
     """The sweep names who started the amendment it reverts, by their server display name and
     their mention."""
@@ -688,6 +768,7 @@ async def test_a_timed_amendment_revert_names_the_member_who_started_it(tmp_path
     assert line.splitlines()[0].endswith("lapsed unconfirmed (started by Alex (<@77>))")
 
 
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_every_group_e_cancel_and_lapse_reaches_the_log_channel(tmp_path):
     """The timed revert of an amendment whose opener has since left the server, which the
     sweep still reaches: the standard lapse form, naming them by mention alone, with what

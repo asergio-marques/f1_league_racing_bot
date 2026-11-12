@@ -25,6 +25,11 @@ import pytest
 
 from leaguebot.core.db.database import get_connection
 
+#: Why a test of the amendment's snapshot or revert fails until #284 hands it attendance's share.
+ATTENDANCE_NOT_HANDED = (
+    "#284: the amendment's snapshot and revert do not yet take attendance's share of the review"
+)
+
 
 ROUND_ID = 21
 STARTER_ID = 4242
@@ -207,6 +212,7 @@ async def test_a_restart_with_no_amendments_open_does_nothing(tmp_path):
     assert _amend_lines(league) == []
 
 
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_an_abandoned_amendment_is_put_back_as_it_was(tmp_path):
     """Stage one commits, so abandoning an amendment is not a no-op (#345).
 
@@ -231,6 +237,7 @@ async def test_an_abandoned_amendment_is_put_back_as_it_was(tmp_path):
     assert "re-run /results rounds amend" in line
 
 
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_an_amendment_put_back_at_a_restart_is_recorded_as_a_lapse(tmp_path):
     """Alex started `/results rounds amend` of round 3 (Pro) and entered the corrections; the
     bot restarted before the amendment was approved, and the queue's lapse puts the round back.
@@ -289,6 +296,7 @@ async def test_an_amendment_with_nothing_to_put_back_is_recorded_neutrally(tmp_p
     assert row is not None and row["closed_at"] is not None
 
 
+@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_a_revert_that_fails_stops_the_queue_keeping_the_snapshot(tmp_path):
     """**The snapshot is the only way back, so a failed revert keeps it** (#345).
 

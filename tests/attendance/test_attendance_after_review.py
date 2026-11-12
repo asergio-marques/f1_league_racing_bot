@@ -690,13 +690,15 @@ async def test_a_sheet_discord_refuses_raises_and_is_not_put_on_the_retry_queue(
 
 
 @pytest.mark.xfail(
-    strict=True, reason="#284: the hook has no check_in_read_on and no recalculation_faults"
+    strict=True, reason="#284: the hook has no check_in_read_on, recalculation_faults, "
+    "pardons_of_on or put_back_pardons_on"
 )
 async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
     """Each method checks attendance's switch itself; the writers read it on the connection they
     are handed. With attendance off and Lewis over the autosack threshold: no driver is owed a
     sanction, the check of his sanction refuses nothing, saving it writes nothing and gives
-    None, nothing is posted or written, an amendment's review is offered no pardon, a round
+    None, nothing is posted or written, an amendment's review is offered no pardon, a reverted
+    amendment has no pardon put back, a round
     ended not held has no reading of its check-in planned, and an amendment's approval is told of
     no fault in attendance's channels, though the server holds none of them. The one
     method that acts whatever the switch, the change of a saved sanction's roles, is pinned by
@@ -718,9 +720,19 @@ async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
     await hook.post_sheet(LATEST_ROUND, DIVISION_ID, sanctioned={LEWIS}, as_text=False)
     await hook.refresh_lineup(DIVISION_ID, as_text=False)
     async with get_connection(db_path) as db:
+        # A pardon of Lewis's, kept by an amendment's snapshot, then gone.
+        await db.execute(
+            "INSERT INTO attendance_pardons (attendance_id, pardon_type, justification, "
+            "granted_by, granted_at) SELECT id, 'ABSENT', 'earlier', 1, '2026-02-02T00:00:00' "
+            "FROM driver_round_attendance WHERE round_id = ? AND driver_profile_id = ?",
+            (AMENDED_ROUND, LEWIS),
+        )
+        saved = await hook.pardons_of_on(db, AMENDED_ROUND)
+        await db.execute("DELETE FROM attendance_pardons")
         before = db.total_changes
         await hook.record_on(db, AMENDED_ROUND, DIVISION_ID, [], NOW)
         await hook.rewrite_pardons_on(db, AMENDED_ROUND, [], NOW)
+        await hook.put_back_pardons_on(db, AMENDED_ROUND, saved)
         await hook.recalculate_on(db, AMENDED_ROUND, DIVISION_ID)
         assert await hook.apply_sanction_on(db, LATEST_ROUND, DIVISION_ID, owed) is None, (
             "None is how the job knows nothing was applied"

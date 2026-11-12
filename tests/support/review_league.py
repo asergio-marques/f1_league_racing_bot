@@ -192,7 +192,9 @@ class AttendanceDouble:
     by `sanction_candidates` while attendance is on, each on every call while it is set.
     `sync_hint` is attendance's own, naming the division and the round it is handed, so a test
     reads the hint the league would, and so is `recalculation_faults`, attendance's reading of an
-    amendment's channels. `lineup_as_text` holds, call by call, whether
+    amendment's channels. `pardons_of_on` keeps no pardons, and `put_back_pardons_on` writes
+    none, `rewrite_pardons_on` having written none to put back. `lineup_as_text` holds, call by
+    call, whether
     `refresh_lineup` was asked for the text. `record_sheet_on` records that the sheet's id was
     to be saved, and writes nothing.
     """
@@ -237,6 +239,12 @@ class AttendanceDouble:
 
     async def rewrite_pardons_on(self, db: Any, round_id: int, pardons: Any, now: Any) -> None:
         self.calls.append(("rewrite_pardons_on", round_id))
+
+    async def pardons_of_on(self, db: Any, round_id: int) -> list[Any]:
+        return []
+
+    async def put_back_pardons_on(self, db: Any, round_id: int, saved: Any) -> None:
+        return None
 
     async def recalculation_faults(self, season_id: int, guild: Any) -> list[str]:
         """Attendance's own reading of the channels an amendment's recalculation posts to, a
@@ -668,18 +676,32 @@ async def race_rows(db_path: str) -> dict[int, dict[str, Any]]:
         return {row["driver_user_id"]: dict(row) for row in await cursor.fetchall()}
 
 
+def attendance_after_review_of(db_path: str) -> Any:
+    """Attendance's own share of a round's review, as the builder hands it to results, over the
+    database at *db_path*: for a test that reaches a save of results' directly, which asks
+    attendance's part of the round through it."""
+    from types import SimpleNamespace
+
+    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
+
+    return AttendanceAfterReview(SimpleNamespace(db_path=db_path), None)
+
+
 async def snapshot_amendment(db_path: str, round_id: int,
                              session_types: list[SessionType], *,
-                             now: datetime | None = None) -> None:
+                             now: datetime | None = None, attendance: Any = None) -> None:
     """Record the round as it stands before an amendment's stage one writes, as stage one does,
     for a test that seeds an amendment past stage one: through `snapshot_before_amendment_on`, on
     a connection opened and committed here. The amendment's half-hour runs from *now*: the wall
-    clock where the test hands none, as the snapshot read it before the clock was handed in."""
+    clock where the test hands none, as the snapshot read it before the clock was handed in.
+    The round's pardons are asked of *attendance*, attendance's own share of the review where the
+    test hands none."""
     from leaguebot.results.services.round_amendment import amendment_writes
 
     async with get_connection(db_path) as db:
         await amendment_writes.snapshot_before_amendment_on(
-            db, round_id, session_types, now=now or datetime.now(timezone.utc)
+            db, round_id, session_types, now=now or datetime.now(timezone.utc),
+            attendance=attendance or attendance_after_review_of(db_path),
         )
         await db.commit()
 
@@ -699,19 +721,22 @@ async def amend_stage_one(db_path: str, round_id: int, division_id: int, session
     in as *display_names*, as the stage approvals hand them to `cascade_recompute_from_round_on`;
     *bot* is not used, and the stage's log line is the change's, not the save's. The amendment's
     half-hour runs from *now*: the wall clock where the test hands none, as stage one read it
-    before the clock was handed in."""
+    before the clock was handed in. The round's pardons are snapshotted through attendance's own
+    share of the review."""
     from leaguebot.results.services.round_amendment import amendment_writes
 
     async with get_connection(db_path) as db:
         await amendment_writes.amend_round_results_on(
             db, round_id, division_id, sessions, amended_by, display_names,
             now=now or datetime.now(timezone.utc),
+            attendance=attendance_after_review_of(db_path),
         )
         await db.commit()
 
 
 async def revert_amendment(db_path: str, round_id: int,
-                           display_names: Mapping[int, str] | None = None) -> bool:
+                           display_names: Mapping[int, str] | None = None, *,
+                           attendance: Any = None) -> bool:
     """Put a round back from its amendment's snapshot, as the amendment's lapse and cancel do;
     gives whether there was anything to put back.
 
@@ -719,11 +744,16 @@ async def revert_amendment(db_path: str, round_id: int,
     and cancel run it inside their `revert` save. That save waits on nothing but its own connection
     (architecture.md, "The database"), so the standings names are resolved before it, by a job of
     their own, and handed in as *display_names*, as the stage approvals hand them to
-    `cascade_recompute_from_round_on`; none handed, a full tie is settled by user id."""
+    `cascade_recompute_from_round_on`; none handed, a full tie is settled by user id. The
+    round's pardons are put back through *attendance*, attendance's own share of the review
+    where the test hands none."""
     from leaguebot.results.services.round_amendment import amendment_writes
 
     async with get_connection(db_path) as db:
-        reverted = await amendment_writes.revert_abandoned_amendment_on(db, round_id, display_names)
+        reverted = await amendment_writes.revert_abandoned_amendment_on(
+            db, round_id, display_names,
+            attendance=attendance or attendance_after_review_of(db_path),
+        )
         await db.commit()
     return bool(reverted)
 
