@@ -159,16 +159,7 @@ async def _enforce(db_path, *, sack=None):
     bot.change_queue.ask = AsyncMock()
 
     with patch("leaguebot.attendance.services.attendance_service.post_attendance_sheet",
-               new=AsyncMock()), _asking_for_sheets() as asked, \
-            patch("leaguebot.results.services.review.verdict_announcement_service.banner_for_round",
-                  return_value=None, create=True), \
-            patch("leaguebot.results.services.review.verdict_announcement_service.post_autosanction_announcement",
-                  # `[] += AsyncMock()` rebinds posting_faults to a MagicMock rather
-                  # than extending it, which leaves SanctionOutcome.complete false
-                  # for every run in this file. It must return a list (#237).
-                  # `create=True`: the run asks the queue to announce instead (#439, slice
-                  # 6b), and the announcer and its banner are deleted.
-                  new=AsyncMock(return_value=[]), create=True):
+               new=AsyncMock()), _asking_for_sheets() as asked:
         await enforce_attendance_sanctions(bot, MagicMock(), db_path, 102, PRO, 1,
                                            queue=bot.change_queue)
     return asked

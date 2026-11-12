@@ -214,10 +214,10 @@ def _lineups_asked(bot) -> list[int]:
 
 
 async def _run(bot, db_path: str):
-    """Call the function under test with the sheet re-post and announcer stubbed out.
+    """Call the function under test with the sheet re-post stubbed out.
 
-    Both are covered by their own files; what is under test here is *whether* and *with what*
-    they are called.
+    The sheet is covered by its own file; what is under test here is *whether* and *with what*
+    it is called.
     """
     return await enforce_attendance_sanctions(
         bot=bot,
@@ -233,25 +233,6 @@ async def _run(bot, db_path: str):
 def _logged(bot) -> str:
     """Every log line the run posted, joined — enough to assert a marker appears."""
     return "\n".join(str(call.args[0]) for call in bot.output_router.post_log.await_args_list)
-
-
-@pytest.fixture
-def announcer():
-    """Patch the verdict announcer and banner, yielding both mocks.
-
-    The announcer returns the sanctions it could not announce (#237), so the stub returns an
-    empty list rather than ``None``: the run adds what comes back to its outcome. Both are
-    patched with ``create=True``: the run asks the change queue to announce its sanctions
-    instead (#439, slice 6b), and the announcer it posted through until then is deleted.
-    """
-    with patch(
-        "leaguebot.results.services.review.verdict_announcement_service.post_autosanction_announcement",
-        new=AsyncMock(return_value=[]), create=True,
-    ) as announce, patch(
-        "leaguebot.results.services.review.verdict_announcement_service.banner_for_round",
-        new=MagicMock(return_value="BANNER"), create=True,
-    ) as banner:
-        yield announce, banner
 
 
 @pytest.fixture
@@ -290,7 +271,7 @@ def _asking_for_sheets() -> Iterator[list[tuple[int, int, set[int]]]]:
 # ---------------------------------------------------------------------------
 
 
-async def test_a_server_with_no_attendance_config_is_left_alone(tmp_path, announcer, sheet):
+async def test_a_server_with_no_attendance_config_is_left_alone(tmp_path, sheet):
     """No row at all is not the same as a row of zeroes, and reaches a different return."""
     db_path = await _make_db(tmp_path, with_config=False)
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 99})
@@ -307,7 +288,7 @@ async def test_a_server_with_no_attendance_config_is_left_alone(tmp_path, announ
     "autoreserve, autosack", [(None, None), (0, 0)], ids=["none", "zero"]
 )
 async def test_both_thresholds_disabled_sanctions_nobody(
-    tmp_path, announcer, sheet, autoreserve, autosack
+    tmp_path, sheet, autoreserve, autosack
 ):
     """FR-027. A league that wants the points but not the automatic consequences.
 
@@ -325,7 +306,7 @@ async def test_both_thresholds_disabled_sanctions_nobody(
     bot.placement_service.move_driver.assert_not_awaited()
 
 
-async def test_a_driver_below_both_thresholds_is_left_alone(tmp_path, announcer, sheet):
+async def test_a_driver_below_both_thresholds_is_left_alone(tmp_path, sheet):
     db_path = await _make_db(tmp_path, autoreserve=10, autosack=20)
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 9})
     bot = _make_bot(db_path)
@@ -342,7 +323,7 @@ async def test_a_driver_below_both_thresholds_is_left_alone(tmp_path, announcer,
 # ---------------------------------------------------------------------------
 
 
-async def test_a_driver_at_the_autosack_threshold_is_sacked(tmp_path, announcer, sheet):
+async def test_a_driver_at_the_autosack_threshold_is_sacked(tmp_path, sheet):
     """At, not past. The comparison is `>=` and a league setting a threshold of 20 means
     the twentieth point is the one that sacks."""
     db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
@@ -360,7 +341,7 @@ async def test_a_driver_at_the_autosack_threshold_is_sacked(tmp_path, announcer,
 
 
 async def test_one_point_short_of_the_autosack_threshold_keeps_the_seat(
-    tmp_path, announcer, sheet
+    tmp_path, sheet
 ):
     """Sits beside the test above, either side of the single point that costs a seat."""
     db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
@@ -372,7 +353,7 @@ async def test_one_point_short_of_the_autosack_threshold_keeps_the_seat(
     bot.placement_service.sack_driver.assert_not_awaited()
 
 
-async def test_autosack_supersedes_autoreserve(tmp_path, announcer, sheet):
+async def test_autosack_supersedes_autoreserve(tmp_path, sheet):
     """FR-025. A driver past both thresholds is sacked once and not also reserved.
 
     The rule is carried by a single `continue`. Without it the driver would be sacked *and*
@@ -389,7 +370,7 @@ async def test_autosack_supersedes_autoreserve(tmp_path, announcer, sheet):
 
 
 async def test_an_autosack_of_drivers_who_never_raced_sacks_every_one_of_them(
-    tmp_path, announcer, sheet
+    tmp_path, sheet
 ):
     """Issue #211, through the real placement service rather than the double above.
 
@@ -446,7 +427,7 @@ async def test_an_autosack_of_drivers_who_never_raced_sacks_every_one_of_them(
 
 
 async def test_a_driver_already_signed_off_logs_a_no_op_rather_than_raising(
-    tmp_path, announcer, sheet
+    tmp_path, sheet
 ):
     """I1. A driver already `NOT_SIGNED_UP` is an expected outcome of a recalculation — not
     a failure. It is logged as a no-op, not attempted, and no sanction is announced."""
@@ -459,19 +440,17 @@ async def test_a_driver_already_signed_off_logs_a_no_op_rather_than_raising(
         await db.commit()
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
     bot = _make_bot(db_path)
-    announce, _ = announcer
 
     outcome = await _run(bot, db_path)
 
     assert "No-op" in _logged(bot)
     bot.placement_service.sack_driver.assert_not_awaited()
-    announce.assert_not_awaited()
     sheet.assert_not_awaited()
     assert outcome.complete
 
 
 async def test_an_autosack_refused_for_another_reason_is_a_failure_not_a_no_op(
-    tmp_path, announcer, sheet
+    tmp_path, sheet
 ):
     """#239. Every `ValueError` from `sack_driver` used to be logged as "already
     NOT_SIGNED_UP", the refusal of an unconfirmed placement included. It is a failure, and
@@ -516,7 +495,7 @@ async def _add_second_full_timer(db_path: str, profile_id: int = 103) -> int:
 
 
 async def test_an_autosack_that_raises_does_not_stop_the_next_driver(
-    tmp_path, announcer, sheet
+    tmp_path, sheet
 ):
     """#239. Only `ValueError` was caught, so anything else from `sack_driver` ended the
     loop: the drivers after it went unsanctioned and the sheet was never posted again.
@@ -544,7 +523,7 @@ async def test_an_autosack_that_raises_does_not_stop_the_next_driver(
 
 
 async def test_the_outcome_names_every_applied_and_failed_sanction(
-    tmp_path, announcer, sheet
+    tmp_path, sheet
 ):
     """What the caller reports is read off this, so it must hold every driver by name."""
     db_path = await _make_db(tmp_path, autoreserve=10, autosack=20)
@@ -562,7 +541,7 @@ async def test_the_outcome_names_every_applied_and_failed_sanction(
 
 
 async def test_an_incomplete_run_is_posted_to_the_log_channel_with_the_sync_line(
-    tmp_path, announcer, sheet
+    tmp_path, sheet
 ):
     """#239. The failures reach the log channel, where a league can read them, each driver by
     name and ending on the command that finishes the job."""
@@ -581,7 +560,7 @@ async def test_an_incomplete_run_is_posted_to_the_log_channel_with_the_sync_line
     assert "`/attendance sync division:Division 1 round:1`" in logged
 
 
-async def test_a_clean_run_posts_no_incomplete_line(tmp_path, announcer, sheet):
+async def test_a_clean_run_posts_no_incomplete_line(tmp_path, sheet):
     db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
     bot = _make_bot(db_path)
@@ -598,7 +577,7 @@ async def test_a_clean_run_posts_no_incomplete_line(tmp_path, announcer, sheet):
 
 
 async def test_a_driver_over_the_autoreserve_threshold_is_moved_to_reserve(
-    tmp_path, announcer, sheet
+    tmp_path, sheet
 ):
     """The move is one `move_driver` onto the division's Reserve team (issue #220), and never
     the unassign and assign it replaced, which left the driver roleless in between and posted
@@ -616,7 +595,7 @@ async def test_a_driver_over_the_autoreserve_threshold_is_moved_to_reserve(
     assert "ATTENDANCE_AUTORESERVE" in _logged(bot)
 
 
-async def test_a_driver_already_in_reserve_is_not_a_candidate(tmp_path, announcer, sheet):
+async def test_a_driver_already_in_reserve_is_not_a_candidate(tmp_path, sheet):
     """FR-026. The reserve driver is over the threshold too, and is passed over — the
     candidate query excludes reserve seats, so no second sanction can reach them.
 
@@ -638,7 +617,7 @@ async def test_a_driver_already_in_reserve_is_not_a_candidate(tmp_path, announce
 
 
 async def test_a_division_with_no_reserve_team_reports_each_candidate_as_failed(
-    tmp_path, announcer, sheet
+    tmp_path, sheet
 ):
     """A league may simply not run a Reserve team. That is a misconfiguration for
     autoreserve, not an error a round's finalisation should die on — but nor is it silent:
@@ -657,7 +636,7 @@ async def test_a_division_with_no_reserve_team_reports_each_candidate_as_failed(
 
 
 async def test_a_failed_autoreserve_is_reported_and_does_not_stop_the_run(
-    tmp_path, announcer, sheet
+    tmp_path, sheet
 ):
     """One driver's move failing must not abandon the drivers after them in the list, and
     must come back to the caller rather than stop at the host's log file (#239)."""
@@ -679,7 +658,7 @@ async def test_a_failed_autoreserve_is_reported_and_does_not_stop_the_run(
 # ---------------------------------------------------------------------------
 
 
-async def test_a_driver_with_no_recorded_total_is_not_a_candidate(tmp_path, announcer, sheet):
+async def test_a_driver_with_no_recorded_total_is_not_a_candidate(tmp_path, sheet):
     """`total_points_after IS NULL` means attendance has not been computed for that driver
     this round. Treating a null as zero would be harmless; treating it as a candidate is
     not, because the `or 0` below would then sanction on a total nobody calculated."""
@@ -697,7 +676,7 @@ async def test_a_driver_with_no_recorded_total_is_not_a_candidate(tmp_path, anno
 # ---------------------------------------------------------------------------
 
 
-async def test_the_sheet_is_reposted_only_when_somebody_was_sanctioned(tmp_path, announcer):
+async def test_the_sheet_is_reposted_only_when_somebody_was_sanctioned(tmp_path):
     db_path = await _make_db(tmp_path, autoreserve=None, autosack=20)
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
     bot = _make_bot(db_path)
@@ -711,7 +690,7 @@ async def test_the_sheet_is_reposted_only_when_somebody_was_sanctioned(tmp_path,
 
 
 async def test_a_sync_s_autosack_asks_once_for_each_lineup_it_reached(
-    tmp_path, announcer, sheet
+    tmp_path, sheet
 ):
     """The full-timer, past the autosack threshold, also sits in Division 2: the sack takes
     them out of both, and the run asks the change queue once for each division's lineup,
@@ -767,25 +746,23 @@ def _announcements_asked(bot) -> list[dict]:
             if call.args[0] == ANNOUNCE_KIND]
 
 
-async def test_an_announced_sanction_leaves_the_run_complete(tmp_path, announcer, sheet):
+async def test_an_announced_sanction_leaves_the_run_complete(tmp_path, sheet):
     """The full-time driver has 25 attendance points against an autosack threshold of 20, and is
     sacked. The run is complete, nothing announced by the run itself, and the announcement of
     the sack is asked of the change queue, once."""
     db_path = await _make_db(tmp_path, autoreserve=10, autosack=20)
     await _seed_totals(db_path, {FULL_TIME_PROFILE: 25})
     bot = _make_bot(db_path)
-    announce, _ = announcer
 
     outcome = await _run(bot, db_path)
 
     assert outcome.applied
     assert outcome.complete
-    announce.assert_not_awaited()
     assert len(_announcements_asked(bot)) == 1
 
 
 async def test_the_announcement_asked_names_each_sanction_applied_and_none_that_failed(
-    tmp_path, announcer, sheet
+    tmp_path, sheet
 ):
     """The full-time driver has 25 points, over the autosack threshold of 20; a second full-timer
     (103) has 12, over the autoreserve threshold of 10, but his move to reserve fails. One

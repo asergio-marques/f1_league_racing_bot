@@ -158,23 +158,12 @@ async def test_a_second_sync_applies_nothing_twice(tmp_path):
         attendance_service, "distribute_attendance_points", new=AsyncMock(return_value=None)
     ), patch.object(
         attendance_service, "post_attendance_sheet", new=AsyncMock(return_value=None)
-    ), _asking_for_sheets(), patch(
-        "leaguebot.results.services.review.verdict_announcement_service.post_autosanction_announcement",
-        # Returns the sanctions it could not announce (#237). `None` is not merely
-        # inert here: the run does `posting_faults += <return>`, which raises inside
-        # the per-driver try and is recorded as a bogus failed sanction. `create=True`
-        # because the run asks the queue to announce instead, and the announcer is deleted.
-        new=AsyncMock(return_value=[]), create=True,
-    ) as announce, patch(
-        "leaguebot.results.services.review.verdict_announcement_service.banner_for_round",
-        new=MagicMock(return_value=None), create=True,
-    ):
+    ), _asking_for_sheets():
         first = await _sync(bot, db_path)
         second = await _sync(bot, db_path)
 
     assert [sanction for _, sanction in first.applied] == ["autosack"]
     assert second.applied == [] and second.complete
-    announce.assert_not_awaited()
     asked = [call for call in bot.change_queue.ask.await_args_list
              if call.args[0] == ANNOUNCE_KIND]
     assert len(asked) == 1, "the second sync asks for no announcement"
@@ -539,19 +528,10 @@ async def test_a_sync_asks_the_queue_to_announce_its_sanctions(tmp_path):
         new=AsyncMock(return_value=None),
     ), patch.object(
         attendance_service, "distribute_attendance_points", new=AsyncMock(return_value=None)
-    ), _asking_for_sheets(), patch(
-        # The announcer the sync posted through until now; `create=True` because the change
-        # deletes it, which leaves nothing to call.
-        "leaguebot.results.services.review.verdict_announcement_service.post_autosanction_announcement",
-        new=AsyncMock(return_value=[]), create=True,
-    ) as announce, patch(
-        "leaguebot.results.services.review.verdict_announcement_service.banner_for_round",
-        new=MagicMock(return_value=None), create=True,
-    ):
+    ), _asking_for_sheets():
         outcome = await _sync(bot, db_path)
 
     assert [sanction for _, sanction in outcome.applied] == ["autosack"]
-    announce.assert_not_awaited()
     asked = [call for call in bot.change_queue.ask.await_args_list
              if call.args[0] == ANNOUNCE_KIND]
     assert len(asked) == 1
