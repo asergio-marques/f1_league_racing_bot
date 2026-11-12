@@ -20,6 +20,7 @@ from leaguebot.core.services.seasons.season_service import (
     live_season_on,
     round_facts_on,
     rounds_from_on,
+    season_divisions_on,
 )
 
 
@@ -182,3 +183,16 @@ async def test_the_division_rounds_are_read_in_round_order_with_their_status(tmp
             (2, RoundStatus.FINAL), (5, RoundStatus.CANCELLED),
         ]
         assert await division_rounds_in_order_on(db, 99) == []
+
+
+async def test_a_seasons_divisions_are_read_in_tier_order(tmp_path):
+    path = str(tmp_path / "league.db")
+    await _seed(path)
+    async with get_connection(path) as db:
+        await db.execute(
+            "INSERT INTO divisions (id, season_id, name, mention_role_id, tier) "
+            "VALUES (5, 7, 'Rookie', 11, 1)"
+        )
+        divisions = await season_divisions_on(db, 7)
+        assert [(d.id, d.name, d.tier) for d in divisions] == [(5, "Rookie", 1), (4, "Pro", 2)]
+        assert await season_divisions_on(db, 99) == []

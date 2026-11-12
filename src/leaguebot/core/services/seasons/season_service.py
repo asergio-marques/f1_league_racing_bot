@@ -552,14 +552,7 @@ class SeasonService:
     async def get_divisions_on(self, db: aiosqlite.Connection, season_id: int) -> list[Division]:
         """`get_divisions` on *db*, a connection the caller holds: what a save has written there
         is read back with the rest."""
-        cursor = await db.execute(
-            "SELECT id, season_id, name, mention_role_id, status, tier, "
-            "lineup_channel_id, calendar_channel_id, lineup_message_id, "
-            "calendar_message_id "
-            "FROM divisions WHERE season_id = ? ORDER BY tier",
-            (season_id,),
-        )
-        return [_row_to_division(r) for r in await cursor.fetchall()]
+        return await season_divisions_on(db, season_id)
 
     async def division_ids_on(self, db: aiosqlite.Connection, season_id: int) -> list[int]:
         """The ids of every division of *season_id*, cancelled ones included, in id order, read on
@@ -1379,6 +1372,23 @@ async def division_rounds_on(db: aiosqlite.Connection, division_id: int) -> list
         (division_id,),
     )
     return [int(row["id"]) for row in await cursor.fetchall()]
+
+
+async def season_divisions_on(db: aiosqlite.Connection, season_id: int) -> list[Division]:
+    """*season_id*'s divisions in tier order, read on *db*; empty for none.
+
+    `SeasonService.get_divisions_on` as a function, for a module reading core's tables only
+    through core's code (architecture.md, "The database") that has the connection of its own
+    save and no service. It writes nothing and commits nothing.
+    """
+    cursor = await db.execute(
+        "SELECT id, season_id, name, mention_role_id, status, tier, "
+        "lineup_channel_id, calendar_channel_id, lineup_message_id, "
+        "calendar_message_id "
+        "FROM divisions WHERE season_id = ? ORDER BY tier",
+        (season_id,),
+    )
+    return [_row_to_division(r) for r in await cursor.fetchall()]
 
 
 async def division_rounds_in_order_on(db: aiosqlite.Connection, division_id: int) -> list[Round]:
