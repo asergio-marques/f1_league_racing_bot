@@ -22,6 +22,8 @@ import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.round_amendment.amendment_writes import (
@@ -443,10 +445,15 @@ def test_the_sweep_runs_often_enough_to_honour_the_deadline():
     assert AMENDMENT_SWEEP_MINUTES * 60 < AMENDMENT_STAGE_TIMEOUT_SECONDS
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#284: the amendment sweep is still armed with APScheduler's lateness limit",
+)
 def test_the_sweep_is_re_armed_by_the_scheduler_not_by_its_own_callback():
     """A job that re-arms itself from inside its body stops for good the first time it raises.
 
-    The same reasoning `schedule_portrait_refresh` gives for using a cron trigger.
+    The same reasoning `schedule_portrait_refresh` gives for using a cron trigger. The sweep is
+    armed with no lateness limit (`misfire_grace_time=None`), so one due while the bot was down
+    runs when it is back (architecture.md, "Timed work and restarts").
     """
     import inspect
 
@@ -460,6 +467,7 @@ def test_the_sweep_is_re_armed_by_the_scheduler_not_by_its_own_callback():
     job = inspect.getsource(armed.args[0])
     assert "add_job" not in job
     assert "except Exception" in job
+    assert armed.kwargs["misfire_grace_time"] is None
 
 
 async def test_a_naive_now_does_not_abort_the_whole_sweep(tmp_path):
