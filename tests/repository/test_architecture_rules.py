@@ -1290,9 +1290,13 @@ def _is_a_service_or_helper(path: str) -> bool:
 
 def _reaches_the_bot(node: ast.expr) -> bool:
     """Whether *node* is the bot as a service may reach it: as `_is_the_bot` reads it, or as
-    ``self._bot`` or ``interaction.client``."""
-    return _is_the_bot(node) or (
-        isinstance(node, ast.Attribute) and node.attr in ("_bot", "client")
+    ``self._bot``, ``interaction.client`` or ``getattr(interaction, "client"[, d])``."""
+    return (
+        _is_the_bot(node)
+        or (isinstance(node, ast.Attribute) and node.attr in ("_bot", "client"))
+        or (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id == "getattr" and len(node.args) >= 2
+            and isinstance(node.args[1], ast.Constant) and node.args[1].value == "client")
     )
 
 
@@ -1614,6 +1618,7 @@ _LOOKUP_SAMPLE = (
     "    ctx.bot.season_service.get()\n"
     "    bot_of(interaction).placement_service.get()\n"
     "    getattr(bot, 'scheduler_service', None)\n"
+    "    getattr(getattr(interaction, 'client', None), 'output_router', None)\n"
     "    bot.change_queue.ask('kind', {})\n"
     "    bot.db_path\n"
 )
@@ -1625,10 +1630,10 @@ _LOOKUP_SAMPLE = (
     ids=["a services file", "a utils file"],
 )
 def test_the_lookup_check_finds_a_lookup_in_a_services_or_utils_file(path):
-    """In a services file, each of the six ways of looking a service up on the bot is counted;
+    """In a services file, each of the seven ways of looking a service up on the bot is counted;
     the change queue, held by the queue check, and an attribute that is not a service are not.
     A helper is held to the rule as a service is."""
-    assert _service_lookups_among(_sample(_LOOKUP_SAMPLE, path)) == Counter({(path, "handler"): 6})
+    assert _service_lookups_among(_sample(_LOOKUP_SAMPLE, path)) == Counter({(path, "handler"): 7})
 
 
 def test_the_lookup_check_counts_each_service_and_hook_the_bot_declares():
