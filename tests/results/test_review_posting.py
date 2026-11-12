@@ -1776,3 +1776,37 @@ async def test_a_standings_picture_that_fails_posts_the_standings_as_text_and_sa
     assert texts and all("Round 3" in text for text in texts)
     line = _fault_line(league)
     assert _says_why(line, "standings"), line
+
+
+async def test_a_picture_fallback_line_names_the_amendment_while_the_season_is_pending_completion(
+    tmp_path,
+):
+    """Season 1 is pending completion, where the two sync commands are refused (results spec
+    :587), and round 3's results and standings are posted again with both pictures failing. The
+    queue runs to the end and the log channel gains one line for each picture, each telling a
+    manager to fix the template and amend the round with `/results rounds amend`, and neither
+    naming a sync command (results spec :589)."""
+    league = await _league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute("UPDATE seasons SET stage = 'PENDING_COMPLETION' WHERE id = ?",
+                         (SEASON_ID,))
+        await db.commit()
+    league.bot.module_service.is_images_enabled = AsyncMock(return_value=True)
+    with patch(
+        "leaguebot.image.services.image_results_post.try_post",
+        new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
+    ), patch(
+        "leaguebot.image.services.image_standings_post.try_post",
+        new=AsyncMock(side_effect=OSError(PICTURE_FILE_FAULT)),
+    ):
+        await _ask(league)
+        await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    lines = [line for line in league.bot.log_channel.sent if "posted as text" in line]
+    assert len(lines) == 2, league.bot.log_channel.sent
+    for picture in ("results", "standings"):
+        [line] = [line for line in lines if f"{picture} picture" in line]
+        assert (f"to put it right: fix the {picture} template, then amend the round with "
+                "`/results rounds amend`") in line, line
+        assert "sync" not in line, line

@@ -281,6 +281,15 @@ async def plan_posts(
     return planned
 
 
+def _put_right(picture: str, remedy: str) -> str:
+    """What puts a *picture* that went out as text right, by the job's own *remedy*: the sync
+    command while the season is being raced, the round's amendment once it is pending
+    completion and the sync commands are refused (results spec :587, :589)."""
+    if remedy == _AMEND:
+        return f"fix the {picture} template, then amend the round with `{_AMEND}`"
+    return f"fix the {picture} template, then run {remedy}"
+
+
 def _standings_job(
     round_id: int, round_number: int, label: str, pending: bool, *, fresh: bool = False,
     step: str = POST_STANDINGS,
@@ -722,7 +731,7 @@ async def _post_session_results(ctx: StepContext) -> StepResult:
     lines = () if posted.fault is None else (picture_fallback_line(
         ctx.named, ctx.what, picture="results", division=rnd["division_name"],
         round_number=rnd["round_number"], fault=posted.fault,
-        put_right=f"fix the results template, then run {_RESULTS_SYNC}",
+        put_right=_put_right("results", payload["remedy"]),
     ),)
     return StepResult(result=result, lines=lines, then=_deletes(channel_id, posted.old, what))
 
@@ -823,7 +832,7 @@ async def _post_standings(ctx: StepContext, *, recompute: bool = False) -> StepR
     lines = () if fault is None else (picture_fallback_line(
         ctx.named, ctx.what, picture="standings", division=rnd["division_name"],
         round_number=rnd["round_number"], fault=fault,
-        put_right=f"fix the standings template, then run {_STANDINGS_SYNC}",
+        put_right=_put_right("standings", payload["remedy"]),
     ),)
     return StepResult(result=result, lines=lines, then=tuple(then))
 
