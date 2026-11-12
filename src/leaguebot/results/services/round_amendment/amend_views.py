@@ -14,6 +14,7 @@ import discord
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.server_config import ServerConfig
 from leaguebot.core.services.queue.change_queue import ChangeQueue
+from leaguebot.core.services.seasons import season_service
 from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.league_server import LeagueView
 from leaguebot.core.utils.log_lines import refuse
@@ -85,13 +86,16 @@ class AmendCancelView(LeagueView):
         async with get_connection(self._db_path) as db:
             row = await (
                 await db.execute(
-                    "SELECT rac.round_id, rac.channel_id, r.division_id "
-                    "FROM round_amend_channels rac JOIN rounds r ON r.id = rac.round_id "
-                    "WHERE rac.id = ?",
+                    "SELECT round_id, channel_id FROM round_amend_channels WHERE id = ?",
                     (self.amend_id,),
                 )
             ).fetchone()
-        if row is None:
+            facts = (
+                await season_service.round_facts_on(db, int(row["round_id"]))
+                if row is not None
+                else None
+            )
+        if row is None or facts is None:
             await refuse(
                 interaction,
                 "ℹ️ Too late to cancel — the amendment is already being "
@@ -104,7 +108,7 @@ class AmendCancelView(LeagueView):
             {
                 "amend_id": self.amend_id,
                 "round_id": int(row["round_id"]),
-                "division_id": int(row["division_id"]),
+                "division_id": facts.division_id,
                 "channel_id": int(row["channel_id"]),
             },
             interaction=interaction,
