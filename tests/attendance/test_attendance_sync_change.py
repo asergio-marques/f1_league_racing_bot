@@ -17,7 +17,8 @@ Each test runs the command as a manager types it, on the bot the entry point bui
 real queue, attendance's real share of a round's review and a real placement service, "now"
 pinned. The league: Division 1 of season 1, ongoing, its full-time driver (profile 101, a test
 driver, so no role is touched) seated in Alpha; each finalised round has the driver as accepted
-and not raced, so the recalculation gives them the no-show penalty; auto-sack is set at 3 points.
+and not raced, so the recalculation gives them the no-show penalty; auto-sack is set at 3 points
+and auto-reserve off, and the division has a Reserve team, unless a test says otherwise.
 """
 from __future__ import annotations
 
@@ -47,6 +48,7 @@ from tests.support.change_queue import (
     stopped_job,
     text_channel,
     tier_member,
+    updated_reply,
 )
 from tests.support.season_league import set_module_flag
 from tests.support.settings_league import unruled
@@ -85,6 +87,10 @@ class _League:
         """What the division's attendance channel was sent: the sheet."""
         return list(self.channels[ATTENDANCE_CHANNEL].sent)
 
+    def log_lines(self) -> list[str]:
+        """Every line the log channel was sent."""
+        return [unruled(str(line)) for line in self.bot.log_channel.sent]
+
     def sync_lines(self) -> list[str]:
         """Every line of the log channel's that records a sync."""
         return [unruled(str(line)) for line in self.bot.log_channel.sent
@@ -92,10 +98,13 @@ class _League:
 
 
 async def _league(tmp_path, *, rounds: dict[int, str] | None = None,
-                  no_show_penalty: int = 5) -> _League:
+                  no_show_penalty: int = 5, autosack: int | None = 3,
+                  autoreserve: int | None = None, reserve: bool = True) -> _League:
     """The league of the module docstring. *rounds* gives each round of Division 1 by number
     (its id the same) and its status, round 1 final where none is given; the driver accepted each
-    finalised round and did not race it. The no-show penalty is *no_show_penalty*."""
+    finalised round and did not race it. The no-show penalty is *no_show_penalty*, the auto-sack
+    and auto-reserve thresholds *autosack* and *autoreserve*; without *reserve* the division has
+    no Reserve team."""
     rounds = rounds or {1: "FINAL"}
     db_path = os.path.join(str(tmp_path), "attendance_sync.db")
     await run_migrations(db_path)
@@ -103,8 +112,9 @@ async def _league(tmp_path, *, rounds: dict[int, str] | None = None,
     await set_module_flag(db_path, "attendance", True)
     async with get_connection(db_path) as db:
         await db.execute(
-            "UPDATE attendance_config SET autosack_threshold = 3, no_show_penalty = ?",
-            (no_show_penalty,),
+            "UPDATE attendance_config SET autosack_threshold = ?, autoreserve_threshold = ?, "
+            "no_show_penalty = ?",
+            (autosack, autoreserve, no_show_penalty),
         )
         await db.execute(
             "INSERT INTO seasons (id, season_number, start_date, status, stage) "
@@ -122,11 +132,12 @@ async def _league(tmp_path, *, rounds: dict[int, str] | None = None,
                 "scheduled_at, status) VALUES (?, ?, ?, 'NORMAL', 'Silverstone', ?, ?)",
                 (number, DIVISION_ID, number, f"2026-09-{number:02d}T18:00:00+00:00", status),
             )
-        for team_id, name, seats, reserve in ((ALPHA, "Alpha", 2, 0), (RESERVE, "Reserve", 6, 1)):
+        teams = [(ALPHA, "Alpha", 2, 0)] + ([(RESERVE, "Reserve", 6, 1)] if reserve else [])
+        for team_id, name, seats, is_reserve in teams:
             await db.execute(
                 "INSERT INTO team_instances (id, division_id, name, full_name, max_seats, "
                 "is_reserve) VALUES (?, ?, ?, ?, ?, ?)",
-                (team_id, DIVISION_ID, name, name, seats, reserve),
+                (team_id, DIVISION_ID, name, name, seats, is_reserve),
             )
         await db.execute(
             "INSERT INTO driver_profiles (id, discord_user_id, current_state, is_test_driver, "
@@ -247,20 +258,22 @@ async def _attendance(db_path: str, round_id: int) -> dict[str, Any]:
 
 @pytest.mark.xfail(strict=True, reason=NOT_A_CHANGE)
 @pytest.mark.parametrize(
-    "no_show_penalty,applied",
-    [(5, 1), (0, 0)],
+    "no_show_penalty,applied,told",
+    [(5, 1, ["Sanctions applied:", "• <@5101> (Full Timer) — autosack"]),
+     (0, 0, ["No sanction was owed."])],
     ids=["a-sanction-owed", "nothing-owed"],
 )
 async def test_a_sync_is_one_change_acknowledged_at_once_and_logged_once_done(
-    tmp_path, no_show_penalty, applied
+    tmp_path, no_show_penalty, applied, told
 ):
     """Round 1 of Division 1 is final; its driver accepted and did not race, with a no-show
     penalty of *no_show_penalty* against an auto-sack of 3. Manager 77 runs `/attendance sync`
     from round 1. One change is asked of the queue and the manager is answered with the queue's
     acknowledgement; nothing is written until the queue runs it: the driver is still seated and
     the round not recalculated. The queue is run: it finishes, the driver is sacked only where
-    owed, and the log channel's one line for the sync is its Success line, naming the division,
-    the round it ran from and the number of sanctions applied."""
+    owed, the acknowledgement is updated with the reply the command always gave (the sanction
+    applied, or that none was owed), and the log channel's one line for the sync is its Success
+    line, naming the division, the round it ran from and the number of sanctions applied."""
     league = await _league(tmp_path, no_show_penalty=no_show_penalty)
 
     interaction = await _sync(league)
@@ -274,6 +287,11 @@ async def test_a_sync_is_one_change_acknowledged_at_once_and_logged_once_done(
 
     assert await stopped_job(league.db_path) is None
     assert await _seated(league.db_path) == ([] if applied else [DRIVER_PROFILE])
+    reply = updated_reply(interaction)
+    assert "Attendance of **Division 1** recalculated from round 1 on." in reply
+    for words in told:
+        assert words in reply
+    assert "Still not applied" not in reply
     [line] = league.sync_lines()
     assert "| /attendance sync | Success" in line
     assert "division: Division 1" in line
@@ -356,3 +374,103 @@ async def test_a_second_sync_announces_nothing_already_announced(tmp_path):
     first, second = league.sync_lines()
     assert "sanctions applied: 1" in first
     assert "sanctions applied: 0" in second
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_A_CHANGE)
+async def test_a_sanction_the_sync_cannot_apply_is_named_and_the_sync_still_finishes(tmp_path):
+    """Round 1 is final; Division 1 has no Reserve team, and its driver, given the no-show penalty
+    of 5 against an auto-reserve of 3 with auto-sack off, is owed an auto-reserve that cannot be
+    applied. Manager 77 runs `/attendance sync` from round 1 and the queue is run. The queue does
+    not stop and the round's recalculation is saved, the driver staying in Alpha. The updated
+    acknowledgement lists the auto-reserve as still not applied, with its reason. The sync's one
+    line in the log channel reads Incomplete and names the driver, the sanction and the reason,
+    ending with the `/attendance sync` command that finishes the job; no other entry repeats
+    it."""
+    league = await _league(tmp_path, autosack=None, autoreserve=3, reserve=False)
+
+    interaction = await _sync(league)
+    await run_queue(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    assert await _attendance(league.db_path, 1) == {"attended": 0, "points_awarded": 5}
+    assert await _seated(league.db_path) == [DRIVER_PROFILE]
+    failure = "<@5101> (Full Timer) — autoreserve: the division has no Reserve team"
+    reply = updated_reply(interaction)
+    assert "Still not applied" in reply
+    assert f"• {failure}" in reply
+    [line] = league.sync_lines()
+    assert "| /attendance sync | Incomplete" in line
+    assert failure in line
+    assert line.rstrip().endswith("`/attendance sync division:Division 1 round:1`.")
+    assert [each for each in league.log_lines() if "no Reserve team" in each] == [line]
+    assert league.cards() == []
+
+
+async def _amend_round_1(league: _League) -> str:
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO round_amend_channels (round_id, channel_id, session_types, created_at) "
+            "VALUES (1, 8200, '[\"FEATURE_RACE\"]', '2026-10-01T11:00:00+00:00')",
+        )
+        await db.commit()
+    return "is being amended"
+
+
+async def _move_to_pending_completion(league: _League) -> str:
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "UPDATE seasons SET stage = 'PENDING_COMPLETION' WHERE id = ?", (SEASON_ID,)
+        )
+        await db.commit()
+    return "only while the season is ongoing"
+
+
+async def _lose_the_attendance_channel(league: _League) -> str:
+    league.channels.pop(ATTENDANCE_CHANNEL)
+    return f"the attendance channel (id {ATTENDANCE_CHANNEL}) is not in the server"
+
+
+#: What can change between a sync being asked and the queue taking it up, each changing it and
+#: returning the words its refusal carries.
+CHANGED_SINCE = {
+    "amended": _amend_round_1,
+    "no-longer-ongoing": _move_to_pending_completion,
+    "channel-gone": _lose_the_attendance_channel,
+}
+
+
+@pytest.mark.xfail(strict=True, reason=NOT_A_CHANGE)
+@pytest.mark.parametrize("changed", list(CHANGED_SINCE), ids=list(CHANGED_SINCE))
+async def test_a_sync_is_refused_as_it_starts_where_the_league_changed_since_it_was_asked(
+    tmp_path, changed
+):
+    """Round 1 is final and its driver owes an auto-sack; the bot can see and post in both of
+    Division 1's channels. Manager 77 runs `/attendance sync` from round 1 and it is asked of the
+    queue. Before the queue takes it up, the league changes (*changed*): an amendment of round 1
+    is opened, the season moves on to Pending completion, or the attendance channel is deleted.
+    The queue is run: the sync is refused, judged again as it starts, and ends REFUSED with
+    nothing written: the driver is still seated, round 1 not recalculated, no card or sheet
+    posted. The manager's reply and the one refusal line in the log channel give the reason.
+    The queue does not stop."""
+    league = await _league(tmp_path)
+    # The bot's own member in the server, so that its channels are judged.
+    league.guild.get_member = MagicMock(return_value=MagicMock())
+
+    interaction = await _sync(league)
+    assert len(await _sync_changes(league.db_path)) == 1
+    reason = await CHANGED_SINCE[changed](league)
+    await run_queue(league.bot)
+
+    [change] = await _sync_changes(league.db_path)
+    assert change["state"] == "REFUSED"
+    assert await stopped_job(league.db_path) is None
+    assert await _seated(league.db_path) == [DRIVER_PROFILE]
+    assert await _attendance(league.db_path, 1) == {"attended": None, "points_awarded": None}
+    assert league.cards() == []
+    assert league.sheets() == []
+    assert reason in updated_reply(interaction)
+    refused = [line for line in league.log_lines() if "`/attendance sync` refused" in line]
+    assert len(refused) == 1
+    assert refused[0].startswith("⛔ `/attendance sync` refused for Manager (<@77>) — ")
+    assert reason in refused[0]
+    assert league.sync_lines() == []
