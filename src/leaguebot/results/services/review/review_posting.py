@@ -127,7 +127,7 @@ def delete_message_step(
 ) -> Step:
     """The shared deletion of one old message, under *name* and with *record* written in the save
     that marks it done: the one delete a change of results plans for a message it replaces, so
-    that none copies it (a payload of ``channel_id``, ``message_id`` and ``what``)."""
+    that none copies it (a payload of ``channel_id``, ``message_id``, ``what`` and ``kind``)."""
     return Step(
         name, StepKind.DELETE, _delete_message, describe=_describe_delete, record=record,
     )
@@ -626,7 +626,9 @@ def _stranded(error: Exception, channel_id: int) -> dict[str, Any] | None:
 def _deletes(channel_id: int, ids: list[int], what: str) -> tuple[PlannedStep, ...]:
     """One `delete_message` job for each of *ids*, in *channel_id*."""
     return tuple(
-        PlannedStep(DELETE_MESSAGE, {"channel_id": channel_id, "message_id": int(i), "what": what})
+        PlannedStep(DELETE_MESSAGE, {
+            "channel_id": channel_id, "message_id": int(i), "what": what, "kind": "standing",
+        })
         for i in ids
     )
 
@@ -948,8 +950,8 @@ async def _describe_delete(ctx: StepContext) -> str:
 
 
 #: Core's delete for each kind of message a `delete_message` job takes down, named by the job's
-#: ``kind``: a table is a standing post (the default), a prompt or a member's message in a
-#: submission or amendment channel is the bot-owned channel's.
+#: ``kind``, which every payload carries: a table is a standing post, a prompt or a member's
+#: message in a submission or amendment channel is the bot-owned channel's.
 _DELETERS = {"standing": delete_standing, "owned": delete_in_owned_channel}
 
 
@@ -964,7 +966,7 @@ async def _delete_message(ctx: StepContext) -> StepResult:
     failures: list[discord.HTTPException] = []
     left = await _delete_posting(
         channel, message_id, [message_id], label=payload.get("what", "message"),
-        delete=_DELETERS[payload.get("kind", "standing")], failures=failures,
+        delete=_DELETERS[payload["kind"]], failures=failures,
     )
     if left:
         raise StepFailedOnDiscord(

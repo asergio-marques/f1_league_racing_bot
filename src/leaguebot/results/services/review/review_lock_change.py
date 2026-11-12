@@ -205,7 +205,7 @@ def lock_clear_change() -> ChangeType:
         return (
             PlannedStep(DELETE_WARNING, {
                 "channel_id": int(payload["channel_id"]), "message_id": int(payload["message_id"]),
-                "what": "the review channel's lock warning",
+                "what": "the review channel's lock warning", "kind": "owned",
             }),
         )
 

@@ -688,6 +688,7 @@ def submission_all_cancelled_change(
         deletions = tuple(
             PlannedStep(DELETE_MESSAGE, {
                 "channel_id": int(channel), "message_id": int(message_id), "what": what,
+                "kind": "standing",
             })
             for channel, ids, what in (
                 (standings_channel, standings_posts, "standings post"),

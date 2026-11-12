@@ -146,12 +146,12 @@ def _plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
     if payload.get("prompt_message_id") is not None:
         steps.append(PlannedStep(DELETE_PROMPT, {
             "channel_id": channel_id, "message_id": int(payload["prompt_message_id"]),
-            "what": "penalty review prompt",
+            "what": "penalty review prompt", "kind": "owned",
         }))
     if payload.get("approval_message_id") is not None:
         steps.append(PlannedStep(DELETE_APPROVAL, {
             "channel_id": channel_id, "message_id": int(payload["approval_message_id"]),
-            "what": "approval message",
+            "what": "approval message", "kind": "owned",
         }))
     steps.append(PlannedStep(POST_ANNOUNCEMENT, {
         "channel_id": channel_id, "text": ANNOUNCEMENT, "round_id": int(payload["round_id"]),

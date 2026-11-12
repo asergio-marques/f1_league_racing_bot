@@ -163,7 +163,7 @@ async def _stage(ctx: StepContext) -> StepResult:
     if approval is not None:
         then.append(PlannedStep(WITHDRAW_APPROVAL, {
             "round_id": state.round_id, "channel_id": state.submission_channel_id,
-            "message_id": approval, "what": "approval message",
+            "message_id": approval, "what": "approval message", "kind": "owned",
         }))
     then.append(PlannedStep(REDRAW, {}))
     log = ctx.payload["log"]
