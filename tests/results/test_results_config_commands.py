@@ -42,7 +42,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.results.cogs.results_cog import ResultsCog, _ConfirmRemoveConfigView
+from leaguebot.results.cogs.config_commands import _ConfirmRemoveConfigView
+from leaguebot.results.cogs.results_cog import ResultsCog
 from tests.support import saves
 from tests.support.change_queue import MEMBER_ID, change_rows, member, run_queue
 from tests.support.settings_league import interaction, last_said, log_lines, said, settings_league

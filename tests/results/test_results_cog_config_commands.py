@@ -22,7 +22,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.results.cogs.results_cog import ResultsCog, _ConfirmRemoveConfigView
+from leaguebot.results.cogs.config_commands import _ConfirmRemoveConfigView
+from leaguebot.results.cogs.results_cog import ResultsCog
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.points import points_config_service, season_points_service
 from tests.support import saves

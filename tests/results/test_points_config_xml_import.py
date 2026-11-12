@@ -51,7 +51,8 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.results.cogs.results_cog import ResultsCog, XmlImportModal
+from leaguebot.results.cogs.config_commands import XmlImportModal
+from leaguebot.results.cogs.results_cog import ResultsCog
 from tests.support import saves
 from tests.support.change_queue import MEMBER_ID, change_rows, run_queue
 from tests.support.settings_league import (

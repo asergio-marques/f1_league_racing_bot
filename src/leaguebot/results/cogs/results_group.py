@@ -6,7 +6,12 @@ refusal are the words two or more of the subgroups use.
 """
 from __future__ import annotations
 
+from abc import abstractmethod
+
+import discord
 from discord import app_commands
+
+from leaguebot.core.utils.league_bot import LeagueBot
 
 RESULTS_GROUP = app_commands.Group(name="results", description="Results & Standings commands")
 
@@ -24,3 +29,22 @@ RACE_SESSION_CHOICES = [
 
 #: A form's refusal when the results module has been switched off since it was shown.
 MODULE_OFF = "\u274c The Results & Standings module is not enabled on this server."
+
+
+class ResultsSubgroup:
+    """What a `/results` subgroup's class takes from the `ResultsCog` it is composed into.
+
+    A subgroup's commands read the bot and call the cog's gates, which `ResultsCog` holds, so
+    the class declares them here for the type checker. Stubs, never the gates themselves: a
+    `Protocol` cannot be a base beside `commands.Cog`, whose metaclass it conflicts with, and
+    typing `self` in every command would put a parameter annotation on each. `ResultsCog`
+    comes first in the order methods are found in, so what it defines is what runs.
+    """
+
+    bot: LeagueBot
+
+    @abstractmethod
+    async def _module_gate(
+        self, interaction: discord.Interaction, *, record: bool = True
+    ) -> bool:
+        """Whether the results module is on; where it is not, refuse and return False."""
