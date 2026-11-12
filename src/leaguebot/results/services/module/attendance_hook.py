@@ -6,9 +6,11 @@ imports nothing of attendance: the change types call these methods and attendanc
 `bot.attendance_after_review` and declared on `LeagueBot`.
 
 **Each method checks attendance's switch itself and does nothing while it is off**
-(architecture.md, "How modules and core fit together"), save three: `enabled` reports the switch,
-`sync_hint` reads none, and `change_sanction_roles` acts whatever it says, a sanction already saved
-being owed its roles (the attendance specification's "Sanctions that do not apply"). The writers
+(architecture.md, "How modules and core fit together"), save these: `enabled` reports the switch,
+`sync_hint` reads none, `change_sanction_roles` acts whatever it says, a sanction already saved
+being owed its roles (the attendance specification's "Sanctions that do not apply"), and so do the
+reads that write nothing, which have no write to withhold (`pardons_of_on`, `attendance_row_of`,
+`latest_scored_round`, `recorded_pardons`). The writers
 read the switch on the connection they are handed. **The writers write on the save they are handed
 and commit nothing**, so the round's attendance lands with the penalties and points or not at all.
 **The posting methods raise** `StepFailedOnDiscord` where they could not post, for the queue to
@@ -53,6 +55,21 @@ class AttendanceAfterReview(Protocol):
         self, db: aiosqlite.Connection, round_id: int, pardons: Any, now: datetime
     ) -> None:
         """Leave the round carrying exactly *pardons*: an amendment's."""
+
+    async def pardons_of_on(self, db: aiosqlite.Connection, round_id: int) -> Any:
+        """The round's pardons as they stand, on the connection *db* the caller reads and writes
+        on: an amendment's snapshot keeps what is given back, **as it is**, whatever it holds
+        (attendance's own value), and hands it to `put_back_pardons_on` if the amendment is
+        undone. A read writing nothing, so it acts whatever attendance's switch says."""
+
+    async def put_back_pardons_on(
+        self, db: aiosqlite.Connection, round_id: int, saved: Any
+    ) -> None:
+        """Leave the round carrying exactly the pardons *saved*, which `pardons_of_on` gave: the
+        revert of an abandoned amendment's. Written on *db*, the caller's connection, and
+        committed by the caller; **only while attendance is on**, as `rewrite_pardons_on`
+        writes, so the pardons of a league that turned attendance off meanwhile stay as they
+        are."""
 
     async def recalculate_on(
         self, db: aiosqlite.Connection, round_id: int, division_id: int

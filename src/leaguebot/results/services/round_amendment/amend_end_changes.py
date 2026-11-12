@@ -80,6 +80,7 @@ from leaguebot.core.services.queue.change_types import (
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.log_lines import abandoned_line, name_of_member
 from leaguebot.results.models.recovery_failed import RecoveryFailed
+from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 from leaguebot.results.services.round_amendment import amendment_writes
 from leaguebot.results.services.round_amendment.amend_changes import COMMAND, LAPSE_KIND, WAIT, lapse_key
 from leaguebot.results.services.round_amendment.amend_turn_change import (
@@ -143,9 +144,12 @@ def _names_step() -> Step:
     return dataclasses.replace(shared, run=run)
 
 
-def amend_cancel_change(*, now: Callable[[], datetime]) -> ChangeType:
+def amend_cancel_change(
+    *, attendance: AttendanceAfterReview, now: Callable[[], datetime]
+) -> ChangeType:
     """The `results.amend.cancel` change type, for the builder to register.
 
+    *attendance* is attendance's share of a round's review, which puts the round's pardons back, and
     *now* is the queue's clock, read when the amendment's row is closed. The payload is
     ``amend_id``, ``round_id``, ``division_id`` and ``channel_id`` of the amendment.
     """
@@ -185,7 +189,7 @@ def amend_cancel_change(*, now: Callable[[], datetime]) -> ChangeType:
         ).fetchone()
         assert row is not None  # the check found the amendment standing
         reverted = await amendment_writes.revert_abandoned_amendment_on(
-            db, round_id, display_names(ctx, division_id)
+            db, round_id, display_names(ctx, division_id), attendance=attendance
         )
         await db.execute("DELETE FROM amend_drafts WHERE amend_id = ?", (amend_id,))
         await db.execute(
@@ -374,9 +378,12 @@ def _sessions_of(row: Any) -> list[str]:
         return []
 
 
-def amend_lapse_change(*, now: Callable[[], datetime]) -> ChangeType:
+def amend_lapse_change(
+    *, attendance: AttendanceAfterReview, now: Callable[[], datetime]
+) -> ChangeType:
     """The `results.amend.lapse` change type, for the builder to register.
 
+    *attendance* is attendance's share of a round's review, which puts the round's pardons back, and
     *now* is the queue's clock, read when the amendment's row is closed. The payload is
     ``amend_id``, ``round_id``, ``division_id``, ``channel_id``, ``started_by`` (the member who
     opened the amendment), ``cause`` and, for a timer, ``armed_for``.
@@ -474,7 +481,7 @@ def amend_lapse_change(*, now: Callable[[], datetime]) -> ChangeType:
         if cause == SWEEP and await amendment_writes._claim_amendment_on(db, round_id) is None:
             return StepResult(result={"held": True})
         reverted = await amendment_writes.revert_abandoned_amendment_on(
-            db, round_id, display_names(ctx, division_id)
+            db, round_id, display_names(ctx, division_id), attendance=attendance
         )
         await db.execute("DELETE FROM amend_drafts WHERE amend_id = ?", (amend_id,))
         await db.execute(

@@ -306,7 +306,7 @@ def amendment_wait_text() -> str:
 
 async def snapshot_before_amendment_on(
     db: aiosqlite.Connection, round_id: int, session_types: list[SessionType],
-    *, now: datetime,
+    *, now: datetime, attendance: AttendanceAfterReview,
 ) -> None:
     """Record the round as it stands, so an abandoned amendment can be undone, on the connection
     handed and committing nothing: stage one writes it in its own save (#439).
@@ -315,7 +315,9 @@ async def snapshot_before_amendment_on(
     driver rows, and its verdict records, and the round's attendance pardons — which is the
     whole of what the amendment changes that a revert cannot recompute. The standings and the
     points follow from the driver rows, so restoring those and cascading again reproduces them.
-    The amendment's half-hour runs from *now*, the queue's clock, handed in by the caller.
+    The amendment's half-hour runs from *now*, the queue's clock, handed in by the caller. The
+    pardons are asked of *attendance*, which keeps them as its own value that the snapshot holds
+    as it is.
     """
     from leaguebot.results.services.review.verdict_records import VERDICT_TABLES, select_verdicts
 
@@ -365,12 +367,7 @@ async def snapshot_before_amendment_on(
     # **The pardons, whole** (#345). The appeal stage rewrites them before it releases the
     # snapshot, so a failure between the two — or a crash — would otherwise revert the
     # classification and the verdicts and leave the amendment's pardons standing on them.
-    cursor = await db.execute(
-        "SELECT * FROM attendance_pardons WHERE attendance_id IN "
-        "(SELECT id FROM driver_round_attendance WHERE round_id = ?) ORDER BY id",
-        (round_id,),
-    )
-    pardons = [dict(row) for row in await cursor.fetchall()]
+    pardons = await attendance.pardons_of_on(db, round_id)
 
     expires = (now + timedelta(seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS)).isoformat()
     await db.execute(
@@ -380,13 +377,16 @@ async def snapshot_before_amendment_on(
     )
 
 
-async def _restore_from_snapshot_on(db: aiosqlite.Connection, round_id: int) -> bool:
+async def _restore_from_snapshot_on(
+    db: aiosqlite.Connection, round_id: int, *, attendance: AttendanceAfterReview
+) -> bool:
     """Put a round's driver rows, verdicts, headers, former-driver flags and pardons back from its
     amendment's snapshot and clear the snapshot, on the connection handed and committing nothing.
 
     The restore itself, which `revert_abandoned_amendment_on` runs for an amendment's lapse and
     cancel in their saves. Returns False, writing nothing, where there is no snapshot to restore
-    from. The standings are not touched here: the caller cascades them.
+    from. The standings are not touched here: the caller cascades them. The pardons are put back
+    by *attendance*, which does so only while attendance is on.
     """
     cursor = await db.execute(
         "SELECT pre_amendment_state FROM round_amend_channels WHERE round_id = ?",
@@ -448,18 +448,7 @@ async def _restore_from_snapshot_on(db: aiosqlite.Connection, round_id: int) -> 
         db, round_id, also_consider=snapshot.get("profiles_before", [])
     )
     if "pardons" in snapshot:
-        await db.execute(
-            "DELETE FROM attendance_pardons WHERE attendance_id IN "
-            "(SELECT id FROM driver_round_attendance WHERE round_id = ?)",
-            (round_id,),
-        )
-        for pardon in snapshot["pardons"]:
-            columns = ", ".join(pardon)
-            placeholders = ", ".join("?" for _ in pardon)
-            await db.execute(
-                f"INSERT INTO attendance_pardons ({columns}) VALUES ({placeholders})",  # noqa: S608
-                list(pardon.values()),
-            )
+        await attendance.put_back_pardons_on(db, round_id, snapshot["pardons"])
     await db.execute(
         "UPDATE round_amend_channels SET pre_amendment_state = NULL, expires_at = NULL "
         "WHERE round_id = ?",
@@ -469,7 +458,8 @@ async def _restore_from_snapshot_on(db: aiosqlite.Connection, round_id: int) -> 
 
 
 async def revert_abandoned_amendment_on(
-    db: aiosqlite.Connection, round_id: int, display_names: Mapping[int, str] | None = None
+    db: aiosqlite.Connection, round_id: int, display_names: Mapping[int, str] | None = None,
+    *, attendance: AttendanceAfterReview,
 ) -> bool:
     """Put a round back as it was before an amendment nobody approved, on the connection handed
     and committing nothing: an amendment's lapse and its cancel run it in their `revert` save.
@@ -482,7 +472,8 @@ async def revert_abandoned_amendment_on(
     in as *display_names*; none handed, the tie is settled by user id.
 
     **Nothing is reposted, because nothing was posted** (#345), and the round's pardons come back
-    as they were. An amendment publishes nothing until its last stage is approved, and approving
+    as they were, put back by *attendance* **only while attendance is on**: a league that turned
+    attendance off meanwhile keeps the pardons it has. An amendment publishes nothing until its last stage is approved, and approving
     that stage releases the snapshot before the rebuild begins, so wherever a snapshot is still
     here to revert from, the channels are still showing the round as it was. Reposting would only
     move the round to the bottom of each channel, out of order.
@@ -490,7 +481,7 @@ async def revert_abandoned_amendment_on(
     Returns True where the round was put back, and False where there was no snapshot to put it
     back from: an amendment abandoned before stage one wrote has nothing to undo.
     """
-    if not await _restore_from_snapshot_on(db, round_id):
+    if not await _restore_from_snapshot_on(db, round_id, attendance=attendance):
         return False
     from leaguebot.results.services.standings import standings_service
 
@@ -868,6 +859,7 @@ async def amend_round_results_on(
     display_names: Mapping[int, str] | None = None,
     *,
     now: datetime,
+    attendance: AttendanceAfterReview,
 ) -> None:
     """Supersede the chosen sessions' results with their corrected classifications, on the
     connection handed and committing nothing.
@@ -878,7 +870,8 @@ async def amend_round_results_on(
     holding some sessions corrected and others not. It posts nothing: the amendment's lane puts
     up the next stage. *display_names* are the standings names a full tie is settled by, resolved
     by the caller before its save; the save waits on nothing but its own connection (#439).
-    *now* is the clock the amendment's half-hour runs from.
+    *now* is the clock the amendment's half-hour runs from, and *attendance* keeps the round's
+    pardons in the snapshot.
 
     Raises :class:`AmendmentWouldOrphanVerdictError` where a driver carrying a verdict is missing
     from their session's corrected classification, and ``SeasonImmutableError`` for an archived
@@ -891,7 +884,7 @@ async def amend_round_results_on(
     # amendment abandoned before its last stage is approved would otherwise leave the round
     # scored from the corrected classification and posted from the old one, for ever.
     await snapshot_before_amendment_on(
-        db, round_id, [s.session_type for s in sessions], now=now
+        db, round_id, [s.session_type for s in sessions], now=now, attendance=attendance
     )
     written: list[tuple[int, AmendedSession]] = []
     # Immutability guard: reject writes to archived seasons

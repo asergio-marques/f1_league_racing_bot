@@ -420,8 +420,12 @@ def register_change_types(
             queue_of=lambda: bot.change_queue,
         )
     )
-    bot.change_queue.register(amend_cancel_change(now=lambda: bot.change_queue.now()))
-    bot.change_queue.register(amend_lapse_change(now=lambda: bot.change_queue.now()))
+    bot.change_queue.register(
+        amend_cancel_change(attendance=attendance, now=lambda: bot.change_queue.now())
+    )
+    bot.change_queue.register(
+        amend_lapse_change(attendance=attendance, now=lambda: bot.change_queue.now())
+    )
 
     # The timer asks the queue when it fires, by the helper's getter, as above.
     bot.scheduler_service.register_timer(
@@ -444,7 +448,7 @@ def register_change_types(
     bot.change_queue.register(
         amend_stage_one_change(
             queue=bot.change_queue, server_config=bot.config_service.get_server_config,
-            teams=bot.team_service, router=bot.output_router,
+            teams=bot.team_service, router=bot.output_router, attendance=attendance,
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
         )
     )

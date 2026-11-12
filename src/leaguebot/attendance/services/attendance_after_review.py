@@ -142,6 +142,16 @@ class AttendanceAfterReview:
             return
         await _att._rewrite_round_pardons_on(db, round_id, list(pardons), now)
 
+    async def pardons_of_on(self, db: aiosqlite.Connection, round_id: int) -> Any:
+        return await _att.pardons_of_on(db, round_id)
+
+    async def put_back_pardons_on(
+        self, db: aiosqlite.Connection, round_id: int, saved: Any
+    ) -> None:
+        if not await attendance_enabled_on(db):
+            return
+        await _att.put_back_pardons_on(db, round_id, saved)
+
     async def recalculate_on(
         self, db: aiosqlite.Connection, round_id: int, division_id: int
     ) -> None:

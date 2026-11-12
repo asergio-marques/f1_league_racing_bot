@@ -55,6 +55,7 @@ from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line
 from leaguebot.core.utils.member_names import member_named
 from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 from leaguebot.results.services.round_amendment import amendment_writes
 from leaguebot.results.services.submission import result_submission_service as submissions, paste_reading
 from leaguebot.results.services.round_amendment.amend_changes import (
@@ -571,11 +572,13 @@ def amend_stage_one_change(
     server_config: ServerConfig,
     teams: TeamService,
     router: OutputRouter,
+    attendance: AttendanceAfterReview,
     now: Callable[[], datetime],
     arm_once: Callable[[str, int | str, datetime], None],
 ) -> ChangeType:
     """The `results.amend.stage_one` change type, for the builder to register, on the league lane:
-    the amendment's pastes, all in, recorded.
+    the amendment's pastes, all in, recorded. *attendance* is attendance's share of a round's
+    review, which keeps the round's pardons in the snapshot.
 
     The last paste's turn hands it over in its own save. The payload is ``amend_id``,
     ``round_id``, ``division_id`` and ``channel_id``; the pastes are read from the amendment's
@@ -642,7 +645,7 @@ def amend_stage_one_change(
         try:
             await amendment_writes.amend_round_results_on(
                 db, round_id, division_id, sessions, int(row["started_by"]),
-                display_names(ctx, division_id), now=now(),
+                display_names(ctx, division_id), now=now(), attendance=attendance,
             )
         except amendment_writes.AmendmentWouldOrphanVerdictError as exc:
             await db.execute("ROLLBACK TO SAVEPOINT stage_one")

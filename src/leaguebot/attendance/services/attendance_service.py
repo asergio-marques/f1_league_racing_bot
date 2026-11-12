@@ -1262,6 +1262,37 @@ async def _rewrite_round_pardons_on(
         )
 
 
+async def pardons_of_on(db, round_id: int) -> list[dict[str, Any]]:
+    """The round's pardons whole, ``id`` and ``granted_at`` included, oldest first, on *db*.
+
+    What an amendment's snapshot keeps (`AttendanceAfterReview.pardons_of_on`): the value is
+    attendance's own, and `put_back_pardons_on` is the one that reads it back. Reads only.
+    """
+    cursor = await db.execute(
+        "SELECT * FROM attendance_pardons WHERE attendance_id IN "
+        "(SELECT id FROM driver_round_attendance WHERE round_id = ?) ORDER BY id",
+        (round_id,),
+    )
+    return [dict(row) for row in await cursor.fetchall()]
+
+
+async def put_back_pardons_on(db, round_id: int, saved: list[dict[str, Any]]) -> None:
+    """Leave the round carrying exactly the pardons *saved*, which `pardons_of_on` gave, ids and
+    times granted as they were, on *db*. Commits nothing: it is a step of the revert's save."""
+    await db.execute(
+        "DELETE FROM attendance_pardons WHERE attendance_id IN "
+        "(SELECT id FROM driver_round_attendance WHERE round_id = ?)",
+        (round_id,),
+    )
+    for pardon in saved:
+        columns = ", ".join(pardon)
+        placeholders = ", ".join("?" for _ in pardon)
+        await db.execute(
+            f"INSERT INTO attendance_pardons ({columns}) VALUES ({placeholders})",  # noqa: S608
+            list(pardon.values()),
+        )
+
+
 @posts_in_a_job
 async def post_attendance_sheet(
     bot: LeagueBot,

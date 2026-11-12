@@ -2031,7 +2031,6 @@ def _tables_written_by_another_module() -> Counter[tuple[str, str]]:
 
 
 KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] = {
-    ("results/services/round_amendment/amendment_writes.py", "_restore_from_snapshot_on"): (2, PASS["results"]),
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, PASS["signup"]),
@@ -2649,8 +2648,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/round_amendment/amend_views.py", "AmendCancelView.cancel_btn"): (1, PASS["results"]),
     ("results/services/round_amendment/amendment_stage_changes.py", "_plan_rebuild"): (3, PASS["results"]),
     ("results/services/round_amendment/amendment_stage_changes.py", "_round_names"): (3, PASS["results"]),
-    ("results/services/round_amendment/amendment_writes.py", "_restore_from_snapshot_on"):
-        (1, PASS["results"]),
     ("results/services/round_amendment/amendment_writes.py", "amend_round_results_on"):
         (3, PASS["results"]),
     ("results/services/round_amendment/amendment_writes.py", "closed_by_cancellation_on"):
@@ -2661,8 +2658,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
         (2, PASS["results"]),
     ("results/services/round_amendment/amendment_writes.py", "revert_abandoned_amendment_on"):
         (1, PASS["results"]),
-    ("results/services/round_amendment/amendment_writes.py", "snapshot_before_amendment_on"):
-        (2, PASS["results"]),
     ("results/services/round_amendment/amendment_writes.py", "sync_held_by_amendment"):
         (1, PASS["results"]),
     ("results/services/standings/standings_service.py", "_rounds_from"): (2, PASS["results"]),

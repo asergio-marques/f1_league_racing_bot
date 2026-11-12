@@ -47,11 +47,6 @@ from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 from tests.support.review_league import amend_stage_one, revert_amendment
 from tests.support.teams import seed_team_instances
 
-#: Why a test of the amendment's snapshot or revert fails until #284 hands it attendance's share.
-ATTENDANCE_NOT_HANDED = (
-    "#284: the amendment's snapshot and revert do not yet take attendance's share of the review"
-)
-
 SERVER_ID = 12908
 SEASON_ID = 1
 DIVISION_ID = 11
@@ -245,7 +240,6 @@ async def _header(db_path, session_type: str = "FEATURE_RACE") -> dict:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_the_amended_classification_is_written(tmp_path):
     """With no verdicts on the round, no penalty record is written either: the ordinary case keeps
     working, so the verdict fix cannot be read as a special path."""
@@ -257,7 +251,6 @@ async def test_the_amended_classification_is_written(tmp_path):
     assert await _verdict_rows(db_path, "penalty_records") == []
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_the_previous_classification_does_not_survive(tmp_path):
     """Nothing is superseded: the rows are deleted outright. Stated as the outcome, because
     a reader assuming the old rows were kept would build on a history that does not
@@ -269,7 +262,6 @@ async def test_the_previous_classification_does_not_survive(tmp_path):
     assert await _race_drivers(db_path) == [(103, 1)]
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_the_header_is_updated_in_place(tmp_path):
     """Not a new session row: the round still has one feature race, and it records who
     amended it and under which configuration."""
@@ -284,7 +276,6 @@ async def test_the_header_is_updated_in_place(tmp_path):
     assert header["status"] == "ACTIVE"
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_another_session_of_the_round_is_untouched(tmp_path):
     """Amending the race must leave the qualifying exactly as it was."""
     db_path = await _make_db(tmp_path, name="amend_scope")
@@ -297,7 +288,6 @@ async def test_another_session_of_the_round_is_untouched(tmp_path):
     assert (await _header(db_path, "FEATURE_QUALIFYING"))["config_name"] == "Old"
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_amending_qualifying_clears_only_qualifying_rows(tmp_path):
     """The two live in different tables, and each amendment clears only its own."""
     db_path = await _make_db(tmp_path, name="amend_quali")
@@ -316,7 +306,6 @@ async def test_amending_qualifying_clears_only_qualifying_rows(tmp_path):
     assert len(await _race_drivers(db_path)) == 2
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_a_row_without_a_position_takes_its_place_in_the_paste(tmp_path):
     """The paste is in finishing order, and a parser that left the position off must not
     put every driver in P0."""
@@ -331,7 +320,6 @@ async def test_a_row_without_a_position_takes_its_place_in_the_paste(tmp_path):
     assert await _race_drivers(db_path) == [(102, 1), (101, 2)]
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_a_parsed_row_object_is_read_like_a_dict(tmp_path):
     """The command hands over parser dataclasses, other callers hand over dicts, and both
     have to write the same row."""
@@ -354,7 +342,6 @@ async def test_a_parsed_row_object_is_read_like_a_dict(tmp_path):
     assert await _race_drivers(db_path) == [(103, 1)]
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_a_session_the_round_does_not_have_is_refused(tmp_path):
     """Updating a header that does not exist would silently match nothing and write driver
     rows with no session to belong to."""
@@ -366,7 +353,6 @@ async def test_a_session_the_round_does_not_have_is_refused(tmp_path):
     assert len(await _race_drivers(db_path)) == 2
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_an_archived_season_is_refused_before_anything_is_written(tmp_path):
     """A COMPLETED season is the league's published record."""
     db_path = await _make_db(tmp_path, name="amend_archived", season_status="COMPLETED")
@@ -382,7 +368,6 @@ async def test_an_archived_season_is_refused_before_anything_is_written(tmp_path
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_stage_one_settles_a_full_tie_by_name(tmp_path):
     """The standings stage one stores are ordered as the posting orders them (decided
     2026-09-15): recomputed by user id, a full tie would disagree with what is later drawn."""
@@ -406,7 +391,6 @@ async def _former(db_path, profile_id: int) -> int:
         return (await cursor.fetchone())[0]
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_stage_one_marks_nobody_a_former_driver(tmp_path):
     """Writing the corrected classification is not what settles the flag (#216).
 
@@ -432,7 +416,6 @@ async def _open_amendment_record(db_path) -> None:
         await db.commit()
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_reverting_leaves_the_flag_matching_the_restored_results(tmp_path):
     """A driver pasted in by mistake, the amendment then cancelled or lapsed (#345, #216).
 
@@ -450,7 +433,6 @@ async def test_reverting_leaves_the_flag_matching_the_restored_results(tmp_path)
     assert await _former(db_path, 33) == 0
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_reverting_restores_the_flag_of_a_driver_the_amendment_struck_out(tmp_path):
     """The round comes back, and with it the drivers it marked.
 
@@ -468,7 +450,6 @@ async def test_reverting_restores_the_flag_of_a_driver_the_amendment_struck_out(
     assert await _former(db_path, 31) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_another_session_of_the_same_round_marks_a_driver(tmp_path):
     """Every live session of the round counts, not only the amended one (#216).
 
@@ -499,7 +480,6 @@ async def test_another_session_of_the_same_round_marks_a_driver(tmp_path):
     assert await _former(db_path, 33) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_the_result_row_is_linked_to_the_drivers_profile(tmp_path):
     """The stable link a standings snapshot survives a Discord account change by."""
     db_path = await _make_db(tmp_path, name="amend_profile")
@@ -511,7 +491,6 @@ async def test_the_result_row_is_linked_to_the_drivers_profile(tmp_path):
         assert (await cursor.fetchone())[0] == 33
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_a_driver_with_no_profile_is_still_recorded(tmp_path):
     """An unregistered guest driver is ordinary in a league, and the result is theirs
     whether or not the bot knows them."""
@@ -526,7 +505,6 @@ async def test_a_driver_with_no_profile_is_still_recorded(tmp_path):
         assert tuple(await cursor.fetchone()) == (999, None)
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_a_lapped_driver_is_stored_as_laps_behind(tmp_path):
     db_path = await _make_db(tmp_path, name="amend_lapped")
 
@@ -540,7 +518,6 @@ async def test_a_lapped_driver_is_stored_as_laps_behind(tmp_path):
         assert tuple(await cursor.fetchone()) == (1, None)
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_a_gap_is_resolved_against_the_winners_time(tmp_path):
     """A delta is meaningless stored on its own; the base time is what penalties are later
     added to."""
@@ -559,7 +536,6 @@ async def test_a_gap_is_resolved_against_the_winners_time(tmp_path):
         assert [tuple(r) for r in await cursor.fetchall()] == [(101, 60000), (102, 65000)]
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_a_retirement_has_no_base_time(tmp_path):
     db_path = await _make_db(tmp_path, name="amend_dnf")
 
@@ -579,7 +555,6 @@ async def test_a_retirement_has_no_base_time(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_the_points_are_re_applied_from_the_configuration(tmp_path):
     """The parsed rows carry no points; without this the amended session scores nothing."""
     db_path = await _make_db(tmp_path, name="amend_points")
@@ -592,7 +567,6 @@ async def test_the_points_are_re_applied_from_the_configuration(tmp_path):
     assert args[3] == "Standard"
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_stage_one_publishes_nothing(tmp_path):
     """**It records; it does not post** (#345).
 
@@ -619,7 +593,6 @@ async def test_stage_one_publishes_nothing(tmp_path):
     assert stubs["bot"].attendance_after_review.method_calls == []
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_the_standings_are_recomputed_before_the_channels_are_rebuilt(tmp_path):
     """Or the rebuild reposts the championship the amendment has just corrected.
 
@@ -634,7 +607,6 @@ async def test_the_standings_are_recomputed_before_the_channels_are_rebuilt(tmp_
     stubs["cascade"].assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_without_a_guild_the_standings_are_still_recomputed(tmp_path):
     """The database has to be right whether or not Discord can be told."""
     db_path = await _make_db(tmp_path, name="amend_noguild")
@@ -684,7 +656,6 @@ async def _race_result_id(db_path, driver: int) -> int:
         return (await cursor.fetchone())[0]
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_the_verdict_follows_its_driver_to_the_new_row(tmp_path):
     """The audit is kept, and kept against the right driver.
 
@@ -705,7 +676,6 @@ async def test_the_verdict_follows_its_driver_to_the_new_row(tmp_path):
     assert rows == [(verdict_id, await _race_result_id(db_path, 101))]
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_the_justification_survives_the_amendment(tmp_path):
     """Re-pointing keeps the record, not merely a row of the right shape.
 
@@ -727,7 +697,6 @@ async def test_the_justification_survives_the_amendment(tmp_path):
     assert row["time_seconds"] == 5
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_an_appeal_verdict_is_re_pointed_too(tmp_path):
     """`appeal_records` carries the same reference and was refused by the same constraint."""
     db_path = await _make_db(tmp_path, name="amend_appeal_verdict")
@@ -741,7 +710,6 @@ async def test_an_appeal_verdict_is_re_pointed_too(tmp_path):
     assert rows == [(verdict_id, await _race_result_id(db_path, 102))]
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_several_verdicts_on_one_driver_are_all_re_pointed(tmp_path):
     """A driver may collect more than one verdict in a session.
 
@@ -758,7 +726,6 @@ async def test_several_verdicts_on_one_driver_are_all_re_pointed(tmp_path):
     assert await _verdict_rows(db_path, "penalty_records") == [(first, new_id), (second, new_id)]
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_a_qualifying_verdict_is_re_pointed_on_its_own_column(tmp_path):
     """Qualifying verdicts use `qual_result_id`, and the qualifying branch had the same defect."""
     db_path = await _make_db(tmp_path, name="amend_qual_verdict")
@@ -786,7 +753,6 @@ async def test_a_qualifying_verdict_is_re_pointed_on_its_own_column(tmp_path):
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_amending_one_session_leaves_the_other_sessions_verdicts_alone(tmp_path):
     """The scope is the session, as the delete's is.
 
@@ -808,7 +774,6 @@ async def test_amending_one_session_leaves_the_other_sessions_verdicts_alone(tmp
     ]
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_an_amendment_dropping_a_driver_who_carries_a_verdict_is_refused(tmp_path):
     """Refused by name, rather than failing on a constraint the admin cannot read.
 
@@ -826,7 +791,6 @@ async def test_an_amendment_dropping_a_driver_who_carries_a_verdict_is_refused(t
     assert "<@102>" in str(excinfo.value)
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_a_refused_amendment_changes_nothing_at_all(tmp_path):
     """The whole transaction is abandoned, so the league keeps the round it raced.
 
@@ -844,7 +808,6 @@ async def test_a_refused_amendment_changes_nothing_at_all(tmp_path):
     assert await _verdict_rows(db_path, "penalty_records") == [(verdict_id, before)]
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_a_verdict_follows_a_driver_who_has_changed_account(tmp_path):
     """**Both sides are read under the driver's current account** (#243, #345).
 
@@ -891,7 +854,6 @@ async def _quali_drivers(db_path) -> list[tuple[int, str]]:
         return [tuple(r) for r in await cursor.fetchall()]
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_several_sessions_are_written_in_one_amendment(tmp_path):
     db_path = await _make_db(tmp_path, name="amend_two_sessions")
 
@@ -909,7 +871,6 @@ async def test_several_sessions_are_written_in_one_amendment(tmp_path):
     stubs["cascade"].assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_a_refusal_in_one_session_writes_none_of_them(tmp_path):
     """**One transaction for every session.** The round is never left holding some sessions
     corrected and others not — which a refusal part-way through would otherwise do."""
