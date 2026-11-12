@@ -1,12 +1,12 @@
 """What a round's review asks of attendance (#439, slice 2, plan 2.6).
 
-`AttendanceAfterReview` is the protocol the builder hands to results, whose review's change types
-take it, so that results imports nothing of attendance: the change types call these methods and
-attendance implements them (`leaguebot.attendance.services.attendance_after_review`). It is
-attached to the bot as `bot.attendance_after_review` and declared on `LeagueBot`. Its duties are
-recording a round's attendance and pardons, recalculating after an amendment, posting the sheet,
-the sanctions, redrawing a lineup, reading a not-held round's check-in and naming what would stop a
-points amendment's recalculation.
+`AttendanceAfterReview` is the protocol the builder hands to results, whose change types take it, so
+that results imports nothing of attendance: the change types call these methods and attendance
+implements them (`leaguebot.attendance.services.attendance_after_review`). It is attached to the bot
+as `bot.attendance_after_review` and declared on `LeagueBot`. Its duties are recording a round's
+attendance and pardons, recalculating after an amendment, posting the sheet, the sanctions,
+redrawing a lineup, reading a not-held round's check-in and naming what would stop a points
+amendment's recalculation.
 
 **Each method checks attendance's switch itself and does nothing while it is off**
 (architecture.md, "How modules and core fit together"), save these: `enabled` reports the switch,
