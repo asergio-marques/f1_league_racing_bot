@@ -33,6 +33,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord, StepKind, StepResult
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.services.queue.change_types import Step, StepContext
+from leaguebot.core.services.seasons import season_service
 from leaguebot.core.services.posting.owned_channel_handler import post_in_owned_channel
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_server import league_guild
@@ -239,15 +240,12 @@ def post_prompt_step() -> Step:
         if not isinstance(channel, discord.TextChannel):
             raise StepFailedOnDiscord("the dialogue's channel is not in the server")
         async with get_connection(ctx.db_path) as db:
-            cursor = await db.execute(
-                "SELECT format FROM rounds WHERE id = ?", (int(payload["round_id"]),)
-            )
-            row = await cursor.fetchone()
+            row = await season_service.round_facts_on(db, int(payload["round_id"]))
         if row is None:
             raise LookupError(f"round {payload['round_id']} is not there to prompt for")
         text = session_prompt(
             SessionType(payload["session_type"]),
-            is_sprint=RoundFormat(row["format"]) is RoundFormat.SPRINT,
+            is_sprint=row.format is RoundFormat.SPRINT,
             override_fl=bool(payload.get("override_fl", False)),
         )
         message_id = await _send(
