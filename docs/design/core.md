@@ -509,7 +509,7 @@ files; this section says what core posts through them.
 | A review's expiry notice | notice | as above | `season.review.take_down`'s `post_expiry` | not kept |
 | The approval's batch notice | notice | the review's channel | `season.approve`'s `post_batch_notice` | its job's result, read by the job that deletes it |
 | A line to the review's channel | notice | the review's channel | `season.approve.tell`, `channel.tell` | not kept |
-| A module's cancellation notice | notice | the module's channel | `cancellation_notice_service.post_cancellation_notice`, which the modules' jobs call | not kept |
+| A module's cancellation notice | notice | the module's channel | `cancellation_notice_service.post_cancellation_notice`, which the modules' jobs call and which hands the message back | the module's own, where it takes the note down (results' `called_off_notes`) |
 | A log line | log line | `server_configs.log_channel_id` | `OutputRouter.post_log`, or `queue_log_on` in a step's save | `pending_messages`, until delivered |
 | The stop notice | log line with buttons | the log channel | `ChangeQueue._post_notice` → `OutputRouter.post_notice` | `queued_change_steps.notice_message_id` |
 

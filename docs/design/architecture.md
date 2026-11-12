@@ -1072,7 +1072,7 @@ log lines. Each handler is a service in core, in a file of its own:
 | Log writer | `core/services/posting/output_router.py` | the router, and `send_log_text`, which divides a line and sends it mentioning nobody, for the retry of a late one |
 | Notice handler | `core/services/posting/notice_handler.py` | `send_notice`, `edit_notice` and `delete_notice` |
 | Standing-post handler | `core/services/posting/standing_post_handler.py` | `post_standing`, `edit_standing` and `delete_standing` |
-| Bot-owned channel handler | `core/services/posting/owned_channel_handler.py` | `post_in_owned_channel` and `delete_owned_channel` |
+| Bot-owned channel handler | `core/services/posting/owned_channel_handler.py` | `post_in_owned_channel`, `edit_in_owned_channel`, `delete_in_owned_channel` and `delete_owned_channel` |
 
 Every function of the notice, standing-post and bot-owned channel handlers carries
 `posts_in_a_job`: they run in the jobs of a change, and a post off the queue cannot go through one.
