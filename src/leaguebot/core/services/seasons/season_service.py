@@ -1393,6 +1393,29 @@ async def active_season_rounds_on(db: aiosqlite.Connection) -> list[tuple[int, i
     return [(int(row["id"]), int(row["division_id"])) for row in await cursor.fetchall()]
 
 
+async def setup_seasons_among_on(
+    db: aiosqlite.Connection, season_ids: Iterable[int]
+) -> list[Season]:
+    """Those of *season_ids* whose season is still in SETUP, in season number order, read on
+    *db*; empty for none.
+
+    The core half of a module's query that joined its own rows to `seasons` to keep those of
+    seasons in setup: the module reads its own table for the season ids it holds, asks this of
+    the ids, and keeps what comes back, on the connection of the save it is in. It writes nothing
+    and commits nothing.
+    """
+    ids = sorted(set(season_ids))
+    if not ids:
+        return []
+    marks = ", ".join("?" for _ in ids)
+    cursor = await db.execute(
+        "SELECT id, start_date, status, season_number, game_edition, stage FROM seasons "  # noqa: S608
+        f"WHERE status = ? AND id IN ({marks}) ORDER BY season_number, id",
+        (SeasonStatus.SETUP.value, *ids),
+    )
+    return [_row_to_season(row) for row in await cursor.fetchall()]
+
+
 async def season_divisions_on(db: aiosqlite.Connection, season_id: int) -> list[Division]:
     """*season_id*'s divisions in tier order, read on *db*; empty for none.
 
