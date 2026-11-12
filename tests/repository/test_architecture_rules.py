@@ -1020,12 +1020,12 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_results_post.py", "try_post"): (1, PASS["image"]),
     ("image/services/image_standings_post.py", "post_championship"): (1, PASS["image"]),
     ("image/services/image_verdict_banner_post.py", "try_post"): (3, PASS["image"]),
+    ("results/services/publishing/results_post_service.py", "_send_chunked"): (2, PASS["results"]),
     ("results/services/review/penalty_wizard.py", "_show_approval_step"): (1, PASS["results"]),
     ("results/services/review/review_prompts.py", "send_appeals_prompt"): (1, PASS["results"]),
-    ("results/services/submission/result_submission_service.py", "send_cancelled_line"): (1, PASS["results"]),
     ("results/services/review/review_prompts.py", "send_review_prompt"): (1, PASS["results"]),
     ("results/services/round_amendment/amendment_writes.py", "run_amendment_review_stages"): (1, PASS["results"]),
-    ("results/services/publishing/results_post_service.py", "_send_chunked"): (2, PASS["results"]),
+    ("results/services/submission/result_submission_service.py", "send_cancelled_line"): (1, PASS["results"]),
     ("attendance/services/check_in_changes.py", "edit_check_in_message"): (1, PASS["attendance"]),
     ("attendance/services/check_in_changes.py", "post_check_in_message"): (1, PASS["attendance"]),
     ("results/services/review/verdict_announcement_service.py", "_send_verdict"): (2, PASS["results"]),
@@ -2028,14 +2028,14 @@ TABLES_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
         (2, "results' own result, standings and submission tables"),
     ("results/services/review/verdict_announcement_service.py", "_record_announcement_on"):
         (1, "the penalty and appeal records, results' own"),
+    ("results/services/review/verdict_records.py", "delete_verdicts"):
+        (1, "`VERDICT_TABLES`, the penalty and appeal records, results' own"),
     ("results/services/round_amendment/amendment_writes.py", "_detach_verdicts"):
         (1, "the penalty and appeal records, results' own"),
     ("results/services/round_amendment/amendment_writes.py", "_repoint_verdicts"):
         (1, "the penalty and appeal records, results' own"),
     ("results/services/round_amendment/amendment_writes.py", "_restore_from_snapshot_on"):
         (3, "results' own session result tables, and the penalty and appeal records"),
-    ("results/services/review/verdict_records.py", "delete_verdicts"):
-        (1, "`VERDICT_TABLES`, the penalty and appeal records, results' own"),
 }
 
 
@@ -2521,20 +2521,20 @@ SPLICED_READS_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
     ),
     ("results/services/points/amendment_mode_service.py", "_staged_rows_on"):
         (1, "results' own live and staged points tables"),
+    ("results/services/points/season_points_service.py", "_points_table"):
+        (2, "results' own live and staged points tables, handed by its callers"),
+    ("results/services/review/review_posting.py", "withdraw_round_standings_on"):
+        (1, "results' own standings snapshots"),
+    ("results/services/review/verdict_records.py", "delete_verdicts"):
+        (1, "the session result tables, results' own"),
+    ("results/services/review/verdict_records.py", "select_verdicts"):
+        (2, "`VERDICT_TABLES` and the session result tables, results' own"),
     ("results/services/round_amendment/amendment_writes.py", "_repoint_verdicts"):
         (1, "results' own session result tables"),
     ("results/services/round_amendment/amendment_writes.py", "snapshot_before_amendment_on"):
         (1, "results' own session result tables"),
-    ("results/services/review/review_posting.py", "withdraw_round_standings_on"):
-        (1, "results' own standings snapshots"),
-    ("results/services/points/season_points_service.py", "_points_table"):
-        (2, "results' own live and staged points tables, handed by its callers"),
     ("results/services/standings/standings_service.py", "previous_standing_positions"):
         (1, "results' own standings snapshots"),
-    ("results/services/review/verdict_records.py", "select_verdicts"):
-        (2, "`VERDICT_TABLES` and the session result tables, results' own"),
-    ("results/services/review/verdict_records.py", "delete_verdicts"):
-        (1, "the session result tables, results' own"),
 }
 
 
@@ -2645,63 +2645,13 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_verdict_post.py", "_driver_nationality"): (5, PASS["image"]),
     ("image/services/image_verdict_post.py", "_round_context"): (3, PASS["image"]),
     ("image/services/image_weather_post.py", "build_drawing_for_round"): (6, PASS["image"]),
-    ("results/services/round_amendment/amend_changes.py", "amend_open_change.check"): (2, PASS["results"]),
-    ("results/services/round_amendment/amend_changes.py", "amend_open_change.plan_open"): (4, PASS["results"]),
-    ("results/services/round_amendment/amend_end_changes.py", "<module>"): (2, PASS["results"]),
-    ("results/services/round_amendment/amend_end_changes.py", "amend_cancel_change.revert"): (2, PASS["results"]),
-    ("results/services/round_amendment/amend_end_changes.py", "amend_lapse_change.revert"): (3, PASS["results"]),
-    ("results/services/round_amendment/amend_turn_change.py", "<module>"): (3, PASS["results"]),
-    ("results/services/round_amendment/amend_turn_change.py", "amend_stage_one_change.record"):
-        (3, PASS["results"]),
-    ("results/services/round_amendment/amend_views.py", "AmendCancelView.cancel_btn"): (1, PASS["results"]),
-    ("results/services/round_amendment/amendment_stage_changes.py", "_plan_rebuild"): (3, PASS["results"]),
-    ("results/services/round_amendment/amendment_stage_changes.py", "_round_names"): (3, PASS["results"]),
-    ("results/services/review/appeals_approval_change.py", "appeals_approval_change.apply"):
-        (2, PASS["results"]),
-    ("results/services/review/penalty_service.py", "load_staged_from_records"): (3, PASS["results"]),
-    ("results/services/review/penalty_wizard.py", "AddPardonModal.on_submit"): (1, PASS["results"]),
-    ("results/services/review/penalty_wizard.py", "ApprovalView.approve_btn"): (3, PASS["results"]),
-    ("results/services/review/penalty_wizard.py", "_render_prompt_content"): (2, PASS["results"]),
-    ("results/services/review/penalty_wizard.py", "appeals_stage_refusal"): (1, PASS["results"]),
-    ("results/services/review/penalty_wizard.py", "review_stage_refusal"): (1, PASS["results"]),
+    ("results/services/module/results_purge_service.py", "erase_season_on"): (4, PASS["results"]),
     ("results/services/points/points_amendment_change.py", "_divisions"): (2, PASS["results"]),
     ("results/services/points/points_amendment_change.py", "points_amendment_change.apply"):
         (1, PASS["results"]),
     ("results/services/points/points_config_service.py", "remove_config_on"): (1, PASS["results"]),
     ("results/services/points/points_config_service.py", "setup_seasons_linking_on"): (1, PASS["results"]),
-    ("results/services/review/report_approval_change.py", "_latest_round"): (2, PASS["results"]),
-    ("results/services/review/report_approval_change.py", "report_approval_change.apply"):
-        (2, PASS["results"]),
-    ("results/services/submission/result_submission_service.py", "<module>"): (2, PASS["results"]),
-    ("results/services/review/review_prompts.py", "_build_penalty_review_state"):
-        (2, PASS["results"]),
-    ("results/services/round_amendment/amendment_writes.py", "_restore_from_snapshot_on"):
-        (1, PASS["results"]),
-    ("results/services/submission/result_submission_service.py", "_save_session_result_in_tx"):
-        (3, PASS["results"]),
-    ("results/services/round_amendment/amendment_writes.py", "amend_round_results_on"):
-        (3, PASS["results"]),
-    ("results/services/round_amendment/amendment_writes.py", "closed_by_cancellation_on"):
-        (3, PASS["results"]),
-    ("results/services/submission/result_submission_service.py", "expected_resubmitted_session_on"):
-        (1, PASS["results"]),
-    ("results/services/submission/result_submission_service.py", "expected_session_on"): (1, PASS["results"]),
-    ("results/services/review/review_prompts.py", "is_channel_in_penalty_review"):
-        (1, PASS["results"]),
-    ("results/services/round_amendment/amendment_writes.py", "open_amendment_in_division"):
-        (1, PASS["results"]),
-    ("results/services/round_amendment/amendment_writes.py", "open_amendment_in_season"):
-        (2, PASS["results"]),
-    ("results/services/submission/paste_reading.py", "other_active_team_assignments"):
-        (3, PASS["results"]),
-    ("results/services/submission/result_submission_service.py", "resubmission_drafts_on"):
-        (1, PASS["results"]),
-    ("results/services/round_amendment/amendment_writes.py", "revert_abandoned_amendment_on"):
-        (1, PASS["results"]),
-    ("results/services/round_amendment/amendment_writes.py", "snapshot_before_amendment_on"):
-        (2, PASS["results"]),
-    ("results/services/round_amendment/amendment_writes.py", "sync_held_by_amendment"):
-        (1, PASS["results"]),
+    ("results/services/points/scoring.py", "<module>"): (3, PASS["results"]),
     ("results/services/publishing/results_post_service.py", "_build_test_driver_display"):
         (1, PASS["results"]),
     ("results/services/publishing/results_post_service.py", "_get_division_tier"): (1, PASS["results"]),
@@ -2717,8 +2667,17 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/publishing/results_post_service.py", "results_sync_hint"): (2, PASS["results"]),
     ("results/services/publishing/results_post_service.py", "standings_display_names"): (1, PASS["results"]),
     ("results/services/publishing/results_post_service.py", "standings_repost_status"): (1, PASS["results"]),
-    ("results/services/points/scoring.py", "<module>"): (3, PASS["results"]),
-    ("results/services/module/results_purge_service.py", "erase_season_on"): (4, PASS["results"]),
+    ("results/services/review/appeals_approval_change.py", "appeals_approval_change.apply"):
+        (2, PASS["results"]),
+    ("results/services/review/penalty_service.py", "load_staged_from_records"): (3, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "AddPardonModal.on_submit"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "ApprovalView.approve_btn"): (3, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "_render_prompt_content"): (2, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "appeals_stage_refusal"): (1, PASS["results"]),
+    ("results/services/review/penalty_wizard.py", "review_stage_refusal"): (1, PASS["results"]),
+    ("results/services/review/report_approval_change.py", "_latest_round"): (2, PASS["results"]),
+    ("results/services/review/report_approval_change.py", "report_approval_change.apply"):
+        (2, PASS["results"]),
     ("results/services/review/review_changes.py", "division_job_in_hand"): (2, PASS["results"]),
     ("results/services/review/review_lock_change.py", "_in_review"): (1, PASS["results"]),
     ("results/services/review/review_open_change.py", "_round_and_channel"): (2, PASS["results"]),
@@ -2734,9 +2693,46 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/review/review_posting.py", "plan_division_posts"): (2, PASS["results"]),
     ("results/services/review/review_posting.py", "plan_posts"): (3, PASS["results"]),
     ("results/services/review/review_posting.py", "withdraw_round_standings_on"): (1, PASS["results"]),
+    ("results/services/review/review_prompts.py", "_build_penalty_review_state"):
+        (2, PASS["results"]),
+    ("results/services/review/review_prompts.py", "is_channel_in_penalty_review"):
+        (1, PASS["results"]),
     ("results/services/review/review_verdicts.py", "_division_name"): (1, PASS["results"]),
     ("results/services/review/review_verdicts.py", "_latest_scored_round"): (2, PASS["results"]),
     ("results/services/review/review_verdicts.py", "_sanction_heading_on"): (1, PASS["results"]),
+    ("results/services/review/verdict_announcement_service.py", "_get_announcement_context"):
+        (4, PASS["results"]),
+    ("results/services/review/verdict_announcement_service.py", "_get_result_context"):
+        (2, PASS["results"]),
+    ("results/services/review/verdict_announcement_service.py", "_rounds_from"): (2, PASS["results"]),
+    ("results/services/review/verdict_announcement_service.py", "announce_verdict"): (1, PASS["results"]),
+    ("results/services/round_amendment/amend_changes.py", "amend_open_change.check"): (2, PASS["results"]),
+    ("results/services/round_amendment/amend_changes.py", "amend_open_change.plan_open"): (4, PASS["results"]),
+    ("results/services/round_amendment/amend_end_changes.py", "<module>"): (2, PASS["results"]),
+    ("results/services/round_amendment/amend_end_changes.py", "amend_cancel_change.revert"): (2, PASS["results"]),
+    ("results/services/round_amendment/amend_end_changes.py", "amend_lapse_change.revert"): (3, PASS["results"]),
+    ("results/services/round_amendment/amend_turn_change.py", "<module>"): (3, PASS["results"]),
+    ("results/services/round_amendment/amend_turn_change.py", "amend_stage_one_change.record"):
+        (3, PASS["results"]),
+    ("results/services/round_amendment/amend_views.py", "AmendCancelView.cancel_btn"): (1, PASS["results"]),
+    ("results/services/round_amendment/amendment_stage_changes.py", "_plan_rebuild"): (3, PASS["results"]),
+    ("results/services/round_amendment/amendment_stage_changes.py", "_round_names"): (3, PASS["results"]),
+    ("results/services/round_amendment/amendment_writes.py", "_restore_from_snapshot_on"):
+        (1, PASS["results"]),
+    ("results/services/round_amendment/amendment_writes.py", "amend_round_results_on"):
+        (3, PASS["results"]),
+    ("results/services/round_amendment/amendment_writes.py", "closed_by_cancellation_on"):
+        (3, PASS["results"]),
+    ("results/services/round_amendment/amendment_writes.py", "open_amendment_in_division"):
+        (1, PASS["results"]),
+    ("results/services/round_amendment/amendment_writes.py", "open_amendment_in_season"):
+        (2, PASS["results"]),
+    ("results/services/round_amendment/amendment_writes.py", "revert_abandoned_amendment_on"):
+        (1, PASS["results"]),
+    ("results/services/round_amendment/amendment_writes.py", "snapshot_before_amendment_on"):
+        (2, PASS["results"]),
+    ("results/services/round_amendment/amendment_writes.py", "sync_held_by_amendment"):
+        (1, PASS["results"]),
     ("results/services/standings/standings_service.py", "_rounds_from"): (2, PASS["results"]),
     ("results/services/standings/standings_service.py", "compute_driver_standings_on"): (7, PASS["results"]),
     ("results/services/standings/standings_service.py", "compute_team_standings_on"): (5, PASS["results"]),
@@ -2744,6 +2740,16 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/standings/standings_service.py", "opening_team_standings"): (1, PASS["results"]),
     ("results/services/standings/standings_service.py", "persist_snapshots_on"): (1, PASS["results"]),
     ("results/services/standings/standings_service.py", "reference_round_id"): (2, PASS["results"]),
+    ("results/services/submission/paste_reading.py", "other_active_team_assignments"):
+        (3, PASS["results"]),
+    ("results/services/submission/result_submission_service.py", "<module>"): (2, PASS["results"]),
+    ("results/services/submission/result_submission_service.py", "_save_session_result_in_tx"):
+        (3, PASS["results"]),
+    ("results/services/submission/result_submission_service.py", "expected_resubmitted_session_on"):
+        (1, PASS["results"]),
+    ("results/services/submission/result_submission_service.py", "expected_session_on"): (1, PASS["results"]),
+    ("results/services/submission/result_submission_service.py", "resubmission_drafts_on"):
+        (1, PASS["results"]),
     ("results/services/submission/submission_changes.py", "<module>"): (3, PASS["results"]),
     ("results/services/submission/submission_changes.py", "ask_submission_open"): (1, PASS["results"]),
     ("results/services/submission/submission_changes.py", "ask_submission_restart"): (1, PASS["results"]),
@@ -2761,12 +2767,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/submission/submission_turn_change.py", "<module>"): (3, PASS["results"]),
     ("results/services/submission/submission_turn_change.py", "turn_steps.post_opening_review"):
         (2, PASS["results"]),
-    ("results/services/review/verdict_announcement_service.py", "_get_announcement_context"):
-        (4, PASS["results"]),
-    ("results/services/review/verdict_announcement_service.py", "_get_result_context"):
-        (2, PASS["results"]),
-    ("results/services/review/verdict_announcement_service.py", "_rounds_from"): (2, PASS["results"]),
-    ("results/services/review/verdict_announcement_service.py", "announce_verdict"): (1, PASS["results"]),
     ("signup/services/review_changes.py", "choices_change.open_"): (1, PASS["signup"]),
     ("signup/services/review_changes.py", "recollect_change.open_"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService._live_season_id"):
@@ -3239,7 +3239,7 @@ KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/drivers/placement_service.py", "PlacementService.move_on"): (1, PASS["attendance"]),
     ("core/services/drivers/placement_service.py", "PlacementService.sack_on"): (1, PASS["attendance"]),
     ("image/services/driver_portrait_service.py", "refresh_portraits"): (1, PASS["image"]),
-    ("results/services/submission/result_submission_service.py", "_save_session_result_in_tx"):
+    ("results/services/module/results_off_change.py", "results_off_change.switch_off"):
         (1, PASS["results"]),
     ("results/services/round_amendment/amendment_writes.py", "amend_round_results_on"):
         (1, PASS["results"]),
@@ -3247,7 +3247,7 @@ KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
         (1, PASS["results"]),
     ("results/services/round_amendment/amendment_writes.py", "sweep_expired_amendments"):
         (1, PASS["results"]),
-    ("results/services/module/results_off_change.py", "results_off_change.switch_off"):
+    ("results/services/submission/result_submission_service.py", "_save_session_result_in_tx"):
         (1, PASS["results"]),
     ("signup/services/wizard_service.py", "WizardService._lock_channel"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.recover_wizards"): (1, PASS["signup"]),
