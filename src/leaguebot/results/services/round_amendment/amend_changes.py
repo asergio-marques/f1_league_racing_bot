@@ -210,10 +210,11 @@ def amend_open_change(
     """The `results.amend.open` change type, for the builder to register.
 
     *modules* tells whether results are on, *config* reads the league's roles and channels on the
-    save's own connection (the opening channel is named and opened to them), *server_config* reads the server configuration the
-    Cancel button checks its presser against, *now* is the queue's clock (read when the prompt's
-    time is recorded), *arm_once* the scheduler service's and *queue_of* the change queue the
-    Cancel button asks, handed here so that no job looks either up on the bot. The payload is ``{"round_id", "division_id", "session_types"}``, the
+    save's own connection (the opening channel is named and opened to them), *server_config* reads
+    the server configuration the Cancel button checks its presser against, *now* is the queue's
+    clock (read when the prompt's time is recorded), *arm_once* the scheduler service's and
+    *queue_of* the change queue the Cancel button asks, handed here so that no job looks either up
+    on the bot. The payload is ``{"round_id", "division_id", "session_types"}``, the
     sessions as session-type values in running order.
     """
 

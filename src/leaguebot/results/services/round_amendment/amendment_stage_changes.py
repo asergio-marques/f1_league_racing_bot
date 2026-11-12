@@ -283,8 +283,8 @@ def amendment_stage_changes(
     amendment's lane's prompt (`results.amend.prompt`); see the module. *attendance* is the hook
     the builder hands every change type of the review, *now* the queue's clock and *queue* the queue
     the review's buttons ask their changes of and *config* the league's configuration, read on the
-    save's own connection (the server the rebuild's message links name) and *server_config* the reader of the configuration
-    their tier check reads and *router* the output router their presses are logged through."""
+    save's own connection (the server the rebuild's message links name) and *server_config* the
+    reader of the configuration their tier check reads and *router* the output router their presses are logged through."""
 
     async def _in_hand(ctx: CheckContext, kind: str, round_id: int) -> bool:
         others = await unfinished(ctx.db_path, [kind], excluding=ctx.change_id)

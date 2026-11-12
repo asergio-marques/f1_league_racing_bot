@@ -123,7 +123,7 @@ class _Amendment:
     round_id: int
     channel_id: int
     session_types: str
-    started_by: int
+    started_by: int | None
     round: RoundFacts
 
     @property
@@ -160,7 +160,8 @@ async def _amendment_from(
         return None
     return _Amendment(
         amend_id=int(row["id"]), round_id=int(row["round_id"]), channel_id=int(row["channel_id"]),
-        session_types=str(row["session_types"]), started_by=int(row["started_by"]), round=facts,
+        session_types=str(row["session_types"]), started_by=None if row["started_by"] is None else int(row["started_by"]),
+        round=facts,
     )
 
 
@@ -687,6 +688,7 @@ def amend_stage_one_change(
             )
             for each in drafted
         ]
+        assert row.started_by is not None  # an open amendment records who opened it
         what = f"`{COMMAND}` of round {row.round_number} ({row.division_name})"
         await db.execute("SAVEPOINT stage_one")
         try:
