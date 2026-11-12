@@ -39,6 +39,7 @@ import discord
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import FollowOn, PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.services.drivers.team_service import TeamService
+from leaguebot.core.services.posting.output_router import OutputRouter
 from leaguebot.core.services.queue import typed_turns
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
@@ -140,11 +141,14 @@ def _covered(row: aiosqlite.Row) -> list[SessionType]:
     return [SessionType(each) for each in json.loads(row["session_types"])]
 
 
-async def take_amended_paste(bot: Any, message: discord.Message, *, queue: ChangeQueue) -> bool:
+async def take_amended_paste(
+    bot: Any, message: discord.Message, *, queue: ChangeQueue, router: OutputRouter
+) -> bool:
     """What the results cog does with a message typed in a channel that holds an open amendment:
     nothing unless it is the opener's; then it is turned away where a turn waits in the channel
     (the refusal logged), else marked ⏳ and asked as a turn. Gives whether the channel is an
-    amendment's, so that the cog hears it no further."""
+    amendment's, so that the cog hears it no further. *router* is the output router the refusal is
+    logged through, handed by the cog."""
     async with get_connection(bot.db_path) as db:
         row = await (await db.execute(_AMENDMENT, (message.channel.id,))).fetchone()
         if row is None:
@@ -157,7 +161,7 @@ async def take_amended_paste(bot: Any, message: discord.Message, *, queue: Chang
     ):
         await typed_turns.turn_away(message, typed_turns.TURN_AWAY_NOTE)
         waiting = "its session" if expected is None else label_of(expected)
-        await bot.output_router.post_log(
+        await router.post_log(
             refusal_line(
                 member_named(message.author.display_name, message.author.id),
                 "A results paste",

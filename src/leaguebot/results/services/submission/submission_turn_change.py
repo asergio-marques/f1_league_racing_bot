@@ -53,6 +53,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import FollowOn, PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.services.drivers.team_service import TeamService
+from leaguebot.core.services.posting.output_router import OutputRouter
 from leaguebot.core.services.queue import typed_turns
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
@@ -148,13 +149,14 @@ async def _conversation_open(db: aiosqlite.Connection, payload: dict[str, Any]) 
 
 
 async def take_paste(
-    bot: Any, message: discord.Message, *, queue: ChangeQueue, config: Any
+    bot: Any, message: discord.Message, *, queue: ChangeQueue, config: Any, router: OutputRouter
 ) -> None:
     """What the results cog does with a message typed in a channel: nothing, unless it is a league
     manager's in a round's open first submission; then it is turned away where a turn waits in the
     channel (the refusal logged), else marked ⏳ and asked as a turn.
 
-    *config* is the server configuration, read by the cog, which holds the league managers' role.
+    *config* is the server configuration, read by the cog, which holds the league managers' role; *router* is the
+    output router the turn-away refusal is logged through, handed by the cog.
     """
     async with get_connection(bot.db_path) as db:
         row = await (await db.execute(_ROUND, (message.channel.id,))).fetchone()
@@ -174,7 +176,7 @@ async def take_paste(
     ):
         await typed_turns.turn_away(message, typed_turns.TURN_AWAY_NOTE)
         waiting = "its session" if expected is None else _label(expected, row)
-        await bot.output_router.post_log(
+        await router.post_log(
             refusal_line(
                 member_named(message.author.display_name, message.author.id),
                 "A results paste",

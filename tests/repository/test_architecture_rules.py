@@ -1577,8 +1577,6 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_weather_post.py", "render_forecast"): (2, PASS["image"]),
     ("image/services/image_weather_post.py", "weather_enabled"): (3, PASS["image"]),
     ("results/services/module/channel_settings.py", "_channel_setting.check"): (1, PASS["results"]),
-    ("results/services/round_amendment/amend_turn_change.py", "take_amended_paste"): (1, PASS["results"]),
-    ("results/services/submission/submission_turn_change.py", "take_paste"): (1, PASS["results"]),
     ("signup/services/signup_views.py", "AdminReviewView._ask_for_reason"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "AdminReviewView._guard"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "AdminReviewView._resolve"): (1, PASS["signup"]),
