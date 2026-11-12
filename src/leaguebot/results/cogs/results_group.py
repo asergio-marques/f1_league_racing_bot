@@ -1,0 +1,26 @@
+"""The `/results` group, and what the subgroups beneath it share.
+
+`RESULTS_GROUP` is the one `/results` group; each subgroup's class names it as its parent, so the
+subgroups sit under one group whichever file declares them. The session choices and the form
+refusal are the words two or more of the subgroups use.
+"""
+from __future__ import annotations
+
+from discord import app_commands
+
+RESULTS_GROUP = app_commands.Group(name="results", description="Results & Standings commands")
+
+SESSION_CHOICES = [
+    app_commands.Choice(name="Sprint Qualifying", value="SPRINT_QUALIFYING"),
+    app_commands.Choice(name="Sprint Race", value="SPRINT_RACE"),
+    app_commands.Choice(name="Feature Qualifying", value="FEATURE_QUALIFYING"),
+    app_commands.Choice(name="Feature Race", value="FEATURE_RACE"),
+]
+
+RACE_SESSION_CHOICES = [
+    app_commands.Choice(name="Sprint Race", value="SPRINT_RACE"),
+    app_commands.Choice(name="Feature Race", value="FEATURE_RACE"),
+]
+
+#: A form's refusal when the results module has been switched off since it was shown.
+MODULE_OFF = "\u274c The Results & Standings module is not enabled on this server."

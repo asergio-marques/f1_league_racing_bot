@@ -12,6 +12,12 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from leaguebot.results.cogs.results_group import (
+    MODULE_OFF,
+    RACE_SESSION_CHOICES,
+    RESULTS_GROUP,
+    SESSION_CHOICES,
+)
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.points import points_config_service, season_points_service
 from leaguebot.results.services.points.amendment_settings import (
@@ -70,13 +76,6 @@ from leaguebot.core.utils.season_gate import season_for_command
 
 log = logging.getLogger(__name__)
 
-_SESSION_CHOICES = [
-    app_commands.Choice(name="Sprint Qualifying", value="SPRINT_QUALIFYING"),
-    app_commands.Choice(name="Sprint Race", value="SPRINT_RACE"),
-    app_commands.Choice(name="Feature Qualifying", value="FEATURE_QUALIFYING"),
-    app_commands.Choice(name="Feature Race", value="FEATURE_RACE"),
-]
-
 # The two points stores a league can read, and the reason the choice is made explicit.
 #
 # A season takes its own copy of every attached configuration at approval
@@ -90,11 +89,6 @@ _SCOPE_SERVER = "SERVER"
 _SCOPE_CHOICES = [
     app_commands.Choice(name="Season (what this season scores by)", value=_SCOPE_SEASON),
     app_commands.Choice(name="Server (what this server holds)", value=_SCOPE_SERVER),
-]
-
-_RACE_SESSION_CHOICES = [
-    app_commands.Choice(name="Sprint Race", value="SPRINT_RACE"),
-    app_commands.Choice(name="Feature Race", value="FEATURE_RACE"),
 ]
 
 
@@ -125,9 +119,6 @@ _CHANNEL_KINDS = {
     "standings": STANDINGS_CHANNEL,
     "verdicts": VERDICTS_CHANNEL,
 }
-
-#: A form's refusal when the results module has been switched off since it was shown.
-_MODULE_OFF = "\u274c The Results & Standings module is not enabled on this server."
 
 
 class BulkConfigSessionModal(LeagueModal, title="Bulk Set Session Points"):
@@ -167,7 +158,7 @@ class BulkConfigSessionModal(LeagueModal, title="Bulk Set Session Points"):
 
         # Checked again at the submit: the form may be submitted long after it was shown.
         if not await bot.module_service.is_results_enabled():
-            await refuse(interaction, _MODULE_OFF, what=what)
+            await refuse(interaction, MODULE_OFF, what=what)
             return
 
         valid, errors, overrides = parse_bulk_lines(self.entries.value)
@@ -227,7 +218,7 @@ class BulkAmendSessionModal(LeagueModal, title="Bulk Amend Session Points"):
         what = "`/results amend bulk-session`"
 
         if not await bot.module_service.is_results_enabled():
-            await refuse(interaction, _MODULE_OFF, what=what)
+            await refuse(interaction, MODULE_OFF, what=what)
             return
 
         # Gated here as well as on the command that opened it (issue #224). A modal can be
@@ -586,7 +577,7 @@ class ResultsCog(commands.Cog):
     # /results config group
     # ------------------------------------------------------------------
 
-    results_group = app_commands.Group(name="results", description="Results & Standings commands")
+    results_group = RESULTS_GROUP
     config_group = app_commands.Group(
         name="config", description="Points configuration management", parent=results_group
     )
@@ -661,7 +652,7 @@ class ResultsCog(commands.Cog):
         position="Finishing position (1-indexed)",
         points="Points awarded",
     )
-    @app_commands.choices(session=_SESSION_CHOICES)
+    @app_commands.choices(session=SESSION_CHOICES)
     @league_manager_only
     async def config_session(
         self,
@@ -691,7 +682,7 @@ class ResultsCog(commands.Cog):
         session="Race session type (Sprint Race or Feature Race)",
         points="Bonus points for fastest lap",
     )
-    @app_commands.choices(session=_RACE_SESSION_CHOICES)
+    @app_commands.choices(session=RACE_SESSION_CHOICES)
     @league_manager_only
     async def config_fl(
         self,
@@ -715,7 +706,7 @@ class ResultsCog(commands.Cog):
         session="Race session type (Sprint Race or Feature Race)",
         limit="Highest eligible position (e.g. 10 → positions 1–10 eligible)",
     )
-    @app_commands.choices(session=_RACE_SESSION_CHOICES)
+    @app_commands.choices(session=RACE_SESSION_CHOICES)
     @league_manager_only
     async def config_fl_plimit(
         self,
@@ -837,7 +828,7 @@ class ResultsCog(commands.Cog):
         name="Config name",
         session="Optional: filter to a specific session type",
     )
-    @app_commands.choices(scope=_SCOPE_CHOICES, session=_SESSION_CHOICES)
+    @app_commands.choices(scope=_SCOPE_CHOICES, session=SESSION_CHOICES)
     @league_manager_only
     @changes_nothing
     async def config_view(
@@ -943,7 +934,7 @@ class ResultsCog(commands.Cog):
         description="Bulk-set points for multiple positions in a session type via a modal.",
     )
     @app_commands.describe(name="Config name", session="Session type")
-    @app_commands.choices(session=_SESSION_CHOICES)
+    @app_commands.choices(session=SESSION_CHOICES)
     @league_manager_only
     async def bulk_config_session(
         self,
@@ -1078,7 +1069,7 @@ class ResultsCog(commands.Cog):
         position="Finishing position",
         points="Points to award",
     )
-    @app_commands.choices(session=_SESSION_CHOICES)
+    @app_commands.choices(session=SESSION_CHOICES)
     @league_manager_only
     async def amend_session(
         self,
@@ -1115,7 +1106,7 @@ class ResultsCog(commands.Cog):
         session="Race session type",
         points="FL bonus points",
     )
-    @app_commands.choices(session=_RACE_SESSION_CHOICES)
+    @app_commands.choices(session=RACE_SESSION_CHOICES)
     @league_manager_only
     async def amend_fl(
         self,
@@ -1149,7 +1140,7 @@ class ResultsCog(commands.Cog):
         session="Race session type",
         limit="Highest eligible position",
     )
-    @app_commands.choices(session=_RACE_SESSION_CHOICES)
+    @app_commands.choices(session=RACE_SESSION_CHOICES)
     @league_manager_only
     async def amend_fl_plimit(
         self,
@@ -1182,7 +1173,7 @@ class ResultsCog(commands.Cog):
         description="Bulk-update points in the modification store for multiple positions via a modal.",
     )
     @app_commands.describe(name="Config name", session="Session type")
-    @app_commands.choices(session=_SESSION_CHOICES)
+    @app_commands.choices(session=SESSION_CHOICES)
     @league_manager_only
     async def bulk_amend_session(
         self,
