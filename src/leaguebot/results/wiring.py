@@ -506,6 +506,7 @@ def register_change_types(
         *results_channel_settings(
             modules=bot.module_service, seasons=bot.season_service,
             channel_of=lambda channel_id: bot.get_channel(channel_id),
+            channel_uses_read=bot.channel_uses_read,
         ),
     ):
         bot.change_queue.register(setting_change(setting))
