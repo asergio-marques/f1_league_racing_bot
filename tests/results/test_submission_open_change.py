@@ -41,6 +41,8 @@ from tests.support.review_league import block_queue, channel
 from tests.support.season_league import (
     PRO,
     SeasonLeague,
+    amend_round,
+    amendment_changes,
     ongoing_league,
     round_id,
 )
@@ -479,6 +481,35 @@ async def test_a_round_whose_start_passed_is_not_opened_again_at_the_restart(
     assert await _opened_rounds(league) == opened
     assert await _stopped_id(league) == stopped
     assert len(league.created) == channels
+
+
+async def test_a_round_whose_amendment_is_in_hand_is_left_to_it_at_the_restart(
+    tmp_path, monkeypatch,
+):
+    """A league manager amends round 3's moment to a day ahead, and the amendment waits on the
+    league's lane behind a change stopped on a failure, across the restart. Round 3's old start
+    has fallen two hours before the bot's clock by then. At the restart both results' catch-up and
+    the late `results` job find round 3 still not run, and ask no opening: the amendment is in
+    hand, and its own arming catches up a moment that passed while it waited (core specification,
+    "Amending and cancelling a round"). The amendment is the only change asked of round 3, which
+    stays not run, and no channel is made."""
+    from datetime import timedelta
+
+    league = await _league(tmp_path)
+    league.holder = await block_queue(league)
+    await run_queue(league.bot)
+    day_ahead = (league.clock.now + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
+    assert await amend_round(league, "Pro", 3, scheduled_at=day_ahead) is not None
+    assert len(await amendment_changes(league)) == 1
+    await _start_passed(league, hours=2)
+
+    await _catch_up(league)
+    await _fire_job(league, monkeypatch)
+    await run_queue(league.bot)
+
+    assert await _opened_rounds(league) == []
+    assert await _status(league) == "NOT_RUN"
+    assert league.created == []
 
 
 async def test_a_round_whose_start_is_ahead_by_the_bot_s_clock_is_not_opened_at_the_restart(
