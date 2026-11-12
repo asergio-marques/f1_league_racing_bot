@@ -324,6 +324,22 @@ async def _announce_verdicts(db_path: str) -> None:
         await db.commit()
 
 
+#: Why the switch-off does not yet take the opening classification down.
+OPENING_LEFT_STANDING = "#284: no id of the opening classification is recorded, so it is left standing"
+
+
+async def _post_opening_classification(db_path: str, division_id: int) -> None:
+    """The division's opening classification, posted in the standings channel when its placements
+    were confirmed: the drivers' table as message 4000 and the teams' as 4001, recorded as results
+    records a round's standings."""
+    await _set(
+        db_path,
+        "INSERT INTO classification_posts (division_id, occasion, standings_message_id, "
+        "constructor_standings_message_id) VALUES (?, 'SEASON_OPENING', 4000, 4001)",
+        (division_id,),
+    )
+
+
 async def _closing_the_rounds_fails(db_path: str) -> None:
     """Make the closing of a round fail inside the switch-off's save: a trigger of the test's own."""
     await _set(
@@ -584,10 +600,14 @@ async def test_a_stop_part_way_through_the_take_down_finishes_it_on_restart_and_
     assert "verdicts removed: 2" in closing
 
 
+@pytest.mark.xfail(strict=True, reason=OPENING_LEFT_STANDING)
 async def test_every_message_is_taken_down_by_the_ids_saved_with_the_switch_off(tmp_path):
-    """The rows naming the messages are gone with the switch-off; the steps keep their ids."""
+    """The rows naming the messages are gone with the switch-off; the steps keep their ids. The
+    division's opening classification (messages 4000 and 4001 in the standings channel) goes with
+    the round's standings (results specification, the switch-off rule)."""
     seeded = await _seed(tmp_path)
     await _announce_verdicts(seeded.db_path)
+    await _post_opening_classification(seeded.db_path, seeded.division_id)
     async with get_connection(seeded.db_path) as db:
         await db.execute(
             "INSERT INTO verdict_banner_messages (round_id, channel_id, message_id, posted_at, "
@@ -600,12 +620,12 @@ async def test_every_message_is_taken_down_by_the_ids_saved_with_the_switch_off(
 
     await run_queue(bot, steps=1)
     for table in ("session_results", "penalty_records", "appeal_records",
-                  "driver_standings_snapshots"):
+                  "driver_standings_snapshots", "classification_posts"):
         assert await _count(seeded.db_path, table) == 0, table
     await run_queue(bot)
 
     assert _deleted(bot, RESULTS_CHANNEL_ID) == [1000]
-    assert _deleted(bot, STANDINGS_CHANNEL_ID) == [2000, 3000]
+    assert _deleted(bot, STANDINGS_CHANNEL_ID) == [2000, 3000, 4000, 4001]
     assert _deleted(bot, VERDICTS_CHANNEL_ID) == [5001, 6001, 7001]
     assert await _count(seeded.db_path, "verdict_banner_messages") == 0
 
@@ -668,29 +688,35 @@ async def test_a_removal_discord_refuses_stops_the_queue_and_once_discarded_is_l
     ) in reply
 
 
+@pytest.mark.xfail(strict=True, reason=OPENING_LEFT_STANDING)
 async def test_messages_left_standing_are_listed_in_the_reply_and_the_closing_line_with_their_links(  # noqa: E501
     tmp_path,
 ):
-    """Two removals Discord refuses each stop the queue; once a league admin discards both, both
-    messages are linked in the admin's reply and in the closing line."""
+    """Three removals Discord refuses each stop the queue: the round's results message, its
+    standings, and the division's opening classification (message 4000 in the standings channel).
+    Once a league admin discards all three, each message is linked in the admin's reply and in the
+    closing line."""
     seeded = await _seed(tmp_path)
+    await _post_opening_classification(seeded.db_path, seeded.division_id)
     bot = _league(seeded.db_path)
     bot.channels[RESULTS_CHANNEL_ID].refuse = {1000}
-    bot.channels[STANDINGS_CHANNEL_ID].refuse = {2000}
+    bot.channels[STANDINGS_CHANNEL_ID].refuse = {2000, 4000}
     interaction = await _confirm(bot)
 
     await run_queue(bot)
     await discard_job(bot)
     await discard_job(bot)
+    await discard_job(bot)
 
-    links = {_link(RESULTS_CHANNEL_ID, 1000), _link(STANDINGS_CHANNEL_ID, 2000)}
+    links = {_link(RESULTS_CHANNEL_ID, 1000), _link(STANDINGS_CHANNEL_ID, 2000),
+             _link(STANDINGS_CHANNEL_ID, 4000)}
     reply = updated_reply(interaction)
-    head = "⚠️ 2 message(s) could not be removed — delete them by hand:\n"
+    head = "⚠️ 3 message(s) could not be removed — delete them by hand:\n"
     assert head in reply
-    assert set(reply.split(head, 1)[1].splitlines()[:2]) == links
+    assert set(reply.split(head, 1)[1].splitlines()[:3]) == links
     closing = await _line_starting(bot, f"{NAMED} | /module disable results | Messages removed")
-    tail = closing.split("\n  left standing, to delete by hand: 2\n", 1)[1]
-    assert {line.strip() for line in tail.splitlines()[:2]} == links
+    tail = closing.split("\n  left standing, to delete by hand: 3\n", 1)[1]
+    assert {line.strip() for line in tail.splitlines()[:3]} == links
     switch_off = await _line_starting(bot, f"{NAMED} | /module disable results | Success")
     assert "left standing" not in switch_off
 
