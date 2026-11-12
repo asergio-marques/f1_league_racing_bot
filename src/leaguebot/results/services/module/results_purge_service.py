@@ -54,6 +54,8 @@ import discord
 
 from leaguebot.core.db.database import sole_row
 from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord
+from leaguebot.core.services.posting.notice_handler import delete_notice
+from leaguebot.core.services.posting.standing_post_handler import delete_standing
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
@@ -63,6 +65,8 @@ log = logging.getLogger(__name__)
 #: The kinds of take-down item that are messages, and the kinds that are channels.
 MESSAGE_KINDS = frozenset({"results", "standings", "verdict", "banner", "called_off"})
 CHANNEL_KINDS = frozenset({"submission", "amendment"})
+#: Of the message kinds, the tables, which are standing posts; the rest are notices.
+TABLE_KINDS = frozenset({"results", "standings"})
 
 
 @dataclass(frozen=True)
@@ -319,7 +323,7 @@ async def take_down(bot: LeagueBot, item: dict[str, Any]) -> dict[str, Any]:
         failures: list[discord.HTTPException] = []
         left = await _delete_posting(
             channel, item["anchor"], item["message_ids"], label=item["label"],
-            failures=failures,
+            delete=delete_standing if kind in TABLE_KINDS else delete_notice, failures=failures,
         )
         if left:
             raise StepFailedOnDiscord(

@@ -70,6 +70,8 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
+from leaguebot.core.services.posting.notice_handler import delete_notice
+from leaguebot.core.services.posting.owned_channel_handler import delete_in_owned_channel
 from leaguebot.core.services.posting.output_router import OutputRouter
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.queue.queue_records import (
@@ -524,7 +526,8 @@ def amendment_stage_changes(
         kept = (ctx.kept or {}).get("message_id")
         if kept is not None:
             await _delete_posting(
-                channel, int(kept), [int(kept)], label="amendment appeals prompt", failures=[]
+                channel, int(kept), [int(kept)], label="amendment appeals prompt",
+                delete=delete_in_owned_channel, failures=[],
             )
         session_types = [SessionType(value) for value in ctx.payload["session_types"]]
         reports, corrections, _stored = await load_staged_from_records(
@@ -569,7 +572,8 @@ def amendment_stage_changes(
         kept = (ctx.kept or {}).get("message_id")
         if kept is not None:
             await _delete_posting(
-                channel, int(kept), [int(kept)], label="amendment report prompt", failures=[]
+                channel, int(kept), [int(kept)], label="amendment report prompt",
+                delete=delete_in_owned_channel, failures=[],
             )
         state = await run_amendment_review_stages(
             ctx.db_path, int(payload["round_id"]), int(payload["division_id"]), channel, ctx.bot,
@@ -605,7 +609,7 @@ def amendment_stage_changes(
         failures: list[Any] = []
         left = await _delete_posting(
             channel, anchor, payload.get("chunks") or [anchor], label="verdict",
-            failures=failures,
+            delete=delete_notice, failures=failures,
         )
         if left:
             raise StepFailedOnDiscord(
@@ -629,7 +633,8 @@ def amendment_stage_changes(
                 return StepResult(result={"kept": True})
         failures: list[Any] = []
         left = await _delete_posting(
-            channel, message_id, [message_id], label="verdict banner", failures=failures
+            channel, message_id, [message_id], label="verdict banner",
+            delete=delete_notice, failures=failures,
         )
         if left:
             raise StepFailedOnDiscord(
@@ -800,7 +805,7 @@ def _prompt_change(
             *(
                 PlannedStep(DELETE_MESSAGE, {
                     "channel_id": channel_id, "message_id": int(down["message_id"]),
-                    "what": down["what"],
+                    "what": down["what"], "kind": "owned",
                 })
                 for down in payload.get("takedowns", [])
             ),

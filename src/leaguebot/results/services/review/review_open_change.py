@@ -104,6 +104,7 @@ from leaguebot.core.models.change import (
     Verdict,
 )
 from leaguebot.core.models.round import ROUND_CANCELLABLE, RoundStatus
+from leaguebot.core.services.posting.owned_channel_handler import delete_in_owned_channel
 from leaguebot.core.services.posting.output_router import OutputRouter
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.queue.queue_records import (
@@ -254,7 +255,7 @@ async def _post_review_prompt(
     kept = (ctx.kept or {}).get("message_id")
     if kept is not None:
         await _delete_posting(channel, int(kept), [int(kept)], label="penalty review prompt",
-                              failures=[])
+                              delete=delete_in_owned_channel, failures=[])
     state = await _build_penalty_review_state(
         ctx.bot, queue, server_config, router, attendance, round_id, int(row["division_id"]),
         channel.id,
@@ -354,7 +355,7 @@ def prompt_steps(payload: dict[str, Any], channel_id: int) -> list[PlannedStep]:
     if payload.get("old_prompt_id") is not None:
         steps.append(PlannedStep(DELETE_MESSAGE, {
             "channel_id": channel_id, "message_id": int(payload["old_prompt_id"]),
-            "what": "penalty review prompt",
+            "what": "penalty review prompt", "kind": "owned",
         }))
     if payload.get("cancel_message_id") is not None:
         steps.append(PlannedStep(_TAKE_DOWN_CANCEL, {
@@ -374,7 +375,7 @@ def appeals_stage_steps(payload: dict[str, Any]) -> list[PlannedStep]:
     steps = [
         PlannedStep(DELETE_MESSAGE, {
             "channel_id": channel_id, "message_id": int(down["message_id"]),
-            "what": down["what"],
+            "what": down["what"], "kind": "owned",
         })
         for down in payload.get("takedowns", [])
     ]
@@ -1058,7 +1059,7 @@ def appeals_open_change(
             then.append(PlannedStep(DELETE_MESSAGE, {
                 "channel_id": int(row["channel_id"]),
                 "message_id": int(ctx.payload["old_prompt_id"]),
-                "what": "appeals review prompt",
+                "what": "appeals review prompt", "kind": "owned",
             }))
         return StepResult(result={"planned": True}, then=tuple(then))
 

@@ -204,7 +204,7 @@ def turn_steps(
         channel_id = int(payload["channel_id"])
         mark = {"channel_id": channel_id, "message_id": int(payload["message_id"])}
         clear = (PlannedStep(typed_turns.CLEAR_MARK, mark),)
-        delete_paste = PlannedStep(DELETE_MESSAGE, {**mark, "what": "an amended results paste"})
+        delete_paste = PlannedStep(DELETE_MESSAGE, {**mark, "what": "an amended results paste", "kind": "owned"})
         async with get_connection(ctx.db_path) as db:
             row = await (await db.execute(_AMENDMENT, (channel_id,))).fetchone()
             expected = None if row is None else await submissions.expected_amended_session_on(

@@ -30,9 +30,10 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
+from leaguebot.core.services.posting.standing_post_handler import delete_standing
 from leaguebot.results.services.publishing.results_post_service import (
     _MSG_MAX,
-    _delete_posting,
+    _delete_posting as _delete_posting_with,
     _ids_json,
     _parse_ids,
     _send_chunked,
@@ -43,6 +44,11 @@ from tests.support.change_queue import in_a_job
 BOT_ID = 1
 SOMEBODY_ELSE = 2
 ANCHOR_ID = 900001
+
+
+async def _delete_posting(*args, **kwargs):
+    """`_delete_posting` as a table's take-down calls it, with core's standing-post delete."""
+    return await _delete_posting_with(*args, delete=delete_standing, **kwargs)
 
 
 # ---------------------------------------------------------------------------

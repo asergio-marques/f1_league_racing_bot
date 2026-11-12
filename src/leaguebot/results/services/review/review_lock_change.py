@@ -166,7 +166,7 @@ def lock_change(*, now: Callable[[], datetime], arm_once: Callable[[str, int, da
         return (
             PlannedStep(DELETE_MESSAGE, {
                 "channel_id": channel_id, "message_id": int(payload["message_id"]),
-                "what": "a message typed in a locked review channel",
+                "what": "a message typed in a locked review channel", "kind": "owned",
             }),
             PlannedStep(POST_WARNING, {
                 "channel_id": channel_id, "text": _warning_text(str(payload["display_name"])),

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import NamedTuple
 
 import aiosqlite
@@ -207,6 +207,7 @@ async def _delete_posting(
     message_ids: list[int] | None,
     label: str = "message",
     *,
+    delete: Callable[[discord.Message], Awaitable[None]],
     failures: list[discord.HTTPException] | None = None,
 ) -> list[int]:
     """Delete a posting: exactly the messages it recorded, and nothing else.
@@ -228,6 +229,10 @@ async def _delete_posting(
     remove. Any other failure is logged and the id returned, and the rest are still attempted.
     *failures*, where given, is appended with each such failure, for a caller that must say what
     kind of fault left the messages standing (the change queue's stop notice does).
+
+    *delete* is core's delete for the kind of post being taken down (``delete_standing`` for a
+    table, ``delete_notice`` for a verdict, a banner or a note, ``delete_in_owned_channel`` for a
+    prompt in a channel the bot owns), which the caller names since only it knows the kind.
     """
     ids = list(message_ids or [anchor_msg_id])
     # The anchor is included whether or not the stored list names it. Every list this module
@@ -248,7 +253,7 @@ async def _delete_posting(
                     failures.append(exc)
             continue
         try:
-            await delete_standing(message)
+            await delete(message)
         except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
             log.warning("_delete_posting: could not delete %s %s: %s", label, message_id, exc)
             if not isinstance(exc, discord.NotFound):
@@ -1079,7 +1084,7 @@ async def remove_part_posted_messages(
         left.extend(
             await _delete_posting(
                 channel, message_id, [message_id], label="part-posted standings",
-                failures=failures,
+                delete=delete_standing, failures=failures,
             )
         )
     return left, failures

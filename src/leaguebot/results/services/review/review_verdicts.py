@@ -82,6 +82,8 @@ from leaguebot.core.models.change import (
 )
 from leaguebot.core.services.drivers import lineup_posting
 from leaguebot.core.services.posting import standing_posts
+from leaguebot.core.services.posting.notice_handler import delete_notice
+from leaguebot.core.services.posting.owned_channel_handler import delete_in_owned_channel
 from leaguebot.core.services.posting.output_router import OutputRouter
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.queue.change_types import OutcomeContext, Step, StepContext
@@ -444,7 +446,8 @@ async def _take_down_kept(channel: Any, ctx: StepContext) -> None:
     if text_channel is None:
         return
     left = await _delete_posting(
-        text_channel, int(message_id), [int(message_id)], label="verdict", failures=[]
+        text_channel, int(message_id), [int(message_id)], label="verdict",
+        delete=delete_notice, failures=[],
     )
     if left:
         raise StepFailedOnDiscord(
@@ -518,7 +521,7 @@ async def _post_appeals_prompt(
     kept = (ctx.kept or {}).get("message_id")
     if kept is not None:
         await _delete_posting(channel, int(kept), [int(kept)], label="appeals review prompt",
-                              failures=[])
+                              delete=delete_in_owned_channel, failures=[])
     state = await _build_penalty_review_state(
         ctx.bot, queue, server_config, router, attendance, round_id, division_id, channel.id
     )

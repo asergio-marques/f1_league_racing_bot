@@ -73,6 +73,8 @@ from leaguebot.core.services.queue.change_types import OutcomeContext, Step, Ste
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.services.posting.notice_handler import delete_notice, send_notice
+from leaguebot.core.services.posting.owned_channel_handler import delete_in_owned_channel
+from leaguebot.core.services.posting.standing_post_handler import delete_standing
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.models.standings_snapshot import (
@@ -596,7 +598,8 @@ async def _remove_kept(guild: discord.Guild, kept: dict[str, Any] | None) -> Non
     left: list[int] = []
     for message_id in ids:
         left.extend(await _delete_posting(
-            channel, message_id, [message_id], label="part-posted message", failures=failures,
+            channel, message_id, [message_id], label="part-posted message",
+            delete=delete_standing, failures=failures,
         ))
     if left:
         raise StepFailedOnDiscord(
@@ -935,6 +938,12 @@ async def _describe_delete(ctx: StepContext) -> str:
     return f"deleting the earlier {payload.get('what', 'message')} in <#{payload['channel_id']}>"
 
 
+#: Core's delete for each kind of message a `delete_message` job takes down, named by the job's
+#: ``kind``: a table is a standing post (the default), a prompt or a member's message in a
+#: submission or amendment channel is the bot-owned channel's.
+_DELETERS = {"standing": delete_standing, "owned": delete_in_owned_channel}
+
+
 async def _delete_message(ctx: StepContext) -> StepResult:
     """Delete one old message: a message already gone, or its channel, completes the job."""
     payload = ctx.step_payload
@@ -946,7 +955,7 @@ async def _delete_message(ctx: StepContext) -> StepResult:
     failures: list[discord.HTTPException] = []
     left = await _delete_posting(
         channel, message_id, [message_id], label=payload.get("what", "message"),
-        failures=failures,
+        delete=_DELETERS[payload.get("kind", "standing")], failures=failures,
     )
     if left:
         raise StepFailedOnDiscord(
