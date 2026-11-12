@@ -472,6 +472,7 @@ own design pass.
 | results | amendment sweep | arms results' standing sweep of lapsed amendments |
 | results | orphaned amend channels | asks each open amendment's lapse; before the submission channels, for the reason its comment gives |
 | results | orphaned submission channels | asks each open submission's review or restart |
+| results | missed round starts | asks the opening of each round whose start passed while the bot was down, through the `results` job's own handler |
 | attendance | missed check-in calls | asks each check-in call that fell due |
 | attendance | RSVP views and deadlines | routes each check-in message's view again and asks each deadline passed |
 | attendance | missed check-in clean-ups | asks each check-in's clean-up that fell due |
@@ -480,7 +481,10 @@ own design pass.
 | image | portrait refresh job | arms the image module's daily refresh |
 
 Results also arms the amendment sweep when it is switched on (`module_on_results`'s `After` step),
-so the sweep runs whenever results is on, a restart or not.
+and its switch-off removes it (`results_off_change`'s `disarm_sweep`), so the sweep runs whenever
+results is on, a restart or not. The builder records the moment the bot came up
+(`LeagueBot.came_up_at`), which the wiring hands to results' `results` job and its catch-up alike,
+so both judge a start passed while the bot was down against one value.
 
 The retry loop for log lines is no step (`architecture.md`, "Start-up runs once, in one
 function"): core's is `RetryCog.retry_loop` (`retry_cog`), started by `LeagueBot.setup_hook`
