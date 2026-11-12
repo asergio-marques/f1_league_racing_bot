@@ -45,6 +45,7 @@ from leaguebot.results.models.session_result import (
 )
 from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
 from leaguebot.results.services.standings import standings_service
+from leaguebot.results.services.standings.season_standings_posts import final_round_on
 from leaguebot.core.services.settings.channel_registry_service import (
     SETTING_LABELS,
     missing_channel_fault,
@@ -1574,19 +1575,6 @@ async def set_reserves_in_standings_on(
     )
 
 
-async def _division_has_active_results(db: aiosqlite.Connection, division_id: int) -> bool:
-    """True where a round of *division_id* holds a session with results on *db*: the rounds are
-    core's to name, the sessions are results' own."""
-    for rnd in await division_rounds_in_order_on(db, division_id):
-        row = await (await db.execute(
-            "SELECT 1 FROM session_results WHERE round_id = ? AND status = 'ACTIVE' LIMIT 1",
-            (rnd.id,),
-        )).fetchone()
-        if row is not None:
-            return True
-    return False
-
-
 async def division_repost_status(
     db_path: str, division_id: int, guild: discord.Guild | None
 ) -> str:
@@ -1611,7 +1599,7 @@ async def division_repost_status(
         if guild is not None and as_text_channel(guild.get_channel(results_ch_id)) is None:
             log.warning("division_repost_status: results channel %s not found in guild", results_ch_id)
             return "no_channel"
-        found = await _division_has_active_results(db, division_id)
+        found = await final_round_on(db, division_id) is not None
     return "ok" if found else "no_rounds"
 
 
@@ -1627,7 +1615,7 @@ async def standings_repost_status(
     *guild* to look in, a channel that is set is taken as on the server.
     """
     async with get_connection(db_path) as db:
-        if not await _division_has_active_results(db, division_id):
+        if await final_round_on(db, division_id) is None:
             return "no_rounds"
         config_row = await (await db.execute(
             "SELECT standings_channel_id FROM division_results_config WHERE division_id = ?",
