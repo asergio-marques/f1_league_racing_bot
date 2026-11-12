@@ -571,11 +571,11 @@ def _round_change(
         its phases due are drawn at once (`phases_due`), and its call, where none stands and its
         check-in is not over, is posted where it has fallen due (`call_fell_due`).
 
-        Under test mode the results submission is not run at once: `/test-mode advance` runs a
-        test season's rounds in their turn. Where results is on and weather off no `results` job is
-        armed at all, as the season's approval arms none; otherwise the round's `results` job is
-        taken down again where its moment has passed, which a job armed with no lateness limit would run at once. Its call
-        is still posted (`post_call`)."""
+        Under test mode the results submission is not run at once: `/test-mode advance` runs a test
+        season's rounds in their turn. Where results is on and weather off no `results` job is armed
+        at all, as the season's approval arms none; otherwise the round's `results` job is taken
+        down again where its moment has passed, which a job armed with no lateness limit would run
+        at once. Its call is still posted (`post_call`)."""
         judgement = judged(ctx) or {}
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:

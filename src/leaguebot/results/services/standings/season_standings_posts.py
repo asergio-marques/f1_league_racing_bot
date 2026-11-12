@@ -70,13 +70,13 @@ async def _opening_round(db_path: str, division_id: int):
 async def remove_earlier_try(guild, kept: dict[str, Any] | None) -> dict[str, Any] | None:
     """Take down the standings a try before this one left posted in part, or None where it left none.
 
-    The ids of an opening or final standings are recorded only once its posting is done, so a
-    table already sent when a later one failed is put on the failure for the job to keep (`kept`), and the next try removes it here,
-    from the channel it was posted in, which the standings channel may since have left: a channel
-    the guild no longer holds holds none of them. A message that will not delete raises, with
-    what is still to remove. Once the copies are down, what is returned names none left, so that
-    a failure of this try names what it left, even nothing, and the job no longer keeps the
-    copies removed.
+    The ids of an opening or final standings are recorded only once its posting is done, so a table
+    already sent when a later one failed is put on the failure for the job to keep (`kept`), and the
+    next try removes it here, from the channel it was posted in, which the standings channel may
+    since have left: a channel the guild no longer holds holds none of them. A message that will not
+    delete raises, with what is still to remove. Once the copies are down, what is returned names
+    none left, so that a failure of this try names what it left, even nothing, and the job no longer
+    keeps the copies removed.
     """
     from leaguebot.core.models.change import StepFailedOnDiscord
     from leaguebot.results.services.publishing.results_post_service import remove_part_posted_messages
