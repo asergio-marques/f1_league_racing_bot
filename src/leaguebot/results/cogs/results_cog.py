@@ -32,7 +32,11 @@ from leaguebot.results.services.points.points_settings import (
     run_xml_import,
     xml_import_named,
 )
-from leaguebot.results.services.points.points_amendment_change import refuse_while_approval_in_hand
+from leaguebot.results.services.points.amendment_mode_service import review_panel
+from leaguebot.results.services.points.points_amendment_change import (
+    KIND as POINTS_AMENDMENT,
+    refuse_while_approval_in_hand,
+)
 from leaguebot.results.services.points.points_config_service import ConfigNotFoundError
 from leaguebot.results.services.points.points_paste import bulk_refusal, parse_bulk_lines
 from leaguebot.results.services.module.channel_settings import (
@@ -1224,9 +1228,6 @@ class ResultsCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
         await interaction.response.defer(ephemeral=True)
-
-        from leaguebot.results.services.points.amendment_mode_service import review_panel
-
         season = await season_for_command(
             interaction, self.bot.season_service, "results amend review"
         )
@@ -1241,8 +1242,6 @@ class ResultsCog(commands.Cog):
                 interaction, "\u274c Amendment mode is not active.", what=describe(interaction)
             )
             return
-
-        from leaguebot.results.services.points.points_amendment_change import KIND
 
         # The season the panel was drawn for, bound where it is known not to be None.
         staged_for = season
@@ -1288,7 +1287,7 @@ class ResultsCog(commands.Cog):
                 # The queue's acknowledgement is the press's response, so it is not deferred
                 # (#439). Every check, the approval and its replies are the change's.
                 await bot_of(btn_inter).change_queue.ask(
-                    KIND,
+                    POINTS_AMENDMENT,
                     {"season_id": staged_for.id, "season_number": staged_for.season_number},
                     interaction=btn_inter,
                     what=describe(interaction),
