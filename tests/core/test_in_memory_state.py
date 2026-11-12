@@ -133,7 +133,7 @@ EXEMPT = {
     ("core/services/modules/module_service.py", "_switch_readers"),
     # The amendment's session chooser: what the member ticked, read once when they press
     # Continue. It dies with the ephemeral view it belongs to (#345).
-    ("results/cogs/results_cog.py", "selected"),
+    ("results/cogs/rounds_commands.py", "selected"),
     # What the test roster's recording judge was asked, in order: one judge is made for each check
     # of a roster change and dies with it, so none outlives the call that asked.
     ("core/services/drivers/template_capacity_service.py", "questions"),

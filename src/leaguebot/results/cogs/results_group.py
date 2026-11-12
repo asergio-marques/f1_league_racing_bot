@@ -48,3 +48,19 @@ class ResultsSubgroup:
         self, interaction: discord.Interaction, *, record: bool = True
     ) -> bool:
         """Whether the results module is on; where it is not, refuse and return False."""
+
+    @abstractmethod
+    async def _answer_nothing_changed(
+        self,
+        interaction: discord.Interaction,
+        command: str,
+        reply: str,
+        *details: str,
+    ) -> None:
+        """Answer a request that changes nothing, and record it in the log channel."""
+
+    @abstractmethod
+    async def _sync_gate(
+        self, interaction: discord.Interaction, div, *, what: str
+    ) -> bool:
+        """Whether a division may be synced; where an amendment is open, refuse and return False."""
