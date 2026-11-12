@@ -88,7 +88,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, TypedDict
 
 import aiosqlite
 import discord
@@ -227,18 +227,38 @@ def _not_done(ctx: OutcomeContext) -> list[str]:
     return lines
 
 
-async def _round_and_channel(db_path: str, round_id: int) -> aiosqlite.Row | None:
+class _RoundAndChannel(TypedDict):
+    """A round as core reads it and its submission row as results reads it; the row's fields are
+    None where the round has none."""
+
+    status: str
+    division_id: int
+    round_number: int
+    division_name: str
+    channel_id: int | None
+    closed: int | None
+    resubmitting: int | None
+
+
+async def _round_and_channel(db_path: str, round_id: int) -> _RoundAndChannel | None:
     async with get_connection(db_path) as db:
-        return await (
+        facts = await season_service.round_facts_on(db, round_id)
+        if facts is None:
+            return None
+        channel = await (
             await db.execute(
-                "SELECT r.status, r.division_id, r.round_number, d.name AS division_name, "
-                "       rsc.channel_id, rsc.closed, rsc.resubmitting "
-                "FROM rounds r JOIN divisions d ON d.id = r.division_id "
-                "LEFT JOIN round_submission_channels rsc ON rsc.round_id = r.id "
-                "WHERE r.id = ?",
+                "SELECT channel_id, closed, resubmitting FROM round_submission_channels "
+                "WHERE round_id = ?",
                 (round_id,),
             )
         ).fetchone()
+    return {
+        "status": facts.status.value, "division_id": facts.division_id,
+        "round_number": facts.round_number, "division_name": facts.division_name,
+        "channel_id": None if channel is None else channel["channel_id"],
+        "closed": None if channel is None else channel["closed"],
+        "resubmitting": None if channel is None else channel["resubmitting"],
+    }
 
 
 async def _post_review_prompt(
@@ -579,16 +599,16 @@ def review_open_change(
     async def open_review(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         payload = ctx.payload
         round_id = int(payload["round_id"])
+        facts = await season_service.round_facts_on(db, round_id)
         row = await (
             await db.execute(
-                "SELECT r.division_id, rsc.channel_id FROM rounds r "
-                "JOIN round_submission_channels rsc ON rsc.round_id = r.id WHERE r.id = ?",
+                "SELECT channel_id FROM round_submission_channels WHERE round_id = ?",
                 (round_id,),
             )
         ).fetchone()
-        if row is None:
+        if facts is None or row is None:
             raise LookupError(f"round {round_id} has no submission channel to open a review in")
-        division_id = int(row["division_id"])
+        division_id = facts.division_id
         publish = bool(payload.get("publish", True))
         label = payload.get("label") or "Provisional Results"
         if publish:
@@ -629,17 +649,16 @@ def review_open_change(
     async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         payload = ctx.payload
         round_id = int(payload["round_id"])
-        row = await (
+        facts = await season_service.round_facts_on(db, round_id)
+        channel = await (
             await db.execute(
-                "SELECT r.round_number, d.name AS division_name, rsc.channel_id "
-                "FROM rounds r JOIN divisions d ON d.id = r.division_id "
-                "LEFT JOIN round_submission_channels rsc ON rsc.round_id = r.id "
-                "WHERE r.id = ?",
+                "SELECT channel_id FROM round_submission_channels WHERE round_id = ?",
                 (round_id,),
             )
         ).fetchone()
-        number = "?" if row is None else row["round_number"]
-        division = "" if row is None else f" ({row['division_name']})"
+        channel_id = None if channel is None else channel["channel_id"]
+        number = "?" if facts is None else facts.round_number
+        division = "" if facts is None else f" ({facts.division_name})"
         views = {view.name: view for view in ctx.steps}
         opened = views.get(_OPEN)
         gone = bool(payload.get("channel_gone"))
@@ -649,8 +668,8 @@ def review_open_change(
         prompt = views.get(_POST_REVIEW_PROMPT)
         prompt_lost = prompt is not None and _discarded(prompt.result)
 
-        if not open_lost and ctx.actor_id is not None and row is not None and row["channel_id"]:
-            return _hand_the_prompt_over(ctx, int(row["channel_id"]))
+        if not open_lost and ctx.actor_id is not None and facts is not None and channel_id:
+            return _hand_the_prompt_over(ctx, int(channel_id))
 
         returning = payload.get("returning")
         lines = _closing_lines(
@@ -858,15 +877,9 @@ def review_prompt_change(
         payload = ctx.payload
         if payload.get("stage") == APPEALS_STAGE:
             return await close_appeals_stage(db, ctx)
-        row = await (
-            await db.execute(
-                "SELECT r.round_number, d.name AS division_name FROM rounds r "
-                "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
-                (int(payload["round_id"]),),
-            )
-        ).fetchone()
-        number = "?" if row is None else row["round_number"]
-        division = "" if row is None else f" ({row['division_name']})"
+        facts = await season_service.round_facts_on(db, int(payload["round_id"]))
+        number = "?" if facts is None else facts.round_number
+        division = "" if facts is None else f" ({facts.division_name})"
         prompt = next((view for view in ctx.steps if view.name == _POST_REVIEW_PROMPT), None)
         prompt_lost = prompt is not None and _discarded(prompt.result)
         left = list(payload["left_reposted" if prompt_lost else "left"])
@@ -1042,18 +1055,18 @@ def appeals_open_change(
     async def plan(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
         """Plan the prompt, then the old prompt's deletion: the new one stands first."""
         round_id = int(ctx.payload["round_id"])
+        facts = await season_service.round_facts_on(db, round_id)
         row = await (
             await db.execute(
-                "SELECT r.division_id, rsc.channel_id FROM rounds r "
-                "JOIN round_submission_channels rsc ON rsc.round_id = r.id WHERE r.id = ?",
+                "SELECT channel_id FROM round_submission_channels WHERE round_id = ?",
                 (round_id,),
             )
         ).fetchone()
-        if row is None:
+        if facts is None or row is None:
             raise LookupError(f"round {round_id} has no submission channel to post a prompt in")
         then = [PlannedStep(
             review_verdicts.POST_APPEALS_PROMPT,
-            {"round_id": round_id, "division_id": int(row["division_id"])},
+            {"round_id": round_id, "division_id": facts.division_id},
         )]
         if ctx.payload.get("old_prompt_id") is not None:
             then.append(PlannedStep(DELETE_MESSAGE, {
@@ -1186,14 +1199,8 @@ def close_stale_change() -> ChangeType:
         await _record_channel_deleted(db, ctx, result)
 
     async def close(db: aiosqlite.Connection, ctx: StepContext) -> StepResult:
-        row = await (
-            await db.execute(
-                "SELECT r.round_number, d.name AS division_name FROM rounds r "
-                "JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
-                (int(ctx.payload["round_id"]),),
-            )
-        ).fetchone()
-        where = "" if row is None else f"round {row['round_number']} ({row['division_name']})"
+        facts = await season_service.round_facts_on(db, int(ctx.payload["round_id"]))
+        where = "" if facts is None else f"round {facts.round_number} ({facts.division_name})"
         return StepResult(
             result={"closed": True},
             lines=(
