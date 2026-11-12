@@ -924,6 +924,36 @@ async def test_a_hub_refresh_that_fails_names_the_refresh_not_the_switch_off(
     assert updated_reply(interaction).startswith(SUCCESS)
 
 
+@pytest.mark.xfail(strict=True, reason="#284: turning results off does not yet remove the "
+                                       "amendment sweep turning it on arms")
+async def test_turning_results_off_removes_the_amendment_sweep(tmp_path):
+    """Results is on, and the standing sweep that undoes an amendment nobody carried through is
+    armed on the bot's scheduler, as turning results on and each start of the bot arm it. The
+    league manager confirms `/module disable results` and the queue carries it out: the switch-off
+    is done, and the scheduler holds no amendment sweep, as turning results on had set up
+    (architecture.md, "Each module turns itself on and off")."""
+    from leaguebot.core.services.scheduler_service import AMENDMENT_SWEEP_JOB_ID, SchedulerService
+
+    seeded = await _seed(tmp_path)
+    bot = _league(seeded.db_path)
+    scheduler = SchedulerService(seeded.db_path, str(tmp_path / "jobs.db"))
+    try:
+        bot.scheduler_service = scheduler
+        # The change types again, as the builder registers them for this scheduler.
+        attach_queue(bot, seeded.db_path, now=bot.clock)
+        scheduler.schedule_amendment_sweep()
+        assert scheduler.has_job(AMENDMENT_SWEEP_JOB_ID)
+        await _confirm(bot)
+
+        await run_queue(bot)
+
+        assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
+        assert await _flag(seeded.db_path) == 0
+        assert not scheduler.has_job(AMENDMENT_SWEEP_JOB_ID)
+    finally:
+        scheduler._scheduler._jobstores["default"].engine.dispose()
+
+
 # ---------------------------------------------------------------------------
 # Repeats and refusals
 # ---------------------------------------------------------------------------
