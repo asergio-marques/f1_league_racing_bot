@@ -261,6 +261,10 @@ CREATE TABLE called_off_notes (
     message_id  TEXT    NOT NULL
 );
 
+-- One note for each thing called off: the posting replaces an earlier row of its own.
+CREATE UNIQUE INDEX uq_called_off_notes_target
+    ON called_off_notes(division_id, IFNULL(round_id, 0));
+
 -- team_standings_snapshots
 CREATE TABLE team_standings_snapshots (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
