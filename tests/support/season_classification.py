@@ -86,15 +86,10 @@ async def seed_season(path: str, *, server_id: int = 1, divisions: tuple[str, ..
     return season_id, ids
 
 
-def classification_posts(standings: Any = None, attendance: Any = None) -> tuple[Any, Any, Any]:
-    """The standings, through whichever of results' two posting functions they use, and the
-    sheet. Both standings doubles are the one mock, so a test reads either; the recording
-    `post_standings` is created where #439 6b has deleted it."""
+def classification_posts(standings: Any = None, attendance: Any = None) -> tuple[Any, Any]:
+    """The standings, through results' posting function, and the sheet."""
     standings = standings or AsyncMock(return_value=[])
     return (
-        patch(
-            "leaguebot.results.services.publishing.results_post_service.post_standings", standings, create=True,
-        ),
         patch("leaguebot.results.services.publishing.results_post_service.produce_standings", standings),
         patch(
             "leaguebot.attendance.services.attendance_service.post_attendance_sheet",

@@ -53,8 +53,8 @@ async def test_the_opening_standings_are_posted_for_every_division(db_path):
     _season_id, division_ids = await seed_season(db_path, divisions=("Div A", "Div B"))
     standings = AsyncMock(return_value=[])
 
-    first, second, third = classification_posts(standings)
-    with first, second, third:
+    first, second = classification_posts(standings)
+    with first, second:
         for division_id in division_ids:
             await service.post_opening_standings(
                 bot_on(db_path), guild_double(), db_path, division_id, as_text=False
@@ -82,8 +82,8 @@ async def test_the_opening_standings_are_drawn_against_the_division_s_first_roun
     opener = await first_round_id(db_path, division_ids[0])
     standings = AsyncMock(return_value=[])
 
-    first, second, third = classification_posts(standings)
-    with first, second, third:
+    first, second = classification_posts(standings)
+    with first, second:
         await service.post_opening_standings(
             bot_on(db_path), guild_double(), db_path, division_ids[0], as_text=False
         )
@@ -101,8 +101,8 @@ async def test_a_division_with_no_rounds_posts_no_opening_standings(db_path):
         await db.commit()
     standings = AsyncMock(return_value=[])
 
-    first, second, third = classification_posts(standings)
-    with first, second, third:
+    first, second = classification_posts(standings)
+    with first, second:
         await service.post_opening_standings(
             bot_on(db_path), guild_double(), db_path, division_ids[0], as_text=False
         )
@@ -123,8 +123,8 @@ async def test_the_opening_standings_post_reads_the_division_s_standings_channel
     )
     standings = AsyncMock(return_value=[])
 
-    first, second, third = classification_posts(standings)
-    with first, second, third:
+    first, second = classification_posts(standings)
+    with first, second:
         await service.post_opening_standings(
             bot_on(db_path), guild, db_path, division_ids[0], as_text=False
         )
@@ -149,8 +149,8 @@ async def test_an_opening_standings_channel_set_and_gone_raises(db_path):
     guild.get_channel.return_value = None
     standings = AsyncMock(return_value=[])
 
-    first, second, third = classification_posts(standings)
-    with first, second, third, pytest.raises(StepFailedOnDiscord):
+    first, second = classification_posts(standings)
+    with first, second, pytest.raises(StepFailedOnDiscord):
         await service.post_opening_standings(
             bot_on(db_path), guild, db_path, division_ids[0], as_text=False
         )
@@ -233,9 +233,9 @@ async def test_the_final_standings_are_drawn_against_the_last_round_with_results
     second = await second_round_with_results(db_path, division_ids[0])
 
     standings = AsyncMock(return_value=[])
-    first, middle, last = classification_posts(standings)
+    first, last = classification_posts(standings)
     inputs = _final_inputs(second, division_ids[0])
-    with first, middle, last, inputs[0], inputs[1]:
+    with first, last, inputs[0], inputs[1]:
         await service.post_final_standings(
             bot_on(db_path), guild_double(), db_path, division_ids[0], second, as_text=False
         )
@@ -290,9 +290,9 @@ async def test_final_standings_whose_channel_was_deleted_raise(db_path):
     guild.get_channel.return_value = None
     standings = AsyncMock(return_value=[])
 
-    first, second, third = classification_posts(standings)
+    first, second = classification_posts(standings)
     inputs = _final_inputs(round_id, division_ids[0])
-    with first, second, third, inputs[0], inputs[1], pytest.raises(StepFailedOnDiscord):
+    with first, second, inputs[0], inputs[1], pytest.raises(StepFailedOnDiscord):
         await service.post_final_standings(
             bot_on(db_path), guild, db_path, division_ids[0], round_id, as_text=False
         )
@@ -311,13 +311,10 @@ async def test_the_final_standings_record_no_message_id(db_path):
     division_id = division_ids[0]
     round_id = await second_round_with_results(db_path, division_id)
     produce = AsyncMock(return_value=[PostedTable([9200], [])])
-    recording = AsyncMock()
 
     inputs = _final_inputs(round_id, division_id)
     with inputs[0], inputs[1], patch(
         "leaguebot.results.services.publishing.results_post_service.produce_standings", produce
-    ), patch(
-        "leaguebot.results.services.publishing.results_post_service.post_standings", recording, create=True,
     ):
         await service.post_final_standings(
             bot_on(db_path), guild_double(), db_path, division_id, round_id, as_text=False
@@ -327,7 +324,6 @@ async def test_the_final_standings_record_no_message_id(db_path):
     assert produce.await_args.args[2] == round_id
     assert produce.await_args.kwargs["fresh"] is True
     assert produce.await_args.kwargs["occasion"] is ClassificationOccasion.SEASON_FINAL
-    recording.assert_not_awaited()
     assert await _recorded_standings_ids(db_path, round_id) == [None]
 
 
@@ -388,9 +384,9 @@ async def test_a_final_standings_channel_never_set_posts_nothing(db_path):
         await db.commit()
     standings = AsyncMock(return_value=[])
 
-    first, second, third = classification_posts(standings)
+    first, second = classification_posts(standings)
     inputs = _final_inputs(round_id, division_id)
-    with first, second, third, inputs[0], inputs[1]:
+    with first, second, inputs[0], inputs[1]:
         await service.post_final_standings(
             bot_on(db_path), guild_double(), db_path, division_id, round_id, as_text=False
         )

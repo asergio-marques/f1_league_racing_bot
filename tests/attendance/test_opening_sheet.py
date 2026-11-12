@@ -48,8 +48,8 @@ async def test_the_opening_sheet_is_posted_for_every_division(db_path):
     _season_id, division_ids = await seed_season(db_path, divisions=("Div A", "Div B"))
     attendance = AsyncMock()
 
-    first, second, third = classification_posts(attendance=attendance)
-    with first, second, third:
+    first, second = classification_posts(attendance=attendance)
+    with first, second:
         for division_id in division_ids:
             await service.post_opening_sheet(
                 bot_on(db_path), guild_double(), db_path, division_id, as_text=False
@@ -77,8 +77,8 @@ async def test_the_opening_sheet_is_drawn_against_the_division_s_first_round(db_
     opener = await first_round_id(db_path, division_ids[0])
     attendance = AsyncMock()
 
-    first, second, third = classification_posts(attendance=attendance)
-    with first, second, third:
+    first, second = classification_posts(attendance=attendance)
+    with first, second:
         await service.post_opening_sheet(
             bot_on(db_path), guild_double(), db_path, division_ids[0], as_text=False
         )
@@ -96,8 +96,8 @@ async def test_a_division_with_no_rounds_posts_no_opening_sheet(db_path):
         await db.commit()
     attendance = AsyncMock()
 
-    first, second, third = classification_posts(attendance=attendance)
-    with first, second, third:
+    first, second = classification_posts(attendance=attendance)
+    with first, second:
         await service.post_opening_sheet(
             bot_on(db_path), guild_double(), db_path, division_ids[0], as_text=False
         )
@@ -115,8 +115,8 @@ async def test_the_opening_sheet_raises_where_it_cannot_be_posted(db_path):
     _season_id, division_ids = await seed_season(db_path)
     attendance = AsyncMock(side_effect=StepFailedOnDiscord("the sheet could not be posted"))
 
-    first, second, third = classification_posts(attendance=attendance)
-    with first, second, third, pytest.raises(StepFailedOnDiscord):
+    first, second = classification_posts(attendance=attendance)
+    with first, second, pytest.raises(StepFailedOnDiscord):
         await service.post_opening_sheet(
             bot_on(db_path), guild_double(), db_path, division_ids[0], as_text=False
         )
