@@ -2679,7 +2679,7 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/submission/submission_changes.py", "ask_submission_open"): (1, PASS["results"]),
     ("results/services/submission/submission_changes.py", "ask_submission_restart"): (1, PASS["results"]),
     ("results/services/submission/submission_changes.py", "submission_all_cancelled_change.end_round"):
-        (3, PASS["results"]),
+        (1, PASS["results"]),
     ("results/services/submission/submission_changes.py", "submission_all_cancelled_change.would_never_finish"):
         (3, PASS["results"]),
     ("results/services/submission/submission_changes.py", "submission_open_change.not_cancelled"):

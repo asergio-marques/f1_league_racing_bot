@@ -6,6 +6,7 @@ import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from typing import Any
 
 import aiosqlite
 
@@ -1004,10 +1005,12 @@ async def cancel_round_on(
 
 @dataclass(frozen=True)
 class RoundEndedNotHeld:
-    """What ending a round as not held gave: *previous*, the status it ended from, and *notices*,
-    what each subscriber to `cancellation_notices` planned for it, in the order they signed up."""
+    """What ending a round as not held gave: *previous*, the status it ended from, *target*, the
+    round's target as the notices hook was handed it, and *notices*, what each subscriber to
+    `cancellation_notices` planned for it, in the order they signed up."""
 
     previous: str
+    target: dict[str, Any]
     notices: list[CancellationNotices]
 
 
@@ -1039,7 +1042,7 @@ async def end_round_not_held_on(
     of a round called off is planned through, on *db*, for the round's scope and the round
     (``round_id``, ``division_id``, ``division_name``, ``season_id``, ``season_number``,
     ``round_number`` and ``track_name``), as the three cancellations call it, and gives what its
-    subscribers planned beside the status the round ended from. The caller turns the notices
+    subscribers planned beside the status the round ended from and that same target. The caller turns the notices
     into jobs; this plans none.
 
     Returns None where nothing was moved, and calls no subscriber.
@@ -1086,7 +1089,7 @@ async def end_round_not_held_on(
         "track_name": ended["track_name"],
     }
     notices = await cancellation_notices.call(db, SCOPE_ROUND, target)
-    return RoundEndedNotHeld(previous, notices)
+    return RoundEndedNotHeld(previous, target, notices)
 
 
 async def cancel_division_on(

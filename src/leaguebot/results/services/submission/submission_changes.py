@@ -661,19 +661,19 @@ def submission_all_cancelled_change(
             return StepResult(result={"ended": False})
         previous = ended.previous
         row = await (await db.execute(
-            "SELECT r.division_id, r.round_number, r.track_name, d.name AS division_name, "
-            "d.season_id, s.season_number, c.results_channel_id FROM rounds r "
-            "JOIN divisions d ON d.id = r.division_id JOIN seasons s ON s.id = d.season_id "
-            "LEFT JOIN division_results_config c ON c.division_id = d.id WHERE r.id = ?",
+            "SELECT c.results_channel_id FROM rounds r "
+            "LEFT JOIN division_results_config c ON c.division_id = r.division_id "
+            "WHERE r.id = ?",
             (round_id,),
         )).fetchone()
         assert row is not None
+        target = ended.target
         # A resubmission leaves the standings its first submission posted: they are withdrawn
         # with the round, and the later rounds' worked out again without it.
         held, standings_channel, standings_posts = await withdraw_round_standings_on(db, round_id)
         if held:
             await cascade_recompute_from_round_on(
-                db, int(row["division_id"]), round_id, display_names(ctx)
+                db, int(target["division_id"]), round_id, display_names(ctx)
             )
         posts = tuple(
             PlannedStep(POST_SESSION_RESULTS, {
@@ -684,11 +684,6 @@ def submission_all_cancelled_change(
             })
             for session in payload["sessions"]
         )
-        target = {
-            "round_id": round_id, "division_id": int(row["division_id"]), "division_name": str(row["division_name"]),
-            "season_id": int(row["season_id"]), "season_number": int(row["season_number"]),
-            "round_number": int(row["round_number"]), "track_name": row["track_name"],
-        }
         results_channel = row["results_channel_id"]
         deletions = tuple(
             PlannedStep(DELETE_MESSAGE, {
