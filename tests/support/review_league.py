@@ -656,20 +656,25 @@ async def race_rows(db_path: str) -> dict[int, dict[str, Any]]:
 
 
 async def snapshot_amendment(db_path: str, round_id: int,
-                             session_types: list[SessionType]) -> None:
+                             session_types: list[SessionType], *,
+                             now: datetime | None = None) -> None:
     """Record the round as it stands before an amendment's stage one writes, as stage one does,
     for a test that seeds an amendment past stage one: through `snapshot_before_amendment_on`, on
-    a connection opened and committed here."""
+    a connection opened and committed here. The amendment's half-hour runs from *now*: the wall
+    clock where the test hands none, as the snapshot read it before the clock was handed in."""
     from leaguebot.results.services.round_amendment import amendment_writes
 
     async with get_connection(db_path) as db:
-        await amendment_writes.snapshot_before_amendment_on(db, round_id, session_types)
+        await amendment_writes.snapshot_before_amendment_on(
+            db, round_id, session_types, now=now or datetime.now(timezone.utc)
+        )
         await db.commit()
 
 
 async def amend_stage_one(db_path: str, round_id: int, division_id: int, sessions: list[Any],
                           amended_by: int, bot: Any,
-                          display_names: Mapping[int, str] | None = None) -> None:
+                          display_names: Mapping[int, str] | None = None, *,
+                          now: datetime | None = None) -> None:
     """Record an amendment's stage one, as its last paste hands it to the league: the round
     snapshotted, each corrected classification written over it, its points applied and the
     standings recomputed, all in one save; nothing posted.
@@ -679,12 +684,15 @@ async def amend_stage_one(db_path: str, round_id: int, division_id: int, session
     in its save. That save waits on nothing but its own connection (architecture.md, "The
     database"), so the standings names a full tie is settled by are resolved before it and handed
     in as *display_names*, as the stage approvals hand them to `cascade_recompute_from_round_on`;
-    *bot* is not used, and the stage's log line is the change's, not the save's."""
+    *bot* is not used, and the stage's log line is the change's, not the save's. The amendment's
+    half-hour runs from *now*: the wall clock where the test hands none, as stage one read it
+    before the clock was handed in."""
     from leaguebot.results.services.round_amendment import amendment_writes
 
     async with get_connection(db_path) as db:
         await amendment_writes.amend_round_results_on(
-            db, round_id, division_id, sessions, amended_by, display_names
+            db, round_id, division_id, sessions, amended_by, display_names,
+            now=now or datetime.now(timezone.utc),
         )
         await db.commit()
 

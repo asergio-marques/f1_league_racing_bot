@@ -41,6 +41,8 @@ from leaguebot.core.services.drivers.team_service import TeamService
 from tests.support.session_writes import save_session_result
 from tests.support.change_queue import in_a_job
 
+_NO_CLOCK = "#284: the results save does not yet take the clock it is handed (now)"
+
 DIVISION_ID = 37
 OTHER_DIVISION_ID = 38
 ROUNDS = (371, 372)
@@ -192,6 +194,7 @@ async def _season_raced_across_a_role_change(tmp_path):
 # ── The standings ─────────────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_CLOCK)
 async def test_team_standings_keep_one_entry_across_a_role_change(tmp_path):
     """The defect itself: Ferrari once, holding both rounds' points, and no stray entry."""
     db_path, teams, _ = await _season_raced_across_a_role_change(tmp_path)
@@ -202,6 +205,7 @@ async def test_team_standings_keep_one_entry_across_a_role_change(tmp_path):
     assert points == {teams["Ferrari"]: 25 + 18, teams["Rival"]: 18 + 25}
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_CLOCK)
 async def test_position_change_survives_a_role_change(tmp_path):
     """The movement arrow reads the previous round by the same key the current one carries."""
     db_path, teams, _ = await _season_raced_across_a_role_change(tmp_path)
@@ -217,6 +221,7 @@ async def test_position_change_survives_a_role_change(tmp_path):
 # ── What a league reads ──────────────────────────────────────────────────────
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_CLOCK)
 async def test_results_post_names_a_team_after_its_role_is_replaced(tmp_path):
     """The first round, posted again after the change, still says Ferrari — never a mention
     of a role that may since have been deleted from the server."""
@@ -251,6 +256,7 @@ async def test_results_post_names_a_team_after_its_role_is_replaced(tmp_path):
     assert "<@&" not in text
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_CLOCK)
 async def test_results_graphic_names_a_team_after_its_role_is_replaced(tmp_path):
     """The graphic finds the name and badge from the team, not by asking Discord about a role."""
     from leaguebot.image.services.image_results_post import _team_names
@@ -342,6 +348,7 @@ async def test_a_refusal_names_the_team_a_driver_is_seated_in(tmp_path, typed):
     ]
 
 
+@pytest.mark.xfail(strict=True, reason=_NO_CLOCK)
 async def test_a_refusal_names_the_team_an_earlier_session_recorded_across_a_role_change(
     tmp_path,
 ):

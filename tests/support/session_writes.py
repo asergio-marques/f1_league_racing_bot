@@ -8,6 +8,8 @@ only needs the rows in place calls these, which keep the call the committing for
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.points import scoring
@@ -24,12 +26,18 @@ async def save_session_result(
     submitted_by: int | None,
     driver_rows: list[dict],
     fl_driver_override: int | None = None,
+    *,
+    now: datetime | None = None,
 ) -> int:
-    """Save one session and its driver rows, committed; gives the session result's id."""
+    """Save one session and its driver rows, committed; gives the session result's id.
+
+    *now* is the time the session is recorded as submitted at: the wall clock where the test hands
+    none, as the save read it before the clock was handed in."""
     async with get_connection(db_path) as db:
         session_result_id = await service._save_session_result_in_tx(
             db, round_id, division_id, session_type, status, config_name,
             submitted_by, driver_rows, fl_driver_override,
+            now=now or datetime.now(timezone.utc),
         )
         await db.commit()
     return session_result_id
@@ -41,13 +49,19 @@ async def replace_round_results(
     division_id: int,
     season_id: int,
     collected: list[service.CollectedSession],
+    *,
+    now: datetime | None = None,
 ) -> None:
     """Replace every session of a round with *collected*, in one transaction: all of it lands or,
-    where anything raises, none of it."""
+    where anything raises, none of it.
+
+    *now* is the time the new sessions are recorded as submitted at: the wall clock where the test
+    hands none, as the swap read it before the clock was handed in."""
     async with get_connection(db_path) as db:
         try:
             await service.replace_round_results_on(
-                db, round_id, division_id, season_id, collected
+                db, round_id, division_id, season_id, collected,
+                now=now or datetime.now(timezone.utc),
             )
             await db.commit()
         except BaseException:
