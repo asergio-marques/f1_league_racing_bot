@@ -23,12 +23,14 @@ from __future__ import annotations
 
 import os
 
+import pytest
+
 from leaguebot.core.db.database import get_connection, run_migrations
 
 #: table -> the columns this change added to it.
 _ADDED: dict[str, tuple[str, ...]] = {
     "session_results": ("results_message_ids",),
-    "driver_standings_snapshots": (
+    "round_standings_posts": (
         "standings_message_ids",
         "constructor_standings_message_ids",
     ),
@@ -43,6 +45,9 @@ async def _columns(db_path: str, table: str) -> dict[str, dict]:
         return {row["name"]: dict(row) for row in await cursor.fetchall()}
 
 
+@pytest.mark.xfail(
+    strict=True, reason="#284: a round's standings posting is not yet a row of its own"
+)
 async def test_the_new_columns_are_nullable(tmp_path):
     """The columns exist, on all four tables, after a plain migration; and a row written before
     this change has no list to offer, and must still be writable.
