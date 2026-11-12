@@ -56,7 +56,9 @@ from leaguebot.core.db.database import sole_row
 from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord
 from leaguebot.core.services.posting.notice_handler import delete_notice
 from leaguebot.core.services.posting.standing_post_handler import delete_standing
+from leaguebot.core.services.seasons.season_service import active_season_rounds_on
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.core.services.settings.config_service import league_server_id_on
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
 
@@ -115,8 +117,8 @@ async def erase_season_on(db: aiosqlite.Connection) -> SeasonErase:
     round and a label (decided with #439): the items travel in the steps of the change that
     turns results off, one step to an item, so a stop part-way through the removals is finished
     from what the first step saved, not from rows long since gone. The server's id is read here
-    too, from `server_configs`, so that a message left standing can be linked even where the
-    server is out of the bot's cache.
+    too, through core's `league_server_id_on`, so that a message left standing can be linked
+    even where the server is out of the bot's cache.
 
     Nothing here touches Discord, and nothing opens a connection: the caller's save holds the
     flag, the rows and the closing of the rounds together. Where no season is active, nothing is
@@ -141,29 +143,31 @@ async def erase_season_on(db: aiosqlite.Connection) -> SeasonErase:
     )
     from leaguebot.results.services.review.verdict_records import VERDICT_TABLES, select_verdicts
 
-    cursor = await db.execute(
-        """
-        SELECT r.id            AS round_id,
-               d.id            AS division_id,
-               drc.results_channel_id,
-               drc.standings_channel_id
-        FROM rounds r
-        JOIN divisions d ON d.id = r.division_id
-        JOIN seasons   s ON s.id = d.season_id
-        LEFT JOIN division_results_config drc ON drc.division_id = d.id
-        WHERE s.status    = 'ACTIVE'
-        ORDER BY r.id
-        """,
-    )
-    rounds = [dict(row) for row in await cursor.fetchall()]
-    if not rounds:
+    active_rounds = await active_season_rounds_on(db)
+    if not active_rounds:
         return SeasonErase()
 
-    cursor = await db.execute(
-        "SELECT server_id FROM server_configs WHERE server_id IS NOT NULL LIMIT 1"
-    )
-    server_row = await cursor.fetchone()
-    server_id = None if server_row is None else int(server_row["server_id"])
+    channels: dict[int, Any] = {}
+    for division_id in sorted({division for _, division in active_rounds}):
+        cursor = await db.execute(
+            "SELECT results_channel_id, standings_channel_id FROM division_results_config "
+            "WHERE division_id = ?",
+            (division_id,),
+        )
+        channels[division_id] = await cursor.fetchone()
+    rounds: list[dict[str, Any]] = [
+        {
+            "round_id": round_id,
+            "division_id": division_id,
+            "results_channel_id": None if channels[division_id] is None
+            else channels[division_id]["results_channel_id"],
+            "standings_channel_id": None if channels[division_id] is None
+            else channels[division_id]["standings_channel_id"],
+        }
+        for round_id, division_id in active_rounds
+    ]
+
+    server_id = await league_server_id_on(db)
 
     items: list[dict[str, Any]] = []
 
