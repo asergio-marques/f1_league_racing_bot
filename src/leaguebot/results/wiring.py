@@ -519,11 +519,11 @@ def start_up_steps(bot: "LeagueBot") -> "tuple[StartUpStep, ...]":
         # database, unapproved; recovering a submission channel whose results were saved but never
         # posted posts its standings from that database. Reverting the amendments first means
         # those standings are built from the round as it raced, wherever the revert succeeds.
-        ("orphaned amend channels", lambda: recover_orphaned_amend_channels(bot)),
+        ("orphaned amend channels", lambda: recover_orphaned_amend_channels(bot, queue=bot.change_queue)),
         # Submission channels left open by a previous run. The paste they were waiting for died
         # with the process, so each is asked of the queue as a review put back or a submission
         # restarted, which asks `results.submission.open` afresh as a follow-on.
-        ("orphaned submission channels", lambda: recover_orphaned_submission_channels(bot)),
+        ("orphaned submission channels", lambda: recover_orphaned_submission_channels(bot, queue=bot.change_queue)),
     )
 
 

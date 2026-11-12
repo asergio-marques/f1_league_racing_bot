@@ -300,7 +300,7 @@ async def ask_lapse(
     )
 
 
-async def recover_orphaned_amend_channels(bot: LeagueBot) -> None:
+async def recover_orphaned_amend_channels(bot: LeagueBot, *, queue: ChangeQueue) -> None:
     """Ask the change queue to end every amendment left open by a previous bot process.
 
     An amendment's pastes are turns on the queue, so an amendment open at a restart has, at
@@ -327,6 +327,8 @@ async def recover_orphaned_amend_channels(bot: LeagueBot) -> None:
     ask for one amendment stops none of the others: once every amendment has been asked for, a
     failure for any is raised as one `RecoveryFailed` naming each amendment's round and its error,
     which the start-up sweep reports to the log channel in one line.
+
+    The change queue is handed in by the wiring's step, not looked up on the bot.
     """
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute("SELECT id, round_id FROM round_amend_channels ORDER BY id")
@@ -335,7 +337,7 @@ async def recover_orphaned_amend_channels(bot: LeagueBot) -> None:
     failures: dict[int, BaseException] = {}
     for amend_id, round_id in orphans:
         try:
-            await ask_lapse(bot.change_queue, bot.db_path, amend_id, cause=RESTART)
+            await ask_lapse(queue, bot.db_path, amend_id, cause=RESTART)
         except Exception as error:
             log.exception("Recovery: could not ask the lapse of amendment %s", amend_id)
             failures[round_id] = error

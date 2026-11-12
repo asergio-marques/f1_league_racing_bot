@@ -295,7 +295,7 @@ async def _recover(league: ReviewLeague) -> None:
 
 
     await restart_queue(league.bot)
-    await recover_orphaned_submission_channels(league.bot)
+    await recover_orphaned_submission_channels(league.bot, queue=league.bot.change_queue)
     await run_queue(league.bot)
 
 
@@ -1159,7 +1159,7 @@ async def test_recovery_leaves_alone_a_round_whose_review_is_in_hand(tmp_path):
 
 
     await restart_queue(league.bot)
-    await recover_orphaned_submission_channels(league.bot)
+    await recover_orphaned_submission_channels(league.bot, queue=league.bot.change_queue)
 
     assert await changes_of(league.db_path, KIND) == []
     assert PROMPT in league.channel(SUBMISSION_CHANNEL).messages
@@ -1332,7 +1332,7 @@ async def test_recovery_leaves_alone_a_round_whose_appeals_approval_is_in_hand(t
 
 
     await restart_queue(league.bot)
-    await recover_orphaned_submission_channels(league.bot)
+    await recover_orphaned_submission_channels(league.bot, queue=league.bot.change_queue)
 
     assert await changes_of(league.db_path, APPEALS_OPEN) == []
     assert OLD_APPEALS_PROMPT in league.channel(SUBMISSION_CHANNEL).messages

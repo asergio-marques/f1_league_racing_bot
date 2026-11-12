@@ -103,7 +103,7 @@ async def _restart(league: SeasonLeague, *, run: bool = True) -> None:
     queue = await restart_queue(league.bot)
     if not run:
         await queue.stop()
-    await recover_orphaned_submission_channels(league.bot)
+    await recover_orphaned_submission_channels(league.bot, queue=league.bot.change_queue)
     if run:
         await run_queue(league.bot)
 

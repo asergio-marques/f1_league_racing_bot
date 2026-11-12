@@ -62,7 +62,7 @@ async def test_each_orphan_is_reported_separately(tmp_path):
             )
         await db.commit()
 
-    await recover_orphaned_amend_channels(league.bot)
+    await recover_orphaned_amend_channels(league.bot, queue=league.bot.change_queue)
     lapses = [row for row in await change_rows(league.db_path)
               if row["kind"] == "results.amend.lapse"]
     await run_queue(league.bot)
@@ -197,7 +197,7 @@ async def test_an_amendment_whose_stage_is_queued_is_not_reverted_on_restart(tmp
     )
 
     await restart_queue(league.bot)
-    await recover_orphaned_amend_channels(league.bot)
+    await recover_orphaned_amend_channels(league.bot, queue=league.bot.change_queue)
 
     assert ("delete_channel", league_of.AMEND_CHANNEL, league_of.AMEND_CHANNEL) not in league.events
     assert await league_of.one(

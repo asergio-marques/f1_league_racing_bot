@@ -187,7 +187,7 @@ async def _recover(stub):
         recover_orphaned_submission_channels,
     )
 
-    await recover_orphaned_submission_channels(stub)
+    await recover_orphaned_submission_channels(stub, queue=stub.change_queue)
 
 
 def _asked(stub) -> list[tuple[str, dict]]:

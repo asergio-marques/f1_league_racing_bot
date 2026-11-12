@@ -490,7 +490,7 @@ async def test_a_restart_leaves_a_refused_deletion_to_the_amendment_s_own_lane(
     await _type(league, "1, <@103>, FER, 1:30:00.000, 1:20.000, N/A")
     assert await stopped_job(league.db_path, LANE) is not None
 
-    await recover_orphaned_amend_channels(league.bot)
+    await recover_orphaned_amend_channels(league.bot, queue=league.bot.change_queue)
     await run_queue(league.bot)
 
     assert await stopped_job(league.db_path, "league") is None
@@ -1196,7 +1196,7 @@ async def test_a_restart_asks_the_lapse_of_each_abandoned_amendment_before_the_q
         )
         await db.commit()
 
-    await recover_orphaned_amend_channels(league.bot)
+    await recover_orphaned_amend_channels(league.bot, queue=league.bot.change_queue)
 
     [lapse] = await _changes(league, LAPSE)
     assert lapse["origin"] == "BOT"

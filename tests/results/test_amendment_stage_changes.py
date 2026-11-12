@@ -564,7 +564,7 @@ async def test_recovery_leaves_alone_an_amendment_whose_stage_is_in_hand(tmp_pat
     await block_queue(league)
     await _approve_reports(league)
 
-    await recover_orphaned_amend_channels(league.bot)
+    await recover_orphaned_amend_channels(league.bot, queue=league.bot.change_queue)
 
     row = await _amend_row(league)
     assert row is not None and row["pre_amendment_state"] is not None

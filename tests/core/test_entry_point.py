@@ -851,7 +851,7 @@ _MODULE_STEPS = {
 }
 
 
-#: The module steps whose recovery is a function handed the bot alone, with where that function
+#: The module steps whose recovery is a function handed the bot, with where that function
 #: lives and its name: in its module's wiring, or, for results' three recoveries, its services.
 _RECOVERIES_OF_THE_STEPS = {
     "portrait refresh job": ("leaguebot.image.wiring", "recover_portrait_refresh_job"),
@@ -870,6 +870,13 @@ _RECOVERIES_OF_THE_STEPS = {
     "missed check-in clean-ups": ("leaguebot.attendance.wiring",
                                   "recover_missed_check_in_clean_ups"),
 }
+
+
+#: The steps whose recovery is handed the bot's change queue as well, which a service does not look
+#: up on the bot (architecture.md, "Services stay attached to the bot, and are built in one place").
+_RECOVERIES_GIVEN_THE_QUEUE = frozenset(
+    {"orphaned amend channels", "orphaned submission channels", "missed round starts"}
+)
 
 
 @pytest.mark.xfail(strict=True, reason="#284: results' start-up recoveries are not yet moved "
@@ -905,8 +912,8 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     close still ahead on record, re-arms it on the bot's scheduler (the step reads the host's clock
     and takes no `now`, so the close is set a day after that clock); the wizards are recovered by
     the bot's wizard service; the amendment sweep arms the bot's scheduler's sweep; and each other
-    step hands its recovery the bot: results' three in results' services, each of the
-    others in its module's wiring. Nothing is posted to the log channel.
+    step hands its recovery the bot: results' three in results' services, which are also handed the
+    bot's queue, each of the others in its module's wiring. Nothing is posted to the log channel.
     """
     import importlib
     from contextlib import asynccontextmanager
@@ -1014,7 +1021,9 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
         "wizards": ("recover_wizards", (bot.wizard_service,), {}),
         "amendment sweep": ("schedule_amendment_sweep", (scheduler,), {}),
     } | {
-        step: (function, (bot,), {}) for step, (_, function) in _RECOVERIES_OF_THE_STEPS.items()
+        step: (function, (bot,),
+               {"queue": bot.change_queue} if step in _RECOVERIES_GIVEN_THE_QUEUE else {})
+        for step, (_, function) in _RECOVERIES_OF_THE_STEPS.items()
     }
     order = _CORE_STEPS + [step for steps in _MODULE_STEPS.values() for step in steps]
     assert sorted(expected) == sorted(order)
