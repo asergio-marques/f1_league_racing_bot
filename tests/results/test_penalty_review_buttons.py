@@ -59,6 +59,7 @@ from tests.support.change_queue import (
     league_double,
     member_interaction,
     run_queue,
+    in_a_job,
     seed_server,
     updated_reply,
 )
@@ -946,6 +947,33 @@ async def test_no_penalties_with_the_channel_unreachable_is_answered_and_recorde
         f"⛔ the “No Penalties / Confirm” button {_OF_THE_REVIEW} refused for Alex (<@77>) — "
     ), line
     assert "4455" in line, line
+
+
+async def test_an_approval_message_discord_refuses_to_delete_is_still_the_one_withdrawn_on_retry(
+    tmp_path,
+):
+    """In an amendment's review the approval message (880401) stands, and Discord refuses to
+    delete it (403). Withdrawing it raises for the job to stop the round's lane on, and the review
+    still holds the message's id, which an amendment keeps in memory alone, so a Retry withdraws
+    the same message again instead of posting a second beside it."""
+    state = _state(staged=[])
+    state.is_amendment = True
+    state.approval_message_id = _APPROVAL_MESSAGE
+    message = MagicMock(delete=AsyncMock(side_effect=discord.Forbidden(MagicMock(), "no perms")))
+    channel = MagicMock()
+    channel.fetch_message = AsyncMock(return_value=message)
+    await _pressed_by_alex(state, channel, tmp_path)
+
+    with in_a_job():
+        with pytest.raises(discord.Forbidden):
+            await pw._take_down_approval(state)
+        assert state.approval_message_id == _APPROVAL_MESSAGE
+        message.delete = AsyncMock()
+        await pw._take_down_approval(state)
+
+    channel.fetch_message.assert_awaited_with(_APPROVAL_MESSAGE)
+    message.delete.assert_awaited_once()
+    assert state.approval_message_id is None
 
 
 # ---------------------------------------------------------------------------

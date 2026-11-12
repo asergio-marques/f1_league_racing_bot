@@ -293,5 +293,7 @@ async def _take_down_approval(state: PenaltyReviewState) -> None:
     changes the review withdraws it, as does anything that ends the stage it belongs to, and its
     buttons refuse on any message but the one recorded here.
     """
-    message_id, state.approval_message_id = state.approval_message_id, None
-    await _delete_review_message(state, message_id)
+    # Cleared once the delete returns: a refusal raises for the job to stop the lane on, and an
+    # amendment keeps the id in memory alone, so a Retry must still find the message.
+    await _delete_review_message(state, state.approval_message_id)
+    state.approval_message_id = None
