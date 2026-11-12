@@ -842,7 +842,8 @@ _CORE_STEPS = ["expired review prompts", "hub"]
 #: the order the builder signs them up: the core specification's.
 _MODULE_STEPS = {
     "signup": ["signup close timer", "wizards"],
-    "results": ["amendment sweep", "orphaned amend channels", "orphaned submission channels"],
+    "results": ["amendment sweep", "orphaned amend channels", "orphaned submission channels",
+                "missed round starts"],
     "attendance": ["missed check-in calls", "RSVP views and deadlines",
                    "missed check-in clean-ups"],
     "weather": ["missed phases", "missed forecast clean-ups"],
@@ -851,13 +852,15 @@ _MODULE_STEPS = {
 
 
 #: The module steps whose recovery is a function handed the bot alone, with where that function
-#: lives and its name: in its module's wiring, or, for results' two recoveries, its services.
+#: lives and its name: in its module's wiring, or, for results' three recoveries, its services.
 _RECOVERIES_OF_THE_STEPS = {
     "portrait refresh job": ("leaguebot.image.wiring", "recover_portrait_refresh_job"),
     "orphaned amend channels": ("leaguebot.results.services.round_amendment.amend_end_changes",
                                 "recover_orphaned_amend_channels"),
     "orphaned submission channels": ("leaguebot.results.services.submission.submission_recovery",
                                      "recover_orphaned_submission_channels"),
+    "missed round starts": ("leaguebot.results.services.submission.submission_recovery",
+                            "recover_missed_round_starts"),
     "missed phases": ("leaguebot.weather.wiring", "recover_missed_phases"),
     "missed forecast clean-ups": ("leaguebot.weather.wiring",
                                   "recover_missed_forecast_clean_ups"),
@@ -870,7 +873,8 @@ _RECOVERIES_OF_THE_STEPS = {
 
 
 @pytest.mark.xfail(strict=True, reason="#284: results' start-up recoveries are not yet moved "
-                                       "out of its wiring into its services")
+                                       "out of its wiring into its services, and no step yet "
+                                       "catches up the round starts missed")
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     """`build` on paths under `tmp_path` signs core's start-up steps and each module's up to
     `bot.starting`, and the sweep is then run over it with every module on, so the order is read
@@ -883,6 +887,9 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
       the restart has its unapproved corrections in the database, and a submission channel whose
       results were saved but never posted posts its standings from it, so swept the other way round
       those standings would publish the corrections the revert then takes back;
+    - **missed round starts after both** (#450): a round's submission cleared and asked open again
+      by the submission channels' recovery is then in hand on the queue, and the catch-up of the
+      round starts missed while the bot was down leaves it to that opening rather than ask another;
     - **missed check-in calls, then the RSVP deadlines, then the missed check-in clean-ups**: a call
       comes before its deadline, and a check-in whose deadline and clean-up both passed while the
       bot was down is distributed before it is taken down;
@@ -898,7 +905,7 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     close still ahead on record, re-arms it on the bot's scheduler (the step reads the host's clock
     and takes no `now`, so the close is set a day after that clock); the wizards are recovered by
     the bot's wizard service; the amendment sweep arms the bot's scheduler's sweep; and each other
-    step hands its recovery the bot: results' two in results' services, each of the
+    step hands its recovery the bot: results' three in results' services, each of the
     others in its module's wiring. Nothing is posted to the log channel.
     """
     import importlib
