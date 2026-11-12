@@ -316,6 +316,59 @@ async def test_a_sheet_s_id_is_saved_with_its_post_and_the_final_sheet_saves_non
     assert str(await _sheet_id(league)) == str(new)
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#285: a round grid that cannot be read is drawn empty, and the sheet is posted over "
+    "the standing one",
+)
+async def test_a_sheet_whose_grid_cannot_be_read_stops_and_leaves_the_standing_one(tmp_path):
+    """Pro's sheet stands as message 6200, and the image module is on with the attendance
+    graphic switched on, so Pro's round 1 sheet is drawn with its grid of rounds. The points
+    each round gave each driver cannot be read. The queue stops at the post, nothing is sent,
+    and 6200 stays as Pro's live sheet, rather than a sheet with an empty grid replacing it. A
+    league admin presses Retry: the sheet is posted as text and replaces 6200."""
+    from leaguebot.image.services.image_attendance_post import (
+        ATTENDANCE_ASPECT,
+        ATTENDANCE_TEMPLATE_KEY,
+        attendance_enabled,
+    )
+
+    league = await ongoing_league(tmp_path, attendance=True, images=True)
+    await league.write(
+        "INSERT INTO driver_round_attendance (round_id, division_id, driver_profile_id, "
+        "rsvp_status, attended, total_points_after) VALUES (?, ?, ?, 'NO_RSVP', 1, 3)",
+        ROUND_1, PRO, profile_id(LEWIS),
+    )
+    await _old_sheet_standing(league)
+    # The attendance graphic switched on, and its template sound.
+    league.bot.image_config_service.get_toggles = AsyncMock(
+        return_value={ATTENDANCE_ASPECT: True}
+    )
+    league.bot.image_validity_service.template_reports = AsyncMock(
+        return_value={ATTENDANCE_TEMPLATE_KEY: MagicMock(valid=True)}
+    )
+    assert await attendance_enabled(league.bot), "the graphic is not drawn in this league"
+    # The grid alone reads the points each round gave; the sheet's own rows read the totals.
+    await league.write(
+        "ALTER TABLE driver_round_attendance RENAME COLUMN points_awarded TO points_unreadable"
+    )
+
+    await _ask_pro_s_sheet(league)
+    await run_queue(league.bot)
+
+    assert (await stopped_job(league.db_path))["name"] == "post_sheet"
+    assert _sheet_events(league) == []
+    assert OLD_SHEET in league.channel(SHEET).messages
+    assert str(await _sheet_id(league)) == str(OLD_SHEET)
+
+    await retry_job(league.bot)
+
+    assert await stopped_job(league.db_path) is None
+    [(sent, new)] = [event for event in _sheet_events(league) if event[0] == "send"]
+    assert ("delete", OLD_SHEET) in _sheet_events(league)
+    assert str(await _sheet_id(league)) == str(new)
+
+
 async def test_an_old_sheet_discord_will_not_delete_stops_the_queue_and_once_discarded_is_named(
     tmp_path,
 ):
