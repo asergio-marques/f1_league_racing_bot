@@ -343,14 +343,22 @@ async def _ignore_answers(db_path: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_an_unparseable_button_id_says_so_rather_than_raising(tmp_path):
-    """The id is round-tripped through Discord and comes back as whatever is on the button.
-    A malformed one must not take the interaction down with an unhandled exception."""
+@pytest.mark.xfail(
+    strict=True, reason="#285: an unparseable button id is still refused, not raised"
+)
+async def test_an_unparseable_check_in_button_id_is_a_fault_not_a_refusal(tmp_path):
+    """The bot writes every check-in button's id itself, so one it cannot read is a fault of the
+    bot's, not anything the driver did: the handler raises, and the view's `on_error` reports it
+    through `report_failure`, as every other fault in a press is reported. It answers the driver
+    nothing and writes no refusal line of its own. An action it does not know stays a refusal
+    (`test_an_unknown_action_says_so`): a button an older version of the bot left behind."""
     interaction = await _make_interaction(await _make_db(tmp_path, starts_in=timedelta(days=3)), 1)
 
-    await _press(interaction, "nonsense")
+    with pytest.raises(Exception):
+        await handle_rsvp_button(interaction, "nonsense")
 
-    assert "invalid button ID" in _reply(interaction)
+    interaction.response.send_message.assert_not_awaited()
+    assert _logged(interaction) == []
 
 
 async def test_an_unknown_action_says_so(tmp_path):
