@@ -223,7 +223,6 @@ def _lines(interaction) -> list[str]:
 @pytest.fixture(autouse=True)
 def _permitted(monkeypatch):
     """Permit by default; the refusal is exercised explicitly where it is the subject."""
-    monkeypatch.setattr(pw, "_may_review_signup", AsyncMock(return_value=True), raising=False)
     monkeypatch.setattr(pw, "is_league_manager", lambda config, member: True)
 
 

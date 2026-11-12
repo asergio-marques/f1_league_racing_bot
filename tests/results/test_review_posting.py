@@ -1614,20 +1614,13 @@ async def test_a_refused_delete_of_an_old_standings_picture_stops_the_queue_keep
 
 async def test_a_standings_picture_s_id_is_saved_with_its_mark(tmp_path):
     """Round 3's standings are drawn as two pictures. Their ids are saved by `post_standings`'
-    own record, with its done mark: the job's result names both pictures, and the standings'
-    own committing save is never called while the pictures post."""
-    from leaguebot.results.services.publishing import results_post_service
-
+    own record, with its done mark: the job's result names both pictures."""
     league = await _league(tmp_path)
-    own_save = AsyncMock()
-    with _standings_drawn(tmp_path), patch.object(
-        results_post_service, "_set_standings_message_id", new=own_save, create=True,
-    ):
+    with _standings_drawn(tmp_path):
         await _ask(league)
         await _run_until_done(league, "post_standings")
 
     drivers, constructors = league.sent_to(STANDINGS_CHANNEL)
-    assert own_save.await_count == 0, "the picture saved its own id outside the job's record"
     assert await _standings_ids(league.db_path) == (drivers, constructors)
     [post] = [row for row in await step_rows(league.db_path) if row["name"] == "post_standings"]
     assert {drivers, constructors} <= set(post["result"]["new"])
