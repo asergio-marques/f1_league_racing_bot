@@ -67,8 +67,8 @@ def _patched(source: str) -> list[tuple[int, str, str]]:
     aliases = _module_aliases(tree)
 
     def base(node: ast.expr) -> str | None:
-        text = ast.unparse(node)
-        target = aliases.get(text, text)
+        head, dot, rest = ast.unparse(node).partition(".")
+        target = aliases.get(head, head) + dot + rest
         return target if target.startswith("leaguebot.") else None
 
     found = []
@@ -151,6 +151,8 @@ def test_the_check_sees_each_form_of_a_patch_that_creates_a_missing_name():
         "    monkeypatch.setattr('leaguebot.core.utils.league_bot.path_gone', 1, raising=False)\n"
         "    monkeypatch.setattr(LeagueBot, 'class_gone', 1, raising=False)\n"
         "    patch('leaguebot.core.utils.league_bot.LeagueBot.path_class_gone', new=1, create=True)\n"
+        "    monkeypatch.setattr(other.LeagueBot, 'module_class_gone', 1, raising=False)\n"
+        "    patch.object(lb.LeagueBot, 'alias_class_gone', new=1, create=True)\n"
     )
 
     assert _dead_patches(source, "t.py") == [
@@ -160,6 +162,8 @@ def test_the_check_sees_each_form_of_a_patch_that_creates_a_missing_name():
         "t.py:9: leaguebot.core.utils.league_bot.path_gone",
         "t.py:10: leaguebot.core.utils.league_bot.LeagueBot.class_gone",
         "t.py:11: leaguebot.core.utils.league_bot.LeagueBot.path_class_gone",
+        "t.py:12: leaguebot.core.utils.league_bot.LeagueBot.module_class_gone",
+        "t.py:13: leaguebot.core.utils.league_bot.LeagueBot.alias_class_gone",
     ]
 
 
