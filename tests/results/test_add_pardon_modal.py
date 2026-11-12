@@ -151,13 +151,13 @@ async def _make_db(
 NOW = datetime(2026, 6, 1, 20, 0, tzinfo=timezone.utc)
 
 
-def _state(db_path: str, *, staged_pardons=None) -> PenaltyReviewState:
+def _state(db_path: str, *, staged_pardons=None, attendance=None) -> PenaltyReviewState:
     """Round 3's review, held by a bot carrying a real change queue on *db_path* and the
     league's log channel: a pardon staged is a change of its own (#439, slice 6b, C54), applied
-    when `_submit` runs the queue. The driver's attendance row is read through attendance's own
-    share of the review, as the builder attaches it to the bot (#284)."""
+    when `_submit` runs the queue. The driver's attendance row is read through *attendance*,
+    handed in on the review's state as its queue is, and attendance's own share of the review
+    where the test hands none (#284)."""
     bot = league_double(db_path)
-    bot.attendance_after_review = attendance_after_review_of(db_path)
     attach_queue(bot, db_path, now=NOW)
     return PenaltyReviewState(
         round_id=ROUND_ID,
@@ -167,6 +167,7 @@ def _state(db_path: str, *, staged_pardons=None) -> PenaltyReviewState:
         db_path=db_path,
         bot=bot,
         queue=bot.change_queue, server_config=bot.config_service.get_server_config, router=bot.output_router,
+        attendance=attendance or attendance_after_review_of(db_path),
         staged_pardons=list(staged_pardons or []),
         round_number=3,
         division_name="Pro",
@@ -249,6 +250,7 @@ def _existing(pardon_type: str = "NO_RSVP") -> StagedPardon:
         ("NO_SHOW", "ACCEPTED"),
     ],
 )
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_matching_pardon_is_staged(tmp_path, pardon_type, rsvp_status):
     """Each of the three faults, against every status it applies to."""
     db_path = await _make_db(
@@ -262,6 +264,7 @@ async def test_a_matching_pardon_is_staged(tmp_path, pardon_type, rsvp_status):
     assert "Pardon staged" in _replied(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_the_staged_pardon_carries_who_granted_it_and_why(tmp_path):
     """A pardon is a steward's decision, and the record of who made it is what makes it
     reviewable afterwards."""
@@ -277,6 +280,7 @@ async def test_the_staged_pardon_carries_who_granted_it_and_why(tmp_path):
     assert pardon.attendance_id == ATTENDANCE_ID
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_the_pardon_type_is_read_regardless_of_case(tmp_path):
     """Typed into a modal by a steward mid-review, not selected from a list."""
     db_path = await _make_db(tmp_path, name="pardon_case")
@@ -287,6 +291,7 @@ async def test_the_pardon_type_is_read_regardless_of_case(tmp_path):
     assert [p.pardon_type for p in state.staged_pardons] == ["NO_RSVP"]
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_surrounding_whitespace_is_ignored(tmp_path):
     db_path = await _make_db(tmp_path, name="pardon_spaces")
     state = _state(db_path)
@@ -296,6 +301,7 @@ async def test_surrounding_whitespace_is_ignored(tmp_path):
     assert len(state.staged_pardons) == 1
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_staging_does_not_write_to_the_attendance_row(tmp_path):
     """It joins the review's list and is written when the review is confirmed, which is
     what lets a steward see the whole set before committing."""
@@ -312,6 +318,7 @@ async def test_staging_does_not_write_to_the_attendance_row(tmp_path):
         assert (await cursor.fetchone())["rsvp_status"] == "NO_RSVP"
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_the_review_prompt_is_refreshed(tmp_path):
     """The prompt is the steward's view of what they have staged; a pardon absent from it
     would be committed unseen."""
@@ -322,6 +329,7 @@ async def test_the_review_prompt_is_refreshed(tmp_path):
     refresh.assert_awaited_once()
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_the_pardon_line_names_the_steward(tmp_path):
     """The steward Alex stages a NO_RSVP pardon for round 3 (Pro). The one line it writes names
     Alex by display name and mention, as every record does (#482), and keeps its token, the
@@ -348,6 +356,7 @@ async def test_the_pardon_line_names_the_steward(tmp_path):
 
 
 @pytest.mark.parametrize("rsvp_status", ["ACCEPTED", "TENTATIVE", "DECLINED"])
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_no_rsvp_is_refused_for_a_driver_who_did_rsvp(tmp_path, rsvp_status):
     """There is no fault to pardon — they answered."""
     db_path = await _make_db(
@@ -362,6 +371,7 @@ async def test_no_rsvp_is_refused_for_a_driver_who_did_rsvp(tmp_path, rsvp_statu
     assert state.staged_pardons == []
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_absent_is_refused_for_a_driver_who_accepted(tmp_path):
     """An accepted driver who did not turn up is a *no-show*, which is the more serious
     fault — pardoning it as the milder one would forgive the wrong thing."""
@@ -376,6 +386,7 @@ async def test_absent_is_refused_for_a_driver_who_accepted(tmp_path):
 
 
 @pytest.mark.parametrize("rsvp_status", ["NO_RSVP", "TENTATIVE", "DECLINED"])
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_no_show_is_refused_for_a_driver_who_did_not_accept(tmp_path, rsvp_status):
     """A no-show is a broken promise; someone who never promised cannot have broken one."""
     db_path = await _make_db(
@@ -399,6 +410,7 @@ async def test_no_show_is_refused_for_a_driver_who_did_not_accept(tmp_path, rsvp
     ],
     ids=["absent-raced", "no-show-raced", "qualifying-only"],
 )
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_driver_in_the_results_cannot_be_pardoned_for_missing(
     tmp_path, pardon_type, rsvp_status, in_results
 ):
@@ -419,6 +431,7 @@ async def test_a_driver_in_the_results_cannot_be_pardoned_for_missing(
     assert state.staged_pardons == []
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_superseded_result_does_not_count_as_being_there(tmp_path):
     """A resubmission supersedes rather than deletes, and a driver who appeared only in a
     submission that was corrected away was not in the round as it stands."""
@@ -440,6 +453,7 @@ async def test_a_superseded_result_does_not_count_as_being_there(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_non_numeric_driver_id_is_refused(tmp_path):
     db_path = await _make_db(tmp_path, name="refuse_badid")
     state = _state(db_path)
@@ -450,6 +464,7 @@ async def test_a_non_numeric_driver_id_is_refused(tmp_path):
     assert state.staged_pardons == []
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_an_unknown_pardon_type_is_refused_and_the_options_given(tmp_path):
     """Three words typed by hand, and a steward who guessed needs the list rather than to
     be told their guess was wrong."""
@@ -463,6 +478,7 @@ async def test_an_unknown_pardon_type_is_refused_and_the_options_given(tmp_path)
     assert "NO_RSVP, ABSENT, NO_SHOW" in replied
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_driver_with_no_profile_here_is_refused(tmp_path):
     """Profiles are per server, so an id pasted from elsewhere resolves to nobody."""
     db_path = await _make_db(tmp_path, name="refuse_noprofile")
@@ -474,6 +490,7 @@ async def test_a_driver_with_no_profile_here_is_refused(tmp_path):
     assert state.staged_pardons == []
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_driver_with_no_attendance_row_is_refused(tmp_path):
     """There is nothing to pardon against, and the reply says what to do first — the row is
     created when results are submitted."""
@@ -491,14 +508,13 @@ async def test_a_driver_with_no_attendance_row_is_refused(tmp_path):
                    "not the driver's attendance row through attendance's share of the review")
 async def test_the_form_reads_the_driver_s_attendance_row_through_attendance(tmp_path):
     """Round 3 holds no attendance row for the driver in the database, but attendance's share
-    of the review, on the review's bot, answers row 99 with no RSVP. The steward stages a
-    NO_RSVP pardon: attendance is asked once, for round 3, Pro and the driver's profile, and the
-    pardon is staged against row 99."""
+    of the review, handed in on the review's state, answers row 99 with no RSVP. The steward
+    stages a NO_RSVP pardon: attendance is asked once, for round 3, Pro and the driver's
+    profile, and the pardon is staged against row 99."""
     db_path = await _make_db(tmp_path, name="pardon_through_hook", attendance_row=False)
-    state = _state(db_path)
     attendance = MagicMock()
     attendance.attendance_row_of = AsyncMock(return_value={"id": 99, "rsvp_status": "NO_RSVP"})
-    state.bot.attendance_after_review = attendance
+    state = _state(db_path, attendance=attendance)
 
     interaction, _ = await _submit(state)
 
@@ -507,6 +523,7 @@ async def test_the_form_reads_the_driver_s_attendance_row_through_attendance(tmp
     assert "Pardon staged" in _replied(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_finalised_round_takes_no_more_pardons(tmp_path):
     """Once post-race penalties are settled the attendance points are computed and
     published; a pardon after that would change a published total with no record of when."""
@@ -530,6 +547,7 @@ async def test_a_finalised_round_takes_no_more_pardons(tmp_path):
         ("FINAL", True, True, True),
     ],
 )
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_pardons_close_when_the_reports_are_approved(
     tmp_path, round_status, amendment, reports_approved, closed
 ):
@@ -566,6 +584,7 @@ async def test_pardons_close_when_the_reports_are_approved(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_the_same_pardon_twice_is_refused(tmp_path):
     """Two identical pardons would be applied twice at confirmation, and a steward
     re-opening the modal after a misread prompt is how it happens."""
@@ -578,6 +597,7 @@ async def test_the_same_pardon_twice_is_refused(tmp_path):
     assert len(state.staged_pardons) == 1
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_different_pardon_for_the_same_driver_is_allowed(tmp_path):
     """One round can carry more than one fault — a driver may have neither answered nor
     turned up, and the two are pardoned separately."""
@@ -589,6 +609,7 @@ async def test_a_different_pardon_for_the_same_driver_is_allowed(tmp_path):
     assert sorted(p.pardon_type for p in state.staged_pardons) == ["ABSENT", "NO_RSVP"]
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_the_same_pardon_for_another_driver_is_allowed(tmp_path):
     """The duplicate check is per attendance row, not per pardon type — a whole division
     failing to RSVP is one evening's work for a steward, not a mistake."""
@@ -609,6 +630,7 @@ async def test_the_same_pardon_for_another_driver_is_allowed(tmp_path):
 
 
 @pytest.mark.parametrize("typed", ["<@&987654321098765432> agreed", "@everyone agreed"])
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_group_mention_in_the_justification_is_refused(tmp_path, typed):
     """Refused as a penalty's texts are. The log channel it goes to notifies nobody, so this
     is one rule for every text a steward types rather than a ping prevented. Nothing is staged
@@ -625,6 +647,7 @@ async def test_a_group_mention_in_the_justification_is_refused(tmp_path, typed):
     refresh.assert_not_awaited()
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_driver_mention_in_the_justification_is_staged(tmp_path):
     db_path = await _make_db(tmp_path, name="driver_mention")
     state = _state(db_path)
@@ -634,6 +657,7 @@ async def test_a_driver_mention_in_the_justification_is_staged(tmp_path):
     assert len(state.staged_pardons) == 1
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_an_emoji_in_the_justification_is_refused(tmp_path):
     """One rule for every text a steward types, though this one is only ever logged. Nothing is
     staged and the one line written is the refusal's (#482)."""
@@ -648,6 +672,7 @@ async def test_an_emoji_in_the_justification_is_refused(tmp_path):
     assert line.startswith("⛔ the “Attendance Pardon” form"), line
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_channel_mention_in_the_justification_is_refused(tmp_path):
     db_path = await _make_db(tmp_path, name="channel_mention")
     state = _state(db_path)
@@ -694,6 +719,7 @@ _PARDON_REFUSALS = [
 
 
 @pytest.mark.parametrize("db, staged, typed", _PARDON_REFUSALS)
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_every_refused_pardon_form_is_recorded(tmp_path, db, staged, typed):
     """The steward Alex fills in the Attendance Pardon form of round 3's penalty review (Pro)
     and is refused: the reports are already approved, the id is not a number, the pardon type

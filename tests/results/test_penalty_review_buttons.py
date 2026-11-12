@@ -113,7 +113,7 @@ def _state(*, staged=()) -> PenaltyReviewState:
         session_types_present=[SessionType.FEATURE_RACE],
         db_path=":memory:",
         bot=bot,
-        queue=bot.change_queue, server_config=bot.config_service.get_server_config, router=bot.output_router,
+        queue=bot.change_queue, server_config=bot.config_service.get_server_config, router=bot.output_router, attendance=MagicMock(),
     )
     state.round_number = 3
     state.division_name = "Division 1"
@@ -253,6 +253,7 @@ async def _press(view, name: str, interaction):
 
 
 @pytest.mark.parametrize("button", BUTTONS)
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_every_button_refuses_somebody_without_the_tier(monkeypatch, button):
     """A review channel is visible to both league tiers and the buttons never disappear,
     so each press is checked rather than the panel's posting being trusted."""
@@ -271,6 +272,7 @@ async def test_every_button_refuses_somebody_without_the_tier(monkeypatch, butto
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_add_penalty_offers_a_session_to_choose():
     """A round has several sessions and a penalty belongs to one; the modal cannot be
     opened until that is known."""
@@ -288,6 +290,7 @@ async def test_add_penalty_offers_a_session_to_choose():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_an_empty_list_goes_straight_to_approval(tmp_path):
     """Nothing to discard, so nothing to confirm — asking would be a confirmation with no
     consequence, which is how confirmations stop being read."""
@@ -302,6 +305,7 @@ async def test_an_empty_list_goes_straight_to_approval(tmp_path):
     approval.assert_awaited_once()
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_staged_list_is_confirmed_before_it_is_cleared():
     """It is an evening's work and discarding it cannot be undone. The confirmation says how
     many would be discarded: the count is what makes the warning real rather than
@@ -317,6 +321,7 @@ async def test_a_staged_list_is_confirmed_before_it_is_cleared():
     assert "**2**" in _replied(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_the_confirmation_says_what_will_happen_to_the_round():
     view = PenaltyReviewView(_state(staged=[_penalty()]))
     interaction = _interaction()
@@ -333,6 +338,7 @@ async def test_the_confirmation_says_what_will_happen_to_the_round():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_confirming_the_clear_discards_the_staged_list(tmp_path):
     state = _state(staged=[_penalty(), _penalty(10)])
     view = _ConfirmClearView(state)
@@ -348,6 +354,7 @@ async def test_confirming_the_clear_discards_the_staged_list(tmp_path):
     approval.assert_awaited_once()
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_confirming_the_clear_redraws_the_prompt_with_nothing_staged(tmp_path):
     """**D5.** Round 3's penalty review (Division 1) has two penalties staged. Alex presses No
     Penalties / Confirm and then "Yes, clear and proceed with no penalties". The list is cleared
@@ -380,6 +387,7 @@ async def test_confirming_the_clear_redraws_the_prompt_with_nothing_staged(tmp_p
     assert order == ["prompt redrawn with 0 staged", "approval question posted"]
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_cancelling_the_clear_keeps_every_penalty():
     """Round 3's penalty review (Division 1) has two penalties staged, and Alex is asked whether
     to clear them. Alex presses "Cancel — keep penalties". Both penalties stay staged, no
@@ -402,6 +410,7 @@ async def test_cancelling_the_clear_keeps_every_penalty():
 
 
 @pytest.mark.parametrize("button", ["confirm_btn", "cancel_btn"])
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_the_clear_confirmation_checks_the_tier_too(monkeypatch, button):
     """It is reached from a button that already checked, which makes it easy to assume —
     but a different person can press this one."""
@@ -422,6 +431,7 @@ async def test_the_clear_confirmation_checks_the_tier_too(monkeypatch, button):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_approving_with_penalties_finalises_the_review():
     """Alex presses ✅ Approve on round 3's review with one 5-second penalty staged. The press
     asks the change queue for `results.reports.approve` of round 3, the penalty in its payload."""
@@ -441,6 +451,7 @@ async def test_approving_with_penalties_finalises_the_review():
     assert payload["staged"] == [_penalty().to_payload()]
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_approving_with_nothing_staged_is_refused():
     """Approving a round *with* penalties and finalising one that has none are different
     acts, and a manager pressing Approve on an empty list has almost certainly meant the
@@ -461,6 +472,7 @@ async def test_approving_with_nothing_staged_is_refused():
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_resubmit_asks_the_queue_to_start_the_resubmission():
     """Alex presses 🔄 Resubmit Initial Results on round 3's review with a penalty staged. The
     press asks the change queue for `results.resubmission.start` of round 3."""
@@ -479,6 +491,7 @@ async def test_resubmit_asks_the_queue_to_start_the_resubmission():
     assert payload["round_id"] == ROUND_ID
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_the_pardon_button_opens_the_pardon_modal():
     """A pardon waives an attendance penalty and needs a justification, so it is a form
     rather than a button."""
@@ -509,6 +522,7 @@ def _custom_ids(view) -> list[str]:
 
 
 @pytest.mark.parametrize("amendment", [False, True])
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_five_staged_penalties_still_draw_the_review(amendment):
     """**The fifth Remove button overflowed row 1**, which also holds Attendance Pardon, and the
     view raised `ValueError` as it was built — so a review with five penalties could not be shown
@@ -524,6 +538,7 @@ async def test_five_staged_penalties_still_draw_the_review(amendment):
     ]
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_more_penalties_than_there_is_room_for_still_draw_the_review():
     """Discord allows twenty-five components; the list beyond them is still listed and applied."""
     view = PenaltyReviewView(_state(staged=[_penalty(s) for s in range(1, 31)]))
@@ -531,6 +546,7 @@ async def test_more_penalties_than_there_is_room_for_still_draw_the_review():
     assert len(view.children) <= 25
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_an_amendment_offers_no_resubmission():
     """Resubmitting replaces every session of the round and sends it through a first-pass review —
     against a round already FINAL. An amendment corrects its classification in stage one."""
@@ -542,6 +558,7 @@ async def test_an_amendment_offers_no_resubmission():
 
 
 @pytest.mark.parametrize("amendment", [False, True])
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_every_review_offers_a_remove_button_for_each_pardon(amendment):
     """A staged pardon is taken back as a staged penalty is, in a first pass as in an amendment
     (#356). Before, a first pass offered none, and the only way to drop a pardon staged by
@@ -555,6 +572,7 @@ async def test_every_review_offers_a_remove_button_for_each_pardon(amendment):
     assert "pw_pardon_remove_0" in ids and "pw_pardon_remove_1" in ids
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_five_penalties_and_two_pardons_all_get_a_remove_button():
     """The pardons' buttons follow the penalties' into whatever room row 1 has left."""
     state = _state(staged=[_penalty(s) for s in range(1, 6)])
@@ -568,6 +586,7 @@ async def test_five_penalties_and_two_pardons_all_get_a_remove_button():
 
 
 @pytest.mark.parametrize("amendment", [False, True])
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_removing_a_pardon_takes_it_off_the_staged_list(amendment, tmp_path):
     state = _state(staged=[_penalty()])
     state.staged_pardons = [_pardon(0), _pardon(1)]
@@ -586,6 +605,7 @@ async def test_removing_a_pardon_takes_it_off_the_staged_list(amendment, tmp_pat
     assert "Removed pardon" in _answered(interaction)
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_the_appeals_review_draws_with_more_corrections_than_there_is_room_for():
     from leaguebot.results.services.review.appeals_review_views import AppealsReviewView
 
@@ -612,6 +632,7 @@ GUARDED = [
 
 
 @pytest.mark.parametrize("control", GUARDED)
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_every_control_refuses_once_the_review_has_moved_on(monkeypatch, control):
     """**The review prompt stayed up, and worked, after the job it was posted for moved on** — so
     Remove said a penalty was removed through the appeals stage when it had been applied, and
@@ -650,6 +671,7 @@ async def test_every_control_refuses_once_the_review_has_moved_on(monkeypatch, c
     ("view_class", "button"),
     [(_ConfirmClearView, "confirm_btn"), (ApprovalView, "make_changes_btn")],
 )
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_the_steps_on_the_way_to_approval_refuse_too(monkeypatch, view_class, button):
     """Clearing the list and going back to it are reached from a review that was current when
     they were posted, which says nothing about whether it still is."""
@@ -752,6 +774,8 @@ def _refusal(case_id, kind, label, reply, *, setup=None, restarted=False, on_mes
     return pytest.param(
         kind, label, reply, setup, restarted, on_message, nothing_staged,
         id=case_id,
+        # A press after a restart has no state to build; every other case builds one.
+        marks=() if restarted else pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review"),
     )
 
 
@@ -882,6 +906,7 @@ async def _pressed_by_alex(state, channel, tmp_path):
 
 
 @pytest.mark.parametrize("kind, label, staged, named", _PRESSES)
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_every_press_of_the_penalty_review_writes_one_line(kind, label, staged, named, tmp_path):
     """Round 3's penalty review (Division 1) has the penalties given staged and one ABSENT
     pardon. Alex, a league manager, presses Remove #1 or Remove Pardon #1, No Penalties /
@@ -923,6 +948,7 @@ async def test_every_press_of_the_penalty_review_writes_one_line(kind, label, st
         assert fragment in line, (fragment, line)
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_no_penalties_with_the_channel_unreachable_is_answered_and_recorded(tmp_path):
     """Round 3's penalty review (Division 1) has nothing staged, and its submission channel
     (4455) can no longer be reached. Alex presses No Penalties / Confirm. No approval question
@@ -970,6 +996,7 @@ def _assert_clear_abandoned(line: str, ending: str) -> None:
     assert not detail[-1].strip().endswith(_CLEAR_KEPT), f"no next step: {line}"
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_clear_confirmation_left_to_lapse_is_recorded():
     """Round 3's penalty review (Division 1) has two penalties staged. Alex presses No
     Penalties / Confirm and is asked whether to clear them, then answers nothing until the

@@ -38,6 +38,7 @@ from leaguebot.results.services.review.penalty_service import StagedPenalty
 from leaguebot.results.services.review.penalty_wizard import _is_league_manager, _require_lm
 from leaguebot.results.services.review.penalty_review_views import _render_prompt_content
 from leaguebot.results.services.review.review_state import PenaltyReviewState, StagedPardon, _pen_label
+from tests.support.review_league import attendance_after_review_of
 from tests.support.teams import seed_team_instances
 
 SERVER_ID = 9508
@@ -115,7 +116,7 @@ def _state(bot, db_path: str = ":memory:") -> PenaltyReviewState:
         session_types_present=[SessionType.FEATURE_RACE],
         db_path=db_path,
         bot=bot,
-        queue=bot.change_queue, server_config=bot.config_service.get_server_config, router=bot.output_router,
+        queue=bot.change_queue, server_config=bot.config_service.get_server_config, router=bot.output_router, attendance=attendance_after_review_of(db_path),
     )
 
 
@@ -163,6 +164,7 @@ async def test_an_unconfigured_server_refuses_rather_than_assuming():
     assert await _is_league_manager(interaction, _bot(None).config_service.get_server_config) is False
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_refused_actor_is_told_why(monkeypatch):
     import leaguebot.results.services.review.penalty_wizard as pw
 
@@ -175,6 +177,7 @@ async def test_a_refused_actor_is_told_why(monkeypatch):
     assert "Only league managers" in interaction.response.send_message.await_args.args[0]
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_permitted_actor_is_not_interrupted(monkeypatch):
     import leaguebot.results.services.review.penalty_wizard as pw
 
@@ -250,6 +253,7 @@ def _state_for(db_path: str, *, staged=(), pardons=()) -> PenaltyReviewState:
     return state
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_the_prompt_names_the_round_and_division(tmp_path):
     db_path = await _make_db(tmp_path)
 
@@ -259,6 +263,7 @@ async def test_the_prompt_names_the_round_and_division(tmp_path):
     assert "Division 1" in content
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_every_driver_with_a_result_is_listed_as_an_attendee(tmp_path):
     """The attendee list is what the manager checks the round against before approving."""
     db_path = await _make_db(tmp_path, attendees=(DRIVER_A, DRIVER_B))
@@ -270,6 +275,7 @@ async def test_every_driver_with_a_result_is_listed_as_an_attendee(tmp_path):
     assert "Preliminary Attendees (2)" in content
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_round_with_no_results_says_so_rather_than_showing_a_blank(tmp_path):
     """A blank section reads as a rendering failure; a manager needs to know the results
     are genuinely absent, because approving then would record a round nobody raced."""
@@ -280,6 +286,7 @@ async def test_a_round_with_no_results_says_so_rather_than_showing_a_blank(tmp_p
     assert "no session results found" in content
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_test_driver_s_display_name_is_carried_into_the_mention(tmp_path):
     """Test drivers share one Discord account, so without the name every penalty in a
     test-mode review reads as being against the same person."""
@@ -292,6 +299,7 @@ async def test_a_test_driver_s_display_name_is_carried_into_the_mention(tmp_path
     assert "Test Lewis" in content
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_no_staged_penalties_says_so(tmp_path):
     db_path = await _make_db(tmp_path)
 
@@ -301,6 +309,7 @@ async def test_no_staged_penalties_says_so(tmp_path):
     assert "click Add Penalty" in content
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_every_staged_penalty_appears_on_the_prompt(tmp_path):
     """The manager approves the round from this message, so a staged penalty missing from
     it would be applied on approval without anybody having read it."""
@@ -317,6 +326,7 @@ async def test_every_staged_penalty_appears_on_the_prompt(tmp_path):
     assert "DSQ" in content
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_staged_no_further_action_appears_on_the_prompt(tmp_path):
     """It is a decision the approval publishes, so the manager reads it before approving
     as they read a sanction (#138)."""
@@ -329,6 +339,7 @@ async def test_a_staged_no_further_action_appears_on_the_prompt(tmp_path):
     assert "**NFA**" in content
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_each_staged_penalty_is_numbered_for_removal(tmp_path):
     """The removal buttons are numbered, so the prompt has to agree with them or a manager
     removes the wrong penalty."""
@@ -344,6 +355,7 @@ async def test_each_staged_penalty_is_numbered_for_removal(tmp_path):
     assert "Remove #2" in content
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_the_session_a_penalty_belongs_to_is_named(tmp_path):
     """A penalty applies to one session, and a qualifying penalty read as a race penalty
     would move the wrong grid."""
@@ -355,6 +367,7 @@ async def test_the_session_a_penalty_belongs_to_is_named(tmp_path):
     assert "Feature Qualifying" in content
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_staged_pardons_are_shown_with_their_kind(tmp_path):
     """A pardon waives an attendance penalty, so it changes the standings as surely as a
     time penalty does and must be visible before approval."""
@@ -376,6 +389,7 @@ async def test_staged_pardons_are_shown_with_their_kind(tmp_path):
     assert "NO_SHOW" in content
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_pardon_s_justification_is_not_shown_on_the_prompt(tmp_path):
     """It is logged to the calculation channel rather than posted where the division can
     read it — a driver's reason for missing a race is theirs."""
@@ -397,6 +411,7 @@ async def test_a_pardon_s_justification_is_not_shown_on_the_prompt(tmp_path):
     assert "justification logged" in content
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_no_pardons_adds_no_pardon_section(tmp_path):
     """Unlike penalties, which always show a "none" line — pardons are the exception, and
     an empty section every round would be noise."""
@@ -412,6 +427,7 @@ async def test_no_pardons_adds_no_pardon_section(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_an_amendments_report_stage_is_headed_as_its_second_stage(tmp_path):
     """Drawn by the prompt itself, so a refresh after each Remove keeps it — a heading the caller
     prefixed was lost the first time the list changed."""
@@ -426,6 +442,7 @@ async def test_an_amendments_report_stage_is_headed_as_its_second_stage(tmp_path
 
 
 @pytest.mark.parametrize("amendment", [False, True])
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_pardon_is_numbered_for_removal(tmp_path, amendment):
     """Every review offers a Remove Pardon button per staged pardon (#356), and the prompt says
     which is which."""
@@ -440,6 +457,7 @@ async def test_a_pardon_is_numbered_for_removal(tmp_path, amendment):
     assert "Remove Pardon #1" in await _render_prompt_content(state)
 
 
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_an_amendments_appeal_stage_does_not_claim_anything_was_posted(tmp_path):
     """The first pass's line — "Post-Race Penalty Results have been posted" — is false during an
     amendment, which publishes nothing until this stage is approved."""

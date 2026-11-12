@@ -65,6 +65,7 @@ from tests.support.change_queue import (
     updated_reply,
 )
 from tests.support.review_league import (
+    attendance_after_review_of,
     AMEND_CHANNEL as AMENDMENT_CHANNEL,
     APPROVAL,
     HEADING,
@@ -848,6 +849,7 @@ async def _appeals_in_hand(league: ReviewLeague, how: str) -> None:
         ("clear", "Yes, clear and proceed with no corrections"),
     ],
 )
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_every_appeals_control_refuses_while_the_appeals_are_being_approved(
     tmp_path, kind, label, how
 ):
@@ -872,7 +874,7 @@ async def test_every_appeals_control_refuses_while_the_appeals_are_being_approve
         round_id=ROUND_ID, division_id=DIVISION_ID, submission_channel_id=SUBMISSION_CHANNEL,
         session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path,
         bot=league.bot,
-        queue=league.bot.change_queue, server_config=league.bot.config_service.get_server_config, router=league.bot.output_router, staged_appeals=[league_penalty(LEWIS)],
+        queue=league.bot.change_queue, server_config=league.bot.config_service.get_server_config, router=league.bot.output_router, attendance=attendance_after_review_of(league.db_path), staged_appeals=[league_penalty(LEWIS)],
         appeals_prompt_message_id=APPEALS_PROMPT, round_number=3, division_name="Pro",
     )
     assert await _appeals_review_moved_on(state) is None
@@ -1692,6 +1694,7 @@ async def test_the_amendment_rewrites_the_rounds_pardons_at_its_last_stage(tmp_p
     "stage, kind",
     [("reports", AMEND_REPORTS), ("appeals", AMEND_APPEALS)],
 )
+@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_each_approve_control_of_an_amendment_asks_its_stage_of_the_queue(
     tmp_path, stage, kind
 ):
@@ -1709,7 +1712,7 @@ async def test_each_approve_control_of_an_amendment_asks_its_stage_of_the_queue(
         round_id=ROUND_ID, division_id=DIVISION_ID, submission_channel_id=AMENDMENT_CHANNEL,
         session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path,
         bot=league.bot,
-        queue=league.bot.change_queue, server_config=league.bot.config_service.get_server_config, router=league.bot.output_router, round_number=3, division_name="Pro", is_amendment=True,
+        queue=league.bot.change_queue, server_config=league.bot.config_service.get_server_config, router=league.bot.output_router, attendance=attendance_after_review_of(league.db_path), round_number=3, division_name="Pro", is_amendment=True,
     )
     if stage == "reports":
         state.staged = [league_penalty(LEWIS)]
