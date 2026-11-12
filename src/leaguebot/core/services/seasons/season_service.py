@@ -1513,6 +1513,27 @@ async def round_facts_on(db: aiosqlite.Connection, round_id: int) -> RoundFacts 
     )
 
 
+async def final_round_ids_among_on(
+    db: aiosqlite.Connection, round_ids: Iterable[int]
+) -> set[int]:
+    """Those of *round_ids* whose round is FINAL, read on *db*; the empty set for none.
+
+    The core half of a module's query that joined its own rows to `rounds` to keep those of final
+    rounds: the module reads its own table for the round ids it holds, asks this of the ids, and
+    keeps what comes back, on the connection of the save it is in. It writes nothing and commits
+    nothing.
+    """
+    ids = sorted(set(round_ids))
+    if not ids:
+        return set()
+    marks = ", ".join("?" for _ in ids)
+    cursor = await db.execute(
+        f"SELECT id FROM rounds WHERE status = ? AND id IN ({marks})",  # noqa: S608
+        (RoundStatus.FINAL.value, *ids),
+    )
+    return {int(row["id"]) for row in await cursor.fetchall()}
+
+
 async def rounds_still_to_run_by(db_path: str, now: datetime) -> list[Round]:
     """Each round of the ACTIVE season still to be run (NOT_RUN) whose start is at or before
     *now*, earliest first.

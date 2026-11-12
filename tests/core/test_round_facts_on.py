@@ -11,7 +11,11 @@ from datetime import datetime, timezone
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.models.season import SeasonStatus
-from leaguebot.core.services.seasons.season_service import RoundFacts, round_facts_on
+from leaguebot.core.services.seasons.season_service import (
+    RoundFacts,
+    final_round_ids_among_on,
+    round_facts_on,
+)
 
 
 async def _seed(path: str) -> int:
@@ -66,3 +70,30 @@ async def test_what_the_handed_connection_has_written_is_read_back(tmp_path):
     assert (facts.status, facts.not_held, facts.season_status) == (
         RoundStatus.FINAL, False, SeasonStatus.COMPLETED,
     )
+
+
+async def test_the_final_rounds_among_those_asked_are_the_ones_returned(tmp_path):
+    path = str(tmp_path / "league.db")
+    cancelled = await _seed(path)
+    async with get_connection(path) as db:
+        ids = []
+        for number, status in ((6, "FINAL"), (7, "NOT_RUN"), (8, "FINAL")):
+            cursor = await db.execute(
+                "INSERT INTO rounds (division_id, round_number, format, scheduled_at, status) "
+                "VALUES (4, ?, 'NORMAL', '2026-03-01T18:00:00+00:00', ?)",
+                (number, status),
+            )
+            ids.append(int(cursor.lastrowid))
+        final_a, not_run, final_b = ids
+        assert await final_round_ids_among_on(db, [cancelled, final_a, not_run, final_b]) == {
+            final_a, final_b,
+        }
+        assert await final_round_ids_among_on(db, [final_b]) == {final_b}
+
+
+async def test_no_final_round_among_those_asked_returns_the_empty_set(tmp_path):
+    path = str(tmp_path / "league.db")
+    cancelled = await _seed(path)
+    async with get_connection(path) as db:
+        assert await final_round_ids_among_on(db, [cancelled, cancelled + 50]) == set()
+        assert await final_round_ids_among_on(db, []) == set()
