@@ -116,6 +116,25 @@ async def test_the_league_server_is_read_on_the_connection_a_save_holds(service)
         assert await service.get_league_server_id_on(db) == OLD_SERVER
 
 
+async def test_the_league_configuration_is_read_on_the_connection_a_save_holds(service):
+    """A module's save reads the league's roles and channels on its own connection: it returns the
+    claimed row's settings, and sees a release that save has not committed, which a read on another
+    connection does not."""
+    async with get_connection(service._db_path) as db:
+        cfg = await service.get_server_config_on(db)
+        assert cfg is not None
+        assert (cfg.server_id, cfg.interaction_role_id, cfg.interaction_channel_id) == (
+            OLD_SERVER, OLD_SERVER + 1, OLD_SERVER + 2
+        )
+        assert cfg.league_admin_role_id == OLD_SERVER + 4
+
+        await db.execute(RELEASE_CLAIM_SQL)
+
+        assert await service.get_server_config_on(db) is None
+        assert await service.get_server_config() == cfg
+        await db.rollback()
+
+
 async def test_a_released_row_takes_no_setting(service):
     """The settings belong to the next server's `/bot init`, not to whoever asks first."""
     await _release(service)

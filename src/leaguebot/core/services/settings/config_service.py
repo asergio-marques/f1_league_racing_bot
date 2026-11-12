@@ -35,14 +35,24 @@ class ConfigService:
     async def get_server_config(self) -> ServerConfig | None:
         """Return the league's ServerConfig, or None while no server is claimed."""
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT server_id, interaction_role_id, interaction_channel_id, "
-                "       log_channel_id, league_admin_role_id, test_mode_active, "
-                "       test_mode_nationality_required, "
-                "       base_role_id, driver_role_id, hub_channel_id, hub_message_id "
-                "FROM server_configs WHERE server_id IS NOT NULL",
-            )
-            row = await cursor.fetchone()
+            return await self.get_server_config_on(db)
+
+    async def get_server_config_on(self, db: aiosqlite.Connection) -> ServerConfig | None:
+        """`get_server_config` on *db*: the league's configuration as that connection sees it, or
+        None while no server is claimed.
+
+        For a module's save that needs the league's roles and channels (results' opening of a
+        submission reads them to name the channel's visibility) on the connection it writes with.
+        It writes nothing and commits nothing.
+        """
+        cursor = await db.execute(
+            "SELECT server_id, interaction_role_id, interaction_channel_id, "
+            "       log_channel_id, league_admin_role_id, test_mode_active, "
+            "       test_mode_nationality_required, "
+            "       base_role_id, driver_role_id, hub_channel_id, hub_message_id "
+            "FROM server_configs WHERE server_id IS NOT NULL",
+        )
+        row = await cursor.fetchone()
 
         if row is None:
             return None
