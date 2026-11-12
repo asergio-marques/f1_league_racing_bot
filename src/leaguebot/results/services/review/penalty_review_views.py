@@ -22,9 +22,13 @@ from leaguebot.core.services.posting.owned_channel_handler import (
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.models.change import StepFailedOnDiscord
+from leaguebot.core.models.season import SeasonStatus
 from leaguebot.core.services.queue.change_queue import ChangeQueue
+from leaguebot.core.services.seasons import season_service
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
-from leaguebot.core.services.drivers.driver_service import accounts_of_in_division, current_account_map_for_division
+from leaguebot.core.services.drivers.driver_service import (
+    accounts_of_in_division, current_account_map_for_division, driver_test_names_on,
+)
 from leaguebot.results.services.review.penalty_service import validate_penalty_input
 from leaguebot.core.utils.input_validator import STEWARD_TEXT, parse_user, parse_user_id
 from leaguebot.core.utils.interaction_errors import describe_form
@@ -110,16 +114,7 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
             current_of.get(int(r["driver_user_id"]), int(r["driver_user_id"]))
             for r in pre_attendees
         ))
-        test_name_map: dict[int, str | None] = {}
-        if all_uids:
-            ph2 = ",".join("?" * len(all_uids))
-            cursor = await db.execute(
-                f"SELECT discord_user_id, test_display_name FROM driver_profiles "
-                f"WHERE discord_user_id IN ({ph2})",
-                [str(uid) for uid in all_uids],
-            )
-            for row in await cursor.fetchall():
-                test_name_map[int(row["discord_user_id"])] = row["test_display_name"]
+        test_name_map = await driver_test_names_on(db, all_uids)
 
         import dataclasses as _dc
         attendee_rows = [
@@ -133,16 +128,7 @@ async def _render_prompt_content(state: PenaltyReviewState) -> str:
         staged_user_ids.update(
             current_of.get(sp.driver_user_id, sp.driver_user_id) for sp in state.staged_pardons
         )
-        test_names: dict[int, str | None] = {}
-        if staged_user_ids:
-            placeholders = ",".join("?" * len(staged_user_ids))
-            cursor = await db.execute(
-                f"SELECT discord_user_id, test_display_name FROM driver_profiles "
-                f"WHERE discord_user_id IN ({placeholders})",
-                list(staged_user_ids),
-            )
-            for row in await cursor.fetchall():
-                test_names[int(row["discord_user_id"])] = row["test_display_name"]
+        test_names = await driver_test_names_on(db, sorted(staged_user_ids))
 
     def _mention(user_id: int, name: str | None = None) -> str:
         user_id = current_of.get(user_id, user_id)
@@ -1374,18 +1360,8 @@ class ApprovalView(LeagueView):
         from leaguebot.core.db.database import get_connection as _gc
         try:
             async with _gc(self.state.db_path) as _db:
-                _cur = await _db.execute(
-                    """
-                    SELECT s.status AS season_status
-                    FROM rounds r
-                    JOIN divisions d ON d.id = r.division_id
-                    JOIN seasons s ON s.id = d.season_id
-                    WHERE r.id = ?
-                    """,
-                    (self.state.round_id,),
-                )
-                _row = await _cur.fetchone()
-            if _row and _row["season_status"] == "COMPLETED":
+                facts = await season_service.round_facts_on(_db, self.state.round_id)
+            if facts is not None and facts.season_status == SeasonStatus.COMPLETED:
                 raise SeasonImmutableError(
                     f"Round {self.state.round_id} belongs to an archived season."
                 )

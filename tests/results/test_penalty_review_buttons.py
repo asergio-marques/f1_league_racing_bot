@@ -36,6 +36,7 @@ from __future__ import annotations
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
@@ -45,6 +46,8 @@ import leaguebot.results.services.review.penalty_review_views as penalty_review_
 import leaguebot.results.services.review.penalty_wizard as pw
 import leaguebot.results.services.review.review_state as review_state
 from leaguebot.core.db.database import run_migrations
+from leaguebot.core.models.season import SeasonStatus
+from leaguebot.core.services.seasons import season_service
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.review.penalty_service import StagedPenalty
 from leaguebot.results.services.review.penalty_review_views import (
@@ -733,19 +736,15 @@ def _moved_on(monkeypatch):
 def _archived(monkeypatch):
     """The round's season reads as COMPLETED."""
 
-    class _Cursor:
-        async def fetchone(self):
-            return {"season_status": "COMPLETED"}
-
-    class _Db:
-        async def execute(self, *_args):
-            return _Cursor()
-
     @asynccontextmanager
     async def _connection(_path):
-        yield _Db()
+        yield None
 
     monkeypatch.setattr("leaguebot.core.db.database.get_connection", _connection)
+    monkeypatch.setattr(
+        season_service, "round_facts_on",
+        AsyncMock(return_value=SimpleNamespace(season_status=SeasonStatus.COMPLETED)),
+    )
 
 
 def _refusal(case_id, kind, label, reply, *, setup=None, restarted=False, on_message=True,
