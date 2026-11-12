@@ -437,6 +437,29 @@ class TeamService:
         }
 
     @staticmethod
+    async def division_teams_on(db: aiosqlite.Connection, division_id: int) -> list[TeamInstance]:
+        """*division_id*'s teams, the reserve team included, in the order they were added, read on
+        *db*; empty for a division with none.
+
+        For a module reading core's tables only through core's services (architecture.md, "The
+        database"), handed the connection of its own read: the teams a query of its own took off
+        `team_instances` come from here. It writes nothing and commits nothing.
+        """
+        cursor = await db.execute(
+            "SELECT id, division_id, name, full_name, max_seats, is_reserve "
+            "FROM team_instances WHERE division_id = ? ORDER BY id",
+            (division_id,),
+        )
+        return [
+            TeamInstance(
+                id=int(row["id"]), division_id=int(row["division_id"]), name=row["name"],
+                full_name=row["full_name"], max_seats=int(row["max_seats"]),
+                is_reserve=bool(row["is_reserve"]),
+            )
+            for row in await cursor.fetchall()
+        ]
+
+    @staticmethod
     async def teams_with_roles_on(db: aiosqlite.Connection) -> list[dict]:
         """`get_teams_with_roles` read on *db*, a connection the caller holds."""
         cursor = await db.execute(
