@@ -36,6 +36,12 @@ from leaguebot.core.services.posting.owned_channel_handler import (
 )
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat
+from leaguebot.core.models.season import SeasonStatus
+from leaguebot.core.services.seasons.season_service import (
+    SeasonImmutableError,
+    final_round_ids_among_on,
+    round_facts_on,
+)
 from leaguebot.results.models.session_result import OutcomeModifier
 from leaguebot.core.services.drivers.driver_service import set_former_drivers_on
 from leaguebot.core.utils.channel_guard import is_league_manager
@@ -158,8 +164,8 @@ async def expected_session_on(db: aiosqlite.Connection, round_id: int) -> Sessio
     The first of the round's sessions, in running order, with no ``session_results`` row. A
     session typed CANCELLED has its row too, so it is not asked for again.
     """
-    row = await (await db.execute("SELECT format FROM rounds WHERE id = ?", (round_id,))).fetchone()
-    if row is None:
+    facts = await round_facts_on(db, round_id)
+    if facts is None:
         return None
     saved = {
         found["session_type"]
@@ -169,7 +175,7 @@ async def expected_session_on(db: aiosqlite.Connection, round_id: int) -> Sessio
             )
         ).fetchall()
     }
-    for session in get_sessions_for_format(RoundFormat(row["format"])):
+    for session in get_sessions_for_format(facts.format):
         if session.value not in saved:
             return session
     return None
@@ -185,8 +191,8 @@ async def expected_resubmitted_session_on(
     nothing. A draft whose configuration is still to be chosen (``config_name`` unset) is not
     complete, and its session is expected again; one typed CANCELLED needs no configuration.
     """
-    row = await (await db.execute("SELECT format FROM rounds WHERE id = ?", (round_id,))).fetchone()
-    if row is None:
+    facts = await round_facts_on(db, round_id)
+    if facts is None:
         return None
     drafted = {
         found["session_type"]
@@ -198,7 +204,7 @@ async def expected_resubmitted_session_on(
             )
         ).fetchall()
     }
-    for session in get_sessions_for_format(RoundFormat(row["format"])):
+    for session in get_sessions_for_format(facts.format):
         if session.value not in drafted:
             return session
     return None
@@ -342,24 +348,23 @@ async def close_called_off_on(
     ))
 
 
+# Each profile that took part in a round of live results, with the round, whatever its status: the
+# result's own half of "raced a final round", for core to say which of the rounds are final. A
+# did-not-start entry is no part (``DNS``).
 _RACED_A_ROUND_SQL = """
     SELECT rsr.driver_profile_id AS profile_id, sr.round_id AS round_id
     FROM race_session_results rsr
     JOIN session_results sr ON sr.id = rsr.session_result_id
-    JOIN rounds r ON r.id = sr.round_id
     WHERE rsr.driver_profile_id IS NOT NULL
       AND rsr.outcome != 'DNS'
       AND sr.status = 'ACTIVE'
-      AND r.status = 'FINAL'
     UNION
     SELECT qsr.driver_profile_id AS profile_id, sr.round_id AS round_id
     FROM qualifying_session_results qsr
     JOIN session_results sr ON sr.id = qsr.session_result_id
-    JOIN rounds r ON r.id = sr.round_id
     WHERE qsr.driver_profile_id IS NOT NULL
       AND qsr.outcome != 'DNS'
       AND sr.status = 'ACTIVE'
-      AND r.status = 'FINAL'
 """
 
 # Every profile named anywhere in one round's live results, whatever the outcome and whatever
@@ -435,11 +440,13 @@ async def recompute_former_drivers_for_round(
     if not candidates:
         return
 
-    cursor = await db.execute(
-        f"SELECT DISTINCT profile_id FROM ({_RACED_A_ROUND_SQL}) WHERE round_id = ?",
-        (round_id,),
-    )
-    raced_here = {r["profile_id"] for r in await cursor.fetchall()}
+    raced_here: set[int] = set()
+    if await final_round_ids_among_on(db, [round_id]):
+        cursor = await db.execute(
+            f"SELECT DISTINCT profile_id FROM ({_RACED_A_ROUND_SQL}) WHERE round_id = ?",
+            (round_id,),
+        )
+        raced_here = {r["profile_id"] for r in await cursor.fetchall()}
 
     # Only those this round does not already mark need asking about, and only where there are
     # any: a finalisation where every candidate raced — the common case by far — asks nothing.
@@ -452,11 +459,13 @@ async def recompute_former_drivers_for_round(
     if to_ask:
         marks = ", ".join("?" for _ in to_ask)
         cursor = await db.execute(
-            f"SELECT DISTINCT profile_id FROM ({_RACED_A_ROUND_SQL}) "  # noqa: S608
+            f"SELECT DISTINCT profile_id, round_id FROM ({_RACED_A_ROUND_SQL}) "  # noqa: S608
             f"WHERE round_id != ? AND profile_id IN ({marks})",
             (round_id, *to_ask),
         )
-        raced_elsewhere = {r["profile_id"] for r in await cursor.fetchall()}
+        raced = await cursor.fetchall()
+        final = await final_round_ids_among_on(db, {r["round_id"] for r in raced})
+        raced_elsewhere = {r["profile_id"] for r in raced if r["round_id"] in final}
 
     await set_former_drivers_on(
         db, {p: p in raced_here or p in raced_elsewhere for p in candidates}
@@ -493,22 +502,11 @@ async def _save_session_result_in_tx(
     A resubmission's swap writes every session of a round in the same transaction as the delete
     of the results they replace.
     """
-    from leaguebot.core.services.seasons.season_service import SeasonImmutableError
     from leaguebot.core.services.drivers.driver_service import resolve_driver_profile_id
 
     submitted_at = now.isoformat()
-    cursor = await db.execute(
-        """
-        SELECT s.status AS season_status
-        FROM rounds r
-        JOIN divisions d ON d.id = r.division_id
-        JOIN seasons s ON s.id = d.season_id
-        WHERE r.id = ?
-        """,
-        (round_id,),
-    )
-    season_row = await cursor.fetchone()
-    if season_row and season_row["season_status"] == "COMPLETED":
+    facts = await round_facts_on(db, round_id)
+    if facts and facts.season_status is SeasonStatus.COMPLETED:
         raise SeasonImmutableError(
             f"Round {round_id} belongs to an archived season — results cannot be submitted."
         )
@@ -535,7 +533,7 @@ async def _save_session_result_in_tx(
     _profile_id_map: dict[int, int | None] = {}
     for row in driver_rows:
         driver_profile_id: int | None = None
-        if season_row is not None:
+        if facts is not None:
             driver_profile_id = await resolve_driver_profile_id(
                 row["driver_user_id"], db
             )
@@ -971,8 +969,8 @@ async def resubmission_drafts_on(
     """The sessions a round's resubmission holds as drafts, in running order, read on the
     connection handed. A draft kept for a season with no configuration to choose
     (`NO_CONFIG`) gives none."""
-    row = await (await db.execute("SELECT format FROM rounds WHERE id = ?", (round_id,))).fetchone()
-    if row is None:
+    facts = await round_facts_on(db, round_id)
+    if facts is None:
         return []
     drafts = {
         found["session_type"]: found
@@ -985,7 +983,7 @@ async def resubmission_drafts_on(
         ).fetchall()
     }
     collected: list[CollectedSession] = []
-    for session in get_sessions_for_format(RoundFormat(row["format"])):
+    for session in get_sessions_for_format(facts.format):
         found = drafts.get(session.value)
         if found is None:
             continue
