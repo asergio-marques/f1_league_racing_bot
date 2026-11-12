@@ -33,7 +33,7 @@ from typing import Any, TypedDict
 import aiosqlite
 
 from leaguebot.core.db.database import get_connection, inserted_id, sole_row
-from leaguebot.core.models.refusal import Refused
+from leaguebot.core.services.drivers.template_capacity_service import RosterCapacity
 from leaguebot.core.services.drivers.team_service import (
     division_team_references,
     resolve_team_reference,
@@ -194,7 +194,7 @@ async def judge_add_on(
     team_name: str,
     division_name: str,
     nationality: str | None = None,
-    capacity=None,
+    capacity: RosterCapacity | None = None,
 ) -> AddPlan | str:
     """Judge a fake driver's seating in *team_name* in *division_name* on *db*, writing nothing:
     the plan to write it, or the refusal the member can act on, in its words.
@@ -204,8 +204,9 @@ async def judge_add_on(
     driver created without one records none, and is drawn without a flag.
 
     *capacity* holds the driver to the template capacities a real placement into
-    the same team is held to, and the driver is refused where one would be. The change always
-    passes it; left None, as tests of the seating alone do, the check is skipped.
+    the same team is held to, and the driver is refused where the drawing, asked in the change's
+    check, said one would be. The check passes it; the save, which asks nothing of the image
+    module, and a test of the seating alone leave it None, and the check is skipped.
 
     *driver_name* is drawn on graphics as a real driver's name is, so it is held to the rules
     every name a league types is held to.
@@ -234,12 +235,9 @@ async def judge_add_on(
     team_row = await sole_row(cursor)
 
     if capacity is not None:
-        try:
-            await capacity.guard_roster_capacity(
-                located.division_id, {team_row["name"]: 1}
-            )
-        except Refused as exc:
-            return str(exc)
+        refusal = await capacity.refusal_on(db, located.division_id, {team_row["name"]: 1})
+        if refusal is not None:
+            return refusal
 
     # Find a free seat (driver_profile_id IS NULL); a reserve team, which has unlimited seats,
     # grows one.
@@ -316,7 +314,7 @@ async def add_test_driver_on(
     team_name: str,
     division_name: str,
     nationality: str | None = None,
-    capacity=None,
+    capacity: RosterCapacity | None = None,
 ) -> TestDriverInfo | str:
     """Judge a fake driver (`judge_add_on`) and seat them (`seat_on`) on *db*: the driver, or the
     refusal, in which case nothing was written. Commits nothing."""
@@ -355,7 +353,7 @@ class BulkPlan:
 async def judge_bulk_on(
     db: aiosqlite.Connection,
     drivers: list,
-    capacity=None,
+    capacity: RosterCapacity | None = None,
 ) -> BulkPlan | list[str]:
     """Judge a whole roster on *db*, writing nothing: the plan to seat it, or every fault met.
 
@@ -381,8 +379,8 @@ async def judge_bulk_on(
 
     *capacity* holds each division the roster seats to the template capacities a
     real placement is held to, counting every driver the roster gives the division at once.
-    The change always passes it; left None, as tests of the seating alone do, the check is
-    skipped.
+    The check passes it, with the drawing's answers; the save, which asks nothing of the image
+    module, and a test of the seating alone leave it None, and the check is skipped.
     """
     from leaguebot.core.utils.roster_import import divisions_named
 
@@ -513,10 +511,9 @@ async def judge_bulk_on(
         for name, division_id in division_ids.items():
             if division_id not in added:
                 continue
-            try:
-                await capacity.guard_roster_capacity(division_id, added[division_id])
-            except Refused as exc:
-                errors.append(f"Division '{name}': {exc}")
+            refusal = await capacity.refusal_on(db, division_id, added[division_id])
+            if refusal is not None:
+                errors.append(f"Division '{name}': {refusal}")
 
     if errors:
         return errors
@@ -591,7 +588,7 @@ async def seat_bulk_on(db: aiosqlite.Connection, plan: BulkPlan) -> int:
 async def add_test_drivers_in_bulk_on(
     db: aiosqlite.Connection,
     drivers: list,
-    capacity=None,
+    capacity: RosterCapacity | None = None,
 ) -> tuple[int, list[str]]:
     """Judge a whole roster (`judge_bulk_on`) and seat it (`seat_bulk_on`) on *db*: the number
     seated and the faults met, **the two exclusive**, a fault in which case seating nobody.

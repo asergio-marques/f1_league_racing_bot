@@ -55,7 +55,7 @@ async def _attach_phantom(db_path, name: str) -> None:
 
 async def _section(db_path, *, on: bool, review: str):
     from leaguebot.core.services.modules.review_sections import Review
-    from leaguebot.results.services.season_points_service import review_section
+    from leaguebot.results.services.points.season_points_service import review_section
 
     modules = MagicMock()
     modules.is_results_enabled = AsyncMock(return_value=on)

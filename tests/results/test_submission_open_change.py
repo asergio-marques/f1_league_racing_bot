@@ -25,7 +25,7 @@ import discord
 import pytest
 
 from leaguebot.core.models.round import RoundFormat
-from leaguebot.results.services.result_submission_service import get_sessions_for_format
+from leaguebot.results.services.submission.result_submission_service import get_sessions_for_format
 from leaguebot.results.utils import results_formatter
 from tests.support.change_queue import (
     acknowledgement,
@@ -41,6 +41,8 @@ from tests.support.review_league import block_queue, channel
 from tests.support.season_league import (
     PRO,
     SeasonLeague,
+    amend_round,
+    amendment_changes,
     ongoing_league,
     round_id,
 )
@@ -302,7 +304,7 @@ async def test_starting_the_round_cannot_be_discarded(tmp_path):
     round: it awaits results and its submission channel is created and recorded."""
     league = await _league(tmp_path)
     with patch(
-        "leaguebot.results.services.submission_changes.set_round_status_on",
+        "leaguebot.results.services.submission.submission_changes.set_round_status_on",
         side_effect=RuntimeError("the rounds table is locked"),
     ):
         await _ask(league)
@@ -332,7 +334,7 @@ async def test_a_round_cancelled_while_its_start_stood_stopped_is_dropped_on_ret
     on, no channel is created and round 3 stays CANCELLED."""
     league = await _league(tmp_path)
     with patch(
-        "leaguebot.results.services.submission_changes.set_round_status_on",
+        "leaguebot.results.services.submission.submission_changes.set_round_status_on",
         side_effect=RuntimeError("the rounds table is locked"),
     ):
         await _ask(league)
@@ -347,3 +349,295 @@ async def test_a_round_cancelled_while_its_start_stood_stopped_is_dropped_on_ret
     assert league.created == []
     assert await _submission(league) == []
     assert await _status(league) == "CANCELLED"
+
+
+# ---------------------------------------------------------------------------
+# A round start missed while the bot was down (#450)
+# ---------------------------------------------------------------------------
+
+#: The name of results' start-up step that catches up the round starts missed while the bot was
+#: down, as `start_up_steps(bot)` gives it.
+MISSED_STARTS = "missed round starts"
+
+
+async def _start_passed(league: SeasonLeague, round_: int = ROUND_3, **ago: float) -> None:
+    """Move *round_*'s start to the given time before the queue's clock (*ago*, as `timedelta`
+    takes it)."""
+    from datetime import timedelta, timezone
+
+    when = (league.clock.now - timedelta(**ago)).astimezone(timezone.utc).isoformat()
+    await league.write("UPDATE rounds SET scheduled_at = ? WHERE id = ?", when, round_)
+
+
+async def _catch_up(league: SeasonLeague) -> None:
+    """Run results' start-up step that catches up the round starts missed, as the start-up sweep
+    runs it, before the queue runs."""
+    from leaguebot.results.wiring import start_up_steps
+
+    await dict(start_up_steps(league.bot))[MISSED_STARTS]()
+
+
+async def _fire_job(league: SeasonLeague, monkeypatch: Any, round_: int = ROUND_3) -> None:
+    """Fire *round_*'s `results` job, as APScheduler runs it: through the one runner, which looks
+    up the handler the builder registered for `results`. The league's scheduler is a double, so
+    the runner is handed the handlers the builder signed up on it through `register_timer`; the
+    runner swallows a handler's fault, so one that raises is raised again here."""
+    from types import SimpleNamespace
+
+    from leaguebot.core.services import scheduler_service
+
+    handlers = {
+        call.args[0]: call.args[1]
+        for call in league.bot.scheduler_service.register_timer.call_args_list
+    }
+    faults: list[BaseException] = []
+
+    async def _handler(key: int) -> None:
+        try:
+            await handlers["results"](key)
+        except Exception as fault:  # noqa: BLE001 — raised again below, past the runner
+            faults.append(fault)
+
+    monkeypatch.setattr(scheduler_service, "_GLOBAL_SERVICE",
+                        SimpleNamespace(_timer_callbacks={"results": _handler}))
+    await scheduler_service._one_off_timer_job("results", round_)
+    if faults:
+        raise faults[0]
+
+
+async def _opened_rounds(league: SeasonLeague) -> list[int]:
+    """The round of each opening asked of the queue, in the order asked."""
+    import json
+
+    return [json.loads(row["payload"])["round_id"] for row in await _open_changes(league)]
+
+
+async def test_a_round_whose_start_passed_while_the_bot_was_down_opens_at_the_restart(tmp_path):
+    """Round 3's start fell two hours before the bot's clock, while the bot was down, and its
+    `results` job was lost with the stop. At the restart results' catch-up asks the queue to open
+    round 3's submission, as its job would have, and the queue opens it: round 3 awaits results and
+    its one channel is created and recorded, with its opening posted. Rounds 1 and 2, raced already,
+    and round 4, whose start is ahead, are asked nothing."""
+    league = await _league(tmp_path)
+    await _start_passed(league, hours=2)
+
+    await _catch_up(league)
+    await run_queue(league.bot)
+
+    assert await _opened_rounds(league) == [ROUND_3]
+    assert await stopped_job(league.db_path) is None
+    assert await _status(league) == "AWAITING_RESULTS"
+    [made] = league.created
+    assert await _submission(league) == [{"channel_id": made, "closed": 0}]
+    assert "Results submission open for **Round 3** (Pro)" in league.texts(made)[0]
+
+
+async def _opened_before_the_stop(league: SeasonLeague) -> None:
+    await _ask(league)
+    await run_queue(league.bot)
+
+
+async def _cancelled(league: SeasonLeague) -> None:
+    await league.write("UPDATE rounds SET status = 'CANCELLED' WHERE id = ?", ROUND_3)
+
+
+async def _in_hand(league: SeasonLeague) -> None:
+    league.holder = await block_queue(league)
+    await _ask(league)
+    await run_queue(league.bot)
+
+
+async def _stopped_id(league: SeasonLeague) -> int | None:
+    """The id of the job the queue is stopped at, or None."""
+    stopped = await stopped_job(league.db_path)
+    return None if stopped is None else stopped["id"]
+
+
+@pytest.mark.parametrize(
+    ("before", "opened", "channels"),
+    [
+        pytest.param(_opened_before_the_stop, [ROUND_3], 1, id="opened before the stop"),
+        pytest.param(_cancelled, [], 0, id="cancelled"),
+        pytest.param(_in_hand, [ROUND_3], 0, id="its opening in hand on a stopped queue"),
+    ],
+)
+async def test_a_round_whose_start_passed_is_not_opened_again_at_the_restart(
+    tmp_path, before: Any, opened: list[int], channels: int,
+):
+    """Round 3's start fell two hours before the bot's clock, and before the bot stopped round 3
+    was in one of three states: its submission opened by its job, its channel standing; cancelled
+    by a league manager; or its opening asked by its job but in hand, the queue stopped at another
+    job ahead of it. At the restart results' catch-up asks no opening of round 3: the openings
+    asked of the queue are the job's alone, the queue runs on without stopping anew, and no further
+    channel is made (one standing where it was opened, none where cancelled or still in hand)."""
+    league = await _league(tmp_path)
+    await _start_passed(league, hours=2)
+    await before(league)
+    stopped = await _stopped_id(league)
+
+    await _catch_up(league)
+    await run_queue(league.bot)
+
+    assert await _opened_rounds(league) == opened
+    assert await _stopped_id(league) == stopped
+    assert len(league.created) == channels
+
+
+async def test_a_round_whose_amendment_stopped_across_the_restart_moves_its_start_ahead_is_not_opened(
+    tmp_path, monkeypatch,
+):
+    """A league manager amends round 3's moment to a day ahead, and the amendment waits on the
+    league's lane behind a change stopped on a failure, across the restart. Round 3's old start
+    has fallen two hours before the bot's clock by then. At the restart both results' catch-up and
+    the late `results` job find round 3 still not run and ask its opening, once, behind the
+    amendment. Once the stopped change is retried the amendment runs first and moves round 3's
+    start a day ahead, and the opening is dropped at its check, the start no longer passed: round 3
+    stays not run, no channel is made and the queue does not stop (core specification, "Amending
+    and cancelling a round")."""
+    from datetime import timedelta
+
+    league = await _league(tmp_path)
+    league.holder = await block_queue(league)
+    await run_queue(league.bot)
+    day_ahead = (league.clock.now + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
+    assert await amend_round(league, "Pro", 3, scheduled_at=day_ahead) is not None
+    assert len(await amendment_changes(league)) == 1
+    await _start_passed(league, hours=2)
+
+    await _catch_up(league)
+    await _fire_job(league, monkeypatch)
+    league.holder["fail"] = False
+    await retry_job(league.bot)
+
+    assert await _opened_rounds(league) == [ROUND_3]
+    assert await stopped_job(league.db_path) is None
+    assert await _status(league) == "NOT_RUN"
+    assert league.created == []
+
+
+async def test_a_round_whose_start_passed_while_its_amendment_stood_stopped_opens_once_when_retried(
+    tmp_path, monkeypatch,
+):
+    """A league manager amends round 3's track, leaving its moment, and the amendment waits on the
+    league's lane behind a change stopped on a failure. Round 3's start falls two hours before the
+    bot's clock while it waits, outside test mode, and both results' catch-up and the late
+    `results` job ask its opening, once, behind the amendment. Once the stopped change is retried
+    the amendment runs, and the opening, whose start has passed and which is still to be run, opens
+    round 3's submission once: it awaits results and one channel is made."""
+    league = await _league(tmp_path)
+    league.holder = await block_queue(league)
+    await run_queue(league.bot)
+    assert await amend_round(league, "Pro", 3, track="Hungaroring") is not None
+    assert len(await amendment_changes(league)) == 1
+    await _start_passed(league, hours=2)
+
+    await _catch_up(league)
+    await _fire_job(league, monkeypatch)
+    league.holder["fail"] = False
+    await retry_job(league.bot)
+
+    assert await _opened_rounds(league) == [ROUND_3]
+    assert await stopped_job(league.db_path) is None
+    assert await _status(league) == "AWAITING_RESULTS"
+    assert len(league.created) == 1
+
+
+async def test_a_round_whose_start_is_ahead_by_the_bot_s_clock_is_not_opened_at_the_restart(
+    tmp_path,
+):
+    """Round 3's start is an hour before the host's clock but an hour after the bot's: the queue's
+    clock, pinned to the host's as the league is built, is put back two hours. At the restart
+    results' catch-up asks nothing, judging "passed" by the queue's clock and never the host's:
+    round 3 stays not run, and no channel is made."""
+    league = await _league(tmp_path)
+    await _start_passed(league, hours=1)
+    league.clock.advance(hours=-2)
+
+    await _catch_up(league)
+    await run_queue(league.bot)
+
+    assert await _opened_rounds(league) == []
+    assert await _status(league) == "NOT_RUN"
+    assert league.created == []
+
+
+@pytest.mark.parametrize("weather", [
+    pytest.param(False, id="weather off"),
+    pytest.param(True, id="weather on, its late job fired too"),
+])
+async def test_under_test_mode_a_missed_round_start_is_left_to_the_advance(
+    tmp_path, monkeypatch, weather: bool,
+):
+    """Test mode is on, with results on and weather off or on. Round 3's submission is left to
+    `/test-mode advance` to open in its turn: with weather off no job is armed for it (core
+    specification, "What confirming placements does": each round's results job is armed "save where
+    the results module is on and the weather module off under test mode, whose advance then opens it
+    by hand"), and with weather on its job stands but a late firing opens nothing, as the
+    amendment's catch-up opens a passed round "at once, outside test mode". Round 3's start fell two
+    hours before the bot's clock. At the restart results' catch-up runs and, with weather on, round
+    3's late `results` job fires too: neither asks an opening, round 3 stays not run, and no channel
+    is made."""
+    league = await _league(tmp_path, test_mode=True, weather=weather)
+    await _start_passed(league, hours=2)
+
+    await _catch_up(league)
+    if weather:
+        await _fire_job(league, monkeypatch)
+    await run_queue(league.bot)
+
+    assert await _opened_rounds(league) == []
+    assert await _status(league) == "NOT_RUN"
+    assert league.created == []
+
+
+async def test_under_test_mode_with_weather_on_a_round_start_after_the_restart_opens_on_time(
+    tmp_path, monkeypatch,
+):
+    """Test mode and weather are on, so round 3's `results` job stands (core specification, "What
+    confirming placements does"). Round 3's start is an hour after the bot's clock when the bot comes
+    up, and results' catch-up runs and asks nothing. The bot's clock then moves two hours on, past
+    round 3's start, and its `results` job fires while the bot is up, an hour after the start: the
+    handler holds back only a start that passed while the bot was down. Round 3's opening is asked
+    of the queue once, and the queue opens it: round 3 awaits results, and one channel is made."""
+    league = await _league(tmp_path, test_mode=True, weather=True)
+    await _start_passed(league, hours=-1)
+
+    await _catch_up(league)
+    assert await _opened_rounds(league) == []
+    league.clock.advance(hours=2)
+    await _fire_job(league, monkeypatch)
+    await run_queue(league.bot)
+
+    assert await _opened_rounds(league) == [ROUND_3]
+    assert await _status(league) == "AWAITING_RESULTS"
+    assert len(league.created) == 1
+
+
+@pytest.mark.parametrize("job_first", [
+    pytest.param(True, id="the job first"),
+    pytest.param(False, id="the catch-up first"),
+])
+async def test_the_late_job_and_the_catch_up_both_firing_open_the_round_once(
+    tmp_path, monkeypatch, job_first: bool,
+):
+    """Round 3's start fell two hours before the bot's clock, while the bot was down, and its
+    `results` job, armed with no lateness limit, survived the stop. At the restart both the late
+    job and results' catch-up fire for round 3, in either order, before the queue runs. Round 3's
+    opening is asked of the queue once, and the queue opens it once: round 3 awaits results, one
+    channel is made and recorded, and the queue does not stop."""
+    league = await _league(tmp_path)
+    await _start_passed(league, hours=2)
+
+    if job_first:
+        await _fire_job(league, monkeypatch)
+        await _catch_up(league)
+    else:
+        await _catch_up(league)
+        await _fire_job(league, monkeypatch)
+    await run_queue(league.bot)
+
+    assert await _opened_rounds(league) == [ROUND_3]
+    assert await stopped_job(league.db_path) is None
+    assert await _status(league) == "AWAITING_RESULTS"
+    [made] = league.created
+    assert await _submission(league) == [{"channel_id": made, "closed": 0}]

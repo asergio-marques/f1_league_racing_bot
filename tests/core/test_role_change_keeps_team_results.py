@@ -23,14 +23,16 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.models.session_result import SessionResult
-from leaguebot.results.services.result_submission_service import (
-    _build_division_validation_data,
+from leaguebot.results.services.submission.result_submission_service import (
     _row_dict_from_qualifying,
     _row_dict_from_race,
+)
+from leaguebot.results.services.submission.paste_reading import (
+    _build_division_validation_data,
     other_active_team_assignments,
     validate_submission_block,
 )
-from leaguebot.results.services.standings_service import (
+from leaguebot.results.services.standings.standings_service import (
     compute_and_persist_round_on,
     compute_team_standings,
     previous_standing_positions,
@@ -38,6 +40,7 @@ from leaguebot.results.services.standings_service import (
 from leaguebot.core.services.drivers.team_service import TeamService
 from tests.support.session_writes import save_session_result
 from tests.support.change_queue import in_a_job
+
 
 DIVISION_ID = 37
 OTHER_DIVISION_ID = 38
@@ -121,7 +124,7 @@ def _bot(db_path: str):
 async def _validate(
     db_path: str, lines: list[str], session_type=SessionType.FEATURE_RACE, *, other=None
 ):
-    data = await _build_division_validation_data(DIVISION_ID, _bot(db_path))
+    data = await _build_division_validation_data(DIVISION_ID, _bot(db_path).team_service)
     return validate_submission_block(
         lines,
         session_type,
@@ -218,10 +221,10 @@ async def test_position_change_survives_a_role_change(tmp_path):
 async def test_results_post_names_a_team_after_its_role_is_replaced(tmp_path):
     """The first round, posted again after the change, still says Ferrari — never a mention
     of a role that may since have been deleted from the server."""
-    from leaguebot.results.services.results_post_service import _load_driver_rows, produce_session_results
+    from leaguebot.results.services.publishing.results_post_service import load_driver_rows, produce_session_results
 
     db_path, _teams, (first, _second) = await _season_raced_across_a_role_change(tmp_path)
-    rows = await _load_driver_rows(db_path, first, SessionType.FEATURE_RACE)
+    rows = await load_driver_rows(db_path, first, SessionType.FEATURE_RACE)
     sent: list[str] = []
 
     async def send(content=None, **_kwargs):

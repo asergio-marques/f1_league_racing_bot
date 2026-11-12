@@ -292,8 +292,12 @@ async def _seed_results(db, round_id: int, division_id: int, index: int) -> None
     )
     await db.execute(
         "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
-        "standing_position, total_points, standings_message_id, "
-        "constructor_standings_message_id) VALUES (?, ?, 42, 1, 25, ?, ?)",
+        "standing_position, total_points) VALUES (?, ?, 42, 1, 25)",
+        (round_id, division_id),
+    )
+    await db.execute(
+        "INSERT INTO round_standings_posts (round_id, division_id, standings_message_id, "
+        "constructor_standings_message_id) VALUES (?, ?, ?, ?)",
         (round_id, division_id, 2000 + index, 3000 + index),
     )
     await db.execute(
@@ -318,6 +322,18 @@ async def _announce_verdicts(db_path: str) -> None:
                 (str(message_id), json.dumps([message_id]), str(VERDICTS_CHANNEL_ID)),
             )
         await db.commit()
+
+
+async def _post_opening_classification(db_path: str, division_id: int) -> None:
+    """The division's opening classification, posted in the standings channel when its placements
+    were confirmed: the drivers' table as message 4000 and the teams' as 4001, recorded as results
+    records a round's standings."""
+    await _set(
+        db_path,
+        "INSERT INTO classification_posts (division_id, occasion, standings_message_id, "
+        "constructor_standings_message_id) VALUES (?, 'SEASON_OPENING', 4000, 4001)",
+        (division_id,),
+    )
 
 
 async def _closing_the_rounds_fails(db_path: str) -> None:
@@ -581,9 +597,15 @@ async def test_a_stop_part_way_through_the_take_down_finishes_it_on_restart_and_
 
 
 async def test_every_message_is_taken_down_by_the_ids_saved_with_the_switch_off(tmp_path):
-    """The rows naming the messages are gone with the switch-off; the steps keep their ids."""
+    """The rows naming the messages are gone with the switch-off; the steps keep their ids. The
+    division's opening classification (messages 4000 and 4001 in the standings channel) goes with
+    the round's standings (results specification, the switch-off rule), and is counted as they
+    are, one per championship's posting: five results and standings messages (1000, 2000, 3000,
+    4000, 4001) and two verdicts, the banner apart, in the Success line, the closing line and the
+    admin's reply."""
     seeded = await _seed(tmp_path)
     await _announce_verdicts(seeded.db_path)
+    await _post_opening_classification(seeded.db_path, seeded.division_id)
     async with get_connection(seeded.db_path) as db:
         await db.execute(
             "INSERT INTO verdict_banner_messages (round_id, channel_id, message_id, posted_at, "
@@ -592,18 +614,29 @@ async def test_every_message_is_taken_down_by_the_ids_saved_with_the_switch_off(
         )
         await db.commit()
     bot = _league(seeded.db_path)
-    await _confirm(bot)
+    interaction = await _confirm(bot)
 
     await run_queue(bot, steps=1)
     for table in ("session_results", "penalty_records", "appeal_records",
-                  "driver_standings_snapshots"):
+                  "driver_standings_snapshots", "classification_posts"):
         assert await _count(seeded.db_path, table) == 0, table
     await run_queue(bot)
 
     assert _deleted(bot, RESULTS_CHANNEL_ID) == [1000]
-    assert _deleted(bot, STANDINGS_CHANNEL_ID) == [2000, 3000]
+    assert _deleted(bot, STANDINGS_CHANNEL_ID) == [2000, 3000, 4000, 4001]
     assert _deleted(bot, VERDICTS_CHANNEL_ID) == [5001, 6001, 7001]
     assert await _count(seeded.db_path, "verdict_banner_messages") == 0
+    switch_off = await _line_starting(bot, f"{NAMED} | /module disable results | Success")
+    assert "  messages to remove: 5 results and standings, 2 verdicts" in switch_off
+    closing = await _line_starting(bot, f"{NAMED} | /module disable results | Messages removed")
+    assert closing.startswith(
+        f"{NAMED} | /module disable results | Messages removed\n"
+        "  results and standings messages removed: 5\n"
+        "  verdicts removed: 2"
+    )
+    assert "5 results and standings message(s) and 2 verdict(s) removed" in updated_reply(
+        interaction
+    )
 
 
 async def test_turning_results_off_deletes_a_session_cancelled_line(tmp_path):
@@ -667,26 +700,31 @@ async def test_a_removal_discord_refuses_stops_the_queue_and_once_discarded_is_l
 async def test_messages_left_standing_are_listed_in_the_reply_and_the_closing_line_with_their_links(  # noqa: E501
     tmp_path,
 ):
-    """Two removals Discord refuses each stop the queue; once a league admin discards both, both
-    messages are linked in the admin's reply and in the closing line."""
+    """Three removals Discord refuses each stop the queue: the round's results message, its
+    standings, and the division's opening classification (message 4000 in the standings channel).
+    Once a league admin discards all three, each message is linked in the admin's reply and in the
+    closing line."""
     seeded = await _seed(tmp_path)
+    await _post_opening_classification(seeded.db_path, seeded.division_id)
     bot = _league(seeded.db_path)
     bot.channels[RESULTS_CHANNEL_ID].refuse = {1000}
-    bot.channels[STANDINGS_CHANNEL_ID].refuse = {2000}
+    bot.channels[STANDINGS_CHANNEL_ID].refuse = {2000, 4000}
     interaction = await _confirm(bot)
 
     await run_queue(bot)
     await discard_job(bot)
     await discard_job(bot)
+    await discard_job(bot)
 
-    links = {_link(RESULTS_CHANNEL_ID, 1000), _link(STANDINGS_CHANNEL_ID, 2000)}
+    links = {_link(RESULTS_CHANNEL_ID, 1000), _link(STANDINGS_CHANNEL_ID, 2000),
+             _link(STANDINGS_CHANNEL_ID, 4000)}
     reply = updated_reply(interaction)
-    head = "⚠️ 2 message(s) could not be removed — delete them by hand:\n"
+    head = "⚠️ 3 message(s) could not be removed — delete them by hand:\n"
     assert head in reply
-    assert set(reply.split(head, 1)[1].splitlines()[:2]) == links
+    assert set(reply.split(head, 1)[1].splitlines()[:3]) == links
     closing = await _line_starting(bot, f"{NAMED} | /module disable results | Messages removed")
-    tail = closing.split("\n  left standing, to delete by hand: 2\n", 1)[1]
-    assert {line.strip() for line in tail.splitlines()[:2]} == links
+    tail = closing.split("\n  left standing, to delete by hand: 3\n", 1)[1]
+    assert {line.strip() for line in tail.splitlines()[:3]} == links
     switch_off = await _line_starting(bot, f"{NAMED} | /module disable results | Success")
     assert "left standing" not in switch_off
 
@@ -791,7 +829,7 @@ async def test_a_discard_after_the_switch_off_says_the_season_can_still_be_compl
     discards it, the admin's reply still says the season can still be completed and that some of
     its messages may remain for removal by hand, and counts what the removals did take down. The
     stop notice and the Discard line name the job as counting what was removed."""
-    from leaguebot.results.services import results_off_change
+    from leaguebot.results.services.module import results_off_change
 
     monkeypatch.setattr(
         results_off_change, "_forget_banners_on", AsyncMock(side_effect=RuntimeError("stuck"))
@@ -922,6 +960,34 @@ async def test_a_hub_refresh_that_fails_names_the_refresh_not_the_switch_off(
     assert (await _stopped_change(seeded.db_path))["kind"] == "hub.refresh"
     assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
     assert updated_reply(interaction).startswith(SUCCESS)
+
+
+async def test_turning_results_off_removes_the_amendment_sweep(tmp_path):
+    """Results is on, and the standing sweep that undoes an amendment nobody carried through is
+    armed on the bot's scheduler, as turning results on and each start of the bot arm it. The
+    league manager confirms `/module disable results` and the queue carries it out: the switch-off
+    is done, and the scheduler holds no amendment sweep, as turning results on had set up
+    (architecture.md, "Each module turns itself on and off")."""
+    from leaguebot.core.services.scheduler_service import AMENDMENT_SWEEP_JOB_ID, SchedulerService
+
+    seeded = await _seed(tmp_path)
+    bot = _league(seeded.db_path)
+    scheduler = SchedulerService(seeded.db_path, str(tmp_path / "jobs.db"))
+    try:
+        bot.scheduler_service = scheduler
+        # The change types again, as the builder registers them for this scheduler.
+        attach_queue(bot, seeded.db_path, now=bot.clock)
+        scheduler.schedule_amendment_sweep()
+        assert scheduler.has_job(AMENDMENT_SWEEP_JOB_ID)
+        await _confirm(bot)
+
+        await run_queue(bot)
+
+        assert (await _change(seeded.db_path, "module.off:results"))["state"] == "DONE"
+        assert await _flag(seeded.db_path) == 0
+        assert not scheduler.has_job(AMENDMENT_SWEEP_JOB_ID)
+    finally:
+        scheduler._scheduler._jobstores["default"].engine.dispose()
 
 
 # ---------------------------------------------------------------------------

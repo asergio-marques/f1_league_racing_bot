@@ -47,11 +47,8 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_wizard import (
-    AddPardonModal,
-    PenaltyReviewState,
-    StagedPardon,
-)
+from leaguebot.results.services.review.penalty_review_views import AddPardonModal
+from leaguebot.results.services.review.review_state import PenaltyReviewState, StagedPardon
 from tests.support.change_queue import (
     acknowledgement,
     attach_queue,
@@ -60,6 +57,7 @@ from tests.support.change_queue import (
     run_queue,
     updated_reply,
 )
+from tests.support.review_league import attendance_after_review_of
 from tests.support.teams import seed_team_instances
 
 SERVER_ID = 11008
@@ -153,10 +151,12 @@ async def _make_db(
 NOW = datetime(2026, 6, 1, 20, 0, tzinfo=timezone.utc)
 
 
-def _state(db_path: str, *, staged_pardons=None) -> PenaltyReviewState:
+def _state(db_path: str, *, staged_pardons=None, attendance=None) -> PenaltyReviewState:
     """Round 3's review, held by a bot carrying a real change queue on *db_path* and the
     league's log channel: a pardon staged is a change of its own (#439, slice 6b, C54), applied
-    when `_submit` runs the queue."""
+    when `_submit` runs the queue. The driver's attendance row is read through *attendance*,
+    handed in on the review's state as its queue is, and attendance's own share of the review
+    where the test hands none (#284)."""
     bot = league_double(db_path)
     attach_queue(bot, db_path, now=NOW)
     return PenaltyReviewState(
@@ -166,6 +166,8 @@ def _state(db_path: str, *, staged_pardons=None) -> PenaltyReviewState:
         session_types_present=[SessionType.FEATURE_RACE],
         db_path=db_path,
         bot=bot,
+        queue=bot.change_queue, server_config=bot.config_service.get_server_config, router=bot.output_router,
+        attendance=attendance or attendance_after_review_of(db_path),
         staged_pardons=list(staged_pardons or []),
         round_number=3,
         division_name="Pro",
@@ -199,7 +201,7 @@ async def _submit(
     modal.driver_id_input._value = driver_id  # type: ignore[attr-defined]
     modal.pardon_type_input._value = pardon_type  # type: ignore[attr-defined]
     modal.justification_input._value = justification  # type: ignore[attr-defined]
-    with patch("leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()) as refresh:
+    with patch("leaguebot.results.services.review.penalty_review_views._refresh_prompt", new=AsyncMock()) as refresh:
         await modal.on_submit(interaction)
         await run_queue(state.bot)
     return interaction, refresh
@@ -486,6 +488,23 @@ async def test_a_driver_with_no_attendance_row_is_refused(tmp_path):
     assert "results have been submitted" in replied
 
 
+async def test_the_form_reads_the_driver_s_attendance_row_through_attendance(tmp_path):
+    """Round 3 holds no attendance row for the driver in the database, but attendance's share
+    of the review, handed in on the review's state, answers row 99 with no RSVP. The steward
+    stages a NO_RSVP pardon: attendance is asked once, for round 3, Pro and the driver's
+    profile, and the pardon is staged against row 99."""
+    db_path = await _make_db(tmp_path, name="pardon_through_hook", attendance_row=False)
+    attendance = MagicMock()
+    attendance.attendance_row_of = AsyncMock(return_value={"id": 99, "rsvp_status": "NO_RSVP"})
+    state = _state(db_path, attendance=attendance)
+
+    interaction, _ = await _submit(state)
+
+    attendance.attendance_row_of.assert_awaited_once_with(ROUND_ID, DIVISION_ID, PROFILE_ID)
+    assert [(p.pardon_type, p.attendance_id) for p in state.staged_pardons] == [("NO_RSVP", 99)]
+    assert "Pardon staged" in _replied(interaction)
+
+
 async def test_a_finalised_round_takes_no_more_pardons(tmp_path):
     """Once post-race penalties are settled the attendance points are computed and
     published; a pardon after that would change a published total with no record of when."""
@@ -519,7 +538,7 @@ async def test_pardons_close_when_the_reports_are_approved(
 
     An amendment's report stage is approved once its row's `reports_approved_at` is set (#439):
     the database says so, not the review's memory, so the answer survives a restart."""
-    from leaguebot.results.services.penalty_wizard import _review_moved_on
+    from leaguebot.results.services.review.review_state import _review_moved_on
 
     db_path = await _make_db(tmp_path, name="pardons_closed", round_status=round_status)
     state = _state(db_path)

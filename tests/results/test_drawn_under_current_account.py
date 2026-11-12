@@ -1,6 +1,6 @@
 """Everything drawn or posted names a driver by the account they use now (issue #243).
 
-`results_post_service._load_driver_rows` is the one reader the posted results — text and
+`results_post_service.load_driver_rows` is the one reader the posted results — text and
 graphic — and the standings graphic's per-round grid draw their rows from, so mapping there
 covers all three. The standings themselves come from `compute_driver_standings`, pinned in
 `test_standings_service.py`.
@@ -16,7 +16,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.results_post_service import _load_driver_rows
+from leaguebot.results.services.publishing.results_post_service import load_driver_rows
 from tests.support.teams import seed_team_instances
 
 SERVER_ID = 2436
@@ -95,7 +95,7 @@ async def test_a_session_is_drawn_under_the_current_account(
 ):
     db_path = await _completed_season(tmp_path)
 
-    rows = await _load_driver_rows(db_path, session_result_id, session_type)
+    rows = await load_driver_rows(db_path, session_result_id, session_type)
 
     assert [r.driver_user_id for r in rows] == [NOW, OTHER]
 
@@ -104,8 +104,8 @@ async def test_drawing_a_completed_season_again_changes_nothing_stored(tmp_path)
     db_path = await _completed_season(tmp_path)
     before = await _stored(db_path)
 
-    await _load_driver_rows(db_path, 1, SessionType.FEATURE_RACE)
-    await _load_driver_rows(db_path, 2, SessionType.FEATURE_QUALIFYING)
+    await load_driver_rows(db_path, 1, SessionType.FEATURE_RACE)
+    await load_driver_rows(db_path, 2, SessionType.FEATURE_QUALIFYING)
 
     assert await _stored(db_path) == before
     assert ("R", PAST, 1) in before

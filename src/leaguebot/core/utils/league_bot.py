@@ -55,7 +55,7 @@ if TYPE_CHECKING:
     from leaguebot.signup.services.wizard_service import WizardService
     from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.modules.image_drawing import ImageDrawing
-    from leaguebot.results.services.attendance_hook import AttendanceAfterReview
+    from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
     from leaguebot.core.services.posting.output_router import OutputRouter
     from leaguebot.core.utils.hooks import AwaitedHook, Hook, StartingHook
 
@@ -67,6 +67,10 @@ class LeagueBot(commands.Bot):
     #: The version and date of the copy of the bot this process loaded; see `core/utils/version.py`.
     running_version: str | None
     running_version_date: datetime | None
+    #: The queue's moment when the bot came up, taken once by `build`. The wiring hands it, as a
+    #: callable, to a module's handler of a timed job and to its start-up catch-up, which tell a
+    #: start missed while the bot was down from one met while it is up (`ask_round_start`).
+    came_up_at: datetime
 
     config_service: ConfigService
     season_service: SeasonService
@@ -239,13 +243,6 @@ class LeagueBot(commands.Bot):
     rounds_called_off: AwaitedHook
     cancellation_notices: AwaitedHook
     cancellation_steps: Hook
-    #: A round ending with every session entered as not held (results' not-held round end),
-    #: given the ending save's connection and the round told (`round_id`, `division_id`,
-    #: `division_name`, `season_id`, and a round's `round_number`): each module signs up its own
-    #: part, planned inside that save, and hands back the steps it plans. Attendance's part
-    #: reads the round's check-in for the log line. The builder makes it and hands it to results'
-    #: not-held round end (architecture.md, "A hook core declares is a list of subscribers").
-    round_ended_not_held: AwaitedHook
     #: The rounds a closer made FINAL (results turned off, a season cancelled), given the closing's
     #: connection and the rounds' ids: each module signing up its part inside the save (results
     #: marks the drivers who raced them as former drivers). The builder makes it and hands it to
@@ -256,6 +253,12 @@ class LeagueBot(commands.Bot):
     #: configurations). The builder makes it and hands it to the toggle's change
     #: (`test_mode_toggle_change`).
     test_mode_turned_on: AwaitedHook
+    #: A season's approval saved, given the save's connection and the season's id: each module
+    #: signing up what it keeps for the season from this moment (results' snapshot of the server's
+    #: points configurations). The builder makes it and hands it to the approval, which calls it
+    #: inside its save, after the rounds' sessions are made and before the placements are
+    #: committed.
+    season_approved: AwaitedHook
     #: Placements confirmed (the season's approval), given the save's connection and a division's
     #: id and name: each module signing up its own opening post, handing back the jobs it plans
     #: for that division (results' opening standings, then attendance's opening sheet). The

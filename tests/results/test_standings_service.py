@@ -6,7 +6,7 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.results.models.session_result import DriverSessionResult, OutcomeModifier
-from leaguebot.results.services.standings_service import (
+from leaguebot.results.services.standings.standings_service import (
     cascade_recompute_from_round_on,
     compute_and_persist_round_on,
     compute_driver_standings,
@@ -630,7 +630,7 @@ async def test_classified_driver_ranks_above_dnf_at_same_position(db_path):
 # pin the arithmetic and, above all, the two cases where the record is absent entirely.
 # ---------------------------------------------------------------------------
 
-from leaguebot.results.services.standings_service import (  # noqa: E402
+from leaguebot.results.services.standings.standings_service import (  # noqa: E402
     MOVEMENT_GAINED,
     MOVEMENT_LOST,
     MOVEMENT_UNCHANGED,
@@ -1377,7 +1377,7 @@ async def test_the_previous_position_is_read_through_a_past_account(db_path):
 @pytest.mark.asyncio
 async def test_a_recompute_leaves_no_row_under_the_past_account(db_path):
     """E9: round 1 was computed under PAST; recomputed after the switch it stands under NOW
-    alone, and the posted message's id moves with the top row."""
+    alone."""
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db)
         r1 = await _round(db, div_id, 1)
@@ -1385,11 +1385,6 @@ async def test_a_recompute_leaves_no_row_under_the_past_account(db_path):
         await db.commit()
     await _persist_round(db_path, r1, div_id)
     async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE driver_standings_snapshots SET standings_message_id = 4444, "
-            "constructor_standings_message_id = 5555 WHERE round_id = ?",
-            (r1,),
-        )
         await _driver_moved(db)
         await db.commit()
 
@@ -1397,46 +1392,84 @@ async def test_a_recompute_leaves_no_row_under_the_past_account(db_path):
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT driver_user_id, total_points, standings_message_id, "
-            "constructor_standings_message_id FROM driver_standings_snapshots "
+            "SELECT driver_user_id, total_points FROM driver_standings_snapshots "
             "WHERE round_id = ?",
             (r1,),
         )
         rows = [tuple(r) for r in await cursor.fetchall()]
-    assert rows == [(NOW, 25, 4444, 5555)]
+    assert rows == [(NOW, 25)]
 
 
 @pytest.mark.asyncio
-async def test_the_postings_message_lists_move_with_the_top_row(db_path):
-    """#345: a repost deletes a posting by the list of every message it occupies. Carrying only
-    the anchor lost the list, and the messages after the anchor were then never deleted."""
+async def test_a_recomputation_that_reorders_a_round_leaves_its_standings_posting_found(
+    db_path,
+):
+    """A round's standings posting is a row keyed by the round, not a column on whichever
+    driver led it (architecture.md, "Posting to Discord"). Round 1 is led by PAST, with 222
+    second, and both championships are posted across several messages. PAST then moves to
+    NOW and 222 is given the win, so the recomputation reorders the round's rows and drops the
+    one under PAST. The posting is still found, every message of it; a repost replaces it in
+    place; and the round holds one posting, nothing left behind."""
+    from leaguebot.results.services.publishing.results_post_service import (
+        STANDINGS_CONSTRUCTORS,
+        STANDINGS_DRIVERS,
+        get_standings_message_id,
+        get_standings_message_ids,
+        set_standings_message_id_on,
+    )
+
     async with get_connection(db_path) as db:
         div_id, _ = await _bootstrap(db)
         r1 = await _round(db, div_id, 1)
-        await _result(db, await _session(db, r1, div_id), PAST, pos=1, pts=25)
+        sr1 = await _session(db, r1, div_id)
+        await _result(db, sr1, PAST, pos=1, pts=25)
+        await _result(db, sr1, 222, pos=2, pts=18)
         await db.commit()
     await _persist_round(db_path, r1, div_id)
     async with get_connection(db_path) as db:
-        await db.execute(
-            "UPDATE driver_standings_snapshots SET standings_message_id = 4444, "
-            "constructor_standings_message_id = 5555, "
-            "standings_message_ids = '[4444, 4445, 4446]', "
-            "constructor_standings_message_ids = '[5555, 5556]' WHERE round_id = ?",
-            (r1,),
+        await set_standings_message_id_on(
+            db, div_id, r1, 4444, STANDINGS_DRIVERS, message_ids="[4444, 4445, 4446]"
+        )
+        await set_standings_message_id_on(
+            db, div_id, r1, 5555, STANDINGS_CONSTRUCTORS, message_ids="[5555, 5556]"
         )
         await _driver_moved(db)
+        await db.execute(
+            "UPDATE race_session_results SET finishing_position = 3 - finishing_position, "
+            "points_awarded = 43 - points_awarded WHERE session_result_id = ?",
+            (sr1,),
+        )
         await db.commit()
 
     await _persist_round(db_path, r1, div_id)
 
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            "SELECT standings_message_ids, constructor_standings_message_ids "
-            "FROM driver_standings_snapshots WHERE round_id = ?",
+            "SELECT driver_user_id FROM driver_standings_snapshots WHERE round_id = ? "
+            "ORDER BY standing_position",
             (r1,),
         )
-        rows = [tuple(r) for r in await cursor.fetchall()]
-    assert rows == [("[4444, 4445, 4446]", "[5555, 5556]")]
+        assert [r[0] for r in await cursor.fetchall()] == [222, NOW]
+    assert await get_standings_message_id(db_path, div_id, r1) == 4444
+    assert await get_standings_message_ids(db_path, div_id, r1) == [4444, 4445, 4446]
+    assert await get_standings_message_id(db_path, div_id, r1, STANDINGS_CONSTRUCTORS) == 5555
+    assert await get_standings_message_ids(
+        db_path, div_id, r1, STANDINGS_CONSTRUCTORS
+    ) == [5555, 5556]
+
+    async with get_connection(db_path) as db:
+        await set_standings_message_id_on(
+            db, div_id, r1, 7777, STANDINGS_DRIVERS, message_ids="[7777]"
+        )
+        await db.commit()
+
+    assert await get_standings_message_ids(db_path, div_id, r1) == [7777]
+    assert await get_standings_message_id(db_path, div_id, r1, STANDINGS_CONSTRUCTORS) == 5555
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM round_standings_posts WHERE round_id = ?", (r1,)
+        )
+        assert (await cursor.fetchone())[0] == 1
 
 
 @pytest.mark.asyncio
@@ -1480,7 +1513,7 @@ SPRINT = SessionType.SPRINT_RACE.value
 
 
 def _order(results, points, **overrides):
-    from leaguebot.results.services.standings_service import order_drivers, tally_feature_finishes
+    from leaguebot.results.services.standings.standings_service import order_drivers, tally_feature_finishes
 
     finish_counts, first_finish_rounds = tally_feature_finishes(results)
     return order_drivers(
@@ -1534,7 +1567,7 @@ def test_participation_then_the_final_tiebreak_settle_what_the_countback_cannot(
 
 
 def test_teams_are_ordered_by_the_same_countback():
-    from leaguebot.results.services.standings_service import order_teams, tally_feature_finishes
+    from leaguebot.results.services.standings.standings_service import order_teams, tally_feature_finishes
 
     finish_counts, first_finish_rounds = tally_feature_finishes(
         [(10, FEATURE, "CLASSIFIED", 4, 1), (20, FEATURE, "CLASSIFIED", 1, 2)]
@@ -1564,7 +1597,7 @@ async def test_the_on_forms_write_on_the_handed_connection(db_path):
     """A review's save recomputes the standings on its own connection: the writers read the points
     it has just rewritten, write what a rollback takes back, and commit nothing themselves.
     Persisting the same snapshots twice leaves one row per driver and team."""
-    from leaguebot.results.services.standings_service import (
+    from leaguebot.results.services.standings.standings_service import (
         cascade_recompute_from_round_on,
         compute_and_persist_round_on,
         compute_driver_standings_on,

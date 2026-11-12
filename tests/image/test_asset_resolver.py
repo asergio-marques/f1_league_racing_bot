@@ -734,7 +734,7 @@ def test_the_position_change_data_are_the_standings_services_own():
     cannot drift. A direction added there and not here would be routed to the mark fallback
     and drawn stretched."""
     from leaguebot.image.models.image_constants import POSITION_CHANGE_DATA
-    from leaguebot.results.services.standings_service import (
+    from leaguebot.results.services.standings.standings_service import (
         MOVEMENT_GAINED,
         MOVEMENT_LOST,
         MOVEMENT_UNCHANGED,

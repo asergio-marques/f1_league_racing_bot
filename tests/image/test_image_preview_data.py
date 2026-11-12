@@ -318,7 +318,7 @@ class TestStandingsPreviousPositions:
 
     def test_one_entry_gained_one_lost_one_held_position(self):
         from leaguebot.image.services.image_preview_data import fabricate_standings_previous_positions
-        from leaguebot.results.services.standings_service import (
+        from leaguebot.results.services.standings.standings_service import (
             MOVEMENT_GAINED,
             MOVEMENT_LOST,
             MOVEMENT_UNCHANGED,
@@ -336,7 +336,7 @@ class TestStandingsPreviousPositions:
 
     def test_no_entry_is_left_without_a_movement(self):
         from leaguebot.image.services.image_preview_data import fabricate_standings_previous_positions
-        from leaguebot.results.services.standings_service import derive_movement
+        from leaguebot.results.services.standings.standings_service import derive_movement
 
         keys = [10, 20, 30, 40]
         previous = fabricate_standings_previous_positions(keys)
@@ -348,7 +348,7 @@ class TestStandingsPreviousPositions:
 
     def test_a_field_too_small_to_swap_holds_every_entry_unchanged(self):
         from leaguebot.image.services.image_preview_data import fabricate_standings_previous_positions
-        from leaguebot.results.services.standings_service import MOVEMENT_UNCHANGED, derive_movement
+        from leaguebot.results.services.standings.standings_service import MOVEMENT_UNCHANGED, derive_movement
 
         for count in (0, 1, 2):
             keys = list(range(10, 10 + count))
@@ -365,7 +365,7 @@ class TestStandingsPreviousPositions:
     def test_a_newcomer_has_no_previous_position_to_have_moved_from(self):
         """The spec's "a driver whom the standings of the preceding round do not hold"."""
         from leaguebot.image.services.image_preview_data import fabricate_standings_previous_positions
-        from leaguebot.results.services.standings_service import derive_movement
+        from leaguebot.results.services.standings.standings_service import derive_movement
 
         keys = [10, 20, 30, 40, 50]
         previous = fabricate_standings_previous_positions(keys, newcomers=frozenset({50}))

@@ -11,7 +11,7 @@ import discord
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from leaguebot.results.services.results_post_service import _label_from_status
+from leaguebot.results.services.publishing.results_post_service import _label_from_status
 from tests.support.change_queue import in_a_job
 
 
@@ -44,7 +44,7 @@ class TestLabelFromStatus:
 async def test_session_results_include_heading_and_label(tmp_path):
     """produce_session_results must prepend 'heading\\nlabel\\n' to the table."""
     from leaguebot.core.db.database import run_migrations, get_connection
-    from leaguebot.results.services.results_post_service import produce_session_results
+    from leaguebot.results.services.publishing.results_post_service import produce_session_results
     from leaguebot.results.models.session_result import SessionResult, DriverSessionResult
 
     db_path = str(tmp_path / "test.db")
@@ -67,7 +67,7 @@ async def test_session_results_include_heading_and_label(tmp_path):
         division_id = cursor.lastrowid
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
-            "VALUES (?, 5, 'STANDARD', 'AWAITING_REPORT_VERDICTS', '2026-06-01T18:00:00+00:00')",
+            "VALUES (?, 5, 'NORMAL', 'AWAITING_REPORT_VERDICTS', '2026-06-01T18:00:00+00:00')",
             (division_id,),
         )
         round_id = cursor.lastrowid
@@ -136,7 +136,7 @@ async def test_session_results_include_heading_and_label(tmp_path):
 async def test_session_results_label_appears_for_all_status_values(tmp_path):
     """Each of the three lifecycle label values must appear in the post content."""
     from leaguebot.core.db.database import run_migrations, get_connection
-    from leaguebot.results.services.results_post_service import produce_session_results
+    from leaguebot.results.services.publishing.results_post_service import produce_session_results
     from leaguebot.results.models.session_result import SessionResult, DriverSessionResult
 
     db_path = str(tmp_path / "test.db")
@@ -159,7 +159,7 @@ async def test_session_results_label_appears_for_all_status_values(tmp_path):
         division_id = cursor.lastrowid
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
-            "VALUES (?, 1, 'STANDARD', 'FINAL', '2026-06-01T18:00:00+00:00')",
+            "VALUES (?, 1, 'NORMAL', 'FINAL', '2026-06-01T18:00:00+00:00')",
             (division_id,),
         )
         round_id = cursor.lastrowid
@@ -222,7 +222,7 @@ async def test_session_results_label_appears_for_all_status_values(tmp_path):
 async def test_produce_standings_includes_heading_and_label(tmp_path):
     """produce_standings must include the heading and label in the posted standings message."""
     from leaguebot.core.db.database import run_migrations, get_connection
-    from leaguebot.results.services.results_post_service import produce_standings
+    from leaguebot.results.services.publishing.results_post_service import produce_standings
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -244,7 +244,7 @@ async def test_produce_standings_includes_heading_and_label(tmp_path):
         division_id = cursor.lastrowid
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, status, scheduled_at) "
-            "VALUES (?, 3, 'STANDARD', 'FINAL', '2026-06-01T18:00:00+00:00')",
+            "VALUES (?, 3, 'NORMAL', 'FINAL', '2026-06-01T18:00:00+00:00')",
             (division_id,),
         )
         round_id = cursor.lastrowid
@@ -299,7 +299,7 @@ async def test_produce_standings_includes_heading_and_label(tmp_path):
 # split changed *how* the message is assembled and must not have changed what it says.
 # ---------------------------------------------------------------------------
 
-from leaguebot.results.services.results_post_service import (  # noqa: E402
+from leaguebot.results.services.publishing.results_post_service import (  # noqa: E402
     STANDINGS_CONSTRUCTORS,
     STANDINGS_DRIVERS,
     compose_standings_message,
@@ -489,7 +489,7 @@ def _bot_with_images(*, enabled=False, toggles=None):
 @pytest.mark.asyncio
 async def test_repost_channel_faults_names_a_deleted_channel(tmp_path):
     """The first of the issue's two reproduction paths, caught before anything is written."""
-    from leaguebot.results.services.results_post_service import repost_channel_faults
+    from leaguebot.results.services.publishing.results_post_service import repost_channel_faults
 
     db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])
 
@@ -505,7 +505,7 @@ async def test_repost_channel_faults_names_a_deleted_channel(tmp_path):
 @pytest.mark.asyncio
 async def test_repost_channel_faults_names_a_channel_the_bot_cannot_post_to(tmp_path):
     """The issue's other reproduction path: Send Messages revoked on a live channel."""
-    from leaguebot.results.services.results_post_service import repost_channel_faults
+    from leaguebot.results.services.publishing.results_post_service import repost_channel_faults
 
     db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])
 
@@ -522,7 +522,7 @@ async def test_repost_channel_faults_names_a_channel_the_bot_cannot_post_to(tmp_
 @pytest.mark.asyncio
 async def test_repost_channel_faults_wants_read_message_history(tmp_path):
     """A repost replaces what it posted and finds it with fetch_message, which needs it."""
-    from leaguebot.results.services.results_post_service import repost_channel_faults
+    from leaguebot.results.services.publishing.results_post_service import repost_channel_faults
 
     db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, None)])
 
@@ -539,7 +539,7 @@ async def test_repost_channel_faults_wants_read_message_history(tmp_path):
 @pytest.mark.asyncio
 async def test_repost_channel_faults_ignores_an_unconfigured_channel(tmp_path):
     """A division with no standings channel is ordinary configuration, not a fault (#187)."""
-    from leaguebot.results.services.results_post_service import repost_channel_faults
+    from leaguebot.results.services.publishing.results_post_service import repost_channel_faults
 
     db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, None)])
 
@@ -553,7 +553,7 @@ async def test_repost_channel_faults_ignores_an_unconfigured_channel(tmp_path):
 @pytest.mark.asyncio
 async def test_repost_channel_faults_asks_for_attach_files_only_with_graphics(tmp_path):
     """Attach Files is asked of a league that has the graphics on, and of no other (#187)."""
-    from leaguebot.results.services.results_post_service import repost_channel_faults
+    from leaguebot.results.services.publishing.results_post_service import repost_channel_faults
 
     db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])
     guild = _guild_for_faults(permissions=_permissions(attach_files=False))
@@ -574,7 +574,7 @@ async def test_repost_channel_faults_asks_for_attach_files_only_with_graphics(tm
 @pytest.mark.asyncio
 async def test_repost_channel_faults_asks_per_aspect(tmp_path):
     """The standings aspect being on does not ask Attach Files of the results channel."""
-    from leaguebot.results.services.results_post_service import repost_channel_faults
+    from leaguebot.results.services.publishing.results_post_service import repost_channel_faults
 
     db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])
 
@@ -592,7 +592,7 @@ async def test_repost_channel_faults_asks_per_aspect(tmp_path):
 async def test_repost_channel_faults_refuses_a_channel_that_is_not_text(tmp_path):
     """A repointed id could hand the posting a category; both post functions type a
     TextChannel and nothing else enforces it."""
-    from leaguebot.results.services.results_post_service import repost_channel_faults
+    from leaguebot.results.services.publishing.results_post_service import repost_channel_faults
 
     db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, None)])
     guild = MagicMock()
@@ -609,7 +609,7 @@ async def test_repost_channel_faults_refuses_a_channel_that_is_not_text(tmp_path
 @pytest.mark.asyncio
 async def test_repost_channel_faults_reports_a_guild_the_bot_cannot_see(tmp_path):
     """Today this path overwrites the points and silently reposts nothing at all (#187)."""
-    from leaguebot.results.services.results_post_service import repost_channel_faults
+    from leaguebot.results.services.publishing.results_post_service import repost_channel_faults
 
     db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])
 
@@ -623,7 +623,7 @@ async def test_repost_channel_faults_reports_a_guild_the_bot_cannot_see(tmp_path
 async def test_repost_channel_faults_refuses_when_the_bot_member_is_unknown(tmp_path):
     """Without its own member object there is no permission arithmetic to do, and
     guessing would defeat the gate."""
-    from leaguebot.results.services.results_post_service import repost_channel_faults
+    from leaguebot.results.services.publishing.results_post_service import repost_channel_faults
 
     db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])
 
@@ -646,7 +646,7 @@ async def test_repost_channel_faults_refuses_when_the_bot_member_is_unknown(tmp_
 async def test_repost_channel_faults_resolves_the_bot_member_from_the_cache(tmp_path):
     """The bot's own member is looked up by id, never taken from ``guild.me`` (#187). In a
     healthy division nothing is wrong, so nothing is reported and the amendment may proceed."""
-    from leaguebot.results.services.results_post_service import repost_channel_faults
+    from leaguebot.results.services.publishing.results_post_service import repost_channel_faults
 
     db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, 502)])
     guild = _guild_for_faults()
@@ -664,7 +664,7 @@ async def test_repost_channel_faults_resolves_the_bot_member_from_the_cache(tmp_
 @pytest.mark.asyncio
 async def test_repost_channel_faults_names_every_division_at_fault(tmp_path):
     """Five divisions failing is five things to repair; naming one buries the rest."""
-    from leaguebot.results.services.results_post_service import repost_channel_faults
+    from leaguebot.results.services.publishing.results_post_service import repost_channel_faults
 
     db_path, season_id = await _seed_season_for_faults(
         tmp_path, [("Alpha", 501, None), ("Beta", 503, None), ("Gamma", 505, None)]
@@ -684,7 +684,7 @@ async def test_repost_channel_faults_names_a_cancelled_division_s_deleted_channe
     channel that division configured and the server has lost is named as a live division's is,
     and refuses the approval until it is set again."""
     from leaguebot.core.db.database import get_connection
-    from leaguebot.results.services.results_post_service import repost_channel_faults
+    from leaguebot.results.services.publishing.results_post_service import repost_channel_faults
 
     db_path, season_id = await _seed_season_for_faults(tmp_path, [("Alpha", 501, None)])
     async with get_connection(db_path) as db:
@@ -779,7 +779,7 @@ def _guild_naming(names: dict[int, str]):
 @pytest.mark.asyncio
 async def test_the_posted_standings_are_ordered_on_the_resolved_names(tmp_path):
     """The order inverts with the names, so it cannot be the user id deciding it."""
-    from leaguebot.results.services.results_post_service import driver_standings_for_display
+    from leaguebot.results.services.publishing.results_post_service import driver_standings_for_display
 
     db_path, division_id, round_id = await _seed_two_tied_drivers(tmp_path)
     bot = MagicMock()
@@ -799,7 +799,7 @@ async def test_the_posted_standings_are_ordered_on_the_resolved_names(tmp_path):
 @pytest.mark.asyncio
 async def test_the_standings_fall_back_to_the_id_with_no_bot_in_scope(tmp_path):
     """Nothing to resolve a name from, so the tie falls to the ascending user id."""
-    from leaguebot.results.services.results_post_service import driver_standings_for_display
+    from leaguebot.results.services.publishing.results_post_service import driver_standings_for_display
 
     db_path, division_id, round_id = await _seed_two_tied_drivers(tmp_path, server_id=301)
 
@@ -817,8 +817,8 @@ async def test_the_stored_order_matches_the_order_that_is_drawn(tmp_path):
     The names are resolved first and the cascade handed them, as a points approval's `names`
     job and its save do (#439)."""
     from leaguebot.core.db.database import get_connection
-    from leaguebot.results.services import standings_service
-    from leaguebot.results.services.results_post_service import (
+    from leaguebot.results.services.standings import standings_service
+    from leaguebot.results.services.publishing.results_post_service import (
         driver_standings_for_display,
         standings_display_names,
     )
@@ -853,8 +853,8 @@ async def test_the_cascade_falls_back_to_the_id_with_no_guild(tmp_path):
     """The one path that genuinely holds no guild still recomputes, ordered by id: no names
     are resolved, and the cascade is handed none."""
     from leaguebot.core.db.database import get_connection
-    from leaguebot.results.services import standings_service
-    from leaguebot.results.services.results_post_service import standings_display_names
+    from leaguebot.results.services.standings import standings_service
+    from leaguebot.results.services.publishing.results_post_service import standings_display_names
 
     db_path, division_id, round_id = await _seed_two_tied_drivers(tmp_path, server_id=303)
 
@@ -894,7 +894,7 @@ async def test_merge_faults_does_not_repeat_a_line():
     by each of them and described in the same words. Concatenating handed the manager the
     same bullet twice, reading as two problems to repair rather than one.
     """
-    from leaguebot.results.services.results_post_service import merge_faults
+    from leaguebot.results.services.publishing.results_post_service import merge_faults
 
     fault = "**Alpha** — the standings channel <#502> no longer exists."
     later = "The standings of round 2 were not reposted."
@@ -904,7 +904,7 @@ async def test_merge_faults_does_not_repeat_a_line():
 
 @pytest.mark.asyncio
 async def test_merge_faults_keeps_the_order_it_was_given():
-    from leaguebot.results.services.results_post_service import merge_faults
+    from leaguebot.results.services.publishing.results_post_service import merge_faults
 
     assert merge_faults(["a", "b"], ["c"], []) == ["a", "b", "c"]
 
@@ -919,7 +919,7 @@ async def test_the_pending_completion_hint_names_results_rounds_amend(tmp_path):
     """Both sync commands are refused there, so the hint names the one command that reposts,
     by the name a manager now types (#462)."""
     from leaguebot.core.db.database import get_connection, run_migrations
-    from leaguebot.results.services.results_post_service import results_sync_hint
+    from leaguebot.results.services.publishing.results_post_service import results_sync_hint
 
     db_path = str(tmp_path / "sync_hint.db")
     await run_migrations(db_path)
@@ -957,10 +957,13 @@ async def test_the_pending_completion_hint_names_results_rounds_amend(tmp_path):
 async def test_the_producers_post_without_saving_or_deleting(tmp_path):
     from leaguebot.core.db.database import get_connection
     from leaguebot.results.models.session_result import SessionResult
-    from leaguebot.results.services.results_post_service import (
+    from leaguebot.results.services.publishing.results_post_service import (
         PostedTable,
+        get_standings_message_id,
+        get_standings_message_ids,
         produce_session_results,
         produce_standings,
+        set_standings_message_id_on,
     )
     from tests.support.review_league import (
         DIVISION_ID,
@@ -981,10 +984,9 @@ async def test_the_producers_post_without_saving_or_deleting(tmp_path):
     )
     async with get_connection(db_path) as db:
         # The standings stand as two messages, the anchor and one continuation.
-        await db.execute(
-            "UPDATE driver_standings_snapshots SET standings_message_ids = ? "
-            "WHERE standings_message_id = ?",
-            (f"[{OLD_STANDINGS}, {continuation}]", OLD_STANDINGS),
+        await set_standings_message_id_on(
+            db, DIVISION_ID, ROUND_ID, OLD_STANDINGS,
+            message_ids=f"[{OLD_STANDINGS}, {continuation}]",
         )
         session_id = (await (await db.execute(
             "SELECT id FROM session_results WHERE round_id = ?", (ROUND_ID,))).fetchone())[0]
@@ -994,10 +996,11 @@ async def test_the_producers_post_without_saving_or_deleting(tmp_path):
         async with get_connection(db_path) as db:
             results = await (await db.execute(
                 "SELECT results_message_id, results_message_ids FROM session_results")).fetchone()
-            standings = await (await db.execute(
-                "SELECT standings_message_id, standings_message_ids "
-                "FROM driver_standings_snapshots WHERE round_id = ?", (ROUND_ID,))).fetchone()
-        return tuple(results), tuple(standings)
+        standings = (
+            await get_standings_message_id(db_path, DIVISION_ID, ROUND_ID),
+            await get_standings_message_ids(db_path, DIVISION_ID, ROUND_ID),
+        )
+        return tuple(results), standings
 
     stored = await _stored()
     events: list[tuple[str, int, int]] = []
@@ -1093,7 +1096,7 @@ async def test_the_public_reserves_reader_defaults_to_shown(tmp_path):
     import os
 
     from leaguebot.core.db.database import get_connection, run_migrations
-    from leaguebot.results.services.results_post_service import reserves_in_standings
+    from leaguebot.results.services.publishing.results_post_service import reserves_in_standings
 
     db_path = os.path.join(str(tmp_path), "reserves.db")
     await run_migrations(db_path)

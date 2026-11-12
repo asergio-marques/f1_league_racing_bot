@@ -81,6 +81,15 @@ def phases_due(
     return [n for n, horizon in horizons.items() if not drawn.get(n, False) and horizon <= at]
 
 
+def results_left_to_advance(*, test_mode: bool, results_on: bool, weather_on: bool) -> bool:
+    """Whether a round's results submission is left to `/test-mode advance`, armed by no job.
+
+    So where results is on and weather off under test mode (core specification, "What confirming
+    placements does"). The season's approval and a round's amendment both read it here, so that an
+    amended round is left to the advance as its neighbours are, whatever its moment."""
+    return test_mode and results_on and not weather_on
+
+
 def as_utc(moment: datetime) -> datetime:
     """A moment with a zone is itself; a naive one is UTC. The queue's clock is read through it: a
     round's moment is aware already, and goes through no such conversion."""

@@ -1,4 +1,4 @@
-"""The jobs the results dialogues share (#439, slice 6b, C44): `results/services/submission_steps.py`.
+"""The jobs the results dialogues share (#439, slice 6b, C44): `results/services/submission/submission_steps.py`.
 
 A round's submission channel, an amendment's channel and the prompts posted in them are made by jobs
 of a change, so a refusal stops the queue with Retry and Discard rather than leaving a manager
@@ -119,7 +119,7 @@ async def test_a_channel_created_is_saved_with_its_mark(tmp_path):
     """The job creates `pro-round-3-results` in the results channel's category, and the
     dialogue's record saves its id on round 3's submission row in the same save as the job's
     mark."""
-    from leaguebot.results.services.submission_steps import create_channel_step
+    from leaguebot.results.services.submission.submission_steps import create_channel_step
 
     league = await review_league(tmp_path)
     created = _with_channel_creation(league)
@@ -139,7 +139,7 @@ async def test_a_channel_created_whose_save_failed_is_deleted_before_the_next_tr
     """The channel is created but the database refuses its row, so the queue stops with the
     channel standing. On Retry the first channel is deleted before a second is created, and the
     second is the one saved."""
-    from leaguebot.results.services.submission_steps import create_channel_step
+    from leaguebot.results.services.submission.submission_steps import create_channel_step
 
     league = await review_league(tmp_path)
     created = _with_channel_creation(league)
@@ -171,7 +171,7 @@ async def test_a_channel_created_whose_save_failed_is_deleted_before_the_next_tr
 async def test_a_refused_channel_creation_stops_the_queue_naming_the_permission(tmp_path):
     """Discord refuses to create the channel (the bot lacks Manage Channels). The queue stops at
     the job, its failure naming the permission, and no row is saved."""
-    from leaguebot.results.services.submission_steps import create_channel_step
+    from leaguebot.results.services.submission.submission_steps import create_channel_step
 
     league = await review_league(tmp_path)
     _with_channel_creation(league)
@@ -192,7 +192,7 @@ async def test_a_prompt_refused_stops_the_queue(tmp_path):
     """The prompt asking for round 3's Feature Race is refused by the submission channel. The
     queue stops at the job with nothing posted; on Retry the prompt naming the Feature Race is
     posted."""
-    from leaguebot.results.services.submission_steps import post_prompt_step
+    from leaguebot.results.services.submission.submission_steps import post_prompt_step
 
     league = await review_league(tmp_path)
     async with get_connection(league.db_path) as db:

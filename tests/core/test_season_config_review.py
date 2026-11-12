@@ -47,7 +47,7 @@ def _gates_of(cog):
     """Each gate *cog* stands in for, patched on `approval_checks`, or on results' service for a
     points gate, for as long as it is held."""
     from leaguebot.core.services.seasons import approval_checks
-    from leaguebot.results.services import season_points_service
+    from leaguebot.results.services.points import season_points_service
 
     with ExitStack() as stack:
         for module, gates in ((approval_checks, _GATES), (season_points_service, _POINTS_GATES)):
@@ -695,7 +695,7 @@ async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
     """The placements review's subsections, save the divisions, in the same words (#220): with
     signup, results, attendance, weather and images on, the review asked of the queue carries each
     module's configuration, the image outputs last and in a message of their own."""
-    from leaguebot.results.services import season_points_service
+    from leaguebot.results.services.points import season_points_service
     from leaguebot.weather.services import weather_config_service
 
     bot = _report_bot(signup=True, results=True, images=True)
@@ -709,7 +709,7 @@ async def test_every_enabled_modules_configuration_is_reported(monkeypatch):
         )
     )
     monkeypatch.setattr(
-        season_points_service, "get_season_config_names",
+        season_points_service, "get_attached_config_names",
         AsyncMock(return_value=["Standard", "Sprint"]),
     )
     monkeypatch.setattr(

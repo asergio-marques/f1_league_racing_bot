@@ -14,7 +14,7 @@ from leaguebot.core.db.database import get_connection
 
 async def snapshot_points(db_path: str, season_id: int) -> None:
     """Copy every configuration attached to *season_id* into its own store, and commit."""
-    from leaguebot.results.services.season_points_service import snapshot_configs_to_season_on
+    from leaguebot.results.services.points.season_points_service import snapshot_configs_to_season_on
 
     async with get_connection(db_path) as db:
         cursor = await db.execute("SELECT module_enabled FROM results_module_config WHERE id = 1")

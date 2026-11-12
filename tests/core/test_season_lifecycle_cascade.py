@@ -790,22 +790,14 @@ async def test_without_the_results_module_the_round_and_its_division_are_saved_t
 
     The round's opening is asked of the change queue with results off, and its division's
     refresh raises: the save fails whole, so the round stays NOT_RUN over a division still
-    ACTIVE rather than final over a division never told. Every form of the refresh is made to
-    raise, so the test reads the same whichever the save goes through.
+    ACTIVE rather than final over a division never told.
     """
     from leaguebot.core.services.seasons import season_service
-    from leaguebot.results.services import result_submission_service
 
     async def refused(*args, **kwargs):
         raise RuntimeError("the division could not be refreshed")
 
-    monkeypatch.setattr(
-        season_service.SeasonService, "refresh_division_status", refused, raising=False
-    )
     monkeypatch.setattr(season_service, "refresh_division_status_on", refused)
-    monkeypatch.setattr(
-        result_submission_service, "refresh_division_status_on", refused, raising=False
-    )
 
     db_path = str(tmp_path / "bot.db")
     _, built = await _seed(db_path, rounds_per_division=1)

@@ -34,7 +34,7 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.results.cogs.results_cog import ResultsCog
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services import points_config_service
+from leaguebot.results.services.points import points_config_service
 from tests.support import saves
 from tests.support.change_queue import MEMBER_ID, run_queue
 from tests.support.settings_league import (
@@ -109,7 +109,8 @@ async def _command(league: Any, method: str, command: str, *args: Any) -> Any:
 async def _form(league: Any, form: str, text: str, *, config: str = CONFIG) -> Any:
     """Submit the config ("config") or amend ("amend") bulk form for CONFIG's Feature Race as
     Admin, with *text* pasted into it, then run the queue."""
-    from leaguebot.results.cogs.results_cog import BulkAmendSessionModal, BulkConfigSessionModal
+    from leaguebot.results.cogs.config_commands import BulkConfigSessionModal
+    from leaguebot.results.cogs.points_amend_commands import BulkAmendSessionModal
 
     cls = BulkConfigSessionModal if form == "config" else BulkAmendSessionModal
     modal = cls(config, RACE, league.db_path)
@@ -679,7 +680,8 @@ async def test_a_bulk_paste_fault_undoes_the_whole_paste(tmp_path, form):
             )
         )
         await db.commit()
-    from leaguebot.results.cogs.results_cog import BulkAmendSessionModal, BulkConfigSessionModal
+    from leaguebot.results.cogs.config_commands import BulkConfigSessionModal
+    from leaguebot.results.cogs.points_amend_commands import BulkAmendSessionModal
 
     modal = (BulkConfigSessionModal if form == "config" else BulkAmendSessionModal)(
         CONFIG, RACE, league.db_path

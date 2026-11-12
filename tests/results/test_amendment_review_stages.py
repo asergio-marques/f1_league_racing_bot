@@ -25,8 +25,9 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_service import StagedPenalty
+from leaguebot.results.services.review.penalty_service import StagedPenalty
 from tests.support.change_queue import in_a_job
+from tests.support.mentions import NOBODY, notified
 from tests.support.teams import seed_team_instances
 
 SEASON_ID = 31
@@ -108,9 +109,7 @@ async def _run(db_path, channel=None, *, attendance=True):
     import inspect
 
     from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
-    from leaguebot.results.services.result_submission_service import (
-        run_amendment_review_stages,
-    )
+    from leaguebot.results.services.round_amendment.amendment_writes import run_amendment_review_stages
 
     async with get_connection(db_path) as db:
         await db.execute(
@@ -129,7 +128,8 @@ async def _run(db_path, channel=None, *, attendance=True):
     )
     with in_a_job():
         state = await run_amendment_review_stages(
-            db_path, ROUND_ID, DIVISION_ID, channel, bot,
+            db_path, ROUND_ID, DIVISION_ID, channel, bot, bot.change_queue,
+            bot.config_service.get_server_config, bot.output_router,
             round_number=3, division_name="Pro",
             session_types=[SessionType.FEATURE_RACE], **handed,
         )
@@ -181,7 +181,8 @@ async def test_the_amendment_channel_is_the_review_channel(tmp_path):
 
 
 async def test_the_screen_is_posted_with_its_view(tmp_path):
-    """A prompt with no view is a message the manager cannot act on."""
+    """A prompt with no view is a message the manager cannot act on. Stage two's prompt for
+    round 3 of Pro is posted with its view, saying it is stage 2 of 3, and notifies nobody."""
     db_path, result_id = await _db(tmp_path, "stage_posted")
     await _penalty(db_path, result_id)
 
@@ -190,6 +191,8 @@ async def test_the_screen_is_posted_with_its_view(tmp_path):
     content, view = channel._sent[0]
     assert view is not None
     assert "Stage 2 of 3" in content
+    [sent] = channel.send.await_args_list
+    assert notified(sent.kwargs.get("allowed_mentions")) == NOBODY
     bot.add_view.assert_called_once()
 
 
@@ -269,12 +272,13 @@ async def test_the_rounds_pardons_are_not_offered_with_attendance_off(tmp_path):
 
 async def test_the_review_asks_the_hook_and_never_reads_attendance_s_switch(tmp_path):
     """Round 3 carries a NO_RSVP pardon. The amendment's review is handed an attendance hook
-    that offers no pardon, and the bot's module service fails the test if asked whether
-    attendance is on. The review asks the hook once, with the round's pardon, offers none, and
-    never reads attendance's switch itself (architecture.md :172-178)."""
-    from leaguebot.results.services.result_submission_service import (
-        run_amendment_review_stages,
-    )
+    that offers no pardon, and reads the round's pardons as attendance's own does; the bot's
+    module service fails the test if asked whether attendance is on. The review asks the hook
+    once, with the round's pardon, offers none, and never reads attendance's switch itself
+    (architecture.md :172-178)."""
+    from tests.support.review_league import attendance_after_review_of
+
+    from leaguebot.results.services.round_amendment.amendment_writes import run_amendment_review_stages
 
     db_path, _ = await _db(tmp_path, "stage_pardons_hook")
     await _pardon(db_path)
@@ -286,9 +290,15 @@ async def test_the_review_asks_the_hook_and_never_reads_attendance_s_switch(tmp_
     hook = MagicMock()
     hook.pardons_to_review = AsyncMock(return_value=[])
 
+    async def _recorded_pardons(round_id: int) -> list:
+        return await attendance_after_review_of(db_path).recorded_pardons(round_id)
+
+    hook.recorded_pardons = AsyncMock(side_effect=_recorded_pardons)
+
     with in_a_job():
         state = await run_amendment_review_stages(
-            db_path, ROUND_ID, DIVISION_ID, _channel(), bot,
+            db_path, ROUND_ID, DIVISION_ID, _channel(), bot, bot.change_queue,
+            bot.config_service.get_server_config, bot.output_router,
             round_number=3, division_name="Pro",
             session_types=[SessionType.FEATURE_RACE], attendance=hook,
         )

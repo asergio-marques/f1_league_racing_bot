@@ -35,7 +35,7 @@ def sign_up_confirmation_refused(bot: Any) -> None:
     from leaguebot.core.utils.hooks import AwaitedHook
 
     async def results_refusals(*args: Any, **kwargs: Any) -> Any:
-        from leaguebot.results.services import season_points_service
+        from leaguebot.results.services.points import season_points_service
 
         return await season_points_service.confirmation_refusals(
             bot.module_service, bot.db_path, *args, **kwargs
@@ -83,7 +83,7 @@ def sign_up_division_channel_faults_read(bot: Any) -> None:
         )
 
     async def results_faults(*args: Any, **kwargs: Any) -> Any:
-        from leaguebot.results.services import division_channels
+        from leaguebot.results.services.module import division_channels
 
         return await division_channels.division_channel_faults(
             bot.module_service, bot.db_path, *args, **kwargs

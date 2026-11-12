@@ -1,5 +1,5 @@
 """Attendance's share of a round's review, as the hook the builder hands results' change types
-(#439, slice 2, plan 2.6; the protocol is `results/services/attendance_hook.py`).
+(#439, slice 2, plan 2.6; the protocol is `results/services/module/attendance_hook.py`).
 
 Built once by the entry point, handed the placement service, the team-role service and the lineup
 poster and attached as `bot.attendance_after_review`. It uses the bot for Discord alone (the league's server, the log
@@ -27,7 +27,7 @@ claimed or it is not in the cache the method raises `GuildUnavailable`.
 """
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any, TypeVar
 
@@ -35,9 +35,10 @@ import aiosqlite
 import discord
 
 from leaguebot.attendance.services import attendance_service as _att
+from leaguebot.attendance.services import check_in_record
 from leaguebot.attendance.services.module_switch_settings import attendance_enabled_on
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord
+from leaguebot.core.models.change import GuildUnavailable, PlannedStep, StepFailedOnDiscord
 from leaguebot.core.models.refusal import Refused
 from leaguebot.core.services.drivers import lineup_posting
 from leaguebot.core.services.drivers.lineup_posting import LineupPoster
@@ -47,6 +48,33 @@ from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
 
 _Pardon = TypeVar("_Pardon")
+
+
+def sanction_card_texts(sanction_type: str, driver_ref: str, threshold: int) -> tuple[str, str, str]:
+    """The label, description and justification of an attendance sanction's card.
+
+    The wording is attendance's (its specification states it), so it is composed here and handed
+    to results' `announce_sanction`, which posts it and composes none. *sanction_type* is
+    ``AUTOSACK`` or ``AUTORESERVE``, *driver_ref* how the card names the driver and *threshold*
+    the point limit the driver reached.
+    """
+    if sanction_type == "AUTOSACK":
+        return (
+            "Sacked",
+            "Sacked due to accumulation of attendance points.",
+            f"{driver_ref} has reached the {threshold} attendance point limit in order to be "
+            "removed from their full-time seat. Therefore, they have been removed from all "
+            "driving seats effective immediately, and their current full-time seat will be "
+            "offered to another driver.",
+        )
+    return (
+        "Moved to Reserve",
+        "Moved to Reserve due to accumulation of attendance points.",
+        f"{driver_ref} has reached the {threshold} attendance point limit in order to be "
+        "removed from their full-time seat. Therefore, they have been demoted to a reserve "
+        "driver effective immediately, and their current full-time seat will be offered to "
+        "another driver.",
+    )
 
 
 class AttendanceAfterReview:
@@ -114,6 +142,29 @@ class AttendanceAfterReview:
             return
         await _att._rewrite_round_pardons_on(db, round_id, list(pardons), now)
 
+    async def pardons_of_on(self, db: aiosqlite.Connection, round_id: int) -> Any:
+        return await _att.pardons_of_on(db, round_id)
+
+    async def put_back_pardons_on(
+        self, db: aiosqlite.Connection, round_id: int, saved: Any
+    ) -> None:
+        if not await attendance_enabled_on(db):
+            return
+        await _att.put_back_pardons_on(db, round_id, saved)
+
+    async def attendance_row_of(
+        self, round_id: int, division_id: int, profile_id: int
+    ) -> dict[str, Any] | None:
+        async with get_connection(self._db_path) as db:
+            return await _att.attendance_row_of(db, round_id, division_id, profile_id)
+
+    async def latest_scored_round(self, division_id: int) -> int | None:
+        async with get_connection(self._db_path) as db:
+            return await _att.latest_scored_round(db, division_id)
+
+    async def recorded_pardons(self, round_id: int) -> list[dict[str, Any]]:
+        return await _att.recorded_pardons(self._db_path, round_id)
+
     async def recalculate_on(
         self, db: aiosqlite.Connection, round_id: int, division_id: int
     ) -> None:
@@ -121,6 +172,20 @@ class AttendanceAfterReview:
             return
         await _att._recalculate_forward(
             self._db_path, round_id, division_id, recompute="round", db=db
+        )
+
+    async def check_in_read_on(
+        self, db: aiosqlite.Connection, target: dict[str, Any]
+    ) -> list[PlannedStep]:
+        if not await attendance_enabled_on(db):
+            return []
+        return list(await check_in_record.read_check_in_on(db, target))
+
+    async def recalculation_faults(self, season_id: int, guild: discord.Guild | None) -> list[str]:
+        if not await self.enabled():
+            return []
+        return await _att.recalculation_faults(
+            self._db_path, season_id, guild, self._bot, cancelled_too=True
         )
 
     async def post_sheet(
@@ -204,18 +269,24 @@ class AttendanceAfterReview:
 
     async def announce_sanction(
         self, round_id: int, division_id: int, candidate: dict[str, Any], *, as_text: bool
-    ) -> None:
+    ) -> Callable[[str, str], str] | None:
         if not await self.enabled():
-            return
-        from leaguebot.results.services import verdict_announcement_service as vas
+            return None
+        from leaguebot.results.services.review import verdict_announcement_service as vas
 
         autoreserve, autosack = await _att._thresholds(self._db_path)
         sanction = candidate["sanction"]
-        await vas.announce_sanction(
-            self._bot, self._db_path, round_id, int(candidate["driver_user_id"]),
-            await _att._display_name_of(self._db_path, candidate["driver_profile_id"]),
-            sanction, (autosack if sanction == "AUTOSACK" else autoreserve) or 0,
-            as_text=as_text,
+        driver_discord_id = int(candidate["driver_user_id"])
+        display_name = await _att._display_name_of(self._db_path, candidate["driver_profile_id"])
+        driver_ref = f"<@{driver_discord_id}>"
+        if display_name:
+            driver_ref += f" ({display_name})"
+        label, description, justification = sanction_card_texts(
+            sanction, driver_ref, (autosack if sanction == "AUTOSACK" else autoreserve) or 0
+        )
+        return await vas.announce_sanction(
+            self._bot, self._db_path, round_id, driver_discord_id, display_name,
+            label, description, justification, as_text=as_text,
         )
 
     async def refresh_lineup(

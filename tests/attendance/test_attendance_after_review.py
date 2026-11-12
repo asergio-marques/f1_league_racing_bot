@@ -44,8 +44,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from leaguebot.attendance.services.attendance_after_review import sanction_card_texts
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.results.services.penalty_wizard import StagedPardon
+from leaguebot.results.services.review.review_state import StagedPardon
 from tests.support.change_queue import http_error, in_a_job
 
 
@@ -692,9 +693,12 @@ async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
     """Each method checks attendance's switch itself; the writers read it on the connection they
     are handed. With attendance off and Lewis over the autosack threshold: no driver is owed a
     sanction, the check of his sanction refuses nothing, saving it writes nothing and gives
-    None, nothing is posted or written, and an amendment's review is offered no pardon. The one
-    method that acts whatever the switch, the change of a saved sanction's roles, is pinned by
-    its own test."""
+    None, nothing is posted or written, an amendment's review is offered no pardon, a reverted
+    amendment has no pardon put back (not even one its snapshot kept while attendance was on), a
+    round ended not held has no reading of its check-in planned, and an amendment's approval is
+    told of no fault in attendance's channels, though the server holds none of them. The methods
+    that act whatever the switch, the change of a saved sanction's roles and the reads that write
+    nothing, are pinned by their own tests."""
     db_path = await _db(tmp_path, attendance=False)
     await _totals(db_path, AMENDED_ROUND, {LEWIS: 25, MAX: 0})
     await _totals(db_path, LATEST_ROUND, {LEWIS: 25})
@@ -712,19 +716,80 @@ async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
     await hook.post_sheet(LATEST_ROUND, DIVISION_ID, sanctioned={LEWIS}, as_text=False)
     await hook.refresh_lineup(DIVISION_ID, as_text=False)
     async with get_connection(db_path) as db:
+        # A pardon of Lewis's, kept by an amendment's snapshot taken while attendance was on;
+        # then attendance is switched off and the pardon is gone.
+        await db.execute("UPDATE attendance_config SET module_enabled = 1")
+        await db.execute(
+            "INSERT INTO attendance_pardons (attendance_id, pardon_type, justification, "
+            "granted_by, granted_at) SELECT id, 'ABSENT', 'earlier', 1, '2026-02-02T00:00:00' "
+            "FROM driver_round_attendance WHERE round_id = ? AND driver_profile_id = ?",
+            (AMENDED_ROUND, LEWIS),
+        )
+        saved = await hook.pardons_of_on(db, AMENDED_ROUND)
+        await db.execute("UPDATE attendance_config SET module_enabled = 0")
+        await db.execute("DELETE FROM attendance_pardons")
         before = db.total_changes
         await hook.record_on(db, AMENDED_ROUND, DIVISION_ID, [], NOW)
         await hook.rewrite_pardons_on(db, AMENDED_ROUND, [], NOW)
+        await hook.put_back_pardons_on(db, AMENDED_ROUND, saved)
         await hook.recalculate_on(db, AMENDED_ROUND, DIVISION_ID)
         assert await hook.apply_sanction_on(db, LATEST_ROUND, DIVISION_ID, owed) is None, (
             "None is how the job knows nothing was applied"
         )
+        assert list(await hook.check_in_read_on(db, {
+            "round_id": AMENDED_ROUND, "division_id": DIVISION_ID, "division_name": "Pro",
+            "round_number": 3,
+        })) == []
         assert db.total_changes == before
+        pardons = await (await db.execute("SELECT id FROM attendance_pardons")).fetchall()
+        assert pardons == [], "the pardon kept while attendance was on is not put back"
     assert await hook.pardons_to_review([object()]) == []
+    no_channels = MagicMock()
+    no_channels.get_channel = MagicMock(return_value=None)
+    assert await hook.recalculation_faults(SEASON_ID, no_channels) == []
 
     assert placement.method_calls == []
     assert lineups.method_calls == []
     channel.send.assert_not_awaited()
+
+
+@pytest.mark.parametrize("attendance", [True, False], ids=["on", "off"])
+async def test_the_read_methods_answer_from_attendance_s_own_tables(tmp_path, attendance):
+    """The reads that write nothing answer whatever attendance's switch says. Round 3 of Pro
+    carries Lewis's attendance row and a recorded NO_SHOW pardon of his; round 7 carries none yet,
+    and Am has no rounds. The hook gives Lewis's row of round 3 (and none of Max's, who has none),
+    the pardon with Lewis's profile and Discord account, and round 3 as Pro's latest scored
+    round, then round 7 once it carries a total, newest first; Am has none."""
+    db_path = await _db(tmp_path, attendance=attendance)
+    await _totals(db_path, AMENDED_ROUND, {LEWIS: 25})
+    async with get_connection(db_path) as db:
+        row = await (await db.execute(
+            "SELECT id FROM driver_round_attendance WHERE round_id = ?", (AMENDED_ROUND,)
+        )).fetchone()
+        await db.execute(
+            "INSERT INTO attendance_pardons (attendance_id, pardon_type, justification, "
+            "granted_by, granted_at) VALUES (?, 'NO_SHOW', 'power cut', 77, '2026-02-02T00:00:00')",
+            (row["id"],),
+        )
+        await db.commit()
+    hook = _hook(_bot(db_path, attendance=attendance), _placement())
+
+    assert await hook.attendance_row_of(AMENDED_ROUND, DIVISION_ID, LEWIS) == {
+        "id": row["id"], "rsvp_status": "ACCEPTED",
+    }
+    assert await hook.attendance_row_of(AMENDED_ROUND, DIVISION_ID, MAX) is None
+    assert await hook.recorded_pardons(AMENDED_ROUND) == [{
+        "attendance_id": row["id"], "pardon_type": "NO_SHOW", "justification": "power cut",
+        "granted_by": 77, "granted_at": "2026-02-02T00:00:00", "driver_profile_id": LEWIS,
+        "discord_user_id": str(LEWIS),
+    }]
+    assert await hook.recorded_pardons(LATEST_ROUND) == []
+    assert await hook.latest_scored_round(DIVISION_ID) == AMENDED_ROUND
+    assert await hook.latest_scored_round(OTHER_DIVISION_ID) is None
+
+    await _totals(db_path, LATEST_ROUND, {LEWIS: 50})
+
+    assert await hook.latest_scored_round(DIVISION_ID) == LATEST_ROUND
 
 
 async def test_an_amendment_s_review_is_offered_every_pardon_while_attendance_is_on(tmp_path):
@@ -928,3 +993,24 @@ async def test_the_sheet_s_record_writes_nothing_while_attendance_is_off(tmp_pat
     written, saved = await _recorded()
     assert written == 1
     assert str(saved) == "7402"
+
+
+@pytest.mark.parametrize(
+    ("sanction", "label", "outcome"),
+    [
+        ("AUTOSACK", "Sacked", "they have been removed from all driving seats"),
+        ("AUTORESERVE", "Moved to Reserve", "they have been demoted to a reserve driver"),
+    ],
+)
+def test_a_sanction_card_names_the_driver_the_limit_and_what_became_of_them(
+    sanction, label, outcome
+):
+    """Attendance writes the sanction card's wording: a sacking and a move to the reserve each
+    carry their label, say the driver reached the limit of 20 points, and say what became of
+    the driver's seat."""
+    got_label, description, justification = sanction_card_texts(sanction, "<@101> (Lewis)", 20)
+
+    assert got_label == label
+    assert description == f"{label} due to accumulation of attendance points."
+    assert justification.startswith("<@101> (Lewis) has reached the 20 attendance point limit")
+    assert outcome in justification

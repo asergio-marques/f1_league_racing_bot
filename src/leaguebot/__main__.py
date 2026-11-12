@@ -151,11 +151,11 @@ def _make_hooks(bot: LeagueBot) -> None:
     bot.cancellation_refused = AwaitedHook()
     bot.rounds_made_final = AwaitedHook()
     bot.test_mode_turned_on = AwaitedHook()
+    bot.season_approved = AwaitedHook()
     bot.divisions_raced_read = AwaitedHook()
     bot.season_standing_read = AwaitedHook()
     bot.final_round_read = AwaitedHook()
     bot.season_end_refused = AwaitedHook()
-    bot.round_ended_not_held = AwaitedHook()
     bot.base_role_changed = AwaitedHook()
     bot.phases_drawn_read = AwaitedHook()
     bot.amendment_step_failure = Hook()
@@ -246,8 +246,7 @@ def _sign_up_to_cancellations(bot: LeagueBot) -> None:
     and the steps a module plans (results' deletion of a submission channel, attendance's
     take-down of a call, attendance's reading of a round's check-in record, then each module's
     own notice, attendance's, weather's, then results'). Results' not-held round end is handed
-    `round_ended_not_held` too, to which attendance signs up the reading of a round's check-in
-    record."""
+    `cancellation_notices` too, which core's writer of it calls."""
     bot.rounds_called_off = AwaitedHook()
     results_wiring.sign_up_to_rounds_called_off(bot)
     attendance_wiring.sign_up_to_rounds_called_off(bot)
@@ -589,7 +588,6 @@ def register_change_types(bot: LeagueBot) -> None:
         wind_down_change,
     )
     from leaguebot.image.services.image_render_service import discard_render
-    from leaguebot.results.services.season_points_service import snapshot_configs_to_season_on
     from leaguebot.core.services.queue.setting_change import setting_change
 
     bot.change_queue.register(hub_refresh_change(
@@ -755,7 +753,7 @@ def register_change_types(bot: LeagueBot) -> None:
             division_channel_faults_read=bot.division_channel_faults_read,
             fingerprint_areas_read=bot.fingerprint_areas_read,
             rasteriser_fault=bot.image_drawing.rasteriser_fault,
-            snapshot_points_on=snapshot_configs_to_season_on,
+            season_approved=bot.season_approved,
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -856,14 +854,21 @@ def register_change_types(bot: LeagueBot) -> None:
         test_roster_clear_change(profiles_deleted=bot.profiles_deleted)
     )
     for setting in (
-        log_channel_setting(config=bot.config_service),
-        interaction_channel_setting(config=bot.config_service),
+        log_channel_setting(config=bot.config_service, channel_uses_read=bot.channel_uses_read),
+        interaction_channel_setting(
+            config=bot.config_service, channel_uses_read=bot.channel_uses_read
+        ),
         interaction_role_setting(config=bot.config_service),
         admin_role_setting(config=bot.config_service),
-        base_role_setting(config=bot.config_service, roles=bot.team_role_service),
+        base_role_setting(
+            config=bot.config_service, roles=bot.team_role_service,
+            base_role_changed=bot.base_role_changed,
+        ),
         driver_role_setting(config=bot.config_service, roles=bot.team_role_service),
-        hub_channel_setting(config=bot.config_service),
-        *division_channel_settings(seasons=bot.season_service),
+        hub_channel_setting(config=bot.config_service, channel_uses_read=bot.channel_uses_read),
+        *division_channel_settings(
+            seasons=bot.season_service, channel_uses_read=bot.channel_uses_read
+        ),
         test_mode_nationality_setting(config=bot.config_service),
     ):
         bot.change_queue.register(setting_change(setting))
@@ -1010,6 +1015,10 @@ async def build(settings: Settings) -> LeagueBot:
     from leaguebot.core.services.queue.change_queue import ChangeQueue
 
     bot.change_queue = ChangeQueue(settings.db_path, bot, bot.output_router, bot.config_service)
+    # The moment the bot came up, by the queue's clock, recorded here once. The wiring hands that
+    # one value, as a callable, to a module's handler of a timed job and to its start-up catch-up,
+    # so both tell a start missed while the bot was down from one met while it is up.
+    bot.came_up_at = bot.change_queue.now()
     bot.driver_service = DriverService(settings.db_path)
     bot.team_service = TeamService(settings.db_path)
 
@@ -1177,7 +1186,8 @@ async def build(settings: Settings) -> LeagueBot:
         NoPreferenceTeammateView,
     )
     from leaguebot.signup.services.signup_views import AdminReviewView, CorrectionParameterView
-    from leaguebot.results.services.penalty_wizard import PenaltyReviewView, ApprovalView, AppealsReviewView
+    from leaguebot.results.services.review.penalty_review_views import PenaltyReviewView, ApprovalView
+    from leaguebot.results.services.review.appeals_review_views import AppealsReviewView
     from leaguebot.attendance.services.rsvp_service import RsvpView
 
     for _view in (

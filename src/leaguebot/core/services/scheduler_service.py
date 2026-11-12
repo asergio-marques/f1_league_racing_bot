@@ -4,8 +4,8 @@ Uses SQLAlchemyJobStore backed by **its own** SQLite file, separate from the lea
 database, so jobs survive restarts. A job whose moment passed while the bot was stopped runs
 on start only if that moment is less than five minutes gone (`_GRACE_SECONDS`, the misfire grace
 a job has unless it is armed with none). Later than that, APScheduler skips it with a warning in
-the host's log, and whatever should be caught up after a longer stop is caught up by the start-up
-recovery in `__main__.py`. A one-off timer and an overdue results submission are armed with no
+the host's log, and whatever should be caught up after a longer stop is caught up by each
+module's start-up steps, signed up by its wiring. A one-off timer and an overdue results submission are armed with no
 lateness limit, and fire at once on start whatever the stop. What becomes of a job missed in a
 longer stop is its kind's handler's to decide (`docs/design/architecture.md`, "Timed work and
 restarts").
@@ -195,7 +195,7 @@ PORTRAIT_REFRESH_JOB_ID = "pfp_daily"
 AMENDMENT_SWEEP_JOB_ID = "amend_sweep"
 
 #: How often it looks. An amendment lapses after
-#: ``result_submission_service.AMENDMENT_STAGE_TIMEOUT_SECONDS``; sweeping every five minutes
+#: ``amendment_writes.AMENDMENT_STAGE_TIMEOUT_SECONDS``; sweeping every five minutes
 #: means a lapsed one is undone within five minutes of its deadline rather than at the deadline
 #: exactly, which is close enough for a round nobody is working on and cheap — the sweep reads
 #: one indexed table and almost always finds nothing.
@@ -712,6 +712,10 @@ class SchedulerService:
         amendment), or a mystery round was amended inside its first horizon. The round still
         needs this job to leave Not run.
 
+        Armed with no lateness limit (`misfire_grace_time=None`): a job whose moment passed while
+        the bot was down fires once it is back, and the handler results signs up for it decides
+        what becomes of a late one (`ask_round_start`).
+
         Args:
             division_meta: Mapping of ``division_id`` →
                 ``(season_number, division_tier)`` used to build human-readable
@@ -728,6 +732,7 @@ class SchedulerService:
                 trigger=DateTrigger(run_date=fire_at, timezone="UTC"),
                 id=job_id,
                 replace_existing=True,
+                misfire_grace_time=None,
                 name=f"Result submission s{season_number} d{division_tier} r{rnd.round_number}",
                 kwargs={"kind": "results", "key": rnd.id},
             )
@@ -739,9 +744,9 @@ class SchedulerService:
         """Run *rnd*'s results submission at once, as its own job would have at its moment.
 
         For a round whose moment passed while its timed work stood removed, as an amendment
-        stopped on the change queue leaves it: the job armed again against that moment is past
-        the misfire grace and would be skipped, and it is the round's one way off Not run. It
-        replaces that job under the same id, armed with no trigger, which APScheduler runs at
+        stopped on the change queue leaves it: the job armed again against that moment lies in the
+        past, and it is the round's one way off Not run, so it is run now rather than left to the
+        scheduler's next wake. It replaces that job under the same id, armed with no trigger, which APScheduler runs at
         once, and with no lateness limit, so that a restart before it runs still runs it.
         """
         job_id = f"results{_round_job_suffix(rnd, season_number, division_tier)}"
@@ -936,6 +941,12 @@ class SchedulerService:
         its own callback would put the survival of the schedule at the mercy of the job body —
         a sweep that raised would silently be the last.
 
+        It is a sweep that repeats, not one timer per amendment, because an amendment is left
+        abandoned by no event the bot sees: nobody carried it through. Each run re-reads the
+        amendments' rows and undoes those past their deadline, as architecture.md's standing sweep
+        is (a job that re-reads its rows each time it runs). It is armed with no lateness limit
+        (`misfire_grace_time=None`), so a run due while the bot was down is made when it is back.
+
         ``replace_existing=True`` so a restart re-arms rather than duplicates it.
         """
         self._scheduler.add_job(
@@ -943,12 +954,18 @@ class SchedulerService:
             trigger=IntervalTrigger(minutes=AMENDMENT_SWEEP_MINUTES),
             id=AMENDMENT_SWEEP_JOB_ID,
             replace_existing=True,
+            misfire_grace_time=None,
             name="Revert abandoned round amendments",
             kwargs={"kind": AMENDMENT_SWEEP_KIND},
         )
         log.info(
             "Scheduled %s every %d minutes", AMENDMENT_SWEEP_JOB_ID, AMENDMENT_SWEEP_MINUTES
         )
+
+    def cancel_amendment_sweep(self) -> None:
+        """Remove the standing sweep `schedule_amendment_sweep` arms (no-op where it is not armed),
+        as turning results off undoes what turning it on set up."""
+        self.cancel_job(AMENDMENT_SWEEP_JOB_ID)
 
     def cancel_portrait_refresh(self) -> None:
         """Remove the daily portrait refresh if it exists."""

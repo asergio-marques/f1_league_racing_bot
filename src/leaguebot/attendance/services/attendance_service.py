@@ -1262,6 +1262,98 @@ async def _rewrite_round_pardons_on(
         )
 
 
+async def attendance_row_of(
+    db, round_id: int, division_id: int, profile_id: int
+) -> dict[str, Any] | None:
+    """The driver's attendance row of the round: its ``id`` and ``rsvp_status``; None where the
+    driver has none. What the review's pardon form stages a pardon against
+    (`AttendanceAfterReview.attendance_row_of`). Reads only."""
+    cursor = await db.execute(
+        "SELECT id, rsvp_status FROM driver_round_attendance "
+        "WHERE round_id = ? AND division_id = ? AND driver_profile_id = ?",
+        (round_id, division_id, profile_id),
+    )
+    row = await cursor.fetchone()
+    return None if row is None else {"id": row["id"], "rsvp_status": row["rsvp_status"]}
+
+
+async def latest_scored_round(db, division_id: int) -> int | None:
+    """The division's latest round with a recorded attendance total, which is where its current
+    sheet stands; None where it has none (`AttendanceAfterReview.latest_scored_round`). Reads
+    only. The division's rounds, newest first, are core's to give (`division_rounds_on`), and
+    the first of them carrying a total is attendance's to pick."""
+    from leaguebot.core.services.seasons.season_service import division_rounds_on
+
+    for round_id in await division_rounds_on(db, division_id):
+        cursor = await db.execute(
+            "SELECT 1 FROM driver_round_attendance "
+            "WHERE round_id = ? AND total_points_after IS NOT NULL LIMIT 1",
+            (round_id,),
+        )
+        if await cursor.fetchone() is not None:
+            return round_id
+    return None
+
+
+async def recorded_pardons(db_path: str, round_id: int) -> list[dict[str, Any]]:
+    """The round's recorded pardons, oldest first: each with its attendance row
+    (``attendance_id``), ``pardon_type``, ``justification``, ``granted_by``, ``granted_at``, the
+    driver's profile (``driver_profile_id``) and their current Discord account
+    (``discord_user_id``), which core names (`driver_names_for_profiles`).
+
+    What the review's staged pardons are rebuilt from (`AttendanceAfterReview.recorded_pardons`).
+    Reads only.
+    """
+    from leaguebot.core.services.drivers.driver_service import driver_names_for_profiles
+
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT p.attendance_id, p.pardon_type, p.justification, p.granted_by, p.granted_at, "
+            "a.driver_profile_id AS driver_profile_id FROM attendance_pardons p "
+            "JOIN driver_round_attendance a ON a.id = p.attendance_id "
+            "WHERE a.round_id = ? ORDER BY p.id",
+            (round_id,),
+        )
+        rows = [dict(row) for row in await cursor.fetchall()]
+    names = await driver_names_for_profiles(db_path, [row["driver_profile_id"] for row in rows])
+    return [
+        {**row, "discord_user_id": names[row["driver_profile_id"]][0]}
+        for row in rows
+        if row["driver_profile_id"] in names
+    ]
+
+
+async def pardons_of_on(db, round_id: int) -> list[dict[str, Any]]:
+    """The round's pardons whole, ``id`` and ``granted_at`` included, oldest first, on *db*.
+
+    What an amendment's snapshot keeps (`AttendanceAfterReview.pardons_of_on`): the value is
+    attendance's own, and `put_back_pardons_on` is the one that reads it back. Reads only.
+    """
+    cursor = await db.execute(
+        "SELECT * FROM attendance_pardons WHERE attendance_id IN "
+        "(SELECT id FROM driver_round_attendance WHERE round_id = ?) ORDER BY id",
+        (round_id,),
+    )
+    return [dict(row) for row in await cursor.fetchall()]
+
+
+async def put_back_pardons_on(db, round_id: int, saved: list[dict[str, Any]]) -> None:
+    """Leave the round carrying exactly the pardons *saved*, which `pardons_of_on` gave, ids and
+    times granted as they were, on *db*. Commits nothing: it is a step of the revert's save."""
+    await db.execute(
+        "DELETE FROM attendance_pardons WHERE attendance_id IN "
+        "(SELECT id FROM driver_round_attendance WHERE round_id = ?)",
+        (round_id,),
+    )
+    for pardon in saved:
+        columns = ", ".join(pardon)
+        placeholders = ", ".join("?" for _ in pardon)
+        await db.execute(
+            f"INSERT INTO attendance_pardons ({columns}) VALUES ({placeholders})",  # noqa: S608
+            list(pardon.values()),
+        )
+
+
 @posts_in_a_job
 async def post_attendance_sheet(
     bot: LeagueBot,
@@ -2559,10 +2651,10 @@ async def recalculation_faults(
     Returns the faults as lines a league can read, and an empty list where every division's
     attendance posting could be made.
 
-    Called by `amendment_service.approval_faults` before an approved amendment writes
-    anything, because the approval recalculates attendance as part of its cascade and a
-    recalculation that cannot be posted used to be swallowed under the same false success
-    as the reposting.
+    Called, through `AttendanceAfterReview.recalculation_faults`, by results' `approval_faults`
+    before an approved amendment writes anything, because the approval recalculates attendance
+    as part of its cascade and a recalculation that cannot be posted used to be swallowed under
+    the same false success as the reposting.
 
     **The verdicts channel is asked for only where sanctions could actually fall.**
     ``enforce_attendance_sanctions`` returns immediately when both the autosack and
@@ -2576,14 +2668,14 @@ async def recalculation_faults(
     part of its question, and the results specification's "every division's" holds.
     """
     from leaguebot.image.services.image_validity_service import aspect_attaches_files
-    from leaguebot.results.services.results_post_service import _bot_member, _channel_fault
+    from leaguebot.results.services.publishing import results_post_service
 
     if guild is None:
         # The results half already reports an absent guild; saying it twice would have a
         # manager repairing one thing from two lines.
         return []
 
-    bot_member = _bot_member(guild, bot)
+    bot_member = results_post_service.bot_member(guild, bot)
     if bot_member is None:
         # The results half already refuses on an unresolvable bot member; saying it twice
         # would have a manager repairing one thing from two lines.
@@ -2623,7 +2715,7 @@ async def recalculation_faults(
     for row in division_rows:
         division_name = row["name"] or f"division {row['id']}"
         if row["attendance_channel_id"]:
-            fault = _channel_fault(
+            fault = results_post_service.channel_fault(
                 guild, bot_member, division_name, "attendance",
                 int(row["attendance_channel_id"]),
                 needs_attachment=attendance_graphics,
@@ -2631,7 +2723,7 @@ async def recalculation_faults(
             if fault is not None:
                 faults.append(fault)
         if sanctions_possible and row["penalty_channel_id"]:
-            fault = _channel_fault(
+            fault = results_post_service.channel_fault(
                 guild, bot_member, division_name, "verdicts",
                 int(row["penalty_channel_id"]),
                 needs_attachment=False,

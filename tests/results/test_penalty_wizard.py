@@ -22,16 +22,13 @@ what pip installs, not what a system-packaged interpreter imports.
 """
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 import discord
 
-from leaguebot.results.services.penalty_wizard import (
-    PenaltyReviewState,
-    PenaltyReviewView,
-    ApprovalView,
-    AppealsReviewView,
-    AddPenaltyModal,
+from leaguebot.results.services.review.penalty_wizard import (
     _CID_AR_ADD,
     _CID_AR_CONFIRM,
     _CID_AR_APPROVE,
@@ -39,7 +36,14 @@ from leaguebot.results.services.penalty_wizard import (
     _CID_CONFIRM,
     _CID_APPROVE,
 )
-from leaguebot.results.services.penalty_service import StagedPenalty
+from leaguebot.results.services.review.penalty_review_views import (
+    PenaltyReviewView,
+    ApprovalView,
+    AddPenaltyModal,
+)
+from leaguebot.results.services.review.appeals_review_views import AppealsReviewView
+from leaguebot.results.services.review.review_state import PenaltyReviewState
+from leaguebot.results.services.review.penalty_service import StagedPenalty
 from leaguebot.results.models.points_config import SessionType
 
 
@@ -56,6 +60,7 @@ class TestPenaltyReviewState:
             session_types_present=[],
             db_path=":memory:",
             bot=None,
+            queue=MagicMock(), server_config=AsyncMock(return_value=None), router=MagicMock(), attendance=MagicMock(),
         )
 
     @pytest.mark.parametrize(
@@ -110,6 +115,7 @@ class TestAddPenaltyModal:
             session_types_present=[SessionType.FEATURE_RACE],
             db_path=":memory:",
             bot=None,
+            queue=MagicMock(), server_config=AsyncMock(return_value=None), router=MagicMock(), attendance=MagicMock(),
         )
         return AddPenaltyModal(
             state=state,
@@ -221,6 +227,7 @@ class TestAppealsReviewView:
             session_types_present=[SessionType.FEATURE_RACE],
             db_path=":memory:",
             bot=None,
+            queue=MagicMock(), server_config=AsyncMock(return_value=None), router=MagicMock(), attendance=MagicMock(),
         )
         state.staged_appeals.extend(staged_appeals)
         view = AppealsReviewView(state=state)
@@ -238,6 +245,7 @@ class TestAppealsReviewView:
             session_types_present=[SessionType.FEATURE_RACE],
             db_path=":memory:",
             bot=None,
+            queue=MagicMock(), server_config=AsyncMock(return_value=None), router=MagicMock(), attendance=MagicMock(),
         )
         state.staged_appeals.append(
             StagedPenalty(driver_user_id=1, session_type=SessionType.FEATURE_RACE, penalty_type="TIME", penalty_seconds=5)

@@ -29,14 +29,14 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_service import StagedPenalty
-from leaguebot.results.services.penalty_wizard import (
-    PenaltyReviewState,
+from leaguebot.results.services.review.penalty_service import StagedPenalty
+from leaguebot.results.services.review.penalty_review_views import (
     PenaltyReviewView,
-    StagedPardon,
     _ConfirmClearView,
     _show_approval_step,
 )
+from leaguebot.results.services.review.review_state import PenaltyReviewState, StagedPardon
+from tests.support.review_league import attendance_after_review_of
 from tests.support.change_queue import (
     attach_queue,
     in_a_job,
@@ -125,13 +125,15 @@ def _bot(db_path: str):
 
 
 def _state(db_path: str, *, pardons: list[StagedPardon] | None = None) -> PenaltyReviewState:
+    bot = _bot(db_path)
     state = PenaltyReviewState(
         round_id=ROUND_ID,
         division_id=DIVISION_ID,
         submission_channel_id=CHANNEL_ID,
         session_types_present=[SessionType.FEATURE_RACE],
         db_path=db_path,
-        bot=_bot(db_path),
+        bot=bot,
+        queue=bot.change_queue, server_config=bot.config_service.get_server_config, router=bot.output_router, attendance=attendance_after_review_of(db_path),
         staged_pardons=pardons or [],
         round_number=3,
         division_name="Pro",
@@ -181,7 +183,7 @@ def _interaction(state: PenaltyReviewState) -> MagicMock:
 
 def _a_league_manager():
     return patch(
-        "leaguebot.results.services.penalty_wizard._is_league_manager", new=AsyncMock(return_value=True)
+        "leaguebot.results.services.review.penalty_wizard._is_league_manager", new=AsyncMock(return_value=True)
     )
 
 
@@ -271,7 +273,7 @@ async def test_clearing_the_penalties_keeps_the_pardons_on_the_approval_message(
     view = _ConfirmClearView(state)
 
     with _a_league_manager(), patch(
-        "leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()
+        "leaguebot.results.services.review.penalty_review_views._refresh_prompt", new=AsyncMock()
     ):
         await type(view).confirm_btn(view, _interaction(state), MagicMock())
         await run_queue(state.bot)

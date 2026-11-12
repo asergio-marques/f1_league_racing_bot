@@ -155,7 +155,7 @@ def _refuse_send(league: Any, cid: int, nth: int) -> None:
 
 def _names_fail_once() -> Any:
     """The first `names` job of the approval fails, as Discord failing would."""
-    from leaguebot.results.services import review_posting
+    from leaguebot.results.services.review import review_posting
 
     real = review_posting.standings_display_names
     calls = {"n": 0}
@@ -172,7 +172,7 @@ def _names_fail_once() -> Any:
 def _standings_fail() -> Any:
     """Every team standings computed raises, as a fault in the bot would."""
     return patch(
-        "leaguebot.results.services.standings_service.compute_team_standings_on",
+        "leaguebot.results.services.standings.standings_service.compute_team_standings_on",
         new=AsyncMock(side_effect=RuntimeError("the standings could not be computed")),
     )
 

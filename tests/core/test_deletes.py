@@ -314,6 +314,16 @@ _TABLE_OF = {
     _DRIVER_KEEPING_HISTORY: "driver_profiles", _DRIVER_LOSING_HISTORY: "driver_profiles",
 }
 
+#: Tables a delete must reach, beyond what the schema happens to hold: a round's standings posting
+#: is a row of its own, keyed by the round, and goes with it, and a division's opening and final
+#: classifications' postings, keyed by the division, go with the division and its season
+#: (architecture.md, "Posting to Discord").
+_MUST_GO = {
+    "round": {"round_standings_posts"},
+    "division": {"classification_posts"},
+    "season": {"classification_posts"},
+}
+
 #: What each delete lets go of rather than takes, and takes where the schema's key would let go.
 _LET_GO = {
     _DRIVER_KEEPING_HISTORY: {"let_go": {*LET_GO_OF_A_DRIVER, HISTORY}},
@@ -343,6 +353,7 @@ async def test_every_delete_leaves_no_orphan(tmp_path, deleted):
     target = _TABLE_OF[deleted]
     gone = _under(rows, links, target, filled[target][0]["id"])
     assert len({t for t, _i in gone}) > 1  # the seed is real: something refers to it
+    assert _MUST_GO.get(deleted, set()) <= {t for t, _i in gone}
     expected = _left(rows, links, gone)
 
     await _delete(db_path, deleted, filled[target][0]["id"])

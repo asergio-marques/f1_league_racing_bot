@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import os
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
@@ -73,7 +73,9 @@ from tests.support.review_league import (
     run_until_done,
     stopped_at,
 )
+from tests.support.mentions import NOBODY, USERS_ONLY, notified
 from tests.support.teams import seed_team_instances
+
 
 KIND = "results.review.open"
 SEASON_ID = 1
@@ -288,11 +290,13 @@ async def _round_status(db_path) -> str:
 
 async def _recover(league: ReviewLeague) -> None:
     """Restart: a fresh queue on the same database, then restart recovery, then the queue run."""
-    from leaguebot.results.wiring import recover_orphaned_submission_channels
+    from leaguebot.results.services.submission.submission_recovery import (
+        recover_orphaned_submission_channels,
+    )
 
 
     await restart_queue(league.bot)
-    await recover_orphaned_submission_channels(league.bot)
+    await recover_orphaned_submission_channels(league.bot, queue=league.bot.change_queue)
     await run_queue(league.bot)
 
 
@@ -366,12 +370,17 @@ async def test_a_round_in_review_can_no_longer_be_cancelled(tmp_path):
 
 
 async def test_the_interim_results_and_standings_are_posted(tmp_path):
+    """Round 3's review opens: its results table and its standings are each posted for the first
+    time, notifying the drivers they name."""
     league = await _league(tmp_path, name="open_posts")
 
     await _open(league)
 
     assert len(league.sent_to(RESULTS_CHANNEL)) == 1
     assert len(league.sent_to(STANDINGS_CHANNEL)) == 1
+    for channel_id in (RESULTS_CHANNEL, STANDINGS_CHANNEL):
+        [sent] = league.channel(channel_id).send.await_args_list
+        assert notified(sent.kwargs.get("allowed_mentions")) == USERS_ONLY
     assert (await _channel_row(league.db_path))["results_posted"] == 1
 
 
@@ -653,8 +662,8 @@ async def test_the_state_carries_the_round_and_division_it_describes(tmp_path):
     [
         "reports-approve",
         "reports-approve-bare",
-        pytest.param("recovery"),
-        pytest.param("appeals-recovery"),
+        "recovery",
+        "appeals-recovery",
     ],
 )
 async def test_the_change_names_its_round_and_division(tmp_path, caplog, route):
@@ -668,7 +677,7 @@ async def test_the_change_names_its_round_and_division(tmp_path, caplog, route):
     import json
     import logging
 
-    from leaguebot.results.services.review_open_change import (
+    from leaguebot.results.services.review.review_open_change import (
         APPEALS_OPEN_KIND,
         appeals_open_change,
         review_open_change,
@@ -705,8 +714,8 @@ async def test_the_change_names_its_round_and_division(tmp_path, caplog, route):
 
     await _recover(league)
 
-    kind, change_type = ((APPEALS_OPEN_KIND, appeals_open_change()) if appeals
-                         else (KIND, review_open_change()))
+    kind, change_type = ((APPEALS_OPEN_KIND, appeals_open_change(queue=MagicMock(), server_config=AsyncMock(return_value=None), router=MagicMock(), attendance=MagicMock())) if appeals
+                         else (KIND, review_open_change(queue=MagicMock(), server_config=AsyncMock(return_value=None), router=MagicMock(), attendance=MagicMock())))
     [change] = await changes_of(league.db_path, kind)
     saved = json.loads(change["payload"])
     assert (saved["round_number"], saved["division_name"]) == (3, "Pro")
@@ -897,6 +906,11 @@ async def test_a_cancelled_resubmission_is_recorded_once_the_review_is_back(tmp_
     assert _at(league, "send", SUBMISSION_CHANNEL, prompt) < _at(
         league, "send", SUBMISSION_CHANNEL, cancel_lines[0]
     )
+    sent = [call for call in submission.send.await_args_list
+            if type(call.kwargs.get("view")).__name__ == "PenaltyReviewView"
+            or "Resubmission cancelled" in (call.args[0] if call.args else "")]
+    assert len(sent) == 3  # the prompt refused, the prompt, the line
+    assert all(notified(call.kwargs.get("allowed_mentions")) == NOBODY for call in sent)
     assert league.log().count("resubmission of round 3") == 1
     lines = league.bot.log_channel.sent
     [cancel] = [line for line in lines if "cancelled by" in line]
@@ -1145,7 +1159,9 @@ async def _ask_report_approval(league: ReviewLeague) -> None:
 
 
 async def test_recovery_leaves_alone_a_round_whose_review_is_in_hand(tmp_path):
-    from leaguebot.results.wiring import recover_orphaned_submission_channels
+    from leaguebot.results.services.submission.submission_recovery import (
+        recover_orphaned_submission_channels,
+    )
 
     league = await _league(tmp_path, name="recover_in_hand", in_review=True,
                            results_posted=True, prompt=PROMPT,
@@ -1154,7 +1170,7 @@ async def test_recovery_leaves_alone_a_round_whose_review_is_in_hand(tmp_path):
 
 
     await restart_queue(league.bot)
-    await recover_orphaned_submission_channels(league.bot)
+    await recover_orphaned_submission_channels(league.bot, queue=league.bot.change_queue)
 
     assert await changes_of(league.db_path, KIND) == []
     assert PROMPT in league.channel(SUBMISSION_CHANNEL).messages
@@ -1185,8 +1201,8 @@ async def test_recovery_leaves_alone_a_round_whose_paste_is_queued_or_stopped(tm
     """The last paste of round 3 has asked for its review, every session's results in and the
     review flag still down, and the open waits behind an earlier job the queue is stopped at. A
     restart finds the round with no review open, as a first paste cut short would look, but the
-    open is in hand on the queue: the results and the submission channel are kept, the wizard is
-    not run again and the review is not asked for twice. Once the stopped job is retried, the
+    open is in hand on the queue: the results and the submission channel are kept and the review
+    is not asked for twice. Once the stopped job is retried, the
     review opens."""
     league = await _league(tmp_path, name="recover_queued_paste")
     holder = await block_queue(league)
@@ -1194,13 +1210,8 @@ async def test_recovery_leaves_alone_a_round_whose_paste_is_queued_or_stopped(tm
     assert await stopped_at(league) == "block"
     assert (await _channel_row(league.db_path))["in_penalty_review"] == 0
 
-    with patch(
-        "leaguebot.results.services.result_submission_service.run_result_submission_job",
-        new=AsyncMock(), create=True,
-    ) as wizard:
-        await _recover(league)
+    await _recover(league)
 
-    wizard.assert_not_called()
     assert len(await changes_of(league.db_path, KIND)) == 1
     assert ("delete_channel", SUBMISSION_CHANNEL, SUBMISSION_CHANNEL) not in league.events
     assert (await _channel_row(league.db_path))["closed"] == 0
@@ -1320,7 +1331,9 @@ async def test_recovery_leaves_alone_a_round_whose_appeals_approval_is_in_hand(t
     """Round 3 awaits its appeal verdicts, its appeals prompt standing, and Approve on it waits
     on the queue when the bot restarts. Restart recovery asks no reopening of the appeals review,
     and the old prompt stands for the approval to take down."""
-    from leaguebot.results.wiring import recover_orphaned_submission_channels
+    from leaguebot.results.services.submission.submission_recovery import (
+        recover_orphaned_submission_channels,
+    )
 
     league = await _league(tmp_path, name="recover_appeals_in_hand", in_review=True,
                            results_posted=True, appeals_prompt=OLD_APPEALS_PROMPT,
@@ -1330,7 +1343,7 @@ async def test_recovery_leaves_alone_a_round_whose_appeals_approval_is_in_hand(t
 
 
     await restart_queue(league.bot)
-    await recover_orphaned_submission_channels(league.bot)
+    await recover_orphaned_submission_channels(league.bot, queue=league.bot.change_queue)
 
     assert await changes_of(league.db_path, APPEALS_OPEN) == []
     assert OLD_APPEALS_PROMPT in league.channel(SUBMISSION_CHANNEL).messages

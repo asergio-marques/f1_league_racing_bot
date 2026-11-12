@@ -169,9 +169,9 @@ async def test_a_re_arming_of_a_round_whose_moment_passed_runs_its_results_submi
 
 
 async def test_a_re_arming_under_test_mode_runs_no_results_submission_at_once(tmp_path):
-    """Under test mode, Pro's round 3, still to be run, was due ten minutes ago. Its re-arming
-    arms its results submission but does not run it at once: `/test-mode advance` runs a test
-    season's rounds in their turn, as for an amended round."""
+    """Under test mode, with results on and weather off, Pro's round 3, still to be run, was due
+    ten minutes ago. Its re-arming arms no results submission and runs none at once:
+    `/test-mode advance` runs a test season's rounds in their turn, as for an amended round."""
     league = await ongoing_league(tmp_path, test_mode=True)
     await league.set_test_mode(True)
     await _place(league, minutes=-10)
@@ -180,7 +180,7 @@ async def test_a_re_arming_under_test_mode_runs_no_results_submission_at_once(tm
     await run_queue(league.bot)
 
     assert await stopped_job(league.db_path) is None
-    assert ("results", [R3]) in league.armed
+    assert ("results", [R3]) not in league.armed
     league.bot.scheduler_service.run_result_submission_now.assert_not_called()
 
 

@@ -24,6 +24,8 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock
 
+import discord
+import pytest
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.models.points_config import SessionType
@@ -39,6 +41,7 @@ from tests.support.change_queue import (
     updated_reply,
 )
 from tests.support.review_league import (
+    attendance_after_review_of,
     APPROVAL,
     DIVISION_ID,
     LEWIS,
@@ -54,6 +57,7 @@ from tests.support.review_league import (
     penalty,
     review_league,
 )
+from tests.support.mentions import NOBODY, notified
 
 KIND = "results.review.stage"
 CONFIRM_KIND = "results.review.confirm"
@@ -64,12 +68,13 @@ APPEALS_PROMPT = 8902
 def _state(league: ReviewLeague, *, staged: Any = (), approval: int | None = None,
            appeals: bool = False) -> Any:
     """Round 3's review as it is held in memory, its prompt the one the channel records."""
-    from leaguebot.results.services.penalty_wizard import PenaltyReviewState
+    from leaguebot.results.services.review.review_state import PenaltyReviewState
 
     return PenaltyReviewState(
         round_id=ROUND_ID, division_id=DIVISION_ID, submission_channel_id=SUBMISSION_CHANNEL,
         session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path,
-        bot=league.bot, staged=list(staged), prompt_message_id=PROMPT,
+        bot=league.bot,
+        queue=league.bot.change_queue, server_config=league.bot.config_service.get_server_config, router=league.bot.output_router, attendance=attendance_after_review_of(league.db_path), staged=list(staged), prompt_message_id=PROMPT,
         appeals_prompt_message_id=APPEALS_PROMPT if appeals else None,
         approval_message_id=approval, round_number=3, division_name="Pro",
     )
@@ -89,7 +94,7 @@ def _alex(league: ReviewLeague, *, message: int | None = None) -> Any:
 async def _add_penalty(state: Any, interaction: Any, *, driver: int = LEWIS,
                        appeals: bool = False) -> None:
     """Alex fills in Add Penalty (or Add Correction) for *driver*: +5s, and submits it."""
-    from leaguebot.results.services.penalty_wizard import AddPenaltyModal
+    from leaguebot.results.services.review.penalty_review_views import AddPenaltyModal
 
     modal = AddPenaltyModal(state, SessionType.FEATURE_RACE, use_appeals_staging=appeals)
     modal.driver_input._value = f"<@{driver}>"
@@ -140,8 +145,8 @@ async def _approval_row(db_path: str) -> Any:
 async def test_a_penalty_added_is_staged_and_the_prompt_redrawn_when_its_turn_comes(tmp_path):
     """Alex adds a five-second penalty for Lewis in round 3's review. He is answered at once that
     it is under way, and nothing is redrawn yet; the staging is a change on round 3's lane. When
-    the queue runs it, the prompt is redrawn with the penalty's Remove button and his answer is
-    updated with what was staged."""
+    the queue runs it, the prompt is redrawn with the penalty's Remove button, notifying nobody,
+    and his answer is updated with what was staged."""
     league = await review_league(tmp_path)
     state = _state(league)
     interaction = _alex(league)
@@ -159,6 +164,8 @@ async def test_a_penalty_added_is_staged_and_the_prompt_redrawn_when_its_turn_co
     assert change["state"] == "DONE"
     assert _edited(league, PROMPT)
     assert "Remove #1" in _labels(league, PROMPT)
+    redraw = league.channel(SUBMISSION_CHANNEL).messages[PROMPT].edit.await_args
+    assert notified(redraw.kwargs.get("allowed_mentions")) == NOBODY
     assert "Staged Penalty" in updated_reply(interaction)
 
 
@@ -276,8 +283,8 @@ async def test_a_pardon_and_an_appeal_correction_are_staged_alike(tmp_path):
     pardon for him: it is a staging change on round 3's lane, and the prompt is redrawn with its
     Remove Pardon button when it runs. In a second league whose round 3 awaits its appeal
     verdicts, Alex adds a correction for Lewis: it too is a staging change on the round's lane,
-    and the appeals prompt is redrawn when it runs."""
-    from leaguebot.results.services.penalty_wizard import AddPardonModal
+    and the appeals prompt is redrawn when it runs, notifying nobody."""
+    from leaguebot.results.services.review.penalty_review_views import AddPardonModal
 
     league = await review_league(tmp_path, attendance=True)
     async with get_connection(league.db_path) as db:
@@ -313,6 +320,8 @@ async def test_a_pardon_and_an_appeal_correction_are_staged_alike(tmp_path):
     await run_queue(appeals.bot)
     assert _edited(appeals, APPEALS_PROMPT)
     assert "Remove #1" in _labels(appeals, APPEALS_PROMPT)
+    redraw = appeals.channel(SUBMISSION_CHANNEL).messages[APPEALS_PROMPT].edit.await_args
+    assert notified(redraw.kwargs.get("allowed_mentions")) == NOBODY
 
 
 async def test_remove_clear_and_make_changes_are_staged_and_redrawn_as_jobs(tmp_path):
@@ -322,7 +331,7 @@ async def test_remove_clear_and_make_changes_are_staged_and_redrawn_as_jobs(tmp_
     and changes nothing until it runs: Make Changes withdraws the approval message and redraws
     the prompt; Remove #2 leaves only Remove #1; the clear leaves no Remove button and the
     approval question is posted again."""
-    from leaguebot.results.services.penalty_wizard import (
+    from leaguebot.results.services.review.penalty_review_views import (
         ApprovalView,
         PenaltyReviewView,
         _ConfirmClearView,
@@ -369,8 +378,9 @@ async def test_remove_clear_and_make_changes_are_staged_and_redrawn_as_jobs(tmp_
 async def test_confirm_posts_the_approval_message_as_a_job_and_keeps_its_id(tmp_path):
     """Nothing is staged in round 3's review when Alex presses No Penalties / Confirm. He is
     answered at once and nothing is posted yet; the confirmation is a change on round 3's lane,
-    whose job posts the approval message and saves its id on the submission's row."""
-    from leaguebot.results.services.penalty_wizard import PenaltyReviewView
+    whose job posts the approval message, notifying nobody, and saves its id on the submission's
+    row."""
+    from leaguebot.results.services.review.penalty_review_views import PenaltyReviewView
 
     league = await review_league(tmp_path)
     state = _state(league)
@@ -390,6 +400,8 @@ async def test_confirm_posts_the_approval_message_as_a_job_and_keeps_its_id(tmp_
     assert type(league.channel(SUBMISSION_CHANNEL).messages[posted].view).__name__ == (
         "ApprovalView"
     )
+    [sent] = league.channel(SUBMISSION_CHANNEL).send.await_args_list
+    assert notified(sent.kwargs.get("allowed_mentions")) == NOBODY
     assert await _approval_row(league.db_path) == posted
 
 
@@ -397,7 +409,7 @@ async def test_a_refused_approval_message_stops_the_queue(tmp_path):
     """Discord refuses the approval message Alex's No Penalties / Confirm posts in round 3's
     submission channel. Round 3's lane stops at that post, the league lane running on, and no id
     is saved; Retry posts it and saves its id."""
-    from leaguebot.results.services.penalty_wizard import PenaltyReviewView
+    from leaguebot.results.services.review.penalty_review_views import PenaltyReviewView
 
     league = await review_league(tmp_path)
     league.channel(SUBMISSION_CHANNEL).fail_when = (
@@ -420,6 +432,48 @@ async def test_a_refused_approval_message_stops_the_queue(tmp_path):
     assert await _approval_row(league.db_path) is not None
 
 
+async def test_a_standing_approval_message_discord_refuses_to_delete_stops_the_lane(tmp_path):
+    """Round 3's approval message 8901 stands, its id on the submission's row, when Alex presses
+    No Penalties / Confirm again, and Discord refuses to delete 8901 (403). Round 3's lane stops
+    at the approval's post, the league lane running on: 8901 stands, no second approval message
+    is posted, and the row still names 8901. Once Discord allows it, Retry deletes 8901, posts the
+    new approval message and saves its id."""
+    from leaguebot.results.services.review.penalty_review_views import PenaltyReviewView
+
+    league = await review_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "UPDATE round_submission_channels SET approval_message_id = ? WHERE round_id = ?",
+            (APPROVAL, ROUND_ID),
+        )
+        await db.commit()
+    submission = league.channel(SUBMISSION_CHANNEL)
+    standing = submission.messages[APPROVAL]
+    working = standing.delete
+    standing.delete = AsyncMock(
+        side_effect=http_error(discord.Forbidden, status=403, text="Missing Permissions")
+    )
+    before = set(submission.messages)
+
+    await _press(PenaltyReviewView(_state(league)), "No Penalties / Confirm",
+                 _alex(league, message=PROMPT))
+    await run_queue(league.bot)
+
+    stopped = await stopped_job(league.db_path, LANE)
+    assert stopped is not None and stopped["name"] == "post_approval"
+    assert await stopped_job(league.db_path, "league") is None
+    assert set(submission.messages) == before
+    assert await _approval_row(league.db_path) == APPROVAL
+
+    standing.delete = working
+    await retry_job(league.bot, lane=LANE)
+
+    assert await stopped_job(league.db_path) is None
+    assert APPROVAL not in submission.messages
+    [posted] = set(submission.messages) - before
+    assert await _approval_row(league.db_path) == posted
+
+
 async def test_the_approval_message_s_id_is_saved_on_the_submission_row_and_read_by_a_later_staging(
     tmp_path,
 ):
@@ -427,7 +481,7 @@ async def test_the_approval_message_s_id_is_saved_on_the_submission_row_and_read
     its id saved on the submission's row. A second review of round 3, built afresh in memory with
     no approval message of its own, then stages a penalty for Lewis: its staging reads the
     approval message from the row and withdraws it, and the row no longer names it."""
-    from leaguebot.results.services.penalty_wizard import PenaltyReviewView
+    from leaguebot.results.services.review.penalty_review_views import PenaltyReviewView
 
     league = await review_league(tmp_path)
     await _press(PenaltyReviewView(_state(league)), "No Penalties / Confirm",

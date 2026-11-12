@@ -413,7 +413,7 @@ def format_race_table(
 # renderers they would sit with, so that adopting a column into the text path is a call and
 # not a reimplementation — which is the shared-rendering half of Constitution XIV.7.
 #
-# The *values* are derived in ``services/standings_service.derive_movement``; these turn one
+# The *values* are derived in ``services/standings/standings_service.derive_movement``; these turn one
 # into the string a field carries. See
 # specs/040-standings-image-generation/contracts/derived-columns.md.
 # ---------------------------------------------------------------------------

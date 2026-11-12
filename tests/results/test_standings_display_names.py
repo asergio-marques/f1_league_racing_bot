@@ -34,7 +34,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.results.services.results_post_service import (
+from leaguebot.results.services.publishing.results_post_service import (
     _build_member_display,
     _build_test_driver_display,
     driver_standings_for_display,
@@ -236,7 +236,7 @@ def _standings(calls: list):
         return [_snap(DRIVER_A), _snap(DRIVER_B)]
 
     return patch(
-        "leaguebot.results.services.standings_service.compute_driver_standings",
+        "leaguebot.results.services.standings.standings_service.compute_driver_standings",
         new=AsyncMock(side_effect=_compute),
     )
 
@@ -294,7 +294,7 @@ async def test_an_empty_division_is_not_computed_twice(tmp_path):
         return []
 
     with patch(
-        "leaguebot.results.services.standings_service.compute_driver_standings",
+        "leaguebot.results.services.standings.standings_service.compute_driver_standings",
         new=AsyncMock(side_effect=_compute),
     ):
         await driver_standings_for_display(db_path, DIVISION_ID, 1, _guild(), MagicMock())
@@ -319,7 +319,7 @@ async def test_the_names_are_resolved_from_the_division_s_last_round(tmp_path):
         return [_snap(DRIVER_A)]
 
     with patch(
-        "leaguebot.results.services.standings_service.compute_driver_standings",
+        "leaguebot.results.services.standings.standings_service.compute_driver_standings",
         new=AsyncMock(side_effect=_compute),
     ), patch(
         "leaguebot.image.services.image_results_post._driver_names",
@@ -341,7 +341,7 @@ async def test_a_cancelled_round_is_not_used_to_resolve_names(tmp_path):
         return [_snap(DRIVER_A)]
 
     with patch(
-        "leaguebot.results.services.standings_service.compute_driver_standings",
+        "leaguebot.results.services.standings.standings_service.compute_driver_standings",
         new=AsyncMock(side_effect=_compute),
     ), patch(
         "leaguebot.image.services.image_results_post._driver_names",
@@ -365,7 +365,7 @@ async def test_a_division_with_no_standings_resolves_nothing(tmp_path):
     db_path = await _make_db(tmp_path)
 
     with patch(
-        "leaguebot.results.services.standings_service.compute_driver_standings",
+        "leaguebot.results.services.standings.standings_service.compute_driver_standings",
         new=AsyncMock(return_value=[]),
     ):
         result = await standings_display_names(db_path, DIVISION_ID, _guild(), MagicMock())

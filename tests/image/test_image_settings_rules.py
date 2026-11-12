@@ -46,11 +46,9 @@ async def test_aspect_blocking_reasons_overrides_the_toggle_for_the_question(tmp
     asking as though it were switched on, names the drawing that cannot be found, and leaves the
     switch off. With the shipped template it names nothing."""
     import leaguebot.image.services.image_render_service as render
-    import leaguebot.image.services.image_settings as image_settings
     from leaguebot.image.services.image_settings import aspect_blocking_reasons
 
     monkeypatch.setattr(render, "converter_available", lambda: True)
-    monkeypatch.setattr(image_settings, "converter_available", lambda: True, raising=False)
     league = await settings_league(tmp_path, modules=("images",))
     config, validity = league.bot.image_config_service, league.bot.image_validity_service
 

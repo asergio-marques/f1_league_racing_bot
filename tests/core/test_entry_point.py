@@ -292,8 +292,8 @@ async def test_every_kind_is_registered_before_the_scheduler_starts(tmp_path):
     result submission, the four check-in jobs, the signup close, the portrait refresh and the
     amendment sweep) and every one-off timer kind."""
     from leaguebot.core.services.seasons import season_review_changes
-    from leaguebot.results.services.amend_changes import TIMER as AMEND_TIMER
-    from leaguebot.results.services.review_lock_change import TIMER as LOCK_TIMER
+    from leaguebot.results.services.round_amendment.amend_changes import TIMER as AMEND_TIMER
+    from leaguebot.results.services.review.review_lock_change import TIMER as LOCK_TIMER
     from leaguebot.signup.services.closing_steps import DELETE_TIMER, INACTIVITY_TIMER
     from leaguebot.signup.services.review_changes import CORRECTION_TIMER
 
@@ -327,9 +327,9 @@ async def test_every_round_kind_has_its_advance_step_after_build(tmp_path):
 #: Each module's part of a cancellation of rounds, as the module names it: the moment's hook on
 #: the bot, the module, the subscriber, and what the test calls it.
 _CANCELLATION_PARTS = (
-    ("cancellation_refused", "leaguebot.results.services.result_submission_service",
+    ("cancellation_refused", "leaguebot.results.services.submission.result_submission_service",
      "cancellation_refusal", "results' refusal"),
-    ("rounds_called_off", "leaguebot.results.services.result_submission_service",
+    ("rounds_called_off", "leaguebot.results.services.submission.result_submission_service",
      "close_called_off_on", "results' close"),
     ("rounds_called_off", "leaguebot.attendance.services.check_in_changes",
      "take_down_called_off_on", "attendance's take-down"),
@@ -337,10 +337,8 @@ _CANCELLATION_PARTS = (
      "notices_on", "attendance's check-in notice"),
     ("cancellation_notices", "leaguebot.weather.services.cancellation_notice",
      "notices_on", "weather's forecast note"),
-    ("cancellation_notices", "leaguebot.results.services.cancellation_notice",
+    ("cancellation_notices", "leaguebot.results.services.publishing.cancellation_notice",
      "notices_on", "results' results note"),
-    ("round_ended_not_held", "leaguebot.attendance.services.check_in_record",
-     "read_check_in_on", "attendance's check-in record"),
 )
 
 
@@ -378,7 +376,7 @@ _PHASES_DRAWN_PARTS = (
 #: Each module's part of a season's end, as the module names it: the moment's hook on the bot, the
 #: module, the subscriber, and what the test calls it, in the order the builder signs them up.
 _SEASON_END_PARTS = (
-    ("season_end_refused", "leaguebot.results.services.result_submission_service",
+    ("season_end_refused", "leaguebot.results.services.round_amendment.amendment_writes",
      "season_end_refusal", "results' refusal of a season's end"),
     ("drivers_returned", "leaguebot.signup.services.closing_steps", "drivers_returned_on",
      "signup's wizards ended"),
@@ -395,25 +393,25 @@ _SEASON_END_PARTS = (
 _DELETE_PARTS = (
     ("rounds_deleted", "leaguebot.attendance.services.attendance_service", "rounds_deleted_on",
      "attendance's rounds"),
-    ("rounds_deleted", "leaguebot.results.services.results_purge_service", "rounds_deleted_on",
+    ("rounds_deleted", "leaguebot.results.services.module.results_purge_service", "rounds_deleted_on",
      "results' rounds"),
     ("rounds_deleted", "leaguebot.weather.services.forecast_cleanup_service", "rounds_deleted_on",
      "weather's rounds"),
     ("divisions_deleted", "leaguebot.attendance.services.attendance_service",
      "divisions_deleted_on", "attendance's divisions"),
-    ("divisions_deleted", "leaguebot.results.services.results_purge_service",
+    ("divisions_deleted", "leaguebot.results.services.module.results_purge_service",
      "divisions_deleted_on", "results' divisions"),
-    ("season_deleted", "leaguebot.results.services.results_purge_service", "season_deleted_on",
+    ("season_deleted", "leaguebot.results.services.module.results_purge_service", "season_deleted_on",
      "results' season"),
     ("season_deleted", "leaguebot.signup.services.signup_module_service", "season_deleted_on",
      "signup's season"),
     ("profiles_deleted", "leaguebot.attendance.services.attendance_service",
      "profiles_deleted_on", "attendance's drivers deleted"),
-    ("profiles_deleted", "leaguebot.results.services.results_purge_service",
+    ("profiles_deleted", "leaguebot.results.services.module.results_purge_service",
      "profiles_deleted_on", "results' drivers deleted"),
     ("profiles_merged", "leaguebot.attendance.services.attendance_service",
      "profiles_merged_on", "attendance's drivers merged"),
-    ("profiles_merged", "leaguebot.results.services.results_purge_service",
+    ("profiles_merged", "leaguebot.results.services.module.results_purge_service",
      "profiles_merged_on", "results' drivers merged"),
 )
 
@@ -432,14 +430,14 @@ _PACK_PARTS = (
     ("leaguebot.signup.services.signup_module_service", "bot_packed_on", "signup's pack"),
     ("leaguebot.weather.services.forecast_cleanup_service", "bot_packed_on", "weather's pack"),
     ("leaguebot.attendance.services.attendance_service", "bot_packed_on", "attendance's pack"),
-    ("leaguebot.results.services.results_purge_service", "bot_packed_on", "results' pack"),
+    ("leaguebot.results.services.module.results_purge_service", "bot_packed_on", "results' pack"),
 )
 
 #: Each module's part of a round's results made final, as the module names it: the module, the
 #: subscriber, and what the test calls it, in the order the builder signs them up. Each marks the
 #: drivers who raced the rounds as former drivers, on the closing's connection.
 _FINAL_PARTS = (
-    ("leaguebot.results.services.result_submission_service", "rounds_made_final_on",
+    ("leaguebot.results.services.submission.result_submission_service", "rounds_made_final_on",
      "results' former drivers"),
 )
 
@@ -447,7 +445,7 @@ _FINAL_PARTS = (
 #: and what the test calls it, in the order the builder signs them up. Each seeds what the module
 #: seeds for a season under test, on the connection of the save that turns test mode on.
 _TEST_MODE_PARTS = (
-    ("leaguebot.results.services.points_config_service", "seed_test_configs_on",
+    ("leaguebot.results.services.points.points_config_service", "seed_test_configs_on",
      "results' points configurations"),
 )
 
@@ -455,7 +453,7 @@ _TEST_MODE_PARTS = (
 #: and what the test calls it, in the order the builder signs them up. Each hands back the jobs it
 #: plans for one division, on the connection of the approval's save.
 _PLACEMENTS_PARTS = (
-    ("leaguebot.results.services.season_standings_posts", "placements_confirmed_on",
+    ("leaguebot.results.services.standings.season_standings_posts", "placements_confirmed_on",
      "results' opening standings"),
     ("leaguebot.attendance.services.sheet_posting", "placements_confirmed_on",
      "attendance's opening sheet"),
@@ -465,7 +463,7 @@ _PLACEMENTS_PARTS = (
 #: and what the test calls it, in the order the builder signs them up. Each hands back the jobs it
 #: plans for one division's final classification, on the connection of the completion's save.
 _SEASON_COMPLETED_PARTS = (
-    ("leaguebot.results.services.season_standings_posts", "season_completed_on",
+    ("leaguebot.results.services.standings.season_standings_posts", "season_completed_on",
      "results' final standings"),
     ("leaguebot.attendance.services.sheet_posting", "season_completed_on",
      "attendance's final sheet"),
@@ -475,7 +473,7 @@ _SEASON_COMPLETED_PARTS = (
 #: subscriber, and what the test calls it. Each hands back the round the division's final
 #: classification is drawn against, or None, on the connection of the completion's save.
 _FINAL_ROUND_PARTS = (
-    ("leaguebot.results.services.season_standings_posts", "final_round_on",
+    ("leaguebot.results.services.standings.season_standings_posts", "final_round_on",
      "results' last round with results"),
 )
 
@@ -514,17 +512,16 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
     check-in notice, then weather's forecast note, then results' results note; and the steps a
     module plans, results' deletion of a submission channel, attendance's take-down of a call,
     attendance's reading of a round's check-in record, then attendance's check-in notice, weather's
-    forecast note and results' results note. A round ended with every session entered as not held,
-    handed the save's connection and the round: attendance's reading of its check-in record for the
-    log. A round's timing windows read: attendance's window, then weather's, each handed whether the
-    round is being amended. A round amended: inside the save, weather's withdrawal of the forecasts
-    the amendment withdraws, then attendance's reopening of its check-in; as the round is armed
-    again, the posts each owes, attendance's then weather's, then the clean-ups due a day after the
-    round, weather's then attendance's; the steps each defines, weather's then attendance's, under
-    the names the amendment gives them today; and the words an outcome gives a step that was not
-    done, weather's for a forecast. A season's end: what stands in its way, results' refusal while a
-    round is being amended; the drivers it returns, signup's ending of their wizards in the save,
-    and the jobs signup plans for a driver returned; the jobs that close what a module holds open,
+    forecast note and results' results note. A round's timing windows read: attendance's window,
+    then weather's, each handed whether the round is being amended. A round amended: inside the
+    save, weather's withdrawal of the forecasts the amendment withdraws, then attendance's reopening
+    of its check-in; as the round is armed again, the posts each owes, attendance's then weather's,
+    then the clean-ups due a day after the round, weather's then attendance's; the steps each
+    defines, weather's then attendance's, under the names the amendment gives them today; and the
+    words an outcome gives a step that was not done, weather's for a forecast. A season's end: what
+    stands in its way, results' refusal while a round is being amended; the drivers it returns,
+    signup's ending of their wizards in the save, and the jobs signup plans for a driver returned;
+    the jobs that close what a module holds open,
     signup's close of its window; the steps each module defines for it, signup's notice and close,
     its window's close, the Sign Up button's deletion and the closed post, then weather's deletion
     of a forecast; the jobs that clear what test mode posted, weather's; and the drivers deleted,
@@ -552,13 +549,13 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
 
     import leaguebot.__main__ as entry_point
     from leaguebot.core.models.cancellation import SCOPE_ROUND
-    from leaguebot.results.services import penalty_wizard
+    from leaguebot.results.services.review import review_state
     from leaguebot.signup.services import signup_views
     from leaguebot.weather.services import forecast_changes
 
     called: list[str] = []
     for module, name, part in (
-        (penalty_wizard, "clear_held_reviews", "penalty reviews"),
+        (review_state, "clear_held_reviews", "penalty reviews"),
         (signup_views, "clear_pending_reasons", "pending reasons"),
     ):
         spy = (lambda part: lambda: called.append(part))(part)
@@ -641,12 +638,6 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
         ["delete_channel"], ["take_down_call"], ["read_check_in"], ["notify_checkin"],
         ["notify_forecast"], ["notify_results"],
     ]
-    called.clear()
-    cancellation_handed.clear()
-    ended = {"round_id": 0, "division_id": 0, "division_name": "Pro", "season_id": 0}
-    await bot.round_ended_not_held.call(None, ended)
-    assert called == ["attendance's check-in record"]
-    assert cancellation_handed == [(None, ended)]
     called.clear()
     await bot.round_windows_read.call(amending=True)
     assert called == ["attendance's window, amending True", "weather's window, amending True"]
@@ -842,7 +833,8 @@ _CORE_STEPS = ["expired review prompts", "hub"]
 #: the order the builder signs them up: the core specification's.
 _MODULE_STEPS = {
     "signup": ["signup close timer", "wizards"],
-    "results": ["amendment sweep", "orphaned amend channels", "orphaned submission channels"],
+    "results": ["amendment sweep", "orphaned amend channels", "orphaned submission channels",
+                "missed round starts"],
     "attendance": ["missed check-in calls", "RSVP views and deadlines",
                    "missed check-in clean-ups"],
     "weather": ["missed phases", "missed forecast clean-ups"],
@@ -850,13 +842,16 @@ _MODULE_STEPS = {
 }
 
 
-#: The module steps whose recovery is a function of its module's wiring handed the bot alone, with
-#: where that function lives and its name.
+#: The module steps whose recovery is a function handed the bot, with where that function
+#: lives and its name: in its module's wiring, or, for results' three recoveries, its services.
 _RECOVERIES_OF_THE_STEPS = {
     "portrait refresh job": ("leaguebot.image.wiring", "recover_portrait_refresh_job"),
-    "orphaned amend channels": ("leaguebot.results.wiring", "recover_orphaned_amend_channels"),
-    "orphaned submission channels": ("leaguebot.results.wiring",
+    "orphaned amend channels": ("leaguebot.results.services.round_amendment.amend_end_changes",
+                                "recover_orphaned_amend_channels"),
+    "orphaned submission channels": ("leaguebot.results.services.submission.submission_recovery",
                                      "recover_orphaned_submission_channels"),
+    "missed round starts": ("leaguebot.results.services.submission.submission_recovery",
+                            "recover_missed_round_starts"),
     "missed phases": ("leaguebot.weather.wiring", "recover_missed_phases"),
     "missed forecast clean-ups": ("leaguebot.weather.wiring",
                                   "recover_missed_forecast_clean_ups"),
@@ -866,6 +861,13 @@ _RECOVERIES_OF_THE_STEPS = {
     "missed check-in clean-ups": ("leaguebot.attendance.wiring",
                                   "recover_missed_check_in_clean_ups"),
 }
+
+
+#: The steps whose recovery is handed the bot's change queue as well, which a service does not look
+#: up on the bot (architecture.md, "Services stay attached to the bot, and are built in one place").
+_RECOVERIES_GIVEN_THE_QUEUE = frozenset(
+    {"orphaned amend channels", "orphaned submission channels", "missed round starts"}
+)
 
 
 async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
@@ -880,6 +882,9 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
       the restart has its unapproved corrections in the database, and a submission channel whose
       results were saved but never posted posts its standings from it, so swept the other way round
       those standings would publish the corrections the revert then takes back;
+    - **missed round starts after both** (#450): a round's submission cleared and asked open again
+      by the submission channels' recovery is then in hand on the queue, and the catch-up of the
+      round starts missed while the bot was down leaves it to that opening rather than ask another;
     - **missed check-in calls, then the RSVP deadlines, then the missed check-in clean-ups**: a call
       comes before its deadline, and a check-in whose deadline and clean-up both passed while the
       bot was down is distributed before it is taken down;
@@ -895,7 +900,8 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     close still ahead on record, re-arms it on the bot's scheduler (the step reads the host's clock
     and takes no `now`, so the close is set a day after that clock); the wizards are recovered by
     the bot's wizard service; the amendment sweep arms the bot's scheduler's sweep; and each other
-    step hands its recovery, in its module's wiring, the bot. Nothing is posted to the log channel.
+    step hands its recovery the bot: results' three in results' services, which are also handed the
+    bot's queue, each of the others in its module's wiring. Nothing is posted to the log channel.
     """
     import importlib
     from contextlib import asynccontextmanager
@@ -1003,10 +1009,16 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
         "wizards": ("recover_wizards", (bot.wizard_service,), {}),
         "amendment sweep": ("schedule_amendment_sweep", (scheduler,), {}),
     } | {
-        step: (function, (bot,), {}) for step, (_, function) in _RECOVERIES_OF_THE_STEPS.items()
+        step: (function, (bot,),
+               {"queue": bot.change_queue} if step in _RECOVERIES_GIVEN_THE_QUEUE else {})
+        for step, (_, function) in _RECOVERIES_OF_THE_STEPS.items()
     }
     order = _CORE_STEPS + [step for steps in _MODULE_STEPS.values() for step in steps]
     assert sorted(expected) == sorted(order)
+    # The catch-up of the missed round starts is handed the moment the bot came up, as a callable,
+    # the one the `results` job's handler is handed.
+    [caught_up] = [kwargs for function, _args, kwargs in ran if function == "recover_missed_round_starts"]
+    assert caught_up.pop("came_up_at")() == bot.came_up_at
     assert ran == [expected[step] for step in order]
     assert lines == []
 
@@ -1168,7 +1180,7 @@ _REVIEW_SECTION_PARTS = (
     ("leaguebot.signup.services.signup_module_service", "review_section", "signup's section"),
     ("leaguebot.attendance.services.attendance_service", "review_section",
      "attendance's section"),
-    ("leaguebot.results.services.season_points_service", "review_section", "results' section"),
+    ("leaguebot.results.services.points.season_points_service", "review_section", "results' section"),
     ("leaguebot.weather.services.weather_config_service", "review_section", "weather's section"),
 )
 
@@ -1199,11 +1211,32 @@ async def test_the_builder_signs_every_module_up_to_the_review_sections(tmp_path
     ]
 
 
+async def test_the_builder_signs_results_up_to_a_season_approved(tmp_path, monkeypatch):
+    """Straight after `build`, results' points snapshot is signed up to the hook a season's
+    approval is saved through, nothing called yet: handed the save's connection, then the
+    season's id."""
+    from leaguebot.results.services.points import season_points_service
+
+    called: list[tuple] = []
+
+    async def snapshot_spy(*args, **kwargs):
+        called.append((args, kwargs))
+
+    monkeypatch.setattr(season_points_service, "snapshot_configs_to_season_on", snapshot_spy)
+
+    bot = await built_bot(tmp_path, now=_NOW)
+    assert called == []
+
+    await bot.season_approved.call(None, 7)
+
+    assert called == [((None, 7), {})]
+
+
 async def test_the_builder_signs_results_up_to_a_confirmation_refused(tmp_path, monkeypatch):
     """Straight after `build`, results' refusals are signed up to the hook a season's confirmation
     is refused through, nothing called yet: handed the league's modules and the database, then
     what the hook is called with (the season, and which confirmation is judged)."""
-    from leaguebot.results.services import season_points_service
+    from leaguebot.results.services.points import season_points_service
 
     called: list[tuple] = []
 

@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.results.services.amend_views import AmendCancelView
+from leaguebot.results.services.round_amendment.amend_views import AmendCancelView
 from tests.support.change_queue import (
     acknowledgement,
     change_rows,

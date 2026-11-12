@@ -46,7 +46,7 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_service import StagedPenalty
+from leaguebot.results.services.review.penalty_service import StagedPenalty
 from tests.results.test_amendment_stage_changes import (
     AMEND_APPEALS_PROMPT,
     AMEND_APPROVAL,
@@ -65,6 +65,7 @@ from tests.support.change_queue import (
     updated_reply,
 )
 from tests.support.review_league import (
+    attendance_after_review_of,
     AMEND_CHANNEL as AMENDMENT_CHANNEL,
     APPROVAL,
     HEADING,
@@ -328,7 +329,7 @@ async def test_a_second_press_while_the_first_is_approving_is_refused(tmp_path):
     the first had while the first drew its graphics. A second Approve pressed while the first is
     queued, and again while it is running, is refused and its refusal recorded (#482); the
     approval is carried out once."""
-    from leaguebot.results.services.penalty_wizard import _BEING_APPROVED
+    from leaguebot.results.services.review.review_state import _BEING_APPROVED
 
     league = await review_league(tmp_path)
     await _ask_reports(league, staged=[league_penalty(LEWIS)])
@@ -808,7 +809,7 @@ async def test_a_second_appeals_approval_while_the_first_runs_is_refused(tmp_pat
     double click applied every correction twice. Round 3 (Pro) awaits its appeal verdicts with one
     correction staged; Alex approves, and presses again while the first is queued and while it is
     running. Each second press is refused, its refusal recorded, and the correction applied once."""
-    from leaguebot.results.services.penalty_wizard import _APPEALS_BEING_APPROVED
+    from leaguebot.results.services.review.review_state import _APPEALS_BEING_APPROVED
 
     league = await _appeals_league(tmp_path)
     await _ask_appeals(league, staged=[league_penalty(LEWIS)])
@@ -857,11 +858,13 @@ async def test_every_appeals_control_refuses_while_the_appeals_are_being_approve
     refused as the approval under way (results spec, stage two: "Once the approval is under way
     or done"): nothing is staged, removed, cleared or asked a second time, and one line records
     the refusal, naming the button, the review, Alex and the reason."""
-    from leaguebot.results.services.penalty_wizard import (
-        _APPEALS_BEING_APPROVED,
+    from leaguebot.results.services.review.appeals_review_views import (
         AppealsReviewView,
-        PenaltyReviewState,
         _AppealsConfirmClearView,
+    )
+    from leaguebot.results.services.review.review_state import (
+        _APPEALS_BEING_APPROVED,
+        PenaltyReviewState,
         _appeals_review_moved_on,
     )
 
@@ -869,7 +872,8 @@ async def test_every_appeals_control_refuses_while_the_appeals_are_being_approve
     state = PenaltyReviewState(
         round_id=ROUND_ID, division_id=DIVISION_ID, submission_channel_id=SUBMISSION_CHANNEL,
         session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path,
-        bot=league.bot, staged_appeals=[league_penalty(LEWIS)],
+        bot=league.bot,
+        queue=league.bot.change_queue, server_config=league.bot.config_service.get_server_config, router=league.bot.output_router, attendance=attendance_after_review_of(league.db_path), staged_appeals=[league_penalty(LEWIS)],
         appeals_prompt_message_id=APPEALS_PROMPT, round_number=3, division_name="Pro",
     )
     assert await _appeals_review_moved_on(state) is None
@@ -883,10 +887,10 @@ async def test_every_appeals_control_refuses_while_the_appeals_are_being_approve
     interaction = member_interaction(league.bot, user=_alex())
 
     with patch(
-        "leaguebot.results.services.penalty_wizard._is_league_manager",
+        "leaguebot.results.services.review.penalty_wizard._is_league_manager",
         new=AsyncMock(return_value=True),
     ), patch(
-        "leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock()
+        "leaguebot.results.services.review.appeals_review_views._refresh_appeals_prompt", new=AsyncMock()
     ) as refresh_appeals:
         await button.callback(interaction)
 
@@ -1248,7 +1252,7 @@ async def test_an_amendment_elsewhere_or_ended_holds_nothing(tmp_path, where):
 
 async def test_an_amendment_is_not_held_by_itself(tmp_path):
     """Its own report and appeal stages are the ones that end it."""
-    from leaguebot.results.services.result_submission_service import held_by_amendment
+    from leaguebot.results.services.round_amendment.amendment_writes import held_by_amendment
 
     db_path = await _make_db(tmp_path, name="not_held_by_itself")
     await _amend_round_two(db_path)
@@ -1260,7 +1264,7 @@ async def test_an_amendment_is_not_held_by_itself(tmp_path):
 async def test_the_wait_a_refusal_quotes_follows_the_deadline(tmp_path, monkeypatch):
     """Written out, a tuned deadline left every refusal quoting the old one; and "at most" was
     never true, the sweep running every few minutes."""
-    import leaguebot.results.services.result_submission_service as rss
+    import leaguebot.results.services.round_amendment.amendment_writes as rss
 
     db_path = await _make_db(tmp_path, name="held_wait")
     await _amend_round_two(db_path)
@@ -1274,7 +1278,7 @@ async def test_the_wait_a_refusal_quotes_follows_the_deadline(tmp_path, monkeypa
 
 async def test_the_season_names_an_amendment_open_in_any_of_its_divisions(tmp_path):
     """What completing the season and approving a change to its points ask (#345)."""
-    from leaguebot.results.services.result_submission_service import open_amendment_in_season
+    from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_season
 
     db_path = await _make_db(tmp_path, name="season_held")
     await _amend_round_two(db_path, division_id=12)
@@ -1287,7 +1291,7 @@ async def test_the_season_names_an_amendment_open_in_any_of_its_divisions(tmp_pa
 
 
 async def test_an_ended_amendment_or_another_season_leaves_the_season_free(tmp_path):
-    from leaguebot.results.services.result_submission_service import open_amendment_in_season
+    from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_season
 
     db_path = await _make_db(tmp_path, name="season_not_held")
     await _amend_round_two(db_path, ended=True)
@@ -1697,17 +1701,16 @@ async def test_each_approve_control_of_an_amendment_asks_its_stage_of_the_queue(
     The press asks the queue for that stage's change, with the round, the division, the amended
     sessions and what is staged in its payload, and Alex is answered at once that it is under way,
     with its job number. The report stage's Approve is pressed on its approval message."""
-    from leaguebot.results.services.penalty_wizard import (
-        AppealsReviewView,
-        ApprovalView,
-        PenaltyReviewState,
-    )
+    from leaguebot.results.services.review.penalty_review_views import ApprovalView
+    from leaguebot.results.services.review.appeals_review_views import AppealsReviewView
+    from leaguebot.results.services.review.review_state import PenaltyReviewState
 
     league = await amend_league(tmp_path, reports_approved=stage == "appeals")
     state = PenaltyReviewState(
         round_id=ROUND_ID, division_id=DIVISION_ID, submission_channel_id=AMENDMENT_CHANNEL,
         session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path,
-        bot=league.bot, round_number=3, division_name="Pro", is_amendment=True,
+        bot=league.bot,
+        queue=league.bot.change_queue, server_config=league.bot.config_service.get_server_config, router=league.bot.output_router, attendance=attendance_after_review_of(league.db_path), round_number=3, division_name="Pro", is_amendment=True,
     )
     if stage == "reports":
         state.staged = [league_penalty(LEWIS)]
@@ -1726,7 +1729,7 @@ async def test_each_approve_control_of_an_amendment_asks_its_stage_of_the_queue(
         interaction.message.id = AMEND_APPROVAL
 
     with patch(
-        "leaguebot.results.services.penalty_wizard._is_league_manager",
+        "leaguebot.results.services.review.penalty_wizard._is_league_manager",
         new=AsyncMock(return_value=True),
     ):
         await view.approve_btn.callback(interaction)
@@ -1758,7 +1761,7 @@ async def test_a_failed_amendment_report_stage_names_the_kind_of_fault(tmp_path)
 
     league = await amend_league(tmp_path)
     with patch(
-        "leaguebot.results.services.result_submission_service._apply_points_in_tx",
+        "leaguebot.results.services.points.scoring._apply_points_in_tx",
         new=AsyncMock(side_effect=sqlite3.OperationalError("database is locked")),
     ):
         interaction = await _amend_reports(league)

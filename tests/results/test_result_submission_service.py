@@ -6,7 +6,8 @@ import pytest
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.results.models.session_result import OutcomeModifier
-from leaguebot.results.services.result_submission_service import (
+from leaguebot.results.services.submission.result_submission_service import get_sessions_for_format
+from leaguebot.results.services.submission.paste_reading import (
     ParsedQualifyingRow,
     ParsedRaceRow,
     _format_time_ms,
@@ -14,7 +15,6 @@ from leaguebot.results.services.result_submission_service import (
     _validate_qualifying_row_wizard,
     _validate_race_row_wizard,
     extract_fl_override,
-    get_sessions_for_format,
     validate_submission_block,
 )
 from leaguebot.image.utils.tyre_compound import TYRE_COMPOUNDS
@@ -520,7 +520,7 @@ def test_format_time_ms(ms, expected_str):
 async def test_channel_not_in_penalty_review_when_flag_zero(tmp_path):
     """is_channel_in_penalty_review returns False when in_penalty_review=0."""
     from leaguebot.core.db.database import get_connection, run_migrations
-    from leaguebot.results.services.result_submission_service import is_channel_in_penalty_review
+    from leaguebot.results.services.review.review_prompts import is_channel_in_penalty_review
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -825,7 +825,7 @@ async def _seed_round(db) -> int:
 async def test_other_active_team_assignments_reads_other_active_sessions_only(tmp_path):
     """Excludes the queried session type and any non-ACTIVE session (FR-065)."""
     from leaguebot.core.db.database import get_connection, run_migrations
-    from leaguebot.results.services.result_submission_service import other_active_team_assignments
+    from leaguebot.results.services.submission.paste_reading import other_active_team_assignments
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -875,7 +875,7 @@ async def test_other_active_team_assignments_leaves_out_the_sessions_an_amendmen
     """Their recorded rows are about to go, and must not be held against their own correction
     (#345) — the sessions an amendment is not touching still count."""
     from leaguebot.core.db.database import get_connection, run_migrations
-    from leaguebot.results.services.result_submission_service import other_active_team_assignments
+    from leaguebot.results.services.submission.paste_reading import other_active_team_assignments
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -941,9 +941,7 @@ async def test_recompute_session_points_on_raises_and_skips_unconfigured(tmp_pat
     from unittest.mock import AsyncMock, patch
 
     from leaguebot.core.db.database import get_connection, run_migrations
-    from leaguebot.results.services.result_submission_service import (
-        _recompute_session_points_on,
-    )
+    from leaguebot.results.services.points.scoring import _recompute_session_points_on
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -962,7 +960,7 @@ async def test_recompute_session_points_on_raises_and_skips_unconfigured(tmp_pat
             sessions[session_type] = cursor.lastrowid
         await db.commit()
 
-    target = "leaguebot.results.services.result_submission_service._apply_points_in_tx"
+    target = "leaguebot.results.services.points.scoring._apply_points_in_tx"
     failing = AsyncMock(side_effect=RuntimeError("the points could not be calculated"))
     async with get_connection(db_path) as db:
         with patch(target, new=failing), pytest.raises(RuntimeError):

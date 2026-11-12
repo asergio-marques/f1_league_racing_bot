@@ -29,7 +29,7 @@ from leaguebot.image.services.image_standings_service import (
     StandingsEntry,
     build_fill_spec,
 )
-from leaguebot.results.services.standings_service import MOVEMENT_GAINED, MOVEMENT_LOST, Movement
+from leaguebot.results.services.standings.standings_service import MOVEMENT_GAINED, MOVEMENT_LOST, Movement
 
 SVG_NS = "http://www.w3.org/2000/svg"
 

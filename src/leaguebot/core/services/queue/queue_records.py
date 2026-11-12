@@ -23,6 +23,7 @@ import json
 import os
 import sqlite3
 from collections.abc import Collection
+from dataclasses import dataclass
 from typing import Any
 
 from leaguebot.core.db.database import get_connection
@@ -127,6 +128,39 @@ async def in_hand(
             (*kinds, excluding, excluding),
         )
         return [(json.loads(row["payload"]), row["job"]) for row in await cursor.fetchall()]
+
+
+@dataclass(frozen=True)
+class AskedChange:
+    """A change the queue was asked for: its id and the number of its first job, which is None
+    for a change with no jobs recorded."""
+
+    change_id: int
+    first_job: int | None
+
+
+async def latest_change_for_round(db_path: str, kind: str, round_id: int) -> AskedChange | None:
+    """The latest change of *kind* whose payload names *round_id*, whatever its state, or None
+    where none was ever asked.
+
+    For a module naming a change it has just asked of its own (results' penalty review, which says
+    in the channel which job is opening it): :func:`ever_asked` and :func:`in_hand` give payloads
+    only, and this gives the change's id and the number of its first job, the job a manager sees on
+    the notice. Read on a connection of its own, as they are.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT c.id, (SELECT MIN(s.id) FROM queued_change_steps s WHERE s.change_id = c.id) "
+            "AS first_job FROM queued_changes c WHERE c.kind = ? "
+            "AND json_extract(c.payload, '$.round_id') = ? ORDER BY c.id DESC LIMIT 1",
+            (kind, round_id),
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return None
+    return AskedChange(
+        change_id=int(row["id"]), first_job=None if row["first_job"] is None else int(row["first_job"])
+    )
 
 
 def highest_job_number(path: str | os.PathLike[str]) -> int:

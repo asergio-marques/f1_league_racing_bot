@@ -6,10 +6,10 @@ textual standings reaches ``results_post_service.produce_standings``, the postin
 
 Two things make this module unlike the five before it.
 
-**It posts two messages from one call.** The textual standings are a single message carrying
-both championships; the graphics are two, the driver standings first and the constructors
-second, each with its own id column on the top-ranked driver's snapshot row. Every other
-post module produces one attachment per call and lets its caller loop.
+**It posts two messages from one call.** The textual standings are a single message carrying both
+championships; the graphics are two, the driver standings first and the constructors second, each
+with its own id column on the round's row in `round_standings_posts`. Every other post module
+produces one attachment per call and lets its caller loop.
 
 **Failure is per championship** (Constitution XIV.4). A drivers graphic that will not draw
 falls back to the drivers section **alone** — never to the whole textual message, which
@@ -229,7 +229,7 @@ async def _round_session_results(bot: LeagueBot, ordinal_of_round: dict[int, int
     grid tells "not yet run, or cancelled" from "run, and this driver took no part".
     """
     from leaguebot.results.models.session_result import SessionType
-    from leaguebot.results.services.results_post_service import _load_driver_rows
+    from leaguebot.results.services.publishing.results_post_service import load_driver_rows
 
     if not ordinal_of_round:
         return {}
@@ -256,7 +256,7 @@ async def _round_session_results(bot: LeagueBot, ordinal_of_round: dict[int, int
                 row["session_type"],
             )
             continue
-        driver_rows = await _load_driver_rows(bot.db_path, row["id"], session_type)
+        driver_rows = await load_driver_rows(bot.db_path, row["id"], session_type)
         results.setdefault(ordinal, {})[session_type.value] = driver_rows
 
     return results
@@ -344,7 +344,7 @@ async def build_drawings(
     behind the grid, the names — because the two graphics draw the same season and differ
     only in what a row stands for.
     """
-    from leaguebot.results.services import standings_service
+    from leaguebot.results.services.standings import standings_service
     from leaguebot.image.services.image_results_post import (
         _driver_names,
         _nationality_collected,
@@ -589,7 +589,7 @@ async def _post_one(
     before the previous one is named for deletion, so a render that fails leaves the channel
     holding the standings it had, and the caller's text fallback replaces nothing prematurely.
     """
-    from leaguebot.results.services.results_post_service import (
+    from leaguebot.results.services.publishing.results_post_service import (
         get_standings_message_id,
         get_standings_message_ids,
     )
@@ -609,9 +609,9 @@ async def _post_one(
     if message is None:
         return outcome
 
-    # A standings message id is keyed by round, on the top-ranked driver's snapshot row.
-    # A season-boundary sheet has no round and no snapshot row to carry one, replaces
-    # nothing, and will never be reposted — so it names nothing it replaces. See
+    # A standings message id is keyed by round, on the round's row in `round_standings_posts`. A
+    # season-boundary sheet has no round and no such row to carry one, replaces nothing, and will
+    # never be reposted — so it names nothing it replaces. See
     # `leaguebot.core.models.classification_occasion`, which is where that reasoning is kept.
     if occasion.names_a_round:
         previous_id = await get_standings_message_id(

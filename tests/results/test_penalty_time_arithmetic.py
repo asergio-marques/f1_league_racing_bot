@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import pytest
 
-from leaguebot.results.services.penalty_service import (
+from leaguebot.results.services.review.penalty_service import (
     _apply_time_penalty,
     _delta_to_ms,
     _ms_to_delta,

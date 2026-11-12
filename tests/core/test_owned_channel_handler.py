@@ -98,3 +98,67 @@ async def test_an_owned_channel_post_outside_a_job_is_refused_before_it_is_sent(
 
     channel.send.assert_not_awaited()
     channel.delete.assert_not_awaited()
+
+
+async def test_a_message_in_an_owned_channel_is_edited_in_place_notifying_only_whom_it_names():
+    """The approval message in a submission channel is edited to its new text and buttons once,
+    notifying only whom the caller names; outside a job the edit is refused before it is sent."""
+    from leaguebot.core.services.posting.owned_channel_handler import edit_in_owned_channel
+    from leaguebot.core.utils.in_a_job import PostedOutsideAJob
+
+    message = MagicMock(id=5150)
+    message.edit = AsyncMock()
+    view = MagicMock(name="view")
+    mentions = discord.AllowedMentions.none()
+    with pytest.raises(PostedOutsideAJob):
+        await edit_in_owned_channel(message, mentions=mentions, content="Approved", view=view)
+    message.edit.assert_not_awaited()
+
+    with in_a_job():
+        assert await edit_in_owned_channel(
+            message, mentions=mentions, content="Approved", view=view
+        ) is None
+
+    message.edit.assert_awaited_once_with(allowed_mentions=mentions, content="Approved", view=view)
+
+
+async def test_a_message_in_an_owned_channel_is_deleted():
+    """A withdrawn approval message in a submission channel is deleted once, the channel left
+    standing; outside a job the delete is refused before it is sent."""
+    from leaguebot.core.services.posting.owned_channel_handler import delete_in_owned_channel
+    from leaguebot.core.utils.in_a_job import PostedOutsideAJob
+
+    channel, message = _channel()
+    message.delete = AsyncMock()
+    with pytest.raises(PostedOutsideAJob):
+        await delete_in_owned_channel(message)
+    message.delete.assert_not_awaited()
+
+    with in_a_job():
+        assert await delete_in_owned_channel(message) is None
+
+    message.delete.assert_awaited_once_with()
+    channel.delete.assert_not_awaited()
+
+
+@pytest.mark.parametrize("error", [http_error(), http_error(discord.NotFound, status=404)],
+                         ids=["refused", "gone"])
+async def test_an_owned_channel_message_edit_or_delete_raises_what_discord_raises(error):
+    """Discord refusing the edit or the delete of one message, or the message being gone (404),
+    reaches the caller as Discord raised it."""
+    from leaguebot.core.services.posting.owned_channel_handler import (
+        delete_in_owned_channel,
+        edit_in_owned_channel,
+    )
+
+    message = MagicMock(id=5150)
+    message.edit = AsyncMock(side_effect=error)
+    message.delete = AsyncMock(side_effect=error)
+    with in_a_job():
+        with pytest.raises(type(error)) as edited:
+            await edit_in_owned_channel(message, mentions=discord.AllowedMentions.none(),
+                                        content="Approved")
+        with pytest.raises(type(error)) as deleted:
+            await delete_in_owned_channel(message)
+
+    assert edited.value is deleted.value is error

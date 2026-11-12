@@ -26,7 +26,6 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.results.services import result_submission_service
 from tests.support.change_queue import (
     MANAGER_ROLE_ID,
     acknowledgement,
@@ -50,6 +49,7 @@ from tests.support.season_league import (
     open_submission,
     round_id,
 )
+
 
 KIND = "results.submission.restart"
 OPEN_KIND = "results.submission.open"
@@ -92,27 +92,18 @@ async def _league(tmp_path: Any) -> SeasonLeague:
 
 async def _restart(league: SeasonLeague, *, run: bool = True) -> None:
     """The bot restarts: a fresh queue on the same database, the start-up's recovery of the
-    submission channels left open, and then, where *run*, the queue run. The submission job the
-    results module has today, where it still has one, is stubbed, so that what it would open
-    off the queue does not run behind the test. Where the queue is not to run, its worker is
-    stopped before it ever runs: left running, it would carry out what the test means to find
-    still in hand, as soon as the recovery waits on the database, on a slow host."""
-    from leaguebot.results.wiring import recover_orphaned_submission_channels
+    submission channels left open, and then, where *run*, the queue run. Where the queue is not to
+    run, its worker is stopped before it ever runs: left running, it would carry out what the test
+    means to find still in hand, as soon as the recovery waits on the database, on a slow host."""
+    from leaguebot.results.services.submission.submission_recovery import (
+        recover_orphaned_submission_channels,
+    )
 
 
     queue = await restart_queue(league.bot)
     if not run:
         await queue.stop()
-    stub = AsyncMock(name="run_result_submission_job")
-    had = hasattr(result_submission_service, "run_result_submission_job")
-    if had:
-        real = result_submission_service.run_result_submission_job
-        result_submission_service.run_result_submission_job = stub
-    try:
-        await recover_orphaned_submission_channels(league.bot)
-    finally:
-        if had:
-            result_submission_service.run_result_submission_job = real
+    await recover_orphaned_submission_channels(league.bot, queue=league.bot.change_queue)
     if run:
         await run_queue(league.bot)
 
@@ -198,7 +189,7 @@ async def test_a_round_whose_closing_is_stopped_is_not_taken_for_a_first_paste_a
     asks no restart of it, which would delete the cancelled sessions and open the submission
     afresh."""
     from leaguebot.core.models.change import ChangeOrigin
-    from leaguebot.results.services.submission_changes import CLOSE_KIND
+    from leaguebot.results.services.submission.submission_changes import CLOSE_KIND
 
     league = await _league(tmp_path)
     league.channel(SUBMISSION_CHANNEL).delete_fails = http_error(
@@ -263,7 +254,7 @@ async def test_a_resubmission_whose_swap_is_in_hand_is_not_ended_at_a_restart(tm
     the swap, say the earlier results still stand and record the resubmission as lapsed after the
     swap had replaced them."""
     from leaguebot.core.models.change import ChangeOrigin
-    from leaguebot.results.services.resubmission_changes import SWAP_KIND
+    from leaguebot.results.services.submission.resubmission_changes import SWAP_KIND
 
     league = await _league(tmp_path)
     await league.write(
@@ -473,7 +464,7 @@ async def test_a_restart_closes_the_channel_of_a_round_that_ended_cancelled_and_
     Where the round ended cancelled after a resubmission that entered every session as not held,
     its submission row still carries the penalty review's flag; the recovery still asks only the
     closing of the channel, and no penalty review is put back for a round that has ended."""
-    from leaguebot.results.services.submission_changes import CLOSE_KIND
+    from leaguebot.results.services.submission.submission_changes import CLOSE_KIND
 
     league = await _league(tmp_path)
     await _ended_cancelled(league, in_review=in_review)
@@ -499,7 +490,7 @@ async def test_a_restart_closes_the_channel_of_a_round_that_ended_cancelled_whos
     bot was stopped, its row still open. At the restart the recovery asks only the closing of the
     channel; the queue finds the channel gone, completes without stopping, and closes the row. The
     cancelled session is kept and no new channel is created."""
-    from leaguebot.results.services.submission_changes import CLOSE_KIND
+    from leaguebot.results.services.submission.submission_changes import CLOSE_KIND
 
     league = await _league(tmp_path)
     await _ended_cancelled(league)

@@ -255,7 +255,7 @@ async def test_a_module_s_channels_are_gathered_only_by_asking_the_module(db_pat
             id="weather",
         ),
         pytest.param(
-            "leaguebot.results.services.division_channels", (40, 41), (23, 24, 25),
+            "leaguebot.results.services.module.division_channels", (40, 41), (23, 24, 25),
             id="results",
         ),
         pytest.param(

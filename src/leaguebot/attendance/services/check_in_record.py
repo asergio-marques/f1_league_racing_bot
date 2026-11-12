@@ -4,8 +4,8 @@ Attendance's own: every driver the check-in recorded, grouped by their answer, a
 where they were distributed. A round's, a division's or a season's cancellation reads it as
 attendance's take-down of the round's call does (`check_in_changes.take_down_call`), before the
 call comes down. A round ending with every session entered as not held reads it too, through
-`read_check_in_on`, attendance's subscriber to core's `round_ended_not_held` hook: planned inside
-the save that ends the round, so that core writes the same record beneath its line without
+`read_check_in_on`, which `AttendanceAfterReview.check_in_read_on` calls: planned inside the
+save that ends the round, so that results writes the same record beneath its line without
 naming attendance's job. `checkin_record` reads `driver_round_attendance` (attendance's own
 table) on its own connection, and the driver and team names through core's `driver_service` and
 `team_service`, never from `driver_profiles` or `team_instances` themselves (core owns both,
@@ -152,7 +152,7 @@ def read_check_in_steps(*, modules: "ModuleService") -> dict[str, Step]:
 async def read_check_in_on(
     _db: Any, ended: dict[str, Any],
 ) -> tuple[PlannedStep, ...]:
-    """Attendance's part of `round_ended_not_held`: plan the reading of *ended*'s check-in
-    (`division_id`, `division_name`, `round_id`, and a round's `round_number`), so that core
-    registers the job without naming attendance. Subscribed to core's `round_ended_not_held`."""
+    """Plan the reading of *ended*'s check-in (`division_id`, `division_name`, `round_id`, and a
+    round's `round_number`), so that results registers the job without naming attendance. Called
+    by `AttendanceAfterReview.check_in_read_on`, which plans nothing while attendance is off."""
     return (PlannedStep(READ_CHECK_IN, dict(ended)),)

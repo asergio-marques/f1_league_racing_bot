@@ -1,7 +1,8 @@
 """The results submission wizard: from a round's start time to penalty review.
 
-Issue #208. `run_result_submission_job` was three-quarters untested. Every raced round of every
-season passes through it. This file drives the whole flow — the channel, the paste for each
+Issue #208. The submission's opening (`results.submission.open`, asked by the round's timer)
+and its session-by-session wizard were three-quarters untested. Every raced round of every
+season passes through them. This file drives the whole flow — the channel, the paste for each
 session, the points configuration and the handover — with the real validator and the real
 session write, so a paste that would be refused in production is refused here, and one that
 would be saved is saved.
@@ -56,11 +57,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.core.models.round import RoundFormat
-from leaguebot.results.services import result_submission_service
-from leaguebot.results.services.result_submission_service import (
-    DivisionValidationData,
-    get_sessions_for_format,
-)
+from leaguebot.results.services.submission import result_submission_service, paste_reading
+from leaguebot.results.services.submission.result_submission_service import get_sessions_for_format
+from leaguebot.results.services.submission.paste_reading import DivisionValidationData
 from leaguebot.results.utils import results_formatter
 from tests.support.change_queue import (
     ADMIN_ROLE_ID,
@@ -359,7 +358,7 @@ async def _paste_league(tmp_path: Any, monkeypatch: Any, *, fmt: str = "NORMAL")
     if not isinstance(getattr(sub, "posted", None), list):
         sub.posted = []
     monkeypatch.setattr(
-        result_submission_service, "_build_division_validation_data",
+        paste_reading, "_build_division_validation_data",
         AsyncMock(return_value=_SEATED),
     )
     return league

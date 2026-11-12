@@ -47,6 +47,10 @@ from leaguebot.core.cogs.module_cog import (
     _results_disable_warning,
 )
 from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.services.publishing.results_post_service import (
+    STANDINGS_CONSTRUCTORS,
+    set_standings_message_id_on,
+)
 from tests.support.change_queue import (
     acknowledgement,
     change_rows,
@@ -236,9 +240,12 @@ async def _season(db_path: str, *, rounds: int = 1, verdicts: int = 0) -> list[i
             race_result_id = cur.lastrowid
             await db.execute(
                 "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
-                "standing_position, total_points, standings_message_id, "
-                "constructor_standings_message_id) VALUES (?, ?, 42, 1, 25, ?, ?)",
-                (round_id, division_id, 2000 + index, 3000 + index),
+                "standing_position, total_points) VALUES (?, ?, 42, 1, 25)",
+                (round_id, division_id),
+            )
+            await set_standings_message_id_on(db, division_id, round_id, 2000 + index)
+            await set_standings_message_id_on(
+                db, division_id, round_id, 3000 + index, STANDINGS_CONSTRUCTORS
             )
             for k in range(verdicts):
                 message_id = 5000 + 100 * index + k

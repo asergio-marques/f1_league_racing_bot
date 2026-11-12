@@ -28,6 +28,18 @@ RELEASE_CLAIM_SQL = (
 )
 
 
+async def league_server_id_on(db: aiosqlite.Connection) -> int | None:
+    """The league's server, the one the configuration row holds, or None while none is claimed,
+    read on *db*: `ConfigService.get_league_server_id_on` for a module reading core's tables only
+    through core's code (architecture.md, "The database") that has the connection of its own save
+    and no service. It writes nothing and commits nothing."""
+    cursor = await db.execute(
+        "SELECT server_id FROM server_configs WHERE server_id IS NOT NULL LIMIT 1"
+    )
+    row = await cursor.fetchone()
+    return None if row is None else int(row["server_id"])
+
+
 class ConfigService:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
@@ -35,14 +47,24 @@ class ConfigService:
     async def get_server_config(self) -> ServerConfig | None:
         """Return the league's ServerConfig, or None while no server is claimed."""
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT server_id, interaction_role_id, interaction_channel_id, "
-                "       log_channel_id, league_admin_role_id, test_mode_active, "
-                "       test_mode_nationality_required, "
-                "       base_role_id, driver_role_id, hub_channel_id, hub_message_id "
-                "FROM server_configs WHERE server_id IS NOT NULL",
-            )
-            row = await cursor.fetchone()
+            return await self.get_server_config_on(db)
+
+    async def get_server_config_on(self, db: aiosqlite.Connection) -> ServerConfig | None:
+        """`get_server_config` on *db*: the league's configuration as that connection sees it, or
+        None while no server is claimed.
+
+        For a module's save that needs the league's roles and channels (results' opening of a
+        submission reads them to name the channel's visibility) on the connection it writes with.
+        It writes nothing and commits nothing.
+        """
+        cursor = await db.execute(
+            "SELECT server_id, interaction_role_id, interaction_channel_id, "
+            "       log_channel_id, league_admin_role_id, test_mode_active, "
+            "       test_mode_nationality_required, "
+            "       base_role_id, driver_role_id, hub_channel_id, hub_message_id "
+            "FROM server_configs WHERE server_id IS NOT NULL",
+        )
+        row = await cursor.fetchone()
 
         if row is None:
             return None
@@ -67,11 +89,12 @@ class ConfigService:
         this before every command.
         """
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT server_id FROM server_configs WHERE server_id IS NOT NULL LIMIT 1"
-            )
-            row = await cursor.fetchone()
-        return None if row is None else int(row["server_id"])
+            return await self.get_league_server_id_on(db)
+
+    async def get_league_server_id_on(self, db: aiosqlite.Connection) -> int | None:
+        """`get_league_server_id` on *db*, for a save that must see its own writes: `/bot init`'s
+        save asks it, after its claim is refused, who holds the league."""
+        return await league_server_id_on(db)
 
     async def claim_on(self, db: aiosqlite.Connection, cfg: ServerConfig) -> bool:
         """Claim the league's server for *cfg* on *db*, committing nothing. Returns whether it did.

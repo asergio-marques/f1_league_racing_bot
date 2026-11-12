@@ -489,12 +489,12 @@ async def test_a_notice_stops_where_the_league_s_server_is_not_in_the_cache(
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
     from tests.support.cancellation_notice import (
-        DIVISION_ID, SEASON_ID, notice_bot, notice_db, pro,
+        DIVISION_ID, SEASON_ID, notice_bot, notice_db, notice_module, pro,
     )
     from tests.support.change_queue import in_a_job
 
     db_path = await notice_db(tmp_path)
-    notices = importlib.import_module(f"leaguebot.{module}.services.cancellation_notice")
+    notices = notice_module(module)
     seasons = MagicMock(spec=SeasonService)
     seasons.get_divisions = AsyncMock(return_value=[pro()])
     steps = getattr(notices, steps_of)(modules=MagicMock(spec=ModuleService), seasons=seasons)
@@ -1478,7 +1478,8 @@ async def test_a_submission_channel_discord_will_not_delete_stops_the_queue_and_
     the job itself, never by its name."""
     job = "delete_channel"
     if cleared == "discarded under another name":
-        from leaguebot.results.services import result_submission_service, review_posting
+        from leaguebot.results.services.review import review_posting
+        from leaguebot.results.services.submission import result_submission_service
 
         rename_module_job(
             monkeypatch, steps=(review_posting, "cancellation_steps"),

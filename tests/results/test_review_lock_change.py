@@ -31,7 +31,9 @@ from tests.support.change_queue import (
     stopped_job,
 )
 from tests.support.review_league import (
+    LATER_ROUND_ID,
     NOW,
+    ROUND_ID,
     SUBMISSION_CHANNEL,
     ReviewLeague,
     block_queue,
@@ -140,6 +142,29 @@ async def test_a_message_in_a_locked_channel_is_deleted_and_warned_as_jobs(tmp_p
     [row] = await _warning_rows(league.db_path)
     assert row["message_id"] == warning
     assert row["channel_id"] == SUBMISSION_CHANNEL
+
+
+async def test_the_lock_goes_ahead_where_the_channel_holds_an_earlier_final_round_s_row(tmp_path):
+    """The channel holds a row of round 4, which is final and in review, saved before round 3's
+    open one. Alex types in it: the lock is asked, and when it runs his message is deleted and the
+    warning posted, the lock reading the final round's row past and the open round's as it stands."""
+    league = await review_league(tmp_path)
+    async with get_connection(league.db_path) as db:
+        await db.execute("DELETE FROM round_submission_channels WHERE round_id = ?", (ROUND_ID,))
+        for round_id in (LATER_ROUND_ID, ROUND_ID):
+            await db.execute(
+                "INSERT INTO round_submission_channels (round_id, channel_id, created_at, "
+                "in_penalty_review, results_posted) "
+                "VALUES (?, ?, '2026-02-01T20:00:00+00:00', 1, 1)",
+                (round_id, SUBMISSION_CHANNEL),
+            )
+        await db.commit()
+
+    await _listen(league, _typed(league))
+    await run_queue(league.bot)
+
+    assert TYPED not in league.channel(SUBMISSION_CHANNEL).messages
+    assert len(_warnings(league)) == 1
 
 
 async def test_the_warning_s_clear_is_armed_by_a_job_of_its_own_after_its_row_is_saved(tmp_path):

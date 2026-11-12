@@ -1,6 +1,6 @@
 """Importing a points configuration from XML, by modal or by file.
 
-Issue #208. `_run_xml_import` is the shared body behind both `/results config xml-import`
+Issue #208. `run_xml_import` is the shared body behind both `/results config xml-import`
 paths and was uncovered end to end, as were the attachment guards in front of it.
 
 **Every outcome is audited, not just the successes.** An import that failed is exactly the event
@@ -30,7 +30,7 @@ file rather than a big one.
 
 **A file import defers; a modal import cannot.** `send_modal` must be an interaction's first
 response, so the attachment path defers itself and the modal path defers inside `on_submit`.
-`_run_xml_import` therefore always answers through `followup` — a fresh response would be a 404
+`run_xml_import` therefore always answers through `followup` — a fresh response would be a 404
 on both paths. Since the import became a settings change on the change queue (#439, slice 7)
 that follow-up is the queue's acknowledgement, updated with the outcome once the change has run.
 
@@ -51,7 +51,8 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.results.cogs.results_cog import ResultsCog, XmlImportModal
+from leaguebot.results.cogs.config_commands import XmlImportModal
+from leaguebot.results.cogs.results_cog import ResultsCog
 from tests.support import saves
 from tests.support.change_queue import MEMBER_ID, change_rows, run_queue
 from tests.support.settings_league import (

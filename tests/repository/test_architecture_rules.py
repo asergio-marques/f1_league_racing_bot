@@ -174,8 +174,6 @@ KNOWN_DATABASE_CODE_OUTSIDE_SERVICES: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/wiring.py", "recover_missed_check_in_clean_ups"): (2, PASS["attendance"]),
     ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (2, PASS["weather"]),
     ("weather/wiring.py", "recover_missed_phases"): (2, PASS["weather"]),
-    ("results/wiring.py", "recover_orphaned_amend_channels"): (2, PASS["results"]),
-    ("results/wiring.py", "recover_orphaned_submission_channels"): (2, PASS["results"]),
     ("image/wiring.py", "recover_portrait_refresh_job"): (2, PASS["image"]),
     ("attendance/wiring.py", "recover_rsvp_views_and_deadlines"): (2, PASS["attendance"]),
     ("signup/wiring.py", "recover_signup_close_timers"): (1, PASS["signup"]),
@@ -259,9 +257,83 @@ def _on_the_connection(awaited: ast.AST, connection: str) -> bool:
     return any(isinstance(argument, ast.Name) and argument.id == connection for argument in arguments)
 
 
-def _awaits_inside_a_write() -> Counter[tuple[str, str]]:
+#: How a function's annotation names a connection (`list[Connection]` is not one).
+_CONNECTION_TYPES = frozenset({"aiosqlite.Connection", "Connection"})
+
+
+def _handed_connection(function: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
+    """The name of the connection *function* is handed, or None where it is handed none: any
+    parameter after `self` or `cls`, keyword-only included, that is named `db` or annotated as a
+    connection. A function given the connection as a keyword is held as one given it first, for the
+    scan lets a call that hands the connection on pass on the strength of the callee being held."""
+    parameters = [*function.args.posonlyargs, *function.args.args, *function.args.kwonlyargs]
+    for parameter in parameters:
+        if parameter.arg in ("self", "cls"):
+            continue
+        annotation = (
+            ast.unparse(parameter.annotation).replace("\"", "").replace("'", "")
+            if parameter.annotation else ""
+        )
+        if parameter.arg == "db" or annotation.removesuffix(" | None") in _CONNECTION_TYPES:
+            return parameter.arg
+    return None
+
+
+def _takes_it_optionally(function: ast.FunctionDef | ast.AsyncFunctionDef, name: str) -> bool:
+    """Whether the parameter *name* of *function* may be left out: its default is `None`,
+    positional or keyword-only, or its annotation says `| None`."""
+    positional = [*function.args.posonlyargs, *function.args.args]
+    defaults = [None] * (len(positional) - len(function.args.defaults)) + list(function.args.defaults)
+    pairs = [*zip(positional, defaults), *zip(function.args.kwonlyargs, function.args.kw_defaults)]
+    for parameter, default in pairs:
+        if parameter.arg != name:
+            continue
+        if isinstance(default, ast.Constant) and default.value is None:
+            return True
+        return parameter.annotation is not None and ast.unparse(parameter.annotation).endswith("| None")
+    return False
+
+
+def _connections_it_opens(function: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
+    """The connections *function* opens itself, by name. Only a function that takes a connection
+    *optionally* (`_takes_it_optionally`) may open its own where it is handed none: it is held to
+    the rule on the handed one, and works on its own as any function that opens one does, the scan
+    being unable to tell which branch ran, and the one with no save open being the one that opens.
+    A function that must be given the connection opens none, and one it opens is counted."""
+    return [
+        item.optional_vars.id
+        for node in ast.walk(function) if isinstance(node, ast.AsyncWith)
+        for item in node.items
+        if isinstance(item.context_expr, ast.Call) and _opens_a_connection(item.context_expr)
+        and isinstance(item.optional_vars, ast.Name)
+    ]
+
+
+def _step_functions(nodes: list[tuple[str, str, ast.AST]]) -> set[tuple[str, str]]:
+    """The functions a `Step(...)` is given to run on the save's connection, as ``(file, name)``:
+    the function passed as the run of a `StepKind.SAVE` step, and the `record=` of any step, where
+    the call names it plainly. What the scan cannot see by name, it cannot follow."""
+    named: set[tuple[str, str]] = set()
+    for path, _function, node in nodes:
+        if not (isinstance(node, ast.Call) and _call_name(node) == "Step"):
+            continue
+        saves = (
+            len(node.args) > 2 and isinstance(node.args[1], ast.Attribute) and node.args[1].attr == "SAVE"
+        )
+        given = [node.args[2]] if saves else []
+        given += [keyword.value for keyword in node.keywords if keyword.arg == "record"]
+        named |= {(path, each.id) for each in given if isinstance(each, ast.Name)}
+    return named
+
+
+def _awaits_inside_a_write(nodes=None) -> Counter[tuple[str, str]]:
+    """Each await, by file and function, that is not the open connection's while a save is open: in
+    an `async with` that opens a connection, between a write and its commit; and in a function
+    handed the connection of a save (`_handed_connection`) or given to a step as its save or its
+    record (`_step_functions`), anywhere in its body, since the save is open throughout."""
+    nodes = list(_nodes() if nodes is None else nodes)
     found: Counter[tuple[str, str]] = Counter()
-    for path, function, node in _nodes():
+    for path, function, node in nodes:
         if not isinstance(node, ast.AsyncWith):
             continue
         for item in node.items:
@@ -284,10 +356,26 @@ def _awaits_inside_a_write() -> Counter[tuple[str, str]]:
                     writing = writing or text is None or bool(_WRITE.match(text))
                 elif writing and not _on_the_connection(call, connection):
                     found[(path, function)] += 1
+    steps = _step_functions(nodes)
+    for path, function, node in nodes:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        connection = _handed_connection(node)
+        if connection is None and (path, node.name) in steps and node.args.args:
+            connection = node.args.args[0].arg
+        if connection is None:
+            continue
+        name = node.name if function == "<module>" else f"{function}.{node.name}"
+        own = _connections_it_opens(node) if _takes_it_optionally(node, connection) else []
+        for awaited in _awaits_in_order(node.body):
+            if not any(_on_the_connection(awaited.value, each) for each in (connection, *own)):
+                found[(path, name)] += 1
     return found
 
 
-KNOWN_AWAITS_INSIDE_A_WRITE: dict[tuple[str, str], tuple[int, str]] = {}
+KNOWN_AWAITS_INSIDE_A_WRITE: dict[tuple[str, str], tuple[int, str]] = {
+    ("signup/services/module_switch_settings.py", "module_on_signup.save"): (1, PASS["signup"]),
+}
 
 
 def test_nothing_else_is_awaited_while_a_write_is_open():
@@ -295,12 +383,69 @@ def test_nothing_else_is_awaited_while_a_write_is_open():
     database"; #155). SQLite admits one writer at a time, so a call to Discord made while a
     write is open holds up every other save in the bot until Discord answers, and a second
     connection that writes would wait on the first until it gave up and failed. SQL the check cannot read, being
-    built elsewhere, counts as a write."""
+    built elsewhere, counts as a write. A function handed the connection of a save is held to the
+    rule throughout, and so is one given to a step as its save or its record."""
     _check(
         "nothing is awaited while a write is open",
         _awaits_inside_a_write(),
         KNOWN_AWAITS_INSIDE_A_WRITE,
     )
+
+
+def test_the_await_check_covers_a_function_handed_the_connection_of_a_save():
+    """An await in a function handed a connection, named `db` or annotated as one, as any parameter
+    and a keyword's too, or given to a step as its save or its record, is counted unless it is on
+    the connection, on a cursor from it, or given it, or, in a function that takes the connection
+    optionally, on a connection it opens itself; a function that must be given the connection and
+    opens a second one has its awaits on that counted;
+    `asyncio.sleep` is counted, for a sleep while a save is open holds the write lock as long as it
+    waits, and so is a pure helper that is given nothing of the connection, for the scan cannot
+    tell it from a read on a second connection. A function a call hands the connection on to as a
+    keyword is held as one handed it first. A list of connections is not a connection, and an await
+    in a function handed none is not counted."""
+    path = "weather/services/sample.py"
+    source = (
+        "import asyncio\n"
+        "async def handed(db: aiosqlite.Connection, row):\n"
+        "    cursor = await db.execute('SELECT 1')\n"
+        "    await cursor.fetchone()\n"
+        "    await helper(db, row)\n"
+        "    await helper(row, db=db)\n"
+        "    await asyncio.sleep(0)\n"
+        "    await config.get_server_config()\n"
+        "async def keyworded(d, *, db=None):\n"
+        "    await drawing.ask(d)\n"
+        "async def optional(p, *, db=None):\n"
+        "    if db is not None:\n"
+        "        return await helper(db)\n"
+        "    async with get_connection(p) as own:\n"
+        "        return await helper(own)\n"
+        "async def required(db, p):\n"
+        "    await db.execute('UPDATE t SET a = 1')\n"
+        "    async with get_connection(p) as other:\n"
+        "        await other.execute('SELECT 1')\n"
+        "async def method(self, _db: 'aiosqlite.Connection'):\n"
+        "    await self.channel.send('x')\n"
+        "async def not_handed(connections: list[aiosqlite.Connection]):\n"
+        "    await close(connections)\n"
+        "def factory():\n"
+        "    async def save(conn, ctx):\n"
+        "        await conn.execute('UPDATE t SET a = 1')\n"
+        "        await post(ctx)\n"
+        "    async def record(link, ctx, result):\n"
+        "        await post(ctx)\n"
+        "    async def run(ctx):\n"
+        "        await post(ctx)\n"
+        "    return {\n"
+        "        'a': Step('a', StepKind.SAVE, save),\n"
+        "        'b': Step('b', StepKind.ACT, run, record=record),\n"
+        "    }\n"
+    )
+
+    assert _awaits_inside_a_write(_sample(source, path)) == Counter({
+        (path, "handed"): 2, (path, "keyworded"): 1, (path, "required"): 1, (path, "method"): 1,
+        (path, "factory.save"): 1, (path, "factory.record"): 1,
+    })
 
 
 # ── 3. No cog or command handles its own errors ─────────────────────────────────────────────
@@ -456,12 +601,9 @@ def _jobs_with_a_lateness_limit() -> Counter[tuple[str, str]]:
 
 KNOWN_JOBS_WITH_A_LATENESS_LIMIT: dict[tuple[str, str], tuple[int, str]] = {
     # Each owned by the pass whose handler must first judge a missed event of its kind.
-    ("core/services/scheduler_service.py", "SchedulerService.schedule_amendment_sweep"): (1, PASS["results"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_attendance_round"): (1, PASS["attendance"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_portrait_refresh"): (1, PASS["image"]),
-    ("core/services/scheduler_service.py", "SchedulerService.schedule_result_submission_jobs"): (1, "#450"),
-    # Weather's phases alone: the results job is armed through `schedule_result_submission_jobs`,
-    # whose line it stays under (#450).
+    # Weather's phases alone: the results job is armed through `schedule_result_submission_jobs`.
     ("core/services/scheduler_service.py", "SchedulerService.schedule_round"): (1, PASS["weather"]),
     ("core/services/scheduler_service.py", "SchedulerService.schedule_round_cleanups"): (1, PASS["attendance"]),
     ("core/services/scheduler_service.py", "SchedulerService._arm_forecast_cleanup"): (1, PASS["weather"]),
@@ -669,12 +811,9 @@ KNOWN_PRIVATE_NAMES_ACROSS_MODULES: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._nationalities"): (1, PASS["image"]),
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._nationality_collected"): (1, PASS["image"]),
-    ("attendance/services/attendance_service.py", "leaguebot.results.services.results_post_service._bot_member"): (1, PASS["results"]),
-    ("attendance/services/attendance_service.py", "leaguebot.results.services.results_post_service._channel_fault"): (1, PASS["results"]),
-    ("image/services/image_standings_post.py", "leaguebot.results.services.results_post_service._load_driver_rows"): (1, PASS["results"]),
-    ("results/services/results_post_service.py", "leaguebot.image.services.image_results_post._driver_names"): (2, PASS["image"]),
-    ("results/services/season_standings_posts.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
-    ("results/services/verdict_announcement_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
+    ("results/services/publishing/results_post_service.py", "leaguebot.image.services.image_results_post._driver_names"): (2, PASS["image"]),
+    ("results/services/review/verdict_announcement_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
+    ("results/services/standings/season_standings_posts.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
 }
 
 
@@ -876,25 +1015,11 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_results_post.py", "try_post"): (1, PASS["image"]),
     ("image/services/image_standings_post.py", "post_championship"): (1, PASS["image"]),
     ("image/services/image_verdict_banner_post.py", "try_post"): (3, PASS["image"]),
-    ("results/services/penalty_wizard.py", "_show_approval_step"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "send_appeals_prompt"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "send_cancelled_line"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "send_review_prompt"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "run_amendment_review_stages"): (1, PASS["results"]),
-    ("results/services/results_post_service.py", "_send_chunked"): (2, PASS["results"]),
     ("attendance/services/check_in_changes.py", "edit_check_in_message"): (1, PASS["attendance"]),
     ("attendance/services/check_in_changes.py", "post_check_in_message"): (1, PASS["attendance"]),
-    ("results/services/verdict_announcement_service.py", "_send_verdict"): (2, PASS["results"]),
     ("signup/services/signup_posting.py", "delete_channel"): (1, PASS["signup"]),
     ("signup/services/signup_posting.py", "post"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.trigger_channel_hold"): (1, PASS["signup"]),
-    ("results/services/penalty_wizard.py", "_delete_review_message"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "_refresh_appeals_prompt"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "_refresh_prompt"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "take_down_cancel_message"): (1, PASS["results"]),
-    ("results/services/results_post_service.py", "_delete_posting"): (1, PASS["results"]),
-    ("results/services/results_post_service.py", "delete_round_channel"): (1, PASS["results"]),
-    ("results/services/results_post_service.py", "produce_standings"): (1, PASS["results"]),
     ("weather/services/forecast_cleanup_service.py", "_discord_delete"): (1, PASS["weather"]),
 }
 
@@ -1142,13 +1267,6 @@ def test_every_post_off_the_queue_names_its_reason():
 
 #: The bot's attribute that holds the change queue (`core/utils/league_bot.py`).
 CHANGE_QUEUE = "change_queue"
-#: The results services files whose views' and forms' callbacks reach the change queue through
-#: the bot until results' pass moves them (#439 slice 6b, decision 20): the penalty review's
-#: buttons and forms, and the configuration picker.
-RESULTS_VIEW_FILES = frozenset({
-    "results/services/penalty_wizard.py",
-    "results/services/result_submission_service.py",
-})
 
 
 def _is_a_service_or_helper(path: str) -> bool:
@@ -1158,9 +1276,13 @@ def _is_a_service_or_helper(path: str) -> bool:
 
 def _reaches_the_bot(node: ast.expr) -> bool:
     """Whether *node* is the bot as a service may reach it: as `_is_the_bot` reads it, or as
-    ``self._bot`` or ``interaction.client``."""
-    return _is_the_bot(node) or (
-        isinstance(node, ast.Attribute) and node.attr in ("_bot", "client")
+    ``self._bot``, ``interaction.client`` or ``getattr(interaction, "client"[, d])``."""
+    return (
+        _is_the_bot(node)
+        or (isinstance(node, ast.Attribute) and node.attr in ("_bot", "client"))
+        or (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            and node.func.id == "getattr" and len(node.args) >= 2
+            and isinstance(node.args[1], ast.Constant) and node.args[1].value == "client")
     )
 
 
@@ -1187,27 +1309,7 @@ def _queue_reached_through_the_bot_among(nodes) -> Counter[tuple[str, str]]:
     return found
 
 
-#: Each callback of a view or form listed under results' pass reads the queue once and hands it
-#: on, binding it to a local where it asks twice (the penalty clear's staging and its approval
-#: message). They are the approve buttons, the configuration picker, Resubmit, the two forms, the
-#: Remove, clear-confirm and Make Changes buttons, and No Penalties.
-KNOWN_QUEUE_REACHED_THROUGH_THE_BOT: dict[tuple[str, str], tuple[int, str]] = {
-    ("results/services/penalty_wizard.py", "AddPardonModal.on_submit"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "AddPenaltyModal.on_submit"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "AppealsReviewView._make_remove_cb.cb"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "AppealsReviewView.approve_btn"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "AppealsReviewView.no_changes_btn"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "ApprovalView.approve_btn"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "ApprovalView.make_changes_btn"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "PenaltyReviewView._make_pardon_remove_cb.cb"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "PenaltyReviewView._make_remove_cb.cb"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "PenaltyReviewView.approve_btn"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "PenaltyReviewView.no_penalties_btn"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "PenaltyReviewView.resubmit_btn"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "_AppealsConfirmClearView.confirm_btn"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "_ConfirmClearView.confirm_btn"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "_ConfigSelectView.__init__._cb"): (1, PASS["results"]),
-}
+KNOWN_QUEUE_REACHED_THROUGH_THE_BOT: dict[tuple[str, str], tuple[int, str]] = {}
 
 
 def test_no_service_reaches_the_change_queue_through_the_bot():
@@ -1243,46 +1345,30 @@ def test_the_queue_check_sees_bot_of_an_interaction():
     assert _queue_reached_through_the_bot_among(_sample(source, cog)) == Counter()
 
 
-def _view_and_form_classes(path: str) -> set[str]:
-    """The classes the package file *path* defines that are views or forms: a base whose name
-    ends ``View`` or ``Modal``."""
-    tree = dict(_sources())[path]
-    return {
-        node.name
-        for node in tree.body
-        if isinstance(node, ast.ClassDef)
-        and any(
-            (base.id if isinstance(base, ast.Name) else base.attr if isinstance(base, ast.Attribute)
-             else "").endswith(("View", "Modal"))
-            for base in node.bases
-        )
-    }
-
-
-def test_the_queue_check_lists_the_view_callbacks_in_results_services_under_its_pass():
-    """The penalty review's buttons and forms, and the configuration picker, sit in results'
-    services files and reach the queue through the bot until results' pass moves them (#439
-    slice 6b, decision 20). Some line is listed under that pass, and each names a callback of a
-    view or form class in one of those files, never a helper the slice hands the queue to."""
-    listed = sorted(
-        key for key, (_count, issue) in KNOWN_QUEUE_REACHED_THROUGH_THE_BOT.items()
-        if issue == PASS["results"]
-    )
-
-    assert listed
-    for path, function in listed:
-        assert path in RESULTS_VIEW_FILES, (path, function)
-        assert "." in function and function.split(".")[0] in _view_and_form_classes(path), (
-            path, function,
-        )
-
-
 # ── 10c. No service looks another service up on the bot ─────────────────────────────────────
 
-#: How the name of a service the bot holds ends (`core/utils/league_bot.py`), and the services
-#: named otherwise.
-_SERVICE_SUFFIX = "_service"
-_SERVICES_NAMED_OTHERWISE = frozenset({"lineup_poster"})
+#: What `LeagueBot` (`core/utils/league_bot.py`) declares that is not a service or a hook the
+#: lookup check counts: the bot's own state, and the change queue, which the queue check counts.
+_BOT_STATE_NOT_LOOKED_UP = frozenset({
+    "db_path", "running_version", "running_version_date", CHANGE_QUEUE,
+})
+_LEAGUE_BOT = "core/utils/league_bot.py"
+
+
+@cache
+def _bot_attributes_looked_up() -> frozenset[str]:
+    """The names a service or a helper may not look up on the bot: every attribute `LeagueBot`
+    declares, which is each service, the router and the posters, each hook and the callbacks the
+    builder sets, but not what the bot itself holds (`_BOT_STATE_NOT_LOOKED_UP`) or what discord.py's
+    own `Bot` carries, which the class does not declare."""
+    tree = dict(_sources())[_LEAGUE_BOT]
+    league_bot = next(
+        node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "LeagueBot"
+    )
+    return frozenset(
+        node.target.id for node in league_bot.body
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+    ) - _BOT_STATE_NOT_LOOKED_UP
 
 
 def _visible(bound: dict[tuple[str, str], set[str]], path: str, function: str) -> set[str]:
@@ -1362,8 +1448,9 @@ def _locals_bound_to_the_bot(nodes) -> dict[tuple[str, str], set[str]]:
 
 #: The helpers in core the cogs use, which reach core's services through the bot as a cog does
 #: (architecture.md, "How the code is laid out"), by file and function, what a function nests
-#: included: the tier guards on a command, the autocomplete, and the checks that admit an
-#: interaction to the league's server. The lookup check does not count them.
+#: included: the tier guards on a command, the autocomplete, the checks that admit an
+#: interaction to the league's server, and the bot's handler of an event's error, which the builder
+#: attaches to the bot as its `on_error`. The lookup check does not count them.
 COG_FACING_HELPERS = frozenset({
     ("core/utils/autocomplete.py", "team_autocomplete"),
     ("core/utils/channel_guard.py", "_tier_guard"),
@@ -1371,6 +1458,7 @@ COG_FACING_HELPERS = frozenset({
     ("core/utils/channel_guard.py", "server_owner_only"),
     ("core/utils/league_server.py", "admits"),
     ("core/utils/league_server.py", "is_foreign_guild"),
+    ("core/utils/league_server.py", "on_event_error"),
 })
 
 #: The helpers a service calls that may look a core service up on the bot, for good, with the reason.
@@ -1380,6 +1468,27 @@ LOOKUPS_ALLOWED: dict[tuple[str, str], str] = {
         "configuration service to find it: handing the configuration service instead to every "
         "service that posts would add a parameter to each, for no rule gained (architecture.md, "
         "\"How the code is laid out\")"
+    ),
+    ("core/utils/interaction_errors.py", "report_failure"): (
+        "the one failure path, which a service's view or a change's step calls with the "
+        "interaction and which writes the failure's line through the bot's log writer: handing "
+        "the router to each caller would add a parameter to each, for no rule gained "
+        "(architecture.md, \"Errors and failures\")"
+    ),
+    ("core/utils/log_lines.py", "record_refusal"): (
+        "called only by `refuse`, whose reason it shares: it writes the one line of a refusal "
+        "through the bot's log writer (architecture.md, \"Errors and failures\")"
+    ),
+    ("core/utils/log_lines.py", "refuse"): (
+        "the one way a command, button or form refuses, which a service's view or a change's "
+        "step calls and which writes the refusal's line through the bot's log writer: handing the "
+        "router to each caller would add a parameter to each, for no rule gained "
+        "(architecture.md, \"Errors and failures\")"
+    ),
+    ("core/utils/log_lines.py", "record_abandoned"): (
+        "records a confirmation cancelled or left to lapse through the bot's log writer, for a "
+        "service's view or a scheduled lapse, which have no router to hand it (architecture.md, "
+        "\"Errors and failures\")"
     ),
 }
 
@@ -1393,8 +1502,8 @@ def _passed_over_by_the_lookup_check(path: str, function: str) -> bool:
 
 
 def _service_lookups_among(nodes) -> Counter[tuple[str, str]]:
-    """The services among *nodes* that a service or a helper looks up on the bot, ``bot.X_service``
-    or ``getattr(bot, "X_service")``, the bot reached as `_reaches_the_bot` reads it or through a
+    """The services and hooks among *nodes* that a service or a helper looks up on the bot, ``bot.X``
+    or ``getattr(bot, "X")`` for an `X` that `_bot_attributes_looked_up` names, the bot reached as `_reaches_the_bot` reads it or through a
     local name bound to it (`_locals_bound_to_the_bot`), counted by file and function. The change
     queue is the queue check's, and not counted here; nor are the cog-facing helpers
     (`COG_FACING_HELPERS`) and the lookups allowed for good (`LOOKUPS_ALLOWED`)."""
@@ -1417,14 +1526,16 @@ def _service_lookups_among(nodes) -> Counter[tuple[str, str]]:
                 and bot_local(path, function, node.args[0])
                 and isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str)):
             name = node.args[1].value
-        if name is not None and (
-                name.endswith(_SERVICE_SUFFIX) or name in _SERVICES_NAMED_OTHERWISE):
+        if name is not None and name in _bot_attributes_looked_up():
             found[(path, function)] += 1
     return found
 
 
 KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
-    ("attendance/services/attendance_service.py", "enforce_attendance_sanctions"): (1, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "apply_sanction"): (2, PASS["attendance"]),
+    ("attendance/services/attendance_service.py", "enforce_attendance_sanctions"): (3, PASS["attendance"]),
+    ("attendance/services/channel_settings.py", "_channel_setting.check"): (1, PASS["attendance"]),
+    ("attendance/services/check_in_changes.py", "_forget_vanished_call.forget"): (1, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "_checkin_attachment"): (1, PASS["attendance"]),
     ("attendance/services/rsvp_service.py", "_rebuild_embed_for_round"): (1, PASS["attendance"]),
     ("attendance/services/sheet_posting.py", "sheet_step.still_due"): (1, PASS["attendance"]),
@@ -1438,12 +1549,15 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_preview_service.py", "build_rsvp_preview"): (2, PASS["image"]),
     ("image/services/image_preview_service.py", "resolve_asset_directories"): (1, PASS["image"]),
     ("image/services/image_preview_service.py", "resolve_context"): (3, PASS["image"]),
+    ("image/services/image_render_service.py", "ImageRenderService.report_notices"): (1, PASS["image"]),
     ("image/services/image_results_post.py", "build_drawing"): (1, PASS["image"]),
     ("image/services/image_results_post.py", "render_png"): (2, PASS["image"]),
+    ("image/services/image_results_post.py", "report"): (1, PASS["image"]),
     ("image/services/image_results_post.py", "results_enabled"): (3, PASS["image"]),
     ("image/services/image_rsvp_post.py", "rsvp_enabled"): (3, PASS["image"]),
     ("image/services/image_rsvp_post.py", "try_attach"): (2, PASS["image"]),
     ("image/services/image_standings_post.py", "render_png"): (2, PASS["image"]),
+    ("image/services/image_standings_post.py", "report"): (1, PASS["image"]),
     ("image/services/image_standings_post.py", "standings_enabled"): (3, PASS["image"]),
     ("image/services/image_validity_service.py", "aspect_attaches_files"): (2, PASS["image"]),
     ("image/services/image_verdict_banner_post.py", "banner_enabled"): (3, PASS["image"]),
@@ -1452,15 +1566,16 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_verdict_post.py", "verdicts_enabled"): (3, PASS["image"]),
     ("image/services/image_weather_post.py", "render_forecast"): (2, PASS["image"]),
     ("image/services/image_weather_post.py", "weather_enabled"): (3, PASS["image"]),
-    ("results/services/penalty_wizard.py", "_is_league_manager"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "_build_division_validation_data"): (2, PASS["results"]),
+    ("signup/services/signup_views.py", "AdminReviewView._ask_for_reason"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "AdminReviewView._guard"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "AdminReviewView._resolve"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "CorrectionParameterView.__init__.make_callback.callback"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "PreferredTeamsButtonView._make_team_callback.callback"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "_may_review_signup"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "_resolve_view_context"): (1, PASS["signup"]),
+    ("signup/services/wizard_answers.py", "take_typed_answer"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService._signup_svc"): (1, PASS["signup"]),
+    ("weather/services/weather_settings.py", "forecast_channel_setting.check"): (1, PASS["weather"]),
 }
 
 
@@ -1469,8 +1584,9 @@ def test_no_service_looks_another_service_up_on_the_bot():
     one up on the bot (architecture.md, "How modules and core fit together": "Services stay
     attached to the bot, and are built in one place"; #439 slice 6b, folded in at Gate 1). A cog
     may look a service up there, and so may a helper in core the cogs use, as a cog does; of the
-    helpers a service calls, `league_guild` alone may, for good. Today's lookups are listed under
-    the pass of the module whose file makes them; a lookup a design pass removes deletes its line
+    helpers a service calls, only those in `LOOKUPS_ALLOWED` may, for good, each with its reason.
+    What is looked up is every service and hook `LeagueBot` declares, and the router. Today's
+    lookups are listed under the pass of the module whose file makes them; a lookup a design pass removes deletes its line
     in that commit."""
     _check(
         "no service looks another service up on the bot",
@@ -1488,6 +1604,7 @@ _LOOKUP_SAMPLE = (
     "    ctx.bot.season_service.get()\n"
     "    bot_of(interaction).placement_service.get()\n"
     "    getattr(bot, 'scheduler_service', None)\n"
+    "    getattr(getattr(interaction, 'client', None), 'output_router', None)\n"
     "    bot.change_queue.ask('kind', {})\n"
     "    bot.db_path\n"
 )
@@ -1499,10 +1616,33 @@ _LOOKUP_SAMPLE = (
     ids=["a services file", "a utils file"],
 )
 def test_the_lookup_check_finds_a_lookup_in_a_services_or_utils_file(path):
-    """In a services file, each of the six ways of looking a service up on the bot is counted;
+    """In a services file, each of the seven ways of looking a service up on the bot is counted;
     the change queue, held by the queue check, and an attribute that is not a service are not.
     A helper is held to the rule as a service is."""
-    assert _service_lookups_among(_sample(_LOOKUP_SAMPLE, path)) == Counter({(path, "handler"): 6})
+    assert _service_lookups_among(_sample(_LOOKUP_SAMPLE, path)) == Counter({(path, "handler"): 7})
+
+
+def test_the_lookup_check_counts_each_service_and_hook_the_bot_declares():
+    """A read of the router, a poster or a hook, none named for a service, is counted, as is the
+    read of any other attribute `LeagueBot` declares; what the bot itself holds, its change queue
+    (the queue check's) and an attribute discord.py's own bot carries are not."""
+    path = "weather/services/sample_service.py"
+    source = (
+        "async def handler(bot, hook):\n"
+        "    bot.output_router.post_log('x')\n"
+        "    getattr(bot, 'channel_uses_read', None)\n"
+        "    bot.lineup_poster.post()\n"
+        "    bot.starting\n"
+        "    bot.db_path\n"
+        "    bot.running_version\n"
+        "    bot.change_queue.ask('kind', {})\n"
+        "    bot.user\n"
+        "    bot.get_channel(1)\n"
+        "    hook.output_router\n"
+    )
+
+    assert _bot_attributes_looked_up() >= {"output_router", "channel_uses_read", "lineup_poster"}
+    assert _service_lookups_among(_sample(source, path)) == Counter({(path, "handler"): 4})
 
 
 def test_the_lookup_check_does_not_count_a_cog_s_lookup():
@@ -1652,6 +1792,8 @@ TABLE_OWNER: dict[str, str] = {
     # results
     "session_results": "results", "qualifying_session_results": "results",
     "race_session_results": "results", "driver_standings_snapshots": "results",
+    "round_standings_posts": "results", "called_off_notes": "results",
+    "classification_posts": "results",
     "team_standings_snapshots": "results", "round_submission_channels": "results",
     "round_amend_channels": "results", "resubmission_drafts": "results",
     "amend_drafts": "results", "review_lock_warnings": "results", "penalty_records": "results", "appeal_records": "results",
@@ -1803,18 +1945,18 @@ _SPLICED_WRITE = re.compile(
 #: their own module owns: how many such statements, and the tables they name. The count is held
 #: exactly, so a statement added later is read by hand too.
 TABLES_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
-    ("results/services/results_purge_service.py", "_delete_rows"):
+    ("results/services/module/results_purge_service.py", "_delete_rows"):
         (2, "results' own result, standings and submission tables"),
-    ("results/services/verdict_announcement_service.py", "_record_announcement_on"):
+    ("results/services/review/verdict_announcement_service.py", "_record_announcement_on"):
         (1, "the penalty and appeal records, results' own"),
-    ("results/services/result_submission_service.py", "_detach_verdicts"):
-        (1, "the penalty and appeal records, results' own"),
-    ("results/services/result_submission_service.py", "_repoint_verdicts"):
-        (1, "the penalty and appeal records, results' own"),
-    ("results/services/result_submission_service.py", "_restore_from_snapshot_on"):
-        (3, "results' own session result tables, and the penalty and appeal records"),
-    ("results/services/verdict_records.py", "delete_verdicts"):
+    ("results/services/review/verdict_records.py", "delete_verdicts"):
         (1, "`VERDICT_TABLES`, the penalty and appeal records, results' own"),
+    ("results/services/round_amendment/amendment_writes.py", "_detach_verdicts"):
+        (1, "the penalty and appeal records, results' own"),
+    ("results/services/round_amendment/amendment_writes.py", "_repoint_verdicts"):
+        (1, "the penalty and appeal records, results' own"),
+    ("results/services/round_amendment/amendment_writes.py", "_restore_from_snapshot_on"):
+        (3, "results' own session result tables, and the penalty and appeal records"),
 }
 
 
@@ -1877,7 +2019,6 @@ def _tables_written_by_another_module() -> Counter[tuple[str, str]]:
 
 
 KNOWN_TABLES_WRITTEN_BY_ANOTHER_MODULE: dict[tuple[str, str], tuple[int, str]] = {
-    ("results/services/result_submission_service.py", "_restore_from_snapshot_on"): (2, PASS["results"]),
     ("signup/cogs/signup_cog.py", "SignupCog._record_close_time_change"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.nationality"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, PASS["signup"]),
@@ -2298,22 +2439,22 @@ SPLICED_READS_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
         "core's own settings tables, `SERVER_SOURCES` and `DIVISION_SOURCES`, and core's "
         "`season_review_prompts` and `pending_messages`",
     ),
-    ("results/services/amendment_mode_service.py", "_staged_rows_on"):
+    ("results/services/points/amendment_mode_service.py", "_staged_rows_on"):
         (1, "results' own live and staged points tables"),
-    ("results/services/result_submission_service.py", "_repoint_verdicts"):
-        (1, "results' own session result tables"),
-    ("results/services/result_submission_service.py", "snapshot_before_amendment_on"):
-        (1, "results' own session result tables"),
-    ("results/services/review_posting.py", "withdraw_round_standings_on"):
-        (1, "results' own standings snapshots"),
-    ("results/services/season_points_service.py", "_points_table"):
+    ("results/services/points/season_points_service.py", "_points_table"):
         (2, "results' own live and staged points tables, handed by its callers"),
-    ("results/services/standings_service.py", "previous_standing_positions"):
+    ("results/services/review/review_posting.py", "withdraw_round_standings_on"):
         (1, "results' own standings snapshots"),
-    ("results/services/verdict_records.py", "select_verdicts"):
-        (2, "`VERDICT_TABLES` and the session result tables, results' own"),
-    ("results/services/verdict_records.py", "delete_verdicts"):
+    ("results/services/review/verdict_records.py", "delete_verdicts"):
         (1, "the session result tables, results' own"),
+    ("results/services/review/verdict_records.py", "select_verdicts"):
+        (2, "`VERDICT_TABLES` and the session result tables, results' own"),
+    ("results/services/round_amendment/amendment_writes.py", "_repoint_verdicts"):
+        (1, "results' own session result tables"),
+    ("results/services/round_amendment/amendment_writes.py", "snapshot_before_amendment_on"):
+        (1, "results' own session result tables"),
+    ("results/services/standings/standings_service.py", "previous_standing_positions"):
+        (1, "results' own standings snapshots"),
 }
 
 
@@ -2363,7 +2504,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/wiring.py", "recover_missed_check_in_clean_ups"): (2, PASS["attendance"]),
     ("weather/wiring.py", "recover_missed_forecast_clean_ups"): (2, PASS["weather"]),
     ("weather/wiring.py", "recover_missed_phases"): (3, PASS["weather"]),
-    ("results/wiring.py", "recover_orphaned_submission_channels"): (3, PASS["results"]),
     ("attendance/wiring.py", "recover_rsvp_views_and_deadlines"): (4, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.sync"): (1, PASS["attendance"]),
     ("attendance/cogs/attendance_cog.py", "AttendanceCog.test_rsvp"): (2, PASS["attendance"]),
@@ -2424,127 +2564,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_verdict_post.py", "_driver_nationality"): (5, PASS["image"]),
     ("image/services/image_verdict_post.py", "_round_context"): (3, PASS["image"]),
     ("image/services/image_weather_post.py", "build_drawing_for_round"): (6, PASS["image"]),
-    ("results/services/amend_changes.py", "amend_open_change.check"): (2, PASS["results"]),
-    ("results/services/amend_changes.py", "amend_open_change.plan_open"): (4, PASS["results"]),
-    ("results/services/amend_end_changes.py", "<module>"): (2, PASS["results"]),
-    ("results/services/amend_end_changes.py", "amend_cancel_change.revert"): (2, PASS["results"]),
-    ("results/services/amend_end_changes.py", "amend_lapse_change.revert"): (3, PASS["results"]),
-    ("results/services/amend_turn_change.py", "<module>"): (3, PASS["results"]),
-    ("results/services/amend_turn_change.py", "amend_stage_one_change.record"):
-        (3, PASS["results"]),
-    ("results/services/amend_views.py", "AmendCancelView.cancel_btn"): (1, PASS["results"]),
-    ("results/services/amendment_stage_changes.py", "_plan_rebuild"): (3, PASS["results"]),
-    ("results/services/amendment_stage_changes.py", "_round_names"): (3, PASS["results"]),
-    ("results/services/appeals_approval_change.py", "appeals_approval_change.apply"):
-        (2, PASS["results"]),
-    ("results/services/penalty_service.py", "load_staged_from_records"): (3, PASS["results"]),
-    ("results/services/penalty_wizard.py", "AddPardonModal.on_submit"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "ApprovalView.approve_btn"): (3, PASS["results"]),
-    ("results/services/penalty_wizard.py", "_render_prompt_content"): (2, PASS["results"]),
-    ("results/services/penalty_wizard.py", "appeals_stage_refusal"): (1, PASS["results"]),
-    ("results/services/penalty_wizard.py", "review_stage_refusal"): (1, PASS["results"]),
-    ("results/services/points_amendment_change.py", "_divisions"): (2, PASS["results"]),
-    ("results/services/points_amendment_change.py", "points_amendment_change.apply"):
-        (1, PASS["results"]),
-    ("results/services/points_config_service.py", "remove_config_on"): (1, PASS["results"]),
-    ("results/services/points_config_service.py", "setup_seasons_linking_on"): (1, PASS["results"]),
-    ("results/services/report_approval_change.py", "_latest_round"): (2, PASS["results"]),
-    ("results/services/report_approval_change.py", "report_approval_change.apply"):
-        (2, PASS["results"]),
-    ("results/services/result_submission_service.py", "<module>"): (5, PASS["results"]),
-    ("results/services/result_submission_service.py", "_build_penalty_review_state"):
-        (2, PASS["results"]),
-    ("results/services/result_submission_service.py", "_restore_from_snapshot_on"):
-        (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "_save_session_result_in_tx"):
-        (3, PASS["results"]),
-    ("results/services/result_submission_service.py", "amend_round_results_on"):
-        (3, PASS["results"]),
-    ("results/services/result_submission_service.py", "closed_by_cancellation_on"):
-        (3, PASS["results"]),
-    ("results/services/result_submission_service.py", "expected_resubmitted_session_on"):
-        (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "expected_session_on"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "is_channel_in_penalty_review"):
-        (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "open_amendment_in_division"):
-        (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "open_amendment_in_season"):
-        (2, PASS["results"]),
-    ("results/services/result_submission_service.py", "other_active_team_assignments"):
-        (3, PASS["results"]),
-    ("results/services/result_submission_service.py", "resubmission_drafts_on"):
-        (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "revert_abandoned_amendment_on"):
-        (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "snapshot_before_amendment_on"):
-        (2, PASS["results"]),
-    ("results/services/result_submission_service.py", "sync_held_by_amendment"):
-        (1, PASS["results"]),
-    ("results/services/results_post_service.py", "_build_test_driver_display"):
-        (1, PASS["results"]),
-    ("results/services/results_post_service.py", "_get_division_tier"): (1, PASS["results"]),
-    ("results/services/results_post_service.py", "_get_heading_context"): (3, PASS["results"]),
-    ("results/services/results_post_service.py", "_get_primary_session_label"):
-        (1, PASS["results"]),
-    ("results/services/results_post_service.py", "_get_reserve_user_ids"): (3, PASS["results"]),
-    ("results/services/results_post_service.py", "_get_result_status"): (1, PASS["results"]),
-    ("results/services/results_post_service.py", "_round_is_cancelled"): (1, PASS["results"]),
-    ("results/services/results_post_service.py", "division_repost_status"): (2, PASS["results"]),
-    ("results/services/results_post_service.py", "repost_channel_faults"): (1, PASS["results"]),
-    ("results/services/results_post_service.py", "rescore_season"): (2, PASS["results"]),
-    ("results/services/results_post_service.py", "results_sync_hint"): (2, PASS["results"]),
-    ("results/services/results_post_service.py", "standings_display_names"): (1, PASS["results"]),
-    ("results/services/results_post_service.py", "standings_repost_status"): (1, PASS["results"]),
-    ("results/services/results_purge_service.py", "erase_season_on"): (4, PASS["results"]),
-    ("results/services/review_changes.py", "division_job_in_hand"): (2, PASS["results"]),
-    ("results/services/review_lock_change.py", "_in_review"): (1, PASS["results"]),
-    ("results/services/review_open_change.py", "_round_and_channel"): (2, PASS["results"]),
-    ("results/services/review_open_change.py", "appeals_open_change.plan"): (1, PASS["results"]),
-    ("results/services/review_open_change.py", "close_stale_change.close"): (2, PASS["results"]),
-    ("results/services/review_open_change.py", "review_open_change.close"): (2, PASS["results"]),
-    ("results/services/review_open_change.py", "review_open_change.open_review"):
-        (1, PASS["results"]),
-    ("results/services/review_open_change.py", "review_prompt_change.close"): (2, PASS["results"]),
-    ("results/services/review_posting.py", "_round_format"): (1, PASS["results"]),
-    ("results/services/review_posting.py", "_round_row"): (2, PASS["results"]),
-    ("results/services/review_posting.py", "_stored_standings"): (2, PASS["results"]),
-    ("results/services/review_posting.py", "plan_division_posts"): (2, PASS["results"]),
-    ("results/services/review_posting.py", "plan_posts"): (3, PASS["results"]),
-    ("results/services/review_posting.py", "withdraw_round_standings_on"): (1, PASS["results"]),
-    ("results/services/review_verdicts.py", "_division_name"): (1, PASS["results"]),
-    ("results/services/review_verdicts.py", "_latest_scored_round"): (2, PASS["results"]),
-    ("results/services/review_verdicts.py", "_sanction_heading_on"): (1, PASS["results"]),
-    ("results/services/standings_service.py", "_rounds_from"): (2, PASS["results"]),
-    ("results/services/standings_service.py", "compute_driver_standings_on"): (7, PASS["results"]),
-    ("results/services/standings_service.py", "compute_team_standings_on"): (5, PASS["results"]),
-    ("results/services/standings_service.py", "opening_driver_standings"): (3, PASS["results"]),
-    ("results/services/standings_service.py", "opening_team_standings"): (1, PASS["results"]),
-    ("results/services/standings_service.py", "persist_snapshots_on"): (1, PASS["results"]),
-    ("results/services/standings_service.py", "reference_round_id"): (2, PASS["results"]),
-    ("results/services/submission_changes.py", "<module>"): (3, PASS["results"]),
-    ("results/services/submission_changes.py", "ask_submission_open"): (1, PASS["results"]),
-    ("results/services/submission_changes.py", "ask_submission_restart"): (1, PASS["results"]),
-    ("results/services/submission_changes.py", "submission_all_cancelled_change.end_round"):
-        (3, PASS["results"]),
-    ("results/services/submission_changes.py", "submission_all_cancelled_change.would_never_finish"):
-        (3, PASS["results"]),
-    ("results/services/submission_changes.py", "submission_open_change.not_cancelled"):
-        (1, PASS["results"]),
-    ("results/services/submission_changes.py", "submission_open_change.start_round"):
-        (1, PASS["results"]),
-    ("results/services/submission_changes.py", "submission_restart_change.clear"):
-        (1, PASS["results"]),
-    ("results/services/submission_steps.py", "post_prompt_step.post"): (1, PASS["results"]),
-    ("results/services/submission_turn_change.py", "<module>"): (3, PASS["results"]),
-    ("results/services/submission_turn_change.py", "turn_steps.post_opening_review"):
-        (2, PASS["results"]),
-    ("results/services/verdict_announcement_service.py", "_get_announcement_context"):
-        (4, PASS["results"]),
-    ("results/services/verdict_announcement_service.py", "_get_result_context"):
-        (2, PASS["results"]),
-    ("results/services/verdict_announcement_service.py", "_rounds_from"): (2, PASS["results"]),
-    ("results/services/verdict_announcement_service.py", "announce_verdict"): (1, PASS["results"]),
     ("signup/services/review_changes.py", "choices_change.open_"): (1, PASS["signup"]),
     ("signup/services/review_changes.py", "recollect_change.open_"): (1, PASS["signup"]),
     ("signup/services/signup_module_service.py", "SignupModuleService._live_season_id"):
@@ -2745,7 +2764,7 @@ SPLICED_SOURCES: tuple[tuple[str, str], ...] = (
     ("core/services/settings/channel_registry_service.py", "SERVER_SOURCES"),
     ("core/services/settings/channel_registry_service.py", "DIVISION_SOURCES"),
     ("core/services/upkeep/factory_reset_service.py", "_OTHER_SOURCES"),
-    ("results/services/verdict_records.py", "VERDICT_TABLES"),
+    ("results/services/review/verdict_records.py", "VERDICT_TABLES"),
 )
 
 
@@ -3017,16 +3036,6 @@ KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/drivers/placement_service.py", "PlacementService.move_on"): (1, PASS["attendance"]),
     ("core/services/drivers/placement_service.py", "PlacementService.sack_on"): (1, PASS["attendance"]),
     ("image/services/driver_portrait_service.py", "refresh_portraits"): (1, PASS["image"]),
-    ("results/services/result_submission_service.py", "_save_session_result_in_tx"):
-        (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "amend_round_results_on"):
-        (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "snapshot_before_amendment_on"):
-        (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "sweep_expired_amendments"):
-        (1, PASS["results"]),
-    ("results/services/results_off_change.py", "results_off_change.switch_off"):
-        (1, PASS["results"]),
     ("signup/services/wizard_service.py", "WizardService._lock_channel"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.recover_wizards"): (1, PASS["signup"]),
 }
@@ -3174,7 +3183,7 @@ CATCH_ALLS_ALLOWED = {
         "a stated exception: a hook that raises must not hold a Discard, the queue's last way past a stop",
     ("core/services/queue/change_queue.py", "ChangeQueue._undiscardable_refusal"):
         "a stated exception: the Discard is refused all the same, whatever the reader does",
-    ("results/services/amend_end_changes.py", "_names_step.run"):
+    ("results/services/round_amendment/amend_end_changes.py", "_names_step.run"):
         "a stated exception: a tie ordered by user id is the lesser fault than a round not put back",
     ("core/utils/interaction_errors.py", "report_failure"):
         "place 3, around reporting a failure, where the report itself might fail",
@@ -3200,7 +3209,7 @@ CATCH_ALLS_ALLOWED = {
     ("core/services/scheduler_service.py", "SchedulerService._remove_job"):
         "a stated exception: every cancel is a clean-up, so a job that will not go is logged and "
         "left",
-    ("core/services/rounds/amendment_service.py", "approval_faults"):
+    ("results/services/points/points_amendment_faults.py", "approval_faults"):
         "a stated exception: an attendance switch that cannot be read never refuses an amendment",
     ("core/services/seasons/approval_checks.py", "channel_on_server"):
         "a stated exception: a channel check that cannot tell must not refuse a season",
@@ -3235,10 +3244,22 @@ CATCH_ALLS_ALLOWED = {
         "a stated exception: a calendar gate that cannot be read answers text, so none is lost",
     ("core/services/drivers/lineup_posting.py", "LineupPoster._refresh_lineup_post"):
         "place 5, a lineup that cannot be drawn is posted as text and its fault is the job's line",
+    ("results/services/publishing/results_post_service.py", "produce_session_results"):
+        "place 5, a results table that cannot be drawn is posted as text and its fault is the "
+        "job's line",
+    ("results/services/publishing/results_post_service.py", "produce_standings"):
+        "place 5, a standings table that cannot be drawn is posted as text and its fault is the "
+        "job's line",
+    ("results/services/review/verdict_announcement_service.py", "_send_verdict"):
+        "place 5, a verdict picture that cannot be drawn is announced as text and its fault is "
+        "the job's line",
     ("image/services/image_drawing.py", "ImageDrawing.lineup_wanted"):
         "a stated exception: a lineup gate that cannot be read answers text, so none is lost",
     ("image/services/image_drawing.py", "ImageDrawing.artwork_signature"):
         "a stated exception: artwork that cannot be read is signed as such, and the rest still is",
+    ("results/services/submission/result_submission_service.py", "_ConfigSelectView._put_back"):
+        "a stated exception: a put-back after a press already answered logs the error in full and "
+        "leaves the message as the press's edit left it, for a report would answer the press twice",
 }
 
 
@@ -3344,14 +3365,6 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/utils/font_metrics.py", "measure"): (1, PASS["image"]),
     ("image/utils/svg_document.py", "_contained"): (2, PASS["image"]),
     ("image/utils/svg_fill.py", "_mandatory_ids"): (1, PASS["image"]),
-    ("results/services/result_submission_service.py", "_ConfigSelectView._put_back"):
-        (1, PASS["results"]),
-    ("results/services/results_post_service.py", "produce_session_results"): (1, PASS["results"]),
-    ("results/services/results_post_service.py", "produce_standings"): (1, PASS["results"]),
-    ("results/services/review_recovery.py", "recover_review"): (1, PASS["results"]),
-    ("results/services/review_verdicts.py", "_sync_hint"): (1, PASS["results"]),
-    ("results/services/verdict_announcement_service.py", "_graphic_name"): (1, PASS["results"]),
-    ("results/services/verdict_announcement_service.py", "_send_verdict"): (1, PASS["results"]),
     ("signup/cogs/signup_cog.py", "ConfirmCloseView.on_timeout"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.on_member_remove"): (1, PASS["signup"]),
     ("signup/cogs/signup_cog.py", "SignupCog.signup_channel"): (1, PASS["signup"]),

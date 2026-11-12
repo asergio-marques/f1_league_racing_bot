@@ -94,7 +94,7 @@ async def test_server_scope_needs_no_season():
     interaction = _interaction()
 
     with patch(
-        "leaguebot.results.services.points_config_service.list_configs_with_sessions",
+        "leaguebot.results.services.points.points_config_service.list_configs_with_sessions",
         AsyncMock(return_value=[("Standard", [SessionType.FEATURE_RACE])]),
     ):
         await _run(cog, interaction, "SERVER")
@@ -109,7 +109,7 @@ async def test_server_scope_names_what_each_config_carries():
     interaction = _interaction()
 
     with patch(
-        "leaguebot.results.services.points_config_service.list_configs_with_sessions",
+        "leaguebot.results.services.points.points_config_service.list_configs_with_sessions",
         AsyncMock(
             return_value=[
                 ("Half Points", [SessionType.FEATURE_RACE]),
@@ -132,10 +132,10 @@ async def test_server_scope_does_not_read_the_season_store():
     season_listing = AsyncMock(return_value=[])
 
     with patch(
-        "leaguebot.results.services.points_config_service.list_configs_with_sessions",
+        "leaguebot.results.services.points.points_config_service.list_configs_with_sessions",
         AsyncMock(return_value=[]),
     ), patch(
-        "leaguebot.results.services.season_points_service.list_season_configs_with_sessions", season_listing
+        "leaguebot.results.services.points.season_points_service.list_season_configs_with_sessions", season_listing
     ):
         await _run(cog, interaction, "SERVER")
 
@@ -153,7 +153,7 @@ async def test_season_scope_reads_the_season_store():
     season_listing = AsyncMock(return_value=[("Standard", [SessionType.FEATURE_RACE])])
 
     with patch(
-        "leaguebot.results.services.season_points_service.list_season_configs_with_sessions", season_listing
+        "leaguebot.results.services.points.season_points_service.list_season_configs_with_sessions", season_listing
     ):
         await _run(cog, interaction, "SEASON")
 
@@ -168,7 +168,7 @@ async def test_season_scope_names_the_season_it_read():
     interaction = _interaction()
 
     with patch(
-        "leaguebot.results.services.season_points_service.list_season_configs_with_sessions",
+        "leaguebot.results.services.points.season_points_service.list_season_configs_with_sessions",
         AsyncMock(return_value=[]),
     ):
         await _run(cog, interaction, "SEASON")
@@ -198,7 +198,7 @@ async def test_the_command_is_gated_on_the_results_module():
     interaction = _interaction()
     listing = AsyncMock(return_value=[])
 
-    with patch("leaguebot.results.services.points_config_service.list_configs_with_sessions", listing):
+    with patch("leaguebot.results.services.points.points_config_service.list_configs_with_sessions", listing):
         await _run(cog, interaction, "SERVER")
 
     listing.assert_not_awaited()
@@ -212,7 +212,7 @@ async def test_a_listing_writes_no_line():
     interaction.client.output_router.post_log = AsyncMock()
 
     with patch(
-        "leaguebot.results.services.points_config_service.list_configs_with_sessions",
+        "leaguebot.results.services.points.points_config_service.list_configs_with_sessions",
         AsyncMock(return_value=[]),
     ):
         await _run(cog, interaction, "SERVER")
@@ -228,7 +228,7 @@ async def test_the_reply_is_ephemeral():
     interaction = _interaction()
 
     with patch(
-        "leaguebot.results.services.points_config_service.list_configs_with_sessions",
+        "leaguebot.results.services.points.points_config_service.list_configs_with_sessions",
         AsyncMock(return_value=[]),
     ):
         await _run(cog, interaction, "SERVER")

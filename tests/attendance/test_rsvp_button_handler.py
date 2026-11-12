@@ -109,9 +109,10 @@ async def _make_db(
     clock because the handler reads the clock itself.
 
     *call_posted* seeds the `NO_RSVP` rows that posting the check-in call creates —
-    `run_rsvp_notice` calls `bulk_insert_attendance_rows` for the whole roster before any
-    button exists to press. Passing False is the driver who has **no** such row: placed into
-    the division after the call went out, since nothing outside `run_rsvp_notice` opens one.
+    the check-in call's change records the call with `bulk_insert_attendance_rows_on` for the
+    whole roster before any button exists to press. Passing False is the driver who has **no**
+    such row: placed into the division after the call went out, since nothing outside the
+    check-in call's change opens one.
     That is issue #209, and the tests below exercise both, because the two answer paths part
     company at the row's existence and nowhere else.
     """
@@ -152,7 +153,7 @@ async def _make_db(
             (ROUND_ID, DIVISION_ID, (datetime.now(timezone.utc) + starts_in).isoformat()),
         )
 
-        # The row `run_rsvp_notice` writes when it posts the call. The handler reads it to
+        # The row the check-in call's change writes when it posts the call. The handler reads it to
         # know a call is still standing (#175), so a press with no row is one on a call
         # already taken down.
         await db.execute(
@@ -563,7 +564,7 @@ async def test_a_reserve_who_has_accepted_may_change_their_answer_before_the_dea
 # ---------------------------------------------------------------------------
 # A driver placed into the division after the call went out — issue #209
 #
-# `run_rsvp_notice` opens a `driver_round_attendance` row per driver of the division *at that
+# The check-in call's change opens a `driver_round_attendance` row per driver of the division *at that
 # moment*, and nothing else in the bot opens one: not `/driver assign`, not `move_driver`, not
 # the mid-season confirmation of placements. So a driver who arrives while the call is standing has none
 # — and they are asked anyway, because the embed is rebuilt from the current roster on every

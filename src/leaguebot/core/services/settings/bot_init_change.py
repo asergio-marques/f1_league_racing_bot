@@ -185,7 +185,7 @@ def _save(config: "ConfigService") -> Callable[[aiosqlite.Connection, StepContex
         if not created:
             # The claim was not taken: either another server already holds the league, or this
             # one's own claim went through on another save first.
-            now_held = await config.get_league_server_id()
+            now_held = await config.get_league_server_id_on(db)
             if now_held != server_id:
                 log.info(
                     "%s refused for %s (%s): another server already holds the league",

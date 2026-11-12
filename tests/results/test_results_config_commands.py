@@ -42,7 +42,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.results.cogs.results_cog import ResultsCog, _ConfirmRemoveConfigView
+from leaguebot.results.cogs.config_commands import _ConfirmRemoveConfigView
+from leaguebot.results.cogs.results_cog import ResultsCog
 from tests.support import saves
 from tests.support.change_queue import MEMBER_ID, change_rows, member, run_queue
 from tests.support.settings_league import interaction, last_said, log_lines, said, settings_league
@@ -253,7 +254,7 @@ async def test_the_question_names_every_season_at_risk(tmp_path):
     league = await _league(tmp_path)
 
     with patch(
-        "leaguebot.results.services.points_config_service.setup_seasons_linking",
+        "leaguebot.results.services.points.points_config_service.setup_seasons_linking",
         AsyncMock(return_value=[(1, 3), (2, 4)]),
     ):
         asked = await _remove(league)

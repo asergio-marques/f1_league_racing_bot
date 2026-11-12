@@ -14,7 +14,7 @@ half-amended — which an amendment abandoned part-way could then not take back.
 
 So an amendment's two stages are changes of their own kinds on the queue (#439, slice 2),
 `results.amendment.reports.approve` and `results.amendment.appeals.approve`, carried out by
-`results/services/amendment_stage_changes.py`, and the first pass's change types carry no
+`results/services/round_amendment/amendment_stage_changes.py`, and the first pass's change types carry no
 amendment branch. These tests pin that split, and pin what the two stages' jobs leave out.
 
 **Asserted against the change types' jobs and the parsed source rather than by running them.**
@@ -31,6 +31,7 @@ import inspect
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -38,8 +39,8 @@ from tests.support.change_queue import attach_queue, league_double
 
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "leaguebot"
-MODULE = "results/services/result_submission_service.py"
-AMENDMENT = "results/services/amendment_stage_changes.py"
+MODULE = "results/services/round_amendment/amendment_writes.py"
+AMENDMENT = "results/services/round_amendment/amendment_stage_changes.py"
 REPORTS = "results.amendment.reports.approve"
 APPEALS = "results.amendment.appeals.approve"
 
@@ -136,8 +137,8 @@ async def test_each_stage_of_an_amendment_is_a_change_of_its_own_kind(tmp_path, 
 @pytest.mark.parametrize(
     "module",
     [
-        "results/services/report_approval_change.py",
-        "results/services/appeals_approval_change.py",
+        "results/services/review/report_approval_change.py",
+        "results/services/review/appeals_approval_change.py",
     ],
 )
 def test_the_first_pass_carries_no_amendment_branches_of_its_own(module):
@@ -242,7 +243,7 @@ async def test_a_settled_round_is_not_moved_on_by_the_first_pass(tmp_path, movin
     approval's check refuses a round no longer awaiting its appeal verdicts, and the moving calls
     appear in its save alone."""
     change_type = _change_type(tmp_path, "results.appeals.approve")
-    module = _module_code("results/services/appeals_approval_change.py")
+    module = _module_code("results/services/review/appeals_approval_change.py")
 
     assert "AWAITING_APPEAL_VERDICTS" in inspect.getsource(inspect.unwrap(change_type.check))
     assert moving_call in _job_source(change_type, "apply")
@@ -278,11 +279,12 @@ def test_the_revert_publishes_nothing_either():
 def test_the_state_carries_the_flags_and_defaults_to_a_first_pass():
     """Defaulting to False is what keeps every existing caller a first pass. Whether an
     amendment's reports are approved is read from its row's `reports_approved_at` (#439)."""
-    from leaguebot.results.services.penalty_wizard import PenaltyReviewState
+    from leaguebot.results.services.review.review_state import PenaltyReviewState
 
     state = PenaltyReviewState(
         round_id=1, division_id=1, submission_channel_id=1,
         session_types_present=[], db_path=":memory:", bot=None,
+        queue=MagicMock(), server_config=AsyncMock(return_value=None), router=MagicMock(), attendance=MagicMock(),
     )
 
     assert state.is_amendment is False

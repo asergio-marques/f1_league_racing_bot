@@ -5,7 +5,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.points_config_service import (
+from leaguebot.results.services.points.points_config_service import (
     ConfigNotFoundError,
     get_config_entries,
 )
@@ -344,7 +344,7 @@ def test_validate_monotonic_fail(session_type, positions, label):
 async def _import_on(db_path: str, config_name: str, payload: XmlImportPayload):
     """Import *payload* into *config_name* on a connection of its own, as a settings change's
     save writes it, and commit; return what the write answered."""
-    from leaguebot.results.services.points_config_service import xml_import_config_on
+    from leaguebot.results.services.points.points_config_service import xml_import_config_on
 
     async with get_connection(db_path) as db:
         saved = await xml_import_config_on(

@@ -136,22 +136,29 @@ point, which would then hold every module's registrations and grow with each mod
 
 **What each part may do:**
 
-- **A cog** turns a command, button or form into a call to one service, and replies, unless it
-  hands a button's press to a service's workflow, which answers through the interaction. It holds no
+- **A cog** turns a command, button or form into a call to one service, and replies, unless it hands
+  a button's press to a service's workflow, which answers through the interaction. It holds no
   database code and no league rule, so every rule a league relies on can be tested by calling a
   service with no Discord interaction involved. A cog holds one command group; when one grows too
-  large, its workflows move into services before it is split. A module's commands sit under its own
-  top-level group, never under one of core's: `/weather channel`, not `/division weather-channel`.
-  So do its tools for test mode, which sit under the module's group and work only while test mode is
-  on, rather than under `/test-mode`. A command's name then says which module owns it, and the
-  module's code stays in its folder. discord.py binds a subcommand only to the cog that declares its
-  group (`steward_module.md` §5), so a module's command under core's group would have to be written
-  in core's cog, or bound to the module by hand.
+  large, its workflows move into services before it is split. The split keeps the group in one cog:
+  the cog class is composed from one file per subgroup. The cog holds the one group as a class
+  attribute, each subgroup's class declares its subgroup with that group as its parent, and
+  discord.py binds a cog's group to the cog together with every child beneath it, wherever the child
+  was declared. What matters is that the cog holds the parent group, not which class declares the
+  subgroup. A class that has one subclass and shares no behaviour is the price, accepted for keeping
+  each file to one subgroup. A module's commands sit under its own top-level group, never under one
+  of core's: `/weather channel`, not `/division weather-channel`. So do its tools for test mode,
+  which sit under the module's group and work only while test mode is on, rather than under
+  `/test-mode`. A command's name then says which module owns it, and the module's code stays in its
+  folder. discord.py binds a subcommand only to the cog that declares its group (`steward_module.md`
+  §5), so a module's command under core's group would have to be written in core's cog, or bound to
+  the module by hand.
 
   *Rejected:* core's cog holding a module's commands and handing the work to the module through a
   hook, which puts part of every module in core. *Rejected:* a module binding its own commands to
   core's groups as it loads, which works, but leaves a module's commands under names that are
-  core's.
+  core's. *Rejected:* a cog for each subgroup, bound to the group by hand, which fights the library
+  for no gain (`steward_module.md` §5).
 - **A service** holds the league's rules and all the database code. It may use discord.py: it can
   post to a channel and build the buttons it posts, and a workflow, to which a cog hands a button's
   press, takes the pressed interaction and answers the member through it, while the gates it walks
@@ -161,14 +168,16 @@ point, which would then hold every module's registrations and grow with each mod
 - **Buttons live beside the code that posts them:** with the cog when a command posts them, with
   the service when a service does. A service never reaches into a cog for a view.
 - **Shared helpers in core** are of two kinds. Those used by cogs (the base classes, the guards,
-  autocomplete) reach core's own services through the bot, as a cog does. Plain helpers
-  (formatting, parsing, time) use no service at all. Neither imports a service, and core uses no
-  module; the one exception to both is the bot's type, which names every service for the type
-  checker (below). Each handler for a kind of post is a service in core, not a helper. One helper a
-  service may call reaches a core service through the bot: `league_guild(bot)`
-  (`core/utils/league_server.py`), the one route from a job or a service to the league's server,
-  which reads the configuration service to find it. Handing the configuration service instead to
-  every service that posts would add a parameter to each, for no rule gained.
+  autocomplete) reach core's own services through the bot, as a cog does. Plain helpers (formatting,
+  parsing, time) use no service at all. Neither imports a service, and core uses no module; the one
+  exception to both is the bot's type, which names every service for the type checker (below). Each
+  handler for a kind of post is a service in core, not a helper. Some helpers a service may call
+  reach the bot, each for one thing. `league_guild(bot)` (`core/utils/league_server.py`) is the one
+  route from a job or a service to the league's server, which it finds through the configuration
+  service. `report_failure`, `refuse` (through `record_refusal`) and `record_abandoned` write a
+  failure, a refusal, or a cancellation or a lapse, through the bot's log writer ("Errors and
+  failures"). Handing the configuration service or the router instead to every service that calls
+  them would add a parameter to each, for no rule gained.
 - **A module's own helpers** sit in its `utils/` folder, beside its services, under the same rules.
 - **A model** is plain data. It uses no Discord and no database, and no service or cog.
 - **The database code in core** opens connections, lends them again, closes them and applies
@@ -179,12 +188,12 @@ point, which would then hold every module's registrations and grow with each mod
 
 **Services stay attached to the bot, and are built in one place.** The bot object keeps a typed
 attribute for each service object. Most services are plain functions and need none. The builder
-makes every service object, handing each the other services it needs, and a service is complete
-once it is built: nothing is wired into it after the bot starts. A test can call the builder to
-get the real set of services. A service that needs Discord itself, to post or to find a channel,
-is given the bot for that and nothing more. It does not use the bot to look up other services,
-save through `league_guild` (above), and a service that is a plain function is handed the services
-it needs by whoever calls it. Looking services up on the bot is what lets a hand-made fake bot in a
+makes every service object, handing each the other services it needs, and a service is complete once
+it is built: nothing is wired into it after the bot starts. A test can call the builder to get the
+real set of services. A service that needs Discord itself, to post or to find a channel, is given
+the bot for that and nothing more. It does not use the bot to look up other services, the router or
+a hook, bar the helpers above, and a service that is a plain function is handed the services it
+needs by whoever calls it. Looking services up on the bot is what lets a hand-made fake bot in a
 test decide which code runs.
 
 *Rejected:* a separate container object holding the services, since the services still need the
@@ -212,7 +221,7 @@ opening rules). Stewarding adds a second [STW-MOD-007].
 (below).** Where something in core has to let the modules act (the bot starting, a timed event
 falling due, a round amended or its timed work armed again, a round's timing windows read, a round,
 a division or a season cancelled, a round's results made final, placements confirmed, a season's
-configuration confirmed, a review gathering its lines, the placements review gathering each
+approval saved, a season's configuration confirmed, a review gathering its lines, the placements review gathering each
 division's lines, a division's channel faults read, a channel's uses read as a command sets it, the
 factory reset gathering the channels each module holds, a round's drawn phases read, a driver's name
 read, the divisions a driver's accounts raced in read, a driver's standing in a division read for
@@ -254,6 +263,9 @@ for it raises `SwitchNotSignedUp`, a `LookupError` of its own type, which no rea
 aside takes for an answer: each lets that type through by name and stands aside from any other
 fault. A link the dependency table allows between two modules is not one of core's hooks: there the
 module depended on may name what it asks of its dependant, as results does of attendance (below).
+Only core calls the subscribers of a hook it declares as a list. Where a module reaches such a
+moment, either the moment is its own and its dependants are reached through what the builder hands
+it, or a core function writes the change and calls the hook itself.
 
 *Rejected:* a hook as one object of named operations the builder fills in, one for each module's
 part, which leaves core knowing what each module does at that moment. *Rejected:* only writing the
@@ -284,18 +296,22 @@ the dependant.
 after a round's review (recording the round's attendance and its pardons, recalculating after an
 amendment, posting the sheet, finding the drivers over a threshold, saying which pardons an
 amendment's review may offer, checking, saving, changing the roles of and announcing one driver's
-sanction, redrawing a lineup) is a protocol results declares, `AttendanceAfterReview`, and
-attendance implements it on its own functions. The builder makes it once, attaches it to the bot and
-hands it to the review's change types, so results imports nothing of attendance and the
-`.importlinter` exception for it is gone. Of its methods, `enabled` reports attendance's switch,
-`sync_hint` only words the hint naming the "attendance sync" command and reads no switch, and
+sanction, redrawing a lineup, reading the check-in of a round ended as not held, naming what would
+stop a points amendment's recalculation) is a protocol results declares, `AttendanceAfterReview`,
+and attendance implements it on its own functions. The builder makes it once, attaches it to the bot
+and hands it to results, whose change types take it, so results imports nothing of attendance and
+the `.importlinter` exception for it is gone. Of its methods, `enabled` reports attendance's switch,
+`sync_hint` only words the hint naming the "attendance sync" command and reads no switch,
 `change_sanction_roles` acts whatever the switch says, as the attendance specification's "Sanctions
-that do not apply" requires. Every other method checks the switch itself, on the connection it is
-handed where it writes, and does nothing while the module is off. A change type never reads the
-switch itself; one whose job serves attendance alone asks `enabled`. The placement service, which a
-sanction moves seats through, the team-role service that gives and takes its roles and the lineup
-poster that posts the lineups it touches are handed to attendance's implementation by the builder
-and not looked up on the bot.
+that do not apply" requires, and so do the four reads that only read attendance's tables
+(`pardons_of_on`, an amendment's snapshot of the round's pardons; `attendance_row_of`, a driver's
+attendance row; `latest_scored_round`, a division's latest scored round; `recorded_pardons`, a
+round's recorded pardons), having no write to withhold. Every other method checks the switch itself,
+on the connection it is handed where it writes, and does nothing while the module is off. A change
+type never reads the switch itself; one whose job serves attendance alone asks `enabled`. The
+placement service, which a sanction moves seats through, the team-role service that gives and takes
+its roles and the lineup poster that posts the lineups it touches are handed to attendance's
+implementation by the builder and not looked up on the bot.
 
 *Rejected:* results calling attendance's functions directly and checking the switch itself, which
 is the dependency the table forbids and leaves each caller to remember the switch.
@@ -384,9 +400,11 @@ Discord is an exception of its own (see "Posting to Discord", and `clean_discord
   of the kinds asked for that are queued, running or stopped on a failure, leaving out the one
   whose check is running (`CheckContext.change_id`).
   What a change type refuses is read from the database and the queue, never from a flag kept in
-  memory, so it holds across a restart. A bot's request that this check finds no longer due (a
-  review reopened for a round that has since gone final) is dropped, not stopped: only a channel
-  missing or unusable stops its lane.
+  memory, so it holds across a restart. State a change reads that may be held in memory is state a
+  module's specification lets a restart lose: the change it feeds reads it, and finds its work no
+  longer due after a restart, as results' penalty-review staging does. A bot's request that this
+  check finds no longer due (a review reopened for a round that has since gone final) is dropped,
+  not stopped: only a channel missing or unusable stops its lane.
 - **All or nothing in one step.** Where a change must be all or nothing (as the results
   specification's "Changing points system mid-season" requires of an approval), everything it
   saves is saved in one step behind the gate, and only its posts come after, as
@@ -738,10 +756,15 @@ another module's table in the same step, it calls that module's service with the
 handed, so the step still happens all at once.
 
 **While a save is open, the bot waits on nothing but that save's own connection.** Not on Discord,
-and not on a second connection. SQLite lets one writer in at a time, so a post made in the middle
-of a save holds up every other save in the bot for as long as Discord takes to answer, and a second
-connection that tried to write would be kept waiting by the first until it gave up and failed.
-Save first, then post, then record what was posted in a save of its own.
+and not on a second connection. SQLite lets one writer in at a time, so a post made in the middle of
+a save holds up every other save in the bot for as long as Discord takes to answer, and a second
+connection that tried to write would be kept waiting by the first until it gave up and failed. The
+rule holds as much for a save run on a connection it was handed as for one a function opens itself.
+A function given a save's connection, or run as a change type's save step or as a step's record,
+awaits only that connection, a cursor from it, or a call it hands the connection on to; one that
+takes a connection optionally may open its own where it is handed none. A read it needs is given a
+form that takes the connection. Save first, then post, then record what was posted in a save of its
+own.
 
 **Each table is read and written by its owner alone.** Every statement that reads or changes a table
 lives in the module that owns it, core included, and every other module asks the owner: a module
@@ -907,6 +930,11 @@ forecast's by `schedule_round` and the check-in's by `schedule_attendance_round`
 `schedule_round_cleanups` arms either or both on their own, and the re-arming calls it alone for a
 round raced, or ended cancelled because every session was entered as not held.
 
+**A standing sweep is an interval job that re-reads its rows each time it runs.** It is the shape
+where work is not yet due while other work is in hand and must be looked at again later, as
+results' sweep that undoes an abandoned amendment is. Its module arms it at start-up, replacing
+itself, and it is armed with no lateness limit.
+
 **A delay is a one-off timer that asks a change.** The queue holds no delay of its own. Where
 something must happen a set time after a job (a season review's, a correction's or an
 amendment's five minutes running out, a signup left unanswered for a day, a held signup channel's
@@ -1044,7 +1072,7 @@ log lines. Each handler is a service in core, in a file of its own:
 | Log writer | `core/services/posting/output_router.py` | the router, and `send_log_text`, which divides a line and sends it mentioning nobody, for the retry of a late one |
 | Notice handler | `core/services/posting/notice_handler.py` | `send_notice`, `edit_notice` and `delete_notice` |
 | Standing-post handler | `core/services/posting/standing_post_handler.py` | `post_standing`, `edit_standing` and `delete_standing` |
-| Bot-owned channel handler | `core/services/posting/owned_channel_handler.py` | `post_in_owned_channel` and `delete_owned_channel` |
+| Bot-owned channel handler | `core/services/posting/owned_channel_handler.py` | `post_in_owned_channel`, `edit_in_owned_channel`, `delete_in_owned_channel` and `delete_owned_channel` |
 
 Every function of the notice, standing-post and bot-owned channel handlers carries
 `posts_in_a_job`: they run in the jobs of a change, and a post off the queue cannot go through one.
@@ -1113,7 +1141,11 @@ The exceptions, each with its reason:
 - **Its message id,** wherever the bot might later edit, delete or replace it. The owning module
   saves the id the handler hands back in the posting step, and asks the handler to delete the
   message it replaces in the step after, so each table keeps one writer. A message nobody recorded
-  can never be found again, to be edited or deleted.
+  can never be found again, to be edited or deleted. Where a module's specification takes its output
+  down when the module is switched off, every post in that output counts as one that might later be
+  deleted. A posted message's ids are kept on a row whose identity is the posting or the thing
+  posted, never on a row a recalculation deletes or rewrites, where a reordering or a rebuild would
+  carry them off or drop them.
 - **Who it may mention,** stated where it is sent. A log line's mentions are wrapped so that they
   name without notifying, but one: the stop notice's mention of the league admins' role
   (`OutputRouter.post_notice`), the one mention the log channel notifies. Who it mentions is the
@@ -1322,7 +1354,7 @@ queue's own telling, of a change's outcome, of its stop or of a press on a stop 
 stated exception as well: each catch-all puts the error in the host's log and what the queue was
 doing stands, the change, its stop or the press alike, a stop notice not posted being posted again,
 because telling what happened must never undo it (their docstrings say so); the readers that stand
-aside (`amendment_service.approval_faults` and `approval_checks.channel_on_server`) are stated
+aside (results' `points_amendment_faults.approval_faults` and `approval_checks.channel_on_server`) are stated
 exceptions too: each puts the error in the host's log and reads an attendance switch as off (a
 switch nobody signed up for aside) or a channel as present, because a reader that cannot answer must
 not refuse an amendment or a season (their docstrings say so); a season's fingerprint that cannot be
@@ -1332,10 +1364,13 @@ which differs from every fingerprint, another empty one included, and so refuses
 review was read, because a fingerprint that could not be read must not wave one through (its
 docstring says so); the factory reset's Discord clean-up (`bot_cog._clean_up`) is a stated
 exception: it says in the reset's last report and closing line that its clean-up stopped, because a
-reset must not end in silence (its docstring says so); and the scheduler's removal of one job
+reset must not end in silence (its docstring says so); the scheduler's removal of one job
 (`SchedulerService._remove_job`) is a stated exception: every cancel is a clean-up, so a job that
 will not go is logged on the host and left, a teardown list going on past it (`SchedulerService`
-says so).
+says so); and the results picker's put-back after a press the bot has already answered
+(`_ConfigSelectView._put_back`) is a stated exception: its catch-all logs the error in full and
+leaves the message as the press's own edit left it, because a report would answer the press twice
+or stand in place of the fault the press is reporting (its docstring says so).
 
 In every case it keeps the full error details for the host's log. Beyond the first place's own
 catch-all, a command catches only the errors it expects by name, and only to turn them into a
@@ -1429,48 +1464,53 @@ later on its own.
   nothing but the entry point imports a module's wiring. The same test checks that core's services
   sit only in the named topic folders, each named as plumbing or as league rules, with the
   scheduler's file alone loose.
-- **`tests/repository/test_architecture_rules.py`** checks the rest: database code outside services,
-  awaiting anything but the connection mid-save, cogs handling their own errors, catch-all handlers
-  that lose the error details, background tasks nobody keeps, code reaching past the scheduler
-  service, the entry point subscribing a module to a hook only that module joins (that module's
-  wiring signs it up), jobs armed with a lateness limit, private names used across modules, a new
-  place naming the log channel (the check lists the six allowed, with their reasons), posting
-  outside the handlers (the four handler files are passed over, `POSTING_ALLOWED`, as is a function
-  named in `POSTS_OFF_THE_QUEUE`), a post made outside a job by a function that is neither decorated
-  nor named off the queue with its reason (`POSTS_OFF_THE_QUEUE`, which fails too on an entry with
-  no reason or no function; the router is exempt, `JOB_CHECK_ALLOWED`, and `NOT_A_POST` names the
-  two calls that are not posts, under "Every post is made in a job"), a service or helper reaching
-  the change queue through the bot, a service looking another service up on the bot (a helper the
-  cogs use may, as a cog does; `league_guild` is the one a service calls), a table written by a
-  module that does not own it, a table read outside its owner (core's tables too; the scan sees
+- **`tests/repository/test_architecture_rules.py`** checks the rest: database code outside
+  services, awaiting anything but the connection mid-save (in a function that opens it and in one
+  handed it), cogs handling their own errors, catch-all handlers that lose the error details,
+  background tasks nobody keeps, code reaching past the scheduler service, the entry point
+  subscribing a module to a hook only that module joins (that module's wiring signs it up), jobs
+  armed with a lateness limit, private names used across modules, a new place naming the log
+  channel (the check lists the six allowed, with their reasons), posting outside the handlers (the
+  four handler files are passed over, `POSTING_ALLOWED`, as is a function named in
+  `POSTS_OFF_THE_QUEUE`), a post made outside a job by a function that is neither decorated nor
+  named off the queue with its reason (`POSTS_OFF_THE_QUEUE`, which fails too on an entry with no
+  reason or no function; the router is exempt, `JOB_CHECK_ALLOWED`, and `NOT_A_POST` names the two
+  calls that are not posts, under "Every post is made in a job"), a service or helper reaching the
+  change queue through the bot, a service looking a service, the router or a hook up on the bot
+  (every one `LeagueBot` declares but the change queue and what the bot itself holds; a helper the
+  cogs use may, as a cog does, and so may the bot's handler of an event's error
+  (`on_event_error`), which the builder attaches to the bot as its `on_error`, and the helpers a
+  service calls that are named for good with their reasons, `LOOKUPS_ALLOWED`), a table written by
+  a module that does not own it, a table read outside its owner (core's tables too; the scan sees
   tables, not columns, so a module's read of its own columns on a core table is named for good,
   `READS_OF_OWN_COLUMNS`; a table whose name is spliced into an f-string after `FROM` or `JOIN`
-  cannot be told, so each counts unless its function was read by hand and found to name only its own
-  module's tables, `SPLICED_READS_READ_BY_HAND`, which holds the count exactly, the tuples of table
-  names those functions iterate checked to name their own module's tables alone), a module's own
-  column on a core table named in a file outside that module, the entry point's and another module's
-  wiring included (`KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER`; the check counts the column's name in any
-  string outside a docstring, in SQL or as a row's key, and each attribute named for it, read or
-  set), core reading a module's service on the bot (an attribute `LeagueBot` types from a module's
-  package, read from a file of core), SQLite's clock in a statement, a service reading the wall
-  clock (the change queue's own default clock is the one place allowed, `WALL_CLOCK_ALLOWED`), a
-  catch-all handler outside the five places (one that raises again, calls `report_failure` as a
-  statement directly in its body, or sits directly in the body of a `for` loop, is in a place by its
-  shape; `CATCH_ALLS_ALLOWED` names for good the failure paths of place 1, the stated exceptions,
-  place 3's guards around reporting and writing a log line and the fifth place's handlers), and a
-  save outside a queued change. The job check and the check of cogs handling their own errors are
-  absolute, with no list of breaches left to grow, and the log channel's check holds its six places
-  for good; every other check lists today's breaches, each under the work that removes it. The check
-  of a save outside a queued change counts each function's `.commit()` and `.executescript()` calls,
-  and a function writing on a handed connection commits nothing and is not counted. It allows for
-  good the migrations run at start-up (`run_migrations` and `_enable_wal`, the journal mode set on
-  the database file itself), the queue's own records, the retry queue for log lines, `/bot pack`
-  (above), and `backup_service._write_empty_database`, which writes the scheduler's empty file and
-  not the league's. The connection-state check refuses, outside the database code, a SQL function
-  added with `create_function`, an authoriser, an assignment to `row_factory` or `isolation_level`,
-  and a PRAGMA, ATTACH or temporary table
-  (`test_a_lent_connection_carries_only_what_the_database_code_sets`); the few functions that set up
-  a connection of their own, opened with `sqlite3.connect` and never lent, are named for good.
+  cannot be told, so each counts unless its function was read by hand and found to name only its
+  own module's tables, `SPLICED_READS_READ_BY_HAND`, which holds the count exactly, the tuples of
+  table names those functions iterate checked to name their own module's tables alone), a module's
+  own column on a core table named in a file outside that module, the entry point's and another
+  module's wiring included (`KNOWN_OWN_COLUMNS_OUTSIDE_THE_OWNER`; the check counts the column's
+  name in any string outside a docstring, in SQL or as a row's key, and each attribute named for
+  it, read or set), core reading a module's service on the bot (an attribute `LeagueBot` types
+  from a module's package, read from a file of core), SQLite's clock in a statement, a service
+  reading the wall clock (the change queue's own default clock is the one place allowed,
+  `WALL_CLOCK_ALLOWED`), a catch-all handler outside the five places (one that raises again, calls
+  `report_failure` as a statement directly in its body, or sits directly in the body of a `for`
+  loop, is in a place by its shape; `CATCH_ALLS_ALLOWED` names for good the failure paths of place
+  1, the stated exceptions, place 3's guards around reporting and writing a log line and the fifth
+  place's handlers), and a save outside a queued change. The job check and the check of cogs
+  handling their own errors are absolute, with no list of breaches left to grow, and the log
+  channel's check holds its six places for good; every other check lists today's breaches, each
+  under the work that removes it. The check of a save outside a queued change counts each
+  function's `.commit()` and `.executescript()` calls, and a function writing on a handed
+  connection commits nothing and is not counted. It allows for good the migrations run at start-up
+  (`run_migrations` and `_enable_wal`, the journal mode set on the database file itself), the
+  queue's own records, the retry queue for log lines, `/bot pack` (above), and
+  `backup_service._write_empty_database`, which writes the scheduler's empty file and not the
+  league's. The connection-state check refuses, outside the database code, a SQL function added
+  with `create_function`, an authoriser, an assignment to `row_factory` or `isolation_level`, and
+  a PRAGMA, ATTACH or temporary table
+  (`test_a_lent_connection_carries_only_what_the_database_code_sets`); the few functions that set
+  up a connection of their own, opened with `sqlite3.connect` and never lent, are named for good.
 - **`tests/repository/test_one_league_server.py`**, **`tests/core/test_schema_rules.py`** and
   **`tests/repository/test_import_roots.py`** check the one-league rule, the schema's own rules, and
   that the bot is imported from one place: the installed package, never through `src`. The schema's

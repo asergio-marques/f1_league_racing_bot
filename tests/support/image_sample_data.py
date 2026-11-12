@@ -1197,7 +1197,7 @@ def build_standings_drawing(root, template_key: str, teams):
         StandingsDataError,
         resolve_drawing,
     )
-    from leaguebot.results.services.standings_service import derive_gaps, derive_movement
+    from leaguebot.results.services.standings.standings_service import derive_gaps, derive_movement
 
     configurable = [t for t in teams or [] if not getattr(t, "is_reserve", False)]
     if not configurable:

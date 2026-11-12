@@ -56,7 +56,10 @@ class RetryCog(commands.Cog):
 
         log.info("retry_loop: processing %d pending message(s)", len(pending))
         for entry in pending:
-            await attempt_delivery(entry, self._bot, now=self._bot.change_queue.now())
+            await attempt_delivery(
+                entry, self._bot, router=self._bot.output_router,
+                now=self._bot.change_queue.now(),
+            )
 
     @retry_loop.before_loop
     async def before_retry_loop(self) -> None:

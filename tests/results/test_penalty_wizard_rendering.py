@@ -34,15 +34,11 @@ from leaguebot.core.db.database import get_connection, run_migrations
 # and `result_submission_service` both import this one, and these are the values
 # `session_results.session_type` actually holds.
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_service import StagedPenalty
-from leaguebot.results.services.penalty_wizard import (
-    PenaltyReviewState,
-    StagedPardon,
-    _is_league_manager,
-    _pen_label,
-    _render_prompt_content,
-    _require_lm,
-)
+from leaguebot.results.services.review.penalty_service import StagedPenalty
+from leaguebot.results.services.review.penalty_wizard import _is_league_manager, _require_lm
+from leaguebot.results.services.review.penalty_review_views import _render_prompt_content
+from leaguebot.results.services.review.review_state import PenaltyReviewState, StagedPardon, _pen_label
+from tests.support.review_league import attendance_after_review_of
 from tests.support.teams import seed_team_instances
 
 SERVER_ID = 9508
@@ -120,6 +116,7 @@ def _state(bot, db_path: str = ":memory:") -> PenaltyReviewState:
         session_types_present=[SessionType.FEATURE_RACE],
         db_path=db_path,
         bot=bot,
+        queue=bot.change_queue, server_config=bot.config_service.get_server_config, router=bot.output_router, attendance=attendance_after_review_of(db_path),
     )
 
 
@@ -135,28 +132,28 @@ async def test_a_league_admin_may_drive_the_review(monkeypatch):
     """Issue #116, on the button-driven half. The gate asks `is_league_manager`, and the
     higher tier carries the lower — so an admin passes without also holding the
     interaction role. Asking for that role alone refused all thirteen buttons."""
-    import leaguebot.results.services.penalty_wizard as pw
+    import leaguebot.results.services.review.penalty_wizard as pw
 
     monkeypatch.setattr(pw, "is_league_manager", lambda config, member: True)
     interaction = _interaction()
 
-    assert await _is_league_manager(interaction, ":memory:", _bot(MagicMock())) is True
+    assert await _is_league_manager(interaction, _bot(MagicMock()).config_service.get_server_config) is True
 
 
 async def test_an_ordinary_member_may_not(monkeypatch):
-    import leaguebot.results.services.penalty_wizard as pw
+    import leaguebot.results.services.review.penalty_wizard as pw
 
     monkeypatch.setattr(pw, "is_league_manager", lambda config, member: False)
     interaction = _interaction()
 
-    assert await _is_league_manager(interaction, ":memory:", _bot(MagicMock())) is False
+    assert await _is_league_manager(interaction, _bot(MagicMock()).config_service.get_server_config) is False
 
 
 async def test_an_interaction_from_outside_a_server_is_refused():
     """Not a `Member`, so there are no roles to check at all."""
     interaction = _interaction(member=False)
 
-    assert await _is_league_manager(interaction, ":memory:", _bot(MagicMock())) is False
+    assert await _is_league_manager(interaction, _bot(MagicMock()).config_service.get_server_config) is False
 
 
 async def test_an_unconfigured_server_refuses_rather_than_assuming():
@@ -164,11 +161,11 @@ async def test_an_unconfigured_server_refuses_rather_than_assuming():
     anybody approve a round on a half-set-up server."""
     interaction = _interaction()
 
-    assert await _is_league_manager(interaction, ":memory:", _bot(None)) is False
+    assert await _is_league_manager(interaction, _bot(None).config_service.get_server_config) is False
 
 
 async def test_a_refused_actor_is_told_why(monkeypatch):
-    import leaguebot.results.services.penalty_wizard as pw
+    import leaguebot.results.services.review.penalty_wizard as pw
 
     monkeypatch.setattr(pw, "is_league_manager", lambda config, member: False)
     interaction = _interaction()
@@ -180,7 +177,7 @@ async def test_a_refused_actor_is_told_why(monkeypatch):
 
 
 async def test_a_permitted_actor_is_not_interrupted(monkeypatch):
-    import leaguebot.results.services.penalty_wizard as pw
+    import leaguebot.results.services.review.penalty_wizard as pw
 
     monkeypatch.setattr(pw, "is_league_manager", lambda config, member: True)
     interaction = _interaction()
@@ -447,7 +444,7 @@ async def test_a_pardon_is_numbered_for_removal(tmp_path, amendment):
 async def test_an_amendments_appeal_stage_does_not_claim_anything_was_posted(tmp_path):
     """The first pass's line — "Post-Race Penalty Results have been posted" — is false during an
     amendment, which publishes nothing until this stage is approved."""
-    from leaguebot.results.services.penalty_wizard import _render_appeals_prompt_content
+    from leaguebot.results.services.review.appeals_review_views import _render_appeals_prompt_content
 
     db_path = await _make_db(tmp_path)
     state = _state_for(db_path)

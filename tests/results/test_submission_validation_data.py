@@ -48,9 +48,9 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.result_submission_service import (
+from leaguebot.results.services.submission.submission_changes import _make_slug
+from leaguebot.results.services.submission.paste_reading import (
     _build_division_validation_data,
-    _make_slug,
     other_active_team_assignments,
 )
 from tests.support.teams import seed_team_instances
@@ -150,7 +150,7 @@ def _bot(teams: list[dict], roles: dict[str, int | None]):
 
 
 async def _build(teams, roles):
-    return await _build_division_validation_data(DIVISION_ID, _bot(teams, roles))
+    return await _build_division_validation_data(DIVISION_ID, _bot(teams, roles).team_service)
 
 
 def _standard():

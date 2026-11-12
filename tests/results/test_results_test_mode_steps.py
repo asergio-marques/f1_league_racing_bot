@@ -89,7 +89,7 @@ async def test_results_hands_back_its_own_pending_step(tmp_path, state, pending)
     the round's result submission while the round is not yet run or awaiting its results, no
     session's results stand and no submission is already asked of the change queue. It passes
     nothing over, and while it is off it hands back nothing."""
-    from leaguebot.results.services.test_mode_steps import pending_steps
+    from leaguebot.results.services.module.test_mode_steps import pending_steps
 
     db_path = str(tmp_path / "results_steps.db")
     await _seed(db_path, **state)
@@ -117,7 +117,7 @@ async def test_results_hands_the_review_its_own_marks(tmp_path, state, queued, m
     session's results stand, and otherwise ⏳ where its job is queued or there is no scheduler to
     ask, ⚠️ where the scheduler holds no job for it. While results is off, it hands back
     nothing."""
-    from leaguebot.results.services.test_mode_steps import review_marks
+    from leaguebot.results.services.module.test_mode_steps import review_marks
 
     db_path = str(tmp_path / "results_marks.db")
     await _seed(db_path, **state)

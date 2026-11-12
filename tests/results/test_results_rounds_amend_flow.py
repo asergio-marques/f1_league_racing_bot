@@ -45,8 +45,8 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.results.services import result_submission_service
-from leaguebot.results.services.result_submission_service import DivisionValidationData
+from leaguebot.results.services.submission import result_submission_service, paste_reading
+from leaguebot.results.services.submission.paste_reading import DivisionValidationData
 from tests.results.test_amend_changes import (
     QUALI_PASTE,
     STALE_CHANNEL,
@@ -433,7 +433,7 @@ async def test_there_is_one_format_and_the_amendment_uses_it(tmp_path, monkeypat
     """
     import inspect
 
-    from leaguebot.results.services.result_submission_service import validate_submission_block
+    from leaguebot.results.services.submission.paste_reading import validate_submission_block
 
     assert "amend_format" not in inspect.signature(validate_submission_block).parameters
 
@@ -721,7 +721,7 @@ async def _lewis_moved(league: Any, monkeypatch: Any) -> None:
         await seed_team_instances(db, DIVISION_ID, 3002)
         await db.commit()
     monkeypatch.setattr(
-        result_submission_service, "_build_division_validation_data",
+        paste_reading, "_build_division_validation_data",
         AsyncMock(return_value=_LEWIS_MOVED),
     )
 
@@ -786,7 +786,7 @@ async def _left_at_the_picker(tmp_path: Any, *, lapse: bool) -> tuple[str, Any, 
     """Manager runs `/results rounds amend` of round 3 of Pro naming no session, and at the session
     picker either presses its Cancel (*lapse* False) or leaves it five minutes (*lapse* True).
     Gives the database, the cog and the command's interaction."""
-    from leaguebot.results.cogs.results_cog import _AmendSessionsView
+    from leaguebot.results.cogs.rounds_commands import _AmendSessionsView
 
     db_path = await _command_db(tmp_path, name="amend_picker_" + ("lapse" if lapse else "cancel"))
     cog = await _command_cog(db_path)
@@ -866,7 +866,7 @@ async def _continue_with_nothing_ticked(tmp_path: Any) -> tuple[Any, Any]:
     """Round 3 of Pro has a Feature Qualifying and a Feature Race. Manager runs
     `/results rounds amend` naming no session and presses Continue on the picker before ticking
     any; the picker is then cancelled. Gives the bot and the press."""
-    from leaguebot.results.cogs.results_cog import _AmendSessionsView
+    from leaguebot.results.cogs.rounds_commands import _AmendSessionsView
 
     db_path = await _command_db(
         tmp_path, name="amend_press_continue",

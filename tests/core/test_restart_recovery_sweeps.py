@@ -91,11 +91,13 @@ async def _amend_league(tmp_path, *, amended: bool = False):
 
 async def _restart(league) -> list[dict]:
     """The restart's sweep, then the lapses it asked of the queue."""
-    from leaguebot.results.wiring import recover_orphaned_amend_channels
+    from leaguebot.results.services.round_amendment.amend_end_changes import (
+        recover_orphaned_amend_channels,
+    )
 
     from tests.support.change_queue import change_rows
 
-    await recover_orphaned_amend_channels(league.bot)
+    await recover_orphaned_amend_channels(league.bot, queue=league.bot.change_queue)
     return [row for row in await change_rows(league.db_path)
             if row["kind"] == "results.amend.lapse"]
 

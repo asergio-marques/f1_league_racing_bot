@@ -28,9 +28,9 @@ import pytest
 
 from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
 from leaguebot.core.db.database import get_connection
-from leaguebot.results.services.penalty_service import StagedPenalty
+from leaguebot.results.services.review.penalty_service import StagedPenalty
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.verdict_announcement_service import (
+from leaguebot.results.services.review.verdict_announcement_service import (
     NO_FURTHER_ACTION,
     describe_penalty,
 )
@@ -44,6 +44,7 @@ from tests.support.change_queue import (
     tier_member,
     updated_reply,
 )
+from tests.support.mentions import notified
 from tests.support.review_league import (
     AMEND_CHANNEL,
     DIVISION_ID,
@@ -178,6 +179,9 @@ def drawn(monkeypatch: Any, tmp_path: Any) -> list[dict[str, Any]]:
 async def test_a_report_verdict_names_the_round_the_driver_the_penalty_and_the_incident(
     tmp_path,
 ):
+    """Alex approves a five-second penalty for Lewis in round 3. The verdict names the round,
+    Lewis, the penalty and the incident, and may notify the members it mentions, never
+    @everyone nor a role."""
     league = await review_league(tmp_path)
     await _approve_reports(league, [penalty(LEWIS)])
     await run_queue(league.bot)
@@ -189,6 +193,11 @@ async def test_a_report_verdict_names_the_round_the_driver_the_penalty_and_the_i
     assert f"**Penalty**: {describe_penalty('TIME', 5)}" in verdict
     assert "**Description**: Corner cutting" in verdict
     assert "**Justification**: Turn 4, lap 12" in verdict
+    [sent] = [call for call in league.channel(VERDICTS_CHANNEL).send.await_args_list
+              if f"<@{LEWIS}>" in (call.args[0] if call.args else "")]
+    assert notified(sent.kwargs.get("allowed_mentions")) == {
+        "everyone": False, "users": "any", "roles": set()
+    }
 
 
 async def test_no_further_action_is_announced_as_no_penalty(tmp_path):
@@ -843,3 +852,76 @@ async def test_a_review_s_sanction_whose_role_change_discord_refuses_stops_the_q
     assert row["is_reserve"] == 1, "Lewis's autoreserve was not saved"
     # The stop notice is a log line, whose mentions are wrapped in code to name without notifying.
     assert f"changing `<@{LEWIS}>`'s roles for their autoreserve in **Pro**" in _sheet_stop(league)
+
+
+# ---------------------------------------------------------------------------
+# A verdict whose picture fails says why in the log channel (image spec :1401)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_verdict_whose_picture_fails_is_announced_as_text_and_says_why_in_the_log(
+    tmp_path, drawn, monkeypatch,
+):
+    """Alex approves a five-second penalty for Lewis in round 3, the verdict graphic switched on,
+    and the image module's step that builds the verdict picture raises a fault it does not catch
+    itself (a file it reads cannot be opened); a fault in rasterising is caught there and already
+    reported in the log channel by the image module. Today the results module logs this one on
+    the host alone. The verdict is announced as text naming Lewis, the queue runs to the end, and
+    the log channel gains one line naming round 3 of Pro, the verdict picture, the fault, and
+    that the verdict went out as text."""
+    from leaguebot.image.services import image_verdict_post
+
+    fault = "the verdict picture's file could not be opened"
+
+    async def _fails(*_args: Any, **_kwargs: Any) -> Any:
+        raise OSError(fault)
+
+    monkeypatch.setattr(image_verdict_post, "build_drawing", _fails)
+    league = await review_league(tmp_path)
+    await _approve_reports(league, [penalty(LEWIS)])
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    [verdict] = _verdicts(league)
+    assert f"**Driver**: <@{LEWIS}>" in verdict
+    faults = [line.lower() for line in league.bot.log_channel.sent
+              if "Pro" in line and "round 3" in line.lower()]
+    assert len(faults) == 1, league.bot.log_channel.sent
+    [line] = faults
+    assert "verdict" in line and ("picture" in line or "image" in line), line
+    assert "text" in line and fault in line, line
+    assert ("to put it right: fix the verdict template, then, once the round is final, amend "
+            "the round with `/results rounds amend`") in line, line
+
+
+async def test_a_sanction_card_whose_picture_fails_is_posted_as_text_and_says_why_in_the_log(
+    tmp_path, drawn, monkeypatch,
+):
+    """A sync has moved Lewis to reserve in round 3 of Pro, attendance's real hook is in place,
+    the verdict graphic is on, and the image module's step that builds the picture raises a fault
+    it does not catch itself. The card is posted as text naming Lewis, the queue runs to the end,
+    and the log channel gains one line naming round 3 of Pro, the verdict picture, the fault, that
+    the card went out as text, and that no command posts it again."""
+    from leaguebot.image.services import image_verdict_post
+
+    fault = "the verdict picture's file could not be opened"
+
+    async def _fails(*_args: Any, **_kwargs: Any) -> Any:
+        raise OSError(fault)
+
+    monkeypatch.setattr(image_verdict_post, "build_drawing", _fails)
+    league = await review_league(tmp_path, attendance=True, attendance_hook=_real_attendance_hook)
+
+    await _announce_lewis_s_autoreserve(league)
+
+    assert await stopped_at(league) is None
+    [card] = _verdicts(league)
+    assert f"<@{LEWIS}>" in card and "Moved to Reserve" in card
+    faults = [line.lower() for line in league.bot.log_channel.sent
+              if "Pro" in line and "round 3" in line.lower()]
+    assert len(faults) == 1, league.bot.log_channel.sent
+    [line] = faults
+    assert "verdict" in line and ("picture" in line or "image" in line), line
+    assert "text" in line and fault in line, line
+    assert "to put it right: fix the verdict template; no command posts a sanction's card again" \
+        in line, line

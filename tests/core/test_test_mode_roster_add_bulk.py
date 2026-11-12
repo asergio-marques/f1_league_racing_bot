@@ -278,14 +278,14 @@ async def test_the_roster_is_held_to_the_template_capacities(league, monkeypatch
 
     asked: list[tuple[int, dict[str, int]]] = []
     measurers: list[TemplateCapacityService] = []
-    measure = TemplateCapacityService.guard_roster_capacity
+    measure = TemplateCapacityService.roster_questions_on
 
-    async def _measured(service, division_id, added):
+    async def _measured(service, db, division_id, added):
         asked.append((division_id, dict(added)))
         measurers.append(service)
-        await measure(service, division_id, added)
+        return await measure(service, db, division_id, added)
 
-    monkeypatch.setattr(TemplateCapacityService, "guard_roster_capacity", _measured)
+    monkeypatch.setattr(TemplateCapacityService, "roster_questions_on", _measured)
 
     await _submit(league, _asks(league))
     assert [row["kind"] for row in await change_rows(league.db_path)] == [

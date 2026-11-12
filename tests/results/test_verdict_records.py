@@ -14,7 +14,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.verdict_records import delete_verdicts, select_verdicts
+from leaguebot.results.services.review.verdict_records import delete_verdicts, select_verdicts
 from tests.support.teams import seed_team_instances
 
 ROUND_ID = 21

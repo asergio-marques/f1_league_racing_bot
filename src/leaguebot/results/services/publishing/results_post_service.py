@@ -1,0 +1,1685 @@
+"""results_post_service.py — Post and edit results/standings in Discord channels."""
+from __future__ import annotations
+
+import json
+import logging
+from collections.abc import Awaitable, Callable, Sequence
+from typing import NamedTuple
+
+import aiosqlite
+import discord
+
+from leaguebot.core.utils.in_a_job import posts_in_a_job
+from leaguebot.core.services.posting.owned_channel_handler import delete_owned_channel
+from leaguebot.core.services.posting.standing_post_handler import (
+    delete_standing,
+    edit_standing,
+    post_standing,
+)
+from leaguebot.core.db.database import get_connection
+from leaguebot.core.services.settings.channel_registry_service import as_text_channel
+from leaguebot.core.models.round import RoundFormat, RoundStatus
+from leaguebot.core.services.drivers.driver_service import (
+    current_account_map_for_division,
+    driver_test_names_on,
+)
+from leaguebot.core.services.drivers.team_service import TeamService
+from leaguebot.core.services.seasons.season_lifecycle_service import season_stage_on
+from leaguebot.core.services.seasons.season_service import (
+    division_on,
+    division_rounds_in_order_on,
+    round_facts_on,
+    season_divisions_on,
+)
+from leaguebot.core.models.classification_occasion import ClassificationOccasion
+from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
+from leaguebot.core.models.change import AuditRecord
+from leaguebot.core.models.season import SeasonStage
+from leaguebot.core.services.queue.setting_change import Saved
+from leaguebot.results.models.session_result import (
+    DriverSessionResult,
+    OutcomeModifier,
+    QualifyingSessionResult,
+    RaceSessionResult,
+    SessionResult,
+)
+from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
+from leaguebot.results.services.standings import standings_service
+from leaguebot.results.services.standings.season_standings_posts import final_round_on
+from leaguebot.core.services.settings.channel_registry_service import (
+    SETTING_LABELS,
+    missing_channel_fault,
+    unpostable_channel_fault,
+)
+from leaguebot.core.services.drivers.team_service import team_names_for_instances
+from leaguebot.results.utils import results_formatter
+from leaguebot.core.utils.league_bot import LeagueBot
+
+log = logging.getLogger(__name__)
+
+_MSG_MAX = 1990  # Leave a small margin under Discord's 2000-char limit
+
+#: Whom a results or standings table posted as text may notify: the drivers it names, as it
+#: always has, and no role and not @everyone. A table drawn as a picture carries no mention text,
+#: so it notifies nobody.
+_TABLE_MENTIONS = discord.AllowedMentions(users=True, roles=False, everyone=False)
+
+
+class PostedTable(NamedTuple):
+    """What posting one table put up, and what it leaves standing for the caller to take down.
+
+    The ``produce_*`` posters send and write nothing else: they save no id and delete no
+    message, so that a caller can save the new ids when it likes (the change queue saves them
+    with the job's done mark) and take the old message down only once the new one stands.
+
+    *new* is the ids of the messages posted, the anchor first. *old* is the ids of the messages
+    this posting replaces and leaves standing, the anchor first where it replaces a whole
+    posting; empty where nothing stood or where it was edited in place and keeps its anchor.
+    *edited* is true where the stored message was edited in place, so that *old* is only the
+    continuations a shorter table no longer fills. *drawn* is true where the picture was
+    posted, which replaces what stood before as a text table does: *new* is its one message and
+    *old* what it replaces. *championship* names the standings column the
+    ids belong to, ``None`` for a session's results. *fault* is what kept a picture from posting
+    where this table went out as text in its place: the job returns it as a line of the log
+    (:func:`picture_fallback_line`), the image module having reported only the faults it
+    catches itself.
+    """
+
+    new: list[int]
+    old: list[int]
+    edited: bool = False
+    drawn: bool = False
+    championship: str | None = None
+    fault: str | None = None
+
+
+def picture_fallback_line(
+    named: str,
+    what: str,
+    *,
+    picture: str,
+    division: str,
+    round_number: int,
+    fault: str,
+    put_right: str,
+) -> str:
+    """The line a job writes to the log where a *picture* ("results", "standings", "verdict")
+    went out as text, as the calendar's and the lineup's do (image specification, :822, :1035
+    and :1401): the member and the change it ran for, then the division, what failed and what
+    puts it right. *put_right* is the remedy, which differs by picture."""
+    return (
+        f"{named} | {what} | {picture.capitalize()} posted as text\n"
+        f"  division: {division}\n"
+        f"  problem: round {round_number}'s {picture} picture could not be posted: {fault}\n"
+        f"  to put it right: {put_right}"
+    )
+
+
+def fault_of(error: BaseException) -> str:
+    """What to say of *error* in a log line: its message, else its type."""
+    return str(error) or type(error).__name__
+
+
+def _split_content(text: str) -> list[str]:
+    """Split *text* into chunks ≤ _MSG_MAX chars, breaking on newlines where possible."""
+    if len(text) <= _MSG_MAX:
+        return [text]
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    for line in text.splitlines(keepends=True):
+        if current_len + len(line) > _MSG_MAX and current:
+            chunks.append("".join(current).rstrip("\n"))
+            current = [line]
+            current_len = len(line)
+        else:
+            current.append(line)
+            current_len += len(line)
+    if current:
+        chunks.append("".join(current).rstrip("\n"))
+    return chunks or [text[:_MSG_MAX]]
+
+
+@posts_in_a_job
+async def _send_chunked(channel: discord.TextChannel, content: str) -> list[int]:
+    """Send *content* to *channel*, splitting into multiple messages if needed, through core's
+    standing-post handler, notifying the drivers it names.
+
+    Returns **every** message's id, the anchor first, so that all of them can be recorded.
+
+    It used to return the anchor alone, and only the anchor was persisted; the rest were found
+    again by walking forward from it over bot-authored messages. That walk cannot tell this
+    posting's continuation from the next posting down, so it was wrong wherever two of the
+    bot's own postings sit together — which the amendment replay makes ordinary, posting a
+    replacement before destroying the original (#345). Recording what was sent removes the
+    guess entirely.
+    """
+    chunks = _split_content(content)
+    sent: list[int] = []
+    try:
+        for chunk in chunks:
+            sent.append(await post_standing(channel, chunk, mentions=_TABLE_MENTIONS))
+    except Exception as failure:
+        # **A posting is whole or absent** (#345). The chunks already sent are recorded nowhere
+        # until the whole posting is, so leaving them would strand the start of a table in the
+        # channel with no route by which the bot could ever take it down.
+        stranded: list[int] = []
+        for message_id in sent:
+            try:
+                await delete_standing(channel.get_partial_message(message_id))
+            except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
+                log.warning("_send_chunked: could not take down chunk %s: %s", message_id, exc)
+                if not isinstance(exc, discord.NotFound):
+                    stranded.append(message_id)
+        if stranded:
+            # What it could not take down, on the failure itself, for a caller that keeps the
+            # ids and removes them before it posts again (the change queue's posting jobs).
+            setattr(failure, "left_standing", stranded)
+        raise
+    return sent
+
+
+def _ids_json(messages: list[discord.Message]) -> str:
+    """The chunk list as it is stored: a JSON array of message ids, the anchor first."""
+    return json.dumps([m.id for m in messages])
+
+
+def _parse_ids(raw: str | None) -> list[int] | None:
+    """The stored chunk list as message ids, or None where nothing usable was recorded.
+
+    A malformed value is treated as nothing recorded rather than raising: the column is written
+    by this module alone, so a bad one means a bug elsewhere, and refusing to delete anything is
+    a great deal safer than deleting whatever a half-parsed list happened to yield.
+    """
+    if not raw:
+        return None
+    try:
+        ids = json.loads(raw)
+    except (TypeError, ValueError):
+        log.warning("_parse_ids: could not read a stored chunk list: %r", raw)
+        return None
+    if not isinstance(ids, list) or not all(isinstance(i, int) for i in ids):
+        log.warning("_parse_ids: stored chunk list was not a list of ids: %r", raw)
+        return None
+    return ids or None
+
+
+@posts_in_a_job
+async def delete_round_channel(
+    channel: discord.abc.GuildChannel | discord.Thread, *, reason: str
+) -> None:
+    """Delete a round's submission or amendment channel.
+
+    The one place one is deleted, which the queue's `delete_channel` job and a results switch-off's
+    take-down both call. Raises
+    `discord.NotFound` where the channel is already gone and `discord.HTTPException` where
+    Discord refuses; each caller says what either means for it.
+    """
+    await delete_owned_channel(channel, reason=reason)
+
+
+@posts_in_a_job
+async def _delete_posting(
+    channel: discord.TextChannel,
+    anchor_msg_id: int,
+    message_ids: list[int] | None,
+    label: str = "message",
+    *,
+    delete: Callable[[discord.Message], Awaitable[None]],
+    failures: list[discord.HTTPException] | None = None,
+) -> list[int]:
+    """Delete a posting: exactly the messages it recorded, and nothing else.
+
+    **The recorded list is the truth** (#345). It is written at send time, so it names this
+    posting's own messages and cannot reach a neighbour's — which matters because a division
+    rebuild posts every replacement before it destroys any original, and both are the bot's.
+
+    This replaced an adjacency walk that took every bot-authored message following the anchor.
+    That walk could not tell this posting's continuation from the next posting down, so under
+    produce-then-destroy it deleted the replacements as it went — one of the two defects issue
+    #345 set out to fix, and the reason rule 11 asks for every chunk's id to be stored at send
+    time. Nothing falls back to it: a posting whose list was never recorded is deleted by its
+    anchor alone, which is one message too few rather than four too many.
+
+    **Returns the ids it could not remove**, so a caller that must tell a league what is still
+    standing can (decided 2026-09-21, #189). A message already gone — ``NotFound`` on either
+    call, most often one a manager deleted by hand — is not returned: nothing of it is left to
+    remove. Any other failure is logged and the id returned, and the rest are still attempted.
+    *failures*, where given, is appended with each such failure, for a caller that must say what
+    kind of fault left the messages standing (the change queue's stop notice does).
+
+    *delete* is core's delete for the kind of post being taken down (``delete_standing`` for a
+    table, ``delete_notice`` for a verdict, a banner or a note, ``delete_in_owned_channel`` for a
+    prompt in a channel the bot owns), which the caller names since only it knows the kind.
+    """
+    ids = list(message_ids or [anchor_msg_id])
+    # The anchor is included whether or not the stored list names it. Every list this module
+    # writes puts it first, but the anchor and the list are cleared and written through separate
+    # paths — so a list that ever omitted it would leak that message for good, and the one thing
+    # certain about the anchor is that it belongs to this posting.
+    if anchor_msg_id not in ids:
+        ids = [anchor_msg_id, *ids]
+    left_standing: list[int] = []
+    for message_id in ids:
+        try:
+            message = await channel.fetch_message(message_id)
+        except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
+            log.warning("_delete_posting: could not fetch %s %s: %s", label, message_id, exc)
+            if not isinstance(exc, discord.NotFound):
+                left_standing.append(message_id)
+                if failures is not None:
+                    failures.append(exc)
+            continue
+        try:
+            await delete(message)
+        except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
+            log.warning("_delete_posting: could not delete %s %s: %s", label, message_id, exc)
+            if not isinstance(exc, discord.NotFound):
+                left_standing.append(message_id)
+                if failures is not None:
+                    failures.append(exc)
+    return left_standing
+
+
+# ---------------------------------------------------------------------------
+# Display-name helpers
+# ---------------------------------------------------------------------------
+
+async def _build_test_driver_display(
+    db_path: str,
+    user_ids: list[int],
+) -> dict[int, str]:
+    """Return {user_id: '<@uid> (name)'} for any test drivers in *user_ids*."""
+    if not user_ids:
+        return {}
+    async with get_connection(db_path) as db:
+        names = await driver_test_names_on(db, user_ids)
+    return {uid: f"<@{uid}> ({name})" for uid, name in names.items() if name}
+
+
+async def _build_member_display(
+    guild: discord.Guild,
+    user_ids: list[int],
+) -> dict[int, str]:
+    """Return {user_id: display_name} for the given IDs."""
+    result: dict[int, str] = {}
+    for uid in user_ids:
+        member = guild.get_member(uid)
+        if member is None:
+            try:
+                member = await guild.fetch_member(uid)
+            except (discord.NotFound, discord.HTTPException):
+                member = None
+        result[uid] = member.display_name if member else f"User {uid}"
+    return result
+
+
+async def driver_standings_for_display(
+    db_path: str,
+    division_id: int,
+    round_id: int,
+    guild: discord.Guild | None,
+    bot: LeagueBot | None = None,
+) -> list[DriverStandingsSnapshot]:
+    """The driver standings, ordered on the names they will be posted under.
+
+    Computed twice, deliberately, and for the reason the opening classification already is:
+    the final tiebreak orders two entries level on everything alphabetically by driver, the
+    names are resolved from Discord by user id, so the roster has to be known before it can
+    be ordered. The first pass is read only for who is in it; the second is the one that
+    counts.
+
+    Where no bot or guild is in scope there is nothing to resolve a name from, and the single
+    pass falls back to ordering a full tie by user id.
+
+    The recomputation that persists a snapshot resolves the same names, through
+    :func:`standings_display_names`, so the stored order and the drawn order agree.
+
+    The name is whatever resolves at the moment of computing, and no earlier one is kept. A
+    driver renamed mid-season therefore moves among the entries they are tied with, and a
+    round reposted after the rename can order such a pair the other way about than when it
+    was first published. That is accepted rather than worked around (decided 2026-09-15):
+    preserving it would mean the standings reading a name nobody is called any more.
+    """
+    snaps = await standings_service.compute_driver_standings(db_path, division_id, round_id)
+    if bot is None or guild is None or not snaps:
+        return snaps
+
+    from leaguebot.image.services.image_results_post import _driver_names
+
+    names = await _driver_names(
+        bot, guild, [s.driver_user_id for s in snaps], division_id=division_id
+    )
+    return await standings_service.compute_driver_standings(
+        db_path, division_id, round_id, names
+    )
+
+
+async def standings_display_names(
+    db_path: str,
+    division_id: int,
+    guild: discord.Guild | None,
+    bot: LeagueBot | None = None,
+) -> dict[int, str] | None:
+    """The names every driver the division's standings can mention would be drawn under.
+
+    Resolved across the division rather than for one round, so a cascade can order every
+    round it rewrites on one resolution. The roster only grows as a season runs, so the
+    division's last round holds every driver an earlier one could.
+
+    ``None`` where there is nothing to resolve a name from, which leaves the caller ordering
+    a full tie by user id.
+    """
+    if bot is None or guild is None:
+        return None
+
+    async with get_connection(db_path) as db:
+        rounds = await division_rounds_in_order_on(db, division_id)
+    last = next((r for r in reversed(rounds) if r.status != RoundStatus.CANCELLED), None)
+    if last is None:
+        return None
+
+    snaps = await standings_service.compute_driver_standings(db_path, division_id, last.id)
+    if not snaps:
+        return None
+
+    from leaguebot.image.services.image_results_post import _driver_names
+
+    return await _driver_names(
+        bot, guild, [s.driver_user_id for s in snaps], division_id=division_id
+    )
+
+
+async def rescore_season(db: aiosqlite.Connection, season_id: int) -> None:
+    """Score every raced session of *season_id* again, under the season's points as they stand.
+
+    For an approved points amendment, which has just replaced the season's tables on *db*:
+    every ``ACTIVE`` session that was scored under a configuration is scored again under that
+    same configuration at its new values, in every round of every division of the season. A
+    finished division is reached while another still races, and a cancelled division's raced
+    rounds are reached too; a round in review is scored like a final one. A session under a
+    configuration the amendment left alone comes out with the points it had, and one scored
+    under no configuration is not touched. No other season is read.
+
+    **It works on the caller's connection and commits nothing**, so the amendment's new tables
+    and the points they give land together or not at all: a failure part-way leaves every
+    session as it stood once the caller's transaction is abandoned. It catches nothing for the
+    same reason — a rescoring that logged a failed session and moved on would publish a
+    championship scored under two tables.
+
+    **The scoring is `scoring._apply_points_in_tx`**, reached through its
+    module rather than bound by name, and every write is its own: this only chooses the
+    sessions. The sanctions already committed survive because that function reads them from
+    the stored rows — a disqualified or non-starting driver scores nothing, a non-finisher no
+    position points, and a time penalty through the finishing position it already moved. It
+    waits on nothing but *db*: no Discord, no names, no connection of its own, so the caller's
+    transaction is held for the scoring alone.
+    """
+    from leaguebot.results.services.points import scoring
+
+    # Core names the season's divisions and each one's rounds; the sessions are results' own.
+    # Ordered division id, round number, session id, as the one query ordered them.
+    sessions: list[aiosqlite.Row] = []
+    for division in sorted(await season_divisions_on(db, season_id), key=lambda d: d.id):
+        for rnd in await division_rounds_in_order_on(db, division.id):
+            cursor = await db.execute(
+                "SELECT id AS session_result_id, config_name, session_type "
+                "FROM session_results "
+                "WHERE round_id = ? AND status = 'ACTIVE' AND config_name IS NOT NULL "
+                "ORDER BY id",
+                (rnd.id,),
+            )
+            sessions.extend(await cursor.fetchall())
+    for row in sessions:
+        await scoring._apply_points_in_tx(
+            db,
+            row["session_result_id"],
+            season_id,
+            row["config_name"],
+            SessionType(row["session_type"]),
+        )
+
+
+async def _get_heading_context(
+    db_path: str, round_id: int
+) -> tuple[int | None, str]:
+    """Return (season_number, division_name) for building result headings."""
+    async with get_connection(db_path) as db:
+        facts = await round_facts_on(db, round_id)
+    if facts is None:
+        return None, "Unknown"
+    return facts.season_number, facts.division_name
+
+
+async def _get_primary_session_label(db_path: str, round_id: int) -> str:
+    """Return the formatted label for the most recently posted session of *round_id*."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            """
+            SELECT session_type FROM session_results
+            WHERE round_id = ? AND status = 'ACTIVE'
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (round_id,),
+        )
+        row = await cursor.fetchone()
+        facts = None if row is None else await round_facts_on(db, round_id)
+    if row is None or facts is None:
+        return "Results"
+    st = SessionType(row["session_type"])
+    is_sprint = facts.format == RoundFormat.SPRINT
+    return results_formatter.format_session_label(st, is_sprint=is_sprint)
+
+
+async def _get_result_status(db_path: str, round_id: int) -> str:
+    """The round's results lifecycle stage, from which both phase closures follow (039)."""
+    async with get_connection(db_path) as db:
+        facts = await round_facts_on(db, round_id)
+    return "" if facts is None else facts.status.value
+
+
+async def _get_division_tier(db_path: str, division_id: int) -> int | None:
+    """The division's tier, an optional field of the results graphic."""
+    async with get_connection(db_path) as db:
+        division = await division_on(db, division_id)
+    return None if division is None else division.tier
+
+
+def _label_from_status(result_status: str) -> str:
+    """Map a round result_status value to the user-visible lifecycle label."""
+    return {
+        "AWAITING_REPORT_VERDICTS": "Provisional Results",
+        "AWAITING_APPEAL_VERDICTS": "Post-Race Penalty Results",
+        "FINAL": "Final Results",
+    }.get(result_status, "Results")
+
+
+# ---------------------------------------------------------------------------
+# Session-level posting
+# ---------------------------------------------------------------------------
+
+async def _load_dsq_phase_map(
+    db_path: str,
+    result_ids: list[int],
+    *,
+    is_qualifying: bool,
+) -> dict[int, str]:
+    """Return a mapping of result-row id -> 'PENALTY' or 'APPEAL' for DSQ entries.
+
+    APPEAL overrides PENALTY when both exist for the same row (appeals are applied last).
+    """
+    if not result_ids:
+        return {}
+    ph = ",".join("?" * len(result_ids))
+    fk_col = "qual_result_id" if is_qualifying else "race_result_id"
+    phase_map: dict[int, str] = {}
+    async with get_connection(db_path) as db:
+        # Penalty phase DSQs
+        cursor = await db.execute(
+            f"SELECT {fk_col} AS rid FROM penalty_records "
+            f"WHERE {fk_col} IN ({ph}) AND penalty_type = 'DSQ'",
+            result_ids,
+        )
+        for row in await cursor.fetchall():
+            phase_map[row["rid"]] = "PENALTY"
+        # Appeal phase DSQs (override)
+        cursor = await db.execute(
+            f"SELECT {fk_col} AS rid FROM appeal_records "
+            f"WHERE {fk_col} IN ({ph}) AND penalty_type = 'DSQ'",
+            result_ids,
+        )
+        for row in await cursor.fetchall():
+            phase_map[row["rid"]] = "APPEAL"
+    return phase_map
+
+
+async def produce_session_results(
+    db_path: str,
+    session_result: SessionResult,
+    driver_rows: list,  # list[QualifyingSessionResult] | list[RaceSessionResult] | list[DriverSessionResult]
+    points_map: dict[int, int],
+    results_channel: discord.TextChannel,
+    guild: discord.Guild,
+    round_number: int,
+    track_name: str,
+    label: str,
+    is_sprint: bool = True,
+    *,
+    bot: LeagueBot | None = None,
+    result_status: str | None = None,
+) -> PostedTable:
+    """Format and send a single session result, saving and deleting nothing.
+
+    Returns what was posted (:class:`PostedTable`): the messages sent and the ids of the
+    message the session's results stood in before, which are left standing. The caller saves
+    the ids and takes the old posting down once the new one stands.
+
+    **The image path is a guard clause in front of an untouched body** (039). Where the
+    images module is enabled, the `results` aspect is on and this session's template is
+    valid, ``image_results_post.try_post`` produces the PNG, posts it under the heading and
+    the lifecycle label, replaces the previous message and returns its id.
+
+    Where it is not — no bot in scope, the module off, the aspect off, an invalid template,
+    or a render that failed an *uncommanded* posting — everything below runs exactly as it
+    did before 039. The graphic is an alternative output beside the text, not a reform of it
+    (Constitution XIV.7).
+
+    This function is the single funnel every reposting occasion reaches, which is why the
+    hook is here and not at its three call sites.
+
+    **A picture's message replaces what stood before as a text table's does**
+    (``image_results_post.try_post`` saves and deletes nothing): it is returned as ``drawn``,
+    with its one message as *new* and what stood before as *old*, for the caller to save and
+    take down.
+    """
+    session_type = SessionType(session_result.session_type)
+    session_label = results_formatter.format_session_label(session_type, is_sprint=is_sprint)
+
+    user_ids = [r.driver_user_id for r in driver_rows]
+    test_display = await _build_test_driver_display(db_path, user_ids)
+    # A team is printed by name, never as a mention of the role it was typed by (#375).
+    team_display = await team_names_for_instances(
+        db_path, [r.team_instance_id for r in driver_rows]
+    )
+
+    # Which rows were disqualified, and in which phase, is read from the verdict tables rather
+    # than taken from the caller: every posting happens after the decisions are committed, the
+    # amendment's rebuild included, so the tables are the one place that knows (#345).
+    result_ids = [r.id for r in driver_rows]
+    dsq_phase_map = await _load_dsq_phase_map(
+        db_path, result_ids, is_qualifying=session_type.is_qualifying
+    )
+
+    if session_type.is_qualifying:
+        table = results_formatter.format_qualifying_table(
+            driver_rows, points_map, member_display=test_display or None,
+            team_display=team_display, dsq_phase_map=dsq_phase_map,
+        )
+    else:
+        table = results_formatter.format_race_table(
+            driver_rows, points_map, member_display=test_display or None,
+            team_display=team_display, dsq_phase_map=dsq_phase_map,
+        )
+
+    season_number, division_name = await _get_heading_context(db_path, session_result.round_id)
+    season_prefix = f"Season {season_number} " if season_number is not None else ""
+    heading = f"**{season_prefix}{division_name} Round {round_number} — {session_label}**"
+
+    # What stood before: read here so that the caller need not, and left standing.
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT results_message_id, results_message_ids FROM session_results WHERE id = ?",
+            (session_result.id,),
+        )
+        stored = await cursor.fetchone()
+    previous: list[int] = []
+    if stored is not None and stored["results_message_id"] is not None:
+        previous = _parse_ids(stored["results_message_ids"]) or [int(stored["results_message_id"])]
+
+    # ── The image path (039) ──────────────────────────────────────────────
+    fault: str | None = None
+    if bot is not None:
+        try:
+            from leaguebot.image.services.image_results_post import try_post
+
+            outcome = await try_post(
+                bot,
+                guild,
+                results_channel,
+                heading=heading,
+                label=label,
+                session_result=session_result,
+                driver_rows=driver_rows,
+                points_map=points_map,
+                round_number=round_number,
+                race_name=track_name,
+                is_sprint=is_sprint,
+                result_status=result_status
+                or await _get_result_status(db_path, session_result.round_id),
+                division_name=division_name,
+                season_number=season_number,
+                division_tier=await _get_division_tier(db_path, session_result.division_id),
+                dsq_phase_map=dsq_phase_map,
+            )
+            if outcome.applicable and outcome.message_id is not None:
+                return PostedTable([outcome.message_id], previous, drawn=True)
+        except Exception as exc:  # noqa: BLE001 — a graphic never blocks a posting (XIV.4)
+            # A fault the image module reports itself is answered there; this one it let
+            # through, so it goes on the table for the job to say why the text stands.
+            log.error("results: image path failed for session %s: %s", session_result.id, exc, exc_info=True)
+            fault = fault_of(exc)
+
+    sent = await _send_chunked(results_channel, f"{heading}\n{label}\n{table}")
+    return PostedTable(sent, previous, fault=fault)
+
+
+async def produce_cancelled_session_line(
+    db_path: str,
+    session_result: SessionResult,
+    results_channel: discord.TextChannel,
+    round_number: int,
+    is_sprint: bool,
+) -> PostedTable:
+    """Send the line saying a session was cancelled, in the place its table would stand.
+
+    The results channel carries a note to that effect in place of a table (results spec), posted
+    with the round's Provisional Results and again wherever the round's tables are. Like
+    :func:`produce_session_results` it saves and deletes nothing: the line's message is returned
+    as *new*, for the caller to record as the session's results message, and what stood before as
+    *old*, for the caller to take down once the new line stands.
+    """
+    session_type = SessionType(session_result.session_type)
+    session_label = results_formatter.format_session_label(session_type, is_sprint=is_sprint)
+    _season, division_name = await _get_heading_context(db_path, session_result.round_id)
+    async with get_connection(db_path) as db:
+        stored = await (
+            await db.execute(
+                "SELECT results_message_id, results_message_ids FROM session_results WHERE id = ?",
+                (session_result.id,),
+            )
+        ).fetchone()
+    previous: list[int] = []
+    if stored is not None and stored["results_message_id"] is not None:
+        previous = _parse_ids(stored["results_message_ids"]) or [int(stored["results_message_id"])]
+    sent = await _send_chunked(
+        results_channel,
+        f"🚫 **Round {round_number} — {session_label}** ({division_name}): "
+        "This session was cancelled.",
+    )
+    return PostedTable(sent, previous)
+
+
+# ---------------------------------------------------------------------------
+# Standings posting
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Standings composition
+#
+# The textual flow posts ONE message carrying both championships; the image flow posts TWO.
+# Composition is kept apart from posting so that a fallback can carry the failed
+# championship's section **alone** — Constitution XIV.7 as amended at v4.5.0 puts a fallback
+# at the grain of the graphic that failed, and never re-posts what a surviving graphic
+# already drew. With the two welded together, one failing championship could only fall back
+# by reposting both.
+#
+# See specs/040-standings-image-generation/contracts/standings-posting.md.
+# ---------------------------------------------------------------------------
+
+#: The two championships, in the order they are posted.
+STANDINGS_DRIVERS = "drivers"
+STANDINGS_CONSTRUCTORS = "constructors"
+
+_STANDINGS_SUBHEADINGS = {
+    STANDINGS_DRIVERS: "**Driver Standings**",
+    STANDINGS_CONSTRUCTORS: "**Team Standings**",
+}
+
+
+def standings_section(championship: str, body: str) -> str:
+    """One championship's section, sub-heading included.
+
+    The sub-heading belongs to the section rather than to the message, so that a section
+    posted alone still says which championship it is.
+    """
+    return f"{_STANDINGS_SUBHEADINGS[championship]}\n{body}"
+
+
+def compose_standings_message(heading: str, label: str, sections: list[str]) -> str:
+    """The heading, the lifecycle label, and one or more championship sections.
+
+    Passing both sections reproduces the message the textual flow has always posted, byte
+    for byte. Passing one is what a per-championship fallback posts.
+
+    A season-boundary posting passes an empty *label* and the occasion's own phrase as the
+    *heading*. The graphic it falls back from carries no text at all, but a bare table names
+    nothing — so where the sheet is written out rather than drawn, the phrase is what heads
+    it.
+    """
+    top = f"{heading}\n{label}" if label else heading
+    return "\n\n".join([top, *sections])
+
+
+@posts_in_a_job
+async def produce_standings(
+    db_path: str,
+    division_id: int,
+    round_id: int,
+    round_number: int,
+    track_name: str,
+    standings_channel: discord.TextChannel,
+    driver_snapshots: list[DriverStandingsSnapshot],
+    team_snapshots: list[TeamStandingsSnapshot],
+    guild: discord.Guild,
+    show_reserves: bool,
+    label: str,
+    *,
+    bot: LeagueBot | None = None,
+    occasion: ClassificationOccasion = ClassificationOccasion.AFTER_ROUND,
+    fresh: bool = False,
+) -> list[PostedTable]:
+    """Format and post (or edit-in-place) the driver and team standings, saving nothing.
+
+    With *fresh* the text is never edited in place: it is posted as a new message at the bottom of
+    the channel and the whole of what stood is handed back to be taken down, as a rebuild of a
+    division (an amendment's) needs, a repost being a new message.
+
+    Returns the tables put up (:class:`PostedTable`), one for each picture posted and each
+    message the text flow sent or edited, each with the messages it replaces left standing.
+    The caller saves the ids and takes the old messages down once the new ones stand.
+
+    **The image path is a guard clause in front of an untouched body** (040). Where the
+    images module is enabled, the `standings` aspect is on and a template is valid,
+    ``image_standings_post.try_post`` produces the two PNGs, posts each under the heading
+    and the lifecycle label and names the messages each replaces. The
+    textual message below is then composed of whichever championships did *not* draw — one
+    section, or neither, or both.
+
+    Where the image flow does not run at all — no bot in scope, the module off, the aspect
+    off, neither template valid — everything below runs exactly as it did before 040, byte
+    for byte. The graphic is an alternative output beside the text, not a reform of it
+    (Constitution XIV.7).
+
+    This function is the single funnel all seven reposting occasions reach over its five
+    call sites, which is why the hook is here and not at any of them.
+    """
+    # Determine reserve user IDs from the DB (is_reserve team instances)
+    reserve_user_ids: set[int] = await _get_reserve_user_ids(db_path, division_id)
+
+    driver_uids = [s.driver_user_id for s in driver_snapshots]
+    test_display = await _build_test_driver_display(db_path, driver_uids)
+
+    driver_text = results_formatter.format_driver_standings(
+        driver_snapshots, reserve_user_ids, show_reserves, driver_display=test_display or None
+    )
+    team_text = results_formatter.format_team_standings(
+        team_snapshots,
+        await team_names_for_instances(db_path, [s.team_instance_id for s in team_snapshots]),
+    )
+
+    season_number, division_name = await _get_heading_context(db_path, round_id)
+    season_prefix = f"Season {season_number} " if season_number is not None else ""
+    if occasion.names_a_round:
+        primary_session_label = await _get_primary_session_label(db_path, round_id)
+        heading = (
+            f"**{season_prefix}{division_name} Round {round_number} "
+            f"— {primary_session_label}**"
+        )
+    else:
+        # No round to head it with and no phase to label it. The graphic goes out bare; the
+        # textual fallback below is headed by the occasion's own phrase.
+        heading = f"**{season_prefix}{division_name} — {occasion.label()}**"
+        label = ""
+
+    sections_by_championship = {
+        STANDINGS_DRIVERS: driver_text,
+        STANDINGS_CONSTRUCTORS: team_text,
+    }
+    championships = [STANDINGS_DRIVERS, STANDINGS_CONSTRUCTORS]
+
+    # ── The image path (040) ──────────────────────────────────────────────
+    # A round recorded as cancelled produces no standings posting. A season-boundary sheet
+    # is not about a round and no round can cancel it, so the guard stands down there.
+    cancelled = occasion.names_a_round and await _round_is_cancelled(db_path, round_id)
+    fault: str | None = None
+    if bot is not None and not cancelled:
+        try:
+            from leaguebot.image.services.image_standings_post import try_post
+
+            outcome = await try_post(
+                bot,
+                guild,
+                standings_channel,
+                db_path=db_path,
+                division_id=division_id,
+                round_id=round_id,
+                round_number=round_number,
+                heading=heading,
+                label=label,
+                driver_snapshots=driver_snapshots,
+                team_snapshots=team_snapshots,
+                reserve_user_ids=reserve_user_ids,
+                show_reserves=show_reserves,
+                result_status=await _get_result_status(db_path, round_id),
+                division_name=division_name,
+                division_tier=await _get_division_tier(db_path, division_id),
+                season_number=season_number,
+                race_name=track_name,
+                occasion=occasion,
+            )
+        except Exception as exc:  # noqa: BLE001 — a graphic never gates the standings (XIV.4)
+            log.exception(
+                "post_standings: the image path failed for round %s; "
+                "the textual standings stand",
+                round_id,
+            )
+            fault = fault_of(exc)
+        else:
+            if outcome.rejects:
+                # A commanded posting that would not draw posts nothing at all (XIV.7).
+                return []
+            if outcome.applicable:
+                # Each picture is a table of its own, with the message it replaces left
+                # standing, as a text table is: the caller saves the new id and takes the
+                # old message down once the picture stands.
+                pictures = [
+                    PostedTable(
+                        [each.message_id], list(each.replaces), drawn=True, championship=name
+                    )
+                    for name, each in (
+                        (STANDINGS_DRIVERS, outcome.drivers),
+                        (STANDINGS_CONSTRUCTORS, outcome.constructors),
+                    )
+                    if each.posted and each.message_id is not None
+                ]
+                championships = outcome.fallback_championships
+                if not championships:
+                    return pictures
+                return pictures + await _produce_standings_sections(
+                    db_path,
+                    division_id,
+                    round_id,
+                    standings_channel,
+                    heading=heading,
+                    label=label,
+                    sections={
+                        name: sections_by_championship[name] for name in championships
+                    },
+                    already_sent=[each for table in pictures for each in table.new],
+                )
+
+    content = compose_standings_message(
+        heading,
+        label,
+        [standings_section(name, sections_by_championship[name]) for name in championships],
+    )
+
+    # Look for existing standings message (kept on the round's row in `round_standings_posts`)
+    existing_msg_id = await get_standings_message_id(db_path, division_id, round_id)
+
+    # **A text table posted over standings that also stand as a constructors message** (a graphic
+    # per championship, or a text table per championship) is posted afresh, and takes both
+    # down: an edit in place would leave the drivers' picture attached to the full table, and
+    # the constructors message standing with its id still recorded.
+    constructors_id = await get_standings_message_id(
+        db_path, division_id, round_id, STANDINGS_CONSTRUCTORS
+    )
+    constructors_old: list[int] = []
+    if constructors_id is not None:
+        constructors_old = list(
+            await get_standings_message_ids(
+                db_path, division_id, round_id, STANDINGS_CONSTRUCTORS
+            )
+            or [constructors_id]
+        )
+        fresh = True
+
+    sent_msg: discord.Message | None = None
+    stale: list[int] = []
+    if existing_msg_id is not None and fresh:
+        stale = list(
+            await get_standings_message_ids(db_path, division_id, round_id, STANDINGS_DRIVERS)
+            or [existing_msg_id]
+        )
+    elif existing_msg_id is not None:
+        try:
+            existing_msg = await standings_channel.fetch_message(existing_msg_id)
+            # Only edit in-place when the content fits in a single message; otherwise
+            # fall through to send afresh so we can chunk across multiple messages.
+            if len(content) <= _MSG_MAX:
+                await edit_standing(existing_msg, mentions=_TABLE_MENTIONS, content=content)
+                sent_msg = existing_msg
+                # **A shorter table leaves the chunks it no longer fills** (#345). Editing the
+                # anchor in place is the cheap path, but a posting that was three messages and
+                # is now one has to lose the other two — and once the id is rewritten as a
+                # single-message list, nothing could ever reach them again.
+                stale = [
+                    message_id
+                    for message_id in (
+                        await get_standings_message_ids(
+                            db_path, division_id, round_id, STANDINGS_DRIVERS
+                        )
+                        or []
+                    )
+                    if message_id != existing_msg_id
+                ]
+            else:
+                # The whole posting, not its anchor alone (#345): a three-chunk table deleted by
+                # its first message left two-thirds of a superseded standings table below the
+                # current one, and the row was then overwritten so nothing could reach them.
+                stale = list(
+                    await get_standings_message_ids(
+                        db_path, division_id, round_id, STANDINGS_DRIVERS
+                    )
+                    or [existing_msg_id]
+                )
+        except discord.NotFound:
+            # Only a table already gone is posted afresh; a refusal reaches the job and stops its lane.
+            sent_msg = None
+            stale = []
+
+    if sent_msg is None:
+        sent = await _send_chunked(standings_channel, content)
+        tables = [PostedTable(sent, stale, championship=STANDINGS_DRIVERS, fault=fault)]
+        if constructors_old:
+            # Nothing new carries the constructors now: the table forgets its id and loses its
+            # messages with the drivers' (see `review_posting._record_standings_post`).
+            tables.append(PostedTable([], constructors_old, championship=STANDINGS_CONSTRUCTORS))
+        return tables
+    # Edited in place, so it is the one message it always was and occupies no others.
+    return [PostedTable(
+        [sent_msg.id], stale, edited=True, championship=STANDINGS_DRIVERS, fault=fault
+    )]
+
+
+async def _round_is_cancelled(db_path: str, round_id: int) -> bool:
+    """True where the round is recorded as cancelled.
+
+    Its standings are not posted as graphics, the `standings` toggle notwithstanding
+    (FR-050). The textual path's own behaviour for a cancelled round is untouched — this
+    only decides whether the image branch is entered.
+    """
+    async with get_connection(db_path) as db:
+        facts = await round_facts_on(db, round_id)
+    return facts is not None and facts.status == RoundStatus.CANCELLED
+
+
+async def _produce_standings_sections(
+    db_path: str,
+    division_id: int,
+    round_id: int,
+    standings_channel: discord.TextChannel,
+    *,
+    heading: str,
+    label: str,
+    sections: dict[str, str],
+    already_sent: Sequence[int] = (),
+) -> list[PostedTable]:
+    """Post a textual section for each championship whose graphic did not draw, saving nothing.
+
+    One message per championship rather than one carrying both, so that the message ids
+    stay one-to-one with the championships and a surviving graphic is never accompanied by
+    a text table repeating what it already drew (FR-052).
+
+    **Produce before destroying** (FR-048): the replacement is sent and the message it
+    replaces is left standing, its ids handed back for the caller to take down once every
+    replacement is up, so the channel is never without that championship's standings.
+
+    *already_sent* names the pictures the job posted before these tables: a table refused
+    after them carries their ids with its own on ``left_standing``, so the queue's job removes
+    them before its next try.
+    """
+    posted: list[PostedTable] = []
+    for championship, body in sections.items():
+        content = compose_standings_message(
+            heading, label, [standings_section(championship, body)]
+        )
+        previous_id = await get_standings_message_id(
+            db_path, division_id, round_id, championship
+        )
+        previous_ids = await get_standings_message_ids(
+            db_path, division_id, round_id, championship
+        )
+        try:
+            sent = await _send_chunked(standings_channel, content)
+        except Exception as failure:
+            # The tables already sent stand, recorded nowhere: handed on the failure with what
+            # this one could not take down, so that the queue's job removes them before its
+            # next try and a legacy caller can take them down.
+            earlier = [*already_sent, *(message_id for table in posted for message_id in table.new)]
+            if earlier:
+                setattr(
+                    failure, "left_standing",
+                    [*earlier, *getattr(failure, "left_standing", [])],
+                )
+            raise
+        old: list[int] = []
+        if previous_id is not None:
+            old = list(previous_ids or [previous_id])
+            if previous_id not in old:
+                old.insert(0, previous_id)
+        posted.append(PostedTable(sent, old, championship=championship))
+    return posted
+
+
+async def remove_part_posted_messages(
+    channel: discord.TextChannel, message_ids: list[int]
+) -> tuple[list[int], list[discord.HTTPException]]:
+    """Delete the messages a failed posting left standing, and hand back what would not go.
+
+    For a caller that keeps the ids on its failed job and removes them at the start of its next
+    try (`StepContext.kept`): the ids it could not remove, and the failures that left them. A
+    message already gone is not returned.
+    """
+    failures: list[discord.HTTPException] = []
+    left: list[int] = []
+    for message_id in message_ids:
+        left.extend(
+            await _delete_posting(
+                channel, message_id, [message_id], label="part-posted standings",
+                delete=delete_standing, failures=failures,
+            )
+        )
+    return left, failures
+
+
+#: Championship → the column naming the message that carries it, on the round's row of
+#: ``round_standings_posts``.
+_STANDINGS_ID_COLUMNS = {
+    STANDINGS_DRIVERS: "standings_message_id",
+    STANDINGS_CONSTRUCTORS: "constructor_standings_message_id",
+}
+
+#: The same two, for the chunk list each posting occupies (#345).
+_STANDINGS_IDS_COLUMNS = {
+    STANDINGS_DRIVERS: "standings_message_ids",
+    STANDINGS_CONSTRUCTORS: "constructor_standings_message_ids",
+}
+
+
+async def get_standings_message_id(
+    db_path: str,
+    division_id: int,
+    round_id: int,
+    championship: str = STANDINGS_DRIVERS,
+) -> int | None:
+    """Return the message id carrying *championship* for the given round's standings posting.
+
+    Defaults to the driver standings, which is the message the textual flow posts for both
+    championships together — so every caller written before the image flow keeps its meaning
+    unchanged.
+
+    **Read from the round's own row**, which a recomputation of its snapshots leaves alone. The
+    ids once sat on the row of the driver leading the round, and a recomputation that changed
+    the leader reordered the rows without moving them: the posting became unreachable, and the
+    next repost left it standing beside its replacement for good (#345).
+    """
+    column = _STANDINGS_ID_COLUMNS[championship]
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            f"SELECT {column} AS message_id FROM round_standings_posts "  # noqa: S608
+            f"WHERE division_id = ? AND round_id = ? AND {column} IS NOT NULL",
+            (division_id, round_id),
+        )
+        row = await cursor.fetchone()
+    return row["message_id"] if row and row["message_id"] else None
+
+
+async def get_standings_message_ids(
+    db_path: str,
+    division_id: int,
+    round_id: int,
+    championship: str = STANDINGS_DRIVERS,
+) -> list[int] | None:
+    """Return every message id *championship*'s posting occupies, or None where none was recorded.
+
+    None is not an empty list. A posting written before the chunk list existed recorded only its
+    anchor, and is deleted by that alone; a posting that recorded ``[]`` would be claiming to
+    occupy no messages at all.
+    """
+    column = _STANDINGS_IDS_COLUMNS[championship]
+    anchor_column = _STANDINGS_ID_COLUMNS[championship]
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            f"SELECT {column} AS message_ids FROM round_standings_posts "  # noqa: S608
+            f"WHERE division_id = ? AND round_id = ? AND {anchor_column} IS NOT NULL",
+            (division_id, round_id),
+        )
+        row = await cursor.fetchone()
+    return _parse_ids(row["message_ids"] if row else None)
+
+
+async def set_standings_message_id_on(
+    db: aiosqlite.Connection,
+    division_id: int,
+    round_id: int,
+    message_id: int | None,
+    championship: str = STANDINGS_DRIVERS,
+    *,
+    message_ids: str | None = None,
+) -> None:
+    """Persist *message_id* for *championship* on the round's standings row, committing nothing.
+
+    Written on every posting, textual or graphic, so the two flows never disagree about
+    which message is which. The textual flow leaves the constructor column null.
+
+    *message_ids* is the JSON chunk list of the same posting where the caller has one, so that
+    deleting it later removes every message it occupies rather than guessing at the rest
+    (#345). Clearing an id clears the list with it: a stale list outliving the message it
+    described would send a delete at somebody else's posting.
+
+    The row is the round's: one for the round, found again whoever leads it and whatever a
+    recomputation does to the snapshots, and a new posting replaces the old in place (#345).
+
+    It writes on the connection it is handed, so that the change queue saves a post's id in the
+    save that marks the post done.
+    """
+    column = _STANDINGS_ID_COLUMNS[championship]
+    list_column = _STANDINGS_IDS_COLUMNS[championship]
+    await db.execute(
+        f"INSERT INTO round_standings_posts (round_id, division_id, {column}, {list_column}) "  # noqa: S608
+        "VALUES (?, ?, ?, ?) "
+        f"ON CONFLICT(round_id) DO UPDATE SET {column} = excluded.{column}, "
+        f"{list_column} = excluded.{list_column}",
+        (round_id, division_id, message_id, message_ids),
+    )
+
+
+async def set_classification_message_id_on(
+    db: aiosqlite.Connection,
+    division_id: int,
+    occasion: ClassificationOccasion,
+    message_id: int | None,
+    championship: str = STANDINGS_DRIVERS,
+    *,
+    message_ids: str | None = None,
+) -> None:
+    """Persist *message_id* for *championship* on the division's row of *occasion* in
+    ``classification_posts``, committing nothing: the opening or final classification the
+    division's standings channel was posted.
+
+    As :func:`set_standings_message_id_on`, but the row is the division's for the occasion, not a
+    round's, since neither classification has a round to key it by. Written on the connection it
+    is handed, so that the change queue saves the ids in the save that marks the post done.
+    """
+    column = _STANDINGS_ID_COLUMNS[championship]
+    list_column = _STANDINGS_IDS_COLUMNS[championship]
+    await db.execute(
+        f"INSERT INTO classification_posts (division_id, occasion, {column}, {list_column}) "  # noqa: S608
+        "VALUES (?, ?, ?, ?) "
+        f"ON CONFLICT(division_id, occasion) DO UPDATE SET {column} = excluded.{column}, "
+        f"{list_column} = excluded.{list_column}",
+        (division_id, occasion.value, message_id, message_ids),
+    )
+
+
+async def _get_reserve_user_ids(db_path: str, division_id: int) -> set[int]:
+    """Return discord_user_ids of all drivers seated in a reserve team for this division."""
+    async with get_connection(db_path) as db:
+        seated = await TeamService.seated_drivers_on(db, division_id)
+    return {s.discord_user_id for s in seated if s.is_reserve}
+
+
+# ---------------------------------------------------------------------------
+# Driver-row loading helpers
+# ---------------------------------------------------------------------------
+
+async def load_driver_rows(
+    db_path: str,
+    session_result_id: int,
+    session_type: SessionType,
+) -> list:
+    """Load driver rows for a session from new tables.
+
+    **The one reader of a posted session's rows**, public because the image module draws from
+    it and the review posting reads it: every module that draws or posts a session's results
+    reads them here, so that all name a driver the same way.
+
+    Returns list[QualifyingSessionResult] for qualifying, list[RaceSessionResult]
+    for race.
+
+    Each row names the driver by the account they use **now**, not the one it was recorded
+    under (issue #243): the rows are read for drawing and posting only, and everything drawn
+    names a driver by their current account — a completed season's results drawn again
+    included. Nothing stored is altered. A caller writing results back must read them itself.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT division_id FROM session_results WHERE id = ?", (session_result_id,)
+        )
+        header = await cursor.fetchone()
+        current_of = (
+            await current_account_map_for_division(db, header["division_id"]) if header else {}
+        )
+
+    if session_type.is_qualifying:
+        async with get_connection(db_path) as db:
+            cursor = await db.execute(
+                "SELECT id, session_result_id, driver_user_id, team_instance_id, finishing_position, "
+                "outcome, tyre, best_lap, points_awarded, driver_profile_id "
+                "FROM qualifying_session_results WHERE session_result_id = ? "
+                "ORDER BY finishing_position",
+                (session_result_id,),
+            )
+            rows = await cursor.fetchall()
+        return [
+            QualifyingSessionResult(
+                id=r["id"],
+                session_result_id=r["session_result_id"],
+                driver_user_id=current_of.get(r["driver_user_id"], r["driver_user_id"]),
+                team_instance_id=r["team_instance_id"],
+                finishing_position=r["finishing_position"],
+                outcome=OutcomeModifier(r["outcome"]),
+                tyre=r["tyre"],
+                best_lap=r["best_lap"],
+                points_awarded=r["points_awarded"] or 0,
+                driver_profile_id=r["driver_profile_id"],
+            )
+            for r in rows
+        ]
+
+    # Race session
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT id, session_result_id, driver_user_id, team_instance_id, finishing_position, "
+            "outcome, base_time_ms, laps_behind, ingame_time_penalties_ms, "
+            "postrace_time_penalties_ms, appeal_time_penalties_ms, fastest_lap, "
+            "fastest_lap_bonus, points_awarded, driver_profile_id "
+            "FROM race_session_results WHERE session_result_id = ? "
+            "ORDER BY finishing_position",
+            (session_result_id,),
+        )
+        rows = await cursor.fetchall()
+    return [
+        RaceSessionResult(
+            id=r["id"],
+            session_result_id=r["session_result_id"],
+            driver_user_id=current_of.get(r["driver_user_id"], r["driver_user_id"]),
+            team_instance_id=r["team_instance_id"],
+            finishing_position=r["finishing_position"],
+            outcome=OutcomeModifier(r["outcome"]),
+            base_time_ms=r["base_time_ms"],
+            laps_behind=r["laps_behind"],
+            ingame_time_penalties_ms=r["ingame_time_penalties_ms"] or 0,
+            postrace_time_penalties_ms=r["postrace_time_penalties_ms"] or 0,
+            appeal_time_penalties_ms=r["appeal_time_penalties_ms"] or 0,
+            fastest_lap=r["fastest_lap"],
+            fastest_lap_bonus=r["fastest_lap_bonus"] or 0,
+            points_awarded=r["points_awarded"] or 0,
+            driver_profile_id=r["driver_profile_id"],
+        )
+        for r in rows
+    ]
+
+
+# ---------------------------------------------------------------------------
+# What a repost needs of a channel
+# ---------------------------------------------------------------------------
+
+#: What the repost needs of a channel before it starts, by the names Discord's own
+#: interface uses. ``view_channel`` is listed even though a bot that cannot see a channel
+#: usually cannot send to it either: the two are separate permissions and Discord will
+#: report ``send_messages`` as granted on a channel the bot cannot read, so checking only
+#: the latter would pass a channel nothing can be posted to.
+#:
+#: ``read_message_history`` is here because a repost *replaces* rather than appends — it
+#: finds what it posted last with ``fetch_message``, which needs it. ``manage_messages`` is
+#: deliberately absent: the bot only ever deletes its own messages, which needs no
+#: permission at all.
+_REPOST_PERMISSIONS: tuple[tuple[str, str], ...] = (
+    ("view_channel", "View Channel"),
+    ("send_messages", "Send Messages"),
+    ("read_message_history", "Read Message History"),
+)
+
+#: Asked of a channel that may receive a graphic, in addition to the above.
+_ATTACHMENT_PERMISSION: tuple[str, str] = ("attach_files", "Attach Files")
+
+
+def bot_member(guild: "discord.Guild", bot: LeagueBot | None):
+    """The bot's own member object in *guild*, or ``None`` where it cannot be resolved.
+
+    **``guild.me`` is deliberately not used here** (#187). It is a property reading
+    ``self._state.user.id``, so where the client has no user yet it raises
+    ``AttributeError`` rather than returning ``None`` — an exception thrown out of a
+    pre-flight check whose whole purpose is to refuse cleanly, which is the one thing it
+    must not do. ``signup_cog`` already takes this guarded form before it does permission
+    arithmetic (``src/leaguebot/signup/cogs/signup_cog.py:870``), and it is the form this check follows.
+
+    Resolving it is not optional: without a member there is no permission arithmetic to do,
+    and every caller (results' own gates and attendance's channel gate) treats ``None`` as a
+    fault rather than as leave to assume. It promises ``None``, never an exception, for a
+    client with no user yet.
+    """
+    bot_user = getattr(bot, "user", None) if bot is not None else None
+    if bot_user is None:
+        return None
+    return guild.get_member(bot_user.id)
+
+
+def channel_fault(
+    guild: discord.Guild,
+    bot_member,
+    division_name: str,
+    setting: str,
+    channel_id: int,
+    *,
+    needs_attachment: bool,
+) -> str | None:
+    """The fault standing between the bot and posting to *channel_id*, or None.
+
+    Reads the gateway cache rather than calling Discord, which is what makes it usable as a
+    gate: it is the same reading ``/results channel verdicts`` already takes before it
+    accepts a channel.
+
+    Public because attendance gates its own channels (attendance and verdicts) by it, so that
+    a channel refused for a missing permission is refused in the same words by every module.
+    It takes the bot's member from :func:`bot_member`, and promises a line for a league to read
+    or ``None``, never an exception.
+    """
+    channel = guild.get_channel(channel_id)
+    if channel is None:
+        return missing_channel_fault(division_name, setting, channel_id)
+
+    if not isinstance(channel, discord.TextChannel):
+        label = SETTING_LABELS.get(setting, setting)
+        return (
+            f"**{division_name}** — the {label} channel <#{channel_id}> is not a text "
+            f"channel, so nothing can be posted in it."
+        )
+
+    permissions = channel.permissions_for(bot_member)
+    wanted = list(_REPOST_PERMISSIONS)
+    if needs_attachment:
+        wanted.append(_ATTACHMENT_PERMISSION)
+    missing = [name for attr, name in wanted if not getattr(permissions, attr, False)]
+    if missing:
+        return unpostable_channel_fault(division_name, setting, channel_id, missing)
+    return None
+
+
+async def repost_channel_faults(
+    db_path: str,
+    season_id: int,
+    guild: "discord.Guild | None",
+    bot: LeagueBot | None = None,
+) -> list[str]:
+    """What stands between this season and reposting every division's results (#187).
+
+    Returns the faults as lines a league can read, and an empty list where every division's
+    configured channels are there and can be posted to.
+
+    **Read before anything is written, so that an amendment is refused entire rather than
+    half-made.** The approval of a mid-season amendment overwrites the season's points and
+    then reposts every round of every division against the new numbers. A channel that has
+    been deleted, or one the bot's Send Messages has been revoked on, used to be discovered
+    only once the points were already overwritten — and then swallowed, so the league was
+    told the championship had been republished when none of it had. Establishing it first
+    turns that into a refusal that changes nothing.
+
+    **A channel a division never configured is not a fault.** It has nothing posted for it
+    and the cascade is right to skip it in silence; reporting it would refuse leagues that
+    are correctly configured. Only a channel the league *did* configure and the server no
+    longer holds, or holds and will not accept a posting in, is reported here.
+
+    **The bot's own member object is required, not assumed.** Without it there is no
+    permission arithmetic to do, and guessing would defeat the point of the gate — so an
+    unresolvable bot member is itself a fault rather than a reason to wave the season
+    through.
+
+    **A cancelled division is asked too** (owner, 2026-10-06, "Refuse at the press"): the
+    approval reposts its raced rounds, so a channel it configured and has lost refuses the
+    approval as a live division's does, and the channel is set again with `/results channel
+    results` or `standings`.
+    """
+    bot_member, faults = _repost_gate(guild, bot)
+    if faults:
+        return faults
+
+    async with get_connection(db_path) as db:
+        division_rows = []
+        for division in sorted(await season_divisions_on(db, season_id), key=lambda d: (d.tier, d.id)):
+            cursor = await db.execute(
+                "SELECT results_channel_id, standings_channel_id "
+                "FROM division_results_config WHERE division_id = ?",
+                (division.id,),
+            )
+            config = await cursor.fetchone()
+            division_rows.append({
+                "id": division.id,
+                "name": division.name,
+                "results_channel_id": None if config is None else config["results_channel_id"],
+                "standings_channel_id": None if config is None else config["standings_channel_id"],
+            })
+
+    return await _channel_faults_for_rows(division_rows, guild, bot_member, bot)
+
+
+def _repost_gate(guild: "discord.Guild | None", bot: LeagueBot | None):
+    """The bot member the permission arithmetic needs, or the fault standing in its way.
+
+    Shared by the season-wide and division-wide gates so that the two cannot drift: both
+    refuse a guild they cannot reach, and both treat an unresolvable bot member as a fault
+    rather than as leave to assume (#187).
+    """
+    if guild is None:
+        return None, [
+            "The bot is not in this server, so nothing can be reposted. "
+            "Check that it is still a member and try again."
+        ]
+
+    member = bot_member(guild, bot)
+    if member is None:
+        return None, [
+            "The bot cannot read its own permissions in this server, so it cannot tell "
+            "whether the reposting would succeed. Try again in a moment."
+        ]
+
+    return member, []
+
+
+async def _channel_faults_for_rows(
+    division_rows, guild, bot_member, bot: LeagueBot | None
+) -> list[str]:
+    """The faults across *division_rows*, each row carrying a division's two channel ids."""
+    # Asked of the image module rather than read out of its configuration here: a posting
+    # service hands the image module an occasion and acts on what comes back, and does not
+    # read its settings (#187, and the layering
+    # `tests/image/test_image_module_flow.py` holds).
+    from leaguebot.image.services.image_validity_service import aspect_attaches_files
+
+    results_graphics = await aspect_attaches_files(bot, "results")
+    standings_graphics = await aspect_attaches_files(bot, "standings")
+
+    faults: list[str] = []
+    for row in division_rows:
+        division_name = row["name"] or f"division {row['id']}"
+        for setting, channel_id, needs_attachment in (
+            ("results", row["results_channel_id"], results_graphics),
+            ("standings", row["standings_channel_id"], standings_graphics),
+        ):
+            if not channel_id:
+                continue
+            fault = channel_fault(
+                guild,
+                bot_member,
+                division_name,
+                setting,
+                int(channel_id),
+                needs_attachment=needs_attachment,
+            )
+            if fault is not None:
+                faults.append(fault)
+    return faults
+
+
+def merge_faults(*fault_lists: list[str]) -> list[str]:
+    """The faults of several reposts as one list, in order, without repeating a line.
+
+    Two reposts run one after the other over the *same* division find a standings channel
+    that has gone missing in both and word it identically (raised in review of #237).
+    Concatenating handed the manager the same bullet twice, reading as two separate problems
+    to repair. Each repost refuses to repeat itself internally; this keeps that true across
+    the pair.
+    """
+    merged: list[str] = []
+    for faults in fault_lists:
+        for line in faults:
+            if line not in merged:
+                merged.append(line)
+    return merged
+
+
+async def results_sync_hint(db_path: str, division_id: int) -> str:
+    """The line telling a manager how to finish a repost that did not land (#237).
+
+    Names both sync commands, because the cascade posts two things a league reads
+    separately — the round's own results and the division's standings — and each has its
+    own command. Modelled on ``attendance_service.sync_hint``, which does the same for a
+    run of sanctions that did not all apply (#239).
+
+    **Except once the season is pending completion**, where both sync commands are refused
+    (issue #224) and naming them would send a manager to a door that will not open. The one
+    repost still available there is `/results rounds amend` itself, which is also the only
+    thing that can have failed: it replaces the round's own results *and* every later
+    round's standings, so re-running it after the channel is repaired recovers the whole of
+    what was lost. The stage is read here rather than passed in, so that none of the three
+    callers has to know the rule.
+    """
+    async with get_connection(db_path) as db:
+        division = await division_on(db, division_id)
+        stage = None if division is None else await season_stage_on(db, division.season_id)
+    name = (division.name if division is not None else None) or f"division {division_id}"
+    if stage == SeasonStage.PENDING_COMPLETION:
+        return (
+            f"Repair the cause, then amend the round again with `/results rounds amend "
+            f"division_name:{name}` — every division of this season is done, so the sync "
+            f"commands are closed and the amendment is what reposts."
+        )
+    return (
+        f"Repair the cause, then run `/results rounds sync division:{name}` and "
+        f"`/results standings sync division:{name}`."
+    )
+
+
+async def reserves_in_standings_on(db: aiosqlite.Connection, division_id: int) -> bool:
+    """Whether *division_id* shows its reserves in the standings, read on *db* (default True:
+    a division with no results configuration, or none set, shows them)."""
+    cursor = await db.execute(
+        "SELECT reserves_in_standings FROM division_results_config WHERE division_id = ?",
+        (division_id,),
+    )
+    row = await cursor.fetchone()
+    if row is None:
+        return True
+    val = row["reserves_in_standings"]
+    return bool(val) if val is not None else True
+
+
+async def reserves_in_standings(db_path: str, division_id: int) -> bool:
+    """Whether *division_id* shows its reserves in the standings (default True).
+
+    The public reader of the flag, for the modules and the commands that read it from outside
+    this file; `reserves_in_standings_on` reads it on a connection already open.
+    """
+    async with get_connection(db_path) as db:
+        return await reserves_in_standings_on(db, division_id)
+
+
+async def set_reserves_in_standings_on(
+    db: aiosqlite.Connection, division_id: int, shown: bool
+) -> Saved:
+    """Set whether *division_id* shows its reserves in the standings, on *db*, committing nothing.
+
+    A division already in that state writes nothing and comes back unchanged. Otherwise the flag
+    is upserted (the division's results configuration row is made if it has none), and one
+    `RESERVES_IN_STANDINGS_SET` entry records the flag from its old value to the new, against the
+    division. The new state is in the result as `shown`.
+    """
+    current = await reserves_in_standings_on(db, division_id)
+    if current == shown:
+        return Saved(changed=False, result={"shown": shown})
+    await db.execute(
+        """
+        INSERT INTO division_results_config (division_id, reserves_in_standings)
+        VALUES (?, ?)
+        ON CONFLICT (division_id) DO UPDATE
+            SET reserves_in_standings = excluded.reserves_in_standings
+        """,
+        (division_id, 1 if shown else 0),
+    )
+    return Saved(
+        changed=True,
+        audits=(
+            AuditRecord(
+                "RESERVES_IN_STANDINGS_SET",
+                {"reserves_in_standings": current},
+                {"reserves_in_standings": shown},
+                division_id=division_id,
+            ),
+        ),
+        result={"shown": shown},
+    )
+
+
+async def division_repost_status(
+    db_path: str, division_id: int, guild: discord.Guild | None
+) -> str:
+    """What a division's results sync finds before it is asked: the read half of the sync.
+
+    One of ``"ok"`` (a results channel set and on the server, and a round with results to post),
+    ``"no_rounds"`` (the division is gone, or no round of it has results) and ``"no_channel"``
+    (no results channel set, or one the server no longer holds). With no *guild* to look in, a
+    channel that is set is taken as on the server. The repost itself is a change on the queue
+    (`rounds_sync_change`).
+    """
+    async with get_connection(db_path) as db:
+        if await division_on(db, division_id) is None:
+            return "no_rounds"
+        config_row = await (await db.execute(
+            "SELECT results_channel_id FROM division_results_config WHERE division_id = ?",
+            (division_id,),
+        )).fetchone()
+        results_ch_id: int | None = None if config_row is None else config_row["results_channel_id"]
+        if not results_ch_id:
+            return "no_channel"
+        if guild is not None and as_text_channel(guild.get_channel(results_ch_id)) is None:
+            log.warning("division_repost_status: results channel %s not found in guild", results_ch_id)
+            return "no_channel"
+        found = await final_round_on(db, division_id) is not None
+    return "ok" if found else "no_rounds"
+
+
+async def standings_repost_status(
+    db_path: str, division_id: int, guild: discord.Guild | None
+) -> str:
+    """What a division's standings sync finds before it is asked: the read half of the sync, as
+    :func:`division_repost_status` is for the results.
+
+    One of ``"ok"`` (a standings channel set and on the server, and a round with results to
+    post), ``"no_rounds"`` (the division is gone, or no round of it has results) and
+    ``"no_channel"`` (no standings channel set, or one the server no longer holds). With no
+    *guild* to look in, a channel that is set is taken as on the server.
+    """
+    async with get_connection(db_path) as db:
+        if await final_round_on(db, division_id) is None:
+            return "no_rounds"
+        config_row = await (await db.execute(
+            "SELECT standings_channel_id FROM division_results_config WHERE division_id = ?",
+            (division_id,),
+        )).fetchone()
+    channel_id = None if config_row is None else config_row["standings_channel_id"]
+    if not channel_id:
+        return "no_channel"
+    if guild is not None and as_text_channel(guild.get_channel(int(channel_id))) is None:
+        log.warning("standings_repost_status: standings channel %s not found in guild", channel_id)
+        return "no_channel"
+    return "ok"
+
+
+# ---------------------------------------------------------------------------
+# Finalization helpers (T021, T021b)
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Private helpers for finalization
+# ---------------------------------------------------------------------------
+
+def _sr_from_row(sr_row) -> "SessionResult":
+    """Construct a :class:`SessionResult` from a DB row dict."""
+    from leaguebot.results.models.session_result import SessionResult
+    return SessionResult(
+        id=sr_row["id"],
+        round_id=sr_row["round_id"],
+        division_id=sr_row["division_id"],
+        session_type=sr_row["session_type"],
+        status=sr_row["status"],
+        config_name=sr_row["config_name"],
+        submitted_by=sr_row["submitted_by"],
+        submitted_at=sr_row["submitted_at"],
+        results_message_id=sr_row["results_message_id"],
+    )
+
+
+

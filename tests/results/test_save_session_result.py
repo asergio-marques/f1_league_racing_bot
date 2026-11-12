@@ -9,17 +9,19 @@ the commit to it. `replace_round_results` is the caller that depends on that.
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.result_submission_service import (
+from leaguebot.results.services.submission.result_submission_service import (
     _save_session_result_in_tx,
 )
 from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 from tests.support.session_writes import save_session_result
 from tests.support.teams import seed_team_instances
+
 
 SERVER_ID = 13210
 SEASON_ID = 1
@@ -122,7 +124,7 @@ async def test_saving_inside_a_transaction_writes_nothing_until_it_commits(tmp_p
     async with get_connection(db_path) as db:
         await _save_session_result_in_tx(
             db, ROUND_ID, DIVISION_ID, SessionType.FEATURE_RACE, "ACTIVE", "Standard",
-            77, [_race_row()],
+            77, [_race_row()], now=datetime.now(timezone.utc),
         )
         await db.rollback()
 

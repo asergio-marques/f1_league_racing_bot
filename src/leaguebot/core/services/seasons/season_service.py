@@ -6,10 +6,12 @@ import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from typing import Any
 
 import aiosqlite
 
-from leaguebot.core.db.database import get_connection, inserted_id
+from leaguebot.core.db.database import get_connection, inserted_id, sole_row
+from leaguebot.core.models.cancellation import SCOPE_ROUND, CancellationNotices
 from leaguebot.core.models.division import Division, DivisionStatus
 from leaguebot.core.models.refusal import Refused
 from leaguebot.core.models.round import (
@@ -550,14 +552,7 @@ class SeasonService:
     async def get_divisions_on(self, db: aiosqlite.Connection, season_id: int) -> list[Division]:
         """`get_divisions` on *db*, a connection the caller holds: what a save has written there
         is read back with the rest."""
-        cursor = await db.execute(
-            "SELECT id, season_id, name, mention_role_id, status, tier, "
-            "lineup_channel_id, calendar_channel_id, lineup_message_id, "
-            "calendar_message_id "
-            "FROM divisions WHERE season_id = ? ORDER BY tier",
-            (season_id,),
-        )
-        return [_row_to_division(r) for r in await cursor.fetchall()]
+        return await season_divisions_on(db, season_id)
 
     async def division_ids_on(self, db: aiosqlite.Connection, season_id: int) -> list[int]:
         """The ids of every division of *season_id*, cancelled ones included, in id order, read on
@@ -567,15 +562,7 @@ class SeasonService:
     async def get_division(self, division_id: int) -> Division | None:
         """Return the division *division_id*, or None where there is none."""
         async with get_connection(self._db_path) as db:
-            cursor = await db.execute(
-                "SELECT id, season_id, name, mention_role_id, status, tier, "
-                "lineup_channel_id, calendar_channel_id, lineup_message_id, "
-                "calendar_message_id "
-                "FROM divisions WHERE id = ?",
-                (division_id,),
-            )
-            row = await cursor.fetchone()
-        return _row_to_division(row) if row is not None else None
+            return await division_on(db, division_id)
 
     async def capacity_counts(self, season_id: int) -> SeasonCapacityCounts:
         """What the season review's warnings ask of the image module: the division holding
@@ -750,13 +737,7 @@ class SeasonService:
     ) -> list[Round]:
         """`get_division_rounds` on *db*, a connection the caller holds: what a save has written
         there is read back with the rest."""
-        cursor = await db.execute(
-            "SELECT id, division_id, round_number, format, track_name, scheduled_at, "
-            "status FROM rounds "
-            "WHERE division_id = ? ORDER BY round_number",
-            (division_id,),
-        )
-        return [_row_to_round(r) for r in await cursor.fetchall()]
+        return await division_rounds_in_order_on(db, division_id)
 
     async def add_round_on(
         self,
@@ -1001,6 +982,17 @@ async def cancel_round_on(
     return previous
 
 
+@dataclass(frozen=True)
+class RoundEndedNotHeld:
+    """What ending a round as not held gave: *previous*, the status it ended from, *target*, the
+    round's target as the notices hook was handed it, and *notices*, what each subscriber to
+    `cancellation_notices` planned for it, in the order they signed up."""
+
+    previous: str
+    target: dict[str, Any]
+    notices: list[CancellationNotices]
+
+
 async def end_round_not_held_on(
     db: aiosqlite.Connection,
     round_id: int,
@@ -1008,7 +1000,8 @@ async def end_round_not_held_on(
     actor_id: int,
     actor_name: str,
     now: datetime,
-) -> str | None:
+    cancellation_notices: AwaitedHook,
+) -> RoundEndedNotHeld | None:
     """End a round CANCELLED because every session was entered as not held, committing nothing.
 
     A round whose every session is entered as CANCELLED takes no results and no review, so it
@@ -1024,7 +1017,14 @@ async def end_round_not_held_on(
     season moved on where this was the last round it waited on, are `cancel_round_on`'s, all
     written on *db* in the caller's save.
 
-    Returns the status the round ended from, or ``None`` where nothing was moved.
+    Where it moved the round it calls *cancellation_notices*, the hook each module's own notice
+    of a round called off is planned through, on *db*, for the round's scope and the round
+    (``round_id``, ``division_id``, ``division_name``, ``season_id``, ``season_number``,
+    ``round_number`` and ``track_name``), as the three cancellations call it, and gives what its
+    subscribers planned beside the status the round ended from and that same target. The caller turns the notices
+    into jobs; this plans none.
+
+    Returns None where nothing was moved, and calls no subscriber.
     """
     cursor = await db.execute(
         "SELECT r.division_id, r.status FROM rounds r WHERE r.id = ?", (round_id,)
@@ -1054,7 +1054,21 @@ async def end_round_not_held_on(
         ),
     )
     await refresh_division_status_on(db, division_id)
-    return previous
+    cursor = await db.execute(
+        "SELECT r.division_id, r.round_number, r.track_name, d.name AS division_name, "
+        "d.season_id, s.season_number FROM rounds r JOIN divisions d ON d.id = r.division_id "
+        "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?",
+        (round_id,),
+    )
+    ended = await sole_row(cursor)
+    target = {
+        "round_id": round_id, "division_id": int(ended["division_id"]),
+        "division_name": str(ended["division_name"]), "season_id": int(ended["season_id"]),
+        "season_number": int(ended["season_number"]), "round_number": int(ended["round_number"]),
+        "track_name": ended["track_name"],
+    }
+    notices = await cancellation_notices.call(db, SCOPE_ROUND, target)
+    return RoundEndedNotHeld(previous, target, notices)
 
 
 async def cancel_division_on(
@@ -1297,15 +1311,30 @@ async def live_season(db_path: str) -> Season | None:
     database and no service: a queued change's check reads the season through it.
     """
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT id, start_date, status, season_number, stage FROM seasons "
-            "WHERE status IN ('SETUP', 'ACTIVE') "
-            "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
-        )
-        row = await cursor.fetchone()
+        return await live_season_on(db)
+
+
+async def live_season_on(db: aiosqlite.Connection) -> Season | None:
+    """`live_season` on *db*, a connection the caller holds: what a save has written there is
+    read back with the rest. For a module planning inside its own save that needs the live
+    season's stage (architecture.md, "The database"). It writes nothing and commits nothing."""
+    cursor = await db.execute(
+        "SELECT id, start_date, status, season_number, stage FROM seasons "
+        "WHERE status IN ('SETUP', 'ACTIVE') "
+        "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
+    )
+    row = await cursor.fetchone()
     if row is None:
         return None
     return _row_to_season(row)
+
+
+async def season_exists(db_path: str, season_id: int) -> bool:
+    """Whether the season *season_id* can be read from the league database at *db_path*, for a
+    reader that checks it before writing anything."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT 1 FROM seasons WHERE id = ?", (season_id,))
+        return await cursor.fetchone() is not None
 
 
 async def division_first_round(db_path: str, division_id: int) -> Round | None:
@@ -1345,6 +1374,99 @@ async def division_rounds_on(db: aiosqlite.Connection, division_id: int) -> list
     return [int(row["id"]) for row in await cursor.fetchall()]
 
 
+async def active_season_rounds_on(db: aiosqlite.Connection) -> list[tuple[int, int]]:
+    """The ``(round_id, division_id)`` of every round of an ACTIVE season, in round id order,
+    read on *db*; empty where no season is active.
+
+    For a module reading core's tables only through core's code (architecture.md, "The
+    database"): what it erases or reads for the live season's rounds names them here, rather than
+    join `rounds`, `divisions` and `seasons` in a query of its own, on the connection of its own
+    save. It writes nothing and commits nothing.
+    """
+    cursor = await db.execute(
+        "SELECT r.id, r.division_id FROM rounds r "
+        "JOIN divisions d ON d.id = r.division_id "
+        "JOIN seasons s ON s.id = d.season_id "
+        "WHERE s.status = ? ORDER BY r.id",
+        (SeasonStatus.ACTIVE.value,),
+    )
+    return [(int(row["id"]), int(row["division_id"])) for row in await cursor.fetchall()]
+
+
+async def season_divisions_on(db: aiosqlite.Connection, season_id: int) -> list[Division]:
+    """*season_id*'s divisions in tier order, read on *db*; empty for none.
+
+    `SeasonService.get_divisions_on` as a function, for a module reading core's tables only
+    through core's code (architecture.md, "The database") that has the connection of its own
+    save and no service. It writes nothing and commits nothing.
+    """
+    cursor = await db.execute(
+        "SELECT id, season_id, name, mention_role_id, status, tier, "
+        "lineup_channel_id, calendar_channel_id, lineup_message_id, "
+        "calendar_message_id "
+        "FROM divisions WHERE season_id = ? ORDER BY tier",
+        (season_id,),
+    )
+    return [_row_to_division(r) for r in await cursor.fetchall()]
+
+
+async def division_rounds_in_order_on(db: aiosqlite.Connection, division_id: int) -> list[Round]:
+    """*division_id*'s rounds in round order, with their status, read on *db*; empty for none.
+
+    `SeasonService.get_division_rounds_on` as a function, for a module reading core's tables only
+    through core's services (architecture.md, "The database") that has the connection of its own
+    save and no service: what it asks of the rounds (which have results, which are cancelled) it
+    reads off the rounds this returns, rather than join `rounds` in a query of its own. It writes
+    nothing and commits nothing.
+    """
+    cursor = await db.execute(
+        "SELECT id, division_id, round_number, format, track_name, scheduled_at, status "
+        "FROM rounds WHERE division_id = ? ORDER BY round_number",
+        (division_id,),
+    )
+    return [_row_to_round(r) for r in await cursor.fetchall()]
+
+
+async def rounds_from_on(
+    db: aiosqlite.Connection, division_id: int, from_round_id: int
+) -> list[Round]:
+    """*division_id*'s rounds from *from_round_id* forward, in round order, the round named
+    included, read on *db*; empty where *from_round_id* is no round.
+
+    For a module reading core's tables only through core's services (architecture.md, "The
+    database"): what it asks of the rounds after one (which are awaiting appeals, which are
+    cancelled) it reads off the status each carries, rather than join `rounds` in a query of its
+    own. It writes nothing and commits nothing.
+    """
+    cursor = await db.execute(
+        "SELECT id, division_id, round_number, format, track_name, scheduled_at, status "
+        "FROM rounds WHERE division_id = ? "
+        "AND round_number >= (SELECT round_number FROM rounds WHERE id = ?) "
+        "ORDER BY round_number",
+        (division_id, from_round_id),
+    )
+    return [_row_to_round(r) for r in await cursor.fetchall()]
+
+
+async def division_on(db: aiosqlite.Connection, division_id: int) -> Division | None:
+    """The division *division_id*, or None where there is none, read on *db*.
+
+    For a module reading core's tables only through core's services (architecture.md, "The
+    database"), handed the connection of its own save or read: what it asks of `divisions` (its
+    season, its name) comes from here rather than from a query of its own. It writes nothing and
+    commits nothing.
+    """
+    cursor = await db.execute(
+        "SELECT id, season_id, name, mention_role_id, status, tier, "
+        "lineup_channel_id, calendar_channel_id, lineup_message_id, "
+        "calendar_message_id "
+        "FROM divisions WHERE id = ?",
+        (division_id,),
+    )
+    row = await cursor.fetchone()
+    return _row_to_division(row) if row is not None else None
+
+
 async def round_by_id(db_path: str, division_id: int, round_id: int) -> Round | None:
     """*round_id* of *division_id*, or None where it is not (any longer) that division's.
 
@@ -1380,6 +1502,136 @@ async def round_called(db_path: str, round_id: int) -> str:
     if row is None:
         return "a round no longer there"
     return f"round {row['round_number']} in **{row['name']}**"
+
+
+@dataclass(frozen=True)
+class RoundInDivision:
+    """A round with the division it belongs to, as core's own read of both gives it."""
+
+    round_id: int
+    division_id: int
+    division_name: str
+    round_number: int
+    status: str
+    scheduled_at: datetime
+
+
+async def round_in_division(db_path: str, round_id: int) -> RoundInDivision | None:
+    """*round_id* with its division, or None where the round is no longer there.
+
+    For a module reading core's tables only through core's services (architecture.md, "How
+    modules and core fit together"), where the caller has the database path and no `SeasonService`
+    of its own: results' restart recovery of a submission channel finds its own row for the round
+    and asks core what the round is.
+    """
+    async with get_connection(db_path) as db:
+        facts = await round_facts_on(db, round_id)
+    if facts is None:
+        return None
+    return RoundInDivision(
+        round_id=facts.round_id, division_id=facts.division_id,
+        division_name=facts.division_name, round_number=facts.round_number,
+        status=facts.status.value, scheduled_at=facts.scheduled_at,
+    )
+
+
+@dataclass(frozen=True)
+class RoundFacts:
+    """A round with its division and season, as core's own read of the three gives it."""
+
+    round_id: int
+    round_number: int
+    status: RoundStatus
+    format: RoundFormat
+    track_name: str | None
+    scheduled_at: datetime
+    not_held: bool
+    division_id: int
+    division_name: str
+    division_tier: int
+    division_status: DivisionStatus
+    season_id: int
+    season_number: int
+    season_status: SeasonStatus
+
+
+async def round_facts_on(db: aiosqlite.Connection, round_id: int) -> RoundFacts | None:
+    """*round_id*'s facts with its division's and its season's, or None where the round is no
+    longer there, read on *db*.
+
+    For a module reading core's tables only through core's services (architecture.md, "The
+    database"), handed the connection of its own save: a query of its own table that joined the
+    round, its division and its season is split at the table line, and this is the core half, read
+    inside the same save, so a round that save has just changed is read as changed. It writes
+    nothing and commits nothing.
+    """
+    cursor = await db.execute(
+        "SELECT r.id, r.round_number, r.status, r.format, r.track_name, r.scheduled_at, "
+        "r.not_held, d.id AS division_id, d.name AS division_name, d.tier AS division_tier, "
+        "d.status AS division_status, "
+        "s.id AS season_id, s.season_number, s.status AS season_status "
+        "FROM rounds r JOIN divisions d ON d.id = r.division_id "
+        "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?",
+        (round_id,),
+    )
+    row = await cursor.fetchone()
+    if row is None:
+        return None
+    return RoundFacts(
+        round_id=int(row["id"]), round_number=int(row["round_number"]),
+        status=RoundStatus(row["status"]), format=RoundFormat(row["format"]),
+        track_name=row["track_name"], scheduled_at=read_scheduled_at(row["scheduled_at"]),
+        not_held=bool(row["not_held"]), division_id=int(row["division_id"]),
+        division_name=str(row["division_name"]), division_tier=int(row["division_tier"]),
+        division_status=DivisionStatus(row["division_status"]), season_id=int(row["season_id"]),
+        season_number=int(row["season_number"]),
+        season_status=SeasonStatus(row["season_status"]),
+    )
+
+
+async def final_round_ids_among_on(
+    db: aiosqlite.Connection, round_ids: Iterable[int]
+) -> set[int]:
+    """Those of *round_ids* whose round is FINAL, read on *db*; the empty set for none.
+
+    The core half of a module's query that joined its own rows to `rounds` to keep those of final
+    rounds: the module reads its own table for the round ids it holds, asks this of the ids, and
+    keeps what comes back, on the connection of the save it is in. It writes nothing and commits
+    nothing.
+    """
+    ids = sorted(set(round_ids))
+    if not ids:
+        return set()
+    marks = ", ".join("?" for _ in ids)
+    cursor = await db.execute(
+        f"SELECT id FROM rounds WHERE status = ? AND id IN ({marks})",  # noqa: S608
+        (RoundStatus.FINAL.value, *ids),
+    )
+    return {int(row["id"]) for row in await cursor.fetchall()}
+
+
+async def rounds_still_to_run_by(db_path: str, now: datetime) -> list[Round]:
+    """Each round of the ACTIVE season still to be run (NOT_RUN) whose start is at or before
+    *now*, earliest first.
+
+    For a module catching up what came due while the bot was down: results' round starts. *now* is
+    handed in by the caller, the change queue's clock at start-up, so that "passed" is the bot's
+    moment and never the host's. The stored moments are ISO 8601 text in UTC written with their
+    offset (`stored_scheduled_at`), so text order is time order and the comparison is made in SQL.
+    A cancelled round is no longer to be run, and a round of a division that was cancelled is
+    cancelled with it.
+    """
+    async with get_connection(db_path) as db:
+        cursor = await db.execute(
+            "SELECT r.id, r.division_id, r.round_number, r.format, r.track_name, r.scheduled_at, "
+            "r.status FROM rounds r JOIN divisions d ON d.id = r.division_id "
+            "JOIN seasons s ON s.id = d.season_id "
+            "WHERE s.status = 'ACTIVE' AND d.status != 'CANCELLED' AND r.status = ? "
+            "AND r.scheduled_at <= ? "
+            "ORDER BY r.scheduled_at, r.id",
+            (RoundStatus.NOT_RUN.value, stored_scheduled_at(now)),
+        )
+        return [_row_to_round(row) for row in await cursor.fetchall()]
 
 
 # ------------------------------------------------------------------

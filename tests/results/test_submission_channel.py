@@ -39,10 +39,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.results.services.result_submission_service import (
-    is_channel_in_penalty_review,
-    is_submission_open,
-)
+from leaguebot.results.services.submission.result_submission_service import is_submission_open
+from leaguebot.results.services.review.review_prompts import is_channel_in_penalty_review
 from tests.support.change_queue import ADMIN_ROLE_ID, MANAGER_ROLE_ID, run_queue
 from tests.support.review_league import channel
 from tests.support.season_league import (

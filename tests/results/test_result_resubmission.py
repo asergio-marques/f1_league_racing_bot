@@ -1,7 +1,7 @@
 """Restarting a round's result submission after the results turned out to be wrong.
 
-Issue #208. `enter_resubmit_flow` is what a league manager reaches by pressing **Resubmit** in
-the penalty review, and it was unexecuted. It throws away every penalty staged against the
+Issue #208. The **Resubmit** press in the penalty review, which a league manager reaches
+through `ask_resubmission_start`, was unexecuted. It throws away every penalty staged against the
 round's results and asks for the results again.
 
 **Everything discarded is logged before it is discarded.** The staged penalties are written
@@ -49,8 +49,8 @@ from leaguebot.core.db.database import get_connection, run_migrations
 # and `result_submission_service` both import this one, and these are the values
 # `session_results.session_type` actually holds.
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_service import StagedPenalty
-from leaguebot.results.services.result_submission_service import (
+from leaguebot.results.services.review.penalty_service import StagedPenalty
+from leaguebot.results.services.submission.result_submission_service import (
     ResubmissionCancelView,
 )
 from tests.results.test_resubmission_changes import (
@@ -146,6 +146,7 @@ def _state(
     bot.get_channel = MagicMock(return_value=channel)
     return SimpleNamespace(
         bot=bot,
+        server_config=AsyncMock(return_value=None),
         round_id=ROUND_ID,
         division_id=DIVISION_ID,
         round_number=3,
@@ -179,7 +180,7 @@ def _penalty(seconds: int = 5, penalty_type: str = "TIME") -> StagedPenalty:
 
 
 def _pardon(pardon_type: str = "ABSENT", justification: str = "Ill"):
-    from leaguebot.results.services.penalty_wizard import StagedPardon
+    from leaguebot.results.services.review.review_state import StagedPardon
 
     return StagedPardon(
         driver_user_id=DRIVER_A, driver_profile_id=31, attendance_id=41,

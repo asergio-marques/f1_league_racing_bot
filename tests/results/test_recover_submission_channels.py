@@ -42,10 +42,13 @@ mid-submission would delete the results the resubmission was meant to supersede.
 asks for the review back returning from a restart, and the abandon is that opening's own jobs
 (#439, slice 6b, C53), so these cases alone run on a real queue.
 
-**Nothing here may raise.** This runs inside start-up, so one unrecoverable round must not stop
-the rest being recovered — nor stop the bot finishing its start-up at all. Every failure path
-is tested for it, because a guild missing from the cache is ordinary on a large bot and a
-deleted channel is ordinary on any.
+**One unrecoverable round stops nothing else, and is reported.** This runs inside start-up, so a
+round that cannot be recovered must not stop the rest being recovered — nor stop the bot finishing
+its start-up at all. A guild missing from the cache is ordinary on a large bot and a deleted
+channel is ordinary on any, and neither is a failure. A round whose recovery does fail is recorded
+and the others carried on with; once all are done the recovery raises one error of results' own
+naming each round that failed, which the start-up sweep reports to the log channel in one line
+(architecture.md, "The sweep is core's own steps, then each enabled module's turn").
 """
 from __future__ import annotations
 
@@ -57,6 +60,8 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
+from tests.support.start_up_sweep import round_failures, run_results_start_up_step
+
 
 SERVER_ID = 11708
 SEASON_ID = 1
@@ -178,9 +183,11 @@ def _bot(db_path: str, *, guild_missing: bool = False, channel=None):
 
 async def _recover(stub):
     """Run recovery; the queue's requests are recorded on the bot's stand-in queue."""
-    from leaguebot.results.wiring import recover_orphaned_submission_channels
+    from leaguebot.results.services.submission.submission_recovery import (
+        recover_orphaned_submission_channels,
+    )
 
-    await recover_orphaned_submission_channels(stub)
+    await recover_orphaned_submission_channels(stub, queue=stub.change_queue)
 
 
 def _asked(stub) -> list[tuple[str, dict]]:
@@ -402,7 +409,7 @@ async def test_a_review_put_back_asks_the_queue_it_was_handed(tmp_path):
     """A service is handed the change queue rather than looking it up on the bot (#439 slice 6b,
     fold-in 6). A round left in its penalty review at a restart is put back by asking the queue
     the recovery was handed, and nothing is asked of the bot's own."""
-    from leaguebot.results.services.review_recovery import recover_review
+    from leaguebot.results.services.submission.review_recovery import recover_review
 
     db_path = await _make_db(tmp_path, name="recover_handed", in_penalty_review=1)
     stub = _bot(db_path, channel=_channel())
@@ -460,12 +467,58 @@ async def test_a_review_whose_channel_is_missing_is_left_intact(tmp_path):
 
 async def test_a_failing_re_prompt_does_not_stop_the_start_up(tmp_path):
     """This runs inside start-up: one unrecoverable round must not stop the rest being
-    recovered, nor stop the bot finishing its start-up at all."""
+    recovered, nor stop the bot finishing its start-up at all, and the league is told. Round 21,
+    in penalty review, cannot be put back because the queue refuses the request: once done, the
+    recovery raises one error of results' own naming round 21 and the queue's error, for the
+    start-up sweep to report."""
     db_path = await _make_db(tmp_path, name="recover_review_fails", in_penalty_review=1)
     stub = _bot(db_path, channel=_channel())
-    stub.change_queue.ask = AsyncMock(side_effect=RuntimeError("the database is locked"))
+    refused = RuntimeError("the database is locked")
+    stub.change_queue.ask = AsyncMock(side_effect=refused)
 
-    await _recover(stub)  # must not raise
+    with pytest.raises(Exception) as raised:
+        await _recover(stub)
+
+    assert round_failures(raised.value) == {ROUND_ID: refused}
+
+
+async def test_a_round_that_cannot_be_recovered_is_reported_and_the_others_still_are(tmp_path):
+    """Rounds 3 (id 21) and 4 (id 22) of Pro were each mid-submission when the bot stopped. At the
+    restart the queue refuses round 21's request for its submission restart. Run through the
+    start-up sweep, results' "orphaned submission channels" step still asks round 22's restart,
+    and the sweep posts one line to the log channel, its failure line for that step; the error
+    the step raised is results' own and names round 21 alone, with the queue's error."""
+    db_path = await _make_db(tmp_path, name="recover_one_fails")
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, status) "
+            "VALUES (22, ?, 4, '2026-02-08T18:00:00+00:00', 'NORMAL', 'AWAITING_RESULTS')",
+            (DIVISION_ID,),
+        )
+        await db.execute(
+            "INSERT INTO round_submission_channels (round_id, channel_id, created_at, closed) "
+            "VALUES (22, 701, '2026-02-08T00:00:00+00:00', 0)"
+        )
+        await db.commit()
+    stub = _bot(db_path, channel=_channel())
+    refused = RuntimeError("the database is locked")
+
+    async def ask(kind, payload, **_):
+        if payload["round_id"] == ROUND_ID:
+            raise refused
+        return 1
+
+    stub.change_queue.ask = AsyncMock(side_effect=ask)
+
+    from leaguebot.core.utils.interaction_errors import start_up_failure_line
+
+    lines, error = await run_results_start_up_step(stub, "orphaned submission channels")
+
+    restarted = sorted(payload["round_id"] for kind, payload in _asked(stub)
+                       if kind == "results.submission.restart")
+    assert restarted == [ROUND_ID, 22]
+    assert round_failures(error) == {ROUND_ID: refused}
+    assert lines == [start_up_failure_line("orphaned submission channels", error)]
 
 
 # ---------------------------------------------------------------------------
@@ -509,6 +562,9 @@ async def test_an_appeals_round_keeps_its_results(tmp_path):
 
 
 async def test_a_failing_appeals_re_post_does_not_stop_the_start_up(tmp_path):
+    """As a failing re-prompt: round 21, awaiting appeals, cannot be put back because the queue
+    refuses the request, and the recovery raises one error of results' own naming round 21 and the
+    queue's error."""
     db_path = await _make_db(
         tmp_path,
         name="recover_appeals_fails",
@@ -516,9 +572,13 @@ async def test_a_failing_appeals_re_post_does_not_stop_the_start_up(tmp_path):
         round_status="AWAITING_APPEAL_VERDICTS",
     )
     stub = _bot(db_path, channel=_channel())
-    stub.change_queue.ask = AsyncMock(side_effect=RuntimeError("the database is locked"))
+    refused = RuntimeError("the database is locked")
+    stub.change_queue.ask = AsyncMock(side_effect=refused)
 
-    await _recover(stub)  # must not raise
+    with pytest.raises(Exception) as raised:
+        await _recover(stub)
+
+    assert round_failures(raised.value) == {ROUND_ID: refused}
 
 
 # ---------------------------------------------------------------------------

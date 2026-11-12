@@ -148,11 +148,6 @@ def _rasteriser_present(monkeypatch):
     import leaguebot.image.services.image_render_service as render
 
     monkeypatch.setattr(render, "converter_available", lambda: True)
-    try:
-        import leaguebot.image.services.image_settings as image_settings
-    except ImportError:
-        return
-    monkeypatch.setattr(image_settings, "converter_available", lambda: True, raising=False)
 
 
 async def _league(tmp_path, *, modules=("images",)) -> Any:

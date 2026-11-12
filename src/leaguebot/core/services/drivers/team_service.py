@@ -10,7 +10,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection, inserted_id
 from leaguebot.core.models.refusal import Refused
-from leaguebot.core.models.team import DefaultTeam, TeamInstance
+from leaguebot.core.models.team import DefaultTeam, SeatedDriver, TeamInstance
 from leaguebot.core.utils.asset_slug import normalise
 from leaguebot.core.utils.input_validator import NAME, parse_role_mention, parse_user_mention
 
@@ -406,6 +406,40 @@ class TeamService:
         """
         async with get_connection(self._db_path) as db:
             return await self.teams_with_roles_on(db)
+
+    @staticmethod
+    async def seated_drivers_on(db: aiosqlite.Connection, division_id: int) -> list[SeatedDriver]:
+        """The drivers holding a seat of *division_id*, the reserve team's included, read on *db*;
+        empty for a division with none.
+
+        A seat held by a driver whose placement is not yet confirmed counts as empty (the
+        uncommitted-placement rule). For a module reading core's tables only through core's
+        services (architecture.md, "The database"), handed the connection of its own read: the
+        seats a query of its own took off a join of `team_seats`, `team_instances` and
+        `driver_profiles` come from here. It writes nothing and commits nothing.
+        """
+        from leaguebot.core.services.seasons.season_lifecycle_service import uncommitted_seat_excluded
+
+        cursor = await db.execute(
+            f"""
+            SELECT dp.discord_user_id, ti.full_name AS team_name, ti.is_reserve
+            FROM team_seats ts
+            JOIN team_instances ti ON ti.id = ts.team_instance_id
+            JOIN driver_profiles dp ON dp.id = ts.driver_profile_id
+            WHERE ti.division_id = ?
+              AND ts.driver_profile_id IS NOT NULL
+              AND {uncommitted_seat_excluded("ts")}
+            """,
+            (division_id,),
+        )
+        seated: list[SeatedDriver] = []
+        for row in await cursor.fetchall():
+            try:
+                user_id = int(row["discord_user_id"])
+            except (TypeError, ValueError):
+                continue
+            seated.append(SeatedDriver(user_id, row["team_name"] or "", bool(row["is_reserve"])))
+        return seated
 
     @staticmethod
     async def teams_with_roles_on(db: aiosqlite.Connection) -> list[dict]:

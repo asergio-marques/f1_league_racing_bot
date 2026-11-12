@@ -68,8 +68,8 @@ def _report(*files: tuple[str, int, int]) -> dict:
         ("src/leaguebot/image/utils/svg_fill.py", "image"),
         ("src/leaguebot/attendance/services/attendance_service.py", "attendance"),
         ("src/leaguebot/attendance/services/rsvp_service.py", "attendance"),
-        ("src/leaguebot/results/services/standings_service.py", "results"),
-        ("src/leaguebot/results/services/penalty_service.py", "results"),
+        ("src/leaguebot/results/services/standings/standings_service.py", "results"),
+        ("src/leaguebot/results/services/review/penalty_service.py", "results"),
         ("src/leaguebot/signup/services/wizard_service.py", "signup"),
         ("src/leaguebot/core/services/seasons/season_service.py", "core"),
     ],
@@ -93,7 +93,7 @@ def test_known_files_are_classified(path, expected):
         # The signup review panel, the points amendment, and fetching a portrait.
         ("src/leaguebot/signup/cogs/admin_review_cog.py", "signup"),
         ("src/leaguebot/results/models/amendment_state.py", "results"),
-        ("src/leaguebot/results/services/season_points_service.py", "results"),
+        ("src/leaguebot/results/services/points/season_points_service.py", "results"),
         ("src/leaguebot/image/services/driver_portrait_service.py", "image"),
     ],
 )
@@ -286,7 +286,7 @@ def test_the_stewarding_module_is_its_own_bucket_and_not_the_results_one():
     module's, and hid it from the per-module floor. By folder, the two cannot mix."""
     report = _report(
         ("src/leaguebot/steward/services/steward_licence_service.py", 10, 5),
-        ("src/leaguebot/results/services/results_post_service.py", 10, 0),
+        ("src/leaguebot/results/services/publishing/results_post_service.py", 10, 0),
     )
 
     buckets = cbm.group(report)
@@ -295,7 +295,7 @@ def test_the_stewarding_module_is_its_own_bucket_and_not_the_results_one():
         "src/leaguebot/steward/services/steward_licence_service.py"
     ]
     assert [f[0] for f in buckets["results"]["files"]] == [
-        "src/leaguebot/results/services/results_post_service.py"
+        "src/leaguebot/results/services/publishing/results_post_service.py"
     ]
 
 

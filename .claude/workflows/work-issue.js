@@ -36,6 +36,7 @@ const SPECS = {
 const DESIGN_FILES = {
   steward: 'docs/design/steward_module.md',
   core: 'docs/design/core.md',
+  results: 'docs/design/results_module.md',
 }
 
 // Each role's model and effort. Every model and effort is set explicitly, so that a session on

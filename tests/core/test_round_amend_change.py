@@ -27,7 +27,7 @@ from collections.abc import Callable
 from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import discord
 import pytest
@@ -140,9 +140,8 @@ class _Reposts:
 
 @pytest.fixture
 def reposts(monkeypatch):
-    """The check-in call posted as attendance posts it, by whichever of the bot's code posts it
-    (#439, slice 6b, C28: today `run_rsvp_notice` and `repost_rsvp_call` whole, then the call's
-    own job), and recorded from what Discord was sent, so that no test leans on either.
+    """The check-in call posted as attendance posts it, by its own job, and recorded from what
+    Discord was sent, so that no test leans on which code posts it.
 
     It wraps this module's `ongoing_league`: the league each test builds gets attendance's own
     service, its writers included (`_attendance_as_it_is`), and the fixture keeps it. `posted`
@@ -705,8 +704,8 @@ async def test_a_judgement_that_stopped_and_is_retried_after_the_window_passed_i
 
     refused = (
         NO_LONGER
-        + "A round cannot be moved into the past. Its result submission would never open, and "
-        "the round could never take results at all. Give it a moment still to come.\n• "
+        + "A round cannot be moved into the past. Its result submission would open late, at "
+        "once, and not at the round's moment. Give it a moment still to come.\n• "
         "The check-in deadline for that moment has already passed, so the round would have no "
         "check-in at all. Move it further out, or shorten the deadline."
         + NOTHING_CHANGED
@@ -1807,8 +1806,8 @@ async def test_a_discarded_catch_up_is_named_whatever_became_of_the_save(
 
     head = SAVE_DISCARDED if ending == "discarded" else (
         NO_LONGER
-        + "A round cannot be moved into the past. Its result submission would never open, and "
-        "the round could never take results at all. Give it a moment still to come."
+        + "A round cannot be moved into the past. Its result submission would open late, at "
+        "once, and not at the round's moment. Give it a moment still to come."
         + NOTHING_CHANGED
     )
     outcome = _outcome(press)
@@ -2044,11 +2043,12 @@ async def test_a_call_given_up_after_its_take_down_clears_the_round_s_answers_an
 async def test_under_test_mode_a_round_whose_moment_passed_while_its_save_stood_stopped_is_left_to_test_mode_advance(
     tmp_path,
 ):
-    """Test mode on. Pro's round 3 is two hours and five minutes out; it is moved thirty minutes
-    later and the save stops. Ten minutes past its old moment a league admin discards the save:
-    the round stands at its old moment, gone by, and still to be run. Its results submission is
-    armed with it, but not run at once, `/test-mode advance` running a test season's rounds in
-    their turn (owner, 2026-10-09: "Leave it to /test-mode advance")."""
+    """Test mode on, results on, weather off. Pro's round 3 is two hours and five minutes out; it
+    is moved thirty minutes later and the save stops. Ten minutes past its old moment a league
+    admin discards the save: the round stands at its old moment, gone by, and still to be run.
+    Neither is its results submission armed nor is it run at once, `/test-mode advance` running a
+    test season's rounds in their turn (owner, 2026-10-09: "Leave it to /test-mode advance"), as
+    the season's approval leaves them (core specification, "What confirming placements does")."""
     league = await ongoing_league(tmp_path)
     await league.set_test_mode(True)
     await _place_r3(league, hours=2, minutes=5)
@@ -2061,7 +2061,53 @@ async def test_under_test_mode_a_round_whose_moment_passed_while_its_save_stood_
 
     assert await stopped_job(league.db_path) is None
     assert await _status(league) == "NOT_RUN"
-    assert league.armed == [("results", [R3])]
+    assert league.armed == []
+    assert league.bot.scheduler_service.run_result_submission_now.call_args_list == []
+
+
+async def test_under_test_mode_an_amended_round_whose_moment_is_ahead_is_left_to_test_mode_advance(
+    tmp_path,
+):
+    """Test mode on, results on, weather off. Pro's round 3 is moved to a hundred and fifty days
+    out, and the amendment goes through. The season's approval armed no results job for its
+    rounds, leaving each to `/test-mode advance` (core specification, "What confirming placements
+    does"): the amendment arms none either, though the round's moment is still ahead, so that the
+    round does not open on time by the clock while its neighbours wait for the advance. Outside
+    test mode it is armed (`test_a_stop_after_the_amendment_is_saved_arms_the_round_again_on_restart`)."""
+    league = await ongoing_league(tmp_path)
+    await league.set_test_mode(True)
+    await _amended(league, scheduled_at=_at(league, days=150))
+
+    await run_queue(league.bot)
+
+    assert (await _change(league))["state"] == "DONE"
+    assert await _moment(league) == _when(league, days=150)
+    assert league.armed == []
+    assert league.bot.scheduler_service.run_result_submission_now.call_args_list == []
+
+
+async def test_under_test_mode_an_amendment_armed_after_its_round_s_moment_takes_the_results_job_down(
+    tmp_path,
+):
+    """Test mode on, results off, so that the round is armed with its `results` job as the
+    season's approval arms it. Pro's round 3 is two hours and five minutes out; it is moved thirty
+    minutes later and the save stops. Ten minutes past its old moment a league admin discards the
+    save, and the round is armed again at its old moment, gone by, while the bot stays up. Its
+    `results` job, armed with no lateness limit, would run at once and open the submission, which
+    `/test-mode advance` is to do in its turn: so the arming takes the round's `results` job down
+    again, and no submission is run at once."""
+    league = await ongoing_league(tmp_path, results=False)
+    await league.set_test_mode(True)
+    await _place_r3(league, hours=2, minutes=5)
+    await _amended(league, scheduled_at=_at(league, hours=2, minutes=35))
+    with _renumbering_fails():
+        await run_queue(league.bot)
+        assert await _stopped_at(league) == "apply"
+        league.clock.advance(hours=2, minutes=15)
+        await discard_job(league.bot)
+
+    taken_down = league.bot.scheduler_service.cancel_round.call_args_list
+    assert call(R3, only=frozenset({"results"})) in taken_down
     assert league.bot.scheduler_service.run_result_submission_now.call_args_list == []
 
 

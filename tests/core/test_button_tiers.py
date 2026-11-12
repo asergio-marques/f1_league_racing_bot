@@ -74,10 +74,12 @@ def _interaction(member: MagicMock) -> MagicMock:
 
 
 async def _press_config_select(member, config):
-    from leaguebot.results.services.result_submission_service import _ConfigSelectView
+    from leaguebot.results.services.submission.result_submission_service import _ConfigSelectView
 
-    view = _ConfigSelectView(["Standard", "Sprint"], config)
     interaction = _interaction(member)
+    view = _ConfigSelectView(
+        ["Standard", "Sprint"], config, router=interaction.client.output_router
+    )
     await view.children[0].callback(interaction)
     return view, interaction
 
@@ -109,11 +111,13 @@ _SESSION = "the Feature Race of round 3 (Pro)"
 
 
 async def _choose_as(member, config):
-    from leaguebot.results.services.result_submission_service import _ConfigSelectView
+    from leaguebot.results.services.submission.result_submission_service import _ConfigSelectView
 
     member.display_name = "Alex"
-    view = _ConfigSelectView(["Standard", "Sprint"], config, session=_SESSION)
     interaction = _interaction(member)
+    view = _ConfigSelectView(
+        ["Standard", "Sprint"], config, session=_SESSION, router=interaction.client.output_router
+    )
     await view.children[0].callback(interaction)
     return view, [call.args[0] for call in interaction.client.output_router.post_log.await_args_list]
 
@@ -184,11 +188,11 @@ async def test_a_signup_review_refuses_when_the_config_cannot_be_read():
 
 
 async def _is_lm(member, config):
-    from leaguebot.results.services.penalty_wizard import _is_league_manager
+    from leaguebot.results.services.review.penalty_wizard import _is_league_manager
 
     bot = MagicMock()
     bot.config_service.get_server_config = AsyncMock(return_value=config)
-    return await _is_league_manager(_interaction(member), ":memory:", bot)
+    return await _is_league_manager(_interaction(member), bot.config_service.get_server_config)
 
 
 @pytest.mark.parametrize("roles", [(MANAGER_ROLE,), (ADMIN_ROLE,)], ids=["manager", "admin"])

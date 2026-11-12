@@ -21,10 +21,14 @@ two identical penalties are not both swallowed by a single appeal.
 from __future__ import annotations
 
 import os
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_service import load_staged_from_records
+from leaguebot.results.services.review.penalty_service import load_staged_from_records
+from tests.support.review_league import attendance_after_review_of
 from tests.support.teams import seed_team_instances
 
 ROUND_ID = 41
@@ -121,7 +125,9 @@ async def test_a_report_comes_back_with_every_field_it_was_given(tmp_path):
         description="Contact at turn four.", justification="Wholly at fault.",
     )
 
-    reports, appeals, pardons = await load_staged_from_records(db_path, ROUND_ID)
+    reports, appeals, pardons = await load_staged_from_records(
+        db_path, ROUND_ID, attendance=attendance_after_review_of(db_path)
+    )
 
     assert (appeals, pardons) == ([], [])
     assert len(reports) == 1
@@ -140,7 +146,9 @@ async def test_a_qualifying_report_recovers_its_own_session(tmp_path):
     await _penalty(db_path, ids["qual_101"], column="qual_result_id", penalty_type="DSQ",
                    seconds=None)
 
-    reports, _, _ = await load_staged_from_records(db_path, ROUND_ID)
+    reports, _, _ = await load_staged_from_records(
+        db_path, ROUND_ID, attendance=attendance_after_review_of(db_path)
+    )
 
     assert len(reports) == 1
     assert reports[0].session_type is SessionType.FEATURE_QUALIFYING
@@ -157,7 +165,9 @@ async def test_an_appeal_is_read_as_an_appeal_and_not_also_as_a_report(tmp_path)
     await _penalty(db_path, ids["race_101"], seconds=5)
     await _appeal(db_path, ids["race_101"], seconds=5)
 
-    reports, appeals, _ = await load_staged_from_records(db_path, ROUND_ID)
+    reports, appeals, _ = await load_staged_from_records(
+        db_path, ROUND_ID, attendance=attendance_after_review_of(db_path)
+    )
 
     assert reports == []
     assert len(appeals) == 1
@@ -174,7 +184,9 @@ async def test_a_report_and_an_appeal_on_one_driver_both_come_back(tmp_path):
     await _penalty(db_path, ids["race_101"], seconds=3)
     await _appeal(db_path, ids["race_101"], seconds=3)
 
-    reports, appeals, _ = await load_staged_from_records(db_path, ROUND_ID)
+    reports, appeals, _ = await load_staged_from_records(
+        db_path, ROUND_ID, attendance=attendance_after_review_of(db_path)
+    )
 
     assert [r.penalty_seconds for r in reports] == [5]
     assert [a.penalty_seconds for a in appeals] == [3]
@@ -192,7 +204,9 @@ async def test_two_identical_reports_are_not_both_claimed_by_one_appeal(tmp_path
     await _penalty(db_path, ids["race_101"], seconds=5)
     await _appeal(db_path, ids["race_101"], seconds=5)
 
-    reports, appeals, _ = await load_staged_from_records(db_path, ROUND_ID)
+    reports, appeals, _ = await load_staged_from_records(
+        db_path, ROUND_ID, attendance=attendance_after_review_of(db_path)
+    )
 
     assert len(reports) == 1
     assert len(appeals) == 1
@@ -220,7 +234,9 @@ async def test_a_pardon_comes_back_staged(tmp_path):
         )
         await db.commit()
 
-    _, _, pardons = await load_staged_from_records(db_path, ROUND_ID)
+    _, _, pardons = await load_staged_from_records(
+        db_path, ROUND_ID, attendance=attendance_after_review_of(db_path)
+    )
 
     assert len(pardons) == 1
     assert pardons[0].driver_user_id == 101
@@ -233,11 +249,34 @@ async def test_a_pardon_comes_back_staged(tmp_path):
     assert pardons[0].granted_at == "2026-02-02T00:00:00+00:00"
 
 
+async def test_the_pardons_are_read_through_attendance(tmp_path):
+    """Round 41 holds no pardon in the database, but attendance's share of the review answers
+    one: a NO_RSVP pardon on attendance row 7 for driver 31 (user 101), granted by 77 "Away with
+    work". It is asked once, for round 41, and the pardon comes back staged with those fields."""
+    db_path, _ = await _seed(tmp_path, "hydrate_pardon_through_attendance")
+    attendance = MagicMock()
+    attendance.recorded_pardons = AsyncMock(return_value=[{
+        "attendance_id": 7, "pardon_type": "NO_RSVP", "justification": "Away with work",
+        "granted_by": "77", "granted_at": "2026-02-02T00:00:00+00:00",
+        "driver_profile_id": 31, "discord_user_id": "101",
+    }])
+
+    _, _, pardons = await load_staged_from_records(db_path, ROUND_ID, attendance=attendance)
+
+    attendance.recorded_pardons.assert_awaited_once_with(ROUND_ID)
+    assert [(p.driver_user_id, p.driver_profile_id, p.attendance_id, p.pardon_type,
+             p.justification, p.grantor_id, p.granted_at) for p in pardons] == [
+        (101, 31, 7, "NO_RSVP", "Away with work", 77, "2026-02-02T00:00:00+00:00"),
+    ]
+
+
 async def test_a_round_that_was_never_penalised_hydrates_to_nothing(tmp_path):
     """The ordinary case, so an empty result cannot be read as a failure to find anything."""
     db_path, _ = await _seed(tmp_path, "hydrate_empty")
 
-    assert await load_staged_from_records(db_path, ROUND_ID) == ([], [], [])
+    assert await load_staged_from_records(
+        db_path, ROUND_ID, attendance=attendance_after_review_of(db_path)
+    ) == ([], [], [])
 
 
 async def test_another_rounds_verdicts_are_not_picked_up(tmp_path):
@@ -264,7 +303,9 @@ async def test_another_rounds_verdicts_are_not_picked_up(tmp_path):
     await _penalty(db_path, other_row)
     await _penalty(db_path, ids["race_102"], seconds=7)
 
-    reports, _, _ = await load_staged_from_records(db_path, ROUND_ID)
+    reports, _, _ = await load_staged_from_records(
+        db_path, ROUND_ID, attendance=attendance_after_review_of(db_path)
+    )
 
     assert [(r.driver_user_id, r.penalty_seconds) for r in reports] == [(102, 7)]
 
@@ -287,7 +328,9 @@ async def test_the_pairing_holds_because_both_rows_come_from_one_staged_appeal(t
     await _penalty(db_path, ids["race_101"], penalty_type="TIME", seconds=8)
     await _appeal(db_path, ids["race_101"], penalty_type="TIME", seconds=8)
 
-    reports, appeals, _ = await load_staged_from_records(db_path, ROUND_ID)
+    reports, appeals, _ = await load_staged_from_records(
+        db_path, ROUND_ID, attendance=attendance_after_review_of(db_path)
+    )
 
     assert reports == []
     assert len(appeals) == 1
@@ -305,7 +348,9 @@ async def test_a_report_of_a_different_shape_is_never_claimed_by_an_appeal(tmp_p
     await _penalty(db_path, ids["race_102"], penalty_type="DSQ", seconds=None)
     await _appeal(db_path, ids["race_101"], penalty_type="TIME", seconds=8)
 
-    reports, appeals, _ = await load_staged_from_records(db_path, ROUND_ID)
+    reports, appeals, _ = await load_staged_from_records(
+        db_path, ROUND_ID, attendance=attendance_after_review_of(db_path)
+    )
 
     assert [(r.driver_user_id, r.penalty_type) for r in reports] == [(102, "DSQ")]
     assert [(a.driver_user_id, a.penalty_type) for a in appeals] == [(101, "TIME")]
@@ -335,7 +380,9 @@ async def test_a_report_and_an_appeal_of_the_same_size_for_different_incidents_b
         description="Track limits, lap 12", justification="Appeal upheld",
     )
 
-    reports, appeals, _ = await load_staged_from_records(db_path, ROUND_ID)
+    reports, appeals, _ = await load_staged_from_records(
+        db_path, ROUND_ID, attendance=attendance_after_review_of(db_path)
+    )
 
     assert [r.description for r in reports] == ["Contact at turn one"]
     assert [a.description for a in appeals] == ["Track limits, lap 12"]
@@ -349,7 +396,9 @@ async def test_a_decision_comes_back_with_its_author_and_its_time(tmp_path):
     await _penalty(db_path, ids["race_101"], description="Report", justification="R")
     await _appeal(db_path, ids["race_102"], description="Appeal", justification="A")
 
-    reports, appeals, _ = await load_staged_from_records(db_path, ROUND_ID)
+    reports, appeals, _ = await load_staged_from_records(
+        db_path, ROUND_ID, attendance=attendance_after_review_of(db_path)
+    )
 
     assert (reports[0].decided_by, reports[0].decided_at) == (
         "77", "2026-02-02T00:00:00+00:00"
@@ -368,11 +417,12 @@ async def test_several_sessions_are_read_back_together(tmp_path):
                    seconds=None, description="Quali")
 
     both, _, _ = await load_staged_from_records(
-        db_path, ROUND_ID,
+        db_path, ROUND_ID, attendance=attendance_after_review_of(db_path),
         session_types=[SessionType.FEATURE_QUALIFYING, SessionType.FEATURE_RACE],
     )
     race_only, _, _ = await load_staged_from_records(
-        db_path, ROUND_ID, session_types=[SessionType.FEATURE_RACE]
+        db_path, ROUND_ID, attendance=attendance_after_review_of(db_path),
+        session_types=[SessionType.FEATURE_RACE],
     )
 
     assert sorted(r.description for r in both) == ["Quali", "Race"]
@@ -386,7 +436,9 @@ async def test_no_further_action_comes_back_as_no_further_action(tmp_path):
     await _penalty(db_path, ids["race_101"], penalty_type="NFA", seconds=None,
                    description="Contact at turn one.", justification="Racing incident.")
 
-    reports, appeals, _ = await load_staged_from_records(db_path, ROUND_ID)
+    reports, appeals, _ = await load_staged_from_records(
+        db_path, ROUND_ID, attendance=attendance_after_review_of(db_path)
+    )
 
     assert appeals == []
     assert [(r.penalty_type, r.penalty_seconds, r.description) for r in reports] == [
@@ -401,7 +453,9 @@ async def test_an_appeal_closed_with_no_further_action_is_paired_off_its_penalty
     await _penalty(db_path, ids["race_101"], penalty_type="NFA", seconds=None)
     await _appeal(db_path, ids["race_101"], penalty_type="NFA", seconds=None)
 
-    reports, appeals, _ = await load_staged_from_records(db_path, ROUND_ID)
+    reports, appeals, _ = await load_staged_from_records(
+        db_path, ROUND_ID, attendance=attendance_after_review_of(db_path)
+    )
 
     assert reports == []
     assert [(a.penalty_type, a.penalty_seconds) for a in appeals] == [("NFA", None)]

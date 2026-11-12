@@ -145,7 +145,7 @@ def _patched(render, *, previous_ids=None, stored=None, stored_lists=None):
         stored[championship] = message_id
         stored_lists[championship] = message_ids
 
-    service = "leaguebot.results.services.results_post_service"
+    service = "leaguebot.results.services.publishing.results_post_service"
     return [
         patch.object(m, "build_drawings", AsyncMock(return_value=_drawings())),
         patch.object(m, "render_png", render),
@@ -551,7 +551,7 @@ async def _seed_league(tmp_path):
         for number in (1, 2):
             cursor = await db.execute(
                 "INSERT INTO rounds (division_id, round_number, format, status, "
-                "track_name, scheduled_at) VALUES (?, ?, 'STANDARD', 'FINAL', "
+                "track_name, scheduled_at) VALUES (?, ?, 'NORMAL', 'FINAL', "
                 "'Silverstone', '2026-06-01T18:00:00+00:00')",
                 (division_id, number),
             )
@@ -889,7 +889,7 @@ async def _seed(tmp_path, *, cancelled=False):
         division_id = cursor.lastrowid
         cursor = await db.execute(
             "INSERT INTO rounds (division_id, round_number, format, status, "
-            "scheduled_at) VALUES (?, 3, 'STANDARD', ?, '2026-06-01T18:00:00+00:00')",
+            "scheduled_at) VALUES (?, 3, 'NORMAL', ?, '2026-06-01T18:00:00+00:00')",
             # One chain now: a cancelled round is CANCELLED, and one that ran to the end of
             # its appeals is FINAL. The two used to be separate columns.
             (division_id, "CANCELLED" if cancelled else "FINAL"),
@@ -935,7 +935,7 @@ def _outcome(*, applicable=True, rejects=False, fallbacks=()):
 async def _post(db_path, division_id, round_id, captured, *, bot=None, channel=None):
     """Round 3's standings put up by `produce_standings` in a channel recording each text it
     is sent in *captured*, giving the tables it reports."""
-    from leaguebot.results.services.results_post_service import produce_standings
+    from leaguebot.results.services.publishing.results_post_service import produce_standings
 
     if channel is None:
         channel = AsyncMock()
@@ -1087,7 +1087,7 @@ async def test_each_picture_is_reported_as_a_table_with_the_message_it_replaces(
     4321, the constructors' as 7702 replacing 4322. `produce_standings` posts no text and
     reports each picture as a table of its own, drawn, with the message it replaces, so that
     the change queue saves the new id with its mark and deletes the old by a job of its own."""
-    from leaguebot.results.services.results_post_service import PostedTable
+    from leaguebot.results.services.publishing.results_post_service import PostedTable
 
     db_path, division_id, round_id = await _seed(tmp_path)
     captured: list[str] = []
@@ -1117,8 +1117,9 @@ async def test_a_textual_fallback_reports_the_message_it_replaces_and_deletes_no
     to save the new id and delete the old once the new one stands (FR-048)."""
     from leaguebot.core.db.database import get_connection
     from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot
-    from leaguebot.results.services.results_post_service import (
+    from leaguebot.results.services.publishing.results_post_service import (
         PostedTable,
+        get_standings_message_id,
         produce_standings,
         set_standings_message_id_on,
     )
@@ -1204,12 +1205,7 @@ async def test_a_textual_fallback_reports_the_message_it_replaces_and_deletes_no
 
     assert order == ["posted"]
     assert PostedTable([9999], [4321], championship="drivers") in tables
-    async with get_connection(db_path) as db:
-        row = await (await db.execute(
-            "SELECT standings_message_id FROM driver_standings_snapshots WHERE round_id = ?",
-            (round_id,),
-        )).fetchone()
-    assert row["standings_message_id"] == 4321
+    assert await get_standings_message_id(db_path, division_id, round_id) == 4321
 
 
 # ── The rendered files do not outlive the posting attempt ─────────────────

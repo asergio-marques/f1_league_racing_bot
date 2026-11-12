@@ -32,15 +32,14 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_wizard import (
+from leaguebot.results.services.review.penalty_review_views import (
     AddPardonModal,
     ApprovalView,
-    PenaltyReviewState,
     PenaltyReviewView,
-    StagedPardon,
-    _review_moved_on,
     _show_approval_step,
 )
+from leaguebot.results.services.review.review_state import PenaltyReviewState, StagedPardon, _review_moved_on
+from tests.support.review_league import attendance_after_review_of
 from tests.support.change_queue import in_a_job
 
 SERVER_ID = 14402
@@ -105,6 +104,7 @@ def _state(db_path: str, *, prompt_message_id: int | None = PROMPT_ID) -> Penalt
         session_types_present=[SessionType.FEATURE_RACE],
         db_path=db_path,
         bot=MagicMock(),
+        queue=MagicMock(), server_config=AsyncMock(return_value=None), router=MagicMock(), attendance=attendance_after_review_of(db_path),
         round_number=3,
         division_name="Pro",
     )
@@ -203,7 +203,7 @@ async def test_a_review_being_approved_has_moved_on(tmp_path):
     )
     state = PenaltyReviewState(
         round_id=LEAGUE_ROUND, division_id=LEAGUE_DIVISION, submission_channel_id=SUBMISSION_CHANNEL,
-        session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path, bot=league.bot,
+        session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path, bot=league.bot, queue=league.bot.change_queue, server_config=league.bot.config_service.get_server_config, router=league.bot.output_router, attendance=attendance_after_review_of(league.db_path),
         prompt_message_id=PROMPT, round_number=3, division_name="Pro",
     )
 
@@ -285,8 +285,8 @@ async def test_an_amendments_pardons_close_with_its_reports(tmp_path, control):
     interaction = _interaction()
 
     with patch(
-        "leaguebot.results.services.penalty_wizard._is_league_manager", new=AsyncMock(return_value=True)
-    ), patch("leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()) as refresh:
+        "leaguebot.results.services.review.penalty_wizard._is_league_manager", new=AsyncMock(return_value=True)
+    ), patch("leaguebot.results.services.review.penalty_review_views._refresh_prompt", new=AsyncMock()) as refresh:
         if control == "AddPardonModal":
             await AddPardonModal(state).on_submit(interaction)
             replied = interaction.followup.send.await_args.args[0]
@@ -318,7 +318,7 @@ class _Channel:
         self.posted: list[int] = []
         self.deleted: list[int] = []
 
-    async def send(self, content, view=None):
+    async def send(self, content, view=None, allowed_mentions=None):
         message = MagicMock()
         message.id = 990001 + len(self.posted)
         self.posted.append(message.id)
@@ -372,8 +372,8 @@ async def test_an_approval_message_no_longer_current_approves_nothing(tmp_path, 
     interaction.client.change_queue.ask = AsyncMock()
 
     with patch(
-        "leaguebot.results.services.penalty_wizard._is_league_manager", new=AsyncMock(return_value=True)
-    ), patch("leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()) as refresh:
+        "leaguebot.results.services.review.penalty_wizard._is_league_manager", new=AsyncMock(return_value=True)
+    ), patch("leaguebot.results.services.review.penalty_review_views._refresh_prompt", new=AsyncMock()) as refresh:
         await getattr(type(view), button)(view, interaction, MagicMock())
 
     assert "withdrawn" in interaction.response.send_message.await_args.args[0]

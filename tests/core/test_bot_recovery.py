@@ -2,8 +2,9 @@
 
 Issue #208. `__main__.py` was the worst-covered file in core at 26.7%. Most of it is `main()`, which
 needs a real gateway connection and is out of scope for this suite (`CLAUDE.md`: no test may
-require a live bot). The recovery helpers it ran are not, now each in its module's wiring — they
-take a bot and a database and put the world back the way it should be, and none was executed.
+require a live bot). The recovery helpers it ran are not, now each in its module's wiring or
+services — they take a bot and a database and put the world back the way it should be, and none
+was executed.
 
 This file takes `recover_orphaned_amend_channels` and `recover_portrait_refresh_job`, which
 re-arms the daily portrait refresh.
@@ -17,6 +18,10 @@ a refused deletion on a lapse stopping the queue in `tests/results/test_amend_ch
 
 An amendment whose stage approval is in hand on the queue is left alone by the sweep, so the
 queue, brought back up, finishes the approval.
+
+An amendment whose lapse cannot be asked for stops none of the others, and is reported: once all
+are asked, the step raises one error of results' own naming each round that failed, which the
+start-up sweep reports to the log channel in one line.
 """
 from __future__ import annotations
 
@@ -28,6 +33,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 
+
 # ---------------------------------------------------------------------------
 # The sweep
 # ---------------------------------------------------------------------------
@@ -38,7 +44,9 @@ async def test_each_orphan_is_reported_separately(tmp_path):
     manager guessing which. Rounds 3 and 4 of Pro were each being amended when the bot stopped:
     the restart asks one lapse for each, as the bot, and once the queue has run them each writes
     its own line in the log channel."""
-    from leaguebot.results.wiring import recover_orphaned_amend_channels
+    from leaguebot.results.services.round_amendment.amend_end_changes import (
+        recover_orphaned_amend_channels,
+    )
 
     from tests.support import review_league as league_of
     from tests.support.change_queue import change_rows, run_queue
@@ -54,7 +62,7 @@ async def test_each_orphan_is_reported_separately(tmp_path):
             )
         await db.commit()
 
-    await recover_orphaned_amend_channels(league.bot)
+    await recover_orphaned_amend_channels(league.bot, queue=league.bot.change_queue)
     lapses = [row for row in await change_rows(league.db_path)
               if row["kind"] == "results.amend.lapse"]
     await run_queue(league.bot)
@@ -62,6 +70,49 @@ async def test_each_orphan_is_reported_separately(tmp_path):
     assert [row["origin"] for row in lapses] == ["BOT", "BOT"]
     lines = [line for line in league.bot.log_channel.sent if "/results rounds amend` of" in line]
     assert len(lines) == 2
+
+
+async def test_an_amendment_that_cannot_be_recovered_is_reported_and_the_others_still_are(
+    tmp_path,
+):
+    """Rounds 3 (id 21) and 4 (id 22) of Pro were each being amended when the bot stopped. At the
+    restart the queue refuses the request for round 21's lapse. Run through the start-up sweep,
+    results' "orphaned amend channels" step still asks round 22's lapse, and the sweep posts one
+    line to the log channel, its failure line for that step; the error the step raised is
+    results' own and names round 21 alone, with the queue's error."""
+    from leaguebot.core.utils.interaction_errors import start_up_failure_line
+
+    from tests.support import review_league as league_of
+    from tests.support.change_queue import change_rows
+    from tests.support.start_up_sweep import round_failures, run_results_start_up_step
+
+    league = await league_of.review_league(tmp_path, round_status="FINAL")
+    async with get_connection(league.db_path) as db:
+        for round_id, channel_id in ((league_of.ROUND_ID, league_of.AMEND_CHANNEL),
+                                     (league_of.LATER_ROUND_ID, league_of.AMEND_CHANNEL + 1)):
+            await db.execute(
+                "INSERT INTO round_amend_channels (round_id, channel_id, session_types, "
+                "created_at) VALUES (?, ?, '[\"FEATURE_RACE\"]', ?)",
+                (round_id, channel_id, league_of.NOW.isoformat()),
+            )
+        await db.commit()
+    refused = RuntimeError("the database is locked")
+    ask = league.bot.change_queue.ask
+
+    async def refusing(kind, payload, **kwargs):
+        if kind == "results.amend.lapse" and payload["round_id"] == league_of.ROUND_ID:
+            raise refused
+        return await ask(kind, payload, **kwargs)
+
+    league.bot.change_queue.ask = refusing
+
+    lines, error = await run_results_start_up_step(league.bot, "orphaned amend channels")
+
+    lapses = [json.loads(row["payload"])["round_id"] for row in await change_rows(league.db_path)
+              if row["kind"] == "results.amend.lapse"]
+    assert lapses == [league_of.LATER_ROUND_ID]
+    assert round_failures(error) == {league_of.ROUND_ID: refused}
+    assert lines == [start_up_failure_line("orphaned amend channels", error)]
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +170,9 @@ async def test_an_amendment_whose_stage_is_queued_is_not_reverted_on_restart(tmp
     """**A restart with an approval in hand finishes it** (#439). An amendment whose report stage
     was asked for and not yet carried out when the bot stopped is left by recovery: its row and
     channel stand, and the queue, brought back up, approves the stage."""
-    from leaguebot.results.wiring import recover_orphaned_amend_channels
+    from leaguebot.results.services.round_amendment.amend_end_changes import (
+        recover_orphaned_amend_channels,
+    )
 
     from tests.support import review_league as league_of
     from tests.support.change_queue import member_interaction, restart_queue, run_queue
@@ -144,7 +197,7 @@ async def test_an_amendment_whose_stage_is_queued_is_not_reverted_on_restart(tmp
     )
 
     await restart_queue(league.bot)
-    await recover_orphaned_amend_channels(league.bot)
+    await recover_orphaned_amend_channels(league.bot, queue=league.bot.change_queue)
 
     assert ("delete_channel", league_of.AMEND_CHANNEL, league_of.AMEND_CHANNEL) not in league.events
     assert await league_of.one(

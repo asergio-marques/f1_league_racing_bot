@@ -65,6 +65,7 @@ from leaguebot.core.services.rounds.amendment_rules_service import (
 from leaguebot.core.services.rounds.round_moments import (
     read_phases_drawn,
     read_round_windows,
+    results_left_to_advance,
     round_event_moments,
 )
 from leaguebot.core.services.rounds.round_moments import phases_due as round_moments_phases_due
@@ -565,13 +566,16 @@ def _round_change(
 
         The amendment can stand stopped for hours, at the save or before it, and a discard or a
         refusal arms the round again at its old moment: a timer armed for a moment already past
-        is skipped by the scheduler. So, judged at the queue's clock: a round still to be run
+        would only fire late. So, judged at the queue's clock: a round still to be run
         whose moment has passed has its results submission run at once through the scheduler,
         its phases due are drawn at once (`phases_due`), and its call, where none stands and its
         check-in is not over, is posted where it has fallen due (`call_fell_due`).
 
-        Under test mode the results submission is not run at once: `/test-mode advance` runs a
-        test season's rounds in their turn. Its call is still posted (`post_call`)."""
+        Under test mode the results submission is not run at once: `/test-mode advance` runs a test
+        season's rounds in their turn. Where results is on and weather off no `results` job is armed
+        at all, as the season's approval arms none; otherwise the round's `results` job is taken
+        down again where its moment has passed, which a job armed with no lateness limit would run
+        at once. Its call is still posted (`post_call`)."""
         judgement = judged(ctx) or {}
         rnd = await seasons.get_round(int(ctx.payload["round_id"]))
         if rnd is None:
@@ -626,9 +630,16 @@ def _round_change(
             # Weather off, or a mystery round moved inside its first horizon, whose notice already
             # told the drivers and which must not be fired retroactively: its forecasts are not
             # armed, but its results submission is, or the round would never leave Not run.
-            scheduler.schedule_result_submission_jobs(
-                [rnd], division_meta={rnd.division_id: (season_number, tier)}
-            )
+            # Not under test mode with results on and weather off, which leaves the round to
+            # `/test-mode advance` as the season's approval does (`results_left_to_advance`).
+            if not results_left_to_advance(
+                test_mode=bool(found["test_mode"]),
+                results_on=await modules.is_results_enabled(),
+                weather_on=weather_on,
+            ):
+                scheduler.schedule_result_submission_jobs(
+                    [rnd], division_meta={rnd.division_id: (season_number, tier)}
+                )
         attendance = judgement["windows"]["attendance"]
         if attendance is not None and await modules.is_attendance_enabled():
             scheduler.schedule_attendance_round(
@@ -646,6 +657,10 @@ def _round_change(
             scheduler.run_result_submission_now(
                 rnd, season_number=season_number, division_tier=tier
             )
+        elif rnd.status == RoundStatus.NOT_RUN.value and result_at <= now():
+            # Test mode: the arming above made a job for a moment already past, which the
+            # scheduler runs at once, so it comes down again and the advance opens the round.
+            scheduler.cancel_round(rnd.id, only=frozenset({"results"}))
         return StepResult(result={"armed": True, "round_number": rnd.round_number}, then=planned)
 
     async def plan_clean_ups(

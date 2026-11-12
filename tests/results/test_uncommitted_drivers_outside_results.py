@@ -32,7 +32,7 @@ async def test_the_team_listing_still_shows_every_seat_by_default(db_path):
 
 
 async def test_the_submission_roster_does_not_admit_an_uncommitted_driver(db_path):
-    from leaguebot.results.services.result_submission_service import _build_division_validation_data
+    from leaguebot.results.services.submission.paste_reading import _build_division_validation_data
 
     bot = SimpleNamespace(
         team_service=TeamService(db_path),
@@ -44,13 +44,13 @@ async def test_the_submission_roster_does_not_admit_an_uncommitted_driver(db_pat
         return_value=[{"name": "Alpha", "role_id": 555, "is_reserve": False}]
     )
 
-    division_driver_ids, *_ = await _build_division_validation_data(DIVISION_ID, bot)
+    division_driver_ids, *_ = await _build_division_validation_data(DIVISION_ID, bot.team_service)
 
     assert division_driver_ids == {1001, 1003}
 
 
 async def test_the_opening_standings_leave_out_an_uncommitted_driver(db_path):
-    from leaguebot.results.services import standings_service
+    from leaguebot.results.services.standings import standings_service
 
     snapshots = await standings_service.opening_driver_standings(db_path, DIVISION_ID)
 

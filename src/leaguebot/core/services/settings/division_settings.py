@@ -43,6 +43,7 @@ from leaguebot.core.services.settings.channel_registry_service import (
 from leaguebot.core.services.queue.setting_change import Saved, Setting
 
 if TYPE_CHECKING:
+    from leaguebot.core.utils.hooks import AwaitedHook
     from leaguebot.core.services.seasons.season_service import SeasonService
 
 NO_SEASON_REFUSAL = (
@@ -76,8 +77,11 @@ def division_not_found(name: str) -> str:
     return f"❌ Division **{name}** not found in the current season."
 
 
-def _division_channel(column: str, seasons: "SeasonService") -> Setting:
-    """The setting of a division's *column*, *seasons* judging which season is live."""
+def _division_channel(
+    column: str, seasons: "SeasonService", channel_uses_read: "AwaitedHook"
+) -> Setting:
+    """The setting of a division's *column*, *seasons* judging which season is live and
+    *channel_uses_read*, the hook the builder makes, naming the module that holds a channel."""
     key, command, label, change_type, read, write = _CHANNELS[column]
 
     async def check(ctx: CheckContext) -> Verdict:
@@ -90,7 +94,7 @@ def _division_channel(column: str, seasons: "SeasonService") -> Setting:
             return Verdict.refuse(division_not_found(payload["division_name"]))
         value = int(payload["value"])
         use = await find_channel_use(
-            ctx.db_path, value, channel_uses_read=ctx.bot.channel_uses_read
+            ctx.db_path, value, channel_uses_read=channel_uses_read
         )
         if use is not None:
             return Verdict.refuse(
@@ -149,9 +153,11 @@ def _division_channel(column: str, seasons: "SeasonService") -> Setting:
     )
 
 
-def division_channel_settings(*, seasons: "SeasonService") -> tuple[Setting, ...]:
+def division_channel_settings(
+    *, seasons: "SeasonService", channel_uses_read: "AwaitedHook"
+) -> tuple[Setting, ...]:
     """The lineup channel's setting and the calendar channel's."""
-    return tuple(_division_channel(column, seasons) for column in _CHANNELS)
+    return tuple(_division_channel(column, seasons, channel_uses_read) for column in _CHANNELS)
 
 
 __all__ = ["NO_SEASON_REFUSAL", "division_channel_settings", "division_not_found"]

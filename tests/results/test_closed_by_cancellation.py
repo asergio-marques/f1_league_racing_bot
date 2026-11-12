@@ -41,7 +41,7 @@ async def test_closed_by_cancellation_on_reads_the_connection_handed(tmp_path, c
     written, and nothing is committed. Read on that same connection, the round is said cancelled,
     or its submission closed, in the wizard's words; with nothing written it is open. Read on
     another connection, the uncommitted write is not seen."""
-    from leaguebot.results.services.result_submission_service import closed_by_cancellation_on
+    from leaguebot.results.services.round_amendment.amendment_writes import closed_by_cancellation_on
 
     league = await ongoing_league(tmp_path)
     await league.write("UPDATE rounds SET status = 'AWAITING_RESULTS' WHERE id = ?", R3)

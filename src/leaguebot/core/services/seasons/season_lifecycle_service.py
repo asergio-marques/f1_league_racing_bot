@@ -103,6 +103,21 @@ async def live_season_stage(db_path: str) -> tuple[int, SeasonStage] | None:
         return await live_season_stage_on(db)
 
 
+async def season_stage_on(db: aiosqlite.Connection, season_id: int) -> SeasonStage | None:
+    """The stage of season *season_id*, read on *db*; None where there is no such season or it
+    holds no stage.
+
+    For a module reading core's tables only through core's services (architecture.md, "The
+    database"): the stage a query of its own took off a join of `seasons` with its own table comes
+    from here, on the connection it was handed. It writes nothing and commits nothing.
+    """
+    cursor = await db.execute("SELECT stage FROM seasons WHERE id = ?", (season_id,))
+    row = await cursor.fetchone()
+    if row is None or row["stage"] is None:
+        return None
+    return SeasonStage(row["stage"])
+
+
 async def live_season_stage_on(db: aiosqlite.Connection) -> tuple[int, SeasonStage] | None:
     """`live_season_stage` read on the caller's connection."""
     cursor = await db.execute(

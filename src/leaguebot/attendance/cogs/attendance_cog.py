@@ -635,7 +635,7 @@ class AttendanceCog(commands.Cog):
         # recalculation reads the results, which hold an open amendment's corrections before
         # they are approved, and publishes the sheet and applies the sanctions it finds —
         # neither of which a cancelled or lapsed amendment then takes back.
-        from leaguebot.results.services.result_submission_service import (
+        from leaguebot.results.services.round_amendment.amendment_writes import (
             amendment_wait_text,
             open_amendment_in_division,
         )

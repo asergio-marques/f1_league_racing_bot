@@ -52,8 +52,10 @@ from leaguebot.core.db.database import get_connection, run_migrations
 # and `result_submission_service` both import this one, and these are the values
 # `session_results.session_type` actually holds.
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_service import StagedPenalty
-from leaguebot.results.services.penalty_wizard import AddPenaltyModal, PenaltyReviewState
+from leaguebot.results.services.review.penalty_service import StagedPenalty
+from leaguebot.results.services.review.penalty_review_views import AddPenaltyModal
+from leaguebot.results.services.review.review_state import PenaltyReviewState
+from tests.support.review_league import attendance_after_review_of
 from tests.support.change_queue import (
     acknowledgement,
     attach_queue,
@@ -152,6 +154,7 @@ def _state(db_path: str, *, staged=(), appeals=()):
         session_types_present=[SessionType.FEATURE_RACE],
         db_path=db_path,
         bot=MagicMock(),
+        queue=MagicMock(), server_config=AsyncMock(return_value=None), router=MagicMock(), attendance=attendance_after_review_of(db_path),
     )
     state.round_number = 3
     state.division_name = "Division 1"
@@ -214,11 +217,12 @@ async def _submit(
     modal.justification_input._value = justification
     interaction = _interaction(state.db_path)
     state.bot = interaction.client
+    state.queue = interaction.client.change_queue
 
     with patch(
-        "leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock(return_value=None)
+        "leaguebot.results.services.review.penalty_review_views._refresh_prompt", new=AsyncMock(return_value=None)
     ), patch(
-        "leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock(return_value=None)
+        "leaguebot.results.services.review.appeals_review_views._refresh_appeals_prompt", new=AsyncMock(return_value=None)
     ):
         await modal.on_submit(interaction)
         await run_queue(interaction.client)
@@ -376,12 +380,13 @@ async def test_the_prompt_is_refreshed_for_the_pass_being_staged_into(tmp_path):
     modal.justification_input._value = "j"
 
     with patch(
-        "leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock(return_value=None)
+        "leaguebot.results.services.review.penalty_review_views._refresh_prompt", new=AsyncMock(return_value=None)
     ) as penalty_refresh, patch(
-        "leaguebot.results.services.penalty_wizard._refresh_appeals_prompt", new=AsyncMock(return_value=None)
+        "leaguebot.results.services.review.appeals_review_views._refresh_appeals_prompt", new=AsyncMock(return_value=None)
     ) as appeals_refresh:
         interaction = _interaction(state.db_path)
         state.bot = interaction.client
+        state.queue = interaction.client.change_queue
         await modal.on_submit(interaction)
         await run_queue(interaction.client)
 
@@ -569,7 +574,7 @@ async def test_either_account_finds_a_result_stood_under_the_old_one(tmp_path, t
 
 
 async def test_the_prompt_names_the_staged_driver_by_the_current_account(tmp_path):
-    from leaguebot.results.services.penalty_wizard import _render_prompt_content
+    from leaguebot.results.services.review.penalty_review_views import _render_prompt_content
 
     db_path = await _make_db(tmp_path)
     await _driver_moved_on(db_path)

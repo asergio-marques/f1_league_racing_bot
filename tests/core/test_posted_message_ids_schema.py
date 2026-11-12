@@ -23,12 +23,14 @@ from __future__ import annotations
 
 import os
 
+import pytest
+
 from leaguebot.core.db.database import get_connection, run_migrations
 
 #: table -> the columns this change added to it.
 _ADDED: dict[str, tuple[str, ...]] = {
     "session_results": ("results_message_ids",),
-    "driver_standings_snapshots": (
+    "round_standings_posts": (
         "standings_message_ids",
         "constructor_standings_message_ids",
     ),

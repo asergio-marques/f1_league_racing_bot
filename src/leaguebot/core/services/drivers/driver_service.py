@@ -243,6 +243,27 @@ async def current_account_map(db) -> dict[int, int]:
     return mapping
 
 
+async def driver_test_names_on(
+    db: aiosqlite.Connection, discord_user_ids: Sequence[int],
+) -> dict[int, str | None]:
+    """The test display name of each profile among *discord_user_ids*, read on *db*.
+
+    A profile with no name maps to None, and an account holding no profile is absent: look up with
+    ``names.get(uid)``. For a module naming a driver in a message without reading core's table.
+    """
+    if not discord_user_ids:
+        return {}
+    placeholders = ",".join("?" * len(discord_user_ids))
+    cursor = await db.execute(
+        "SELECT discord_user_id, test_display_name FROM driver_profiles "
+        f"WHERE CAST(discord_user_id AS INTEGER) IN ({placeholders})",
+        [int(uid) for uid in discord_user_ids],
+    )
+    return {
+        int(row["discord_user_id"]): row["test_display_name"] for row in await cursor.fetchall()
+    }
+
+
 async def set_former_drivers_on(db, former: Mapping[int, bool]) -> None:
     """Set `driver_profiles.former_driver` for each profile in *former* (profile id -> flag), on
     the connection handed and in the save it belongs to.

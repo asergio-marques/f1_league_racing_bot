@@ -168,7 +168,6 @@ the code is laid out"). The table names a service by its file, not its folder.
 | Module switches | `module_service` (`ModuleService`) | nothing: each switch is read through its module |
 | The image module | `image_drawing` (the `ImageDrawing` protocol) | nothing: it declares what core asks |
 | Amending a round | `amendment_rules_service`, `round_steps` | nothing: the first judges what an amendment may do and costs, pure; the second names a round in an amendment's step by the number it bears when read |
-| A points amendment | `amendment_service` | nothing: `approval_faults`, what stops a mid-season points amendment being published, which results calls |
 | Season reviews and confirmations | `approval_checks`, `approval_window_service` (`calendar_faults`, what is already behind a season on the day it is approved), `review_sections`, `confirmation_refusals`, `season_fingerprint_service`, `season_review_changes`, `season_review_views`, `season_review_workflows` | `season_review_prompts` |
 | The hub | `hub_service`, `about_service` | `server_configs.hub_message_id` |
 | Test mode | `test_mode_service`, `test_roster_service`, `backup_service` | `server_configs.test_mode_active` |
@@ -182,8 +181,7 @@ under "How a change is carried out".
 directly so that the signup window's forced close can call it with nothing but a path (its
 docstring). The same holds for the other services of plain functions: they are handed what they
 need by whoever calls them, as architecture.md's "Services stay attached to the bot" has it.
-`approval_faults` is handed core's module switches (`ModuleService`) by results' cog and change
-type. A cog's reads are asked of a core service, as architecture.md's "What each part may do" has
+A cog's reads are asked of a core service, as architecture.md's "What each part may do" has
 it: `pack_service.what_stops_a_pack`, `track_service.list_tracks` and `resolve_track`,
 `PlacementService.division_lineup`. `/season config-review` reads `bot.configuration_faults`, the
 reader the builder makes (`_make_configuration_faults`), which asks
@@ -474,6 +472,7 @@ own design pass.
 | results | amendment sweep | arms results' standing sweep of lapsed amendments |
 | results | orphaned amend channels | asks each open amendment's lapse; before the submission channels, for the reason its comment gives |
 | results | orphaned submission channels | asks each open submission's review or restart |
+| results | missed round starts | asks the opening of each round whose start passed while the bot was down, through the `results` job's own handler |
 | attendance | missed check-in calls | asks each check-in call that fell due |
 | attendance | RSVP views and deadlines | routes each check-in message's view again and asks each deadline passed |
 | attendance | missed check-in clean-ups | asks each check-in's clean-up that fell due |
@@ -482,7 +481,10 @@ own design pass.
 | image | portrait refresh job | arms the image module's daily refresh |
 
 Results also arms the amendment sweep when it is switched on (`module_on_results`'s `After` step),
-so the sweep runs whenever results is on, a restart or not.
+and its switch-off removes it (`results_off_change`'s `disarm_sweep`), so the sweep runs whenever
+results is on, a restart or not. The builder records the moment the bot came up
+(`LeagueBot.came_up_at`), which the wiring hands to results' `results` job and its catch-up alike,
+so both judge a start passed while the bot was down against one value.
 
 The retry loop for log lines is no step (`architecture.md`, "Start-up runs once, in one
 function"): core's is `RetryCog.retry_loop` (`retry_cog`), started by `LeagueBot.setup_hook`
@@ -511,7 +513,7 @@ files; this section says what core posts through them.
 | A review's expiry notice | notice | as above | `season.review.take_down`'s `post_expiry` | not kept |
 | The approval's batch notice | notice | the review's channel | `season.approve`'s `post_batch_notice` | its job's result, read by the job that deletes it |
 | A line to the review's channel | notice | the review's channel | `season.approve.tell`, `channel.tell` | not kept |
-| A module's cancellation notice | notice | the module's channel | `cancellation_notice_service.post_cancellation_notice`, which the modules' jobs call | not kept |
+| A module's cancellation notice | notice | the module's channel | `cancellation_notice_service`: `post_cancellation_notice`, which attendance's and weather's jobs call and which drops the message, and `post_cancellation_message`, which results' job calls and which hands the message back | not kept, except results', in `called_off_notes`, where its switch-off finds it again |
 | A log line | log line | `server_configs.log_channel_id` | `OutputRouter.post_log`, or `queue_log_on` in a step's save | `pending_messages`, until delivered |
 | The stop notice | log line with buttons | the log channel | `ChangeQueue._post_notice` → `OutputRouter.post_notice` | `queued_change_steps.notice_message_id` |
 
@@ -531,7 +533,8 @@ and the calendar's post job ask for text on every try after the first (`as_text`
 who that is, is the core specification's ("The record of what changed", "How a change is
 carried out"). The stop notice's mention is decided by `ChangeQueue._admins_to_notify`, and a log
 line's mentions are wrapped by the router (`test_every_mention_in_a_log_line_is_written_as_code`).
-`post_cancellation_notice` posts with the mentions its caller, a module's notice job, hands it.
+`post_cancellation_notice` and `post_cancellation_message` post with the mentions their caller, a
+module's notice job, hands them.
 
 **Core's posts off the queue** are `architecture.md`'s exceptions ("Every post is made in a
 job"), in `OutputRouter`, `ChangeQueue._update_reply`, `typed_turns` and `BotCog`'s factory reset.
@@ -575,9 +578,8 @@ which each `_sign_up_to_*` docstring states where it matters.
 | `amendment_step_failure` | P | weather | `round_amend_change` |
 | `cancellation_refused` | A | results | `cancellation_changes` |
 | `rounds_called_off` | A | results, attendance | `cancellation_changes` |
-| `cancellation_notices` | A | attendance, weather, results | `cancellation_changes`; results' not-held round end calls it too |
+| `cancellation_notices` | A | attendance, weather, results | `cancellation_changes`, and `season_service.end_round_not_held_on`, results' not-held round end's writer |
 | `cancellation_steps` | P | results, attendance (three), weather, results | `cancellation_changes` |
-| `round_ended_not_held` | A | attendance | — (results' not-held round end calls it) |
 | `rounds_made_final` | A | results | `season_service` (`end_rounds_awaiting_results_on`, `close_raced_rounds_on`) |
 | `placements_confirmed`, `placements_confirmed_steps` | A, P | results, attendance | `season_approval_change` |
 | `configuration_confirmed` | A | signup | `configuration_confirm_change` |
@@ -602,6 +604,7 @@ which each `_sign_up_to_*` docstring states where it matters.
 | `season_end_steps` | P | signup, weather | `season_lifecycle_service` |
 | `drivers_deleted` | A | image | `season_end_service` |
 | `test_mode_turned_on` | A | results | `test_mode_toggle_change` |
+| `season_approved` | A | results | `season_approval_change` |
 | `test_mode_flushed` | A | weather | `season_end_service` |
 | `pending_steps_read` | A | weather, attendance, results | `test_mode_service` |
 | `review_marks_read` | A | weather, results, attendance | `test_mode_service` |
@@ -828,8 +831,10 @@ audit entries, the roster's writers taking the connection of the save and commit
 the reply of a discarded save needs is read into the payload at the ask (`fill`), and a fault in a
 save stops the lane. What each kind judges and writes is its docstring's. A roster is measured
 against the template capacities with the bot's own template capacity service, the one carrying the
-image module's drawing, as a real placement is, and one the file shows wrong on its own is refused
-by the form before the ask.
+image module's drawing, as a real placement is: the drawing is asked in the check, before the
+save opens, and the save judges the rest again on its own connection, measures no capacity again
+and asks nothing of the drawing. The lane runs one change at a time, so what the check was told
+still holds. One the file shows wrong on its own is refused by the form before the ask.
 
 **Fake drivers are seeded, not moved through the state machine.** `test_roster_service` inserts a
 fake driver at Assigned, flagged as a test driver, with a synthetic id above any real Discord id;

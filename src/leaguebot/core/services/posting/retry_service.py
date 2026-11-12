@@ -43,6 +43,7 @@ from leaguebot.core.models.pending_message import PendingMessage
 from leaguebot.core.utils.formatting import discord_ts
 
 if TYPE_CHECKING:
+    from leaguebot.core.services.posting.output_router import OutputRouter
     from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
@@ -181,7 +182,9 @@ async def mark_failed(
 # attempt_delivery
 # ---------------------------------------------------------------------------
 
-async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot", *, now: datetime) -> bool:
+async def attempt_delivery(
+    entry: PendingMessage, bot: "LeagueBot", *, router: "OutputRouter", now: datetime
+) -> bool:
     """Attempt to post entry.content to the log channel as it is now, under :func:`delivery_lock`.
 
     The log channel set when the row is tried takes it, so that a channel set again after the
@@ -193,6 +196,9 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot", *, now: date
     Returns True if all chunks were delivered successfully, False otherwise. A failure to read
     the log channel (a database fault in `log_destination`, which raises), to find it or to send
     gives False; a fault reading or writing the retry table raises. Never calls enqueue() (FR-009).
+
+    *router* is the log writer the worker's own lines and the log channel's name come through,
+    handed by the cog that runs the loop, never looked up on the bot here.
 
     *now* is the time of this try: what a failure records and the success line names as the time
     delivered.
@@ -225,7 +231,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot", *, now: date
         # the one tried, which is the one a reader should look at.
         target = entry.channel_id
         try:
-            named = await bot.output_router.log_destination()
+            named = await router.log_destination()
         except Exception as exc:
             log.warning(
                 "attempt_delivery: cannot read the log channel for entry id=%s: %s",
@@ -246,7 +252,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot", *, now: date
                 f"{entry.retry_count} time(s) since {discord_ts(entry.enqueued_at)}. "
                 f"Original failure: {entry.failure_reason}"
             )
-            _safe_post_log(bot, warn_msg)
+            _safe_post_log(router, warn_msg)
 
         # --- Resolve channel ---
         try:
@@ -300,7 +306,7 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot", *, now: date
         f"Retries taken: {entry.retry_count}. "
         f"Delivered at: {discord_ts(now)}."
     )
-    _safe_post_log(bot, success_msg)
+    _safe_post_log(router, success_msg)
     return True
 
 
@@ -308,17 +314,17 @@ async def attempt_delivery(entry: PendingMessage, bot: "LeagueBot", *, now: date
 # Internal helper: best-effort log-channel post
 # ---------------------------------------------------------------------------
 
-def _safe_post_log(bot: "LeagueBot", message: str) -> None:
+def _safe_post_log(router: "OutputRouter", message: str) -> None:
     """Schedule a fire-and-forget post of the worker's own *message* (`_post_own_line`).
 
     Uses asyncio.ensure_future so the caller does not need to await it.
     """
     import asyncio
 
-    asyncio.ensure_future(_post_own_line(bot, message))
+    asyncio.ensure_future(_post_own_line(router, message))
 
 
-async def _post_own_line(bot: "LeagueBot", message: str) -> None:
+async def _post_own_line(router: "OutputRouter", message: str) -> None:
     """Post one of the worker's own lines, the "Stuck retry entry" warning or the "Retry delivery
     succeeded" line, to the log channel, **never queueing it** (FR-009).
 
@@ -329,7 +335,6 @@ async def _post_own_line(bot: "LeagueBot", message: str) -> None:
     unreachable. A line that cannot be posted, or written before the bot is set up, goes to the
     host's log at WARNING instead. Never raises.
     """
-    router = bot.output_router
     try:
         channel = await router.log_destination()
         if channel is not None and await router.post_log(message, channel=channel) is not None:

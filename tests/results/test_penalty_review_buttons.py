@@ -36,27 +36,33 @@ from __future__ import annotations
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
 
-import leaguebot.results.services.penalty_wizard as pw
+import leaguebot.results.services.review.penalty_review_views as penalty_review_views
+import leaguebot.results.services.review.penalty_wizard as pw
+import leaguebot.results.services.review.review_state as review_state
 from leaguebot.core.db.database import run_migrations
+from leaguebot.core.models.season import SeasonStatus
+from leaguebot.core.services.seasons import season_service
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_service import StagedPenalty
-from leaguebot.results.services.penalty_wizard import (
+from leaguebot.results.services.review.penalty_service import StagedPenalty
+from leaguebot.results.services.review.penalty_review_views import (
     ApprovalView,
-    PenaltyReviewState,
     PenaltyReviewView,
     _ConfirmClearView,
 )
+from leaguebot.results.services.review.review_state import PenaltyReviewState
 from tests.support.change_queue import (
     acknowledgement,
     attach_queue,
     league_double,
     member_interaction,
     run_queue,
+    in_a_job,
     seed_server,
     updated_reply,
 )
@@ -111,6 +117,7 @@ def _state(*, staged=()) -> PenaltyReviewState:
         session_types_present=[SessionType.FEATURE_RACE],
         db_path=":memory:",
         bot=bot,
+        queue=bot.change_queue, server_config=bot.config_service.get_server_config, router=bot.output_router, attendance=MagicMock(),
     )
     state.round_number = 3
     state.division_name = "Division 1"
@@ -167,6 +174,7 @@ async def _on_the_queue(state: PenaltyReviewState, tmp_path) -> MagicMock:
     bot = league_double(db_path)
     attach_queue(bot, db_path, now=PRESSED_AT)
     state.bot = bot
+    state.queue = bot.change_queue
     state.db_path = db_path
     user = MagicMock(spec=discord.Member)
     user.id = 77
@@ -221,7 +229,6 @@ def _lines(interaction) -> list[str]:
 @pytest.fixture(autouse=True)
 def _permitted(monkeypatch):
     """Permit by default; the refusal is exercised explicitly where it is the subject."""
-    monkeypatch.setattr(pw, "_may_review_signup", AsyncMock(return_value=True), raising=False)
     monkeypatch.setattr(pw, "is_league_manager", lambda config, member: True)
 
 
@@ -232,10 +239,12 @@ def _current(monkeypatch):
     The real check reads the round from the database, which a state on `:memory:` does not have.
     """
     monkeypatch.setattr(pw, "_review_moved_on", AsyncMock(return_value=None))
+    monkeypatch.setattr(review_state, "_review_moved_on", AsyncMock(return_value=None))
+    monkeypatch.setattr(penalty_review_views, "_review_moved_on", AsyncMock(return_value=None))
 
 
 def _approval_step():
-    return patch("leaguebot.results.services.penalty_wizard._show_approval_step", new=AsyncMock(return_value=None))
+    return patch("leaguebot.results.services.review.penalty_review_views._show_approval_step", new=AsyncMock(return_value=None))
 
 
 async def _press(view, name: str, interaction):
@@ -334,7 +343,7 @@ async def test_confirming_the_clear_discards_the_staged_list(tmp_path):
     interaction = await _on_the_queue(state, tmp_path)
 
     with _approval_step() as approval, patch(
-        "leaguebot.results.services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
+        "leaguebot.results.services.review.review_state._shown", new=AsyncMock(return_value=DRIVER)
     ):
         await type(view).confirm_btn(view, interaction, MagicMock())
         await run_queue(state.bot)
@@ -360,13 +369,13 @@ async def test_confirming_the_clear_redraws_the_prompt_with_nothing_staged(tmp_p
         order.append("approval question posted")
 
     with patch(
-        "leaguebot.results.services.penalty_wizard._refresh_prompt",
+        "leaguebot.results.services.review.penalty_review_views._refresh_prompt",
         new=AsyncMock(side_effect=_redrawn),
     ), patch(
-        "leaguebot.results.services.penalty_wizard._show_approval_step",
+        "leaguebot.results.services.review.penalty_review_views._show_approval_step",
         new=AsyncMock(side_effect=_asked),
     ), patch(
-        "leaguebot.results.services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
+        "leaguebot.results.services.review.review_state._shown", new=AsyncMock(return_value=DRIVER)
     ):
         await type(view).confirm_btn(view, interaction, MagicMock())
         await run_queue(state.bot)
@@ -419,20 +428,14 @@ async def test_the_clear_confirmation_checks_the_tier_too(monkeypatch, button):
 
 async def test_approving_with_penalties_finalises_the_review():
     """Alex presses ✅ Approve on round 3's review with one 5-second penalty staged. The press
-    asks the change queue for `results.reports.approve` of round 3, the penalty in its payload.
-
-    The finaliser is stubbed while it stands (`create=True` once it is gone), so that the press
-    fails on what it asks rather than on a finaliser run against a stub bot."""
+    asks the change queue for `results.reports.approve` of round 3, the penalty in its payload."""
     state = _state(staged=[_penalty()])
     interaction = _interaction()
     state.bot.change_queue = interaction.client.change_queue
+    state.queue = interaction.client.change_queue
     view = PenaltyReviewView(state)
 
-    with patch(
-        "leaguebot.results.services.result_submission_service.finalize_penalty_review",
-        new=AsyncMock(return_value=None), create=True,
-    ):
-        await _press(view, "approve_btn", interaction)
+    await _press(view, "approve_btn", interaction)
 
     ask = interaction.client.change_queue.ask
     ask.assert_awaited_once()
@@ -464,20 +467,14 @@ async def test_approving_with_nothing_staged_is_refused():
 
 async def test_resubmit_asks_the_queue_to_start_the_resubmission():
     """Alex presses 🔄 Resubmit Initial Results on round 3's review with a penalty staged. The
-    press asks the change queue for `results.resubmission.start` of round 3.
-
-    The off-queue flow is stubbed while it stands (`create=True` once it is gone), so that the
-    press fails on what it asks rather than on a flow run against a stub bot."""
+    press asks the change queue for `results.resubmission.start` of round 3."""
     state = _state(staged=[_penalty()])
     interaction = _interaction()
     state.bot.change_queue = interaction.client.change_queue
+    state.queue = interaction.client.change_queue
     view = PenaltyReviewView(state)
 
-    with patch(
-        "leaguebot.results.services.result_submission_service.enter_resubmit_flow",
-        new=AsyncMock(return_value=None), create=True,
-    ):
-        await _press(view, "resubmit_btn", interaction)
+    await _press(view, "resubmit_btn", interaction)
 
     ask = interaction.client.change_queue.ask
     ask.assert_awaited_once()
@@ -503,7 +500,7 @@ async def test_the_pardon_button_opens_the_pardon_modal():
 
 
 def _pardon(idx: int = 0):
-    from leaguebot.results.services.penalty_wizard import StagedPardon
+    from leaguebot.results.services.review.review_state import StagedPardon
 
     return StagedPardon(
         driver_user_id=DRIVER + idx, driver_profile_id=31 + idx, attendance_id=41 + idx,
@@ -583,9 +580,9 @@ async def test_removing_a_pardon_takes_it_off_the_staged_list(amendment, tmp_pat
     button = next(c for c in view.children if c.custom_id == "pw_pardon_remove_0")
     interaction = await _on_the_queue(state, tmp_path)
 
-    with patch("leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()), patch(
-        "leaguebot.results.services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
-    ), patch("leaguebot.results.services.penalty_wizard._review_moved_on", new=AsyncMock(return_value=None)):
+    with patch("leaguebot.results.services.review.penalty_review_views._refresh_prompt", new=AsyncMock()), patch(
+        "leaguebot.results.services.review.penalty_review_views._shown", new=AsyncMock(return_value=DRIVER)
+    ), patch("leaguebot.results.services.review.penalty_review_views._review_moved_on", new=AsyncMock(return_value=None)):
         await button.callback(interaction)
         await run_queue(state.bot)
 
@@ -594,7 +591,7 @@ async def test_removing_a_pardon_takes_it_off_the_staged_list(amendment, tmp_pat
 
 
 async def test_the_appeals_review_draws_with_more_corrections_than_there_is_room_for():
-    from leaguebot.results.services.penalty_wizard import AppealsReviewView
+    from leaguebot.results.services.review.appeals_review_views import AppealsReviewView
 
     state = _state()
     state.staged_appeals = [_penalty(s) for s in range(1, 31)]
@@ -637,11 +634,8 @@ async def test_every_control_refuses_once_the_review_has_moved_on(monkeypatch, c
     refresh = AsyncMock()
 
     with _approval_step() as approval, patch(
-        "leaguebot.results.services.penalty_wizard._refresh_prompt", new=refresh
-    ), patch(
-        "leaguebot.results.services.result_submission_service.enter_resubmit_flow", new=AsyncMock(),
-        create=True,
-    ) as resubmit:
+        "leaguebot.results.services.review.penalty_review_views._refresh_prompt", new=refresh
+    ):
         if control.startswith("pw_"):
             await next(c for c in view.children if c.custom_id == control).callback(interaction)
         else:
@@ -652,7 +646,6 @@ async def test_every_control_refuses_once_the_review_has_moved_on(monkeypatch, c
     assert len(state.staged) == 1 and len(state.staged_pardons) == 1
     approval.assert_not_awaited()
     refresh.assert_not_awaited()
-    resubmit.assert_not_awaited()
     interaction.response.send_modal.assert_not_awaited()
     interaction.response.defer.assert_not_awaited()
 
@@ -673,7 +666,7 @@ async def test_the_steps_on_the_way_to_approval_refuse_too(monkeypatch, view_cla
     refresh = AsyncMock()
 
     with _approval_step() as approval, patch(
-        "leaguebot.results.services.penalty_wizard._refresh_prompt", new=refresh
+        "leaguebot.results.services.review.penalty_review_views._refresh_prompt", new=refresh
     ):
         await getattr(type(view), button)(view, interaction, MagicMock())
 
@@ -743,19 +736,15 @@ def _moved_on(monkeypatch):
 def _archived(monkeypatch):
     """The round's season reads as COMPLETED."""
 
-    class _Cursor:
-        async def fetchone(self):
-            return {"season_status": "COMPLETED"}
-
-    class _Db:
-        async def execute(self, *_args):
-            return _Cursor()
-
     @asynccontextmanager
     async def _connection(_path):
-        yield _Db()
+        yield None
 
     monkeypatch.setattr("leaguebot.core.db.database.get_connection", _connection)
+    monkeypatch.setattr(
+        season_service, "round_facts_on",
+        AsyncMock(return_value=SimpleNamespace(season_status=SeasonStatus.COMPLETED)),
+    )
 
 
 def _refusal(case_id, kind, label, reply, *, setup=None, restarted=False, on_message=True,
@@ -836,17 +825,13 @@ async def test_every_refused_press_of_the_penalty_review_is_recorded(
     interaction = _interaction()
     interaction.message.id = _APPROVAL_MESSAGE if on_message else _APPROVAL_MESSAGE + 1
 
-    with _approval_step() as approval, patch(
-        "leaguebot.results.services.result_submission_service.enter_resubmit_flow",
-        new=AsyncMock(return_value=None), create=True,
-    ) as resubmit:
+    with _approval_step() as approval:
         await button.callback(interaction)
 
     approval.assert_not_awaited()
     interaction.client.change_queue.ask.assert_not_awaited()
     if state is not None:
         assert not state.bot.change_queue.ask.called
-    resubmit.assert_not_awaited()
     interaction.response.send_modal.assert_not_awaited()
     (replied,) = [
         call.args[0] for call in interaction.response.send_message.await_args_list
@@ -916,9 +901,11 @@ async def test_every_press_of_the_penalty_review_writes_one_line(kind, label, st
     interaction = await _pressed_by_alex(state, channel, tmp_path)
 
     with patch(
-        "leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()
+        "leaguebot.results.services.review.penalty_review_views._refresh_prompt", new=AsyncMock()
     ), patch(
-        "leaguebot.results.services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
+        "leaguebot.results.services.review.penalty_review_views._shown", new=AsyncMock(return_value=DRIVER)
+    ), patch(
+        "leaguebot.results.services.review.review_state._shown", new=AsyncMock(return_value=DRIVER)
     ):
         await button.callback(interaction)
         await run_queue(state.bot)
@@ -947,7 +934,7 @@ async def test_no_penalties_with_the_channel_unreachable_is_answered_and_recorde
     interaction = await _pressed_by_alex(state, None, tmp_path)
 
     with patch(
-        "leaguebot.results.services.penalty_wizard._shown", new=AsyncMock(return_value=DRIVER)
+        "leaguebot.results.services.review.penalty_review_views._shown", new=AsyncMock(return_value=DRIVER)
     ):
         await _press(view, "no_penalties_btn", interaction)
         await run_queue(state.bot)
@@ -959,6 +946,33 @@ async def test_no_penalties_with_the_channel_unreachable_is_answered_and_recorde
         f"⛔ the “No Penalties / Confirm” button {_OF_THE_REVIEW} refused for Alex (<@77>) — "
     ), line
     assert "4455" in line, line
+
+
+async def test_an_approval_message_discord_refuses_to_delete_is_still_the_one_withdrawn_on_retry(
+    tmp_path,
+):
+    """In an amendment's review the approval message (880401) stands, and Discord refuses to
+    delete it (403). Withdrawing it raises for the job to stop the round's lane on, and the review
+    still holds the message's id, which an amendment keeps in memory alone, so a Retry withdraws
+    the same message again instead of posting a second beside it."""
+    state = _state(staged=[])
+    state.is_amendment = True
+    state.approval_message_id = _APPROVAL_MESSAGE
+    message = MagicMock(delete=AsyncMock(side_effect=discord.Forbidden(MagicMock(), "no perms")))
+    channel = MagicMock()
+    channel.fetch_message = AsyncMock(return_value=message)
+    await _pressed_by_alex(state, channel, tmp_path)
+
+    with in_a_job():
+        with pytest.raises(discord.Forbidden):
+            await pw._take_down_approval(state)
+        assert state.approval_message_id == _APPROVAL_MESSAGE
+        message.delete = AsyncMock()
+        await pw._take_down_approval(state)
+
+    channel.fetch_message.assert_awaited_with(_APPROVAL_MESSAGE)
+    message.delete.assert_awaited_once()
+    assert state.approval_message_id is None
 
 
 # ---------------------------------------------------------------------------

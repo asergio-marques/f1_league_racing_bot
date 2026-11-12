@@ -42,10 +42,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.result_submission_service import (
-    AmendmentWouldOrphanVerdictError,
-    AmendedSession,
-)
+from leaguebot.results.services.round_amendment.amendment_writes import AmendmentWouldOrphanVerdictError, AmendedSession
 from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 from tests.support.review_league import amend_stage_one, revert_amendment
 from tests.support.teams import seed_team_instances
@@ -138,7 +135,7 @@ def _no_standings_names():
     """The names a full tie is settled by are resolved through Discord, which these stub bots
     only pretend to reach; ordering by user id keeps the tests about the classification."""
     with patch(
-        "leaguebot.results.services.results_post_service.standings_display_names", new=AsyncMock(return_value=None)
+        "leaguebot.results.services.publishing.results_post_service.standings_display_names", new=AsyncMock(return_value=None)
     ):
         yield
 
@@ -179,15 +176,15 @@ async def _amend(
     with ExitStack() as stack:
         for name in ("_apply_points_from_config", "_apply_points_from_config_on"):
             stack.enter_context(patch(
-                f"leaguebot.results.services.result_submission_service.{name}",
+                f"leaguebot.results.services.round_amendment.amendment_writes.{name}",
                 new=apply_points, create=True,
             ))
         stack.enter_context(patch(
-            "leaguebot.results.services.standings_service.cascade_recompute_from_round_on",
+            "leaguebot.results.services.standings.standings_service.cascade_recompute_from_round_on",
             new=cascade,
         ))
         repost = stack.enter_context(patch(
-            "leaguebot.results.services.results_post_service.produce_session_results",
+            "leaguebot.results.services.publishing.results_post_service.produce_session_results",
             new=AsyncMock(),
         ))
         await amend_stage_one(
@@ -213,7 +210,7 @@ def _standings_cascade_stubbed():
     and the cancel run in their save."""
     stack = ExitStack()
     stack.enter_context(patch(
-        "leaguebot.results.services.standings_service.cascade_recompute_from_round_on",
+        "leaguebot.results.services.standings.standings_service.cascade_recompute_from_round_on",
         new=AsyncMock(),
     ))
     return stack
@@ -378,7 +375,7 @@ async def test_stage_one_settles_a_full_tie_by_name(tmp_path):
     names = {101: "Alice"}
 
     with patch(
-        "leaguebot.results.services.results_post_service.standings_display_names",
+        "leaguebot.results.services.publishing.results_post_service.standings_display_names",
         new=AsyncMock(return_value=names),
     ):
         stubs = await _amend(db_path, [_race_row(101, 1)], display_names=names)

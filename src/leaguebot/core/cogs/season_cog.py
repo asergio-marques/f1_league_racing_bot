@@ -349,8 +349,8 @@ class SeasonCog(commands.Cog):
             lines.append(
                 f"⛔ **Round {rnd.round_number} has already run** "
                 f"({discord_ts(rnd.scheduled_at)}), and so has every round before it. A "
-                f"round in the past never opens its result submission, so it could never "
-                f"take results at all. Move the calendar forward with `/round amend`."
+                f"round in the past would have its result submission opened late, at once, "
+                f"and not at its start. Move the calendar forward with `/round amend`."
             )
         if fault.latest_window is not None:
             window = fault.latest_window

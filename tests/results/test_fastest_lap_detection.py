@@ -36,7 +36,7 @@ from leaguebot.results.models.points_config import (
     SessionType,
 )
 from leaguebot.results.models.session_result import DriverSessionResult, OutcomeModifier
-from leaguebot.results.services.standings_service import (
+from leaguebot.results.services.standings.standings_service import (
     compute_points_for_session,
     detect_fastest_lap,
 )

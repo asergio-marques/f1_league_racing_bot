@@ -19,6 +19,10 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
+from leaguebot.results.services.publishing.results_post_service import (
+    get_standings_message_id,
+    set_standings_message_id_on,
+)
 from tests.support.change_queue import (
     change_rows,
     discard_job,
@@ -94,10 +98,9 @@ async def _round_4_posted(league: ReviewLeague) -> None:
                 (session.lastrowid, driver, position, 3_600_000 + position * 1000, points,
                  profile),
             )
-        await db.execute(
-            "UPDATE driver_standings_snapshots SET standings_message_id = ?, "
-            "standings_message_ids = ? WHERE round_id = ?",
-            (OLD_LATER_STANDINGS, f"[{OLD_LATER_STANDINGS}]", LATER_ROUND_ID),
+        await set_standings_message_id_on(
+            db, DIVISION_ID, LATER_ROUND_ID, OLD_LATER_STANDINGS,
+            message_ids=f"[{OLD_LATER_STANDINGS}]",
         )
         await db.commit()
     league.channel(STANDINGS_CHANNEL).seed(OLD_LATER_STANDINGS, "round 4 standings")
@@ -135,14 +138,7 @@ def _outcome(interaction: Any) -> str:
 
 
 async def _standings_id(league: ReviewLeague, round_id: int) -> Any:
-    from leaguebot.core.db.database import get_connection
-
-    async with get_connection(league.db_path) as db:
-        row = await (await db.execute(
-            "SELECT standings_message_id FROM driver_standings_snapshots WHERE round_id = ?",
-            (round_id,),
-        )).fetchone()
-    return row["standings_message_id"]
+    return await get_standings_message_id(league.db_path, DIVISION_ID, round_id)
 
 
 async def _sync_states(league: ReviewLeague) -> list[str]:

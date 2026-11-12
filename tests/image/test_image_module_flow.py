@@ -1783,7 +1783,7 @@ async def test_no_source_module_posting_path_imports_the_render_service(
     ]
 
     for name in posting_services:
-        (path,) = src.glob(f"leaguebot/*/services/{name}")
+        (path,) = src.glob(f"leaguebot/*/services/**/{name}")
         text = path.read_text(encoding="utf-8")
         assert "image_render_service" not in text, f"{name} reaches the render service"
         assert "image_config_service" not in text, f"{name} reads image config"
@@ -2365,7 +2365,7 @@ async def test_an_approved_penalty_posts_a_graphic_and_only_a_mention(
     """One PNG per penalty, on a message carrying the driver mention and nothing besides."""
     from pathlib import Path
 
-    from leaguebot.results.services import verdict_announcement_service as vas
+    from leaguebot.results.services.review import verdict_announcement_service as vas
     from leaguebot.image.services.image_verdict_service import VerdictKind
 
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)
@@ -2442,7 +2442,7 @@ async def test_the_verdict_toggle_off_posts_the_textual_announcement(
     db_path, module_service, config_service, template_dir, monkeypatch
 ):
     """The toggle decides how a posting is dressed, never whether it happens."""
-    from leaguebot.results.services import verdict_announcement_service as vas
+    from leaguebot.results.services.review import verdict_announcement_service as vas
     from leaguebot.image.services.image_verdict_service import VerdictKind
 
     monkeypatch.setattr("leaguebot.core.utils.paths.PROJECT_ROOT", template_dir, raising=False)

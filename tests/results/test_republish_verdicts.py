@@ -67,7 +67,7 @@ async def _banner(db_path, round_id: int, message_id: int, channel=VERDICTS_CHAN
         await db.commit()
 
 async def test_a_sanction_card_marks_exactly_its_banner(tmp_path):
-    from leaguebot.results.services.verdict_announcement_service import (
+    from leaguebot.results.services.review.verdict_announcement_service import (
         _mark_banner_over_sanction_on,
     )
 

@@ -205,11 +205,10 @@ CREATE TABLE session_results (
     submitted_at       TEXT,
     results_message_id INTEGER, fl_driver_override INTEGER,
     -- results_message_ids: JSON array of *every* message the posting occupies, the
-    -- anchor first. A table past 2000 characters is split across consecutive messages
-    -- and only the anchor was ever recorded, leaving deletion to guess the rest by
-    -- walking forward over bot-authored messages -- which mistakes an unrelated posting
-    -- below it for a continuation of this one. NULL on a row written before this
-    -- column existed; such a row falls back to the walk.
+    -- anchor first. A table past 2000 characters is split across consecutive messages,
+    -- and deletion takes down exactly the messages named here. NULL where no list was
+    -- recorded; the posting is then deleted by results_message_id alone, and nothing
+    -- guesses at the messages after it.
     results_message_ids TEXT,
     UNIQUE (round_id, session_type)
 );
@@ -226,14 +225,63 @@ CREATE TABLE driver_standings_snapshots (
     total_points        INTEGER NOT NULL DEFAULT 0,
     finish_counts       TEXT    NOT NULL DEFAULT '{}',
     first_finish_rounds TEXT    NOT NULL DEFAULT '{}',
-    standings_message_id INTEGER, driver_profile_id INTEGER REFERENCES driver_profiles(id), constructor_standings_message_id INTEGER,
-    -- The chunk lists of the two standings postings, as session_results' above.
-    standings_message_ids TEXT,
-    constructor_standings_message_ids TEXT,
+    driver_profile_id   INTEGER REFERENCES driver_profiles(id),
     UNIQUE (round_id, division_id, driver_user_id)
 );
 CREATE INDEX idx_dss_driver_profile
     ON driver_standings_snapshots(division_id, driver_profile_id);
+
+-- round_standings_posts: the standings a round posted, one row for the posting whoever leads the
+-- round. The ids sit here, not on a snapshot row, because a recomputation reorders and drops
+-- those rows and the posting would be lost with them.
+CREATE TABLE round_standings_posts (
+    round_id    INTEGER PRIMARY KEY
+                    REFERENCES rounds(id),
+    division_id INTEGER NOT NULL
+                    REFERENCES divisions(id),
+    -- The message carrying each championship, and the chunk list of every message it occupies,
+    -- as session_results' above.
+    standings_message_id              INTEGER,
+    constructor_standings_message_id  INTEGER,
+    standings_message_ids             TEXT,
+    constructor_standings_message_ids TEXT
+);
+
+-- classification_posts: the opening and final classifications a division's standings channel was
+-- posted, one row for each occasion, so that switching results off can take down the opening one
+-- (a final classification belongs to a completed season, which the purge never reads). Neither
+-- classification replaces a round's standings or is reached by a standings sync, and neither has
+-- a round to key it by: the row is keyed by the division and the occasion. The ids are kept as
+-- round_standings_posts' are.
+CREATE TABLE classification_posts (
+    division_id INTEGER NOT NULL
+                    REFERENCES divisions(id),
+    occasion    TEXT NOT NULL
+                    CHECK (occasion IN ('SEASON_OPENING', 'SEASON_FINAL')),
+    standings_message_id              INTEGER,
+    constructor_standings_message_id  INTEGER,
+    standings_message_ids             TEXT,
+    constructor_standings_message_ids TEXT,
+    PRIMARY KEY (division_id, occasion)
+);
+
+-- called_off_notes: the note results posted of a round or a division called off, kept so that
+-- switching results off can take it down. One row for the posting, keyed by what was called off:
+-- a division's (round_id NULL) or a round's (both set). A season's note is not recorded, the
+-- purge reading the live season alone.
+CREATE TABLE called_off_notes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    division_id INTEGER NOT NULL
+                    REFERENCES divisions(id),
+    round_id    INTEGER
+                    REFERENCES rounds(id),
+    channel_id  TEXT    NOT NULL,
+    message_id  TEXT    NOT NULL
+);
+
+-- One note for each thing called off: the posting replaces an earlier row of its own.
+CREATE UNIQUE INDEX uq_called_off_notes_target
+    ON called_off_notes(division_id, IFNULL(round_id, 0));
 
 -- team_standings_snapshots
 CREATE TABLE team_standings_snapshots (
@@ -378,8 +426,8 @@ CREATE TABLE "penalty_records" (
     announcement_channel_id TEXT,
     -- announcement_message_id: the verdict announcement itself, so an amendment can
     -- replace it rather than leaving a decision that contradicts the classification it
-    -- was applied to. NULL for a verdict announced before this column existed;
-    -- those cannot be replaced and are re-announced fresh, which the log says.
+    -- was applied to. NULL where no announcement id was recorded; such a verdict
+    -- cannot be replaced, and a takedown passes over it.
     announcement_message_id TEXT,
     -- The chunk list of that announcement, as elsewhere.
     announcement_message_ids TEXT
@@ -400,8 +448,8 @@ CREATE TABLE "appeal_records" (
     announcement_channel_id TEXT,
     -- announcement_message_id: the verdict announcement itself, so an amendment can
     -- replace it rather than leaving a decision that contradicts the classification it
-    -- was applied to. NULL for a verdict announced before this column existed;
-    -- those cannot be replaced and are re-announced fresh, which the log says.
+    -- was applied to. NULL where no announcement id was recorded; such a verdict
+    -- cannot be replaced, and a takedown passes over it.
     announcement_message_id TEXT,
     -- The chunk list of that announcement, as elsewhere.
     announcement_message_ids TEXT

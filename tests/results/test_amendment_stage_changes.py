@@ -1,7 +1,7 @@
 """Approving an amendment's report stage and its appeals stage through the change queue (#439,
 slice 2).
 
-`results/services/amendment_stage_changes.py` carries the two stages of `/results rounds amend`
+`results/services/round_amendment/amendment_stage_changes.py` carries the two stages of `/results rounds amend`
 after its classification stage as changes:
 
 - `results.amendment.reports.approve`: `apply`, one save (the superseded announcements noted, the
@@ -38,12 +38,15 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from leaguebot.attendance.services.attendance_after_review import sanction_card_texts
 from leaguebot.core.db.database import get_connection
+from leaguebot.results.services.publishing.results_post_service import set_standings_message_id_on
 from tests.support.change_queue import (
     acknowledgement,
     discard_job,
     http_error,
     member_interaction,
+    queued_log_lines,
     restart_queue,
     retry_job,
     run_queue,
@@ -53,6 +56,7 @@ from tests.support.change_queue import (
     updated_reply,
 )
 from tests.support.review_league import (
+    attendance_after_review_of,
     AMEND_CHANNEL,
     DIVISION_ID,
     HEADING,
@@ -80,6 +84,10 @@ from tests.support.review_league import (
     stopped_at,
     verdict_headings,
 )
+
+
+#: Only the half-hour lapse's log line says this: the amendment's stages were not approved in time.
+LAPSED = "were not approved in time"
 
 REPORTS = "results.amendment.reports.approve"
 APPEALS = "results.amendment.appeals.approve"
@@ -239,9 +247,9 @@ def _clock(league: ReviewLeague) -> Any:
 
 
 async def _sweep(league: ReviewLeague, *, after: timedelta) -> int:
-    from leaguebot.results.services.result_submission_service import sweep_expired_amendments
+    from leaguebot.results.services.round_amendment.amendment_writes import sweep_expired_amendments
 
-    asked = await sweep_expired_amendments(league.bot, queue=league.bot.change_queue, now=NOW + after)
+    asked = await sweep_expired_amendments(league.bot.db_path, queue=league.bot.change_queue, now=NOW + after)
     # The sweep asks the queue for each lapse (#439 6b), which the queue then carries out.
     await run_queue(league.bot)
     return asked
@@ -464,6 +472,41 @@ async def test_a_discarded_stage_past_its_deadline_is_undone_at_the_next_sweep(t
     assert "put back" in league.log()
 
 
+
+class _Killed(BaseException):
+    """The bot's process killed: no handler of the bot's sees it, nothing more is saved."""
+
+
+async def test_a_lapse_run_again_after_a_stop_tells_the_log_channel_once(tmp_path, monkeypatch):
+    """Alex's amendment of round 3 is past its half-hour, and the sweep asks for its lapse. The
+    round is put back, then the bot is killed as the queue comes to save the lapse's
+    `record_lapse` job: after the job has done its work, before its mark is saved. When the bot
+    starts again the queue runs that job again. The log channel is told once that the amendment
+    lapsed and the round was put back, counting the lines posted and those still waiting to be."""
+    from leaguebot.core.services.queue.change_queue import ChangeQueue
+
+    league = await _amend_league(tmp_path)
+    saving = ChangeQueue._save_result
+    killing = {"now": True}
+
+    async def _save_result(self: Any, db: Any, change: Any, row: Any, *args: Any) -> Any:
+        if row["name"] == "record_lapse" and killing["now"]:
+            killing["now"] = False
+            raise _Killed()
+        return await saving(self, db, change, row, *args)
+
+    monkeypatch.setattr(ChangeQueue, "_save_result", _save_result)
+
+    with pytest.raises(_Killed):
+        await _sweep(league, after=timedelta(hours=2))
+    assert not killing["now"], "the lapse never reached its record_lapse job"
+    await restart_queue(league.bot)
+    await run_queue(league.bot)
+
+    told = "\n".join([league.log(), *await queued_log_lines(league.db_path)])
+    assert told.count(LAPSED) == 1
+    assert _amend_channel_deleted(league)
+
 @pytest.mark.parametrize("stage", ["reports", "appeals"])
 @pytest.mark.parametrize("lapsed", [False, True], ids=["inside", "past"])
 async def test_a_discarded_stage_past_its_deadline_names_the_undoing_and_one_before_it_names_approve_again(
@@ -480,7 +523,7 @@ async def test_a_discarded_stage_past_its_deadline_names_the_undoing_and_one_bef
     if lapsed:
         _clock(league).advance(minutes=20)
     fault = points_fail() if stage == "reports" else patch(
-        "leaguebot.results.services.amendment_stage_changes.cascade_recompute_from_round_on",
+        "leaguebot.results.services.round_amendment.amendment_stage_changes.cascade_recompute_from_round_on",
         new=AsyncMock(side_effect=RuntimeError("the standings could not be calculated")),
     )
     with fault:
@@ -512,13 +555,15 @@ async def test_a_discarded_stage_past_its_deadline_names_the_undoing_and_one_bef
 
 
 async def test_recovery_leaves_alone_an_amendment_whose_stage_is_in_hand(tmp_path):
-    from leaguebot.results.wiring import recover_orphaned_amend_channels
+    from leaguebot.results.services.round_amendment.amend_end_changes import (
+        recover_orphaned_amend_channels,
+    )
 
     league = await _amend_league(tmp_path)
     await block_queue(league)
     await _approve_reports(league)
 
-    await recover_orphaned_amend_channels(league.bot)
+    await recover_orphaned_amend_channels(league.bot, queue=league.bot.change_queue)
 
     row = await _amend_row(league)
     assert row is not None and row["pre_amendment_state"] is not None
@@ -628,7 +673,7 @@ async def test_the_rebuild_goes_in_the_order_a_league_reads_it(tmp_path):
     them: the results, the standings, the attendance sheet, the round's report verdicts, then its
     appeal verdicts". Round 3's amendment, its reports approved (Lewis's and Max's) and attendance
     on, has its appeals stage approved by Alex with a 10-second correction for Max upheld."""
-    from leaguebot.results.services.penalty_service import StagedPenalty
+    from leaguebot.results.services.review.penalty_service import StagedPenalty
     from leaguebot.results.models.points_config import SessionType
 
     league = await _amend_league(tmp_path, reports_approved=True, attendance=True)
@@ -724,10 +769,12 @@ async def _seed_round(
             )
             await db.execute(
                 "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
-                "standing_position, total_points, standings_message_id, standings_message_ids) "
-                "VALUES (?, ?, ?, 1, 25, ?, ?)",
-                (round_id, DIVISION_ID, LEWIS, OLD_ROUND_STANDINGS[round_id],
-                 json.dumps([OLD_ROUND_STANDINGS[round_id]])),
+                "standing_position, total_points) VALUES (?, ?, ?, 1, 25)",
+                (round_id, DIVISION_ID, LEWIS),
+            )
+            await set_standings_message_id_on(
+                db, DIVISION_ID, round_id, OLD_ROUND_STANDINGS[round_id],
+                message_ids=json.dumps([OLD_ROUND_STANDINGS[round_id]]),
             )
         await db.commit()
     league.channel(RESULTS_CHANNEL).seed(OLD_ROUND_RESULTS[round_id], f"round {number} results")
@@ -889,7 +936,7 @@ async def test_each_round_s_verdicts_are_announced_again_under_one_heading_of_it
     superseded banners leaves them standing. Round 3's amendment has its reports approved (Lewis's
     and Max's); round 4 holds Max's announced report; each round has its old banner."""
     from leaguebot.results.models.points_config import SessionType
-    from leaguebot.results.services.penalty_service import StagedPenalty
+    from leaguebot.results.services.review.penalty_service import StagedPenalty
 
     league = await _amend_league(tmp_path, reports_approved=True)
     later = await _seed_round(league, LATER_ROUND_ID, 4, "Spa")
@@ -1103,7 +1150,7 @@ async def test_an_amendment_that_sanctions_keeps_the_banner_its_card_stands_unde
     rebuild was planned. The other superseded banner and announcements come down. The double's
     announcement posts the card as the real hook does, through `announce_sanction`, beneath the
     banner of the round it is handed."""
-    from leaguebot.results.services import verdict_announcement_service
+    from leaguebot.results.services.review import verdict_announcement_service
 
     league = await _amend_league(tmp_path, reports_approved=True, attendance=True)
     await _seed_round(league, LATER_ROUND_ID, 4, "Spa")
@@ -1121,7 +1168,9 @@ async def test_an_amendment_that_sanctions_keeps_the_banner_its_card_stands_unde
         await recorded(round_id, division_id, owed, as_text=as_text)
         await verdict_announcement_service.announce_sanction(
             league.bot, league.db_path, round_id, owed["driver_user_id"], "Max",
-            owed["sanction"], 10, as_text=as_text,
+            *sanction_card_texts(
+                owed["sanction"], f"<@{owed['driver_user_id']}> (Max)", 10
+            ), as_text=as_text,
         )
 
     league.attendance.announce_sanction = _announce
@@ -1174,7 +1223,7 @@ async def test_a_stage_approval_is_refused_while_a_staging_is_in_hand(tmp_path):
     waiting to be shown. Alex presses Approve on the report stage: it is refused at the press,
     telling him a change to the review is still being shown, and the stage is not approved."""
     from leaguebot.results.models.points_config import SessionType
-    from leaguebot.results.services.penalty_wizard import PenaltyReviewState
+    from leaguebot.results.services.review.review_state import PenaltyReviewState
     from tests.results.test_review_stage_change import _add_penalty, _alex
 
     league = await _amend_league(tmp_path)
@@ -1182,7 +1231,8 @@ async def test_a_stage_approval_is_refused_while_a_staging_is_in_hand(tmp_path):
     state = PenaltyReviewState(
         round_id=ROUND_ID, division_id=DIVISION_ID, submission_channel_id=AMEND_CHANNEL,
         session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path,
-        bot=league.bot, prompt_message_id=AMEND_PROMPT, approval_message_id=AMEND_APPROVAL,
+        bot=league.bot,
+        queue=league.bot.change_queue, server_config=league.bot.config_service.get_server_config, router=league.bot.output_router, attendance=attendance_after_review_of(league.db_path), prompt_message_id=AMEND_PROMPT, approval_message_id=AMEND_APPROVAL,
         round_number=3, division_name="Pro", is_amendment=True,
     )
     await _add_penalty(state, _alex(league), driver=MAX)
@@ -1209,17 +1259,18 @@ async def test_the_report_stage_offers_the_pardons_the_builder_s_hook_gives(monk
     from types import SimpleNamespace
     from unittest.mock import MagicMock
 
-    from leaguebot.results.services import (
-        amendment_stage_changes as stages,
-        result_submission_service,
-        review_posting,
-    )
+    from leaguebot.results.services.round_amendment import amendment_stage_changes as stages, amendment_writes
+    from leaguebot.results.services.review import review_posting
 
     hook = MagicMock()
     hook.pardons_to_review = AsyncMock(return_value=[])
-    *_, prompt = stages.amendment_stage_changes(attendance=hook, now=lambda: NOW)
+    *_, prompt = stages.amendment_stage_changes(
+        attendance=hook, now=lambda: NOW, queue=MagicMock(), config=MagicMock(),
+        server_config=AsyncMock(return_value=None),
+        router=MagicMock(),
+    )
     review = AsyncMock(return_value=SimpleNamespace(prompt_message_id=8990))
-    monkeypatch.setattr(result_submission_service, "run_amendment_review_stages", review)
+    monkeypatch.setattr(amendment_writes, "run_amendment_review_stages", review)
     channel = SimpleNamespace(id=AMEND_CHANNEL)
     monkeypatch.setattr(review_posting, "_league_guild", AsyncMock(return_value=MagicMock()))
     monkeypatch.setattr(review_posting, "_channel", lambda *_args: channel)

@@ -75,6 +75,19 @@ def test_the_windows_hook_is_declared_and_made_by_the_builder():
     assert not {"approval_windows", "amendment_windows"} & (_declared() | _attached_in_bot_py())
 
 
+def test_no_hook_is_declared_for_a_round_ended_not_held():
+    """A round ended not held asks attendance's reading of its check-in through
+    `AttendanceAfterReview`, not through a hook core declares and only results calls
+    (architecture.md, "How modules and core fit together"): `LeagueBot` declares no
+    `round_ended_not_held`, the builder makes none, and attendance's wiring signs nothing up to
+    one."""
+    from leaguebot.attendance import wiring as attendance_wiring
+
+    assert "round_ended_not_held" not in _declared()
+    assert "round_ended_not_held" not in _attached_in_bot_py()
+    assert "round_ended_not_held" not in inspect.getsource(attendance_wiring)
+
+
 def test_the_season_approval_is_registered():
     """The builder registers the season's approval and the change that tells the review's channel
     of a refusal its member can no longer be told of (#439, slice 4a)."""

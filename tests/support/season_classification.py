@@ -86,16 +86,11 @@ async def seed_season(path: str, *, server_id: int = 1, divisions: tuple[str, ..
     return season_id, ids
 
 
-def classification_posts(standings: Any = None, attendance: Any = None) -> tuple[Any, Any, Any]:
-    """The standings, through whichever of results' two posting functions they use, and the
-    sheet. Both standings doubles are the one mock, so a test reads either; the recording
-    `post_standings` is created where #439 6b has deleted it."""
+def classification_posts(standings: Any = None, attendance: Any = None) -> tuple[Any, Any]:
+    """The standings, through results' posting function, and the sheet."""
     standings = standings or AsyncMock(return_value=[])
     return (
-        patch(
-            "leaguebot.results.services.results_post_service.post_standings", standings, create=True,
-        ),
-        patch("leaguebot.results.services.results_post_service.produce_standings", standings),
+        patch("leaguebot.results.services.publishing.results_post_service.produce_standings", standings),
         patch(
             "leaguebot.attendance.services.attendance_service.post_attendance_sheet",
             attendance or AsyncMock(return_value=None),
@@ -130,14 +125,14 @@ async def second_round_with_results(path: str, division_id: int, *, message_id=N
         )
         await db.execute(
             "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
-            "standing_position, total_points, standings_message_id, standings_message_ids) "
-            "VALUES (?, ?, 500, 1, 25, ?, ?)",
-            (
-                round_id,
-                division_id,
-                message_id,
-                None if message_id is None else f"[{message_id}]",
-            ),
+            "standing_position, total_points) VALUES (?, ?, 500, 1, 25)",
+            (round_id, division_id),
         )
+        if message_id is not None:
+            await db.execute(
+                "INSERT INTO round_standings_posts (round_id, division_id, "
+                "standings_message_id, standings_message_ids) VALUES (?, ?, ?, ?)",
+                (round_id, division_id, message_id, f"[{message_id}]"),
+            )
         await db.commit()
     return round_id

@@ -38,13 +38,13 @@ import pytest
 # `session_results.session_type` actually holds.
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.penalty_service import StagedPenalty
+from leaguebot.results.services.review.penalty_service import StagedPenalty
 from tests.support.change_queue import in_a_job
-from leaguebot.results.services.penalty_wizard import (
-    PenaltyReviewState,
+from leaguebot.results.services.review.appeals_review_views import (
     _refresh_appeals_prompt,
     _render_appeals_prompt_content,
 )
+from leaguebot.results.services.review.review_state import PenaltyReviewState
 
 SERVER_ID = 10508
 ROUND_ID = 5
@@ -81,10 +81,10 @@ def _no_driver_changed_account(monkeypatch):
     The state points at no real database; the account map the prompt reads is the one query
     it makes, and naming by the current account is pinned in `test_add_penalty_modal.py`.
     """
-    import leaguebot.results.services.penalty_wizard as penalty_wizard
+    import leaguebot.results.services.review.appeals_review_views as appeals_review_views
 
     monkeypatch.setattr(
-        penalty_wizard, "current_account_map_for_division", AsyncMock(return_value={})
+        appeals_review_views, "current_account_map_for_division", AsyncMock(return_value={})
     )
 
 
@@ -106,6 +106,7 @@ def _state(*, appeals=(), prompt_id: int | None = PROMPT_ID, channel=...):
         session_types_present=[SessionType.FEATURE_RACE],
         db_path=":memory:",
         bot=bot,
+        queue=bot.change_queue, server_config=bot.config_service.get_server_config, router=bot.output_router, attendance=MagicMock(),
     )
     state.round_number = 3
     state.division_name = "Division 1"

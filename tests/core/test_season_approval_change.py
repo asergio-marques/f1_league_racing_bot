@@ -383,7 +383,10 @@ async def test_the_opening_standings_are_posted_in_each_division_s_standings_cha
     """Results on and attendance off, Pro's standings channel 602 and Am's 702 set in
     `division_results_config`: each is sent the opening classification, the drivers' and the
     teams' championships. Pro's and Am's attendance channels, set too, are sent no opening
-    sheet while attendance is off."""
+    sheet while attendance is off. The message each division's classification went out as is
+    recorded against the division as its opening classification, as a round's standings are
+    recorded, so that switching results off can find it; posted as text, both championships
+    share that one message and no constructors' message is recorded."""
     league = await _league_for(tmp_path, monkeypatch, results=True)
     await _pressed(league)
 
@@ -394,6 +397,17 @@ async def test_the_opening_standings_are_posted_in_each_division_s_standings_cha
     assert league.texts(PRO_CH.attendance) == []
     assert league.texts(AM_CH.attendance) == []
     assert await _stopped_at(league) is None
+    recorded = {row["division_id"]: row for row in await league.rows(
+        "SELECT * FROM classification_posts WHERE occasion = 'SEASON_OPENING'"
+    )}
+    assert set(recorded) == {PRO, AM}
+    for division, chans in ((PRO, PRO_CH), (AM, AM_CH)):
+        posted = [message_id for message_id, message in league.channel(chans.standings)
+                  .messages.items() if "Opening Classification" in message.content]
+        assert len(posted) == 1, posted
+        assert recorded[division]["standings_message_id"] == posted[0]
+        assert json.loads(recorded[division]["standings_message_ids"]) == posted
+        assert recorded[division]["constructor_standings_message_id"] is None
 
 
 async def test_a_role_discord_refuses_stops_the_queue_and_once_discarded_is_named(
@@ -589,13 +603,34 @@ async def test_the_manager_is_told_at_once_and_the_reply_is_updated_when_the_sea
     assert NOT_EVERYTHING not in reply(press)
 
 
+def _failing_placements(league: Any) -> ExitStack:
+    """The save's commitment of the placements raises, as a fault of the database would."""
+    return _failing_save()
+
+
+def _failing_subscriber(league: Any) -> ExitStack:
+    """A subscriber to the season approved hook raises, after results' points snapshot."""
+    async def failing(db: Any, season_id: int) -> None:
+        raise RuntimeError("disk I/O error")
+
+    league.bot.season_approved.subscribe(failing)
+    return ExitStack()
+
+
+@pytest.mark.parametrize("fault", [
+    pytest.param(_failing_placements, id="the placements' commitment"),
+    pytest.param(_failing_subscriber, id="a season approved subscriber"),
+])
 async def test_the_sessions_placements_points_and_season_are_saved_in_one_save(
-    tmp_path, monkeypatch,
+    tmp_path, monkeypatch, fault,
 ):
+    """Results on. A fault in the save, in the placements' commitment or in a module's part of
+    the season approved, stops the queue at the save, and none of the save is kept: no sessions,
+    no points on the season, no placements committed, and the season still in Placements."""
     league = await _league_for(tmp_path, monkeypatch, results=True)
     await _pressed(league)
 
-    with _failing_save():
+    with fault(league):
         await run_queue(league.bot)
 
     assert await _stopped_at(league) == "apply"
@@ -605,6 +640,36 @@ async def test_the_sessions_placements_points_and_season_are_saved_in_one_save(
     assert await _committed(league) == 0
     season = await league.season()
     assert (season["status"], season["stage"]) == ("SETUP", "PLACEMENTS")
+
+
+async def test_the_save_calls_season_approved_once_on_its_connection_before_the_placements(
+    tmp_path, monkeypatch,
+):
+    """Results on, Pro and Am with four rounds each. As the approval's save runs, the season
+    approved hook is called once, on the save's own connection with its transaction still open,
+    handed the season's id, after every round has its sessions and before any placement is
+    committed or the season moved on: where results' points snapshot ran by name until now."""
+    league = await _league_for(tmp_path, monkeypatch, results=True)
+    handed: list[tuple[Any, ...]] = []
+
+    async def watching(db: Any, season_id: int) -> None:
+        cursor = await db.execute("SELECT COUNT(*) AS n FROM sessions")
+        sessions = (await cursor.fetchone())["n"]
+        cursor = await db.execute(
+            "SELECT COUNT(*) AS n FROM driver_season_assignments WHERE committed = 1"
+        )
+        committed = (await cursor.fetchone())["n"]
+        cursor = await db.execute("SELECT stage FROM seasons WHERE id = ?", (season_id,))
+        stage = (await cursor.fetchone())["stage"]
+        handed.append((db.in_transaction, season_id, sessions, committed, stage))
+
+    league.bot.season_approved.subscribe(watching)
+    await _pressed(league)
+
+    await run_queue(league.bot)
+
+    assert handed == [(True, SEASON_ID, 2 * len(_all_rounds()), 0, "PLACEMENTS")]
+    assert (await league.season())["stage"] == "ONGOING"
 
 
 async def test_the_save_reads_nothing_but_its_own_connection(tmp_path, monkeypatch):
@@ -1623,7 +1688,7 @@ async def test_an_opening_post_stops_where_the_league_s_server_is_not_in_the_cac
 @pytest.mark.parametrize(
     ("job", "owner", "fail"),
     [
-        ("opening_standings", "leaguebot.results.services.season_standings_posts",
+        ("opening_standings", "leaguebot.results.services.standings.season_standings_posts",
          _fail_standings),
         ("opening_sheet", "leaguebot.attendance.services.sheet_posting", _fail_sheet),
     ],

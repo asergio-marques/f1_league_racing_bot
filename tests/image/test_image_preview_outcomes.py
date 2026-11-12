@@ -732,7 +732,7 @@ class TestStandingsPreviewCountback:
     async def test_the_level_drivers_stand_in_the_order_the_countback_gives(
         self, bot, league, db_path
     ):
-        from leaguebot.results.services.standings_service import order_drivers, tally_feature_finishes
+        from leaguebot.results.services.standings.standings_service import order_drivers, tally_feature_finishes
 
         await _seed_full_grid(db_path, league)
         for round_number in (1, 2, 3, 4):
@@ -764,7 +764,7 @@ class TestStandingsPreviewCountback:
     async def test_the_level_teams_stand_in_the_order_the_countback_gives(
         self, bot, league, db_path
     ):
-        from leaguebot.results.services.standings_service import order_teams, tally_feature_finishes
+        from leaguebot.results.services.standings.standings_service import order_teams, tally_feature_finishes
 
         await _seed_full_grid(db_path, league)
         for round_number in (1, 2, 3, 4):

@@ -92,14 +92,11 @@ def _drawing(db_path=":memory:", *, images_on=True, aspect_on=True, valid=True, 
 
 
 def _portraits_spied(monkeypatch):
-    """Stand a spy in for the portrait refresh before a render, wherever the drawing reaches it;
-    gives the spy."""
+    """Stand a spy in for the portrait refresh before a render; gives the spy."""
     import leaguebot.image.services.driver_portrait_service as portraits
-    import leaguebot.image.services.image_drawing as image_drawing
 
     spy = AsyncMock(return_value=0)
     monkeypatch.setattr(portraits, "refresh_before_render", spy)
-    monkeypatch.setattr(image_drawing, "refresh_before_render", spy, raising=False)
     return spy
 
 

@@ -175,51 +175,33 @@ async def _record_call(db_path: str) -> None:
 
 
 class _Posts:
-    """What the command did to post a call: *asked* is the queue's `ask`, *notice* the stand-in
-    for `run_rsvp_notice`, which it called before 6b."""
+    """What the command did to post a call: *asked* is the queue's `ask`."""
 
-    def __init__(self, asked: AsyncMock, notice: AsyncMock) -> None:
+    def __init__(self, asked: AsyncMock) -> None:
         self.asked = asked
-        self.notice = notice
 
     def assert_nothing(self) -> None:
-        """Nothing was asked of the queue and nothing posted."""
+        """Nothing was asked of the queue."""
         self.asked.assert_not_awaited()
-        self.notice.assert_not_awaited()
 
     def assert_asked_once(self, interaction) -> None:
-        """The round's call was asked of the queue once, with the manager's interaction, and
-        nothing posted at once."""
-        self.notice.assert_not_awaited()
+        """The round's call was asked of the queue once, with the manager's interaction."""
         self.asked.assert_awaited_once()
         assert self.asked.await_args.args[0] == KIND
         assert ROUND_ID in self.asked.await_args.args[1].values()
         assert self.asked.await_args.kwargs["interaction"] is interaction
 
 
-async def _invoke(cog, interaction, *, division="division 1", round=1, now=NOW,
-                  posts=False) -> _Posts:
-    """Run the command with the clock pinned, against the stand-in queue of `_cog`.
-
-    `run_rsvp_notice`, which the command called before it asked the queue, is stood in for too,
-    created where it is gone; *posts* says whether the stand-in records a call.
-    """
-    db_path = cog.bot.db_path
+async def _invoke(cog, interaction, *, division="division 1", round=1, now=NOW) -> _Posts:
+    """Run the command with the clock pinned, against the stand-in queue of `_cog`."""
     interaction.command = AttendanceCog.post_check_in
     interaction.client = cog.bot
 
-    async def _fake_notice(round_id, bot):
-        if posts:
-            await _record_call(db_path)
-
     clock = MagicMock(wraps=datetime)
     clock.now = MagicMock(return_value=now)
-    with patch("leaguebot.attendance.cogs.attendance_cog.datetime", clock), patch(
-        "leaguebot.attendance.services.rsvp_service.run_rsvp_notice",
-        new=AsyncMock(side_effect=_fake_notice), create=True,
-    ) as notice:
+    with patch("leaguebot.attendance.cogs.attendance_cog.datetime", clock):
         await undecorate(AttendanceCog.post_check_in)(cog, interaction, division, round)
-    return _Posts(cog.bot.change_queue.ask, notice)
+    return _Posts(cog.bot.change_queue.ask)
 
 
 async def _queue_league(tmp_path) -> SeasonLeague:
@@ -442,7 +424,7 @@ async def test_it_posts_the_call_for_the_named_round(tmp_path, offset, deadline_
     )
     interaction = _interaction()
 
-    posts = await _invoke(cog, interaction, posts=True)
+    posts = await _invoke(cog, interaction)
 
     posts.assert_asked_once(interaction)
 

@@ -1,6 +1,6 @@
 """Approving a round's reports through the change queue: `results.reports.approve` (#439, slice 2).
 
-`results/services/report_approval_change.py` carries stage one of a round's penalty review as a
+`results/services/review/report_approval_change.py` carries stage one of a round's penalty review as a
 change: `names` resolves the drivers' display names, `apply` saves everything the approval writes
 in one save (the penalties and their records, the points, the round's attendance, the standings
 snapshots of this round and every later one, and the status), then the republication under
@@ -26,6 +26,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from leaguebot.attendance.services.attendance_after_review import sanction_card_texts
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.results.models.points_config import SessionType
@@ -43,7 +44,9 @@ from tests.support.change_queue import (
     tier_member,
     updated_reply,
 )
+from tests.support.mentions import NOBODY, notified
 from tests.support.review_league import (
+    attendance_after_review_of,
     APPROVAL,
     AMEND_CHANNEL,
     DIVISION_ID,
@@ -703,7 +706,7 @@ async def test_an_approval_whose_cascade_reaches_a_later_round_heads_its_sanctio
     banner posted for them, and round 4's banner is left as it was. The double's announcement
     posts the card as the real hook does, through `announce_sanction`, beneath the banner of the
     round it is handed."""
-    from leaguebot.results.services import verdict_announcement_service
+    from leaguebot.results.services.review import verdict_announcement_service
 
     league = await review_league(tmp_path, attendance=True)
     league.channel(VERDICTS_CHANNEL).seed(LATER_BANNER, "**Season 1 Pro Round 4**")
@@ -724,7 +727,9 @@ async def test_an_approval_whose_cascade_reaches_a_later_round_heads_its_sanctio
         await recorded(round_id, division_id, owed, as_text=as_text)
         await verdict_announcement_service.announce_sanction(
             league.bot, league.db_path, round_id, owed["driver_user_id"], "Max",
-            owed["sanction"], 10, as_text=as_text,
+            *sanction_card_texts(
+                owed["sanction"], f"<@{owed['driver_user_id']}> (Max)", 10
+            ), as_text=as_text,
         )
 
     league.attendance.announce_sanction = _announce
@@ -758,7 +763,7 @@ def _cards_posted_for_real(league: ReviewLeague) -> None:
     """Make the double's announcement post the card as the real hook does, through
     `announce_sanction`, beneath the banner of the round it is handed, and post nothing while
     attendance is off."""
-    from leaguebot.results.services import verdict_announcement_service
+    from leaguebot.results.services.review import verdict_announcement_service
 
     recorded = league.attendance.announce_sanction
 
@@ -769,7 +774,9 @@ def _cards_posted_for_real(league: ReviewLeague) -> None:
             return
         await verdict_announcement_service.announce_sanction(
             league.bot, league.db_path, round_id, owed["driver_user_id"], None,
-            owed["sanction"], 10, as_text=as_text,
+            *sanction_card_texts(
+                owed["sanction"], f"<@{owed['driver_user_id']}>", 10
+            ), as_text=as_text,
         )
 
     league.attendance.announce_sanction = _announce
@@ -996,7 +1003,7 @@ async def test_a_sanction_the_hook_did_not_apply_plans_no_heading(tmp_path, appl
     banner recorded, the job plans the role change the hook named, then the heading over the
     cards; a sanction naming no roles (a test driver's) plans the heading alone."""
     from leaguebot.core.models.change import StepKind
-    from leaguebot.results.services import review_verdicts
+    from leaguebot.results.services.review import review_verdicts
     from tests.support.review_league import NOW
 
     league = await review_league(tmp_path, attendance=True)
@@ -1019,8 +1026,8 @@ async def test_a_fault_working_out_the_cards_heading_rolls_the_sanction_back(
     committed nothing, so the save is rolled back whole and the sanction is not applied: on Retry
     it is still owed, and its card is not lost."""
     from leaguebot.core.models.change import StepKind
-    from leaguebot.results.services import review_verdicts
-    from leaguebot.results.services import verdict_announcement_service
+    from leaguebot.results.services.review import review_verdicts
+    from leaguebot.results.services.review import verdict_announcement_service
     from tests.support.review_league import NOW
 
     league = await review_league(tmp_path, attendance=True)
@@ -1066,7 +1073,7 @@ async def test_a_failed_sanctions_plan_keeps_the_sync_hint_for_its_discard(tmp_p
     sheet's and a sanction's do: the failure keeps the hook's `attendance sync` hint on its kept
     result, for the line a Discard writes, and the fault stays its cause, which the stop notice
     names by its type."""
-    from leaguebot.results.services import review_verdicts
+    from leaguebot.results.services.review import review_verdicts
 
     league = await review_league(tmp_path, attendance=True)
     hook = MagicMock()
@@ -1448,6 +1455,41 @@ async def test_a_sacked_driver_s_other_division_sheet_is_posted_again_as_a_job(t
         assert divisions == [DIVISION_ID, DIVISION_ID]
 
 
+async def test_another_division_s_sheet_round_is_asked_of_attendance(tmp_path):
+    """Max, over the autosack threshold, also sat in division 12 (Am), whose round 5 is final but
+    holds no recorded attendance total in the database. Attendance's share of the review answers
+    that Am's latest scored round is round 5. Approving the reports asks attendance once, for
+    Am, and Am's sheet is posted again as at round 5, marking Max's sack."""
+    league = await review_league(tmp_path, attendance=True)
+    async with get_connection(league.db_path) as db:
+        await db.execute(
+            "INSERT INTO rounds (id, division_id, round_number, scheduled_at, format, "
+            "track_name, status) VALUES (?, ?, 5, '2026-03-01T18:00:00+00:00', 'NORMAL', "
+            "'Monza', 'FINAL')",
+            (OTHER_ROUND_ID, OTHER_DIVISION_ID),
+        )
+        await db.commit()
+    league.attendance.candidates = [
+        candidate(MAX_PROFILE, MAX, "AUTOSACK", other_divisions=(OTHER_DIVISION_ID,)),
+    ]
+    league.attendance.latest_scored_round = AsyncMock(return_value=OTHER_ROUND_ID)
+    drawn: list[tuple[int, int, set[int]]] = []
+    recorded = league.attendance.post_sheet
+
+    async def _post_sheet(round_id: int, division_id: int, *, sanctioned: Any,
+                          as_text: bool) -> None:
+        drawn.append((division_id, round_id, set(sanctioned)))
+        await recorded(round_id, division_id, sanctioned=sanctioned, as_text=as_text)
+
+    league.attendance.post_sheet = _post_sheet
+    await _approve(league)
+    await run_queue(league.bot)
+
+    assert await stopped_at(league) is None
+    league.attendance.latest_scored_round.assert_awaited_once_with(OTHER_DIVISION_ID)
+    assert (OTHER_DIVISION_ID, OTHER_ROUND_ID, {MAX_PROFILE}) in drawn
+
+
 async def test_a_discarded_sanction_announcement_names_the_driver_as_applied_but_not_announced(
     tmp_path,
 ):
@@ -1641,7 +1683,7 @@ async def test_an_autosack_s_other_division_has_its_lineup_posted_as_a_job(tmp_p
 
 
 async def test_a_second_approval_while_the_first_is_queued_is_refused(tmp_path):
-    from leaguebot.results.services.penalty_wizard import _BEING_APPROVED
+    from leaguebot.results.services.review.review_state import _BEING_APPROVED
 
     league = await review_league(tmp_path)
     await _approve(league)
@@ -1652,7 +1694,7 @@ async def test_a_second_approval_while_the_first_is_queued_is_refused(tmp_path):
 
 
 async def test_a_second_approval_while_the_first_is_running_is_refused(tmp_path):
-    from leaguebot.results.services.penalty_wizard import _BEING_APPROVED
+    from leaguebot.results.services.review.review_state import _BEING_APPROVED
 
     league = await review_league(tmp_path)
     await _approve(league)
@@ -1665,7 +1707,7 @@ async def test_a_second_approval_while_the_first_is_running_is_refused(tmp_path)
 
 
 async def test_a_second_approval_while_the_first_is_stopped_is_refused(tmp_path):
-    from leaguebot.results.services.penalty_wizard import _BEING_APPROVED
+    from leaguebot.results.services.review.review_state import _BEING_APPROVED
 
     league = await review_league(tmp_path)
     with points_fail():
@@ -1679,7 +1721,7 @@ async def test_a_second_approval_while_the_first_is_stopped_is_refused(tmp_path)
 
 
 async def test_every_review_control_refuses_while_the_approval_is_in_hand(tmp_path):
-    from leaguebot.results.services.penalty_wizard import (
+    from leaguebot.results.services.review.review_state import (
         _BEING_APPROVED,
         PenaltyReviewState,
         _review_moved_on,
@@ -1689,7 +1731,8 @@ async def test_every_review_control_refuses_while_the_approval_is_in_hand(tmp_pa
     state = PenaltyReviewState(
         round_id=ROUND_ID, division_id=DIVISION_ID, submission_channel_id=SUBMISSION_CHANNEL,
         session_types_present=[SessionType.FEATURE_RACE], db_path=league.db_path,
-        bot=league.bot, prompt_message_id=PROMPT, round_number=3, division_name="Pro",
+        bot=league.bot,
+        queue=league.bot.change_queue, server_config=league.bot.config_service.get_server_config, router=league.bot.output_router, attendance=attendance_after_review_of(league.db_path), prompt_message_id=PROMPT, round_number=3, division_name="Pro",
     )
     assert await _review_moved_on(state) is None
 
@@ -1870,8 +1913,8 @@ async def test_the_save_awaits_nothing_but_its_connection(tmp_path):
 async def test_the_appeals_prompt_is_posted_on_the_round_s_lane(tmp_path):
     """Round 3's reports are approved by Alex while Discord refuses the appeals prompt. The
     approval finishes on the league lane, the round moved on to its appeals; round 3's lane, not
-    the league's, stops at the appeals prompt's post. Retry on the round's lane posts it and saves
-    its id."""
+    the league's, stops at the appeals prompt's post. Retry on the round's lane posts it, notifying
+    nobody, and saves its id."""
     lane = f"channel:{SUBMISSION_CHANNEL}"
     league = await review_league(tmp_path)
     league.channel(SUBMISSION_CHANNEL).fail_when = is_appeals_prompt
@@ -1893,6 +1936,10 @@ async def test_the_appeals_prompt_is_posted_on_the_round_s_lane(tmp_path):
 
     assert await stopped_job(league.db_path) is None
     [prompt] = appeals_prompts(league)
+    sent = [call for call in league.channel(SUBMISSION_CHANNEL).send.await_args_list
+            if type(call.kwargs.get("view")).__name__ == "AppealsReviewView"]
+    assert len(sent) == 2  # the prompt refused, then the prompt
+    assert all(notified(call.kwargs.get("allowed_mentions")) == NOBODY for call in sent)
     assert await one(
         league.db_path, "SELECT appeals_prompt_message_id FROM round_submission_channels"
     ) == prompt

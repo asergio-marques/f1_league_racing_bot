@@ -22,13 +22,16 @@ import os
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.result_submission_service import (
+from leaguebot.results.services.round_amendment import amendment_writes
+from leaguebot.results.services.round_amendment.amendment_writes import (
     AMENDMENT_STAGE_TIMEOUT_SECONDS,
     sweep_expired_amendments,
 )
-from tests.support.change_queue import attach_queue, change_rows, run_queue
+from tests.support.change_queue import attach_queue, attendance_hook_double, change_rows, run_queue
 from tests.support.review_league import claim_amendment, revert_amendment, snapshot_amendment
 from tests.support.teams import seed_team_instances
 
@@ -120,10 +123,17 @@ async def _overwrite_the_classification(db_path) -> None:
 def _bot(db_path):
     bot = MagicMock()
     bot.db_path = db_path
+    bot.attendance_after_review = attendance_hook_double()
     bot.output_router = MagicMock()
     bot.output_router.post_log = AsyncMock()
-    # The queue delivers the lines each job saved through the router after the job; this one saves
-    # none, and there is nothing to deliver.
+    # The queue writes the lines each job saves through `queue_log_on` and delivers them after the
+    # job; the lapse's line is one of them. The double records such a line as a post to the log
+    # channel, so that a test reads every line the bot told the log channel in one place, and
+    # there is nothing to deliver.
+    async def _queued_log_line(_db, line):
+        await bot.output_router.post_log(line)
+
+    bot.output_router.queue_log_on = AsyncMock(side_effect=_queued_log_line)
     bot.output_router.deliver_queued = AsyncMock()
     bot.get_guild = MagicMock(return_value=None)
     bot.config_service.get_league_server_id = AsyncMock(return_value=1)
@@ -143,7 +153,7 @@ async def _lapses(db_path) -> list[dict]:
 
 def _cascade():
     return patch(
-        "leaguebot.results.services.standings_service.cascade_recompute_from_round_on",
+        "leaguebot.results.services.standings.standings_service.cascade_recompute_from_round_on",
         new=AsyncMock(),
     )
 
@@ -190,7 +200,7 @@ async def test_the_classification_is_put_back(tmp_path):
     await _overwrite_the_classification(db_path)
     assert await _drivers(db_path) == [(102, 1)]
 
-    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round_on", new=AsyncMock()):
+    with patch("leaguebot.results.services.standings.standings_service.cascade_recompute_from_round_on", new=AsyncMock()):
         assert await revert_amendment(db_path, ROUND_ID) is True
 
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
@@ -233,7 +243,7 @@ async def test_standings_names_that_cannot_be_had_still_leave_the_cascade_runnin
 def _cascade_in_the_save():
     """The standings cascade the revert runs inside its save, stood in for."""
     return patch(
-        "leaguebot.results.services.standings_service.cascade_recompute_from_round_on",
+        "leaguebot.results.services.standings.standings_service.cascade_recompute_from_round_on",
         new=AsyncMock(),
     )
 
@@ -257,9 +267,12 @@ async def _pardons(db_path) -> list[tuple]:
 
 async def test_the_rounds_pardons_come_back_as_they_were(tmp_path):
     """The appeal stage rewrites them before it releases the snapshot; a revert from there —
-    a failure, or a restart — put back the classification and left the new pardons on it."""
+    a failure, or a restart — put back the classification and left the new pardons on it.
+    Attendance on: the pardons are kept and put back by attendance's own share of the review,
+    their ids and the time each was granted included."""
     db_path = await _db(tmp_path, "revert_pardons")
     async with get_connection(db_path) as db:
+        await db.execute("INSERT INTO attendance_config (id, module_enabled) VALUES (1, 1)")
         await db.execute(
             "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
             "VALUES (31, '101', 'ASSIGNED')"
@@ -286,9 +299,74 @@ async def test_the_rounds_pardons_come_back_as_they_were(tmp_path):
         )
         await db.commit()
 
-    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round_on", new=AsyncMock()):
+    with patch("leaguebot.results.services.standings.standings_service.cascade_recompute_from_round_on", new=AsyncMock()):
         await revert_amendment(db_path, ROUND_ID)
 
+    assert await _pardons(db_path) == before
+
+
+class _AttendanceKeeping:
+    """Attendance's share of a round's review, as a double: the round's pardons it keeps for a
+    snapshot are its own opaque value, and each question it is asked is recorded with the very
+    connection it was asked on."""
+
+    KEPT = {"attendance's own": [7]}
+
+    def __init__(self) -> None:
+        self.asked: list[tuple] = []
+
+    async def pardons_of_on(self, db, round_id):
+        self.asked.append(("pardons_of_on", db, round_id))
+        return self.KEPT
+
+    async def put_back_pardons_on(self, db, round_id, saved):
+        self.asked.append(("put_back_pardons_on", db, round_id, saved))
+
+
+async def test_the_round_s_pardons_are_kept_and_put_back_through_attendance(tmp_path):
+    """Round 4 at Spa carries a pardon of attendance's. The amendment's snapshot asks attendance
+    for the round's pardons, once, on the very connection the snapshot is saved on, and keeps what
+    it is given as it is; the revert hands that back to attendance to put back, once, on the very
+    connection the revert is saved on.
+    Results writes no pardon itself: the pardon standing before is standing after."""
+    db_path = await _db(tmp_path, "revert_through_attendance")
+    async with get_connection(db_path) as db:
+        await db.execute(
+            "INSERT INTO driver_profiles (id, discord_user_id, current_state) "
+            "VALUES (31, '101', 'ASSIGNED')"
+        )
+        await db.execute(
+            "INSERT INTO driver_round_attendance (id, round_id, division_id, driver_profile_id, "
+            "rsvp_status) VALUES (41, ?, ?, 31, 'NO_RSVP')",
+            (ROUND_ID, DIVISION_ID),
+        )
+        await db.execute(
+            "INSERT INTO attendance_pardons (id, attendance_id, pardon_type, justification, "
+            "granted_by, granted_at) VALUES (7, 41, 'NO_RSVP', 'Ill', 55, "
+            "'2026-02-01T20:00:00+00:00')"
+        )
+        await db.commit()
+    before = await _pardons(db_path)
+    snapshotting, reverting = _AttendanceKeeping(), _AttendanceKeeping()
+    now = datetime(2026, 2, 1, 20, 30, tzinfo=timezone.utc)
+
+    async with get_connection(db_path) as snapshot_db:
+        await amendment_writes.snapshot_before_amendment_on(
+            snapshot_db, ROUND_ID, [SessionType.FEATURE_RACE], now=now,
+            attendance=snapshotting,
+        )
+        await snapshot_db.commit()
+    with _cascade():
+        async with get_connection(db_path) as revert_db:
+            assert await amendment_writes.revert_abandoned_amendment_on(
+                revert_db, ROUND_ID, attendance=reverting
+            ) is True
+            await revert_db.commit()
+
+    assert snapshotting.asked == [("pardons_of_on", snapshot_db, ROUND_ID)]
+    assert reverting.asked == [
+        ("put_back_pardons_on", revert_db, ROUND_ID, _AttendanceKeeping.KEPT)
+    ]
     assert await _pardons(db_path) == before
 
 
@@ -297,7 +375,7 @@ async def test_the_snapshot_is_cleared_once_it_has_been_used(tmp_path):
     db_path = await _db(tmp_path, "revert_clears")
     await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
 
-    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round_on", new=AsyncMock()):
+    with patch("leaguebot.results.services.standings.standings_service.cascade_recompute_from_round_on", new=AsyncMock()):
         await revert_amendment(db_path, ROUND_ID)
 
     assert (await _snapshot_row(db_path))["pre_amendment_state"] is None
@@ -328,7 +406,7 @@ async def test_an_expired_amendment_is_reverted(tmp_path):
     )
     bot = _queued(db_path, later)
 
-    await sweep_expired_amendments(bot, queue=bot.change_queue, now=later)
+    await sweep_expired_amendments(db_path, queue=bot.change_queue, now=later)
 
     [lapse] = await _lapses(db_path)
     assert lapse["origin"] == "BOT"
@@ -351,7 +429,7 @@ async def test_an_amendment_still_within_its_deadline_is_left_alone(tmp_path):
 
     bot = _queued(db_path, now)
 
-    await sweep_expired_amendments(bot, queue=bot.change_queue, now=now)
+    await sweep_expired_amendments(db_path, queue=bot.change_queue, now=now)
 
     assert await _lapses(db_path) == []
     assert await _drivers(db_path) == [(102, 1)]
@@ -371,7 +449,7 @@ async def test_the_revert_is_announced(tmp_path):
 
     bot = _queued(db_path, later)
 
-    await sweep_expired_amendments(bot, queue=bot.change_queue, now=later)
+    await sweep_expired_amendments(db_path, queue=bot.change_queue, now=later)
     assert len(await _lapses(db_path)) == 1
     with _cascade():
         await run_queue(bot)
@@ -402,7 +480,7 @@ async def test_a_round_with_no_deadline_is_not_swept(tmp_path):
 
     bot = _queued(db_path, later)
 
-    await sweep_expired_amendments(bot, queue=bot.change_queue, now=later)
+    await sweep_expired_amendments(db_path, queue=bot.change_queue, now=later)
 
     assert await _lapses(db_path) == []
 
@@ -446,7 +524,9 @@ def test_the_sweep_runs_often_enough_to_honour_the_deadline():
 def test_the_sweep_is_re_armed_by_the_scheduler_not_by_its_own_callback():
     """A job that re-arms itself from inside its body stops for good the first time it raises.
 
-    The same reasoning `schedule_portrait_refresh` gives for using a cron trigger.
+    The same reasoning `schedule_portrait_refresh` gives for using a cron trigger. The sweep is
+    armed with no lateness limit (`misfire_grace_time=None`), so one due while the bot was down
+    runs when it is back (architecture.md, "Timed work and restarts").
     """
     import inspect
 
@@ -460,6 +540,7 @@ def test_the_sweep_is_re_armed_by_the_scheduler_not_by_its_own_callback():
     job = inspect.getsource(armed.args[0])
     assert "add_job" not in job
     assert "except Exception" in job
+    assert armed.kwargs["misfire_grace_time"] is None
 
 
 async def test_a_naive_now_does_not_abort_the_whole_sweep(tmp_path):
@@ -477,7 +558,7 @@ async def test_a_naive_now_does_not_abort_the_whole_sweep(tmp_path):
 
     bot = _queued(db_path, naive.replace(tzinfo=timezone.utc))
 
-    await sweep_expired_amendments(bot, queue=bot.change_queue, now=naive)
+    await sweep_expired_amendments(db_path, queue=bot.change_queue, now=naive)
     with _cascade():
         await run_queue(bot)
 
@@ -516,7 +597,7 @@ async def test_the_verdict_records_come_back_whole(tmp_path):
         await db.commit()
     await _overwrite_the_classification(db_path)
 
-    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round_on", new=AsyncMock()):
+    with patch("leaguebot.results.services.standings.standings_service.cascade_recompute_from_round_on", new=AsyncMock()):
         await revert_amendment(db_path, ROUND_ID)
 
     async with get_connection(db_path) as db:
@@ -545,7 +626,7 @@ async def test_the_sweep_leaves_an_amendment_a_stage_has_claimed(tmp_path):
 
     bot = _queued(db_path, later)
 
-    await sweep_expired_amendments(bot, queue=bot.change_queue, now=later)
+    await sweep_expired_amendments(db_path, queue=bot.change_queue, now=later)
 
     assert await _lapses(db_path) == []
     assert await _drivers(db_path) == [(102, 1)]
@@ -612,7 +693,7 @@ async def test_every_amended_session_is_snapshotted_and_put_back(tmp_path):
         await db.execute("UPDATE qualifying_session_results SET best_lap = '1:25.000'")
         await db.commit()
 
-    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round_on", new=AsyncMock()):
+    with patch("leaguebot.results.services.standings.standings_service.cascade_recompute_from_round_on", new=AsyncMock()):
         assert await revert_amendment(db_path, ROUND_ID) is True
 
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
@@ -660,7 +741,7 @@ async def _lapse(tmp_path, name: str, *, member_name: str | None):
     later = datetime.now(timezone.utc) + timedelta(seconds=AMENDMENT_STAGE_TIMEOUT_SECONDS + 60)
     attach_queue(bot, db_path, now=later)
 
-    await sweep_expired_amendments(bot, queue=bot.change_queue, now=later)
+    await sweep_expired_amendments(db_path, queue=bot.change_queue, now=later)
     assert len(await _lapses(db_path)) == 1
     with _cascade():
         await run_queue(bot)
@@ -716,7 +797,7 @@ async def test_the_sweep_skips_an_amendment_whose_stage_is_in_hand(tmp_path):
         interaction=member_interaction(league.bot), what="✅ Approve on the amendment's reports",
     )
 
-    await sweep_expired_amendments(league.bot, queue=league.bot.change_queue, now=deadline + timedelta(hours=2))
+    await sweep_expired_amendments(league.bot.db_path, queue=league.bot.change_queue, now=deadline + timedelta(hours=2))
 
     assert await league_of.one(
         league.db_path, "SELECT pre_amendment_state FROM round_amend_channels"
