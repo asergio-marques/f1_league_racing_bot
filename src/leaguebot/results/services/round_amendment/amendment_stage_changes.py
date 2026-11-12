@@ -57,7 +57,7 @@ import json
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import aiosqlite
 
@@ -70,6 +70,7 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
+from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.posting.notice_handler import delete_notice
 from leaguebot.core.services.posting.owned_channel_handler import delete_in_owned_channel
 from leaguebot.core.services.posting.output_router import OutputRouter
@@ -84,6 +85,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
+from leaguebot.core.services.seasons.season_service import round_facts_on, rounds_from_on
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
 from leaguebot.results.models.points_config import SessionType
@@ -130,6 +132,9 @@ from leaguebot.results.services.review.verdict_announcement_service import (
     _forget_banners_on,
 )
 from leaguebot.results.services.review.verdict_records import VERDICT_TABLES, select_verdicts
+
+if TYPE_CHECKING:
+    from leaguebot.core.services.settings.config_service import ConfigService
 
 log = logging.getLogger(__name__)
 
@@ -236,17 +241,10 @@ async def _amend_channel_of(db: aiosqlite.Connection, round_id: int) -> int:
 
 
 async def _round_names(db: aiosqlite.Connection, round_id: int) -> tuple[int, str, int | None]:
-    row = await (
-        await db.execute(
-            "SELECT r.round_number, d.name AS division_name, s.season_number "
-            "FROM rounds r JOIN divisions d ON d.id = r.division_id "
-            "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?",
-            (round_id,),
-        )
-    ).fetchone()
-    if row is None:
+    facts = await round_facts_on(db, round_id)
+    if facts is None:
         raise LookupError(f"round {round_id} is not in the database")
-    return int(row["round_number"]), str(row["division_name"]), row["season_number"]
+    return facts.round_number, facts.division_name, facts.season_number
 
 
 async def _applied_text(
@@ -277,13 +275,15 @@ def amendment_stage_changes(
     attendance: AttendanceAfterReview,
     now: Callable[[], datetime],
     queue: ChangeQueue,
+    config: ConfigService,
     server_config: ReadServerConfig,
     router: OutputRouter,
 ) -> tuple[ChangeType, ChangeType, ChangeType]:
     """The change types of an amendment's stages, the report stage's, the appeals stage's and the
     amendment's lane's prompt (`results.amend.prompt`); see the module. *attendance* is the hook
     the builder hands every change type of the review, *now* the queue's clock and *queue* the queue
-    the review's buttons ask their changes of and *server_config* the reader of the configuration
+    the review's buttons ask their changes of and *config* the league's configuration, read on the
+    save's own connection (the server the rebuild's message links name) and *server_config* the reader of the configuration
     their tier check reads and *router* the output router their presses are logged through."""
 
     async def _in_hand(ctx: CheckContext, kind: str, round_id: int) -> bool:
@@ -468,7 +468,7 @@ def amendment_stage_changes(
         )
         applied = await _applied_text(db, division_id, staged) if staged else ""
 
-        then = await _plan_rebuild(db, round_id, division_id, division_name, channel_id)
+        then = await _plan_rebuild(db, config, round_id, division_id, division_name, channel_id)
         return StepResult(
             result={
                 "round_number": round_number, "division_name": division_name,
@@ -900,27 +900,22 @@ def _left(ctx: OutcomeContext) -> list[str]:
 
 
 async def _plan_rebuild(
-    db: aiosqlite.Connection, round_id: int, division_id: int, division_name: str,
-    channel_id: int,
+    db: aiosqlite.Connection, config: ConfigService, round_id: int, division_id: int,
+    division_name: str, channel_id: int,
 ) -> list[PlannedStep]:
     """The jobs that rebuild the division's channels once the amendment is saved, in the order a
     league reads them (see the module), read on the save's own connection."""
-    server = await (await db.execute("SELECT server_id FROM server_configs")).fetchone()
-    guild_id = None if server is None else server["server_id"]
+    guild_id = await config.get_league_server_id_on(db)
 
     def link(channel: Any, message_id: int) -> str | None:
         if guild_id is None or not channel:
             return None
         return f"https://discord.com/channels/{guild_id}/{channel}/{message_id}"
 
-    rounds = await (
-        await db.execute(
-            "SELECT id, round_number FROM rounds WHERE division_id = ? AND status != 'CANCELLED' "
-            "AND round_number >= (SELECT round_number FROM rounds WHERE id = ?) "
-            "ORDER BY round_number",
-            (division_id, round_id),
-        )
-    ).fetchall()
+    rounds = [
+        each for each in await rounds_from_on(db, division_id, round_id)
+        if each.status != RoundStatus.CANCELLED.value
+    ]
 
     planned: list[PlannedStep] = [
         PlannedStep(POST_BATCH_NOTICE, {"channel_id": channel_id, "text": _REBUILD_NOTICE}),
@@ -931,7 +926,7 @@ async def _plan_rebuild(
     ]
     takes_down: list[PlannedStep] = []
     for rnd in rounds:
-        this_round = int(rnd["id"])
+        this_round = rnd.id
         appeals = sorted(
             await select_verdicts(db, "appeal_records", _VERDICT_COLUMNS, round_id=this_round),
             key=lambda r: r["id"],
@@ -945,7 +940,7 @@ async def _plan_rebuild(
         )
         planned.extend(
             review_verdicts.plan_round_verdicts(
-                this_round, int(rnd["round_number"]), penalties, appeals
+                this_round, rnd.round_number, penalties, appeals
             )
         )
 

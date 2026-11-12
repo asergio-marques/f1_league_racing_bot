@@ -499,6 +499,7 @@ def register_change_types(
         attendance=attendance,
         now=lambda: bot.change_queue.now(),
         queue=bot.change_queue,
+        config=bot.config_service,
         server_config=bot.config_service.get_server_config,
         router=bot.output_router,
     ):

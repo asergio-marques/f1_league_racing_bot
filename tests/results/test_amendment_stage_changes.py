@@ -1265,7 +1265,7 @@ async def test_the_report_stage_offers_the_pardons_the_builder_s_hook_gives(monk
     hook = MagicMock()
     hook.pardons_to_review = AsyncMock(return_value=[])
     *_, prompt = stages.amendment_stage_changes(
-        attendance=hook, now=lambda: NOW, queue=MagicMock(),
+        attendance=hook, now=lambda: NOW, queue=MagicMock(), config=MagicMock(),
         server_config=AsyncMock(return_value=None),
         router=MagicMock(),
     )
