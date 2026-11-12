@@ -26,6 +26,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services.round_amendment import amendment_writes
 from leaguebot.results.services.round_amendment.amendment_writes import (
     AMENDMENT_STAGE_TIMEOUT_SECONDS,
     sweep_expired_amendments,
@@ -316,7 +317,8 @@ async def test_the_rounds_pardons_come_back_as_they_were(tmp_path):
 
 class _AttendanceKeeping:
     """Attendance's share of a round's review, as a double: the round's pardons it keeps for a
-    snapshot are its own opaque value, and each question it is asked is recorded."""
+    snapshot are its own opaque value, and each question it is asked is recorded with the very
+    connection it was asked on."""
 
     KEPT = {"attendance's own": [7]}
 
@@ -324,18 +326,19 @@ class _AttendanceKeeping:
         self.asked: list[tuple] = []
 
     async def pardons_of_on(self, db, round_id):
-        self.asked.append(("pardons_of_on", db.in_transaction is not None, round_id))
+        self.asked.append(("pardons_of_on", db, round_id))
         return self.KEPT
 
     async def put_back_pardons_on(self, db, round_id, saved):
-        self.asked.append(("put_back_pardons_on", db.in_transaction is not None, round_id, saved))
+        self.asked.append(("put_back_pardons_on", db, round_id, saved))
 
 
 @pytest.mark.xfail(strict=True, reason=ATTENDANCE_NOT_HANDED)
 async def test_the_round_s_pardons_are_kept_and_put_back_through_attendance(tmp_path):
     """Round 4 at Spa carries a pardon of attendance's. The amendment's snapshot asks attendance
-    for the round's pardons, once, on the snapshot's connection, and keeps what it is given as it
-    is; the revert hands that back to attendance to put back, once, on the revert's connection.
+    for the round's pardons, once, on the very connection the snapshot is saved on, and keeps what
+    it is given as it is; the revert hands that back to attendance to put back, once, on the very
+    connection the revert is saved on.
     Results writes no pardon itself: the pardon standing before is standing after."""
     db_path = await _db(tmp_path, "revert_through_attendance")
     async with get_connection(db_path) as db:
@@ -356,15 +359,24 @@ async def test_the_round_s_pardons_are_kept_and_put_back_through_attendance(tmp_
         await db.commit()
     before = await _pardons(db_path)
     snapshotting, reverting = _AttendanceKeeping(), _AttendanceKeeping()
+    now = datetime(2026, 2, 1, 20, 30, tzinfo=timezone.utc)
 
-    await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE],
-                             attendance=snapshotting)
+    async with get_connection(db_path) as snapshot_db:
+        await amendment_writes.snapshot_before_amendment_on(
+            snapshot_db, ROUND_ID, [SessionType.FEATURE_RACE], now=now,
+            attendance=snapshotting,
+        )
+        await snapshot_db.commit()
     with _cascade():
-        assert await revert_amendment(db_path, ROUND_ID, attendance=reverting) is True
+        async with get_connection(db_path) as revert_db:
+            assert await amendment_writes.revert_abandoned_amendment_on(
+                revert_db, ROUND_ID, attendance=reverting
+            ) is True
+            await revert_db.commit()
 
-    assert snapshotting.asked == [("pardons_of_on", True, ROUND_ID)]
+    assert snapshotting.asked == [("pardons_of_on", snapshot_db, ROUND_ID)]
     assert reverting.asked == [
-        ("put_back_pardons_on", True, ROUND_ID, _AttendanceKeeping.KEPT)
+        ("put_back_pardons_on", revert_db, ROUND_ID, _AttendanceKeeping.KEPT)
     ]
     assert await _pardons(db_path) == before
 
