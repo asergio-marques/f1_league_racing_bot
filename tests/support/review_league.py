@@ -193,8 +193,9 @@ class AttendanceDouble:
     `sync_hint` is attendance's own, naming the division and the round it is handed, so a test
     reads the hint the league would, and so is `recalculation_faults`, attendance's reading of an
     amendment's channels. `attendance_row_of` reads the driver's attendance row of the round,
-    and `latest_scored_round` a division's latest round with a recorded total, as attendance's
-    own do, whatever the switch, a read writing nothing. `pardons_of_on` keeps no pardons, and `put_back_pardons_on` writes
+    `latest_scored_round` a division's latest round with a recorded total, and
+    `recorded_pardons` the round's pardons for the staged review, as attendance's own do,
+    whatever the switch, a read writing nothing. `pardons_of_on` keeps no pardons, and `put_back_pardons_on` writes
     none, `rewrite_pardons_on` having written none to put back. `lineup_as_text` holds, call by
     call, whether
     `refresh_lineup` was asked for the text. `record_sheet_on` records that the sheet's id was
@@ -268,6 +269,22 @@ class AttendanceDouble:
                 (division_id,),
             )).fetchone()
         return None if row is None else int(row["id"])
+
+    async def recorded_pardons(self, round_id: int) -> list[dict[str, Any]]:
+        """The round's pardons, oldest first, each with its attendance row, type, justification,
+        grantor, time, and the driver's profile and Discord account."""
+        self.calls.append(("recorded_pardons", round_id))
+        async with get_connection(self.league.db_path) as db:
+            rows = await (await db.execute(
+                "SELECT p.attendance_id, p.pardon_type, p.justification, p.granted_by, "
+                "p.granted_at, a.driver_profile_id AS driver_profile_id, "
+                "d.discord_user_id AS discord_user_id FROM attendance_pardons p "
+                "JOIN driver_round_attendance a ON a.id = p.attendance_id "
+                "JOIN driver_profiles d ON d.id = a.driver_profile_id "
+                "WHERE a.round_id = ? ORDER BY p.id",
+                (round_id,),
+            )).fetchall()
+        return [dict(row) for row in rows]
 
     async def pardons_of_on(self, db: Any, round_id: int) -> list[Any]:
         return []

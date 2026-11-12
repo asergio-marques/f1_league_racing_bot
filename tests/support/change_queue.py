@@ -503,7 +503,8 @@ def attendance_hook_double() -> Any:
     method does nothing, no driver is owed a sanction, no channel of attendance's stands in an
     amendment's way, no check-in reading is planned for a round ended not held, an amendment's
     snapshot keeps no pardons, no driver has an attendance row for the pardon form to read, no
-    division has a scored round, and the sync hint names `/attendance sync`."""
+    division has a scored round, no round has a pardon for the staged review to read, and the
+    sync hint names `/attendance sync`."""
     hook = MagicMock()
     for name in ("record_on", "rewrite_pardons_on", "put_back_pardons_on", "recalculate_on",
                  "post_sheet",
@@ -516,6 +517,7 @@ def attendance_hook_double() -> Any:
     hook.pardons_of_on = AsyncMock(return_value=[])
     hook.attendance_row_of = AsyncMock(return_value=None)
     hook.latest_scored_round = AsyncMock(return_value=None)
+    hook.recorded_pardons = AsyncMock(return_value=[])
     hook.sync_hint = AsyncMock(return_value="Repair the cause, then run `/attendance sync`.")
     hook.pardons_to_review = AsyncMock(side_effect=lambda pardons: list(pardons))
     return hook

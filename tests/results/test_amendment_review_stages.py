@@ -268,9 +268,12 @@ async def test_the_rounds_pardons_are_not_offered_with_attendance_off(tmp_path):
 
 async def test_the_review_asks_the_hook_and_never_reads_attendance_s_switch(tmp_path):
     """Round 3 carries a NO_RSVP pardon. The amendment's review is handed an attendance hook
-    that offers no pardon, and the bot's module service fails the test if asked whether
-    attendance is on. The review asks the hook once, with the round's pardon, offers none, and
-    never reads attendance's switch itself (architecture.md :172-178)."""
+    that offers no pardon, and reads the round's pardons as attendance's own does; the bot's
+    module service fails the test if asked whether attendance is on. The review asks the hook
+    once, with the round's pardon, offers none, and never reads attendance's switch itself
+    (architecture.md :172-178)."""
+    from tests.support.review_league import attendance_after_review_of
+
     from leaguebot.results.services.round_amendment.amendment_writes import run_amendment_review_stages
 
     db_path, _ = await _db(tmp_path, "stage_pardons_hook")
@@ -282,6 +285,11 @@ async def test_the_review_asks_the_hook_and_never_reads_attendance_s_switch(tmp_
     )
     hook = MagicMock()
     hook.pardons_to_review = AsyncMock(return_value=[])
+
+    async def _recorded_pardons(round_id: int) -> list:
+        return await attendance_after_review_of(db_path).recorded_pardons(round_id)
+
+    hook.recorded_pardons = AsyncMock(side_effect=_recorded_pardons)
 
     with in_a_job():
         state = await run_amendment_review_stages(
