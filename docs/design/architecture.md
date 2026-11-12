@@ -146,13 +146,13 @@ point, which would then hold every module's registrations and grow with each mod
   discord.py binds a cog's group to the cog together with every child beneath it, wherever the child
   was declared. What matters is that the cog holds the parent group, not which class declares the
   subgroup. A class that has one subclass and shares no behaviour is the price, accepted for keeping
-  each file to one subgroup. A module's
-  commands sit under its own top-level group, never under one of core's: `/weather channel`, not
-  `/division weather-channel`. So do its tools for test mode, which sit under the module's group and
-  work only while test mode is on, rather than under `/test-mode`. A command's name then says which
-  module owns it, and the module's code stays in its folder. discord.py binds a subcommand only to
-  the cog that declares its group (`steward_module.md` §5), so a module's command under core's group
-  would have to be written in core's cog, or bound to the module by hand.
+  each file to one subgroup. A module's commands sit under its own top-level group, never under one
+  of core's: `/weather channel`, not `/division weather-channel`. So do its tools for test mode,
+  which sit under the module's group and work only while test mode is on, rather than under
+  `/test-mode`. A command's name then says which module owns it, and the module's code stays in its
+  folder. discord.py binds a subcommand only to the cog that declares its group (`steward_module.md`
+  §5), so a module's command under core's group would have to be written in core's cog, or bound to
+  the module by hand.
 
   *Rejected:* core's cog holding a module's commands and handing the work to the module through a
   hook, which puts part of every module in core. *Rejected:* a module binding its own commands to
