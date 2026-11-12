@@ -1,6 +1,6 @@
 """The amendment mode's writers, moved to results and run on the change queue (#439, slice 7).
 
-`results/services/amendment_mode_service.py` writes amendment mode, its modification store and its
+`results/services/points/amendment_mode_service.py` writes amendment mode, its modification store and its
 modified flag on the connection a settings change hands it, committing nothing, and returns what
 it did: whether anything changed, and the audit entries the queue saves with it. Each test builds
 season 1, under way and scoring on `Standard` (Feature Race P1 25, P2 18, a fastest-lap bonus of 1
@@ -68,7 +68,7 @@ async def _rows(db_path: str, sql: str) -> list[tuple[Any, ...]]:
 
 async def _save(db_path: str, name: str, *args: Any, **kwargs: Any) -> Any:
     """Call the writer *name* on a connection of its own and commit, as the queue's save does."""
-    from leaguebot.results.services import amendment_mode_service
+    from leaguebot.results.services.points import amendment_mode_service
 
     async with get_connection(db_path) as db:
         saved = await getattr(amendment_mode_service, name)(db, *args, **kwargs)
@@ -163,7 +163,7 @@ async def test_staging_a_fastest_lap_keeps_the_other_column(tmp_path):
 async def test_the_mode_writers_commit_nothing(tmp_path):
     """Each writer, its connection closed without a commit, leaves the season as it was:
     turning the mode on, staging P1 at 27 and reverting a staged P1 of 26."""
-    from leaguebot.results.services import amendment_mode_service as service
+    from leaguebot.results.services.points import amendment_mode_service as service
 
     off = await _season(tmp_path / "off")
     on = await _season(tmp_path / "on", amend=True, staged=True)
@@ -183,7 +183,7 @@ async def test_the_mode_writers_commit_nothing(tmp_path):
 async def test_validate_modification_ordering_passes_a_table_running_down(tmp_path):
     """Season 1 in amendment mode with the Feature Race's P1 staged at 30 over P2's 18: the
     staged table still runs down, so the approval's ordering check finds nothing."""
-    from leaguebot.results.services.amendment_mode_service import validate_modification_ordering
+    from leaguebot.results.services.points.amendment_mode_service import validate_modification_ordering
 
     db_path = await _season(tmp_path, amend=True)
     await _save(db_path, "stage_points_on", SEASON_ID, CONFIG, "FEATURE_RACE", [(1, 30)])
@@ -194,7 +194,7 @@ async def test_validate_modification_ordering_passes_a_table_running_down(tmp_pa
 async def test_validate_modification_ordering_names_a_staged_inversion(tmp_path):
     """Season 1 in amendment mode with the Feature Race's P2 staged at 30, above P1's 25: one
     ordering error, naming the configuration and the session."""
-    from leaguebot.results.services.amendment_mode_service import validate_modification_ordering
+    from leaguebot.results.services.points.amendment_mode_service import validate_modification_ordering
 
     db_path = await _season(tmp_path, amend=True)
     await _save(db_path, "stage_points_on", SEASON_ID, CONFIG, "FEATURE_RACE", [(2, 30)])
@@ -209,7 +209,7 @@ async def test_validate_modification_ordering_names_a_staged_inversion(tmp_path)
 async def test_validate_modification_ordering_judges_each_session_on_its_own(tmp_path):
     """A qualifying table staged worth 1 for P1 and 3 for P2 is wrong; it does not make the
     race table, still 25 and 18, wrong: one error, naming the qualifying session."""
-    from leaguebot.results.services.amendment_mode_service import validate_modification_ordering
+    from leaguebot.results.services.points.amendment_mode_service import validate_modification_ordering
 
     db_path = await _season(tmp_path, amend=True)
     await _save(db_path, "stage_points_on", SEASON_ID, CONFIG, "FEATURE_QUALIFYING", [(1, 1), (2, 3)])
@@ -244,7 +244,7 @@ async def test_the_modification_store_diff_lists_each_staged_change(tmp_path, st
     scores on (P1 25, P2 18): nothing staged says so; P1 staged at 26 is one change, counted in
     the singular; P2 taken out and P3 staged at 5 are two, in position order, a position the
     season lacks shown as "?" and one the store lacks as "(removed)"."""
-    from leaguebot.results.services.amendment_mode_service import get_modification_store_diff
+    from leaguebot.results.services.points.amendment_mode_service import get_modification_store_diff
 
     db_path = await _season(tmp_path, amend=True, staged=staged is True)
     if staged == "removal and addition":

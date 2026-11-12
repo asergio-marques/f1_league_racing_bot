@@ -31,7 +31,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.scoring import _apply_points_in_tx
+from leaguebot.results.services.points.scoring import _apply_points_in_tx
 from tests.support.session_writes import apply_points_from_config as _apply_points_from_config
 from tests.support.teams import seed_team_instances
 

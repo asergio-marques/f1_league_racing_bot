@@ -17,7 +17,7 @@ from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.models.session_result import OutcomeModifier
 from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.results.services.scoring import _apply_points_from_config_on
+from leaguebot.results.services.points.scoring import _apply_points_from_config_on
 from leaguebot.results.services.submission.result_submission_service import (
     CollectedSession,
     _PROFILES_IN_ROUND_SQL,

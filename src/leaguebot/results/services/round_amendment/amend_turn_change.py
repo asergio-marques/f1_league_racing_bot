@@ -432,7 +432,7 @@ def turn_steps(
 
 
 async def _attached_configs(db_path: str, season_id: int) -> list[str]:
-    from leaguebot.results.services.season_points_service import get_attached_config_names
+    from leaguebot.results.services.points.season_points_service import get_attached_config_names
 
     return await get_attached_config_names(db_path, season_id)
 

@@ -54,7 +54,7 @@ CONFIG = "100%"
 
 def _notice() -> tuple[Any, str, str]:
     """`ordering_notice` and the two consequences it names, where the service keeps them."""
-    from leaguebot.results.services.points_config_service import (
+    from leaguebot.results.services.points.points_config_service import (
         BLOCKS_AMENDMENT,
         BLOCKS_APPROVAL,
         ordering_notice,

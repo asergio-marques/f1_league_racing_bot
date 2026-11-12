@@ -589,7 +589,7 @@ def register_change_types(bot: LeagueBot) -> None:
         wind_down_change,
     )
     from leaguebot.image.services.image_render_service import discard_render
-    from leaguebot.results.services.season_points_service import snapshot_configs_to_season_on
+    from leaguebot.results.services.points.season_points_service import snapshot_configs_to_season_on
     from leaguebot.core.services.queue.setting_change import setting_change
 
     bot.change_queue.register(hub_refresh_change(

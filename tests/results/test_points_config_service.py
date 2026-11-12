@@ -7,7 +7,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.points_config_service import (
+from leaguebot.results.services.points.points_config_service import (
     config_exists,
     get_config_entries,
     setup_seasons_linking,
@@ -219,7 +219,7 @@ async def test_set_session_points_many_writes_every_pair_in_one_transaction(db_p
     """Every pair lands on the connection the save hands it, and each position it changed is
     answered as an audit entry, from what it was to what it became; the queue stamps who and
     when and writes them, so the writer itself writes no audit row and commits nothing."""
-    from leaguebot.results.services.points_config_service import config_points_on
+    from leaguebot.results.services.points.points_config_service import config_points_on
 
     await create_config(db_path, config_name="Standard")
     await set_session_points(db_path, "Standard", SessionType.FEATURE_RACE, 1, 20)
@@ -260,6 +260,6 @@ def test_points_value_refusal_follows_the_bulk_rule(given, refusal):
     """A single position, points value or fastest-lap limit is held to the bulk paste's rule: a
     position or a limit below 1, or points below 0, is refused in the paste's words, the position
     judged before the points; anything else passes."""
-    from leaguebot.results.services.points_config_service import points_value_refusal
+    from leaguebot.results.services.points.points_config_service import points_value_refusal
 
     assert points_value_refusal(**given) == refusal

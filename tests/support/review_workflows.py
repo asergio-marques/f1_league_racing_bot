@@ -35,7 +35,7 @@ def sign_up_confirmation_refused(bot: Any) -> None:
     from leaguebot.core.utils.hooks import AwaitedHook
 
     async def results_refusals(*args: Any, **kwargs: Any) -> Any:
-        from leaguebot.results.services import season_points_service
+        from leaguebot.results.services.points import season_points_service
 
         return await season_points_service.confirmation_refusals(
             bot.module_service, bot.db_path, *args, **kwargs

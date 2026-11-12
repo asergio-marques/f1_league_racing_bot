@@ -162,13 +162,13 @@ async def test_a_fault_after_the_audit_write_undoes_both_the_entries_and_the_poi
     with pytest.raises(sqlite3.Error):
         async with get_connection(db_path) as db:
             if writer == "bulk config":
-                from leaguebot.results.services.points_config_service import config_points_on
+                from leaguebot.results.services.points.points_config_service import config_points_on
 
                 saved = await config_points_on(
                     db, "Standard", SessionType.FEATURE_RACE, [(1, 25), (2, 18)]
                 )
             elif writer == "xml import":
-                from leaguebot.results.services.points_config_service import (
+                from leaguebot.results.services.points.points_config_service import (
                     xml_import_config_on,
                 )
 
@@ -179,7 +179,7 @@ async def test_a_fault_after_the_audit_write_undoes_both_the_entries_and_the_poi
                     {SessionType.FEATURE_RACE: (2, 10)},
                 )
             else:
-                from leaguebot.results.services.amendment_mode_service import stage_points_on
+                from leaguebot.results.services.points.amendment_mode_service import stage_points_on
 
                 saved = await stage_points_on(
                     db, 1, "Standard", "FEATURE_RACE", [(1, 30), (2, 18)]

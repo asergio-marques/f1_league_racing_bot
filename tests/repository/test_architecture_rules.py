@@ -2519,7 +2519,7 @@ SPLICED_READS_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
         "core's own settings tables, `SERVER_SOURCES` and `DIVISION_SOURCES`, and core's "
         "`season_review_prompts` and `pending_messages`",
     ),
-    ("results/services/amendment_mode_service.py", "_staged_rows_on"):
+    ("results/services/points/amendment_mode_service.py", "_staged_rows_on"):
         (1, "results' own live and staged points tables"),
     ("results/services/round_amendment/amendment_writes.py", "_repoint_verdicts"):
         (1, "results' own session result tables"),
@@ -2527,7 +2527,7 @@ SPLICED_READS_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
         (1, "results' own session result tables"),
     ("results/services/review/review_posting.py", "withdraw_round_standings_on"):
         (1, "results' own standings snapshots"),
-    ("results/services/season_points_service.py", "_points_table"):
+    ("results/services/points/season_points_service.py", "_points_table"):
         (2, "results' own live and staged points tables, handed by its callers"),
     ("results/services/standings_service.py", "previous_standing_positions"):
         (1, "results' own standings snapshots"),
@@ -2664,11 +2664,11 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/review/penalty_wizard.py", "_render_prompt_content"): (2, PASS["results"]),
     ("results/services/review/penalty_wizard.py", "appeals_stage_refusal"): (1, PASS["results"]),
     ("results/services/review/penalty_wizard.py", "review_stage_refusal"): (1, PASS["results"]),
-    ("results/services/points_amendment_change.py", "_divisions"): (2, PASS["results"]),
-    ("results/services/points_amendment_change.py", "points_amendment_change.apply"):
+    ("results/services/points/points_amendment_change.py", "_divisions"): (2, PASS["results"]),
+    ("results/services/points/points_amendment_change.py", "points_amendment_change.apply"):
         (1, PASS["results"]),
-    ("results/services/points_config_service.py", "remove_config_on"): (1, PASS["results"]),
-    ("results/services/points_config_service.py", "setup_seasons_linking_on"): (1, PASS["results"]),
+    ("results/services/points/points_config_service.py", "remove_config_on"): (1, PASS["results"]),
+    ("results/services/points/points_config_service.py", "setup_seasons_linking_on"): (1, PASS["results"]),
     ("results/services/review/report_approval_change.py", "_latest_round"): (2, PASS["results"]),
     ("results/services/review/report_approval_change.py", "report_approval_change.apply"):
         (2, PASS["results"]),
@@ -2717,7 +2717,7 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/results_post_service.py", "results_sync_hint"): (2, PASS["results"]),
     ("results/services/results_post_service.py", "standings_display_names"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "standings_repost_status"): (1, PASS["results"]),
-    ("results/services/scoring.py", "<module>"): (3, PASS["results"]),
+    ("results/services/points/scoring.py", "<module>"): (3, PASS["results"]),
     ("results/services/results_purge_service.py", "erase_season_on"): (4, PASS["results"]),
     ("results/services/review/review_changes.py", "division_job_in_hand"): (2, PASS["results"]),
     ("results/services/review/review_lock_change.py", "_in_review"): (1, PASS["results"]),

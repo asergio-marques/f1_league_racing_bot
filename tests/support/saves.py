@@ -24,20 +24,20 @@ from leaguebot.image.services.image_config_service import (
     set_flag_on,
     set_tier_colours_on,
 )
-from leaguebot.results.services.amendment_mode_service import (
+from leaguebot.results.services.points.amendment_mode_service import (
     revert_on,
     set_amendment_mode_on,
     stage_fastest_lap_on,
     stage_points_on,
 )
-from leaguebot.results.services.points_config_service import (
+from leaguebot.results.services.points.points_config_service import (
     config_fastest_lap_on,
     config_points_on,
     create_config_on,
     remove_config_on,
     xml_import_config_on,
 )
-from leaguebot.results.services.season_points_service import attach_config_on, detach_config_on
+from leaguebot.results.services.points.season_points_service import attach_config_on, detach_config_on
 from leaguebot.weather.services.weather_config_service import (
     deadline_refusal,
     read_config_on,

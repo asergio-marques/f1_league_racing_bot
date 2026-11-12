@@ -53,7 +53,7 @@ from leaguebot.core.models.season import SeasonStage
 # Imported here, before any test patches `open_amendment_in_season`: the review imports this
 # module lazily, inside the patch, and its `from ... import open_amendment_in_season` would
 # otherwise bind the mock for the rest of the session and break every later test of the change.
-import leaguebot.results.services.points_amendment_change  # noqa: F401
+import leaguebot.results.services.points.points_amendment_change  # noqa: F401
 from leaguebot.results.cogs.results_cog import ResultsCog
 from tests.support.undecorate import undecorate
 
@@ -236,13 +236,13 @@ async def _review(
     discord.ui.View.wait = _wait  # type: ignore[assignment]
     try:
         with patch(
-            "leaguebot.results.services.amendment_mode_service.get_amendment_state",
+            "leaguebot.results.services.points.amendment_mode_service.get_amendment_state",
             new=AsyncMock(return_value=state),
         ), patch(
-            "leaguebot.results.services.amendment_mode_service.get_modification_store_diff",
+            "leaguebot.results.services.points.amendment_mode_service.get_modification_store_diff",
             new=AsyncMock(return_value=diff),
         ), patch(
-            "leaguebot.results.services.amendment_mode_service.validate_modification_ordering",
+            "leaguebot.results.services.points.amendment_mode_service.validate_modification_ordering",
             new=AsyncMock(return_value=panel_errors or []),
         ) as validate, patch(
             "leaguebot.core.services.rounds.amendment_service.approval_faults",
@@ -440,7 +440,7 @@ async def test_the_panel_does_not_refuse_the_button():
 async def test_approving_asks_the_queue_for_the_season_s_approval():
     """One ask, of the points approval's kind, naming the season by id and number, through
     the press and under the command's name."""
-    from leaguebot.results.services.points_amendment_change import KIND
+    from leaguebot.results.services.points.points_amendment_change import KIND
 
     cog = _make_cog()
     interaction = _interaction()

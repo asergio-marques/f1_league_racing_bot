@@ -693,7 +693,7 @@ async def test_a_test_season_with_nothing_attached_is_refused_as_any_other(db_pa
     (decided 2026-09-23, #409). The approval once attached them itself where a test season had
     none, overriding a manager who had detached both on purpose.
     """
-    from leaguebot.results.services import season_points_service
+    from leaguebot.results.services.points import season_points_service
 
     cog = _cog_with_results(db_path)
     cog.bot.config_service.get_server_config = AsyncMock(

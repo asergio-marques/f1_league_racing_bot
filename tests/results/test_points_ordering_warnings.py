@@ -34,7 +34,7 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.season import SeasonStage
 from leaguebot.results.cogs.results_cog import ResultsCog
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services import points_config_service
+from leaguebot.results.services.points import points_config_service
 from tests.support import saves
 from tests.support.change_queue import MEMBER_ID, run_queue
 from tests.support.settings_league import (

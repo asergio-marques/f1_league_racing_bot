@@ -12,7 +12,7 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.utils.league_bot import LeagueBot
-from leaguebot.results.services.scoring import _recompute_session_points_on
+from leaguebot.results.services.points.scoring import _recompute_session_points_on
 
 if TYPE_CHECKING:
     from leaguebot.results.services.review.penalty_wizard import PenaltyReviewState

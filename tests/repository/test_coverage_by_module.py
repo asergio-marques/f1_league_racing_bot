@@ -93,7 +93,7 @@ def test_known_files_are_classified(path, expected):
         # The signup review panel, the points amendment, and fetching a portrait.
         ("src/leaguebot/signup/cogs/admin_review_cog.py", "signup"),
         ("src/leaguebot/results/models/amendment_state.py", "results"),
-        ("src/leaguebot/results/services/season_points_service.py", "results"),
+        ("src/leaguebot/results/services/points/season_points_service.py", "results"),
         ("src/leaguebot/image/services/driver_portrait_service.py", "image"),
     ],
 )

@@ -56,7 +56,7 @@ def sign_up_to_confirmation_refused(bot: "LeagueBot") -> None:
     """Sign results' refusals up to the hook a season's confirmation is refused through: handed the
     league's modules and the database, then the season and which confirmation is judged. Results
     checks its own switch."""
-    from leaguebot.results.services import season_points_service
+    from leaguebot.results.services.points import season_points_service
 
     bot.confirmation_refused.subscribe(partial(
         season_points_service.confirmation_refusals, bot.module_service, bot.db_path
@@ -86,7 +86,7 @@ def sign_up_to_test_mode_turned_on(bot: "LeagueBot") -> None:
     on the connection of the save that turns test mode on, given the season's id (architecture.md,
     "How modules and core fit together"). Results' seeding runs whether or not the results module
     is on, as the core specification's test mode section says without a condition."""
-    from leaguebot.results.services import points_config_service
+    from leaguebot.results.services.points import points_config_service
 
     bot.test_mode_turned_on.subscribe(points_config_service.seed_test_configs_on)
 
@@ -128,7 +128,7 @@ def sign_up_to_season_end_refused(bot: "LeagueBot") -> None:
 def sign_up_to_review_sections(bot: "LeagueBot") -> None:
     """Sign results' section up to the hook a season review gathers its lines through: handed
     which review is gathered, the season and its divisions, it checks its own switch."""
-    from leaguebot.results.services import season_points_service
+    from leaguebot.results.services.points import season_points_service
 
     bot.review_sections_read.subscribe(partial(
         season_points_service.review_section, bot.module_service, bot.db_path
@@ -308,13 +308,13 @@ def register_change_types(
         amend_stage_one_change,
         amend_turn_change,
     )
-    from leaguebot.results.services.amendment_settings import amendment_settings
+    from leaguebot.results.services.points.amendment_settings import amendment_settings
     from leaguebot.results.services.round_amendment.amendment_stage_changes import amendment_stage_changes
     from leaguebot.results.services.review.appeals_approval_change import appeals_approval_change
     from leaguebot.results.services.channel_settings import results_channel_settings
     from leaguebot.results.services.module_switch_settings import module_on_results
-    from leaguebot.results.services.points_amendment_change import points_amendment_change
-    from leaguebot.results.services.points_settings import points_settings
+    from leaguebot.results.services.points.points_amendment_change import points_amendment_change
+    from leaguebot.results.services.points.points_settings import points_settings
     from leaguebot.results.services.review.report_approval_change import report_approval_change
     from leaguebot.results.services.results_off_change import results_off_change
     from leaguebot.results.services.submission.resubmission_changes import (

@@ -24,7 +24,7 @@ import pytest
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.cogs.results_cog import ResultsCog, _ConfirmRemoveConfigView
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services import points_config_service, season_points_service
+from leaguebot.results.services.points import points_config_service, season_points_service
 from tests.support import saves
 from tests.support.change_queue import MEMBER_ID, change_rows, member, run_queue
 from tests.support.settings_league import interaction, last_said, said, settings_league

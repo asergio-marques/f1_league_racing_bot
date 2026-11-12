@@ -21,7 +21,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services import points_config_service, season_points_service
+from leaguebot.results.services.points import points_config_service, season_points_service
 from tests.support.season_points import snapshot_points
 from tests.support.delete_hooks import DRIVER_HOOKS, delete_hooks
 
@@ -30,7 +30,7 @@ SERVER_ID = 9310
 
 async def _seed(db_path, season_id):
     """Results' part of test mode turned on, in a save of its own; the names it newly created."""
-    from leaguebot.results.services.points_config_service import seed_test_configs_on
+    from leaguebot.results.services.points.points_config_service import seed_test_configs_on
 
     async with get_connection(db_path) as db:
         created = await seed_test_configs_on(db, season_id)

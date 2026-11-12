@@ -53,7 +53,7 @@ async def modification_ordering_warnings_on(
     can judge the table it has just written.
 
     The modification store's answer to
-    :func:`leaguebot.results.services.points_config_service.ordering_warnings_on`, and given on
+    :func:`leaguebot.results.services.points.points_config_service.ordering_warnings_on`, and given on
     the same terms: a staged edit that breaks the ordering **warns and still applies**. A manager
     restructuring a table mid-season moves through the same transient states as one building it in
     the first place, and the refusal waits for the approval, which is where the table would stop

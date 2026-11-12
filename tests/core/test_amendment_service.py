@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.results.services.amendment_mode_service import get_amendment_state
+from leaguebot.results.services.points.amendment_mode_service import get_amendment_state
 from tests.support.change_queue import run_queue, stopped_job
 from tests.support.saves import (
     enable_amendment_mode,
@@ -846,7 +846,7 @@ async def _approve(path: str, season_id: int, bot):
     `/results amend review`'s Approve button asks it (#439, slice 3). Returns the press, whose
     reply is the queue's acknowledgement, or the refusal the change's check gave at once.
     """
-    from leaguebot.results.services.points_amendment_change import KIND
+    from leaguebot.results.services.points.points_amendment_change import KIND
     from tests.support.change_queue import league_queue, member_interaction, run_queue, tier_member
 
     async with get_connection(path) as db:
@@ -2156,7 +2156,7 @@ async def test_a_rescore_that_fails_changes_nothing(db_path, monkeypatch):
     they stood. Nothing is reposted, and the log records no success."""
     import sqlite3
 
-    from leaguebot.results.services import scoring
+    from leaguebot.results.services.points import scoring
 
     path, season_id = db_path
     await _seed_points_config(path, season_id)

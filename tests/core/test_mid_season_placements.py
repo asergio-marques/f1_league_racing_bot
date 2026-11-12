@@ -614,7 +614,7 @@ async def test_only_the_image_checks_of_the_configuration_review_are_repeated(mo
     cog.bot.module_service.is_signup_enabled = AsyncMock(return_value=True)
     cog.image_configuration_faults = AsyncMock(return_value=["Inkscape is not installed."])
     # Results' points gates, stood in where results keeps them (#283).
-    from leaguebot.results.services import season_points_service
+    from leaguebot.results.services.points import season_points_service
 
     missing = AsyncMock(return_value=["Standrad"])
     ordering = AsyncMock(return_value=["P2 beats P1"])

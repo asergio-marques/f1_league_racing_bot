@@ -5,8 +5,8 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services import season_points_service
-from leaguebot.results.services.season_points_service import (
+from leaguebot.results.services.points import season_points_service
+from leaguebot.results.services.points.season_points_service import (
     get_season_points_view,
     validate_monotonic_ordering,
 )
@@ -67,7 +67,7 @@ async def _attach_verdict(tmp_path, *, status: str, name: str):
     Returns the league, the season's id and the check's verdict."""
     from leaguebot.core.models.change import ChangeOrigin
     from leaguebot.core.services.queue.change_types import CheckContext
-    from leaguebot.results.services.points_settings import points_settings
+    from leaguebot.results.services.points.points_settings import points_settings
 
     league = await settings_league(tmp_path, modules=("results",))
     season_id = await _make_season(league.db_path, status=status)
@@ -103,7 +103,7 @@ async def test_attach_config_blocked_outside_setup(tmp_path):
 async def test_attach_config_success_in_setup(db_path):
     """Attaching "CFG" to a season in setup, on the save's connection: the season holds it,
     and the write answers that it changed something, with one `POINTS_CONFIG_ATTACH` entry."""
-    from leaguebot.results.services.season_points_service import attach_config_on
+    from leaguebot.results.services.points.season_points_service import attach_config_on
 
     season_id = await _make_season(db_path, status="SETUP")
     await _make_config_with_entries(db_path, "CFG")
@@ -535,7 +535,7 @@ async def test_staged_points_are_installed_on_the_save_handed_and_kept_only_when
     """The install writes on the connection it is handed and commits nothing: left uncommitted,
     the season keeps its points, the working copy and the mode; committed, the season scores on
     the staged table, the working copy is emptied and amendment mode is off."""
-    from leaguebot.results.services.season_points_service import install_staged_points_on
+    from leaguebot.results.services.points.season_points_service import install_staged_points_on
 
     season_id = await _season_mid_amendment(db_path, staged_fl=2)
     async with get_connection(db_path) as db:
@@ -570,7 +570,7 @@ async def test_installing_returns_each_value_changed_by_its_session_label(db_pat
     """What the install returns names every value it changed, before and after, a session by
     its label: the approval's success line and its audit record are formed from it. A value
     staged unchanged (P2, 18) is not named."""
-    from leaguebot.results.services.season_points_service import install_staged_points_on
+    from leaguebot.results.services.points.season_points_service import install_staged_points_on
 
     season_id = await _season_mid_amendment(db_path, staged_fl=2, staged_limit=5)
     async with get_connection(db_path) as db:
@@ -596,7 +596,7 @@ async def test_installing_refuses_writing_nothing_where_amendment_mode_is_off_or
     approved, or the mode turned off) or a staged table out of order refuses, with the reply the
     admin is given and, for the ordering, the errors as its reason. Nothing is written, even where
     the caller commits afterwards."""
-    from leaguebot.results.services.season_points_service import (
+    from leaguebot.results.services.points.season_points_service import (
         StagedPointsNotApprovable,
         install_staged_points_on,
     )
@@ -649,7 +649,7 @@ async def test_the_snapshot_is_written_on_the_save_handed(db_path):
     """Results is on and a season in setup has `Standard` attached, paying 25, 18 and 15 for the
     Feature Race. Copied on a connection, the season's store holds those three on that
     connection; rolled back, it holds nothing."""
-    from leaguebot.results.services.season_points_service import snapshot_configs_to_season_on
+    from leaguebot.results.services.points.season_points_service import snapshot_configs_to_season_on
 
     season_id = await _make_season(db_path)
     await _make_config_with_entries(db_path, "Standard")
@@ -676,7 +676,7 @@ async def test_the_snapshot_writes_nothing_while_results_is_off(db_path, switch)
     """A season in setup has `Standard` attached, and results has never been switched on, or
     has been switched off. Copied on a connection and committed, the season's store holds
     nothing."""
-    from leaguebot.results.services.season_points_service import snapshot_configs_to_season_on
+    from leaguebot.results.services.points.season_points_service import snapshot_configs_to_season_on
 
     season_id = await _make_season(db_path)
     await _make_config_with_entries(db_path, "Standard")

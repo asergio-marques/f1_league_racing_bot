@@ -941,7 +941,7 @@ async def test_recompute_session_points_on_raises_and_skips_unconfigured(tmp_pat
     from unittest.mock import AsyncMock, patch
 
     from leaguebot.core.db.database import get_connection, run_migrations
-    from leaguebot.results.services.scoring import _recompute_session_points_on
+    from leaguebot.results.services.points.scoring import _recompute_session_points_on
 
     db_path = str(tmp_path / "test.db")
     await run_migrations(db_path)
@@ -960,7 +960,7 @@ async def test_recompute_session_points_on_raises_and_skips_unconfigured(tmp_pat
             sessions[session_type] = cursor.lastrowid
         await db.commit()
 
-    target = "leaguebot.results.services.scoring._apply_points_in_tx"
+    target = "leaguebot.results.services.points.scoring._apply_points_in_tx"
     failing = AsyncMock(side_effect=RuntimeError("the points could not be calculated"))
     async with get_connection(db_path) as db:
         with patch(target, new=failing), pytest.raises(RuntimeError):

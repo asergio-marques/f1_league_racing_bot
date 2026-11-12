@@ -34,16 +34,16 @@ from leaguebot.core.services.queue.change_types import CheckContext
 from leaguebot.core.services.queue.setting_change import NOTHING_SAVED, SAVE, Saved, Setting
 from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services import amendment_mode_service
-from leaguebot.results.services.points_amendment_change import approval_in_hand, staging_refusal
-from leaguebot.results.services.points_config_service import (
+from leaguebot.results.services.points import amendment_mode_service
+from leaguebot.results.services.points.points_amendment_change import approval_in_hand, staging_refusal
+from leaguebot.results.services.points.points_config_service import (
     BLOCKS_AMENDMENT,
     STANDS_BLOCKS_AMENDMENT,
     ordering_notice,
     points_value_refusal,
 )
-from leaguebot.results.services.points_settings import MODULE_OFF
-from leaguebot.results.services.season_points_service import get_attached_config_names
+from leaguebot.results.services.points.points_settings import MODULE_OFF
+from leaguebot.results.services.points.season_points_service import get_attached_config_names
 
 if TYPE_CHECKING:
     import aiosqlite

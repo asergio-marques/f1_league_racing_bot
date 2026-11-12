@@ -35,12 +35,9 @@ from leaguebot.core.models.season import SeasonStatus
 from leaguebot.core.services.queue.setting_change import NOTHING_SAVED, SAVE, Saved, Setting
 from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services import (
-    points_config_service,
-    results_post_service,
-    season_points_service,
-)
-from leaguebot.results.services.points_config_service import (
+from leaguebot.results.services import results_post_service
+from leaguebot.results.services.points import points_config_service, season_points_service
+from leaguebot.results.services.points.points_config_service import (
     BLOCKS_APPROVAL,
     STANDS_BLOCKS_APPROVAL,
     ordering_notice,

@@ -14,14 +14,14 @@ from discord.ext import commands
 
 from leaguebot.core.models.season import Season
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services import points_config_service, season_points_service
-from leaguebot.results.services.amendment_settings import (
+from leaguebot.results.services.points import points_config_service, season_points_service
+from leaguebot.results.services.points.amendment_settings import (
     AMEND_FASTEST_LAP,
     AMEND_MODE,
     AMEND_POINTS,
     AMEND_REVERT,
 )
-from leaguebot.results.services.points_settings import (
+from leaguebot.results.services.points.points_settings import (
     CONFIG_ADD,
     CONFIG_ATTACH,
     CONFIG_DETACH,
@@ -32,7 +32,7 @@ from leaguebot.results.services.points_settings import (
     RESERVES,
     reserves_toggle_request,
 )
-from leaguebot.results.services.points_config_service import ConfigNotFoundError
+from leaguebot.results.services.points.points_config_service import ConfigNotFoundError
 from leaguebot.results.services.channel_settings import (
     NO_ACCESS,
     NOT_ENABLED,
@@ -205,7 +205,7 @@ async def _approval_holds_staging(
     out"), so the six staging commands leave the working copy and amendment mode alone, naming the
     job. True where *interaction* was refused (#439, slice 3).
     """
-    from leaguebot.results.services.points_amendment_change import (
+    from leaguebot.results.services.points.points_amendment_change import (
         approval_in_hand,
         staging_refusal,
     )
@@ -1179,7 +1179,7 @@ class ResultsCog(commands.Cog):
         if not await self._module_gate(interaction):
             return
 
-        from leaguebot.results.services.amendment_mode_service import (
+        from leaguebot.results.services.points.amendment_mode_service import (
             get_amendment_state,
         )
 
@@ -1379,7 +1379,7 @@ class ResultsCog(commands.Cog):
         await interaction.response.defer(ephemeral=True)
 
         from leaguebot.core.services.rounds.amendment_service import approval_faults
-        from leaguebot.results.services.amendment_mode_service import (
+        from leaguebot.results.services.points.amendment_mode_service import (
             get_amendment_state,
             get_modification_store_diff,
             validate_modification_ordering,
@@ -1438,7 +1438,7 @@ class ResultsCog(commands.Cog):
         # until its last stage is approved; approving here reposts every round of every
         # division from the same database, and would publish them unapproved. Shown in the
         # panel and read again at the press, as the two refusals above are.
-        from leaguebot.results.services.points_amendment_change import KIND, held_text
+        from leaguebot.results.services.points.points_amendment_change import KIND, held_text
         from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_season
 
         held = await open_amendment_in_season(self.bot.db_path, season.id)

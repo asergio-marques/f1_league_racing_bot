@@ -376,7 +376,7 @@ async def rescore_season(db: aiosqlite.Connection, season_id: int) -> None:
     waits on nothing but *db*: no Discord, no names, no connection of its own, so the caller's
     transaction is held for the scoring alone.
     """
-    from leaguebot.results.services import scoring
+    from leaguebot.results.services.points import scoring
 
     cursor = await db.execute(
         "SELECT sr.id AS session_result_id, sr.config_name, sr.session_type "

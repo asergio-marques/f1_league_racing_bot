@@ -83,7 +83,7 @@ def _gates_of(cog):
     """Each gate *cog* stands in for, patched on `approval_checks`, or on results' service for a
     points gate, for as long as it is held."""
     from leaguebot.core.services.seasons import approval_checks
-    from leaguebot.results.services import season_points_service
+    from leaguebot.results.services.points import season_points_service
 
     with ExitStack() as stack:
         for module, gates in ((approval_checks, _GATES), (season_points_service, _POINTS_GATES)):

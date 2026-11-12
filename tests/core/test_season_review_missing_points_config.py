@@ -53,7 +53,7 @@ async def _problems(db_path) -> list[str]:
     """The attached points configurations of the season that no longer exist, the gate handed
     the database alone (issue #240: a reader that grew a second dependency could not be given
     one here)."""
-    from leaguebot.results.services import season_points_service
+    from leaguebot.results.services.points import season_points_service
 
     return await season_points_service.missing_points_config_problems(db_path, SEASON_ID)
 
@@ -81,8 +81,8 @@ async def _attach_phantom(db_path, config_name: str) -> None:
 #: Where each surface lives: results' section of the placements review, and results' refusals of a
 #: season's confirmation, which the approval and the configuration's gate read through core's hook.
 _FILES = {
-    "review_section": "results/services/season_points_service.py",
-    "confirmation_refusals": "results/services/season_points_service.py",
+    "review_section": "results/services/points/season_points_service.py",
+    "confirmation_refusals": "results/services/points/season_points_service.py",
 }
 
 

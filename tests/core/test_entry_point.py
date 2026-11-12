@@ -447,7 +447,7 @@ _FINAL_PARTS = (
 #: and what the test calls it, in the order the builder signs them up. Each seeds what the module
 #: seeds for a season under test, on the connection of the save that turns test mode on.
 _TEST_MODE_PARTS = (
-    ("leaguebot.results.services.points_config_service", "seed_test_configs_on",
+    ("leaguebot.results.services.points.points_config_service", "seed_test_configs_on",
      "results' points configurations"),
 )
 
@@ -1168,7 +1168,7 @@ _REVIEW_SECTION_PARTS = (
     ("leaguebot.signup.services.signup_module_service", "review_section", "signup's section"),
     ("leaguebot.attendance.services.attendance_service", "review_section",
      "attendance's section"),
-    ("leaguebot.results.services.season_points_service", "review_section", "results' section"),
+    ("leaguebot.results.services.points.season_points_service", "review_section", "results' section"),
     ("leaguebot.weather.services.weather_config_service", "review_section", "weather's section"),
 )
 
@@ -1203,7 +1203,7 @@ async def test_the_builder_signs_results_up_to_a_confirmation_refused(tmp_path, 
     """Straight after `build`, results' refusals are signed up to the hook a season's confirmation
     is refused through, nothing called yet: handed the league's modules and the database, then
     what the hook is called with (the season, and which confirmation is judged)."""
-    from leaguebot.results.services import season_points_service
+    from leaguebot.results.services.points import season_points_service
 
     called: list[tuple] = []
 

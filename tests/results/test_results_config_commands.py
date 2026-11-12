@@ -253,7 +253,7 @@ async def test_the_question_names_every_season_at_risk(tmp_path):
     league = await _league(tmp_path)
 
     with patch(
-        "leaguebot.results.services.points_config_service.setup_seasons_linking",
+        "leaguebot.results.services.points.points_config_service.setup_seasons_linking",
         AsyncMock(return_value=[(1, 3), (2, 4)]),
     ):
         asked = await _remove(league)
