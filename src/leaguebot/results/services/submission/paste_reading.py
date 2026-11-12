@@ -760,15 +760,10 @@ async def other_active_team_assignments(
         # A session recorded before the driver changed account stands under the old one;
         # the check compares drivers, so both are read as the account in use (issue #243).
         from leaguebot.core.services.drivers.driver_service import current_account_map
+        from leaguebot.core.services.seasons.season_service import round_facts_on
 
-        cursor = await db.execute(
-            "SELECT 1 FROM rounds r JOIN divisions d ON d.id = r.division_id "
-            "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?",
-            (round_id,),
-        )
-        server_row = await cursor.fetchone()
         current_of = (
-            await current_account_map(db) if server_row else {}
+            await current_account_map(db) if await round_facts_on(db, round_id) else {}
         )
 
     result: dict[int, tuple[int, str]] = {}
