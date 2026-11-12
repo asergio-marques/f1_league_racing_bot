@@ -10,11 +10,12 @@ from datetime import datetime, timezone
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.round import RoundFormat, RoundStatus
-from leaguebot.core.models.season import SeasonStatus
+from leaguebot.core.models.season import SeasonStage, SeasonStatus
 from leaguebot.core.services.seasons.season_service import (
     RoundFacts,
     division_on,
     final_round_ids_among_on,
+    live_season_on,
     round_facts_on,
     rounds_from_on,
 )
@@ -143,3 +144,23 @@ async def test_no_rounds_are_read_from_a_round_that_is_not_there(tmp_path):
     round_id = await _seed(path)
     async with get_connection(path) as db:
         assert await rounds_from_on(db, 4, round_id + 50) == []
+
+
+async def test_the_live_season_is_read_on_the_handed_connection_with_its_stage(tmp_path):
+    path = str(tmp_path / "league.db")
+    await _seed(path)
+    async with get_connection(path) as db:
+        season = await live_season_on(db)
+        assert season is not None and season.id == 7
+        assert season.stage != SeasonStage.PENDING_COMPLETION
+        await db.execute("UPDATE seasons SET stage = 'PENDING_COMPLETION' WHERE id = 7")
+        moved = await live_season_on(db)
+        assert moved is not None and moved.stage == SeasonStage.PENDING_COMPLETION
+
+
+async def test_no_live_season_is_none(tmp_path):
+    path = str(tmp_path / "league.db")
+    await _seed(path)
+    async with get_connection(path) as db:
+        await db.execute("UPDATE seasons SET status = 'COMPLETED' WHERE id = 7")
+        assert await live_season_on(db) is None

@@ -1324,12 +1324,19 @@ async def live_season(db_path: str) -> Season | None:
     database and no service: a queued change's check reads the season through it.
     """
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT id, start_date, status, season_number, stage FROM seasons "
-            "WHERE status IN ('SETUP', 'ACTIVE') "
-            "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
-        )
-        row = await cursor.fetchone()
+        return await live_season_on(db)
+
+
+async def live_season_on(db: aiosqlite.Connection) -> Season | None:
+    """`live_season` on *db*, a connection the caller holds: what a save has written there is
+    read back with the rest. For a module planning inside its own save that needs the live
+    season's stage (architecture.md, "The database"). It writes nothing and commits nothing."""
+    cursor = await db.execute(
+        "SELECT id, start_date, status, season_number, stage FROM seasons "
+        "WHERE status IN ('SETUP', 'ACTIVE') "
+        "ORDER BY CASE status WHEN 'ACTIVE' THEN 0 ELSE 1 END, id DESC LIMIT 1",
+    )
+    row = await cursor.fetchone()
     if row is None:
         return None
     return _row_to_season(row)
