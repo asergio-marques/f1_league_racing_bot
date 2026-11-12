@@ -429,7 +429,7 @@ async def test_approving_with_penalties_finalises_the_review():
     view = PenaltyReviewView(state)
 
     with patch(
-        "leaguebot.results.services.result_submission_service.finalize_penalty_review",
+        "leaguebot.results.services.submission.result_submission_service.finalize_penalty_review",
         new=AsyncMock(return_value=None), create=True,
     ):
         await _press(view, "approve_btn", interaction)
@@ -474,7 +474,7 @@ async def test_resubmit_asks_the_queue_to_start_the_resubmission():
     view = PenaltyReviewView(state)
 
     with patch(
-        "leaguebot.results.services.result_submission_service.enter_resubmit_flow",
+        "leaguebot.results.services.submission.result_submission_service.enter_resubmit_flow",
         new=AsyncMock(return_value=None), create=True,
     ):
         await _press(view, "resubmit_btn", interaction)
@@ -639,7 +639,7 @@ async def test_every_control_refuses_once_the_review_has_moved_on(monkeypatch, c
     with _approval_step() as approval, patch(
         "leaguebot.results.services.penalty_wizard._refresh_prompt", new=refresh
     ), patch(
-        "leaguebot.results.services.result_submission_service.enter_resubmit_flow", new=AsyncMock(),
+        "leaguebot.results.services.submission.result_submission_service.enter_resubmit_flow", new=AsyncMock(),
         create=True,
     ) as resubmit:
         if control.startswith("pw_"):
@@ -837,7 +837,7 @@ async def test_every_refused_press_of_the_penalty_review_is_recorded(
     interaction.message.id = _APPROVAL_MESSAGE if on_message else _APPROVAL_MESSAGE + 1
 
     with _approval_step() as approval, patch(
-        "leaguebot.results.services.result_submission_service.enter_resubmit_flow",
+        "leaguebot.results.services.submission.result_submission_service.enter_resubmit_flow",
         new=AsyncMock(return_value=None), create=True,
     ) as resubmit:
         await button.callback(interaction)

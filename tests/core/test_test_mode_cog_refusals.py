@@ -33,7 +33,7 @@ from leaguebot.core.cogs.test_mode_cog import _RosterImportModal
 from leaguebot.core.services.upkeep import backup_service
 from leaguebot.core.services.test_mode import test_mode_service
 from leaguebot.core.utils import roster_import
-from leaguebot.results.services import result_submission_service
+from leaguebot.results.services.submission import result_submission_service
 from tests.support.undecorate import undecorate
 
 ADMIN_ID = 4242

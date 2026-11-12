@@ -268,11 +268,11 @@ def _finalisers():
     a stub bot."""
     return (
         patch(
-            "leaguebot.results.services.result_submission_service.finalize_penalty_review",
+            "leaguebot.results.services.submission.result_submission_service.finalize_penalty_review",
             new=AsyncMock(), create=True,
         ),
         patch(
-            "leaguebot.results.services.result_submission_service.finalize_appeals_review",
+            "leaguebot.results.services.submission.result_submission_service.finalize_appeals_review",
             new=AsyncMock(), create=True,
         ),
         patch("leaguebot.results.services.penalty_wizard._refresh_prompt", new=AsyncMock()),

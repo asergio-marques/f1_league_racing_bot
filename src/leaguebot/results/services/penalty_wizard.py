@@ -1906,7 +1906,7 @@ class PenaltyReviewView(LeagueView):
             interaction, self.state, what=_button(button.label, self.state)
         ):
             return
-        from leaguebot.results.services.resubmission_changes import ask_resubmission_start
+        from leaguebot.results.services.submission.resubmission_changes import ask_resubmission_start
 
         await ask_resubmission_start(
             interaction,

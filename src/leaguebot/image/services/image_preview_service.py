@@ -898,7 +898,7 @@ async def build_results_preview(bot: LeagueBot, context: PreviewContext):
         fabricate_race_rows,
     )
     from leaguebot.image.services.image_results_service import build_fill_spec, resolve_drawing
-    from leaguebot.results.services.result_submission_service import get_sessions_for_format
+    from leaguebot.results.services.submission.result_submission_service import get_sessions_for_format
 
     config = await bot.image_config_service.get_config()
     drivers = _racing_drivers(context)

@@ -106,7 +106,7 @@ async def test_the_expected_session_of_a_first_submission_is_the_first_without_r
     """Round 3 is a sprint round. With nothing saved its first paste is Sprint Qualifying; with
     Sprint Qualifying saved and Sprint Race typed CANCELLED, it is Feature Qualifying; with all
     four saved, none is expected."""
-    from leaguebot.results.services.result_submission_service import expected_session_on
+    from leaguebot.results.services.submission.result_submission_service import expected_session_on
 
     db_path = await _round(tmp_path)
     async with get_connection(db_path) as db:
@@ -134,7 +134,7 @@ async def test_the_expected_session_of_a_resubmission_is_the_first_without_a_dra
     """Round 3's four sessions are all saved, and a resubmission of it has a draft for Sprint
     Qualifying alone: the resubmission expects Sprint Race, the round's saved results counting
     for nothing; with all four drafted, none is expected."""
-    from leaguebot.results.services.result_submission_service import (
+    from leaguebot.results.services.submission.result_submission_service import (
         expected_resubmitted_session_on,
     )
 
@@ -161,7 +161,7 @@ async def test_the_expected_session_of_an_amendment_follows_its_session_types(tm
     """Round 3's four sessions are saved. An amendment re-enters its Sprint Race and Feature Race
     only: it expects Sprint Race first, then, with Sprint Race drafted, Feature Race — never a
     session it does not cover; with both drafted, none."""
-    from leaguebot.results.services.result_submission_service import (
+    from leaguebot.results.services.submission.result_submission_service import (
         expected_amended_session_on,
     )
 
@@ -186,7 +186,7 @@ async def test_a_session_awaiting_its_configuration_is_expected_again(tmp_path):
     """A resubmission's Sprint Qualifying and an amendment's Sprint Race were each pasted, but
     their points configuration is still to be chosen (the draft's configuration unset). Each
     dialogue expects that session again, not the next."""
-    from leaguebot.results.services.result_submission_service import (
+    from leaguebot.results.services.submission.result_submission_service import (
         expected_amended_session_on,
         expected_resubmitted_session_on,
     )

@@ -18,7 +18,7 @@ from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.models.session_result import OutcomeModifier
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.results.services.scoring import _apply_points_from_config_on
-from leaguebot.results.services.result_submission_service import (
+from leaguebot.results.services.submission.result_submission_service import (
     CollectedSession,
     _PROFILES_IN_ROUND_SQL,
     _insert_new_tables_in_tx,

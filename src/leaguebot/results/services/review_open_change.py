@@ -119,7 +119,7 @@ from leaguebot.core.services.seasons.season_service import set_round_status_on
 from leaguebot.core.services.queue import typed_turns
 from leaguebot.core.utils.log_lines import abandoned_line
 from leaguebot.results.services import review_posting, review_verdicts
-from leaguebot.results.services.result_submission_service import send_cancelled_line, take_down_cancel_message
+from leaguebot.results.services.submission.result_submission_service import send_cancelled_line, take_down_cancel_message
 from leaguebot.results.services.review_prompts import _build_penalty_review_state, send_review_prompt
 from leaguebot.results.services.amendment_writes import held_by_amendment
 from leaguebot.results.services.results_post_service import _delete_posting
@@ -137,7 +137,7 @@ from leaguebot.results.services.review_posting import (
     posting_steps,
 )
 from leaguebot.results.services.standings_service import compute_and_persist_round_on
-from leaguebot.results.services.submission_steps import post_step
+from leaguebot.results.services.submission.submission_steps import post_step
 
 __all__ = [
     "APPEALS_OPEN_KIND", "CLOSE_STALE_KIND", "KIND", "PROMPT_KIND", "appeals_open_change",

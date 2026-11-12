@@ -108,13 +108,13 @@ from leaguebot.core.services.test_mode.test_mode_service import (
     PhaseEntry,
     round_result_status,
 )
-from leaguebot.results.services.result_submission_service import (
+from leaguebot.results.services.submission.result_submission_service import (
     expected_session_on,
     get_sessions_for_format,
     is_submission_open,
 )
 from leaguebot.results.services.standings_service import cascade_recompute_from_round_on
-from leaguebot.results.services.submission_steps import (
+from leaguebot.results.services.submission.submission_steps import (
     CREATE_CHANNEL,
     POST,
     POST_PROMPT,

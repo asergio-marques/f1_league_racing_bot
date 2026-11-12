@@ -1022,7 +1022,7 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_verdict_banner_post.py", "try_post"): (3, PASS["image"]),
     ("results/services/penalty_wizard.py", "_show_approval_step"): (1, PASS["results"]),
     ("results/services/review_prompts.py", "send_appeals_prompt"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "send_cancelled_line"): (1, PASS["results"]),
+    ("results/services/submission/result_submission_service.py", "send_cancelled_line"): (1, PASS["results"]),
     ("results/services/review_prompts.py", "send_review_prompt"): (1, PASS["results"]),
     ("results/services/amendment_writes.py", "run_amendment_review_stages"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "_send_chunked"): (2, PASS["results"]),
@@ -1035,10 +1035,10 @@ KNOWN_DIRECT_POSTS: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/penalty_wizard.py", "_delete_review_message"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "_refresh_appeals_prompt"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "_refresh_prompt"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "take_down_cancel_message"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "_delete_posting"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "delete_round_channel"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "produce_standings"): (1, PASS["results"]),
+    ("results/services/submission/result_submission_service.py", "take_down_cancel_message"): (1, PASS["results"]),
     ("weather/services/forecast_cleanup_service.py", "_discord_delete"): (1, PASS["weather"]),
 }
 
@@ -1291,7 +1291,7 @@ CHANGE_QUEUE = "change_queue"
 #: buttons and forms, and the configuration picker.
 RESULTS_VIEW_FILES = frozenset({
     "results/services/penalty_wizard.py",
-    "results/services/result_submission_service.py",
+    "results/services/submission/result_submission_service.py",
 })
 
 
@@ -1350,7 +1350,7 @@ KNOWN_QUEUE_REACHED_THROUGH_THE_BOT: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/penalty_wizard.py", "PenaltyReviewView.resubmit_btn"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "_AppealsConfirmClearView.confirm_btn"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "_ConfirmClearView.confirm_btn"): (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "_ConfigSelectView.__init__._cb"): (1, PASS["results"]),
+    ("results/services/submission/result_submission_service.py", "_ConfigSelectView.__init__._cb"): (1, PASS["results"]),
 }
 
 
@@ -1646,8 +1646,8 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/amend_turn_change.py", "take_amended_paste"): (1, PASS["results"]),
     ("results/services/channel_settings.py", "_channel_setting.check"): (1, PASS["results"]),
     ("results/services/penalty_wizard.py", "_is_league_manager"): (1, PASS["results"]),
-    ("results/services/paste_reading.py", "_build_division_validation_data"): (2, PASS["results"]),
-    ("results/services/submission_turn_change.py", "take_paste"): (1, PASS["results"]),
+    ("results/services/submission/paste_reading.py", "_build_division_validation_data"): (2, PASS["results"]),
+    ("results/services/submission/submission_turn_change.py", "take_paste"): (1, PASS["results"]),
     ("signup/services/signup_views.py", "AdminReviewView._ask_for_reason"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "AdminReviewView._guard"): (1, PASS["signup"]),
     ("signup/services/signup_views.py", "AdminReviewView._resolve"): (1, PASS["signup"]),
@@ -2672,29 +2672,29 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/report_approval_change.py", "_latest_round"): (2, PASS["results"]),
     ("results/services/report_approval_change.py", "report_approval_change.apply"):
         (2, PASS["results"]),
-    ("results/services/result_submission_service.py", "<module>"): (2, PASS["results"]),
+    ("results/services/submission/result_submission_service.py", "<module>"): (2, PASS["results"]),
     ("results/services/review_prompts.py", "_build_penalty_review_state"):
         (2, PASS["results"]),
     ("results/services/amendment_writes.py", "_restore_from_snapshot_on"):
         (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "_save_session_result_in_tx"):
+    ("results/services/submission/result_submission_service.py", "_save_session_result_in_tx"):
         (3, PASS["results"]),
     ("results/services/amendment_writes.py", "amend_round_results_on"):
         (3, PASS["results"]),
     ("results/services/amendment_writes.py", "closed_by_cancellation_on"):
         (3, PASS["results"]),
-    ("results/services/result_submission_service.py", "expected_resubmitted_session_on"):
+    ("results/services/submission/result_submission_service.py", "expected_resubmitted_session_on"):
         (1, PASS["results"]),
-    ("results/services/result_submission_service.py", "expected_session_on"): (1, PASS["results"]),
+    ("results/services/submission/result_submission_service.py", "expected_session_on"): (1, PASS["results"]),
     ("results/services/review_prompts.py", "is_channel_in_penalty_review"):
         (1, PASS["results"]),
     ("results/services/amendment_writes.py", "open_amendment_in_division"):
         (1, PASS["results"]),
     ("results/services/amendment_writes.py", "open_amendment_in_season"):
         (2, PASS["results"]),
-    ("results/services/paste_reading.py", "other_active_team_assignments"):
+    ("results/services/submission/paste_reading.py", "other_active_team_assignments"):
         (3, PASS["results"]),
-    ("results/services/result_submission_service.py", "resubmission_drafts_on"):
+    ("results/services/submission/result_submission_service.py", "resubmission_drafts_on"):
         (1, PASS["results"]),
     ("results/services/amendment_writes.py", "revert_abandoned_amendment_on"):
         (1, PASS["results"]),
@@ -2744,22 +2744,22 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/standings_service.py", "opening_team_standings"): (1, PASS["results"]),
     ("results/services/standings_service.py", "persist_snapshots_on"): (1, PASS["results"]),
     ("results/services/standings_service.py", "reference_round_id"): (2, PASS["results"]),
-    ("results/services/submission_changes.py", "<module>"): (3, PASS["results"]),
-    ("results/services/submission_changes.py", "ask_submission_open"): (1, PASS["results"]),
-    ("results/services/submission_changes.py", "ask_submission_restart"): (1, PASS["results"]),
-    ("results/services/submission_changes.py", "submission_all_cancelled_change.end_round"):
+    ("results/services/submission/submission_changes.py", "<module>"): (3, PASS["results"]),
+    ("results/services/submission/submission_changes.py", "ask_submission_open"): (1, PASS["results"]),
+    ("results/services/submission/submission_changes.py", "ask_submission_restart"): (1, PASS["results"]),
+    ("results/services/submission/submission_changes.py", "submission_all_cancelled_change.end_round"):
         (3, PASS["results"]),
-    ("results/services/submission_changes.py", "submission_all_cancelled_change.would_never_finish"):
+    ("results/services/submission/submission_changes.py", "submission_all_cancelled_change.would_never_finish"):
         (3, PASS["results"]),
-    ("results/services/submission_changes.py", "submission_open_change.not_cancelled"):
+    ("results/services/submission/submission_changes.py", "submission_open_change.not_cancelled"):
         (1, PASS["results"]),
-    ("results/services/submission_changes.py", "submission_open_change.start_round"):
+    ("results/services/submission/submission_changes.py", "submission_open_change.start_round"):
         (1, PASS["results"]),
-    ("results/services/submission_changes.py", "submission_restart_change.clear"):
+    ("results/services/submission/submission_changes.py", "submission_restart_change.clear"):
         (1, PASS["results"]),
-    ("results/services/submission_steps.py", "post_prompt_step.post"): (1, PASS["results"]),
-    ("results/services/submission_turn_change.py", "<module>"): (3, PASS["results"]),
-    ("results/services/submission_turn_change.py", "turn_steps.post_opening_review"):
+    ("results/services/submission/submission_steps.py", "post_prompt_step.post"): (1, PASS["results"]),
+    ("results/services/submission/submission_turn_change.py", "<module>"): (3, PASS["results"]),
+    ("results/services/submission/submission_turn_change.py", "turn_steps.post_opening_review"):
         (2, PASS["results"]),
     ("results/services/verdict_announcement_service.py", "_get_announcement_context"):
         (4, PASS["results"]),
@@ -3239,7 +3239,7 @@ KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
     ("core/services/drivers/placement_service.py", "PlacementService.move_on"): (1, PASS["attendance"]),
     ("core/services/drivers/placement_service.py", "PlacementService.sack_on"): (1, PASS["attendance"]),
     ("image/services/driver_portrait_service.py", "refresh_portraits"): (1, PASS["image"]),
-    ("results/services/result_submission_service.py", "_save_session_result_in_tx"):
+    ("results/services/submission/result_submission_service.py", "_save_session_result_in_tx"):
         (1, PASS["results"]),
     ("results/services/amendment_writes.py", "amend_round_results_on"):
         (1, PASS["results"]),
@@ -3461,7 +3461,7 @@ CATCH_ALLS_ALLOWED = {
         "a stated exception: a lineup gate that cannot be read answers text, so none is lost",
     ("image/services/image_drawing.py", "ImageDrawing.artwork_signature"):
         "a stated exception: artwork that cannot be read is signed as such, and the rest still is",
-    ("results/services/result_submission_service.py", "_ConfigSelectView._put_back"):
+    ("results/services/submission/result_submission_service.py", "_ConfigSelectView._put_back"):
         "a stated exception: a put-back after a press already answered logs the error in full and "
         "leaves the message as the press's edit left it, for a report would answer the press twice",
 }
@@ -3571,8 +3571,8 @@ KNOWN_CATCH_ALLS_OUTSIDE_THE_PLACES: dict[tuple[str, str], tuple[int, str]] = {
     ("image/utils/svg_fill.py", "_mandatory_ids"): (1, PASS["image"]),
     ("results/services/results_post_service.py", "produce_session_results"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "produce_standings"): (1, PASS["results"]),
-    ("results/services/review_recovery.py", "recover_review"): (1, PASS["results"]),
     ("results/services/review_verdicts.py", "_sync_hint"): (1, PASS["results"]),
+    ("results/services/submission/review_recovery.py", "recover_review"): (1, PASS["results"]),
     ("results/services/verdict_announcement_service.py", "_graphic_name"): (1, PASS["results"]),
     ("results/services/verdict_announcement_service.py", "_send_verdict"): (1, PASS["results"]),
     ("signup/cogs/signup_cog.py", "ConfirmCloseView.on_timeout"): (1, PASS["signup"]),

@@ -28,9 +28,9 @@ import pytest
 from leaguebot.core.models.change import Verdict
 from leaguebot.core.models.round import RoundFormat
 from leaguebot.core.utils.member_names import member_named
-from leaguebot.results.services import result_submission_service, paste_reading
-from leaguebot.results.services.result_submission_service import get_sessions_for_format
-from leaguebot.results.services.paste_reading import DivisionValidationData
+from leaguebot.results.services.submission import result_submission_service, paste_reading
+from leaguebot.results.services.submission.result_submission_service import get_sessions_for_format
+from leaguebot.results.services.submission.paste_reading import DivisionValidationData
 from leaguebot.results.utils import results_formatter
 from tests.support.change_queue import (
     MANAGER_ROLE_ID,

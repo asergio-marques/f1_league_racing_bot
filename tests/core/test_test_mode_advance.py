@@ -269,10 +269,10 @@ async def _advance(cog, interaction, entry, *, passed=None, sign_up: bool = True
         for name in _CHECK_IN_RUNNERS
         if hasattr(rsvp_service, name)
     }
-    from leaguebot.results.services import result_submission_service
+    from leaguebot.results.services.submission import result_submission_service
 
     if hasattr(result_submission_service, "run_result_submission_job"):
-        defaults["leaguebot.results.services.result_submission_service.run_result_submission_job"] = (
+        defaults["leaguebot.results.services.submission.result_submission_service.run_result_submission_job"] = (
             AsyncMock(return_value=None)
         )
     defaults.update(patches)

@@ -53,11 +53,8 @@ from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line
 from leaguebot.core.utils.member_names import member_named
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services import (
-    result_submission_service as submissions,
-    paste_reading,
-    amendment_writes,
-)
+from leaguebot.results.services import amendment_writes
+from leaguebot.results.services.submission import result_submission_service as submissions, paste_reading
 from leaguebot.results.services.amend_changes import (
     ARM_LAPSE,
     COMMAND,
@@ -75,7 +72,7 @@ from leaguebot.results.services.review_posting import (
     display_names,
     posting_steps,
 )
-from leaguebot.results.services.submission_steps import (
+from leaguebot.results.services.submission.submission_steps import (
     POST,
     POST_PROMPT,
     post_choice_step,

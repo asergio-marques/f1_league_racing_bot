@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import pytest
 
-from leaguebot.results.services.paste_reading import (
+from leaguebot.results.services.submission.paste_reading import (
     _validate_qualifying_row_wizard,
     _validate_race_row_wizard,
 )

@@ -86,7 +86,7 @@ from leaguebot.results.services.penalty_wizard import (
     _pen_label,
     appeals_stage_refusal,
 )
-from leaguebot.results.services.result_submission_service import recompute_former_drivers_for_round
+from leaguebot.results.services.submission.result_submission_service import recompute_former_drivers_for_round
 from leaguebot.results.services.review_prompts import _apply_staged_appeals_on, _snapshot_staged_drivers_on
 from leaguebot.results.services.amendment_writes import held_by_amendment
 from leaguebot.results.services.review_posting import (

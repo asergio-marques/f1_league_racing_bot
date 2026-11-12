@@ -27,7 +27,7 @@ from leaguebot.image.utils.tyre_compound import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.results.services.result_submission_service import CollectedSession
+    from leaguebot.results.services.submission.result_submission_service import CollectedSession
 
 
 def _placeholders(items) -> str:

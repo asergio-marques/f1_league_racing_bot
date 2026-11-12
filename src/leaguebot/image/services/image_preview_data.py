@@ -386,7 +386,7 @@ def fabricate_standings_round_results(
     from typing import Any
 
     from leaguebot.core.models.round import RoundFormat
-    from leaguebot.results.services.result_submission_service import get_sessions_for_format
+    from leaguebot.results.services.submission.result_submission_service import get_sessions_for_format
 
     def team_of(driver) -> str:
         return driver.team_key or driver.team_name

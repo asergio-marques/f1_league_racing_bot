@@ -25,7 +25,7 @@ import discord
 import pytest
 
 from leaguebot.core.models.round import RoundFormat
-from leaguebot.results.services.result_submission_service import get_sessions_for_format
+from leaguebot.results.services.submission.result_submission_service import get_sessions_for_format
 from leaguebot.results.utils import results_formatter
 from tests.support.change_queue import (
     acknowledgement,
@@ -302,7 +302,7 @@ async def test_starting_the_round_cannot_be_discarded(tmp_path):
     round: it awaits results and its submission channel is created and recorded."""
     league = await _league(tmp_path)
     with patch(
-        "leaguebot.results.services.submission_changes.set_round_status_on",
+        "leaguebot.results.services.submission.submission_changes.set_round_status_on",
         side_effect=RuntimeError("the rounds table is locked"),
     ):
         await _ask(league)
@@ -332,7 +332,7 @@ async def test_a_round_cancelled_while_its_start_stood_stopped_is_dropped_on_ret
     on, no channel is created and round 3 stays CANCELLED."""
     league = await _league(tmp_path)
     with patch(
-        "leaguebot.results.services.submission_changes.set_round_status_on",
+        "leaguebot.results.services.submission.submission_changes.set_round_status_on",
         side_effect=RuntimeError("the rounds table is locked"),
     ):
         await _ask(league)

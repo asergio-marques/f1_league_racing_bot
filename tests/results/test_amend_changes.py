@@ -41,8 +41,8 @@ import pytest
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.seasons.season_service import SeasonService
-from leaguebot.results.services import result_submission_service, paste_reading
-from leaguebot.results.services.paste_reading import DivisionValidationData
+from leaguebot.results.services.submission import result_submission_service, paste_reading
+from leaguebot.results.services.submission.paste_reading import DivisionValidationData
 from tests.support.change_queue import (
     MARK,
     MEMBER_ID,

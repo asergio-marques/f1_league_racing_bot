@@ -402,7 +402,7 @@ async def test_a_review_put_back_asks_the_queue_it_was_handed(tmp_path):
     """A service is handed the change queue rather than looking it up on the bot (#439 slice 6b,
     fold-in 6). A round left in its penalty review at a restart is put back by asking the queue
     the recovery was handed, and nothing is asked of the bot's own."""
-    from leaguebot.results.services.review_recovery import recover_review
+    from leaguebot.results.services.submission.review_recovery import recover_review
 
     db_path = await _make_db(tmp_path, name="recover_handed", in_penalty_review=1)
     stub = _bot(db_path, channel=_channel())

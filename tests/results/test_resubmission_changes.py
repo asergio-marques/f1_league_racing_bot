@@ -32,12 +32,13 @@ import pytest
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.round import RoundFormat
-from leaguebot.results.services import penalty_wizard, result_submission_service, paste_reading
-from leaguebot.results.services.result_submission_service import (
+from leaguebot.results.services import penalty_wizard
+from leaguebot.results.services.submission import result_submission_service, paste_reading
+from leaguebot.results.services.submission.result_submission_service import (
     ResubmissionCancelView,
     get_sessions_for_format,
 )
-from leaguebot.results.services.paste_reading import DivisionValidationData
+from leaguebot.results.services.submission.paste_reading import DivisionValidationData
 from leaguebot.results.utils import results_formatter
 from tests.results.test_review_open_change import (
     RESULTS_CHANNEL,

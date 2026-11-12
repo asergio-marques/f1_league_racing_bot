@@ -45,8 +45,8 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.results.services import result_submission_service, paste_reading
-from leaguebot.results.services.paste_reading import DivisionValidationData
+from leaguebot.results.services.submission import result_submission_service, paste_reading
+from leaguebot.results.services.submission.paste_reading import DivisionValidationData
 from tests.results.test_amend_changes import (
     QUALI_PASTE,
     STALE_CHANNEL,
@@ -433,7 +433,7 @@ async def test_there_is_one_format_and_the_amendment_uses_it(tmp_path, monkeypat
     """
     import inspect
 
-    from leaguebot.results.services.paste_reading import validate_submission_block
+    from leaguebot.results.services.submission.paste_reading import validate_submission_block
 
     assert "amend_format" not in inspect.signature(validate_submission_block).parameters
 

@@ -48,8 +48,8 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.submission_changes import _make_slug
-from leaguebot.results.services.paste_reading import (
+from leaguebot.results.services.submission.submission_changes import _make_slug
+from leaguebot.results.services.submission.paste_reading import (
     _build_division_validation_data,
     other_active_team_assignments,
 )

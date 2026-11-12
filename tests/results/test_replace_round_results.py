@@ -21,7 +21,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.result_submission_service import CollectedSession
+from leaguebot.results.services.submission.result_submission_service import CollectedSession
 from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 from tests.support.session_writes import replace_round_results
 from tests.support.teams import seed_team_instances
@@ -220,7 +220,7 @@ async def test_a_failure_part_way_keeps_the_old_results(tmp_path):
     db_path = await _make_db(tmp_path, name="replace_partway")
     scoring = AsyncMock(side_effect=[True, RuntimeError("disk")])
 
-    with patch("leaguebot.results.services.result_submission_service._apply_points_in_tx", new=scoring):
+    with patch("leaguebot.results.services.submission.result_submission_service._apply_points_in_tx", new=scoring):
         with pytest.raises(RuntimeError):
             await replace_round_results(
                 db_path, ROUND_ID, DIVISION_ID, SEASON_ID, _collected()

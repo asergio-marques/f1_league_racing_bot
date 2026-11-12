@@ -327,9 +327,9 @@ async def test_every_round_kind_has_its_advance_step_after_build(tmp_path):
 #: Each module's part of a cancellation of rounds, as the module names it: the moment's hook on
 #: the bot, the module, the subscriber, and what the test calls it.
 _CANCELLATION_PARTS = (
-    ("cancellation_refused", "leaguebot.results.services.result_submission_service",
+    ("cancellation_refused", "leaguebot.results.services.submission.result_submission_service",
      "cancellation_refusal", "results' refusal"),
-    ("rounds_called_off", "leaguebot.results.services.result_submission_service",
+    ("rounds_called_off", "leaguebot.results.services.submission.result_submission_service",
      "close_called_off_on", "results' close"),
     ("rounds_called_off", "leaguebot.attendance.services.check_in_changes",
      "take_down_called_off_on", "attendance's take-down"),
@@ -439,7 +439,7 @@ _PACK_PARTS = (
 #: subscriber, and what the test calls it, in the order the builder signs them up. Each marks the
 #: drivers who raced the rounds as former drivers, on the closing's connection.
 _FINAL_PARTS = (
-    ("leaguebot.results.services.result_submission_service", "rounds_made_final_on",
+    ("leaguebot.results.services.submission.result_submission_service", "rounds_made_final_on",
      "results' former drivers"),
 )
 

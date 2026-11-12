@@ -1195,7 +1195,7 @@ async def test_recovery_leaves_alone_a_round_whose_paste_is_queued_or_stopped(tm
     assert (await _channel_row(league.db_path))["in_penalty_review"] == 0
 
     with patch(
-        "leaguebot.results.services.result_submission_service.run_result_submission_job",
+        "leaguebot.results.services.submission.result_submission_service.run_result_submission_job",
         new=AsyncMock(), create=True,
     ) as wizard:
         await _recover(league)

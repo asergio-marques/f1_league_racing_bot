@@ -50,7 +50,7 @@ from leaguebot.core.db.database import get_connection, run_migrations
 # `session_results.session_type` actually holds.
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.penalty_service import StagedPenalty
-from leaguebot.results.services.result_submission_service import (
+from leaguebot.results.services.submission.result_submission_service import (
     ResubmissionCancelView,
 )
 from tests.results.test_resubmission_changes import (

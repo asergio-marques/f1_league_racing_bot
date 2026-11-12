@@ -23,7 +23,7 @@ from __future__ import annotations
 import pytest
 
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.paste_reading import _RETIRED_SANCTION_COLUMNS, validate_submission_block
+from leaguebot.results.services.submission.paste_reading import _RETIRED_SANCTION_COLUMNS, validate_submission_block
 
 DRIVER = 101
 TEAM = 3001

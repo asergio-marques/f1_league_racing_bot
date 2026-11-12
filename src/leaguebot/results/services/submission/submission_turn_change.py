@@ -66,15 +66,11 @@ from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 from leaguebot.core.utils.member_names import member_named
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services import (
-    result_submission_service as submissions,
-    paste_reading,
-    scoring,
-    amendment_writes,
-)
+from leaguebot.results.services import scoring, amendment_writes
+from leaguebot.results.services.submission import result_submission_service as submissions, paste_reading
 from leaguebot.results.services import review_open_change, season_points_service
-from leaguebot.results.services.submission_changes import ALL_CANCELLED_KIND
-from leaguebot.results.services.submission_steps import (
+from leaguebot.results.services.submission.submission_changes import ALL_CANCELLED_KIND
+from leaguebot.results.services.submission.submission_steps import (
     POST,
     POST_PROMPT,
     post_choice_step,

@@ -794,7 +794,7 @@ async def test_without_the_results_module_the_round_and_its_division_are_saved_t
     raise, so the test reads the same whichever the save goes through.
     """
     from leaguebot.core.services.seasons import season_service
-    from leaguebot.results.services import result_submission_service
+    from leaguebot.results.services.submission import result_submission_service
 
     async def refused(*args, **kwargs):
         raise RuntimeError("the division could not be refreshed")

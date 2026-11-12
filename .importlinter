@@ -164,9 +164,9 @@ ignore_imports =
     # a module hands it.
     leaguebot.image.services.image_preview_service -> leaguebot.attendance.services.attendance_service
     leaguebot.image.services.image_rsvp_post -> leaguebot.attendance.services.attendance_service
-    leaguebot.image.services.image_preview_data -> leaguebot.results.services.result_submission_service
+    leaguebot.image.services.image_preview_data -> leaguebot.results.services.submission.result_submission_service
     leaguebot.image.services.image_preview_data -> leaguebot.results.models.session_result
-    leaguebot.image.services.image_preview_service -> leaguebot.results.services.result_submission_service
+    leaguebot.image.services.image_preview_service -> leaguebot.results.services.submission.result_submission_service
     leaguebot.image.services.image_preview_service -> leaguebot.results.services.standings_service
     leaguebot.image.services.image_results_service -> leaguebot.results.models.points_config
     leaguebot.image.services.image_results_service -> leaguebot.results.utils.results_formatter

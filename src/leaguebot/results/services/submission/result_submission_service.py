@@ -40,7 +40,7 @@ from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.utils.member_names import interaction_member
 from leaguebot.results.services.results_post_service import _parse_ids
 from leaguebot.results.services.review_posting import DELETE_CHANNEL
-from leaguebot.results.services.paste_reading import ParsedQualifyingRow, ParsedRaceRow, _parse_time_to_ms
+from leaguebot.results.services.submission.paste_reading import ParsedQualifyingRow, ParsedRaceRow, _parse_time_to_ms
 from leaguebot.results.services.scoring import _apply_points_in_tx
 
 log = logging.getLogger(__name__)
@@ -1022,7 +1022,7 @@ class ResubmissionCancelView(LeagueView):
             interaction, self.state, what=_button(button.label, self.state)
         ):
             return
-        from leaguebot.results.services.resubmission_changes import ask_resubmission_cancel
+        from leaguebot.results.services.submission.resubmission_changes import ask_resubmission_cancel
 
         if await ask_resubmission_cancel(
             interaction, self.state, what=_button(button.label, self.state)

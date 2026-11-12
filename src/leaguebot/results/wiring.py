@@ -66,7 +66,7 @@ def sign_up_to_confirmation_refused(bot: "LeagueBot") -> None:
 def sign_up_to_cancellation_refused(bot: "LeagueBot") -> None:
     """Sign up results' refusal of a round whose submission accepted results, to the hook of what
     stands in the way of a cancellation."""
-    from leaguebot.results.services import result_submission_service
+    from leaguebot.results.services.submission import result_submission_service
 
     bot.cancellation_refused.subscribe(result_submission_service.cancellation_refusal)
 
@@ -76,7 +76,7 @@ def sign_up_to_rounds_made_final(bot: "LeagueBot") -> None:
     round's results made final declares, on the closing's connection, inside its save
     (architecture.md, "How modules and core fit together"). The builder hands it to the two closers
     that make a round FINAL: results turned off, and a season cancelled."""
-    from leaguebot.results.services import result_submission_service
+    from leaguebot.results.services.submission import result_submission_service
 
     bot.rounds_made_final.subscribe(result_submission_service.rounds_made_final_on)
 
@@ -138,7 +138,7 @@ def sign_up_to_review_sections(bot: "LeagueBot") -> None:
 def sign_up_to_rounds_called_off(bot: "LeagueBot") -> None:
     """Sign results' closing of the empty submissions of the rounds called off up to the hook of
     the rounds called off, in the save."""
-    from leaguebot.results.services import result_submission_service
+    from leaguebot.results.services.submission import result_submission_service
 
     bot.rounds_called_off.subscribe(result_submission_service.close_called_off_on)
 
@@ -317,7 +317,7 @@ def register_change_types(
     from leaguebot.results.services.points_settings import points_settings
     from leaguebot.results.services.report_approval_change import report_approval_change
     from leaguebot.results.services.results_off_change import results_off_change
-    from leaguebot.results.services.resubmission_changes import (
+    from leaguebot.results.services.submission.resubmission_changes import (
         resubmission_start_change,
         resubmission_swap_change,
     )
@@ -337,13 +337,13 @@ def register_change_types(
     from leaguebot.results.services.review_stage_change import review_stage_change
     from leaguebot.results.services.rounds_sync_change import rounds_sync_change
     from leaguebot.results.services.standings_sync_change import standings_sync_change
-    from leaguebot.results.services.submission_changes import (
+    from leaguebot.results.services.submission.submission_changes import (
         submission_all_cancelled_change,
         submission_close_change,
         submission_open_change,
         submission_restart_change,
     )
-    from leaguebot.results.services.submission_turn_change import (
+    from leaguebot.results.services.submission.submission_turn_change import (
         submission_config_change,
         submission_turn_change,
     )
@@ -492,7 +492,7 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
 
     Each asks the change queue, read from the bot when it fires. The bot keeps the one queue
     `build` made; a test that replaces the queue must register these handlers again."""
-    from leaguebot.results.services.submission_changes import advance_step, ask_submission_open
+    from leaguebot.results.services.submission.submission_changes import advance_step, ask_submission_open
 
     scheduler = bot.scheduler_service
 
@@ -575,7 +575,7 @@ async def recover_orphaned_submission_channels(bot: "LeagueBot") -> None:
         )
         orphans = await cursor.fetchall()
 
-    from leaguebot.results.services.review_recovery import recover_review
+    from leaguebot.results.services.submission.review_recovery import recover_review
 
     for row in orphans:
         round_id: int = row["round_id"]
@@ -592,7 +592,7 @@ async def recover_orphaned_submission_channels(bot: "LeagueBot") -> None:
         # A first paste cut short is cleared, its channel deleted and its submission opened
         # afresh by the change queue's `results.submission.restart`, before the queue starts. A
         # round with a change of its submission in hand is left to it above.
-        from leaguebot.results.services.submission_changes import ask_submission_restart
+        from leaguebot.results.services.submission.submission_changes import ask_submission_restart
 
         log.info("Recovery: asking the queue to clear and reopen round %s's submission", round_id)
         try:

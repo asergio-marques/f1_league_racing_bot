@@ -33,7 +33,7 @@ import discord
 import pytest
 
 from leaguebot.core.models.round import RoundFormat
-from leaguebot.results.services.result_submission_service import get_sessions_for_format
+from leaguebot.results.services.submission.result_submission_service import get_sessions_for_format
 from leaguebot.results.utils import results_formatter
 from tests.support.change_queue import (
     MANAGER_ROLE_ID,
@@ -678,7 +678,7 @@ def _check_in_read_failing() -> ExitStack:
                         "leaguebot.attendance.services.check_in_changes",
                         "leaguebot.core.services.cancellations.cancellation_notice_service",
                         "leaguebot.core.services.cancellations.cancellation_changes",
-                        "leaguebot.results.services.submission_changes"):
+                        "leaguebot.results.services.submission.submission_changes"):
         try:
             module = importlib.import_module(module_name)
         except ImportError:

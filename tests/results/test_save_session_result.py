@@ -14,7 +14,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.result_submission_service import (
+from leaguebot.results.services.submission.result_submission_service import (
     _save_session_result_in_tx,
 )
 from leaguebot.core.services.seasons.season_service import SeasonImmutableError

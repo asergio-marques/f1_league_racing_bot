@@ -53,7 +53,7 @@ from leaguebot.results.services.amend_views import AmendCancelView
 from leaguebot.results.services.review_changes import division_job_in_hand
 from leaguebot.results.services.review_posting import DELETE_CHANNEL, posting_steps
 from leaguebot.results.services.amendment_writes import open_amendment_in_division
-from leaguebot.results.services.submission_steps import (
+from leaguebot.results.services.submission.submission_steps import (
     CREATE_CHANNEL,
     POST_PROMPT,
     create_channel_step,

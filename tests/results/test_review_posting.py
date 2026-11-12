@@ -758,7 +758,7 @@ async def _cancel_round_3_s_qualifying(league: _League, *, posted_as: int | None
     line already stands in the results channel as that message, recorded as the session's. Gives
     the session's label as a league reads it."""
     from leaguebot.core.models.round import RoundFormat
-    from leaguebot.results.services.result_submission_service import get_sessions_for_format
+    from leaguebot.results.services.submission.result_submission_service import get_sessions_for_format
     from leaguebot.results.utils import results_formatter
 
     async with get_connection(league.db_path) as db:

@@ -91,7 +91,7 @@ async def test_an_open_submission_counts_as_accepted_once_any_session_is_saved(
     accepted. Round 2's submission stands open too, but round 2 is not asked about, and round 3
     has none. Asked about rounds 1 and 3, the reader gives round 1's submission alone, accepted
     once any session of it is saved, and nothing for a closed submission."""
-    from leaguebot.results.services.result_submission_service import open_submissions_on
+    from leaguebot.results.services.submission.result_submission_service import open_submissions_on
 
     db_path = await _make_db(tmp_path)
     await _submission(db_path, ROUND_ID, closed=case == "closed")
@@ -113,7 +113,7 @@ async def test_closing_the_submissions_writes_on_the_connection_handed_and_commi
     closed already. Closing rounds 1 and 3 on a connection gives round 1 and its channel alone,
     marks round 1's submission closed on that connection and leaves round 2's open; rolled back,
     a fresh connection finds round 1's submission open again, for nothing was committed."""
-    from leaguebot.results.services.result_submission_service import close_submissions_on
+    from leaguebot.results.services.submission.result_submission_service import close_submissions_on
 
     db_path = await _make_db(tmp_path)
     await _submission(db_path, ROUND_ID)
