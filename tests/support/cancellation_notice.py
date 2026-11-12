@@ -94,7 +94,10 @@ async def post_notice(
     cancellation, or of *scope*'s, to *division* (Pro where None), as its job does; what it
     answers."""
     posting = notice_module(module)
+    post = posting.post_note if module == "results" else posting.post_notice
     with in_a_job():
-        return await posting.post_notice(
+        answer = await post(
             bot, guild, division or pro(), scope=scope, round_number=3, track_name="Monza",
         )
+    # results' `post_note` answers the message it posted; the others answer only a refusal
+    return answer if isinstance(answer, str) or answer is None else None

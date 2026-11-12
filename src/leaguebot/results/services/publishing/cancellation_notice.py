@@ -102,24 +102,6 @@ async def post_note(
     )
 
 
-@posts_in_a_job
-async def post_notice(
-    bot: LeagueBot,
-    guild,
-    division,
-    *,
-    scope: str,
-    round_number: int | None = None,
-    track_name: str | None = None,
-) -> str | None:
-    """:func:`post_note`, answering "no channel is set" where the division has none and nothing
-    else."""
-    posted = await post_note(
-        bot, guild, division, scope=scope, round_number=round_number, track_name=track_name
-    )
-    return posted if isinstance(posted, str) else None
-
-
 async def record_note_on(
     db: aiosqlite.Connection, ctx: StepContext, result: StepResult
 ) -> None:
