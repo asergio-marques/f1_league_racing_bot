@@ -63,8 +63,6 @@ KIND = "results.review.stage"
 CONFIRM_KIND = "results.review.confirm"
 LANE = f"channel:{SUBMISSION_CHANNEL}"
 APPEALS_PROMPT = 8902
-#: Why a test of whom a review post may notify fails until the posts go through core's handlers.
-MENTIONS_NOT_STATED = "#284: the review's posts do not yet say whom they may notify"
 
 
 def _state(league: ReviewLeague, *, staged: Any = (), approval: int | None = None,
@@ -144,7 +142,6 @@ async def _approval_row(db_path: str) -> Any:
     )
 
 
-@pytest.mark.xfail(strict=True, reason=MENTIONS_NOT_STATED)
 async def test_a_penalty_added_is_staged_and_the_prompt_redrawn_when_its_turn_comes(tmp_path):
     """Alex adds a five-second penalty for Lewis in round 3's review. He is answered at once that
     it is under way, and nothing is redrawn yet; the staging is a change on round 3's lane. When
@@ -281,7 +278,6 @@ async def test_staging_withdraws_a_standing_approval_message_as_a_job(tmp_path):
     assert "withdraw_approval" in names
 
 
-@pytest.mark.xfail(strict=True, reason=MENTIONS_NOT_STATED)
 async def test_a_pardon_and_an_appeal_correction_are_staged_alike(tmp_path):
     """Attendance is on and Max (102) gave no answer to round 3's check-in. Alex stages a NO_RSVP
     pardon for him: it is a staging change on round 3's lane, and the prompt is redrawn with its
@@ -379,7 +375,6 @@ async def test_remove_clear_and_make_changes_are_staged_and_redrawn_as_jobs(tmp_
     assert all(_lane(change) == LANE for change in await changes_of(league.db_path, KIND))
 
 
-@pytest.mark.xfail(strict=True, reason=MENTIONS_NOT_STATED)
 async def test_confirm_posts_the_approval_message_as_a_job_and_keeps_its_id(tmp_path):
     """Nothing is staged in round 3's review when Alex presses No Penalties / Confirm. He is
     answered at once and nothing is posted yet; the confirmation is a change on round 3's lane,
@@ -437,9 +432,6 @@ async def test_a_refused_approval_message_stops_the_queue(tmp_path):
     assert await _approval_row(league.db_path) is not None
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#284: a refused deletion of the approval message passes silently"
-)
 async def test_a_standing_approval_message_discord_refuses_to_delete_stops_the_lane(tmp_path):
     """Round 3's approval message 8901 stands, its id on the submission's row, when Alex presses
     No Penalties / Confirm again, and Discord refuses to delete 8901 (403). Round 3's lane stops

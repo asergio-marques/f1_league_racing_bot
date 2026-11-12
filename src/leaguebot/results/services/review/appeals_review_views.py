@@ -12,6 +12,7 @@ import logging
 import discord
 
 from leaguebot.core.utils.in_a_job import posts_in_a_job
+from leaguebot.core.services.posting.owned_channel_handler import edit_in_owned_channel
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.services.queue.change_queue import ChangeQueue
@@ -89,7 +90,9 @@ async def _refresh_appeals_prompt(state: PenaltyReviewState) -> None:
         msg = await ch.fetch_message(state.appeals_prompt_message_id)
         content = await _render_appeals_prompt_content(state)
         new_view = AppealsReviewView(state)
-        await msg.edit(content=content, view=new_view)
+        await edit_in_owned_channel(
+            msg, mentions=discord.AllowedMentions.none(), content=content, view=new_view
+        )
         state.bot.add_view(new_view, message_id=state.appeals_prompt_message_id)
     except discord.NotFound as exc:
         log.warning("_refresh_appeals_prompt: failed to edit appeals prompt: %s", exc)

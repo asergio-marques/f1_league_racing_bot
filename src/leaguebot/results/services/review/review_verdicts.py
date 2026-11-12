@@ -519,8 +519,8 @@ async def _post_appeals_prompt(
     state = await _build_penalty_review_state(
         ctx.bot, queue, server_config, router, attendance, round_id, division_id, channel.id
     )
-    message = await send_appeals_prompt(ctx.bot, channel, state)
-    return StepResult(result={"message_id": message.id, "channel_id": channel.id})
+    message_id = await send_appeals_prompt(ctx.bot, channel, state)
+    return StepResult(result={"message_id": message_id, "channel_id": channel.id})
 
 
 # ---------------------------------------------------------------------------

@@ -10,6 +10,7 @@ import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.utils.in_a_job import posts_in_a_job
+from leaguebot.core.services.posting.owned_channel_handler import post_in_owned_channel
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.results.services.points.scoring import _recompute_session_points_on
@@ -112,9 +113,10 @@ async def _build_penalty_review_state(
 @posts_in_a_job
 async def send_review_prompt(
     bot: LeagueBot, sub_channel: discord.TextChannel, state: "PenaltyReviewState"
-) -> discord.Message:
-    """Post the penalty review prompt of *state* in *sub_channel* and register its view, so that
-    its buttons keep working across a restart. Gives the message; *state* learns its id.
+) -> int:
+    """Post the penalty review prompt of *state* in *sub_channel*, notifying nobody, and register
+    its view, so that its buttons keep working across a restart. Gives the message's id; *state*
+    learns it too.
 
     The one place the prompt is sent, which the review's `post_review_prompt` job calls (#439).
     """
@@ -125,18 +127,21 @@ async def send_review_prompt(
 
     view = PenaltyReviewView(state=state)
     content = await _render_prompt_content(state)
-    msg = await sub_channel.send(content, view=view)
-    state.prompt_message_id = msg.id
-    bot.add_view(view, message_id=msg.id)
-    return msg
+    message_id = await post_in_owned_channel(
+        sub_channel, content, mentions=discord.AllowedMentions.none(), view=view
+    )
+    state.prompt_message_id = message_id
+    bot.add_view(view, message_id=message_id)
+    return message_id
 
 
 @posts_in_a_job
 async def send_appeals_prompt(
     bot: LeagueBot, sub_channel: discord.TextChannel, state: "PenaltyReviewState"
-) -> discord.Message:
-    """Post the appeals review prompt of *state* in *sub_channel* and register its view, so that
-    its buttons keep working across a restart. Gives the message; *state* learns its id.
+) -> int:
+    """Post the appeals review prompt of *state* in *sub_channel*, notifying nobody, and register
+    its view, so that its buttons keep working across a restart. Gives the message's id; *state*
+    learns it too.
 
     The one place the appeals prompt is sent, which `_post_appeals_prompt` and the queue's
     `post_appeals_prompt` job both call (#439).
@@ -148,10 +153,12 @@ async def send_appeals_prompt(
 
     appeals_view = AppealsReviewView(state=state)
     content = await _render_appeals_prompt_content(state)
-    msg = await sub_channel.send(content, view=appeals_view)
-    state.appeals_prompt_message_id = msg.id
-    bot.add_view(appeals_view, message_id=msg.id)
-    return msg
+    message_id = await post_in_owned_channel(
+        sub_channel, content, mentions=discord.AllowedMentions.none(), view=appeals_view
+    )
+    state.appeals_prompt_message_id = message_id
+    bot.add_view(appeals_view, message_id=message_id)
+    return message_id
 
 
 async def _insert_appeal_records_on(

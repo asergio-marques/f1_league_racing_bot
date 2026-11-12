@@ -10,6 +10,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.utils.in_a_job import posts_in_a_job
+from leaguebot.core.services.posting.owned_channel_handler import delete_owned_channel
 from leaguebot.core.services.posting.standing_post_handler import (
     delete_standing,
     edit_standing,
@@ -165,7 +166,7 @@ async def delete_round_channel(
     `discord.NotFound` where the channel is already gone and `discord.HTTPException` where
     Discord refuses; each caller says what either means for it.
     """
-    await channel.delete(reason=reason)
+    await delete_owned_channel(channel, reason=reason)
 
 
 @posts_in_a_job

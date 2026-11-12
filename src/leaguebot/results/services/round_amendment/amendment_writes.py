@@ -10,10 +10,12 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Mapping
 
 import aiosqlite
+import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.season_end import COMPLETION
 from leaguebot.core.utils.in_a_job import posts_in_a_job
+from leaguebot.core.services.posting.owned_channel_handler import post_in_owned_channel
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.models.session_result import OutcomeModifier
 from leaguebot.core.utils.league_bot import LeagueBot
@@ -833,9 +835,11 @@ async def run_amendment_review_stages(
 
     view = PenaltyReviewView(state=state)
     content = await _render_prompt_content(state)
-    message = await channel.send(content, view=view)
-    state.prompt_message_id = message.id
-    bot.add_view(view, message_id=message.id)
+    message_id = await post_in_owned_channel(
+        channel, content, mentions=discord.AllowedMentions.none(), view=view
+    )
+    state.prompt_message_id = message_id
+    bot.add_view(view, message_id=message_id)
 
     return state
 

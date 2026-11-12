@@ -15,6 +15,10 @@ import logging
 import discord
 
 from leaguebot.core.utils.in_a_job import posts_in_a_job
+from leaguebot.core.services.posting.owned_channel_handler import (
+    edit_in_owned_channel,
+    post_in_owned_channel,
+)
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.models.change import StepFailedOnDiscord
@@ -200,7 +204,9 @@ async def _refresh_prompt(state: PenaltyReviewState) -> None:
         msg = await ch.fetch_message(state.prompt_message_id)
         content = await _render_prompt_content(state)
         new_view = PenaltyReviewView(state)
-        await msg.edit(content=content, view=new_view)
+        await edit_in_owned_channel(
+            msg, mentions=discord.AllowedMentions.none(), content=content, view=new_view
+        )
         state.bot.add_view(new_view, message_id=state.prompt_message_id)
     except discord.NotFound as exc:
         log.warning("_refresh_prompt: failed to edit prompt: %s", exc)
@@ -827,10 +833,12 @@ async def _show_approval_step(
     if ch is not None:
         await _take_down_approval(state)
         view = ApprovalView(state=state)
-        msg = await ch.send(content, view=view)
-        state.approval_message_id = msg.id
-        state.bot.add_view(view, message_id=msg.id)
-        return msg.id
+        message_id = await post_in_owned_channel(
+            ch, content, mentions=discord.AllowedMentions.none(), view=view
+        )
+        state.approval_message_id = message_id
+        state.bot.add_view(view, message_id=message_id)
+        return message_id
     return None
 
 

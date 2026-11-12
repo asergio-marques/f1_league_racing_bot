@@ -318,7 +318,7 @@ class _Channel:
         self.posted: list[int] = []
         self.deleted: list[int] = []
 
-    async def send(self, content, view=None):
+    async def send(self, content, view=None, allowed_mentions=None):
         message = MagicMock()
         message.id = 990001 + len(self.posted)
         self.posted.append(message.id)

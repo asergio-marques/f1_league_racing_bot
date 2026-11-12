@@ -551,8 +551,8 @@ def amendment_stage_changes(
             division_name=division_name,
             is_amendment=True,
         )
-        message = await send_appeals_prompt(ctx.bot, channel, state)
-        return StepResult(result={"message_id": message.id, "channel_id": channel.id})
+        message_id = await send_appeals_prompt(ctx.bot, channel, state)
+        return StepResult(result={"message_id": message_id, "channel_id": channel.id})
 
     async def describe_reports_prompt(ctx: StepContext) -> str:
         return f"posting the amendment's report stage in <#{ctx.step_payload['channel_id']}>"

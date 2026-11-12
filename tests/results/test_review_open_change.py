@@ -874,10 +874,6 @@ async def test_a_resubmission_is_published_as_amended(tmp_path):
     assert len(_prompts(league)) == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#284: the review prompt and the cancelled line do not yet say whom they may notify",
-)
 async def test_a_cancelled_resubmission_is_recorded_once_the_review_is_back(tmp_path):
     """A cancel puts the review back first: its line in the channel and in the log come after
     the prompt stands, never while the prompt is still owed. The cancel button is taken off."""

@@ -17,6 +17,7 @@ from typing import Any
 import discord
 
 from leaguebot.core.utils.in_a_job import posts_in_a_job
+from leaguebot.core.services.posting.owned_channel_handler import delete_in_owned_channel
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.utils.channel_guard import is_league_manager
@@ -277,9 +278,9 @@ async def _delete_review_message(state: PenaltyReviewState, message_id: int | No
         return
     try:
         message = await ch.fetch_message(message_id)
-        await message.delete()
-    except (discord.NotFound, discord.HTTPException):
-        pass  # Passes over any refusal, not only a message already gone; nothing depends on it
+        await delete_in_owned_channel(message)
+    except discord.NotFound:
+        pass  # Already gone; a refusal raises, for the job to stop the round's lane on
 
 
 async def _take_down_approval(state: PenaltyReviewState) -> None:

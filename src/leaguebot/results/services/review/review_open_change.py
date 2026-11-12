@@ -259,8 +259,8 @@ async def _post_review_prompt(
         ctx.bot, queue, server_config, router, attendance, round_id, int(row["division_id"]),
         channel.id,
     )
-    message = await send_review_prompt(ctx.bot, channel, state)
-    return StepResult(result={"message_id": message.id, "channel_id": channel.id})
+    message_id = await send_review_prompt(ctx.bot, channel, state)
+    return StepResult(result={"message_id": message_id, "channel_id": channel.id})
 
 
 def _post_prompt_job(

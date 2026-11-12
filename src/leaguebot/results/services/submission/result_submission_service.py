@@ -30,6 +30,10 @@ from leaguebot.core.models.change import PlannedStep, StepFailedOnDiscord, Verdi
 from leaguebot.core.services.posting.output_router import OutputRouter
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.utils.in_a_job import posts_in_a_job
+from leaguebot.core.services.posting.owned_channel_handler import (
+    edit_in_owned_channel,
+    post_in_owned_channel,
+)
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.models.round import ROUND_CANCELLABLE, ROUND_TERMINAL, RoundFormat
 from leaguebot.results.models.session_result import OutcomeModifier
@@ -1054,7 +1058,7 @@ async def take_down_cancel_message(message: discord.Message | discord.PartialMes
     Discord refuses otherwise raises `StepFailedOnDiscord`, for the job to stop the queue on.
     """
     try:
-        await message.edit(view=None)
+        await edit_in_owned_channel(message, mentions=discord.AllowedMentions.none(), view=None)
     except discord.NotFound:
         pass
     except discord.HTTPException as exc:
@@ -1067,6 +1071,8 @@ async def take_down_cancel_message(message: discord.Message | discord.PartialMes
 async def send_cancelled_line(sub_channel: discord.TextChannel) -> None:
     """Tell the submission channel that a resubmission was cancelled and the earlier results
     stand. The one place it is sent, for the review's job."""
-    await sub_channel.send(CANCELLED_LINE)
+    await post_in_owned_channel(
+        sub_channel, CANCELLED_LINE, mentions=discord.AllowedMentions.none()
+    )
 
 
