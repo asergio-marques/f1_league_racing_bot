@@ -28,6 +28,18 @@ RELEASE_CLAIM_SQL = (
 )
 
 
+async def league_server_id_on(db: aiosqlite.Connection) -> int | None:
+    """The league's server, the one the configuration row holds, or None while none is claimed,
+    read on *db*: `ConfigService.get_league_server_id_on` for a module reading core's tables only
+    through core's code (architecture.md, "The database") that has the connection of its own save
+    and no service. It writes nothing and commits nothing."""
+    cursor = await db.execute(
+        "SELECT server_id FROM server_configs WHERE server_id IS NOT NULL LIMIT 1"
+    )
+    row = await cursor.fetchone()
+    return None if row is None else int(row["server_id"])
+
+
 class ConfigService:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
@@ -82,11 +94,7 @@ class ConfigService:
     async def get_league_server_id_on(self, db: aiosqlite.Connection) -> int | None:
         """`get_league_server_id` on *db*, for a save that must see its own writes: `/bot init`'s
         save asks it, after its claim is refused, who holds the league."""
-        cursor = await db.execute(
-            "SELECT server_id FROM server_configs WHERE server_id IS NOT NULL LIMIT 1"
-        )
-        row = await cursor.fetchone()
-        return None if row is None else int(row["server_id"])
+        return await league_server_id_on(db)
 
     async def claim_on(self, db: aiosqlite.Connection, cfg: ServerConfig) -> bool:
         """Claim the league's server for *cfg* on *db*, committing nothing. Returns whether it did.
