@@ -3,10 +3,11 @@
 The subgroups' commands live in `config_commands.py`, `points_amend_commands.py`,
 `reserves_commands.py`, `standings_commands.py`, `rounds_commands.py` and `channel_commands.py`,
 one file for each subgroup, under the one `/results` group declared in `results_group.py`. The
-cog stays one cog for one group: the class derives from them, which discord.py allows because it
-collects a cog's commands across the classes the cog derives from, and a cog too large to read in
-one file is split by subgroup rather than into a cog for each, as the architecture's cog bullet
-gives it (`docs/design/architecture.md`).
+cog stays one cog for one group: it holds `/results` as a class attribute, each subgroup's class
+declares its subgroup with that group as its parent, and discord.py binds a cog's group to the cog
+together with every child beneath it, so every command runs with this cog's `self`. A cog too large
+to read in one file is split by subgroup rather than into a cog for each, as the architecture's cog
+bullet gives it (`docs/design/architecture.md`).
 
 What is left here is what the subgroups share: the cog's bot, the listener that guards a round's
 channels, and the gates the subgroups' commands call.
