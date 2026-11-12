@@ -7,13 +7,18 @@ import json as _json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Mapping
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, Mapping
 
 import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.division import DivisionStatus
+from leaguebot.core.models.round import RoundStatus
+from leaguebot.core.models.season import SeasonStatus
 from leaguebot.core.models.season_end import COMPLETION
+from leaguebot.core.services.seasons import season_service
 from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.services.posting.owned_channel_handler import post_in_owned_channel
 from leaguebot.results.models.points_config import SessionType
@@ -280,10 +285,8 @@ async def sync_held_by_amendment(db_path: str, division_id: int) -> str | None:
     if row is None:
         return None
     async with get_connection(db_path) as db:
-        division = await (await db.execute(
-            "SELECT name FROM divisions WHERE id = ?", (division_id,)
-        )).fetchone()
-    name = division["name"] if division is not None else "the division"
+        division = await season_service.division_on(db, division_id)
+    name = division.name if division is not None else "the division"
     return (
         f"\u23f8\ufe0f Round {row['round_number']} of **{name}** is being amended in "
         f"<#{row['channel_id']}>, and its corrections are not approved yet, so the "
@@ -487,11 +490,10 @@ async def revert_abandoned_amendment_on(
         return False
     from leaguebot.results.services.standings import standings_service
 
-    cursor = await db.execute("SELECT division_id FROM rounds WHERE id = ?", (round_id,))
-    division = await cursor.fetchone()
-    if division is not None:
+    facts = await season_service.round_facts_on(db, round_id)
+    if facts is not None:
         await standings_service.cascade_recompute_from_round_on(
-            db, int(division["division_id"]), round_id, display_names
+            db, facts.division_id, round_id, display_names
         )
     return True
 
@@ -589,24 +591,47 @@ async def _release_amendment_on(db: aiosqlite.Connection, round_id: int) -> None
     )
 
 
-async def open_amendment_in_division(db_path: str, division_id: int):
+async def _open_amendments_among_on(
+    db: aiosqlite.Connection, round_ids: Iterable[int]
+) -> dict[int, aiosqlite.Row]:
+    """The amendment open on each of *round_ids* that has one, by round id, read on *db*: results'
+    own `round_amend_channels`, the rounds being the core half's (a division's, in round order)."""
+    ids = sorted(set(round_ids))
+    if not ids:
+        return {}
+    marks = ", ".join("?" for _ in ids)
+    cursor = await db.execute(
+        "SELECT round_id, channel_id, session_types FROM round_amend_channels "  # noqa: S608
+        f"WHERE closed_at IS NULL AND round_id IN ({marks})",
+        ids,
+    )
+    return {int(row["round_id"]): row for row in await cursor.fetchall()}
+
+
+async def open_amendment_in_division(db_path: str, division_id: int) -> dict[str, Any] | None:
     """The amendment open in a division — its round, round number, channel and sessions — or None.
 
     One is open from the moment its channel is recorded until it is approved, cancelled or
     reverted. A row carrying ``closed_at`` is one that has ended and could not delete its
     channel; it is kept for restart recovery to find, and holds nothing open.
+
+    The division's rounds are core's, read first and in round order; the amendment is results'
+    own, read on the same connection.
     """
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT rac.round_id, r.round_number, rac.channel_id, rac.session_types "
-            "FROM round_amend_channels rac JOIN rounds r ON r.id = rac.round_id "
-            "WHERE r.division_id = ? AND rac.closed_at IS NULL",
-            (division_id,),
-        )
-        return await cursor.fetchone()
+        rounds = await season_service.division_rounds_in_order_on(db, division_id)
+        open_on = await _open_amendments_among_on(db, (each.id for each in rounds))
+    for each in rounds:
+        row = open_on.get(each.id)
+        if row is not None:
+            return {
+                "round_id": each.id, "round_number": each.round_number,
+                "channel_id": row["channel_id"], "session_types": row["session_types"],
+            }
+    return None
 
 
-async def open_amendment_in_season(db_path: str, season_id: int):
+async def open_amendment_in_season(db_path: str, season_id: int) -> dict[str, Any] | None:
     """An amendment open in any division of a season — its division, round and channel — or None.
 
     For what reposts or closes every division at once: completing the season, and approving a
@@ -614,15 +639,17 @@ async def open_amendment_in_season(db_path: str, season_id: int):
     highest division is named; each is refused until none is left.
     """
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT d.name AS division_name, r.round_number, rac.channel_id "
-            "FROM round_amend_channels rac JOIN rounds r ON r.id = rac.round_id "
-            "JOIN divisions d ON d.id = r.division_id "
-            "WHERE d.season_id = ? AND rac.closed_at IS NULL "
-            "ORDER BY d.tier, r.round_number LIMIT 1",
-            (season_id,),
-        )
-        return await cursor.fetchone()
+        for division in await season_service.SeasonService(db_path).get_divisions_on(db, season_id):
+            rounds = await season_service.division_rounds_in_order_on(db, division.id)
+            open_on = await _open_amendments_among_on(db, (each.id for each in rounds))
+            for each in rounds:
+                row = open_on.get(each.id)
+                if row is not None:
+                    return {
+                        "division_name": division.name, "round_number": each.round_number,
+                        "channel_id": row["channel_id"],
+                    }
+    return None
 
 
 async def season_end_refusal(db_path: str, season_id: int, ending: str) -> str | None:
@@ -704,26 +731,25 @@ async def closed_by_cancellation_on(db: aiosqlite.Connection, round_id: int) -> 
     cancellation's save written on the same connection, and not yet committed, is seen, and the
     two saves hold the queue's write lock in turn, so one of them is read by the other.
     """
-    cursor = await db.execute(
-        "SELECT r.round_number, r.status AS round_status, d.status AS division_status, "
-        "s.status AS season_status, rsc.closed "
-        "FROM rounds r JOIN divisions d ON d.id = r.division_id "
-        "JOIN seasons s ON s.id = d.season_id "
-        "LEFT JOIN round_submission_channels rsc ON rsc.round_id = r.id "
-        "WHERE r.id = ?",
-        (round_id,),
-    )
-    row = await cursor.fetchone()
-    if row is None:
+    facts = await season_service.round_facts_on(db, round_id)
+    if facts is None:
         return None
-    if "CANCELLED" in (row["round_status"], row["division_status"], row["season_status"]):
+    if (
+        RoundStatus.CANCELLED is facts.status
+        or DivisionStatus.CANCELLED is facts.division_status
+        or SeasonStatus.CANCELLED is facts.season_status
+    ):
         return (
-            f"⛔ Round {row['round_number']} has been cancelled, so its results can no longer be "
+            f"⛔ Round {facts.round_number} has been cancelled, so its results can no longer be "
             "entered. Nothing was saved."
         )
-    if row["closed"]:
+    cursor = await db.execute(
+        "SELECT closed FROM round_submission_channels WHERE round_id = ?", (round_id,)
+    )
+    channel = await cursor.fetchone()
+    if channel is not None and channel["closed"]:
         return (
-            f"⛔ Round {row['round_number']}'s results submission has been closed, so its "
+            f"⛔ Round {facts.round_number}'s results submission has been closed, so its "
             "results can no longer be entered. Nothing was saved."
         )
     return None
@@ -882,8 +908,6 @@ async def amend_round_results_on(
     from their session's corrected classification, and ``SeasonImmutableError`` for an archived
     season, with nothing written in either case, the caller's save being rolled back.
     """
-    from leaguebot.core.services.seasons.season_service import SeasonImmutableError
-
     submitted_at = now.isoformat()
     # The round as it stands, before any of it is overwritten (#345). Stage one commits, so an
     # amendment abandoned before its last stage is approved would otherwise leave the round
@@ -893,22 +917,12 @@ async def amend_round_results_on(
     )
     written: list[tuple[int, AmendedSession]] = []
     # Immutability guard: reject writes to archived seasons
-    cursor = await db.execute(
-        """
-        SELECT s.status AS season_status, s.id AS season_id
-        FROM rounds r
-        JOIN divisions d ON d.id = r.division_id
-        JOIN seasons s ON s.id = d.season_id
-        WHERE r.id = ?
-        """,
-        (round_id,),
-    )
-    season_row = await cursor.fetchone()
-    if season_row and season_row["season_status"] == "COMPLETED":
-        raise SeasonImmutableError(
+    facts = await season_service.round_facts_on(db, round_id)
+    if facts is not None and facts.season_status is SeasonStatus.COMPLETED:
+        raise season_service.SeasonImmutableError(
             f"Round {round_id} belongs to an archived season — results cannot be amended."
         )
-    season_id: int | None = season_row["season_id"] if season_row else None
+    season_id: int | None = facts.season_id if facts is not None else None
 
     # **Who the round held before the rewrite goes into the snapshot** (#216), read here
     # because the next lines delete those rows. A driver an amendment strikes out entirely
@@ -923,7 +937,7 @@ async def amend_round_results_on(
             (
                 await _write_amended_session_in_tx(
                     db, round_id, division_id, session, amended_by, submitted_at,
-                    has_season=season_row is not None,
+                    has_season=facts is not None,
                 ),
                 session,
             )
