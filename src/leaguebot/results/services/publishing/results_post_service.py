@@ -97,7 +97,7 @@ def picture_fallback_line(
     )
 
 
-def _fault_of(error: BaseException) -> str:
+def fault_of(error: BaseException) -> str:
     """What to say of *error* in a log line: its message, else its type."""
     return str(error) or type(error).__name__
 
@@ -659,7 +659,7 @@ async def produce_session_results(
             # A fault the image module reports itself is answered there; this one it let
             # through, so it goes on the table for the job to say why the text stands.
             log.error("results: image path failed for session %s: %s", session_result.id, exc, exc_info=True)
-            fault = _fault_of(exc)
+            fault = fault_of(exc)
 
     sent = await _send_chunked(results_channel, f"{heading}\n{label}\n{table}")
     return PostedTable(sent, previous, fault=fault)
@@ -865,7 +865,7 @@ async def produce_standings(
                 "the textual standings stand",
                 round_id,
             )
-            fault = _fault_of(exc)
+            fault = fault_of(exc)
         else:
             if outcome.rejects:
                 # A commanded posting that would not draw posts nothing at all (XIV.7).

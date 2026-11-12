@@ -590,11 +590,15 @@ async def _announce_verdict(ctx: StepContext) -> StepResult:
     round_id = int(payload["round_id"])
     channel, _context = await _channel_of(ctx, round_id)
     await _take_down_kept(channel, ctx)
-    message_id, channel_id = await vas.announce_verdict(
+    announced = await vas.announce_verdict(
         ctx.bot, ctx.db_path, round_id, payload["table"], payload["record"],
         as_text=ctx.tries > 0,
     )
-    return StepResult(result={"message_id": message_id, "channel_id": channel_id})
+    lines = () if announced.fallback is None else (announced.fallback(ctx.named, ctx.what),)
+    return StepResult(
+        result={"message_id": announced.message_id, "channel_id": announced.channel_id},
+        lines=lines,
+    )
 
 
 # ---------------------------------------------------------------------------

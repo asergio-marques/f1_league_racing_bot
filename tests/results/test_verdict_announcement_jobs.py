@@ -859,11 +859,6 @@ async def test_a_review_s_sanction_whose_role_change_discord_refuses_stops_the_q
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#284: a verdict picture whose building raises falls back to text with no line in the "
-    "log channel",
-)
 async def test_a_verdict_whose_picture_fails_is_announced_as_text_and_says_why_in_the_log(
     tmp_path, drawn, monkeypatch,
 ):
@@ -895,3 +890,5 @@ async def test_a_verdict_whose_picture_fails_is_announced_as_text_and_says_why_i
     [line] = faults
     assert "verdict" in line and ("picture" in line or "image" in line), line
     assert "text" in line and fault in line, line
+    assert ("to put it right: fix the verdict template, then amend the round with "
+            "/results rounds amend") in line, line

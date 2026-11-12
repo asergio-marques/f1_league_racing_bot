@@ -7,8 +7,11 @@ from __future__ import annotations
 
 import json as _json
 import logging
+import sqlite3
 from datetime import datetime
+from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple
 
 import aiosqlite
 import discord
@@ -21,6 +24,10 @@ from leaguebot.core.services.drivers.driver_service import current_account_map_f
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.image.services import image_verdict_post
 from leaguebot.image.services.image_verdict_service import VerdictKind
+from leaguebot.results.services.publishing.results_post_service import (
+    fault_of,
+    picture_fallback_line,
+)
 from leaguebot.results.utils import results_formatter
 from leaguebot.core.utils.input_validator import (
     is_disqualification,
@@ -104,8 +111,9 @@ async def _graphic_name(
     fell straight through to its last resort (#141). A mock driver drew correctly, which is
     why it survived every pass made in test mode.
 
-    *fallback_display_name* stands in where the read fails: a name is not worth a lost
-    announcement, so an unreadable one leaves the behaviour exactly as it was before.
+    *fallback_display_name* stands in where the read of the recorded names fails (a database
+    error): a name is not worth a lost announcement, so an unreadable one leaves the behaviour
+    exactly as it was before. Any other fault is a defect and is raised.
     """
     from leaguebot.image.services.image_lineup_service import resolve_driver_name
 
@@ -113,7 +121,7 @@ async def _graphic_name(
         from leaguebot.image.services.image_results_post import _driver_names
 
         names = await _driver_names(bot, guild, [int(discord_user_id)])
-    except Exception as exc:  # noqa: BLE001 — a name is not worth a failed announcement
+    except sqlite3.Error as exc:
         log.warning("verdicts: driver name unreadable for %s: %s", discord_user_id, exc, exc_info=True)
     else:
         resolved = names.get(int(discord_user_id))
@@ -369,6 +377,24 @@ async def _record_announcement_on(
     )
 
 
+class SentVerdict(NamedTuple):
+    """What :func:`_send_verdict` sent: the *message*, and the *fault* that kept the verdict's
+    picture from posting where it went out as text in its place (``None`` otherwise)."""
+
+    message: "object | None"
+    fault: str | None = None
+
+
+class AnnouncedVerdict(NamedTuple):
+    """What :func:`announce_verdict` posted: the message's id and its channel's, which the job's
+    record saves, and *fallback*, the line the job writes to the log where the verdict's picture
+    went out as text (``None`` where it did not; image specification, :1401)."""
+
+    message_id: int
+    channel_id: int
+    fallback: "Callable[[str, str], str] | None" = None
+
+
 @posts_in_a_job
 async def _send_verdict(
     bot: LeagueBot,
@@ -390,14 +416,15 @@ async def _send_verdict(
     team_name: str | None = None,
     team_key: str | None = None,
     as_text: bool = False,
-) -> "object | None":
+) -> SentVerdict:
     """Post one verdict: as a graphic where the toggle allows, as text otherwise.
 
     *as_text* posts the text where the toggle allows a graphic: a job's retry, the picture
     being attempted on the first try alone (Constitution XIV rule 8, #439).
 
     Returns the message it sent, so the caller can record which message carries this verdict
-    (#189). Without that the bot held nothing by which to find an announcement again, and an
+    (#189), with the fault of a picture that fell back to text, for the job to say so in the log
+    (image specification, :1401). Without that the bot held nothing by which to find an announcement again, and an
     amendment left a decision standing that contradicted the classification it was applied to.
 
     The graphic **displaces the whole announcement but the mention** (Constitution XIV.7): its
@@ -411,6 +438,7 @@ async def _send_verdict(
     from leaguebot.image.services import image_verdict_post
 
     render = None
+    fault: str | None = None
     if not as_text and await image_verdict_post.verdicts_enabled(bot):
         try:
             drawing = await image_verdict_post.build_drawing(
@@ -432,8 +460,11 @@ async def _send_verdict(
                 team_key=team_key,
             )
             render = await image_verdict_post.render_verdict(bot, drawing)
-        except Exception:  # noqa: BLE001 — a graphic never costs a league its announcement
+        except Exception as exc:  # noqa: BLE001 — a graphic never costs a league its announcement (XIV.4)
+            # A fault the image module reports itself is answered there; this one it let
+            # through, so it goes back with the message for the job to say why the text stands.
             log.exception("verdict graphic failed for driver %s", driver_discord_id)
+            fault = fault_of(exc)
             render = None
 
         subject = image_verdict_post.describe(
@@ -458,9 +489,9 @@ async def _send_verdict(
         # verdict belongs to, and leaking the raw template key was never intended.
         attachment = _discord.File(str(render.png), filename=Path(render.png).name)
         try:
-            return await send_notice(
+            return SentVerdict(await send_notice(
                 target_channel, f"<@{driver_discord_id}>", mentions=_VERDICT_MENTIONS, file=attachment
-            )
+            ))
         finally:
             image_verdict_post.discard(render, attachment)
 
@@ -475,7 +506,7 @@ async def _send_verdict(
         justification_text,
         driver_display_name=driver_display_name,
     )
-    return await send_notice(target_channel, content, mentions=_VERDICT_MENTIONS)
+    return SentVerdict(await send_notice(target_channel, content, mentions=_VERDICT_MENTIONS), fault)
 
 
 async def announce_sanction(
@@ -555,7 +586,7 @@ async def announce_verdict(
     record: dict,
     *,
     as_text: bool = False,
-) -> tuple[int, int]:
+) -> AnnouncedVerdict:
     """Announce one verdict in the round's verdicts channel, raising where it cannot.
 
     What a queued `announce_verdict` job is (#439): *table* is ``penalty_records`` or
@@ -567,7 +598,9 @@ async def announce_verdict(
     heading is the round's `announce_heading` job and not this one's. *as_text* leaves the
     picture out, as a retry does (Constitution XIV, rule 8).
 
-    Gives the message's id and its channel's, which the job's record saves with the verdict.
+    Gives the message's id and its channel's, which the job's record saves with the verdict, and
+    where the picture fell back to text, the line the job writes to the log, given the member and
+    the change it ran for.
     """
     ctx = await _get_announcement_context(db_path, round_id)
     if not ctx:
@@ -606,7 +639,7 @@ async def announce_verdict(
     )
     guild = getattr(channel, "guild", None)
     try:
-        message = await _send_verdict(
+        sent = await _send_verdict(
             bot,
             channel,
             db_path=db_path,
@@ -637,9 +670,18 @@ async def announce_verdict(
         )
     except discord.HTTPException as exc:
         raise StepFailedOnDiscord(f"the verdict could not be posted: {exc}") from exc
-    if message is None:
+    if sent.message is None:
         raise StepFailedOnDiscord("the verdict could not be posted")
-    return int(getattr(message, "id")), int(channel.id)
+    fault = sent.fault
+    fallback = None if fault is None else (
+        lambda named, what: picture_fallback_line(
+            named, what, picture="verdict", division=ctx["division_name"],
+            round_number=result_ctx["round_number"], fault=fault,
+            put_right="fix the verdict template, then amend the round with "
+            "/results rounds amend to announce it again",
+        )
+    )
+    return AnnouncedVerdict(int(getattr(sent.message, "id")), int(channel.id), fallback)
 
 
 def _parse_chunk_ids(raw):
