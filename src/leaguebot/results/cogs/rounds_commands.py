@@ -4,7 +4,6 @@ The session picker the amendment posts (`_AmendSessionsView`) is here with it.
 """
 from __future__ import annotations
 
-import logging
 
 import discord
 from discord import app_commands
@@ -22,7 +21,6 @@ from leaguebot.core.utils.league_server import (
 from leaguebot.core.utils.log_lines import record_abandoned, refuse
 from leaguebot.core.utils.season_gate import season_for_command
 
-log = logging.getLogger(__name__)
 
 #: What a `/results rounds amend` left at its session picker leaves beneath its line.
 _PICKER_ENDED = "Nothing was amended. Run `/results rounds amend` again to amend a round."

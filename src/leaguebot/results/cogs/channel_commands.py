@@ -5,7 +5,6 @@ change queue for the kind of change its channel names (`_CHANNEL_KINDS`).
 """
 from __future__ import annotations
 
-import logging
 
 import discord
 from discord import app_commands
@@ -24,7 +23,6 @@ from leaguebot.core.utils.channel_guard import league_manager_only
 from leaguebot.core.utils.interaction_errors import describe
 from leaguebot.core.utils.log_lines import refuse
 
-log = logging.getLogger(__name__)
 
 #: The kind of change each `/results channel` command asks of the queue.
 _CHANNEL_KINDS = {
