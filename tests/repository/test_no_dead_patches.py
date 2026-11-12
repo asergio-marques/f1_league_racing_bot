@@ -10,13 +10,14 @@ fail. A test that reads as isolating a call it never isolated hides what it cove
 
 So this walks every test file, finds those three forms, and resolves each *statically named*
 target: a string path starting `leaguebot.`, or a name bound by an import in the test file to a
-`leaguebot` module. Where the target module lacks the name, it fails, naming file and line. A
-patch that really creates something the module reads (a `getattr` with a default) is not what
-`create=True` is for in this suite: say what is stubbed with a name the module has.
+`leaguebot` module or class. Where the target lacks the name (`hasattr`, so for a class a
+method or class attribute it carries, not one its `__init__` sets), it fails, naming file and
+line. A patch that really creates something the module reads (a `getattr` with a default) is not
+what `create=True` is for in this suite: say what is stubbed with a name the target has.
 
 A target it cannot resolve statically (an object built at run time, such as a fake bot or a cog,
-or a class rather than a module) is passed over: only the module's own names are checked. The
-source is read, and only the modules the targets name are imported.
+or a class from outside `leaguebot`) is passed over. The source is read, and only the modules the
+targets name are imported.
 """
 from __future__ import annotations
 
@@ -97,8 +98,9 @@ def _patched(source: str) -> list[tuple[int, str, str]]:
     return found
 
 
-def _module(dotted: str) -> ModuleType | None:
-    """The module *dotted* names, or None where it names something else or nothing."""
+def _target(dotted: str) -> object | None:
+    """The module, or the `leaguebot` class, *dotted* names, or None where it names something
+    else or nothing."""
     try:
         return importlib.import_module(dotted)
     except ModuleNotFoundError:
@@ -108,15 +110,20 @@ def _module(dotted: str) -> ModuleType | None:
         except ModuleNotFoundError:
             return None
         found = getattr(owner, last, None)
-        return found if isinstance(found, ModuleType) else None
+        if isinstance(found, ModuleType):
+            return found
+        if isinstance(found, type) and found.__module__.startswith("leaguebot."):
+            return found
+        return None
 
 
 def _dead_patches(source: str, path: str) -> list[str]:
-    """Each patch in *source* that creates a name its module lacks, as ``path:line: module.name``."""
+    """Each patch in *source* that creates a name its module or class lacks, as
+    ``path:line: target.name``."""
     dead = []
     for line, target, name in _patched(source):
-        module = _module(target)
-        if module is not None and not hasattr(module, name):
+        owner = _target(target)
+        if owner is not None and not hasattr(owner, name):
             dead.append(f"{path}:{line}: {target}.{name}")
     return dead
 
@@ -136,28 +143,34 @@ def test_the_check_sees_each_form_of_a_patch_that_creates_a_missing_name():
         "from unittest.mock import patch\n"
         "import leaguebot.core.utils.league_bot as lb\n"
         "from leaguebot.core.utils import league_bot as other\n"
+        "from leaguebot.core.utils.league_bot import LeagueBot\n"
         "def test_a(monkeypatch):\n"
         "    patch('leaguebot.core.utils.league_bot.gone', new=1, create=True)\n"
         "    patch.object(lb, 'also_gone', new=1, create=True)\n"
         "    monkeypatch.setattr(other, 'again_gone', 1, raising=False)\n"
         "    monkeypatch.setattr('leaguebot.core.utils.league_bot.path_gone', 1, raising=False)\n"
+        "    monkeypatch.setattr(LeagueBot, 'class_gone', 1, raising=False)\n"
+        "    patch('leaguebot.core.utils.league_bot.LeagueBot.path_class_gone', new=1, create=True)\n"
     )
 
     assert _dead_patches(source, "t.py") == [
-        "t.py:5: leaguebot.core.utils.league_bot.gone",
-        "t.py:6: leaguebot.core.utils.league_bot.also_gone",
-        "t.py:7: leaguebot.core.utils.league_bot.again_gone",
-        "t.py:8: leaguebot.core.utils.league_bot.path_gone",
+        "t.py:6: leaguebot.core.utils.league_bot.gone",
+        "t.py:7: leaguebot.core.utils.league_bot.also_gone",
+        "t.py:8: leaguebot.core.utils.league_bot.again_gone",
+        "t.py:9: leaguebot.core.utils.league_bot.path_gone",
+        "t.py:10: leaguebot.core.utils.league_bot.LeagueBot.class_gone",
+        "t.py:11: leaguebot.core.utils.league_bot.LeagueBot.path_class_gone",
     ]
 
 
-def test_the_check_passes_over_a_name_the_module_has_and_a_target_it_cannot_resolve():
+def test_the_check_passes_over_a_name_the_target_has_and_a_target_it_cannot_resolve():
     source = (
         "from unittest.mock import patch\n"
         "import leaguebot.core.utils.league_bot as lb\n"
         "def test_a(monkeypatch, cog):\n"
         "    patch('leaguebot.core.utils.league_bot.LeagueBot', new=1, create=True)\n"
-        "    patch('leaguebot.core.utils.league_bot.LeagueBot.gone', new=1, create=True)\n"
+        "    patch('leaguebot.core.utils.league_bot.LeagueBot.setup_hook', new=1, create=True)\n"
+        "    patch('os.path.gone', new=1, create=True)\n"
         "    patch.object(lb, 'gone', new=1)\n"
         "    monkeypatch.setattr(lb, 'gone', 1)\n"
         "    monkeypatch.setattr(cog.bot, 'gone', 1, raising=False)\n"
