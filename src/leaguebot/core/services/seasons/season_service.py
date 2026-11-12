@@ -1462,6 +1462,57 @@ async def round_in_division(db_path: str, round_id: int) -> RoundInDivision | No
     )
 
 
+@dataclass(frozen=True)
+class RoundFacts:
+    """A round with its division and season, as core's own read of the three gives it."""
+
+    round_id: int
+    round_number: int
+    status: RoundStatus
+    format: RoundFormat
+    track_name: str | None
+    scheduled_at: datetime
+    not_held: bool
+    division_id: int
+    division_name: str
+    division_tier: int
+    season_id: int
+    season_number: int
+    season_status: SeasonStatus
+
+
+async def round_facts_on(db: aiosqlite.Connection, round_id: int) -> RoundFacts | None:
+    """*round_id*'s facts with its division's and its season's, or None where the round is no
+    longer there, read on *db*.
+
+    For a module reading core's tables only through core's services (architecture.md, "The
+    database"), handed the connection of its own save: a query of its own table that joined the
+    round, its division and its season is split at the table line, and this is the core half, read
+    inside the same save, so a round that save has just changed is read as changed. It writes
+    nothing and commits nothing.
+    """
+    cursor = await db.execute(
+        "SELECT r.id, r.round_number, r.status, r.format, r.track_name, r.scheduled_at, "
+        "r.not_held, d.id AS division_id, d.name AS division_name, d.tier AS division_tier, "
+        "s.id AS season_id, s.season_number, s.status AS season_status "
+        "FROM rounds r JOIN divisions d ON d.id = r.division_id "
+        "JOIN seasons s ON s.id = d.season_id WHERE r.id = ?",
+        (round_id,),
+    )
+    row = await cursor.fetchone()
+    if row is None:
+        return None
+    return RoundFacts(
+        round_id=int(row["id"]), round_number=int(row["round_number"]),
+        status=RoundStatus(row["status"]), format=RoundFormat(row["format"]),
+        track_name=row["track_name"], scheduled_at=read_scheduled_at(row["scheduled_at"]),
+        not_held=bool(row["not_held"]), division_id=int(row["division_id"]),
+        division_name=str(row["division_name"]), division_tier=int(row["division_tier"]),
+        season_id=int(row["season_id"]), season_number=int(row["season_number"]),
+        season_status=SeasonStatus(row["season_status"]),
+    )
+
+
 async def rounds_still_to_run_by(db_path: str, now: datetime) -> list[Round]:
     """Each round of the ACTIVE season still to be run (NOT_RUN) whose start is at or before
     *now*, earliest first.
