@@ -72,6 +72,11 @@ OLD_STANDINGS = 8801
 OLD_LATER_STANDINGS = 8802
 LABEL = "Final Results"
 KIND = "test.review_posting"
+#: Why a test of whom a results or standings table may notify fails until the tables go through
+#: core's standing-post handler.
+TABLE_MENTIONS_NOT_STATED = (
+    "#284: the results and standings tables do not yet say whom they may notify"
+)
 
 _ids = itertools.count(9000)
 
@@ -350,7 +355,10 @@ async def _stop_notice(league: _League) -> str:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.xfail(strict=True, reason=TABLE_MENTIONS_NOT_STATED)
 async def test_a_replacement_is_posted_before_the_old_message_is_deleted(tmp_path):
+    """Round 3's results table is posted again: the new table goes out, notifying nobody,
+    before the old one (8800) is deleted."""
     league = await _league(tmp_path)
     await _ask(league)
     await run_queue(league.bot)
@@ -363,6 +371,8 @@ async def test_a_replacement_is_posted_before_the_old_message_is_deleted(tmp_pat
         ("delete", RESULTS_CHANNEL, OLD_RESULTS)
     )
     assert set(league.channel(RESULTS_CHANNEL).messages) == {new[0]}
+    [sent] = league.channel(RESULTS_CHANNEL).send.await_args_list
+    assert notified(sent.kwargs.get("allowed_mentions")) == NOBODY
 
 
 async def test_the_new_message_id_is_saved_with_the_post(tmp_path):
@@ -853,7 +863,10 @@ async def test_an_old_message_already_gone_completes_its_delete(tmp_path):
     assert len(league.sent_to(RESULTS_CHANNEL)) == 1
 
 
+@pytest.mark.xfail(strict=True, reason=TABLE_MENTIONS_NOT_STATED)
 async def test_standings_that_still_fit_are_edited_in_place_and_nothing_is_deleted(tmp_path):
+    """Round 3's standings (8801) still fit one message: they are edited in place, notifying
+    nobody, and nothing is posted or deleted."""
     league = await _league(tmp_path)
     await _ask(league)
     await run_queue(league.bot)
@@ -864,6 +877,8 @@ async def test_standings_that_still_fit_are_edited_in_place_and_nothing_is_delet
     assert league.deleted_in(STANDINGS_CHANNEL) == []
     assert OLD_STANDINGS in standings.messages
     assert standings.messages[OLD_STANDINGS].content != "provisional standings"
+    edit = standings.messages[OLD_STANDINGS].edit.await_args
+    assert notified(edit.kwargs.get("allowed_mentions")) == NOBODY
 
 
 @pytest.mark.xfail(strict=True, reason="#284: a refused standings edit posts a second table")
