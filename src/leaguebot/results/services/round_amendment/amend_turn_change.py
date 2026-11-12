@@ -160,7 +160,8 @@ async def _amendment_from(
         return None
     return _Amendment(
         amend_id=int(row["id"]), round_id=int(row["round_id"]), channel_id=int(row["channel_id"]),
-        session_types=str(row["session_types"]), started_by=None if row["started_by"] is None else int(row["started_by"]),
+        session_types=str(row["session_types"]),
+        started_by=None if row["started_by"] is None else int(row["started_by"]),
         round=facts,
     )
 
