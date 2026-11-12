@@ -36,6 +36,12 @@ import discord
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
+from leaguebot.results.services.publishing.results_post_service import (
+    STANDINGS_CONSTRUCTORS,
+    get_standings_message_id,
+    get_standings_message_ids,
+    set_standings_message_id_on,
+)
 from tests.support.change_queue import (
     acknowledgement,
     attach_queue,
@@ -262,11 +268,13 @@ async def _make_db(
         ):
             await db.execute(
                 "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
-                "standing_position, total_points, standings_message_id, standings_message_ids) "
-                "VALUES (?, ?, 1001, 1, 25, ?, ?)",
-                (round_id, DIVISION_ID, message_id,
-                 json.dumps([message_id]) if message_id else None),
+                "standing_position, total_points) VALUES (?, ?, 1001, 1, 25)",
+                (round_id, DIVISION_ID),
             )
+            if message_id:
+                await set_standings_message_id_on(
+                    db, DIVISION_ID, round_id, message_id, message_ids=json.dumps([message_id])
+                )
         await db.execute(
             "INSERT INTO round_submission_channels (round_id, channel_id, created_at) "
             "VALUES (?, ?, '2026-02-01T20:00:00+00:00')",
@@ -661,10 +669,9 @@ async def _standings_as_two_tables(league: _League) -> None:
     """Round 3's standings stand as one text table per championship, each with its id recorded:
     the drivers' as `OLD_STANDINGS`, the constructors' as `OLD_CONSTRUCTORS_TABLE`."""
     async with get_connection(league.db_path) as db:
-        await db.execute(
-            "UPDATE driver_standings_snapshots SET constructor_standings_message_id = ?, "
-            "constructor_standings_message_ids = ? WHERE round_id = ?",
-            (OLD_CONSTRUCTORS_TABLE, json.dumps([OLD_CONSTRUCTORS_TABLE]), ROUND_ID),
+        await set_standings_message_id_on(
+            db, DIVISION_ID, ROUND_ID, OLD_CONSTRUCTORS_TABLE, STANDINGS_CONSTRUCTORS,
+            message_ids=json.dumps([OLD_CONSTRUCTORS_TABLE]),
         )
         await db.commit()
     league.channel(STANDINGS_CHANNEL).seed(OLD_CONSTRUCTORS_TABLE, "constructors' standings")
@@ -718,13 +725,10 @@ async def test_a_standings_post_that_fails_on_its_second_table_removes_the_first
     )
     # Besides the retry's table the channel holds only round 4's, which this round leaves alone.
     assert set(standings.messages) == set(posted) | {OLD_LATER_STANDINGS}
-    async with get_connection(league.db_path) as db:
-        row = await (await db.execute(
-            "SELECT standings_message_ids, constructor_standings_message_id "
-            "FROM driver_standings_snapshots WHERE round_id = ?", (ROUND_ID,),
-        )).fetchone()
-    assert json.loads(row["standings_message_ids"]) == posted
-    assert row["constructor_standings_message_id"] is None
+    assert await get_standings_message_ids(league.db_path, DIVISION_ID, ROUND_ID) == posted
+    assert await get_standings_message_id(
+        league.db_path, DIVISION_ID, ROUND_ID, STANDINGS_CONSTRUCTORS
+    ) is None
 
 
 async def test_a_channel_the_division_was_never_given_plans_no_post(tmp_path):
@@ -914,12 +918,13 @@ async def test_a_text_repost_over_two_graphics_takes_both_down(tmp_path):
     constructors' id forgotten with nothing new to carry it."""
     league = await _league(tmp_path)
     async with get_connection(league.db_path) as db:
-        await db.execute(
-            "UPDATE driver_standings_snapshots SET standings_message_id = ?, "
-            "standings_message_ids = ?, constructor_standings_message_id = ?, "
-            "constructor_standings_message_ids = ? WHERE round_id = ?",
-            (DRIVERS_GRAPHIC, json.dumps([DRIVERS_GRAPHIC]), CONSTRUCTORS_GRAPHIC,
-             json.dumps([CONSTRUCTORS_GRAPHIC]), ROUND_ID),
+        await set_standings_message_id_on(
+            db, DIVISION_ID, ROUND_ID, DRIVERS_GRAPHIC,
+            message_ids=json.dumps([DRIVERS_GRAPHIC]),
+        )
+        await set_standings_message_id_on(
+            db, DIVISION_ID, ROUND_ID, CONSTRUCTORS_GRAPHIC, STANDINGS_CONSTRUCTORS,
+            message_ids=json.dumps([CONSTRUCTORS_GRAPHIC]),
         )
         await db.commit()
     standings = league.channel(STANDINGS_CHANNEL)
@@ -941,15 +946,13 @@ async def test_a_text_repost_over_two_graphics_takes_both_down(tmp_path):
     assert ("edit", STANDINGS_CHANNEL, DRIVERS_GRAPHIC) not in league.events
     assert {DRIVERS_GRAPHIC, CONSTRUCTORS_GRAPHIC} <= set(league.deleted_in(STANDINGS_CHANNEL))
     assert not {DRIVERS_GRAPHIC, CONSTRUCTORS_GRAPHIC} & set(standings.messages)
-    async with get_connection(league.db_path) as db:
-        row = await (await db.execute(
-            "SELECT standings_message_id, constructor_standings_message_id, "
-            "constructor_standings_message_ids FROM driver_standings_snapshots "
-            "WHERE round_id = ?", (ROUND_ID,),
-        )).fetchone()
-    assert row["standings_message_id"] == new[0]
-    assert row["constructor_standings_message_id"] is None
-    assert row["constructor_standings_message_ids"] is None
+    assert await get_standings_message_id(league.db_path, DIVISION_ID, ROUND_ID) == new[0]
+    assert await get_standings_message_id(
+        league.db_path, DIVISION_ID, ROUND_ID, STANDINGS_CONSTRUCTORS
+    ) is None
+    assert await get_standings_message_ids(
+        league.db_path, DIVISION_ID, ROUND_ID, STANDINGS_CONSTRUCTORS
+    ) is None
 
 
 async def test_each_later_round_s_posted_standings_are_posted_again(tmp_path):
@@ -995,9 +998,11 @@ async def _seed_rounds_either_side(league: _League) -> None:
             )
             await db.execute(
                 "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
-                "standing_position, total_points, standings_message_id, standings_message_ids) "
-                "VALUES (?, ?, 1001, 1, 25, ?, ?)",
-                (round_id, DIVISION_ID, message_id, json.dumps([message_id])),
+                "standing_position, total_points) VALUES (?, ?, 1001, 1, 25)",
+                (round_id, DIVISION_ID),
+            )
+            await set_standings_message_id_on(
+                db, DIVISION_ID, round_id, message_id, message_ids=json.dumps([message_id])
             )
         await db.commit()
     league.channel(STANDINGS_CHANNEL).seed(OLD_EARLIER_STANDINGS, "round 2 standings")
@@ -1061,10 +1066,12 @@ async def test_a_cancelled_later_round_s_standings_are_not_posted_again(tmp_path
         )
         await db.execute(
             "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
-            "standing_position, total_points, standings_message_id, standings_message_ids) "
-            "VALUES (?, ?, 1001, 1, 25, ?, ?)",
-            (CANCELLED_ROUND_ID, DIVISION_ID, OLD_CANCELLED_STANDINGS,
-             json.dumps([OLD_CANCELLED_STANDINGS])),
+            "standing_position, total_points) VALUES (?, ?, 1001, 1, 25)",
+            (CANCELLED_ROUND_ID, DIVISION_ID),
+        )
+        await set_standings_message_id_on(
+            db, DIVISION_ID, CANCELLED_ROUND_ID, OLD_CANCELLED_STANDINGS,
+            message_ids=json.dumps([OLD_CANCELLED_STANDINGS]),
         )
         await db.commit()
     league.channel(STANDINGS_CHANNEL).seed(OLD_CANCELLED_STANDINGS, "round 6 standings")
@@ -1084,11 +1091,10 @@ async def test_a_later_round_with_only_its_team_standings_posted_is_posted_again
     drivers' alone, since the picture can leave the two in different states."""
     league = await _league(tmp_path)
     async with get_connection(league.db_path) as db:
-        await db.execute(
-            "UPDATE driver_standings_snapshots SET standings_message_id = NULL, "
-            "standings_message_ids = NULL, constructor_standings_message_id = ?, "
-            "constructor_standings_message_ids = ? WHERE round_id = ?",
-            (TEAMS_ONLY_STANDINGS, json.dumps([TEAMS_ONLY_STANDINGS]), LATER_ROUND_ID),
+        await set_standings_message_id_on(db, DIVISION_ID, LATER_ROUND_ID, None)
+        await set_standings_message_id_on(
+            db, DIVISION_ID, LATER_ROUND_ID, TEAMS_ONLY_STANDINGS, STANDINGS_CONSTRUCTORS,
+            message_ids=json.dumps([TEAMS_ONLY_STANDINGS]),
         )
         await db.commit()
     league.channel(STANDINGS_CHANNEL).seed(TEAMS_ONLY_STANDINGS, "round 4 team standings")
@@ -1163,9 +1169,8 @@ async def _seed_classification(
         )
         await db.execute(
             "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
-            "standing_position, total_points, standings_message_id, standings_message_ids) "
-            "VALUES (?, ?, 1002, 2, 10, ?, ?)",
-            (ROUND_ID, DIVISION_ID, OLD_STANDINGS, json.dumps([OLD_STANDINGS])),
+            "standing_position, total_points) VALUES (?, ?, 1002, 2, 10)",
+            (ROUND_ID, DIVISION_ID),
         )
         if reserves is None:
             await db.execute(
@@ -1564,12 +1569,10 @@ def _standings_drawn(tmp_path: Any, *, championships: tuple[str, ...] = (
 
 
 async def _standings_ids(db_path: str) -> tuple[int | None, int | None]:
-    async with get_connection(db_path) as db:
-        row = await (await db.execute(
-            "SELECT standings_message_id, constructor_standings_message_id "
-            "FROM driver_standings_snapshots WHERE round_id = ?", (ROUND_ID,),
-        )).fetchone()
-    return row["standings_message_id"], row["constructor_standings_message_id"]
+    return (
+        await get_standings_message_id(db_path, DIVISION_ID, ROUND_ID),
+        await get_standings_message_id(db_path, DIVISION_ID, ROUND_ID, STANDINGS_CONSTRUCTORS),
+    )
 
 
 async def test_a_standings_picture_s_old_message_is_deleted_by_a_job_of_its_own(tmp_path):
@@ -1612,12 +1615,13 @@ async def test_a_refused_delete_of_an_old_standings_picture_stops_the_queue_keep
     links the old picture left standing."""
     league = await _league(tmp_path)
     async with get_connection(league.db_path) as db:
-        await db.execute(
-            "UPDATE driver_standings_snapshots SET standings_message_id = ?, "
-            "standings_message_ids = ?, constructor_standings_message_id = ?, "
-            "constructor_standings_message_ids = ? WHERE round_id = ?",
-            (DRIVERS_GRAPHIC, json.dumps([DRIVERS_GRAPHIC]), CONSTRUCTORS_GRAPHIC,
-             json.dumps([CONSTRUCTORS_GRAPHIC]), ROUND_ID),
+        await set_standings_message_id_on(
+            db, DIVISION_ID, ROUND_ID, DRIVERS_GRAPHIC,
+            message_ids=json.dumps([DRIVERS_GRAPHIC]),
+        )
+        await set_standings_message_id_on(
+            db, DIVISION_ID, ROUND_ID, CONSTRUCTORS_GRAPHIC, STANDINGS_CONSTRUCTORS,
+            message_ids=json.dumps([CONSTRUCTORS_GRAPHIC]),
         )
         await db.commit()
     standings = league.channel(STANDINGS_CHANNEL)
