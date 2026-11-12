@@ -91,7 +91,7 @@ from leaguebot.results.services.review.penalty_service import (
     load_staged_from_records,
     reports_only,
 )
-from leaguebot.results.services.review.penalty_wizard import PenaltyReviewState, StagedPardon, _pen_label
+from leaguebot.results.services.review.review_state import PenaltyReviewState, StagedPardon, _pen_label
 from leaguebot.results.services.review.report_approval_change import _latest_round
 from leaguebot.results.services.review.review_prompts import _apply_staged_appeals_on, send_appeals_prompt
 from leaguebot.results.services.round_amendment.amendment_writes import (

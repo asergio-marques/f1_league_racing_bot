@@ -764,7 +764,7 @@ def test_a_staged_penalty_and_a_staged_pardon_round_trip_their_payloads(decided)
     in: a decision read back from the round keeps its author and its time, and a pardon its."""
     import json
 
-    from leaguebot.results.services.review.penalty_wizard import StagedPardon
+    from leaguebot.results.services.review.review_state import StagedPardon
 
     staged = StagedPenalty(
         driver_user_id=101,

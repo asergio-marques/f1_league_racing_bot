@@ -53,7 +53,8 @@ from leaguebot.core.db.database import get_connection, run_migrations
 # `session_results.session_type` actually holds.
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.review.penalty_service import StagedPenalty
-from leaguebot.results.services.review.penalty_wizard import AddPenaltyModal, PenaltyReviewState
+from leaguebot.results.services.review.penalty_wizard import AddPenaltyModal
+from leaguebot.results.services.review.review_state import PenaltyReviewState
 from tests.support.change_queue import (
     acknowledgement,
     attach_queue,

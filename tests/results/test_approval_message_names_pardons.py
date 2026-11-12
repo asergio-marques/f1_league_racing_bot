@@ -31,12 +31,11 @@ from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.review.penalty_service import StagedPenalty
 from leaguebot.results.services.review.penalty_wizard import (
-    PenaltyReviewState,
     PenaltyReviewView,
-    StagedPardon,
     _ConfirmClearView,
     _show_approval_step,
 )
+from leaguebot.results.services.review.review_state import PenaltyReviewState, StagedPardon
 from tests.support.change_queue import (
     attach_queue,
     in_a_job,

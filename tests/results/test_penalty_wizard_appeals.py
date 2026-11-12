@@ -41,10 +41,10 @@ from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.review.penalty_service import StagedPenalty
 from tests.support.change_queue import in_a_job
 from leaguebot.results.services.review.penalty_wizard import (
-    PenaltyReviewState,
     _refresh_appeals_prompt,
     _render_appeals_prompt_content,
 )
+from leaguebot.results.services.review.review_state import PenaltyReviewState
 
 SERVER_ID = 10508
 ROUND_ID = 5

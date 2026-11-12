@@ -28,7 +28,7 @@ from leaguebot.results.services.submission.result_submission_service import (
 if TYPE_CHECKING:
     from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
-    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewState
+    from leaguebot.results.services.review.review_state import PenaltyReviewState
 
 log = logging.getLogger(__name__)
 
@@ -801,7 +801,8 @@ async def run_amendment_review_stages(
     Returns the state the screens share. The approvals happen through the screens themselves.
     """
     from leaguebot.results.services.review.penalty_service import load_staged_from_records
-    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewState, PenaltyReviewView
+    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewView
+    from leaguebot.results.services.review.review_state import PenaltyReviewState
     from leaguebot.results.services.review.penalty_wizard import _render_prompt_content
 
     # **Scoped to the sessions being amended** (#345). `apply_penalties_on` walks whatever

@@ -80,11 +80,7 @@ from leaguebot.core.services.seasons.season_service import round_called, set_rou
 from leaguebot.results.services.review import review_posting, review_verdicts
 from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 from leaguebot.results.services.review.penalty_service import StagedPenalty, apply_penalties_on
-from leaguebot.results.services.review.penalty_wizard import (
-    _BEING_APPROVED,
-    StagedPardon,
-    review_stage_refusal,
-)
+from leaguebot.results.services.review.review_state import _BEING_APPROVED, StagedPardon, review_stage_refusal
 from leaguebot.results.services.review.review_confirm_change import approval_wait_refusal
 from leaguebot.results.services.review.review_prompts import _snapshot_staged_drivers_on
 from leaguebot.results.services.round_amendment.amendment_writes import held_by_amendment

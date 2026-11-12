@@ -35,12 +35,10 @@ from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.review.penalty_wizard import (
     AddPardonModal,
     ApprovalView,
-    PenaltyReviewState,
     PenaltyReviewView,
-    StagedPardon,
-    _review_moved_on,
     _show_approval_step,
 )
+from leaguebot.results.services.review.review_state import PenaltyReviewState, StagedPardon, _review_moved_on
 from tests.support.change_queue import in_a_job
 
 SERVER_ID = 14402

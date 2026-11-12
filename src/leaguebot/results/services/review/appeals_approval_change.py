@@ -81,7 +81,7 @@ from leaguebot.results.services.review.review_confirm_change import STAGING_IN_H
 from leaguebot.results.services.review import review_posting, review_verdicts
 from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 from leaguebot.results.services.review.penalty_service import StagedPenalty
-from leaguebot.results.services.review.penalty_wizard import (
+from leaguebot.results.services.review.review_state import (
     _APPEALS_BEING_APPROVED,
     _pen_label,
     appeals_stage_refusal,

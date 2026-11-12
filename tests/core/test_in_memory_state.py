@@ -59,7 +59,7 @@ CLEARED = {
     # The penalty review a staging is handed on to its change, by (round, appeals): dropped by
     # results' subscriber to the bot's hook for the clear, so a pack's or a reset's gone round
     # holds no review (#439, 6b, C54; #283 S8a).
-    ("results/services/review/penalty_wizard.py", "_HELD_REVIEWS"),
+    ("results/services/review/review_state.py", "_HELD_REVIEWS"),
     # What became of each standing review's button, by its question's id: the reviews go with the
     # database a pack or a reset replaces, so no mark may outlive them (#439, 6b, C97).
     ("core/services/seasons/season_review_changes.py", "_PRESSES"),
@@ -239,7 +239,7 @@ async def test_clearing_a_leagues_state_drops_the_penalty_reviews_held_for_stagi
     """A review handed on to a staging change is gone after the clear through the hook of the
     bot the builder makes, so a factory reset leaves no review of a round that no longer exists
     (#439, 6b, C54)."""
-    from leaguebot.results.services.review.penalty_wizard import held_review, hold_review
+    from leaguebot.results.services.review.review_state import held_review, hold_review
 
     review: Any = SimpleNamespace(round_id=7)
     hold_review(review, appeals=False)

@@ -276,7 +276,7 @@ def sign_up_to_season_completed(bot: "LeagueBot") -> None:
 def sign_up_to_in_memory_state_cleared(bot: "LeagueBot") -> None:
     """Sign up what results holds in memory to the hook the bot's in-memory state is cleared
     through (`/bot pack`, `/bot factory-reset`)."""
-    from leaguebot.results.services.review.penalty_wizard import clear_held_reviews
+    from leaguebot.results.services.review.review_state import clear_held_reviews
 
     bot.in_memory_state_cleared.subscribe(clear_held_reviews)
 

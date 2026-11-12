@@ -1646,7 +1646,7 @@ async def test_an_autosack_s_other_division_has_its_lineup_posted_as_a_job(tmp_p
 
 
 async def test_a_second_approval_while_the_first_is_queued_is_refused(tmp_path):
-    from leaguebot.results.services.review.penalty_wizard import _BEING_APPROVED
+    from leaguebot.results.services.review.review_state import _BEING_APPROVED
 
     league = await review_league(tmp_path)
     await _approve(league)
@@ -1657,7 +1657,7 @@ async def test_a_second_approval_while_the_first_is_queued_is_refused(tmp_path):
 
 
 async def test_a_second_approval_while_the_first_is_running_is_refused(tmp_path):
-    from leaguebot.results.services.review.penalty_wizard import _BEING_APPROVED
+    from leaguebot.results.services.review.review_state import _BEING_APPROVED
 
     league = await review_league(tmp_path)
     await _approve(league)
@@ -1670,7 +1670,7 @@ async def test_a_second_approval_while_the_first_is_running_is_refused(tmp_path)
 
 
 async def test_a_second_approval_while_the_first_is_stopped_is_refused(tmp_path):
-    from leaguebot.results.services.review.penalty_wizard import _BEING_APPROVED
+    from leaguebot.results.services.review.review_state import _BEING_APPROVED
 
     league = await review_league(tmp_path)
     with points_fail():
@@ -1684,7 +1684,7 @@ async def test_a_second_approval_while_the_first_is_stopped_is_refused(tmp_path)
 
 
 async def test_every_review_control_refuses_while_the_approval_is_in_hand(tmp_path):
-    from leaguebot.results.services.review.penalty_wizard import (
+    from leaguebot.results.services.review.review_state import (
         _BEING_APPROVED,
         PenaltyReviewState,
         _review_moved_on,

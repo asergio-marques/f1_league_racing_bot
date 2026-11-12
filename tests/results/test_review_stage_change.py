@@ -64,7 +64,7 @@ APPEALS_PROMPT = 8902
 def _state(league: ReviewLeague, *, staged: Any = (), approval: int | None = None,
            appeals: bool = False) -> Any:
     """Round 3's review as it is held in memory, its prompt the one the channel records."""
-    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewState
+    from leaguebot.results.services.review.review_state import PenaltyReviewState
 
     return PenaltyReviewState(
         round_id=ROUND_ID, division_id=DIVISION_ID, submission_channel_id=SUBMISSION_CHANNEL,

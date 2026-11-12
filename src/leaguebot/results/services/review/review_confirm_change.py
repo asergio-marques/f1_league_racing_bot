@@ -40,11 +40,9 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
-from leaguebot.results.services.review import penalty_wizard
-from leaguebot.results.services.review.penalty_wizard import (
-    approval_unreachable,
-    held_review,
-)
+from leaguebot.results.services.review import penalty_wizard, review_state
+from leaguebot.results.services.review.penalty_wizard import approval_unreachable
+from leaguebot.results.services.review.review_state import held_review
 from leaguebot.results.services.review.review_stage_change import (
     KIND as STAGE_KIND,
     approval_on_the_row,
@@ -157,7 +155,7 @@ def review_confirm_change() -> ChangeType:
         state = held_review(int(ctx.payload["round_id"]), appeals=False)
         if state is None:
             return Verdict.not_due("The review this was confirmed in is no longer held.")
-        refusal = await penalty_wizard._review_moved_on(state)
+        refusal = await review_state._review_moved_on(state)
         if refusal is not None:
             return Verdict.refuse(refusal)
         unreachable = approval_unreachable(state)

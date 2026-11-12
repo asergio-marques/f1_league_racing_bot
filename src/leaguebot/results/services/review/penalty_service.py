@@ -20,7 +20,7 @@ from leaguebot.core.utils.input_validator import (
 )
 
 if TYPE_CHECKING:
-    from leaguebot.results.services.review.penalty_wizard import StagedPardon
+    from leaguebot.results.services.review.review_state import StagedPardon
 
 log = logging.getLogger(__name__)
 
@@ -480,7 +480,7 @@ async def load_staged_from_records(
 
     Returned in the order the records were written, so a manager reads them as they were decided.
     """
-    from leaguebot.results.services.review.penalty_wizard import StagedPardon
+    from leaguebot.results.services.review.review_state import StagedPardon
 
     reports: list[StagedPenalty] = []
     appeals: list[StagedPenalty] = []

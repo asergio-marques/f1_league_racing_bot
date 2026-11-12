@@ -42,15 +42,16 @@ import discord
 import pytest
 
 import leaguebot.results.services.review.penalty_wizard as pw
+import leaguebot.results.services.review.review_state as review_state
 from leaguebot.core.db.database import run_migrations
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.review.penalty_service import StagedPenalty
 from leaguebot.results.services.review.penalty_wizard import (
     ApprovalView,
-    PenaltyReviewState,
     PenaltyReviewView,
     _ConfirmClearView,
 )
+from leaguebot.results.services.review.review_state import PenaltyReviewState
 from tests.support.change_queue import (
     acknowledgement,
     attach_queue,
@@ -232,6 +233,7 @@ def _current(monkeypatch):
     The real check reads the round from the database, which a state on `:memory:` does not have.
     """
     monkeypatch.setattr(pw, "_review_moved_on", AsyncMock(return_value=None))
+    monkeypatch.setattr(review_state, "_review_moved_on", AsyncMock(return_value=None))
 
 
 def _approval_step():
@@ -489,7 +491,7 @@ async def test_the_pardon_button_opens_the_pardon_modal():
 
 
 def _pardon(idx: int = 0):
-    from leaguebot.results.services.review.penalty_wizard import StagedPardon
+    from leaguebot.results.services.review.review_state import StagedPardon
 
     return StagedPardon(
         driver_user_id=DRIVER + idx, driver_profile_id=31 + idx, attendance_id=41 + idx,

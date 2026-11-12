@@ -15,7 +15,7 @@ from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.results.services.points.scoring import _recompute_session_points_on
 
 if TYPE_CHECKING:
-    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewState
+    from leaguebot.results.services.review.review_state import PenaltyReviewState
 
 
 async def is_channel_in_penalty_review(db_path: str, channel_id: int) -> bool:
@@ -49,13 +49,13 @@ async def _build_penalty_review_state(
     division_id: int,
     submission_channel_id: int,
 ) -> "PenaltyReviewState":
-    """Reconstruct a :class:`~leaguebot.results.services.review.penalty_wizard.PenaltyReviewState` from the DB.
+    """Reconstruct a :class:`~leaguebot.results.services.review.review_state.PenaltyReviewState` from the DB.
 
     Used by the changes that put a review's prompt up: the review-open and verdict changes
     (`review_open_change`, `review_verdicts`), which a restart also asks to put a review back,
     the appeals phase's included (``status = 'AWAITING_APPEAL_VERDICTS'``).
     """
-    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewState
+    from leaguebot.results.services.review.review_state import PenaltyReviewState
 
     db_path: str = bot.db_path
 

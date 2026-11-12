@@ -552,13 +552,13 @@ async def test_the_builder_signs_every_module_up(tmp_path, monkeypatch):
 
     import leaguebot.__main__ as entry_point
     from leaguebot.core.models.cancellation import SCOPE_ROUND
-    from leaguebot.results.services.review import penalty_wizard
+    from leaguebot.results.services.review import review_state
     from leaguebot.signup.services import signup_views
     from leaguebot.weather.services import forecast_changes
 
     called: list[str] = []
     for module, name, part in (
-        (penalty_wizard, "clear_held_reviews", "penalty reviews"),
+        (review_state, "clear_held_reviews", "penalty reviews"),
         (signup_views, "clear_pending_reasons", "pending reasons"),
     ):
         spy = (lambda part: lambda: called.append(part))(part)

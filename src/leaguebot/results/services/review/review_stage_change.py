@@ -57,12 +57,8 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.services.review.penalty_service import StagedPenalty
-from leaguebot.results.services.review import penalty_wizard
-from leaguebot.results.services.review.penalty_wizard import (
-    PenaltyReviewState,
-    StagedPardon,
-    held_review,
-)
+from leaguebot.results.services.review import penalty_wizard, review_state
+from leaguebot.results.services.review.review_state import PenaltyReviewState, StagedPardon, held_review
 from leaguebot.results.services.review import review_posting
 
 __all__ = ["KIND", "review_stage_change"]
@@ -233,8 +229,8 @@ def review_stage_change() -> ChangeType:
         if state is None:
             return Verdict.not_due("The review this was staged in is no longer held.")
         refusal = await (
-            penalty_wizard._appeals_review_moved_on(state) if ctx.payload.get("appeals")
-            else penalty_wizard._review_moved_on(state)
+            review_state._appeals_review_moved_on(state) if ctx.payload.get("appeals")
+            else review_state._review_moved_on(state)
         )
         if refusal is not None:
             return Verdict.refuse(refusal)

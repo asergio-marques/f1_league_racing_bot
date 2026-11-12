@@ -278,7 +278,7 @@ def test_the_revert_publishes_nothing_either():
 def test_the_state_carries_the_flags_and_defaults_to_a_first_pass():
     """Defaulting to False is what keeps every existing caller a first pass. Whether an
     amendment's reports are approved is read from its row's `reports_approved_at` (#439)."""
-    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewState
+    from leaguebot.results.services.review.review_state import PenaltyReviewState
 
     state = PenaltyReviewState(
         round_id=1, division_id=1, submission_channel_id=1,

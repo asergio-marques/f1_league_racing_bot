@@ -2673,8 +2673,6 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/review/penalty_wizard.py", "AddPardonModal.on_submit"): (1, PASS["results"]),
     ("results/services/review/penalty_wizard.py", "ApprovalView.approve_btn"): (3, PASS["results"]),
     ("results/services/review/penalty_wizard.py", "_render_prompt_content"): (2, PASS["results"]),
-    ("results/services/review/penalty_wizard.py", "appeals_stage_refusal"): (1, PASS["results"]),
-    ("results/services/review/penalty_wizard.py", "review_stage_refusal"): (1, PASS["results"]),
     ("results/services/review/report_approval_change.py", "_latest_round"): (2, PASS["results"]),
     ("results/services/review/report_approval_change.py", "report_approval_change.apply"):
         (2, PASS["results"]),
@@ -2697,6 +2695,8 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
         (2, PASS["results"]),
     ("results/services/review/review_prompts.py", "is_channel_in_penalty_review"):
         (1, PASS["results"]),
+    ("results/services/review/review_state.py", "appeals_stage_refusal"): (1, PASS["results"]),
+    ("results/services/review/review_state.py", "review_stage_refusal"): (1, PASS["results"]),
     ("results/services/review/review_verdicts.py", "_division_name"): (1, PASS["results"]),
     ("results/services/review/review_verdicts.py", "_latest_scored_round"): (2, PASS["results"]),
     ("results/services/review/review_verdicts.py", "_sanction_heading_on"): (1, PASS["results"]),

@@ -179,7 +179,7 @@ def _penalty(seconds: int = 5, penalty_type: str = "TIME") -> StagedPenalty:
 
 
 def _pardon(pardon_type: str = "ABSENT", justification: str = "Ill"):
-    from leaguebot.results.services.review.penalty_wizard import StagedPardon
+    from leaguebot.results.services.review.review_state import StagedPardon
 
     return StagedPardon(
         driver_user_id=DRIVER_A, driver_profile_id=31, attendance_id=41,

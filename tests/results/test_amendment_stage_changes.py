@@ -1177,7 +1177,7 @@ async def test_a_stage_approval_is_refused_while_a_staging_is_in_hand(tmp_path):
     waiting to be shown. Alex presses Approve on the report stage: it is refused at the press,
     telling him a change to the review is still being shown, and the stage is not approved."""
     from leaguebot.results.models.points_config import SessionType
-    from leaguebot.results.services.review.penalty_wizard import PenaltyReviewState
+    from leaguebot.results.services.review.review_state import PenaltyReviewState
     from tests.results.test_review_stage_change import _add_penalty, _alex
 
     league = await _amend_league(tmp_path)
