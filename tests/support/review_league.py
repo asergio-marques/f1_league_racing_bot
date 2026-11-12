@@ -191,7 +191,8 @@ class AttendanceDouble:
     raise; so do `recalculate_fails`, raised by `recalculate_on`, and `candidates_fail`, raised
     by `sanction_candidates` while attendance is on, each on every call while it is set.
     `sync_hint` is attendance's own, naming the division and the round it is handed, so a test
-    reads the hint the league would. `lineup_as_text` holds, call by call, whether
+    reads the hint the league would, and so is `recalculation_faults`, attendance's reading of an
+    amendment's channels. `lineup_as_text` holds, call by call, whether
     `refresh_lineup` was asked for the text. `record_sheet_on` records that the sheet's id was
     to be saved, and writes nothing.
     """
@@ -236,6 +237,18 @@ class AttendanceDouble:
 
     async def rewrite_pardons_on(self, db: Any, round_id: int, pardons: Any, now: Any) -> None:
         self.calls.append(("rewrite_pardons_on", round_id))
+
+    async def recalculation_faults(self, season_id: int, guild: Any) -> list[str]:
+        """Attendance's own reading of the channels an amendment's recalculation posts to, a
+        cancelled division's included, while the league's attendance is on; none while it is
+        off."""
+        if not self.league.attendance_on:
+            return []
+        from leaguebot.attendance.services import attendance_service
+
+        return await attendance_service.recalculation_faults(
+            self.league.db_path, season_id, guild, self.league.bot, cancelled_too=True
+        )
 
     async def recalculate_on(self, db: Any, round_id: int, division_id: int) -> None:
         self.calls.append(("recalculate_on", round_id, division_id))

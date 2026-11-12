@@ -500,14 +500,15 @@ def _stub_discord(bot: Any, *, real_config: bool = False) -> None:
 
 def attendance_hook_double() -> Any:
     """Attendance's share of a round's review as a league with attendance off sees it: every
-    method does nothing, no driver is owed a sanction, and the sync hint names
-    `/attendance sync`."""
+    method does nothing, no driver is owed a sanction, no channel of attendance's stands in an
+    amendment's way, and the sync hint names `/attendance sync`."""
     hook = MagicMock()
     for name in ("record_on", "rewrite_pardons_on", "recalculate_on", "post_sheet",
                  "apply_sanction", "announce_sanction", "refresh_lineup", "record_sheet_on",
                  "check_sanction", "apply_sanction_on", "change_sanction_roles"):
         setattr(hook, name, AsyncMock(return_value=None))
     hook.sanction_candidates = AsyncMock(return_value=[])
+    hook.recalculation_faults = AsyncMock(return_value=[])
     hook.sync_hint = AsyncMock(return_value="Repair the cause, then run `/attendance sync`.")
     hook.pardons_to_review = AsyncMock(side_effect=lambda pardons: list(pardons))
     return hook

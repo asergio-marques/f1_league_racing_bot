@@ -689,13 +689,16 @@ async def test_a_sheet_discord_refuses_raises_and_is_not_put_on_the_retry_queue(
     assert row["attendance_message_id"] == str(OLD_SHEET)
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the hook has no check_in_read_on")
+@pytest.mark.xfail(
+    strict=True, reason="#284: the hook has no check_in_read_on and no recalculation_faults"
+)
 async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
     """Each method checks attendance's switch itself; the writers read it on the connection they
     are handed. With attendance off and Lewis over the autosack threshold: no driver is owed a
     sanction, the check of his sanction refuses nothing, saving it writes nothing and gives
-    None, nothing is posted or written, an amendment's review is offered no pardon, and a round
-    ended not held has no reading of its check-in planned. The one
+    None, nothing is posted or written, an amendment's review is offered no pardon, a round
+    ended not held has no reading of its check-in planned, and an amendment's approval is told of
+    no fault in attendance's channels, though the server holds none of them. The one
     method that acts whatever the switch, the change of a saved sanction's roles, is pinned by
     its own test."""
     db_path = await _db(tmp_path, attendance=False)
@@ -728,6 +731,9 @@ async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
         })) == []
         assert db.total_changes == before
     assert await hook.pardons_to_review([object()]) == []
+    no_channels = MagicMock()
+    no_channels.get_channel = MagicMock(return_value=None)
+    assert await hook.recalculation_faults(SEASON_ID, no_channels) == []
 
     assert placement.method_calls == []
     assert lineups.method_calls == []

@@ -736,7 +736,7 @@ _message_ids = itertools.count(4300)
 
 
 async def _bot_recording_reposts(path: str, reposted: list[tuple], *,
-                                 missing: tuple[int, ...] = ()):
+                                 missing: tuple[int, ...] = (), attendance_hook_of=None):
     """A bot double whose guild is real enough for the approval's posting jobs to run.
 
     Built on the change queue's `league_bot` (#439, slice 3; #283): a real output router, so every
@@ -746,6 +746,9 @@ async def _bot_recording_reposts(path: str, reposted: list[tuple], *,
 
     *missing* names channels the guild no longer holds, for the refusal tests: a deleted
     channel is what ``guild.get_channel`` answers None to.
+
+    *attendance_hook_of*, where given, makes attendance's hook, as `league_bot` takes it; else the
+    hook is `league_bot`'s double, as a league with attendance off sees it.
 
     The channels are specced as ``discord.TextChannel`` because the approval checks that what a
     division points at is something that can be posted in (#187). A bare ``AsyncMock`` is not,
@@ -768,7 +771,7 @@ async def _bot_recording_reposts(path: str, reposted: list[tuple], *,
 
     from tests.support.change_queue import SERVER_ID, league_bot
 
-    bot = await league_bot(path)
+    bot = await league_bot(path, attendance_hook_of=attendance_hook_of)
     guild = MagicMock()
     guild.id = SERVER_ID
     # The bot's own member resolves — the pre-flight reads its permissions through it — and
@@ -1233,15 +1236,19 @@ async def test_a_division_with_no_channels_does_not_refuse_the_amendment(db_path
 
 @pytest.mark.asyncio
 async def test_an_amendment_is_refused_when_the_attendance_channel_is_gone(db_path):
-    """The approval recalculates attendance too, so its channels are part of the gate."""
-    from unittest.mock import AsyncMock
+    """The approval recalculates attendance too, so its channels are part of the gate. Attendance
+    is on, and answers through the real hook the builder hands the approval."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
 
     path, season_id = db_path
     await _seed_season_points(path, season_id)
     division_id, _raced, _unraced = await _seed_division_with_rounds(path, season_id)
     async with get_connection(path) as db:
         await db.execute(
-            "INSERT INTO attendance_config (id, autosack_threshold) VALUES (1, 3)"
+            "INSERT INTO attendance_config (id, module_enabled, autosack_threshold) "
+            "VALUES (1, 1, 3)"
         )
         await db.execute(
             "INSERT INTO attendance_division_config (division_id, "
@@ -1251,54 +1258,16 @@ async def test_an_amendment_is_refused_when_the_attendance_channel_is_gone(db_pa
         await db.commit()
     await _staged_amendment(path, season_id)
 
-    bot = await _bot_recording_reposts(path, [], missing=(601,))
+    bot = await _bot_recording_reposts(
+        path, [], missing=(601,),
+        attendance_hook_of=lambda made, _path: AttendanceAfterReview(made, MagicMock()),
+    )
     bot.module_service.is_attendance_enabled = AsyncMock(return_value=True)
 
     press = await _approve(path, season_id, bot)
 
     assert "attendance channel" in _reply(press)
     assert await _nothing_queued(path), "a refused approval was queued"
-
-
-@pytest.mark.asyncio
-async def test_approval_faults_names_a_cancelled_division_s_deleted_attendance_channel(db_path):
-    """A division cancelled mid-season, attendance on, whose attendance channel (601) has been
-    deleted: the approval reposts and recalculates its raced rounds too, so the check names the
-    channel, as the results specification's "every division's" channels require (owner,
-    2026-10-06, "Refuse at the press"). Whether attendance is on is asked of the module service
-    the check is handed, not of one it looks up on the bot."""
-    from unittest.mock import AsyncMock, MagicMock
-
-    from leaguebot.core.services.rounds.amendment_service import approval_faults
-
-    path, season_id = db_path
-    await _seed_season_points(path, season_id)
-    division_id, _raced, _unraced = await _seed_division_with_rounds(path, season_id)
-    async with get_connection(path) as db:
-        await db.execute(
-            "INSERT INTO attendance_config (id, autosack_threshold) VALUES (1, 3)"
-        )
-        await db.execute(
-            "INSERT INTO attendance_division_config (division_id, "
-            "attendance_channel_id) VALUES (?, 601)",
-            (division_id,),
-        )
-        await db.execute(
-            "UPDATE divisions SET status = 'CANCELLED' WHERE id = ?", (division_id,)
-        )
-        await db.commit()
-    await _staged_amendment(path, season_id)
-
-    # The switches are handed in: the bot's own module service, which says attendance is off, is
-    # never asked (architecture.md, "Services stay attached to the bot").
-    bot = await _bot_recording_reposts(path, [], missing=(601,))
-    switches = MagicMock()
-    switches.is_attendance_enabled = AsyncMock(return_value=True)
-
-    faults = await approval_faults(path, season_id, bot, module_service=switches)
-
-    assert len(faults) == 1, faults
-    assert "attendance channel (id 601)" in faults[0]
 
 
 @pytest.mark.asyncio
@@ -1344,30 +1313,6 @@ async def test_the_attendance_channels_are_not_checked_while_the_module_is_off(d
             )
         ).fetchone()
     assert row is not None and row["points"] == 30, "a sound amendment was refused"
-
-
-@pytest.mark.asyncio
-async def test_an_attendance_switch_nobody_signed_up_for_is_raised_not_read_as_off(db_path):
-    """The attendance module's switch reader was never signed up (`SwitchNotSignedUp`): that is a fault
-    in the bot's assembly, not a switch that cannot be read, so `approval_faults` raises it rather
-    than standing aside and reading the module as off. The switch is the handed module service's."""
-    from unittest.mock import AsyncMock, MagicMock
-
-    from leaguebot.core.services.rounds.amendment_service import approval_faults
-
-    path, season_id = db_path
-    await _seed_season_points(path, season_id)
-    await _seed_division_with_rounds(path, season_id)
-    await _staged_amendment(path, season_id)
-
-    bot = await _bot_recording_reposts(path, [])
-    from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
-
-    switches = MagicMock()
-    switches.is_attendance_enabled = AsyncMock(side_effect=SwitchNotSignedUp("attendance"))
-
-    with pytest.raises(SwitchNotSignedUp, match="attendance"):
-        await approval_faults(path, season_id, bot, module_service=switches)
 
 
 @pytest.mark.asyncio
