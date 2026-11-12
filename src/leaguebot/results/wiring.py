@@ -120,9 +120,9 @@ def sign_up_to_final_round_read(bot: "LeagueBot") -> None:
 def sign_up_to_season_end_refused(bot: "LeagueBot") -> None:
     """Sign results' refusal of a season with a round being amended up to the hook what stands in
     the way of a season's completion and of its cancellation is read through."""
-    from leaguebot.results.services import result_submission_service
+    from leaguebot.results.services import amendment_writes
 
-    bot.season_end_refused.subscribe(result_submission_service.season_end_refusal)
+    bot.season_end_refused.subscribe(amendment_writes.season_end_refusal)
 
 
 def sign_up_to_review_sections(bot: "LeagueBot") -> None:
@@ -504,7 +504,7 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
 
     # The standing sweep that undoes an amendment nobody carried through; start-up arms it.
     async def _amendment_sweep_cb() -> None:
-        from leaguebot.results.services.result_submission_service import sweep_expired_amendments
+        from leaguebot.results.services.amendment_writes import sweep_expired_amendments
         await sweep_expired_amendments(bot, queue=bot.change_queue)
 
     scheduler.register_timer("amendment_sweep", _amendment_sweep_cb)

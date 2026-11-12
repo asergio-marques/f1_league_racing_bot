@@ -195,7 +195,7 @@ PORTRAIT_REFRESH_JOB_ID = "pfp_daily"
 AMENDMENT_SWEEP_JOB_ID = "amend_sweep"
 
 #: How often it looks. An amendment lapses after
-#: ``result_submission_service.AMENDMENT_STAGE_TIMEOUT_SECONDS``; sweeping every five minutes
+#: ``amendment_writes.AMENDMENT_STAGE_TIMEOUT_SECONDS``; sweeping every five minutes
 #: means a lapsed one is undone within five minutes of its deadline rather than at the deadline
 #: exactly, which is close enough for a round nobody is working on and cheap — the sweep reads
 #: one indexed table and almost always finds nothing.

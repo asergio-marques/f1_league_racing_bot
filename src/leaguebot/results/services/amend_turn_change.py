@@ -53,7 +53,11 @@ from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line
 from leaguebot.core.utils.member_names import member_named
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services import result_submission_service as submissions, paste_reading
+from leaguebot.results.services import (
+    result_submission_service as submissions,
+    paste_reading,
+    amendment_writes,
+)
 from leaguebot.results.services.amend_changes import (
     ARM_LAPSE,
     COMMAND,
@@ -200,7 +204,7 @@ def turn_steps(
             expected = None if row is None else await submissions.expected_amended_session_on(
                 db, int(row["amend_id"])
             )
-            drafted = [] if row is None else await submissions.amend_drafts_on(
+            drafted = [] if row is None else await amendment_writes.amend_drafts_on(
                 db, int(row["amend_id"])
             )
         if row is None or expected is None:
@@ -611,9 +615,9 @@ def amend_stage_one_change(
             )
         ).fetchone()
         assert row is not None  # the check found the amendment standing
-        drafted = await submissions.amend_drafts_on(db, amend_id)
+        drafted = await amendment_writes.amend_drafts_on(db, amend_id)
         sessions = [
-            submissions.AmendedSession(
+            amendment_writes.AmendedSession(
                 each.session_type, each.driver_rows, each.config_name, each.fl_driver_override
             )
             for each in drafted
@@ -621,11 +625,11 @@ def amend_stage_one_change(
         what = f"`{COMMAND}` of round {row['round_number']} ({row['division_name']})"
         await db.execute("SAVEPOINT stage_one")
         try:
-            await submissions.amend_round_results_on(
+            await amendment_writes.amend_round_results_on(
                 db, round_id, division_id, sessions, int(row["started_by"]),
                 display_names(ctx, division_id), now=now(),
             )
-        except submissions.AmendmentWouldOrphanVerdictError as exc:
+        except amendment_writes.AmendmentWouldOrphanVerdictError as exc:
             await db.execute("ROLLBACK TO SAVEPOINT stage_one")
             await db.execute("RELEASE SAVEPOINT stage_one")
             return StepResult(

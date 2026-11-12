@@ -1155,7 +1155,7 @@ async def test_the_half_hour_lapse_is_held_while_the_stage_two_prompt_is_in_hand
     """Stage one of Alex's amendment is recorded, but Discord refuses the stage-two prompt and
     the amendment's lane stops at it. Thirty-one minutes on, the half-hour sweep runs: the
     amendment is held (results spec :491), neither put back nor its channel deleted."""
-    from leaguebot.results.services.result_submission_service import sweep_expired_amendments
+    from leaguebot.results.services.amendment_writes import sweep_expired_amendments
 
     league = await _league(tmp_path, monkeypatch)
     await _ask_open(league)

@@ -32,7 +32,7 @@ from leaguebot.core.services.queue.change_types import (
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.services import review_posting
-from leaguebot.results.services.result_submission_service import sync_held_by_amendment
+from leaguebot.results.services.amendment_writes import sync_held_by_amendment
 from leaguebot.results.services.results_post_service import standings_repost_status
 
 if TYPE_CHECKING:

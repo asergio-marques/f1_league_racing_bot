@@ -240,7 +240,7 @@ def _clock(league: ReviewLeague) -> Any:
 
 
 async def _sweep(league: ReviewLeague, *, after: timedelta) -> int:
-    from leaguebot.results.services.result_submission_service import sweep_expired_amendments
+    from leaguebot.results.services.amendment_writes import sweep_expired_amendments
 
     asked = await sweep_expired_amendments(league.bot, queue=league.bot.change_queue, now=NOW + after)
     # The sweep asks the queue for each lapse (#439 6b), which the queue then carries out.
@@ -1212,17 +1212,13 @@ async def test_the_report_stage_offers_the_pardons_the_builder_s_hook_gives(monk
     from types import SimpleNamespace
     from unittest.mock import MagicMock
 
-    from leaguebot.results.services import (
-        amendment_stage_changes as stages,
-        result_submission_service,
-        review_posting,
-    )
+    from leaguebot.results.services import amendment_stage_changes as stages, review_posting, amendment_writes
 
     hook = MagicMock()
     hook.pardons_to_review = AsyncMock(return_value=[])
     *_, prompt = stages.amendment_stage_changes(attendance=hook, now=lambda: NOW)
     review = AsyncMock(return_value=SimpleNamespace(prompt_message_id=8990))
-    monkeypatch.setattr(result_submission_service, "run_amendment_review_stages", review)
+    monkeypatch.setattr(amendment_writes, "run_amendment_review_stages", review)
     channel = SimpleNamespace(id=AMEND_CHANNEL)
     monkeypatch.setattr(review_posting, "_league_guild", AsyncMock(return_value=MagicMock()))
     monkeypatch.setattr(review_posting, "_channel", lambda *_args: channel)

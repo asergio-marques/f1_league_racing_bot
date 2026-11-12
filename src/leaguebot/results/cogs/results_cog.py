@@ -723,7 +723,7 @@ class ResultsCog(commands.Cog):
         The wait is a refusal and is recorded as one (#482), *what* being the caller's own name
         of the command as the log channel should read it.
         """
-        from leaguebot.results.services.result_submission_service import sync_held_by_amendment
+        from leaguebot.results.services.amendment_writes import sync_held_by_amendment
 
         reply = await sync_held_by_amendment(self.bot.db_path, div.id)
         if reply is None:
@@ -1439,7 +1439,7 @@ class ResultsCog(commands.Cog):
         # division from the same database, and would publish them unapproved. Shown in the
         # panel and read again at the press, as the two refusals above are.
         from leaguebot.results.services.points_amendment_change import KIND, held_text
-        from leaguebot.results.services.result_submission_service import open_amendment_in_season
+        from leaguebot.results.services.amendment_writes import open_amendment_in_season
 
         held = await open_amendment_in_season(self.bot.db_path, season.id)
         if held is not None:

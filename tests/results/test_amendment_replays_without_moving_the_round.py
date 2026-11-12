@@ -38,7 +38,7 @@ from tests.support.change_queue import attach_queue, league_double
 
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "leaguebot"
-MODULE = "results/services/result_submission_service.py"
+MODULE = "results/services/amendment_writes.py"
 AMENDMENT = "results/services/amendment_stage_changes.py"
 REPORTS = "results.amendment.reports.approve"
 APPEALS = "results.amendment.appeals.approve"

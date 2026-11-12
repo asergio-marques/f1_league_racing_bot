@@ -78,7 +78,7 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.utils.log_lines import abandoned_line, name_of_member
-from leaguebot.results.services import result_submission_service as submissions
+from leaguebot.results.services import amendment_writes
 from leaguebot.results.services.amend_changes import COMMAND, LAPSE_KIND, WAIT, lapse_key
 from leaguebot.results.services.amend_turn_change import (
     CLOSE_KIND,
@@ -158,7 +158,7 @@ def amend_cancel_change(*, now: Callable[[], datetime]) -> ChangeType:
             ).fetchone()
         if row is None or row["closed_at"] is not None:
             return Verdict.refuse(TOO_LATE)
-        if await submissions.stage_in_hand(
+        if await amendment_writes.stage_in_hand(
             ctx.db_path, int(row["round_id"]), before=ctx.change_id
         ):
             return Verdict.refuse(STAGE_IN_HAND)
@@ -182,7 +182,7 @@ def amend_cancel_change(*, now: Callable[[], datetime]) -> ChangeType:
             )
         ).fetchone()
         assert row is not None  # the check found the amendment standing
-        reverted = await submissions.revert_abandoned_amendment_on(
+        reverted = await amendment_writes.revert_abandoned_amendment_on(
             db, round_id, display_names(ctx, division_id)
         )
         await db.execute("DELETE FROM amend_drafts WHERE amend_id = ?", (amend_id,))
@@ -192,8 +192,8 @@ def amend_cancel_change(*, now: Callable[[], datetime]) -> ChangeType:
         )
         what = f"`/{COMMAND}` of round {row['round_number']} ({row['division_name']})"
         detail = (
-            submissions.ROUND_PUT_BACK if reverted
-            else "Nothing was written. " + submissions.AMENDMENT_RE_RUN
+            amendment_writes.ROUND_PUT_BACK if reverted
+            else "Nothing was written. " + amendment_writes.AMENDMENT_RE_RUN
         )
         return StepResult(
             result={"reverted": reverted},
@@ -220,7 +220,7 @@ def amend_cancel_change(*, now: Callable[[], datetime]) -> ChangeType:
                 if view.done:
                     lines.append(
                         "↩️ Amendment cancelled. "
-                        + (submissions.ROUND_PUT_BACK if result.get("reverted")
+                        + (amendment_writes.ROUND_PUT_BACK if result.get("reverted")
                            else "Nothing was written.")
                     )
             elif view.name == DELETE_CHANNEL and "discarded" in result:
@@ -381,7 +381,7 @@ def amend_lapse_change(*, now: Callable[[], datetime]) -> ChangeType:
                     return Verdict.not_due("its channel's deletion is in hand on its own lane")
                 return Verdict.go()
             return Verdict.not_due("the amendment has ended")
-        if await submissions.stage_in_hand(ctx.db_path, int(row["round_id"])):
+        if await amendment_writes.stage_in_hand(ctx.db_path, int(row["round_id"])):
             return Verdict.not_due("a stage of the amendment is in hand on the change queue")
         if await _already_asked(ctx):
             return Verdict.not_due("the same lapse is already in hand")
@@ -424,9 +424,9 @@ def amend_lapse_change(*, now: Callable[[], datetime]) -> ChangeType:
             return StepResult(
                 result={"already_closed": True}, then=(PlannedStep(FORGET_CHANNEL, delete),)
             )
-        if cause == SWEEP and await submissions._claim_amendment_on(db, round_id) is None:
+        if cause == SWEEP and await amendment_writes._claim_amendment_on(db, round_id) is None:
             return StepResult(result={"held": True})
-        reverted = await submissions.revert_abandoned_amendment_on(
+        reverted = await amendment_writes.revert_abandoned_amendment_on(
             db, round_id, display_names(ctx, division_id)
         )
         await db.execute("DELETE FROM amend_drafts WHERE amend_id = ?", (amend_id,))
@@ -474,14 +474,14 @@ def amend_lapse_change(*, now: Callable[[], datetime]) -> ChangeType:
         elif cause == SWEEP:
             line = abandoned_line(named, what, lapsed=True, detail=(
                 f"season: {result['season_number']}, sessions: "
-                f"{submissions._sessions_text(sessions)}\n"
+                f"{amendment_writes._sessions_text(sessions)}\n"
                 "The amendment's report and appeal stages were not approved in time, so the "
-                f"round has been put back as it was. {submissions.AMENDMENT_RE_RUN}"
+                f"round has been put back as it was. {amendment_writes.AMENDMENT_RE_RUN}"
             ))
         else:
             line = abandoned_line(
                 named, what, lapsed=True,
-                detail=f"Nothing was written. {submissions.AMENDMENT_RE_RUN}",
+                detail=f"Nothing was written. {amendment_writes.AMENDMENT_RE_RUN}",
             )
         await ctx.bot.output_router.post_log(line)
         return StepResult(result={"recorded": True})

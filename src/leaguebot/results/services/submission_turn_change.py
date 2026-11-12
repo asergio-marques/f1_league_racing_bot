@@ -66,7 +66,12 @@ from leaguebot.core.utils.channel_guard import is_league_manager
 from leaguebot.core.utils.log_lines import refusal_line, reply_reason
 from leaguebot.core.utils.member_names import member_named
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services import result_submission_service as submissions, paste_reading, scoring
+from leaguebot.results.services import (
+    result_submission_service as submissions,
+    paste_reading,
+    scoring,
+    amendment_writes,
+)
 from leaguebot.results.services import review_open_change, season_points_service
 from leaguebot.results.services.submission_changes import ALL_CANCELLED_KIND
 from leaguebot.results.services.submission_steps import (
@@ -271,7 +276,7 @@ def turn_steps(
                 round_number=round_number, session=session_value, content=content, reason=reason,
             )
 
-        closed = await submissions.closed_by_cancellation(ctx.db_path, round_id)
+        closed = await amendment_writes.closed_by_cancellation(ctx.db_path, round_id)
         if closed:
             return StepResult(
                 result={"refused": "closed"}, lines=(refused(reply_reason(closed)),),
@@ -426,8 +431,8 @@ def turn_steps(
         payload = ctx.step_payload
         channel_id = int(payload["channel_id"])
         round_id = int(payload["round_id"])
-        held = await submissions.closed_by_cancellation(ctx.db_path, round_id) or (
-            await submissions.held_by_amendment(
+        held = await amendment_writes.closed_by_cancellation(ctx.db_path, round_id) or (
+            await amendment_writes.held_by_amendment(
                 ctx.db_path, round_id, int(payload["division_id"]), then=str(payload["held_then"])
             )
         )
@@ -446,7 +451,7 @@ def turn_steps(
         round_id = int(payload["round_id"])
         session = SessionType(payload["session_type"])
         channel_id = int(payload["channel_id"])
-        closed = await submissions.closed_by_cancellation_on(db, round_id)
+        closed = await amendment_writes.closed_by_cancellation_on(db, round_id)
         if closed:
             # A cancellation's save came between the settling and this save: both hold the write
             # lock in turn, so it is read here and the session is not saved against its round.

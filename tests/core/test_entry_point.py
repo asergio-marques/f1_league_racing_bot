@@ -378,7 +378,7 @@ _PHASES_DRAWN_PARTS = (
 #: Each module's part of a season's end, as the module names it: the moment's hook on the bot, the
 #: module, the subscriber, and what the test calls it, in the order the builder signs them up.
 _SEASON_END_PARTS = (
-    ("season_end_refused", "leaguebot.results.services.result_submission_service",
+    ("season_end_refused", "leaguebot.results.services.amendment_writes",
      "season_end_refusal", "results' refusal of a season's end"),
     ("drivers_returned", "leaguebot.signup.services.closing_steps", "drivers_returned_on",
      "signup's wizards ended"),

@@ -24,7 +24,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.result_submission_service import (
+from leaguebot.results.services.amendment_writes import (
     AMENDMENT_STAGE_TIMEOUT_SECONDS,
     sweep_expired_amendments,
 )
