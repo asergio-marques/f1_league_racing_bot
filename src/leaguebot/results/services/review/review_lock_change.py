@@ -34,6 +34,7 @@ import aiosqlite
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import ChangeOrigin, PlannedStep, StepKind, StepResult, Verdict
+from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
 )
@@ -44,6 +45,7 @@ from leaguebot.core.services.queue.change_types import (
     Step,
     StepContext,
 )
+from leaguebot.core.services.seasons import season_service
 from leaguebot.results.services.review.review_posting import DELETE_MESSAGE, delete_message_step
 from leaguebot.results.services.submission.submission_steps import post_step
 
@@ -79,15 +81,15 @@ async def _in_review(db: aiosqlite.Connection, channel_id: int) -> bool:
     rule: not closed, not being resubmitted, the round not final)."""
     row = await (
         await db.execute(
-            """
-            SELECT 1 FROM round_submission_channels rsc JOIN rounds r ON r.id = rsc.round_id
-            WHERE rsc.channel_id = ? AND rsc.closed = 0 AND rsc.in_penalty_review = 1
-              AND rsc.resubmitting = 0 AND r.status != 'FINAL'
-            """,
+            "SELECT round_id FROM round_submission_channels "
+            "WHERE channel_id = ? AND closed = 0 AND in_penalty_review = 1 AND resubmitting = 0",
             (channel_id,),
         )
     ).fetchone()
-    return row is not None
+    if row is None:
+        return False
+    facts = await season_service.round_facts_on(db, int(row["round_id"]))
+    return facts is not None and facts.status != RoundStatus.FINAL
 
 
 async def _conversation_open(db: aiosqlite.Connection, payload: dict[str, Any]) -> bool:
