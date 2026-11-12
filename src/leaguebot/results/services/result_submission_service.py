@@ -1,4 +1,10 @@
-"""result_submission_service.py — Round result submission wizard and channel management."""
+"""result_submission_service.py — A round's results submission: its state and its saves.
+
+Owns the submission's state (the session orders, which submissions are open, the session each
+expects next, closing one, the cancellation refusal and a round called off), the former-driver
+recompute and the round's going final, saving a session's result, the points-configuration picker,
+and the resubmission swap with its cancel view. Reading a paste is in ``paste_reading``, scoring
+in ``scoring``, amending in ``amendment_writes`` and the review's prompts in ``review_prompts``."""
 from __future__ import annotations
 
 import asyncio
@@ -739,19 +745,7 @@ class _ConfigSelectView(LeagueView):
 
 
 # ---------------------------------------------------------------------------
-# Private helpers
-# ---------------------------------------------------------------------------
-
-
-def _make_slug(name: str) -> str:
-    """Convert a division name to a Discord-channel-safe slug."""
-    slug = name.lower().replace(" ", "-")
-    slug = re.sub(r"[^a-z0-9-]", "", slug)
-    return slug[:24]  # keep channel name short
-
-
-# ---------------------------------------------------------------------------
-# Points computation — applied after a session is saved
+# Resubmission flow — triggered by the 🔄 Resubmit Initial Results button
 # ---------------------------------------------------------------------------
 
 
@@ -883,15 +877,6 @@ async def _insert_new_tables_in_tx(
                 ),
             )
 
-
-# ---------------------------------------------------------------------------
-# Main wizard
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
-# Resubmission flow — triggered by the 🔄 Resubmit Initial Results button
-# ---------------------------------------------------------------------------
 
 @dataclass
 class CollectedSession:

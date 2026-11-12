@@ -51,6 +51,7 @@ the log channel records the ending, with whatever a league admin discarded benea
 from __future__ import annotations
 
 import dataclasses
+import re
 from collections.abc import Callable
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -108,7 +109,6 @@ from leaguebot.core.services.test_mode.test_mode_service import (
     round_result_status,
 )
 from leaguebot.results.services.result_submission_service import (
-    _make_slug,
     expected_session_on,
     get_sessions_for_format,
     is_submission_open,
@@ -157,6 +157,13 @@ _ROUND = (
     "FROM rounds r JOIN divisions d ON d.id = r.division_id JOIN seasons s ON s.id = d.season_id "
     "LEFT JOIN division_results_config c ON c.division_id = d.id WHERE r.id = ?"
 )
+
+
+def _make_slug(name: str) -> str:
+    """Convert a division name to a Discord-channel-safe slug."""
+    slug = name.lower().replace(" ", "-")
+    slug = re.sub(r"[^a-z0-9-]", "", slug)
+    return slug[:24]  # keep channel name short
 
 
 def submission_open_change(*, now: Callable[[], datetime]) -> ChangeType:
