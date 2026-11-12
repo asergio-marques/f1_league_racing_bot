@@ -66,6 +66,7 @@ discards is named, with the sync command, as a run of the sanctions that could n
 from __future__ import annotations
 
 import logging
+import sqlite3
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
@@ -394,10 +395,12 @@ async def _failed(
 
 
 async def _sync_hint(hook: AttendanceAfterReview, division_id: int, round_id: int) -> str:
-    """The hook's line telling the manager how to finish a sanction, or the plain one."""
+    """The hook's line telling the manager how to finish a sanction, or the plain one where
+    the database cannot be read for the division's and the round's names: the hint is a courtesy
+    to the failure it rides on. Any other fault is a defect and is raised."""
     try:
         return await hook.sync_hint(division_id, round_id)
-    except Exception:  # noqa: BLE001 — the hint is a courtesy to the failure it rides on
+    except sqlite3.Error:
         log.exception("could not form the attendance sync hint for division %s", division_id)
         return _SYNC
 
