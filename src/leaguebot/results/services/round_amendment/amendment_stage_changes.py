@@ -94,7 +94,7 @@ from leaguebot.results.services.review.penalty_service import (
 from leaguebot.results.services.review.penalty_wizard import PenaltyReviewState, StagedPardon, _pen_label
 from leaguebot.results.services.review.report_approval_change import _latest_round
 from leaguebot.results.services.review.review_prompts import _apply_staged_appeals_on, send_appeals_prompt
-from leaguebot.results.services.amendment_writes import (
+from leaguebot.results.services.round_amendment.amendment_writes import (
     _AMENDMENT_NOT_OPEN,
     _clear_round_verdict_records_on,
     _recompute_former_drivers_after_amendment_on,
@@ -541,7 +541,7 @@ def amendment_stage_changes(
     async def post_reports_prompt(ctx: StepContext) -> StepResult:
         """Open the amendment's second stage in its channel, once stage one is recorded: the
         decisions the amended sessions already carry, for the manager to change."""
-        from leaguebot.results.services.amendment_writes import run_amendment_review_stages
+        from leaguebot.results.services.round_amendment.amendment_writes import run_amendment_review_stages
 
         payload = ctx.step_payload
         guild = await review_posting._league_guild(ctx.bot)

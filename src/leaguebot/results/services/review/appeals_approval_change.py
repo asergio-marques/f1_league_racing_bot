@@ -88,7 +88,7 @@ from leaguebot.results.services.review.penalty_wizard import (
 )
 from leaguebot.results.services.submission.result_submission_service import recompute_former_drivers_for_round
 from leaguebot.results.services.review.review_prompts import _apply_staged_appeals_on, _snapshot_staged_drivers_on
-from leaguebot.results.services.amendment_writes import held_by_amendment
+from leaguebot.results.services.round_amendment.amendment_writes import held_by_amendment
 from leaguebot.results.services.review.review_posting import (
     DELETE_CHANNEL,
     NAMES,

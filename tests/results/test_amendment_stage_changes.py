@@ -1,7 +1,7 @@
 """Approving an amendment's report stage and its appeals stage through the change queue (#439,
 slice 2).
 
-`results/services/amendment_stage_changes.py` carries the two stages of `/results rounds amend`
+`results/services/round_amendment/amendment_stage_changes.py` carries the two stages of `/results rounds amend`
 after its classification stage as changes:
 
 - `results.amendment.reports.approve`: `apply`, one save (the superseded announcements noted, the
@@ -240,7 +240,7 @@ def _clock(league: ReviewLeague) -> Any:
 
 
 async def _sweep(league: ReviewLeague, *, after: timedelta) -> int:
-    from leaguebot.results.services.amendment_writes import sweep_expired_amendments
+    from leaguebot.results.services.round_amendment.amendment_writes import sweep_expired_amendments
 
     asked = await sweep_expired_amendments(league.bot, queue=league.bot.change_queue, now=NOW + after)
     # The sweep asks the queue for each lapse (#439 6b), which the queue then carries out.
@@ -481,7 +481,7 @@ async def test_a_discarded_stage_past_its_deadline_names_the_undoing_and_one_bef
     if lapsed:
         _clock(league).advance(minutes=20)
     fault = points_fail() if stage == "reports" else patch(
-        "leaguebot.results.services.amendment_stage_changes.cascade_recompute_from_round_on",
+        "leaguebot.results.services.round_amendment.amendment_stage_changes.cascade_recompute_from_round_on",
         new=AsyncMock(side_effect=RuntimeError("the standings could not be calculated")),
     )
     with fault:
@@ -1212,7 +1212,7 @@ async def test_the_report_stage_offers_the_pardons_the_builder_s_hook_gives(monk
     from types import SimpleNamespace
     from unittest.mock import MagicMock
 
-    from leaguebot.results.services import amendment_stage_changes as stages, amendment_writes
+    from leaguebot.results.services.round_amendment import amendment_stage_changes as stages, amendment_writes
     from leaguebot.results.services.review import review_posting
 
     hook = MagicMock()

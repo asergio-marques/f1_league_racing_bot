@@ -53,9 +53,9 @@ from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.log_lines import refusal_line
 from leaguebot.core.utils.member_names import member_named
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services import amendment_writes
+from leaguebot.results.services.round_amendment import amendment_writes
 from leaguebot.results.services.submission import result_submission_service as submissions, paste_reading
-from leaguebot.results.services.amend_changes import (
+from leaguebot.results.services.round_amendment.amend_changes import (
     ARM_LAPSE,
     COMMAND,
     WAIT,
@@ -63,7 +63,7 @@ from leaguebot.results.services.amend_changes import (
     prompt_steps,
     record_prompt_posted,
 )
-from leaguebot.results.services.amendment_stage_changes import PROMPT_KIND
+from leaguebot.results.services.round_amendment.amendment_stage_changes import PROMPT_KIND
 from leaguebot.results.services.review.review_posting import (
     DELETE_CHANNEL,
     DELETE_MESSAGE,

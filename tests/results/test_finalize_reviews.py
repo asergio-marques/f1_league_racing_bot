@@ -1248,7 +1248,7 @@ async def test_an_amendment_elsewhere_or_ended_holds_nothing(tmp_path, where):
 
 async def test_an_amendment_is_not_held_by_itself(tmp_path):
     """Its own report and appeal stages are the ones that end it."""
-    from leaguebot.results.services.amendment_writes import held_by_amendment
+    from leaguebot.results.services.round_amendment.amendment_writes import held_by_amendment
 
     db_path = await _make_db(tmp_path, name="not_held_by_itself")
     await _amend_round_two(db_path)
@@ -1260,7 +1260,7 @@ async def test_an_amendment_is_not_held_by_itself(tmp_path):
 async def test_the_wait_a_refusal_quotes_follows_the_deadline(tmp_path, monkeypatch):
     """Written out, a tuned deadline left every refusal quoting the old one; and "at most" was
     never true, the sweep running every few minutes."""
-    import leaguebot.results.services.amendment_writes as rss
+    import leaguebot.results.services.round_amendment.amendment_writes as rss
 
     db_path = await _make_db(tmp_path, name="held_wait")
     await _amend_round_two(db_path)
@@ -1274,7 +1274,7 @@ async def test_the_wait_a_refusal_quotes_follows_the_deadline(tmp_path, monkeypa
 
 async def test_the_season_names_an_amendment_open_in_any_of_its_divisions(tmp_path):
     """What completing the season and approving a change to its points ask (#345)."""
-    from leaguebot.results.services.amendment_writes import open_amendment_in_season
+    from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_season
 
     db_path = await _make_db(tmp_path, name="season_held")
     await _amend_round_two(db_path, division_id=12)
@@ -1287,7 +1287,7 @@ async def test_the_season_names_an_amendment_open_in_any_of_its_divisions(tmp_pa
 
 
 async def test_an_ended_amendment_or_another_season_leaves_the_season_free(tmp_path):
-    from leaguebot.results.services.amendment_writes import open_amendment_in_season
+    from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_season
 
     db_path = await _make_db(tmp_path, name="season_not_held")
     await _amend_round_two(db_path, ended=True)

@@ -993,7 +993,7 @@ async def test_a_lapse_asked_for_a_closed_amendment_is_dropped_unless_a_restart_
     restart to finish. Asked for that closed amendment's lapse, the timer and the sweep find it not
     due and ask nothing; a restart asks it, and when it runs the channel is deleted and the row
     forgotten, with nothing said in the log channel."""
-    from leaguebot.results.services.amend_end_changes import ask_lapse
+    from leaguebot.results.services.round_amendment.amend_end_changes import ask_lapse
 
     league = await _league(tmp_path, monkeypatch)
     await _ask_open(league)
@@ -1155,7 +1155,7 @@ async def test_the_half_hour_lapse_is_held_while_the_stage_two_prompt_is_in_hand
     """Stage one of Alex's amendment is recorded, but Discord refuses the stage-two prompt and
     the amendment's lane stops at it. Thirty-one minutes on, the half-hour sweep runs: the
     amendment is held (results spec :491), neither put back nor its channel deleted."""
-    from leaguebot.results.services.amendment_writes import sweep_expired_amendments
+    from leaguebot.results.services.round_amendment.amendment_writes import sweep_expired_amendments
 
     league = await _league(tmp_path, monkeypatch)
     await _ask_open(league)

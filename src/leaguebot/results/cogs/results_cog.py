@@ -653,7 +653,7 @@ class ResultsCog(commands.Cog):
             return
         # The opener's message in an open amendment's channel is a paste too: a turn on the
         # amendment's lane (#439).
-        from leaguebot.results.services.amend_turn_change import take_amended_paste
+        from leaguebot.results.services.round_amendment.amend_turn_change import take_amended_paste
 
         if await take_amended_paste(self.bot, message, queue=self.bot.change_queue):
             return
@@ -723,7 +723,7 @@ class ResultsCog(commands.Cog):
         The wait is a refusal and is recorded as one (#482), *what* being the caller's own name
         of the command as the log channel should read it.
         """
-        from leaguebot.results.services.amendment_writes import sync_held_by_amendment
+        from leaguebot.results.services.round_amendment.amendment_writes import sync_held_by_amendment
 
         reply = await sync_held_by_amendment(self.bot.db_path, div.id)
         if reply is None:
@@ -1439,7 +1439,7 @@ class ResultsCog(commands.Cog):
         # division from the same database, and would publish them unapproved. Shown in the
         # panel and read again at the press, as the two refusals above are.
         from leaguebot.results.services.points_amendment_change import KIND, held_text
-        from leaguebot.results.services.amendment_writes import open_amendment_in_season
+        from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_season
 
         held = await open_amendment_in_season(self.bot.db_path, season.id)
         if held is not None:
@@ -1738,7 +1738,7 @@ class ResultsCog(commands.Cog):
         from leaguebot.core.models.change import VerdictKind
         from leaguebot.core.utils.season_gate import LIVE_STAGES, season_for_command
         from leaguebot.results.models.points_config import SessionType
-        from leaguebot.results.services.amend_changes import (
+        from leaguebot.results.services.round_amendment.amend_changes import (
             COMMAND,
             KIND,
             amendable_sessions,

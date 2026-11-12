@@ -31,7 +31,8 @@ from leaguebot.core.services.seasons.season_end_changes import (
     SEASON_CANCEL,
     SEASON_COMPLETE,
 )
-from leaguebot.results.services import amendment_stage_changes, points_amendment_change
+from leaguebot.results.services import points_amendment_change
+from leaguebot.results.services.round_amendment import amendment_stage_changes
 from leaguebot.results.services.review import appeals_approval_change, report_approval_change, review_open_change
 
 __all__ = ["REVIEW_KINDS", "division_job_in_hand", "round_in_hand"]

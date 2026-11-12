@@ -78,14 +78,14 @@ from leaguebot.core.services.queue.change_types import (
     StepContext,
 )
 from leaguebot.core.utils.log_lines import abandoned_line, name_of_member
-from leaguebot.results.services import amendment_writes
-from leaguebot.results.services.amend_changes import COMMAND, LAPSE_KIND, WAIT, lapse_key
-from leaguebot.results.services.amend_turn_change import (
+from leaguebot.results.services.round_amendment import amendment_writes
+from leaguebot.results.services.round_amendment.amend_changes import COMMAND, LAPSE_KIND, WAIT, lapse_key
+from leaguebot.results.services.round_amendment.amend_turn_change import (
     CLOSE_KIND,
     CONFIG_KIND,
     KIND as TURN_KIND,
 )
-from leaguebot.results.services.amend_views import CANCEL_KIND
+from leaguebot.results.services.round_amendment.amend_views import CANCEL_KIND
 from leaguebot.results.services.review.review_posting import (
     DELETE_CHANNEL,
     NAMES,

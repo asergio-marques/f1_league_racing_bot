@@ -660,7 +660,7 @@ async def snapshot_amendment(db_path: str, round_id: int,
     """Record the round as it stands before an amendment's stage one writes, as stage one does,
     for a test that seeds an amendment past stage one: through `snapshot_before_amendment_on`, on
     a connection opened and committed here."""
-    from leaguebot.results.services import amendment_writes
+    from leaguebot.results.services.round_amendment import amendment_writes
 
     async with get_connection(db_path) as db:
         await amendment_writes.snapshot_before_amendment_on(db, round_id, session_types)
@@ -680,7 +680,7 @@ async def amend_stage_one(db_path: str, round_id: int, division_id: int, session
     database"), so the standings names a full tie is settled by are resolved before it and handed
     in as *display_names*, as the stage approvals hand them to `cascade_recompute_from_round_on`;
     *bot* is not used, and the stage's log line is the change's, not the save's."""
-    from leaguebot.results.services import amendment_writes
+    from leaguebot.results.services.round_amendment import amendment_writes
 
     async with get_connection(db_path) as db:
         await amendment_writes.amend_round_results_on(
@@ -699,7 +699,7 @@ async def revert_amendment(db_path: str, round_id: int,
     (architecture.md, "The database"), so the standings names are resolved before it, by a job of
     their own, and handed in as *display_names*, as the stage approvals hand them to
     `cascade_recompute_from_round_on`; none handed, a full tie is settled by user id."""
-    from leaguebot.results.services import amendment_writes
+    from leaguebot.results.services.round_amendment import amendment_writes
 
     async with get_connection(db_path) as db:
         reverted = await amendment_writes.revert_abandoned_amendment_on(db, round_id, display_names)
@@ -711,7 +711,7 @@ async def claim_amendment(db_path: str, round_id: int) -> str | None:
     """Take an open amendment's deadline, as a stage's approval does before it writes; gives the
     deadline taken, or None where there was nothing to claim: through `_claim_amendment_on`, on a
     connection opened and committed here."""
-    from leaguebot.results.services import amendment_writes
+    from leaguebot.results.services.round_amendment import amendment_writes
 
     async with get_connection(db_path) as db:
         claimed = await amendment_writes._claim_amendment_on(db, round_id)

@@ -42,7 +42,7 @@ import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.amendment_writes import AmendmentWouldOrphanVerdictError, AmendedSession
+from leaguebot.results.services.round_amendment.amendment_writes import AmendmentWouldOrphanVerdictError, AmendedSession
 from leaguebot.core.services.seasons.season_service import SeasonImmutableError
 from tests.support.review_league import amend_stage_one, revert_amendment
 from tests.support.teams import seed_team_instances
@@ -176,7 +176,7 @@ async def _amend(
     with ExitStack() as stack:
         for name in ("_apply_points_from_config", "_apply_points_from_config_on"):
             stack.enter_context(patch(
-                f"leaguebot.results.services.amendment_writes.{name}",
+                f"leaguebot.results.services.round_amendment.amendment_writes.{name}",
                 new=apply_points, create=True,
             ))
         stack.enter_context(patch(

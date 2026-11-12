@@ -108,7 +108,7 @@ async def _run(db_path, channel=None, *, attendance=True):
     import inspect
 
     from leaguebot.attendance.services.attendance_after_review import AttendanceAfterReview
-    from leaguebot.results.services.amendment_writes import run_amendment_review_stages
+    from leaguebot.results.services.round_amendment.amendment_writes import run_amendment_review_stages
 
     async with get_connection(db_path) as db:
         await db.execute(
@@ -270,7 +270,7 @@ async def test_the_review_asks_the_hook_and_never_reads_attendance_s_switch(tmp_
     that offers no pardon, and the bot's module service fails the test if asked whether
     attendance is on. The review asks the hook once, with the round's pardon, offers none, and
     never reads attendance's switch itself (architecture.md :172-178)."""
-    from leaguebot.results.services.amendment_writes import run_amendment_review_stages
+    from leaguebot.results.services.round_amendment.amendment_writes import run_amendment_review_stages
 
     db_path, _ = await _db(tmp_path, "stage_pardons_hook")
     await _pardon(db_path)

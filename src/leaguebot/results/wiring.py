@@ -120,7 +120,7 @@ def sign_up_to_final_round_read(bot: "LeagueBot") -> None:
 def sign_up_to_season_end_refused(bot: "LeagueBot") -> None:
     """Sign results' refusal of a season with a round being amended up to the hook what stands in
     the way of a season's completion and of its cancellation is read through."""
-    from leaguebot.results.services import amendment_writes
+    from leaguebot.results.services.round_amendment import amendment_writes
 
     bot.season_end_refused.subscribe(amendment_writes.season_end_refusal)
 
@@ -295,21 +295,21 @@ def register_change_types(
     """
     from leaguebot.core.services.seasons.season_lifecycle_service import steps_of_the_modules
     from leaguebot.core.services.queue.setting_change import setting_change
-    from leaguebot.results.services.amend_changes import amend_open_change
-    from leaguebot.results.services.amend_changes import TIMER as AMEND_TIMER
-    from leaguebot.results.services.amend_end_changes import (
+    from leaguebot.results.services.round_amendment.amend_changes import amend_open_change
+    from leaguebot.results.services.round_amendment.amend_changes import TIMER as AMEND_TIMER
+    from leaguebot.results.services.round_amendment.amend_end_changes import (
         amend_cancel_change,
         amend_lapse_change,
         amend_lapse_timer,
     )
-    from leaguebot.results.services.amend_turn_change import (
+    from leaguebot.results.services.round_amendment.amend_turn_change import (
         amend_close_change,
         amend_config_change,
         amend_stage_one_change,
         amend_turn_change,
     )
     from leaguebot.results.services.amendment_settings import amendment_settings
-    from leaguebot.results.services.amendment_stage_changes import amendment_stage_changes
+    from leaguebot.results.services.round_amendment.amendment_stage_changes import amendment_stage_changes
     from leaguebot.results.services.review.appeals_approval_change import appeals_approval_change
     from leaguebot.results.services.channel_settings import results_channel_settings
     from leaguebot.results.services.module_switch_settings import module_on_results
@@ -504,7 +504,7 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
 
     # The standing sweep that undoes an amendment nobody carried through; start-up arms it.
     async def _amendment_sweep_cb() -> None:
-        from leaguebot.results.services.amendment_writes import sweep_expired_amendments
+        from leaguebot.results.services.round_amendment.amendment_writes import sweep_expired_amendments
         await sweep_expired_amendments(bot, queue=bot.change_queue)
 
     scheduler.register_timer("amendment_sweep", _amendment_sweep_cb)
@@ -630,7 +630,7 @@ async def recover_orphaned_amend_channels(bot: "LeagueBot") -> None:
     ask for one amendment is logged and does not stop the rest.
     """
     from leaguebot.core.db.database import get_connection
-    from leaguebot.results.services.amend_end_changes import RESTART, ask_lapse
+    from leaguebot.results.services.round_amendment.amend_end_changes import RESTART, ask_lapse
 
     async with get_connection(bot.db_path) as db:
         cursor = await db.execute("SELECT id FROM round_amend_channels ORDER BY id")

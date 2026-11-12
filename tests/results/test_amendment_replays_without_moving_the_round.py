@@ -14,7 +14,7 @@ half-amended — which an amendment abandoned part-way could then not take back.
 
 So an amendment's two stages are changes of their own kinds on the queue (#439, slice 2),
 `results.amendment.reports.approve` and `results.amendment.appeals.approve`, carried out by
-`results/services/amendment_stage_changes.py`, and the first pass's change types carry no
+`results/services/round_amendment/amendment_stage_changes.py`, and the first pass's change types carry no
 amendment branch. These tests pin that split, and pin what the two stages' jobs leave out.
 
 **Asserted against the change types' jobs and the parsed source rather than by running them.**
@@ -38,8 +38,8 @@ from tests.support.change_queue import attach_queue, league_double
 
 
 SRC = Path(__file__).resolve().parents[2] / "src" / "leaguebot"
-MODULE = "results/services/amendment_writes.py"
-AMENDMENT = "results/services/amendment_stage_changes.py"
+MODULE = "results/services/round_amendment/amendment_writes.py"
+AMENDMENT = "results/services/round_amendment/amendment_stage_changes.py"
 REPORTS = "results.amendment.reports.approve"
 APPEALS = "results.amendment.appeals.approve"
 

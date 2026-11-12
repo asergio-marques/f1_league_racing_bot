@@ -748,8 +748,8 @@ async def stage_in_hand(db_path: str, round_id: int, *, before: int | None = Non
     before the last paste handed stage one over comes up first and ends the amendment, so stage one
     queued behind it is no stage "in hand" ahead of it."""
     from leaguebot.core.services.queue.queue_records import unfinished
-    from leaguebot.results.services.amend_turn_change import STAGE_ONE_KIND
-    from leaguebot.results.services.amendment_stage_changes import (
+    from leaguebot.results.services.round_amendment.amend_turn_change import STAGE_ONE_KIND
+    from leaguebot.results.services.round_amendment.amendment_stage_changes import (
         APPEALS_KIND,
         PROMPT_KIND,
         REPORTS_KIND,
@@ -1109,7 +1109,7 @@ async def sweep_expired_amendments(
     bot). *now* is taken as a parameter so a test can pin it alongside the deadline it seeds; left out
     it is the wall clock.
     """
-    from leaguebot.results.services.amend_end_changes import SWEEP, ask_lapse
+    from leaguebot.results.services.round_amendment.amend_end_changes import SWEEP, ask_lapse
 
     # Normalised to UTC-aware, because the stored deadline always is: comparing it against a
     # naive *now* raises `TypeError` outside the guard below and aborts the whole sweep, leaving

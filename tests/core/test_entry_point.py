@@ -292,7 +292,7 @@ async def test_every_kind_is_registered_before_the_scheduler_starts(tmp_path):
     result submission, the four check-in jobs, the signup close, the portrait refresh and the
     amendment sweep) and every one-off timer kind."""
     from leaguebot.core.services.seasons import season_review_changes
-    from leaguebot.results.services.amend_changes import TIMER as AMEND_TIMER
+    from leaguebot.results.services.round_amendment.amend_changes import TIMER as AMEND_TIMER
     from leaguebot.results.services.review.review_lock_change import TIMER as LOCK_TIMER
     from leaguebot.signup.services.closing_steps import DELETE_TIMER, INACTIVITY_TIMER
     from leaguebot.signup.services.review_changes import CORRECTION_TIMER
@@ -378,7 +378,7 @@ _PHASES_DRAWN_PARTS = (
 #: Each module's part of a season's end, as the module names it: the moment's hook on the bot, the
 #: module, the subscriber, and what the test calls it, in the order the builder signs them up.
 _SEASON_END_PARTS = (
-    ("season_end_refused", "leaguebot.results.services.amendment_writes",
+    ("season_end_refused", "leaguebot.results.services.round_amendment.amendment_writes",
      "season_end_refusal", "results' refusal of a season's end"),
     ("drivers_returned", "leaguebot.signup.services.closing_steps", "drivers_returned_on",
      "signup's wizards ended"),

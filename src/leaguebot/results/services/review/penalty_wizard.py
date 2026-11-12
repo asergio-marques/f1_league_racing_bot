@@ -1541,7 +1541,7 @@ async def _ask_reports_approved(
     *what* in the log.
     """
     if state.is_amendment:
-        from leaguebot.results.services.amendment_stage_changes import REPORTS_KIND
+        from leaguebot.results.services.round_amendment.amendment_stage_changes import REPORTS_KIND
 
         await queue.ask(
             REPORTS_KIND,
@@ -1597,7 +1597,7 @@ async def _ask_appeals_approved(
     *what* in the log.
     """
     if state.is_amendment:
-        from leaguebot.results.services.amendment_stage_changes import APPEALS_KIND
+        from leaguebot.results.services.round_amendment.amendment_stage_changes import APPEALS_KIND
 
         await queue.ask(
             APPEALS_KIND,

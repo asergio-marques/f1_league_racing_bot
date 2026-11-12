@@ -248,7 +248,7 @@ async def _review(
             "leaguebot.core.services.rounds.amendment_service.approval_faults",
             new=AsyncMock(return_value=panel_faults or []),
         ) as faults, patch(
-            "leaguebot.results.services.amendment_writes.open_amendment_in_season",
+            "leaguebot.results.services.round_amendment.amendment_writes.open_amendment_in_season",
             new=AsyncMock(side_effect=list(held)),
         ):
             await undecorate(ResultsCog.amend_review)(cog, interaction)
