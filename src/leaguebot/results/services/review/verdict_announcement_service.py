@@ -20,7 +20,12 @@ from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.services.posting.notice_handler import send_notice
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
+from leaguebot.core.services.drivers.driver_service import (
+    current_account_map_for_division,
+    driver_test_names_on,
+)
+from leaguebot.core.services.rounds import track_service
+from leaguebot.core.services.seasons import season_service
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.image.services import image_verdict_post
 from leaguebot.image.services.image_verdict_service import VerdictKind
@@ -191,31 +196,27 @@ async def _get_announcement_context(db_path: str, round_id: int) -> dict:
     disagree with the card beneath it about what a round is called.
     """
     async with get_connection(db_path) as db:
+        facts = await season_service.round_facts_on(db, round_id)
+        if facts is None:
+            return {}
         cursor = await db.execute(
-            """
-            SELECT s.season_number, d.name AS division_name, d.tier AS division_tier,
-                   drc.penalty_channel_id, r.round_number,
-                   t.gp_name AS race_name, t.country AS country_name
-            FROM rounds r
-            JOIN divisions d ON d.id = r.division_id
-            JOIN seasons s ON s.id = d.season_id
-            LEFT JOIN division_results_config drc ON drc.division_id = d.id
-            LEFT JOIN tracks t ON t.name = r.track_name
-            WHERE r.id = ?
-            """,
-            (round_id,),
+            "SELECT penalty_channel_id FROM division_results_config WHERE division_id = ?",
+            (facts.division_id,),
         )
-        row = await cursor.fetchone()
-    if row is None:
-        return {}
+        config = await cursor.fetchone()
+        track = (
+            await track_service.get_track_by_name(db, facts.track_name)
+            if facts.track_name is not None
+            else None
+        )
     return {
-        "season_number": row["season_number"],
-        "division_name": row["division_name"],
-        "division_tier": row["division_tier"],
-        "penalty_channel_id": row["penalty_channel_id"],
-        "round_number": row["round_number"],
-        "race_name": row["race_name"],
-        "country_name": row["country_name"],
+        "season_number": facts.season_number,
+        "division_name": facts.division_name,
+        "division_tier": facts.division_tier,
+        "penalty_channel_id": config["penalty_channel_id"] if config is not None else None,
+        "round_number": facts.round_number,
+        "race_name": track["gp_name"] if track is not None else None,
+        "country_name": track["country"] if track is not None else None,
     }
 
 
@@ -298,11 +299,9 @@ async def _get_result_context(db_path: str, race_result_id: int | None, qual_res
         if race_result_id is not None:
             cursor = await db.execute(
                 """
-                SELECT r.round_number, sr.session_type, r.format, r.id AS round_id,
-                       r.division_id
+                SELECT sr.session_type, sr.round_id
                 FROM race_session_results rsr
                 JOIN session_results sr ON sr.id = rsr.session_result_id
-                JOIN rounds r ON r.id = sr.round_id
                 WHERE rsr.id = ?
                 """,
                 (race_result_id,),
@@ -310,11 +309,9 @@ async def _get_result_context(db_path: str, race_result_id: int | None, qual_res
         elif qual_result_id is not None:
             cursor = await db.execute(
                 """
-                SELECT r.round_number, sr.session_type, r.format, r.id AS round_id,
-                       r.division_id
+                SELECT sr.session_type, sr.round_id
                 FROM qualifying_session_results qsr
                 JOIN session_results sr ON sr.id = qsr.session_result_id
-                JOIN rounds r ON r.id = sr.round_id
                 WHERE qsr.id = ?
                 """,
                 (qual_result_id,),
@@ -322,14 +319,17 @@ async def _get_result_context(db_path: str, race_result_id: int | None, qual_res
         else:
             return {}
         row = await cursor.fetchone()
-    if row is None:
+        if row is None:
+            return {}
+        facts = await season_service.round_facts_on(db, row["round_id"])
+    if facts is None:
         return {}
     return {
-        "round_number": row["round_number"],
+        "round_number": facts.round_number,
         "session_type": row["session_type"],
-        "format": row["format"],
-        "round_id": row["round_id"],
-        "division_id": row["division_id"],
+        "format": facts.format.value,
+        "round_id": facts.round_id,
+        "division_id": facts.division_id,
     }
 
 
@@ -647,14 +647,11 @@ async def announce_verdict(
     # recorded under (issue #243).
     async with get_connection(db_path) as db:
         current_of = await current_account_map_for_division(db, result_ctx["division_id"])
-        cursor = await db.execute(
-            "SELECT test_display_name FROM driver_profiles "
-            "WHERE CAST(discord_user_id AS INTEGER) = ?",
-            (current_of.get(int(record["driver_user_id"]), int(record["driver_user_id"])),),
+        driver_discord_id = current_of.get(
+            int(record["driver_user_id"]), int(record["driver_user_id"])
         )
-        profile = await cursor.fetchone()
-    driver_discord_id = current_of.get(int(record["driver_user_id"]), int(record["driver_user_id"]))
-    test_display_name: str | None = profile["test_display_name"] if profile else None
+        test_names = await driver_test_names_on(db, [driver_discord_id])
+    test_display_name: str | None = test_names.get(driver_discord_id)
     is_sprint = str(result_ctx["format"]).upper() == "SPRINT"
     session_label = results_formatter.format_session_label(
         SessionType(result_ctx["session_type"]), is_sprint=is_sprint
@@ -707,25 +704,3 @@ def _parse_chunk_ids(raw):
     from leaguebot.results.services.publishing.results_post_service import _parse_ids
 
     return _parse_ids(raw)
-
-
-async def _rounds_from(db_path: str, division_id: int, from_round_id: int) -> list[dict]:
-    """The division's rounds from *from_round_id* forward, in round order.
-
-    Inclusive of the round named. Cancelled rounds are left out: they have no classification
-    for a verdict to describe, and their messages are not part of the sequence a league reads.
-    """
-    async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            """
-            SELECT r.id AS round_id, r.round_number
-            FROM rounds r
-            WHERE r.division_id = ?
-              AND r.status != 'CANCELLED'
-              AND r.round_number >= (SELECT round_number FROM rounds WHERE id = ?)
-            ORDER BY r.round_number
-            """,
-            (division_id, from_round_id),
-        )
-        return [dict(row) for row in await cursor.fetchall()]
-
