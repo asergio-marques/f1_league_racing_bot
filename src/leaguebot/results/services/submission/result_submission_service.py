@@ -38,7 +38,7 @@ from leaguebot.core.utils.league_bot import bot_of
 from leaguebot.core.utils.league_server import CallbackButton, LeagueView
 from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.utils.member_names import interaction_member
-from leaguebot.results.services.results_post_service import _parse_ids
+from leaguebot.results.services.publishing.results_post_service import _parse_ids
 from leaguebot.results.services.review.review_posting import DELETE_CHANNEL
 from leaguebot.results.services.submission.paste_reading import ParsedQualifyingRow, ParsedRaceRow, _parse_time_to_ms
 from leaguebot.results.services.points.scoring import _apply_points_in_tx

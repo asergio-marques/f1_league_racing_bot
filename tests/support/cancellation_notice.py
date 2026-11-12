@@ -3,7 +3,7 @@
 Season 1's division Pro (11), whose role is 555, has a forecast channel (701), a results channel
 (702) and a check-in channel (703) on the server, each a double recording its sends. Each module
 words, finds its channel for and posts its own notice of a round's, a division's or a season's
-cancellation (`leaguebot.<module>.services.cancellation_notice.post_notice`), as its own job does.
+cancellation (`post_notice` of `notice_module(<module>)`), as its own job does.
 """
 from __future__ import annotations
 
@@ -80,13 +80,20 @@ def pro(role_id: int | None = ROLE_ID) -> Any:
     return NS(id=DIVISION_ID, name="Pro", mention_role_id=role_id, calendar_message_id=None)
 
 
+def notice_module(module: str) -> Any:
+    """The module *module* ("attendance", "weather" or "results") keeps its cancellation notice
+    in; results' sits in its `publishing` folder."""
+    folder = ".publishing" if module == "results" else ""
+    return importlib.import_module(f"leaguebot.{module}.services{folder}.cancellation_notice")
+
+
 async def post_notice(
     module: str, bot: Any, guild: Any, *, scope: str = SCOPE_ROUND, division: Any = None
 ) -> str | None:
     """Post *module*'s ("attendance", "weather" or "results") notice of round 3 (Monza)'s
     cancellation, or of *scope*'s, to *division* (Pro where None), as its job does; what it
     answers."""
-    posting = importlib.import_module(f"leaguebot.{module}.services.cancellation_notice")
+    posting = notice_module(module)
     with in_a_job():
         return await posting.post_notice(
             bot, guild, division or pro(), scope=scope, round_number=3, track_name="Monza",

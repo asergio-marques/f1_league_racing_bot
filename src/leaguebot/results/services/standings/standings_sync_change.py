@@ -33,7 +33,7 @@ from leaguebot.core.utils.league_server import league_guild
 from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.services.review import review_posting
 from leaguebot.results.services.round_amendment.amendment_writes import sync_held_by_amendment
-from leaguebot.results.services.results_post_service import standings_repost_status
+from leaguebot.results.services.publishing.results_post_service import standings_repost_status
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService

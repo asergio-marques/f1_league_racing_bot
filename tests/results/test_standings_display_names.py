@@ -34,7 +34,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.results.services.results_post_service import (
+from leaguebot.results.services.publishing.results_post_service import (
     _build_member_display,
     _build_test_driver_display,
     driver_standings_for_display,

@@ -145,7 +145,7 @@ def sign_up_to_rounds_called_off(bot: "LeagueBot") -> None:
 
 def sign_up_to_cancellation_notices(bot: "LeagueBot") -> None:
     """Sign results' note up to the hook the notices told of a division are gathered through."""
-    from leaguebot.results.services import cancellation_notice as results_cancellation_notice
+    from leaguebot.results.services.publishing import cancellation_notice as results_cancellation_notice
 
     bot.cancellation_notices.subscribe(results_cancellation_notice.notices_on)
 
@@ -161,7 +161,7 @@ def sign_up_to_cancellation_steps(bot: "LeagueBot") -> None:
 def sign_up_to_cancellation_notice_steps(bot: "LeagueBot") -> None:
     """Sign results' notice of a cancellation up to the hook the steps a cancellation plans are
     gathered through."""
-    from leaguebot.results.services import cancellation_notice as results_cancellation_notice
+    from leaguebot.results.services.publishing import cancellation_notice as results_cancellation_notice
 
     bot.cancellation_steps.subscribe(partial(
         results_cancellation_notice.notify_results_steps,
@@ -335,7 +335,7 @@ def register_change_types(
         review_prompt_change,
     )
     from leaguebot.results.services.review.review_stage_change import review_stage_change
-    from leaguebot.results.services.rounds_sync_change import rounds_sync_change
+    from leaguebot.results.services.publishing.rounds_sync_change import rounds_sync_change
     from leaguebot.results.services.standings.standings_sync_change import standings_sync_change
     from leaguebot.results.services.submission.submission_changes import (
         submission_all_cancelled_change,

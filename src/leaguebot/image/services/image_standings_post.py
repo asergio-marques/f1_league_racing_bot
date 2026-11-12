@@ -229,7 +229,7 @@ async def _round_session_results(bot: LeagueBot, ordinal_of_round: dict[int, int
     grid tells "not yet run, or cancelled" from "run, and this driver took no part".
     """
     from leaguebot.results.models.session_result import SessionType
-    from leaguebot.results.services.results_post_service import load_driver_rows
+    from leaguebot.results.services.publishing.results_post_service import load_driver_rows
 
     if not ordinal_of_round:
         return {}
@@ -589,7 +589,7 @@ async def _post_one(
     before the previous one is named for deletion, so a render that fails leaves the channel
     holding the standings it had, and the caller's text fallback replaces nothing prematurely.
     """
-    from leaguebot.results.services.results_post_service import (
+    from leaguebot.results.services.publishing.results_post_service import (
         get_standings_message_id,
         get_standings_message_ids,
     )

@@ -286,7 +286,7 @@ def test_the_stewarding_module_is_its_own_bucket_and_not_the_results_one():
     module's, and hid it from the per-module floor. By folder, the two cannot mix."""
     report = _report(
         ("src/leaguebot/steward/services/steward_licence_service.py", 10, 5),
-        ("src/leaguebot/results/services/results_post_service.py", 10, 0),
+        ("src/leaguebot/results/services/publishing/results_post_service.py", 10, 0),
     )
 
     buckets = cbm.group(report)
@@ -295,7 +295,7 @@ def test_the_stewarding_module_is_its_own_bucket_and_not_the_results_one():
         "src/leaguebot/steward/services/steward_licence_service.py"
     ]
     assert [f[0] for f in buckets["results"]["files"]] == [
-        "src/leaguebot/results/services/results_post_service.py"
+        "src/leaguebot/results/services/publishing/results_post_service.py"
     ]
 
 

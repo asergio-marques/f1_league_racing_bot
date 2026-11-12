@@ -593,7 +593,7 @@ async def test_a_post_that_fails_part_way_removes_what_it_sent_before_its_next_t
     results = league.channel(RESULTS_CHANNEL)
     results.fail_send_at = 2
     results.delete_fails = http_error(text="Discord is down")
-    with patch("leaguebot.results.services.results_post_service._MSG_MAX", 40):
+    with patch("leaguebot.results.services.publishing.results_post_service._MSG_MAX", 40):
         await _ask(league)
         await run_queue(league.bot)
         assert (await stopped_job(league.db_path))["name"] == "post_session_results"
@@ -621,7 +621,7 @@ async def test_a_discarded_part_posted_table_names_its_stranded_messages(tmp_pat
     results = league.channel(RESULTS_CHANNEL)
     results.fail_send_at = 2
     results.delete_fails = http_error(text="Discord is down")
-    with patch("leaguebot.results.services.results_post_service._MSG_MAX", 40):
+    with patch("leaguebot.results.services.publishing.results_post_service._MSG_MAX", 40):
         interaction = await _ask(league)
         await run_queue(league.bot)
         assert (await stopped_job(league.db_path))["name"] == "post_session_results"
@@ -1616,7 +1616,7 @@ async def test_a_standings_picture_s_id_is_saved_with_its_mark(tmp_path):
     """Round 3's standings are drawn as two pictures. Their ids are saved by `post_standings`'
     own record, with its done mark: the job's result names both pictures, and the standings'
     own committing save is never called while the pictures post."""
-    from leaguebot.results.services import results_post_service
+    from leaguebot.results.services.publishing import results_post_service
 
     league = await _league(tmp_path)
     own_save = AsyncMock()

@@ -70,7 +70,7 @@ async def remove_earlier_try(guild, kept: dict[str, Any] | None) -> dict[str, An
     copies removed.
     """
     from leaguebot.core.models.change import StepFailedOnDiscord
-    from leaguebot.results.services.results_post_service import remove_part_posted_messages
+    from leaguebot.results.services.publishing.results_post_service import remove_part_posted_messages
 
     earlier = [int(each) for each in (kept or {}).get("new") or []]
     if not earlier:
@@ -160,7 +160,7 @@ async def post_opening_standings(
     from leaguebot.core.models.change import StepFailedOnDiscord
     from leaguebot.image.services.image_results_post import _driver_names
     from leaguebot.results.services.standings import standings_service
-    from leaguebot.results.services.results_post_service import (
+    from leaguebot.results.services.publishing.results_post_service import (
         produce_standings,
         reserves_in_standings,
     )
@@ -310,7 +310,7 @@ async def post_final_standings(
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.models.change import StepFailedOnDiscord
     from leaguebot.results.services.standings import standings_service
-    from leaguebot.results.services.results_post_service import (
+    from leaguebot.results.services.publishing.results_post_service import (
         driver_standings_for_display,
         produce_standings,
         reserves_in_standings,

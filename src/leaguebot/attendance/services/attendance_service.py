@@ -2576,7 +2576,7 @@ async def recalculation_faults(
     part of its question, and the results specification's "every division's" holds.
     """
     from leaguebot.image.services.image_validity_service import aspect_attaches_files
-    from leaguebot.results.services import results_post_service
+    from leaguebot.results.services.publishing import results_post_service
 
     if guild is None:
         # The results half already reports an absent guild; saying it twice would have a

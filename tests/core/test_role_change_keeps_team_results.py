@@ -220,7 +220,7 @@ async def test_position_change_survives_a_role_change(tmp_path):
 async def test_results_post_names_a_team_after_its_role_is_replaced(tmp_path):
     """The first round, posted again after the change, still says Ferrari — never a mention
     of a role that may since have been deleted from the server."""
-    from leaguebot.results.services.results_post_service import load_driver_rows, produce_session_results
+    from leaguebot.results.services.publishing.results_post_service import load_driver_rows, produce_session_results
 
     db_path, _teams, (first, _second) = await _season_raced_across_a_role_change(tmp_path)
     rows = await load_driver_rows(db_path, first, SessionType.FEATURE_RACE)

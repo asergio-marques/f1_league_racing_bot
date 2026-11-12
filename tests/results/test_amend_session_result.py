@@ -135,7 +135,7 @@ def _no_standings_names():
     """The names a full tie is settled by are resolved through Discord, which these stub bots
     only pretend to reach; ordering by user id keeps the tests about the classification."""
     with patch(
-        "leaguebot.results.services.results_post_service.standings_display_names", new=AsyncMock(return_value=None)
+        "leaguebot.results.services.publishing.results_post_service.standings_display_names", new=AsyncMock(return_value=None)
     ):
         yield
 
@@ -184,7 +184,7 @@ async def _amend(
             new=cascade,
         ))
         repost = stack.enter_context(patch(
-            "leaguebot.results.services.results_post_service.produce_session_results",
+            "leaguebot.results.services.publishing.results_post_service.produce_session_results",
             new=AsyncMock(),
         ))
         await amend_stage_one(
@@ -375,7 +375,7 @@ async def test_stage_one_settles_a_full_tie_by_name(tmp_path):
     names = {101: "Alice"}
 
     with patch(
-        "leaguebot.results.services.results_post_service.standings_display_names",
+        "leaguebot.results.services.publishing.results_post_service.standings_display_names",
         new=AsyncMock(return_value=names),
     ):
         stubs = await _amend(db_path, [_race_row(101, 1)], display_names=names)

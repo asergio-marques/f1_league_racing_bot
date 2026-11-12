@@ -118,7 +118,7 @@ async def erase_season_on(db: aiosqlite.Connection) -> SeasonErase:
     records are not forgotten here but by the change's closing step, for those taken down, so a
     banner left standing keeps its record.
     """
-    from leaguebot.results.services.results_post_service import (
+    from leaguebot.results.services.publishing.results_post_service import (
         _STANDINGS_ID_COLUMNS,
         _STANDINGS_IDS_COLUMNS,
         STANDINGS_CONSTRUCTORS,
@@ -279,7 +279,7 @@ async def take_down(bot: LeagueBot, item: dict[str, Any]) -> dict[str, Any]:
     posting's messages are. The switch-off's save has already erased the rows that name the
     channels, so a channel is only deleted here. No new direct post is made. A message already gone is not left.
     """
-    from leaguebot.results.services.results_post_service import _delete_posting, delete_round_channel
+    from leaguebot.results.services.publishing.results_post_service import _delete_posting, delete_round_channel
 
     guild = await league_guild(bot)
     if guild is None:

@@ -1597,7 +1597,7 @@ class ResultsCog(commands.Cog):
         if not await self._sync_gate(interaction, div, what=describe(interaction)):
             return
 
-        from leaguebot.results.services.results_post_service import standings_repost_status
+        from leaguebot.results.services.publishing.results_post_service import standings_repost_status
         from leaguebot.results.services.standings.standings_sync_change import STANDINGS_SYNC
 
         # The channel and the rounds are read here to answer at once, as the command always has;
@@ -1657,8 +1657,8 @@ class ResultsCog(commands.Cog):
         if not await self._sync_gate(interaction, div, what=describe(interaction)):
             return
 
-        from leaguebot.results.services.results_post_service import division_repost_status
-        from leaguebot.results.services.rounds_sync_change import ROUNDS_SYNC
+        from leaguebot.results.services.publishing.results_post_service import division_repost_status
+        from leaguebot.results.services.publishing.rounds_sync_change import ROUNDS_SYNC
 
         # The channel and the rounds are read here to answer at once, as the command always has;
         # the repost itself is a change on the queue, which checks them again when it runs.

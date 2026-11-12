@@ -102,7 +102,7 @@ from leaguebot.results.services.round_amendment.amendment_writes import (
     _remember_superseded_announcements_on,
 )
 from leaguebot.results.services.points.scoring import _recompute_session_points_on
-from leaguebot.results.services.results_post_service import _delete_posting, _parse_ids
+from leaguebot.results.services.publishing.results_post_service import _delete_posting, _parse_ids
 from leaguebot.results.services.review.review_posting import (
     DELETE_BATCH_NOTICE,
     DELETE_CHANNEL,

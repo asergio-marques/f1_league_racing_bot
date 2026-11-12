@@ -618,7 +618,7 @@ async def test_apply_penalties_on_neither_reposts_nor_logs(tmp_path):
     from unittest.mock import AsyncMock, patch
 
     from leaguebot.core.db.database import get_connection
-    from leaguebot.results.services import results_post_service as rps
+    from leaguebot.results.services.publishing import results_post_service as rps
     from leaguebot.results.services.review.penalty_service import apply_penalties_on
 
     parameters = inspect.signature(apply_penalties_on).parameters

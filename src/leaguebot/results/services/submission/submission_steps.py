@@ -38,7 +38,7 @@ from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.image.utils.tyre_compound import tyre_compound_list
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services.results_post_service import delete_round_channel
+from leaguebot.results.services.publishing.results_post_service import delete_round_channel
 from leaguebot.results.utils import results_formatter
 
 CREATE_CHANNEL = "create_channel"

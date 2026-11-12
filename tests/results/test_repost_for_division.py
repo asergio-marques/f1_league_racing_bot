@@ -115,7 +115,7 @@ def _guild(*, missing: bool = False):
 async def _results(db_path, *, guild=None):
     """What the results sync finds for the division: its status, read by
     `division_repost_status`, the repost itself being a change on the queue (#439)."""
-    from leaguebot.results.services.results_post_service import division_repost_status
+    from leaguebot.results.services.publishing.results_post_service import division_repost_status
 
     return await division_repost_status(db_path, DIVISION_ID, guild or _guild())
 
@@ -123,7 +123,7 @@ async def _results(db_path, *, guild=None):
 async def _standings(db_path, *, guild=None):
     """What the standings sync finds for the division: its status, read by
     `standings_repost_status`, the repost itself being a change on the queue (#439 6b)."""
-    from leaguebot.results.services.results_post_service import standings_repost_status
+    from leaguebot.results.services.publishing.results_post_service import standings_repost_status
 
     return await standings_repost_status(db_path, DIVISION_ID, guild or _guild())
 

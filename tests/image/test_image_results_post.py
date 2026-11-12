@@ -123,7 +123,7 @@ def _drawing():
 
 
 async def test_no_bot_leaves_the_textual_path_exactly_as_it_was(tmp_path):
-    from leaguebot.results.services.results_post_service import produce_session_results
+    from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
@@ -147,7 +147,7 @@ async def test_no_bot_leaves_the_textual_path_exactly_as_it_was(tmp_path):
 
 
 async def test_the_module_being_disabled_leaves_the_text(tmp_path):
-    from leaguebot.results.services.results_post_service import produce_session_results
+    from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
@@ -170,7 +170,7 @@ async def test_the_module_being_disabled_leaves_the_text(tmp_path):
 
 
 async def test_the_aspect_being_off_leaves_the_text(tmp_path):
-    from leaguebot.results.services.results_post_service import produce_session_results
+    from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
@@ -194,7 +194,7 @@ async def test_the_aspect_being_off_leaves_the_text(tmp_path):
 
 async def test_an_invalid_template_falls_back_to_the_textual_table(tmp_path):
     """An uncommanded posting whose render fails leaves the league its results."""
-    from leaguebot.results.services.results_post_service import produce_session_results
+    from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
@@ -226,7 +226,7 @@ async def test_a_posted_graphic_is_returned_with_the_message_it_replaces(tmp_pat
     message after it."""
     from leaguebot.core.db.database import get_connection
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import produce_session_results
+    from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path, message_id=111)
     sent: list = []
@@ -289,7 +289,7 @@ async def test_a_failed_render_leaves_the_previous_message_in_place(tmp_path):
     """The league keeps the results it had rather than losing them to a failed rebuild."""
     from leaguebot.core.db.database import get_connection
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import produce_session_results
+    from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path, message_id=111)
     sent: list = []
@@ -335,7 +335,7 @@ async def test_a_failed_render_leaves_the_previous_message_in_place(tmp_path):
 
 async def test_a_problem_is_reported_naming_the_session(tmp_path):
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import produce_session_results
+    from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
@@ -412,7 +412,7 @@ async def test_a_commanded_posting_is_rejected_and_posts_nothing(tmp_path):
 
 async def test_notices_are_reported_when_a_graphic_does_post(tmp_path):
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import produce_session_results
+    from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
@@ -493,7 +493,7 @@ async def test_the_rounds_stage_reaches_the_drawing(
 ):
     """The stage is read from the round, so the label drawn and the phase rule agree."""
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import produce_session_results
+    from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path, result_status=status)
     sent: list = []
@@ -533,7 +533,7 @@ async def test_the_rounds_stage_reaches_the_drawing(
 
 async def test_the_division_tier_and_season_reach_the_drawing(tmp_path):
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import produce_session_results
+    from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
@@ -577,7 +577,7 @@ async def test_a_discord_failure_posting_the_image_falls_back_to_the_text(tmp_pa
     import discord
 
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import produce_session_results
+    from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     png = tmp_path / "results.png"
@@ -625,7 +625,7 @@ async def test_a_discord_failure_posting_the_image_falls_back_to_the_text(tmp_pa
 async def test_an_unexpected_fault_in_the_image_path_never_blocks_the_posting(tmp_path):
     """The unit of failure is one graphic (XIV.4): the league still gets its results."""
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import produce_session_results
+    from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
@@ -656,7 +656,7 @@ async def test_an_unexpected_fault_in_the_image_path_never_blocks_the_posting(tm
 
 async def test_a_resolution_fault_is_reported_and_the_text_still_posts(tmp_path):
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import produce_session_results
+    from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     sent: list = []
@@ -702,7 +702,7 @@ def _render_artifact(tmp_path, name="results_race_template.png"):
 
 async def test_the_rendered_file_is_gone_once_the_graphic_has_posted(tmp_path):
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import produce_session_results
+    from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     png = _render_artifact(tmp_path)
@@ -735,7 +735,7 @@ async def test_the_rendered_file_is_gone_when_the_send_fails(tmp_path):
     import discord
 
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import produce_session_results
+    from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path)
     png = _render_artifact(tmp_path)
@@ -786,7 +786,7 @@ async def test_the_results_picture_saves_and_deletes_nothing(tmp_path):
     delete."""
     from leaguebot.core.db.database import get_connection
     from leaguebot.image.services import image_results_post
-    from leaguebot.results.services.results_post_service import produce_session_results
+    from leaguebot.results.services.publishing.results_post_service import produce_session_results
 
     db_path, session_result = await _seeded(tmp_path, message_id=111)
     async with get_connection(db_path) as db:

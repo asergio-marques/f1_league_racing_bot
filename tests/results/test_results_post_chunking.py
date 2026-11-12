@@ -30,7 +30,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from leaguebot.results.services.results_post_service import (
+from leaguebot.results.services.publishing.results_post_service import (
     _MSG_MAX,
     _delete_posting,
     _ids_json,

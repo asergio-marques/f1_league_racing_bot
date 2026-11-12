@@ -213,7 +213,7 @@ def _final_inputs(round_id: int, division_id: int):
     """The drivers and teams of the round, as the final standings read them."""
     return (
         patch(
-            "leaguebot.results.services.results_post_service.driver_standings_for_display",
+            "leaguebot.results.services.publishing.results_post_service.driver_standings_for_display",
             AsyncMock(return_value=[_lewis(round_id, division_id)]),
         ),
         patch(
@@ -305,7 +305,7 @@ async def test_the_final_standings_record_no_message_id(db_path):
     results' posting that records nothing, asked to post afresh as the final classification:
     no id is recorded against round 2."""
     from leaguebot.results.services.standings import season_standings_posts as service
-    from leaguebot.results.services.results_post_service import PostedTable
+    from leaguebot.results.services.publishing.results_post_service import PostedTable
 
     _season_id, division_ids = await seed_season(db_path)
     division_id = division_ids[0]
@@ -315,9 +315,9 @@ async def test_the_final_standings_record_no_message_id(db_path):
 
     inputs = _final_inputs(round_id, division_id)
     with inputs[0], inputs[1], patch(
-        "leaguebot.results.services.results_post_service.produce_standings", produce
+        "leaguebot.results.services.publishing.results_post_service.produce_standings", produce
     ), patch(
-        "leaguebot.results.services.results_post_service.post_standings", recording, create=True,
+        "leaguebot.results.services.publishing.results_post_service.post_standings", recording, create=True,
     ):
         await service.post_final_standings(
             bot_on(db_path), guild_double(), db_path, division_id, round_id, as_text=False
@@ -351,9 +351,9 @@ async def test_a_part_posted_final_standings_is_kept_and_removed_by_the_next_try
 
     inputs = _final_inputs(round_id, division_id)
     with inputs[0], inputs[1], patch(
-        "leaguebot.results.services.results_post_service.produce_standings", produce
+        "leaguebot.results.services.publishing.results_post_service.produce_standings", produce
     ), patch(
-        "leaguebot.results.services.results_post_service.remove_part_posted_messages", remove
+        "leaguebot.results.services.publishing.results_post_service.remove_part_posted_messages", remove
     ):
         with pytest.raises(StepFailedOnDiscord) as failed:
             await service.post_final_standings(

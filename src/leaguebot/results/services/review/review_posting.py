@@ -80,7 +80,7 @@ from leaguebot.results.models.standings_snapshot import (
     TeamStandingsSnapshot,
 )
 from leaguebot.results.services.standings import standings_service
-from leaguebot.results.services.results_post_service import (
+from leaguebot.results.services.publishing.results_post_service import (
     _delete_posting,
     _label_from_status,
     _parse_ids,

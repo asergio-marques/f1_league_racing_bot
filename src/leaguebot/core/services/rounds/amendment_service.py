@@ -55,7 +55,7 @@ async def approval_faults(
     The switch is asked of *module_service*, which the caller hands in: a service asks the bot for
     no service of its own.
     """
-    from leaguebot.results.services import results_post_service
+    from leaguebot.results.services.publishing import results_post_service
 
     if not await _season_exists(db_path, season_id):
         return ["The season could not be read, so nothing was changed."]

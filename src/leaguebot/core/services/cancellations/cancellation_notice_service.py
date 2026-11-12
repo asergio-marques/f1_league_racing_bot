@@ -4,7 +4,7 @@ Core announces nothing of its own: telling the drivers a race is off is each ena
 own notice, in its own words, found and posted through its own subscriber to the
 `cancellation_notices` hook (`cancellation_changes`, "Cancellation notices";
 `attendance.services.cancellation_notice`, `weather.services.cancellation_notice`,
-`results.services.cancellation_notice`). A round's cancellation, a division's, a season's, and a
+`results.services.publishing.cancellation_notice`). A round's cancellation, a division's, a season's, and a
 round ended because every session was entered as not held (results' `submission_changes`) all
 call the hook, inside the save, for every division it tells; the calendar, owned by core, is
 refreshed whatever the modules, through its own step.

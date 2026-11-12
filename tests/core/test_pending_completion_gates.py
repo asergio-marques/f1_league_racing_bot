@@ -211,7 +211,7 @@ async def _standings_sync(bot, interaction):
     is recorded rather than run; its read of the standings channel and rounds, and the repost
     it made at once before, each give "ok", created where missing."""
     bot.change_queue.ask = AsyncMock(return_value=1)
-    service = "leaguebot.results.services.results_post_service"
+    service = "leaguebot.results.services.publishing.results_post_service"
     with patch(
         f"{service}.standings_repost_status", new=AsyncMock(return_value="ok"), create=True,
     ), patch(
@@ -226,7 +226,7 @@ async def _rounds_sync(bot, interaction):
     is recorded rather than run."""
     bot.change_queue.ask = AsyncMock(return_value=1)
     with patch(
-        "leaguebot.results.services.results_post_service.division_repost_status",
+        "leaguebot.results.services.publishing.results_post_service.division_repost_status",
         new=AsyncMock(return_value="ok"),
     ):
         await undecorate(ResultsCog.rounds_sync)(_cog(ResultsCog, bot), interaction, "Pro")

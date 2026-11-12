@@ -54,7 +54,7 @@ async def test_every_scope_says_something_in_the_results_channel(tmp_path, scope
 
 
 def test_a_round_note_with_no_track_names_mystery():
-    from leaguebot.results.services.cancellation_notice import results_note
+    from leaguebot.results.services.publishing.cancellation_notice import results_note
 
     assert "Round 3 (Mystery)" in results_note(SCOPE_ROUND, "Pro", round_number=3)
 

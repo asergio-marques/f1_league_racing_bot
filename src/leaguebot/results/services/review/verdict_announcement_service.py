@@ -643,7 +643,7 @@ async def announce_verdict(
 
 def _parse_chunk_ids(raw):
     """The stored chunk list of an announcement, via the one parser that reads them."""
-    from leaguebot.results.services.results_post_service import _parse_ids
+    from leaguebot.results.services.publishing.results_post_service import _parse_ids
 
     return _parse_ids(raw)
 

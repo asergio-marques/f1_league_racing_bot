@@ -122,7 +122,7 @@ from leaguebot.results.services.review import review_posting, review_verdicts
 from leaguebot.results.services.submission.result_submission_service import send_cancelled_line, take_down_cancel_message
 from leaguebot.results.services.review.review_prompts import _build_penalty_review_state, send_review_prompt
 from leaguebot.results.services.round_amendment.amendment_writes import held_by_amendment
-from leaguebot.results.services.results_post_service import _delete_posting
+from leaguebot.results.services.publishing.results_post_service import _delete_posting
 from leaguebot.results.services.review.review_posting import (
     DELETE_CHANNEL,
     DELETE_MESSAGE,

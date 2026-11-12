@@ -337,7 +337,7 @@ _CANCELLATION_PARTS = (
      "notices_on", "attendance's check-in notice"),
     ("cancellation_notices", "leaguebot.weather.services.cancellation_notice",
      "notices_on", "weather's forecast note"),
-    ("cancellation_notices", "leaguebot.results.services.cancellation_notice",
+    ("cancellation_notices", "leaguebot.results.services.publishing.cancellation_notice",
      "notices_on", "results' results note"),
     ("round_ended_not_held", "leaguebot.attendance.services.check_in_record",
      "read_check_in_on", "attendance's check-in record"),

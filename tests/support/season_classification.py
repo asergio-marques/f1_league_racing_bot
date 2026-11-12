@@ -93,9 +93,9 @@ def classification_posts(standings: Any = None, attendance: Any = None) -> tuple
     standings = standings or AsyncMock(return_value=[])
     return (
         patch(
-            "leaguebot.results.services.results_post_service.post_standings", standings, create=True,
+            "leaguebot.results.services.publishing.results_post_service.post_standings", standings, create=True,
         ),
-        patch("leaguebot.results.services.results_post_service.produce_standings", standings),
+        patch("leaguebot.results.services.publishing.results_post_service.produce_standings", standings),
         patch(
             "leaguebot.attendance.services.attendance_service.post_attendance_sheet",
             attendance or AsyncMock(return_value=None),

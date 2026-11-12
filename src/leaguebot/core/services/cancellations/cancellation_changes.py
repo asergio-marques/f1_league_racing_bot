@@ -673,7 +673,7 @@ def _follow_steps(*, seasons: SeasonService, drawing: ImageDrawing) -> dict[str,
     """The jobs core carries out after the save: the calendar's repost. Every notice of the
     cancellation is now its own module's step, planned through `cancellation_notices` and
     registered on `cancellation_steps` (`attendance.services.cancellation_notice`,
-    `weather.services.cancellation_notice`, `results.services.cancellation_notice`). A job
+    `weather.services.cancellation_notice`, `results.services.publishing.cancellation_notice`). A job
     reads its division from its own payload (`division_id`, `division_name`, `season_id`).
 
     *drawing* is the image module's own answer to core's drawing protocol, handed on to

@@ -166,7 +166,7 @@ async def _standings_sync(cog, interaction, *, division="Pro", status="ok"):
     The repost the command made at once before 6b is patched to give *status* as well, each
     created where it is missing, so that a case whose answer the change leaves alone holds on
     either side of it."""
-    service = "leaguebot.results.services.results_post_service"
+    service = "leaguebot.results.services.publishing.results_post_service"
     with patch(
         f"{service}.standings_repost_status", new=AsyncMock(return_value=status), create=True,
     ), patch(
@@ -182,7 +182,7 @@ async def _rounds_sync(cog, interaction, *, division="Pro", status="ok"):
     given *status* here, and on "ok" asks the change queue for the sync (#439), whose `ask` is
     recorded rather than run. Gives the `ask`."""
     with patch(
-        "leaguebot.results.services.results_post_service.division_repost_status",
+        "leaguebot.results.services.publishing.results_post_service.division_repost_status",
         new=AsyncMock(return_value=status),
     ):
         await undecorate(ResultsCog.rounds_sync)(cog, interaction, division)
