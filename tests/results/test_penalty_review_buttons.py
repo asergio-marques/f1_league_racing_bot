@@ -337,8 +337,6 @@ async def test_confirming_the_clear_discards_the_staged_list(tmp_path):
     interaction = await _on_the_queue(state, tmp_path)
 
     with _approval_step() as approval, patch(
-        "leaguebot.results.services.review.penalty_review_views._shown", new=AsyncMock(return_value=DRIVER)
-    ), patch(
         "leaguebot.results.services.review.review_state._shown", new=AsyncMock(return_value=DRIVER)
     ):
         await type(view).confirm_btn(view, interaction, MagicMock())
@@ -370,8 +368,6 @@ async def test_confirming_the_clear_redraws_the_prompt_with_nothing_staged(tmp_p
     ), patch(
         "leaguebot.results.services.review.penalty_review_views._show_approval_step",
         new=AsyncMock(side_effect=_asked),
-    ), patch(
-        "leaguebot.results.services.review.penalty_review_views._shown", new=AsyncMock(return_value=DRIVER)
     ), patch(
         "leaguebot.results.services.review.review_state._shown", new=AsyncMock(return_value=DRIVER)
     ):

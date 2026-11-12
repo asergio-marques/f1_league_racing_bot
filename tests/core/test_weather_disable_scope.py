@@ -10,9 +10,9 @@ league was told that only weather jobs had been cancelled.
 
 The result-submission job is the worse of the two losses. The ``results.submission.open``
 change, asked by the round's timer, is the round's one clock-driven status transition and
-runs whatever the modules, so without it a round never leaves NOT_RUN and its season can never be completed. The three RSVP jobs are
-the more permanent: only the confirmation of placements creates them, and it cannot be run again on an
-active season.
+runs whatever the modules, so without it a round never leaves NOT_RUN and its season can never be
+completed. The three RSVP jobs are the more permanent: only the confirmation of placements creates
+them, and it cannot be run again on an active season.
 
 These tests hold the cancel to the weather prefixes, hold the round sweep that must not
 narrow with it, and pin the unfiltered default the round- and season-level cancels rely on.

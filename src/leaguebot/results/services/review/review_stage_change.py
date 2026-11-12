@@ -11,7 +11,7 @@ again without staging it twice.
 
 **What the lane applies the item to.** The review's state is held by its views and forms, and a
 change on the queue carries plain data only, so the form or press that asks hands the review it
-stands for to `hold_review` first (`penalty_wizard`), keyed by round and stage. The change reads the
+stands for to `hold_review` first (`review_state`), keyed by round and stage. The change reads the
 review it finds there when it runs. A restart finds none, as it finds no staged item: the change is
 then no longer due, which keeps defect 1 of #439 fixed (a prompt put back after a restart is a new
 one, and an old press staged nothing against it).
@@ -57,7 +57,7 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.services.review.penalty_service import StagedPenalty
-from leaguebot.results.services.review import penalty_wizard, review_state, appeals_review_views, penalty_review_views
+from leaguebot.results.services.review import review_state, appeals_review_views, penalty_review_views
 from leaguebot.results.services.review.review_state import PenaltyReviewState, StagedPardon, held_review
 from leaguebot.results.services.review import review_posting
 
