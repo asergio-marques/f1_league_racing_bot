@@ -128,12 +128,12 @@ def test_a_round_already_run_is_reported():
 
 
 def test_the_past_round_fault_says_why_it_cannot_stand():
-    """A manager who does not know that a past round never opens its submission would
-    assume the bot would simply catch up."""
+    """A manager who does not know that a past round has its submission opened late would
+    assume it opens at its start."""
     lines = _make_cog()._calendar_fault_lines(_fault(latest_past=_round(3)))
 
-    assert "never opens its result submission" in lines[0]
-    assert "could never take results" in lines[0]
+    assert "would have its result submission opened late" in lines[0]
+    assert "not at its start" in lines[0]
 
 
 def test_the_past_round_fault_says_every_earlier_round_is_affected():

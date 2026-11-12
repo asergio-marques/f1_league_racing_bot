@@ -434,7 +434,7 @@ def test_the_past_round_line_names_the_round_and_the_remedy():
 
     assert len(lines) == 1
     assert "Round 3 has already run" in lines[0]
-    assert "could never take results" in lines[0]
+    assert "would have its result submission opened late" in lines[0]
     assert "/round amend" in lines[0]
 
 

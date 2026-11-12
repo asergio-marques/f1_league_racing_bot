@@ -740,8 +740,7 @@ async def test_a_clean_season_is_offered_for_approval(db_path):
 
 
 async def test_a_round_already_run_withholds_approval(db_path):
-    """A round in the past never opens its result submission, so it could never take
-    results at all."""
+    """A round in the past would have its result submission opened late, not at its start."""
     cog = _cog(db_path, rounds=[_round(1, days_away=-3)])
     messages = await _review(cog, _interaction())
 

@@ -704,8 +704,8 @@ async def test_a_judgement_that_stopped_and_is_retried_after_the_window_passed_i
 
     refused = (
         NO_LONGER
-        + "A round cannot be moved into the past. Its result submission would never open, and "
-        "the round could never take results at all. Give it a moment still to come.\n• "
+        + "A round cannot be moved into the past. Its result submission would open late, at "
+        "once, and not at the round's moment. Give it a moment still to come.\n• "
         "The check-in deadline for that moment has already passed, so the round would have no "
         "check-in at all. Move it further out, or shorten the deadline."
         + NOTHING_CHANGED
@@ -1806,8 +1806,8 @@ async def test_a_discarded_catch_up_is_named_whatever_became_of_the_save(
 
     head = SAVE_DISCARDED if ending == "discarded" else (
         NO_LONGER
-        + "A round cannot be moved into the past. Its result submission would never open, and "
-        "the round could never take results at all. Give it a moment still to come."
+        + "A round cannot be moved into the past. Its result submission would open late, at "
+        "once, and not at the round's moment. Give it a moment still to come."
         + NOTHING_CHANGED
     )
     outcome = _outcome(press)
