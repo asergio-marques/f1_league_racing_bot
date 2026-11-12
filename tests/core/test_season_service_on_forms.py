@@ -719,19 +719,25 @@ def _notices_hook() -> tuple[Any, list[tuple[Any, ...]], Any]:
     return hook, handed, planned
 
 
+TARGET_NOT_RETURNED = "#284: ending a round not held does not yet hand back the round's target"
+
+
 @pytest.mark.parametrize(
     "statuses,ended,moves",
     [
-        pytest.param(("AWAITING_RESULTS", "NOT_RUN"), 0, True, id="awaiting results"),
+        pytest.param(("AWAITING_RESULTS", "NOT_RUN"), 0, True, id="awaiting results",
+                     marks=pytest.mark.xfail(strict=True, reason=TARGET_NOT_RETURNED)),
         pytest.param(("AWAITING_REPORT_VERDICTS", "NOT_RUN"), 0, True,
-                     id="awaiting report verdicts"),
+                     id="awaiting report verdicts",
+                     marks=pytest.mark.xfail(strict=True, reason=TARGET_NOT_RETURNED)),
         pytest.param(("NOT_RUN", "NOT_RUN"), 0, False, id="not run"),
         pytest.param(("AWAITING_APPEAL_VERDICTS", "NOT_RUN"), 0, False,
                      id="awaiting appeal verdicts"),
         pytest.param(("FINAL", "NOT_RUN"), 0, False, id="final"),
         pytest.param(("CANCELLED", "NOT_RUN"), 0, False, id="already cancelled"),
         pytest.param(("FINAL", "AWAITING_RESULTS", "NOT_RUN"), 1, True,
-                     id="the middle of three rounds"),
+                     id="the middle of three rounds",
+                     marks=pytest.mark.xfail(strict=True, reason=TARGET_NOT_RETURNED)),
     ],
 )
 async def test_end_round_not_held_on_moves_only_a_round_awaiting_results_or_report_verdicts(
@@ -744,9 +750,9 @@ async def test_end_round_not_held_on_moves_only_a_round_awaiting_results_or_repo
     Ending the middle of three rounds, round 1 final, marks that round alone. Where it moves the
     round it calls the notices hook it is handed once, on its own connection, for the round scope
     and the round (its id and number, Pro's id and name, the season's id and number, and its
-    track), and answers what the hook's subscribers planned beside the status. From any other
-    status it answers None, writes nothing and calls no subscriber: the round keeps its status,
-    unmarked, and no audit is written."""
+    track), and answers what the hook's subscribers planned beside the status and that same target.
+    From any other status it answers None, writes nothing and calls no subscriber: the round keeps
+    its status, unmarked, and no audit is written."""
     from leaguebot.core.services.seasons.season_service import end_round_not_held_on
 
     hook, handed, planned = _notices_hook()
@@ -764,6 +770,7 @@ async def test_end_round_not_held_on_moves_only_a_round_awaiting_results_or_repo
                 "season_id": SEASON_ID, "season_number": 3, "round_number": ended + 1,
                 "track_name": None,
             })]
+            assert answer.target == handed[0][2], "the round's target, handed back"
             assert await _round_statuses(db) == [
                 "CANCELLED" if n == ended else status for n, status in enumerate(statuses)
             ]

@@ -265,7 +265,6 @@ class SeasonLeague:
         bot.fetch_channel = AsyncMock(side_effect=_fetch)
         bot.get_guild = MagicMock(return_value=guild)
         set_guilds(bot, [guild])
-        _attach_amendment_service(bot, db_path)
         bot.attendance_service.get_or_create_config = AsyncMock(side_effect=self._attendance)
         bot.attendance_after_review.check_in_read_on = AttendanceAfterReview(
             bot, MagicMock()
@@ -426,17 +425,6 @@ class SeasonLeague:
             self.bot, approve_view=_approve_view_for(self.bot), queue=self.bot.change_queue)
         self.cog = SeasonCog(self.bot)
         await restart_queue(self.bot)
-
-
-def _attach_amendment_service(bot: Any, db_path: str) -> None:
-    """The real `AmendmentService` while it stands, so that its record of the amendments being
-    applied is what the cancellations read; nothing once `/round amend` is on the change queue and
-    the class is gone."""
-    try:
-        from leaguebot.core.services.rounds.amendment_service import AmendmentService
-    except ImportError:
-        return
-    bot.amendment_service = AmendmentService(db_path)
 
 
 async def make_db(tmp_path: Any, now: datetime, *, extra_drivers: bool) -> str:
