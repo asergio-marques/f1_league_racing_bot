@@ -446,6 +446,7 @@ async def test_a_driver_already_signed_off_logs_a_no_op_rather_than_raising(
     assert "No-op" in _logged(bot)
     bot.placement_service.sack_driver.assert_not_awaited()
     sheet.assert_not_awaited()
+    assert _announcements_asked(bot) == []
     assert outcome.complete
 
 
