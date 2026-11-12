@@ -41,7 +41,7 @@ from leaguebot.core.services.settings.channel_registry_service import (
 )
 from leaguebot.core.services.settings.division_settings import NO_SEASON_REFUSAL, division_not_found
 from leaguebot.core.services.queue.setting_change import Saved, Setting
-from leaguebot.results.services.division_channels import (
+from leaguebot.results.services.module.division_channels import (
     set_division_penalty_channel,
     set_division_results_channel,
     set_division_standings_channel,

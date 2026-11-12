@@ -25,7 +25,7 @@ from leaguebot.core.utils.league_server import league_guild
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.utils.hooks import StartUpStep
-    from leaguebot.results.services.attendance_hook import AttendanceAfterReview
+    from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
     from leaguebot.core.utils.league_bot import LeagueBot
 
 log = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ log = logging.getLogger(__name__)
 def register_switch(modules: "ModuleService") -> None:
     """Sign results up with `ModuleService` for the reader of its own switch, keyed by the name
     `is_results_enabled` asks it by."""
-    from leaguebot.results.services.module_switch_settings import results_enabled_on
+    from leaguebot.results.services.module.module_switch_settings import results_enabled_on
 
     modules.register_switch("results", results_enabled_on)
 
@@ -95,7 +95,7 @@ def sign_up_to_divisions_raced_read(bot: "LeagueBot") -> None:
     """Sign results' read of its own records up to the hook `/driver reassign` asks which divisions
     a driver's accounts raced in through, handed the connection of the check or the save that asks
     and the accounts."""
-    from leaguebot.results.services import results_purge_service
+    from leaguebot.results.services.module import results_purge_service
 
     bot.divisions_raced_read.subscribe(results_purge_service.divisions_raced_on)
 
@@ -174,7 +174,7 @@ def sign_up_to_deletes(bot: "LeagueBot") -> None:
     """Sign results up to the hooks a season, a division, a round or a driver deleted, or a driver
     merged, declares: deleting or re-pointing its own rows, on the delete's connection, inside its
     save (architecture.md, "The database")."""
-    from leaguebot.results.services import results_purge_service
+    from leaguebot.results.services.module import results_purge_service
 
     bot.rounds_deleted.subscribe(results_purge_service.rounds_deleted_on)
     bot.divisions_deleted.subscribe(results_purge_service.divisions_deleted_on)
@@ -187,7 +187,7 @@ def sign_up_to_pack(bot: "LeagueBot") -> None:
     """Sign results' clearing of its own rows tied to the server the bot leaves up to the hook the
     bot packed declares, on the pack's connection, inside its one transaction (architecture.md,
     "The database")."""
-    from leaguebot.results.services import results_purge_service
+    from leaguebot.results.services.module import results_purge_service
 
     bot.bot_packed.subscribe(results_purge_service.bot_packed_on)
 
@@ -195,7 +195,7 @@ def sign_up_to_pack(bot: "LeagueBot") -> None:
 def sign_up_to_division_lines_read(bot: "LeagueBot") -> None:
     """Sign results' three channels up to the hook the placements review gathers each division's
     module lines through, handed the database, the season and the divisions the review shows."""
-    from leaguebot.results.services import division_channels
+    from leaguebot.results.services.module import division_channels
 
     bot.division_lines_read.subscribe(partial(division_channels.division_lines, bot.db_path))
 
@@ -203,7 +203,7 @@ def sign_up_to_division_lines_read(bot: "LeagueBot") -> None:
 def sign_up_to_channel_uses_read(bot: "LeagueBot") -> None:
     """Sign results' uses of a channel up to the hook a channel being set is asked of each module
     through, handed the database's path."""
-    from leaguebot.results.services import division_channels as results_channels
+    from leaguebot.results.services.module import division_channels as results_channels
 
     bot.channel_uses_read.subscribe(partial(results_channels.channel_uses, bot.db_path))
 
@@ -211,7 +211,7 @@ def sign_up_to_channel_uses_read(bot: "LeagueBot") -> None:
 def sign_up_to_setting_channels_read(bot: "LeagueBot") -> None:
     """Sign results' channels up to the hook the factory reset asks each module through for every
     channel it holds, handed the database's path."""
-    from leaguebot.results.services import division_channels as results_channels
+    from leaguebot.results.services.module import division_channels as results_channels
 
     bot.setting_channels_read.subscribe(partial(results_channels.setting_channels, bot.db_path))
 
@@ -219,7 +219,7 @@ def sign_up_to_setting_channels_read(bot: "LeagueBot") -> None:
 def sign_up_to_division_channel_faults_read(bot: "LeagueBot") -> None:
     """Sign results' lines naming its own channels not set or not on the server up to the hook a
     division's channel faults are read through, handed the module service and the database."""
-    from leaguebot.results.services import division_channels
+    from leaguebot.results.services.module import division_channels
 
     bot.division_channel_faults_read.subscribe(
         partial(division_channels.division_channel_faults, bot.module_service, bot.db_path)
@@ -230,7 +230,7 @@ def sign_up_to_fingerprint_areas_read(bot: "LeagueBot") -> None:
     """Sign results' rows of its own configuration up to the hook a season's fingerprint is taken
     through, by area, handed the season service. Results reads its channels by division, as the
     season service reads the divisions of the season."""
-    from leaguebot.results.services import fingerprint_areas as results_areas
+    from leaguebot.results.services.module import fingerprint_areas as results_areas
 
     bot.fingerprint_areas_read.subscribe(partial(results_areas.fingerprint_areas, bot.season_service))
 
@@ -238,14 +238,14 @@ def sign_up_to_fingerprint_areas_read(bot: "LeagueBot") -> None:
 def sign_up_to_pending_steps_read(bot: "LeagueBot") -> None:
     """Sign results' pending steps up to the hook `/test-mode advance` reads the pending steps
     through."""
-    from leaguebot.results.services import test_mode_steps as results_steps
+    from leaguebot.results.services.module import test_mode_steps as results_steps
 
     bot.pending_steps_read.subscribe(results_steps.pending_steps)
 
 
 def sign_up_to_review_marks_read(bot: "LeagueBot") -> None:
     """Sign results' marks up to the hook `/test-mode review` reads each module's marks through."""
-    from leaguebot.results.services import test_mode_steps as results_steps
+    from leaguebot.results.services.module import test_mode_steps as results_steps
 
     bot.review_marks_read.subscribe(results_steps.review_marks)
 
@@ -311,12 +311,12 @@ def register_change_types(
     from leaguebot.results.services.points.amendment_settings import amendment_settings
     from leaguebot.results.services.round_amendment.amendment_stage_changes import amendment_stage_changes
     from leaguebot.results.services.review.appeals_approval_change import appeals_approval_change
-    from leaguebot.results.services.channel_settings import results_channel_settings
-    from leaguebot.results.services.module_switch_settings import module_on_results
+    from leaguebot.results.services.module.channel_settings import results_channel_settings
+    from leaguebot.results.services.module.module_switch_settings import module_on_results
     from leaguebot.results.services.points.points_amendment_change import points_amendment_change
     from leaguebot.results.services.points.points_settings import points_settings
     from leaguebot.results.services.review.report_approval_change import report_approval_change
-    from leaguebot.results.services.results_off_change import results_off_change
+    from leaguebot.results.services.module.results_off_change import results_off_change
     from leaguebot.results.services.submission.resubmission_changes import (
         resubmission_start_change,
         resubmission_swap_change,

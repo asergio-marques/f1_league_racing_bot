@@ -791,7 +791,7 @@ async def test_a_discard_after_the_switch_off_says_the_season_can_still_be_compl
     discards it, the admin's reply still says the season can still be completed and that some of
     its messages may remain for removal by hand, and counts what the removals did take down. The
     stop notice and the Discard line name the job as counting what was removed."""
-    from leaguebot.results.services import results_off_change
+    from leaguebot.results.services.module import results_off_change
 
     monkeypatch.setattr(
         results_off_change, "_forget_banners_on", AsyncMock(side_effect=RuntimeError("stuck"))

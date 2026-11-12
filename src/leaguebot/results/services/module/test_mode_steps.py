@@ -34,7 +34,7 @@ from leaguebot.core.services.test_mode.test_mode_service import (
     ReviewMarks,
     phase_mark,
 )
-from leaguebot.results.services.module_switch_settings import results_enabled_on
+from leaguebot.results.services.module.module_switch_settings import results_enabled_on
 from leaguebot.results.services.submission.submission_changes import KIND as SUBMISSION_OPEN
 
 #: The phase of the result submission, and the statuses a round stands at while it is still due.

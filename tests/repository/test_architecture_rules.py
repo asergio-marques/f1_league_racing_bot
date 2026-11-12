@@ -1642,7 +1642,7 @@ KNOWN_SERVICE_LOOKUPS: dict[tuple[str, str], tuple[int, str]] = {
     ("image/services/image_verdict_post.py", "verdicts_enabled"): (3, PASS["image"]),
     ("image/services/image_weather_post.py", "render_forecast"): (2, PASS["image"]),
     ("image/services/image_weather_post.py", "weather_enabled"): (3, PASS["image"]),
-    ("results/services/channel_settings.py", "_channel_setting.check"): (1, PASS["results"]),
+    ("results/services/module/channel_settings.py", "_channel_setting.check"): (1, PASS["results"]),
     ("results/services/review/penalty_wizard.py", "_is_league_manager"): (1, PASS["results"]),
     ("results/services/round_amendment/amend_end_changes.py", "amend_lapse_change.record_lapse"): (1, PASS["results"]),
     ("results/services/round_amendment/amend_turn_change.py", "take_amended_paste"): (1, PASS["results"]),
@@ -2024,7 +2024,7 @@ _SPLICED_WRITE = re.compile(
 #: their own module owns: how many such statements, and the tables they name. The count is held
 #: exactly, so a statement added later is read by hand too.
 TABLES_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
-    ("results/services/results_purge_service.py", "_delete_rows"):
+    ("results/services/module/results_purge_service.py", "_delete_rows"):
         (2, "results' own result, standings and submission tables"),
     ("results/services/review/verdict_announcement_service.py", "_record_announcement_on"):
         (1, "the penalty and appeal records, results' own"),
@@ -2718,7 +2718,7 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/publishing/results_post_service.py", "standings_display_names"): (1, PASS["results"]),
     ("results/services/publishing/results_post_service.py", "standings_repost_status"): (1, PASS["results"]),
     ("results/services/points/scoring.py", "<module>"): (3, PASS["results"]),
-    ("results/services/results_purge_service.py", "erase_season_on"): (4, PASS["results"]),
+    ("results/services/module/results_purge_service.py", "erase_season_on"): (4, PASS["results"]),
     ("results/services/review/review_changes.py", "division_job_in_hand"): (2, PASS["results"]),
     ("results/services/review/review_lock_change.py", "_in_review"): (1, PASS["results"]),
     ("results/services/review/review_open_change.py", "_round_and_channel"): (2, PASS["results"]),
@@ -3247,7 +3247,7 @@ KNOWN_WALL_CLOCK_READS: dict[tuple[str, str], tuple[int, str]] = {
         (1, PASS["results"]),
     ("results/services/round_amendment/amendment_writes.py", "sweep_expired_amendments"):
         (1, PASS["results"]),
-    ("results/services/results_off_change.py", "results_off_change.switch_off"):
+    ("results/services/module/results_off_change.py", "results_off_change.switch_off"):
         (1, PASS["results"]),
     ("signup/services/wizard_service.py", "WizardService._lock_channel"): (1, PASS["signup"]),
     ("signup/services/wizard_service.py", "WizardService.recover_wizards"): (1, PASS["signup"]),

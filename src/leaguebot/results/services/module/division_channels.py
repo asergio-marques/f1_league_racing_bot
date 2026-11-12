@@ -1,7 +1,7 @@
 """The channels a division's results, standings and penalty verdicts are posted in.
 
 `/results channel results`, `standings` and `verdicts` set them, each in its own column of
-`division_results_config`, which the results module owns (`results/services/channel_settings.py`
+`division_results_config`, which the results module owns (`results/services/module/channel_settings.py`
 holds the settings that call these). Three separate upserts naming one column each, so that setting
 one never blanks its neighbour.
 

@@ -27,7 +27,7 @@ from leaguebot.results.services.submission.result_submission_service import (
 
 if TYPE_CHECKING:
     from leaguebot.core.services.queue.change_queue import ChangeQueue
-    from leaguebot.results.services.attendance_hook import AttendanceAfterReview
+    from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
     from leaguebot.results.services.review.penalty_wizard import PenaltyReviewState
 
 log = logging.getLogger(__name__)

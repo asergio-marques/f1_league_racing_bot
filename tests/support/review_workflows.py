@@ -83,7 +83,7 @@ def sign_up_division_channel_faults_read(bot: Any) -> None:
         )
 
     async def results_faults(*args: Any, **kwargs: Any) -> Any:
-        from leaguebot.results.services import division_channels
+        from leaguebot.results.services.module import division_channels
 
         return await division_channels.division_channel_faults(
             bot.module_service, bot.db_path, *args, **kwargs

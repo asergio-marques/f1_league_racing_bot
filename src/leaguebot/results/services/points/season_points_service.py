@@ -15,7 +15,7 @@ from leaguebot.core.services.queue.setting_change import Saved
 from leaguebot.results.models.points_changed import PointsChanged, ValueChange
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.results.services.points import points_config_service
-from leaguebot.results.services.module_switch_settings import results_enabled_on
+from leaguebot.results.services.module.module_switch_settings import results_enabled_on
 from leaguebot.results.utils.points_ordering import ordering_message, ordering_violations
 
 if TYPE_CHECKING:

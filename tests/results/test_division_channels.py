@@ -16,7 +16,7 @@ import os
 import pytest
 
 from leaguebot.core.db.database import get_connection, run_migrations
-from leaguebot.results.services.division_channels import (
+from leaguebot.results.services.module.division_channels import (
     set_division_penalty_channel,
     set_division_results_channel,
     set_division_standings_channel,
@@ -200,7 +200,7 @@ async def test_results_names_each_division_s_missing_or_deleted_channels(tmp_pat
     being taken as there. Results off names nothing."""
     from unittest.mock import AsyncMock, MagicMock
 
-    from leaguebot.results.services.division_channels import division_channel_faults
+    from leaguebot.results.services.module.division_channels import division_channel_faults
     from tests.support.channel_faults import server_holding
 
     db_path = await _make_db(tmp_path)
@@ -250,7 +250,7 @@ async def test_results_hands_the_review_each_division_s_channel_lines(tmp_path):
     standings then verdicts: a channel set is named, a results or standings channel not set reads
     "*(none)*", and a verdicts channel not set "*(not configured)*". It asks no switch, the
     review showing them whether results is on or off."""
-    from leaguebot.results.services.division_channels import division_lines
+    from leaguebot.results.services.module.division_channels import division_lines
 
     db_path = await _make_db(tmp_path)
     async with get_connection(db_path) as db:

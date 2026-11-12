@@ -1,5 +1,5 @@
 """Attendance's share of a round's review, as the hook the builder hands results' change types
-(#439, slice 2, plan 2.6; the protocol is `results/services/attendance_hook.py`).
+(#439, slice 2, plan 2.6; the protocol is `results/services/module/attendance_hook.py`).
 
 Built once by the entry point, handed the placement service, the team-role service and the lineup
 poster and attached as `bot.attendance_after_review`. It uses the bot for Discord alone (the league's server, the log

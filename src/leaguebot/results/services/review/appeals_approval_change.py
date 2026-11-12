@@ -79,7 +79,7 @@ from leaguebot.core.services.seasons import season_lifecycle_service, season_ser
 from leaguebot.core.services.seasons.season_service import set_round_status_on
 from leaguebot.results.services.review.review_confirm_change import STAGING_IN_HAND, staging_in_hand
 from leaguebot.results.services.review import review_posting, review_verdicts
-from leaguebot.results.services.attendance_hook import AttendanceAfterReview
+from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 from leaguebot.results.services.review.penalty_service import StagedPenalty
 from leaguebot.results.services.review.penalty_wizard import (
     _APPEALS_BEING_APPROVED,

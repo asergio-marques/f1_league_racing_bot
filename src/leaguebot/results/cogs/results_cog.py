@@ -33,7 +33,7 @@ from leaguebot.results.services.points.points_settings import (
     reserves_toggle_request,
 )
 from leaguebot.results.services.points.points_config_service import ConfigNotFoundError
-from leaguebot.results.services.channel_settings import (
+from leaguebot.results.services.module.channel_settings import (
     NO_ACCESS,
     NOT_ENABLED,
     RESULTS_CHANNEL,

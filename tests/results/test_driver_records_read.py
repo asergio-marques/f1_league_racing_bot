@@ -75,7 +75,7 @@ async def test_results_answers_the_divisions_a_driver_s_accounts_raced_in(tmp_pa
     Pro. Written on the reassign's save and not yet committed, results answers, on that save's
     connection, that A and B raced in Season 1 Pro and Season 1 Am, and that no account raced in
     anything where it is handed none."""
-    from leaguebot.results.services.results_purge_service import divisions_raced_on
+    from leaguebot.results.services.module.results_purge_service import divisions_raced_on
 
     db_path = await _league(tmp_path)
     async with get_connection(db_path) as db:
@@ -143,7 +143,7 @@ async def test_the_builder_signs_results_up_for_a_driver_s_records(tmp_path, mon
         return ((2, 88), 100)
 
     monkeypatch.setattr(
-        "leaguebot.results.services.results_purge_service.divisions_raced_on", raced
+        "leaguebot.results.services.module.results_purge_service.divisions_raced_on", raced
     )
     monkeypatch.setattr(
         "leaguebot.results.services.standings.season_standings_posts.season_standing_on", standing

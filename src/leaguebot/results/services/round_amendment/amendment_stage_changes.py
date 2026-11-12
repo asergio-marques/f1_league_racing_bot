@@ -84,7 +84,7 @@ from leaguebot.core.services.settings.channel_registry_service import as_text_ch
 from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.review import review_posting, review_verdicts
-from leaguebot.results.services.attendance_hook import AttendanceAfterReview
+from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 from leaguebot.results.services.review.penalty_service import (
     StagedPenalty,
     apply_penalties_on,

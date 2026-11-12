@@ -78,7 +78,7 @@ from leaguebot.core.services.queue.change_types import (
 )
 from leaguebot.core.services.seasons.season_service import round_called, set_round_status_on
 from leaguebot.results.services.review import review_posting, review_verdicts
-from leaguebot.results.services.attendance_hook import AttendanceAfterReview
+from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 from leaguebot.results.services.review.penalty_service import StagedPenalty, apply_penalties_on
 from leaguebot.results.services.review.penalty_wizard import (
     _BEING_APPROVED,

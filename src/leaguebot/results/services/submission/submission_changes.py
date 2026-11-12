@@ -90,7 +90,7 @@ from leaguebot.core.services.seasons.season_service import set_round_status_on
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.results.services.review import review_posting
-from leaguebot.results.services.module_switch_settings import results_enabled_on
+from leaguebot.results.services.module.module_switch_settings import results_enabled_on
 from leaguebot.results.services.review.review_posting import (
     DELETE_CHANNEL,
     DELETE_MESSAGE,

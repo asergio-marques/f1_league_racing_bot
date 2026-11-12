@@ -80,8 +80,8 @@ from leaguebot.results.services.points.amendment_mode_service import (
     get_amendment_state,
     validate_modification_ordering,
 )
-from leaguebot.results.services.attendance_hook import AttendanceAfterReview
-from leaguebot.results.services.module_switch_settings import results_enabled_on
+from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
+from leaguebot.results.services.module.module_switch_settings import results_enabled_on
 from leaguebot.results.services.round_amendment.amendment_writes import amendment_wait_text, open_amendment_in_season
 from leaguebot.results.services.publishing.results_post_service import rescore_season
 from leaguebot.results.services.review.review_posting import NAMES, display_names, posting_steps

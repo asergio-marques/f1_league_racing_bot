@@ -32,7 +32,7 @@ appeals stage in the round's submission channel, and its `record` saves the prom
 channel's row, so that a restart or a Discard knows which prompt stands. A try that posted and
 failed to save its id left the message standing, which the next try removes first from `ctx.kept`.
 
-**Attendance is the hook's** (`results/services/attendance_hook.py`), which does nothing while
+**Attendance is the hook's** (`results/services/module/attendance_hook.py`), which does nothing while
 attendance is off, so no job of attendance's here asks the switch. The one job of results' own
 that serves attendance alone, the heading over the sanction cards, asks it of the hook
 (`enabled`) and is dropped while attendance is off, and an `apply_sanction` the hook answers with
@@ -85,7 +85,7 @@ from leaguebot.core.services.queue.change_types import OutcomeContext, Step, Ste
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.image.services import image_verdict_banner_post
 from leaguebot.results.services.review import verdict_announcement_service as vas
-from leaguebot.results.services.attendance_hook import AttendanceAfterReview
+from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 from leaguebot.results.services.review.review_prompts import _build_penalty_review_state, send_appeals_prompt
 from leaguebot.results.services.publishing.results_post_service import _delete_posting
 from leaguebot.results.services.review.review_posting import _channel, _deletes, _league_guild
