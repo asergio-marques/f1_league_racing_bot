@@ -361,7 +361,7 @@ def register_change_types(
             now=lambda: bot.change_queue.now(),
         )
     )
-    bot.change_queue.register(submission_open_change(now=lambda: bot.change_queue.now()))
+    bot.change_queue.register(submission_open_change(config=bot.config_service, now=lambda: bot.change_queue.now()))
     bot.change_queue.register(submission_restart_change())
     bot.change_queue.register(
         submission_all_cancelled_change(

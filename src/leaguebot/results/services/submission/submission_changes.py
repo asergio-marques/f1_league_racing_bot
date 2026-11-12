@@ -90,7 +90,6 @@ from leaguebot.core.services.cancellations.cancellation_changes import not_notif
 from leaguebot.core.services.cancellations.cancellation_notice_service import failure_log_lines
 from leaguebot.core.services.seasons.season_lifecycle_service import WIND_DOWN, kept_line
 from leaguebot.core.services.seasons.season_service import set_round_status_on
-from leaguebot.core.services.settings.config_service import ConfigService
 from leaguebot.core.utils.hooks import AwaitedHook
 from leaguebot.core.utils.league_server import league_guild
 from leaguebot.results.services.review import review_posting
@@ -131,6 +130,7 @@ from leaguebot.results.utils import results_formatter
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.image_drawing import ImageDrawing
     from leaguebot.core.services.seasons.season_service import SeasonService
+    from leaguebot.core.services.settings.config_service import ConfigService
     from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 
 KIND = "results.submission.open"
@@ -163,11 +163,12 @@ def _make_slug(name: str) -> str:
     return slug[:24]  # keep channel name short
 
 
-def submission_open_change(*, now: Callable[[], datetime]) -> ChangeType:
+def submission_open_change(*, config: ConfigService, now: Callable[[], datetime]) -> ChangeType:
     """The `results.submission.open` change type, for the builder to register.
 
-    *now* is the queue's clock, read when the channel's row is written and, for an opening asked by
-    the round's start, by the check that judges the start has come. The payload is
+    *config* reads the league's roles and channels on the opening's connection, to name who sees the
+    channel. *now* is the queue's clock, read when the channel's row is written and, for an opening
+    asked by the round's start, by the check that judges the start has come. The payload is
     ``{"round_id": int}``, with ``"at_its_start": True`` where the round's start asked it (its job on
     time or late, or the restart's catch-up), so that the check judges the round still due.
     """
@@ -229,7 +230,7 @@ def submission_open_change(*, now: Callable[[], datetime]) -> ChangeType:
         await set_round_status_on(
             db, round_id, RoundStatus.AWAITING_RESULTS, only_from=(RoundStatus.NOT_RUN.value,)
         )
-        server = await ConfigService(ctx.db_path).get_server_config_on(db)
+        server = await config.get_server_config_on(db)
         interaction_role = None if server is None else server.interaction_role_id
         admin_role = None if server is None else server.league_admin_role_id
         fmt = row.format
