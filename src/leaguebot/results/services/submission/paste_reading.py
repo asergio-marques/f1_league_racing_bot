@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Mapping, NamedTuple, TypeVar
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.models.session_result import OutcomeModifier
-from leaguebot.core.services.drivers.team_service import resolve_team_reference
+from leaguebot.core.services.drivers.team_service import TeamService, resolve_team_reference
 from leaguebot.core.utils.input_validator import (
     USER_MENTION,
     parse_gap,
@@ -19,7 +19,6 @@ from leaguebot.core.utils.input_validator import (
     parse_time,
     parse_user_mention,
 )
-from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.image.utils.tyre_compound import (
     canonicalise_tyre,
     records_no_tyre,
@@ -671,15 +670,17 @@ class DivisionValidationData(NamedTuple):
     team_of_shorthand: dict[str, int]
 
 
-async def _build_division_validation_data(division_id: int, bot: LeagueBot) -> DivisionValidationData:
+async def _build_division_validation_data(
+    division_id: int, teams: TeamService
+) -> DivisionValidationData:
     """Build validation structures for the given division.
 
     A team whose role is not mapped cannot be typed, and is left out. Its drivers are then
     outside ``division_driver_ids`` too, and refused as not in the division.
     """
     # Only drivers whose placements are confirmed may be scored (issue #220).
-    div_teams = await bot.team_service.get_division_teams(division_id, committed_only=True)
-    teams_with_roles = await bot.team_service.get_teams_with_roles()
+    div_teams = await teams.get_division_teams(division_id, committed_only=True)
+    teams_with_roles = await teams.get_teams_with_roles()
 
     name_to_role: dict[str, int] = {
         t["name"]: t["role_id"]

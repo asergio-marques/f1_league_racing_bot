@@ -38,6 +38,7 @@ import discord
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import FollowOn, PlannedStep, StepKind, StepResult, Verdict
+from leaguebot.core.services.drivers.team_service import TeamService
 from leaguebot.core.services.queue import typed_turns
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
@@ -185,6 +186,7 @@ async def take_amended_paste(bot: Any, message: discord.Message, *, queue: Chang
 def turn_steps(
     queue: ChangeQueue,
     server_config: ServerConfig,
+    teams: TeamService,
     *,
     now: Callable[[], datetime],
     arm_once: Callable[[str, int | str, datetime], None],
@@ -227,7 +229,7 @@ def turn_steps(
             ctx.db_path, round_id, expected,
             also_exclude=[each for each in covered if each is not expected],
         ))
-        data = await paste_reading._build_division_validation_data(int(row["division_id"]), ctx.bot)
+        data = await paste_reading._build_division_validation_data(int(row["division_id"]), teams)
         errors, parsed = paste_reading.split_validation(
             paste_reading.validate_submission_block(
                 lines_raw, expected, data.division_driver_ids, data.team_of_role,
@@ -476,13 +478,15 @@ def amend_turn_change(
     *,
     queue: ChangeQueue,
     server_config: ServerConfig,
+    teams: TeamService,
     now: Callable[[], datetime],
     arm_once: Callable[[str, int | str, datetime], None],
 ) -> ChangeType:
     """The `results.amend.turn` change type, for the builder to register.
 
     *server_config* reads the server configuration the points-configuration picker checks its
-    presser against, *now* is the queue's clock and *arm_once* the scheduler service's, handed
+    presser against, *teams* the team service the paste's validation reads the division's teams from,
+    *now* is the queue's clock and *arm_once* the scheduler service's, handed
     here so that no job looks the scheduler up on the bot. The payload is ``channel_id``,
     ``message_id``, ``author_id``, ``content``, ``attachments`` and ``typed_at`` of the pasted
     message, which counts only if typed within the five minutes of the prompt it answers.
@@ -490,7 +494,7 @@ def amend_turn_change(
     return ChangeType(
         kind=KIND,
         opening=(PlannedStep(JUDGE),),
-        steps=turn_steps(queue, server_config, now=now, arm_once=arm_once),
+        steps=turn_steps(queue, server_config, teams, now=now, arm_once=arm_once),
         check=_amendment_standing,
         key=lambda payload: f"{KIND}:{payload['message_id']}",
         doing=lambda _payload: "Taking an amended results paste",
@@ -506,6 +510,7 @@ def amend_config_change(
     *,
     queue: ChangeQueue,
     server_config: ServerConfig,
+    teams: TeamService,
     now: Callable[[], datetime],
     arm_once: Callable[[str, int | str, datetime], None],
 ) -> ChangeType:
@@ -538,7 +543,7 @@ def amend_config_change(
         kind=CONFIG_KIND,
         opening=(),
         plan=plan,
-        steps=turn_steps(queue, server_config, now=now, arm_once=arm_once),
+        steps=turn_steps(queue, server_config, teams, now=now, arm_once=arm_once),
         check=_amendment_standing,
         key=lambda payload: f"{CONFIG_KIND}:{payload['channel_id']}:{payload['session_type']}",
         doing=lambda payload: (
@@ -557,6 +562,7 @@ def amend_stage_one_change(
     *,
     queue: ChangeQueue,
     server_config: ServerConfig,
+    teams: TeamService,
     now: Callable[[], datetime],
     arm_once: Callable[[str, int | str, datetime], None],
 ) -> ChangeType:
@@ -579,7 +585,7 @@ def amend_stage_one_change(
     records them. The drafts are kept once recorded: the amendment expects its next session by
     them.
     """
-    steps = turn_steps(queue, server_config, now=now, arm_once=arm_once)
+    steps = turn_steps(queue, server_config, teams, now=now, arm_once=arm_once)
 
     def plan(payload: dict[str, Any]) -> tuple[PlannedStep, ...]:
         return (

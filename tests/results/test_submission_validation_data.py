@@ -150,7 +150,7 @@ def _bot(teams: list[dict], roles: dict[str, int | None]):
 
 
 async def _build(teams, roles):
-    return await _build_division_validation_data(DIVISION_ID, _bot(teams, roles))
+    return await _build_division_validation_data(DIVISION_ID, _bot(teams, roles).team_service)
 
 
 def _standard():

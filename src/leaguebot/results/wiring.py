@@ -373,24 +373,28 @@ def register_change_types(
     bot.change_queue.register(
         submission_turn_change(
             queue=bot.change_queue, server_config=bot.config_service.get_server_config,
+            teams=bot.team_service,
             now=lambda: bot.change_queue.now(), resubmission=True,
         )
     )
     bot.change_queue.register(
         submission_config_change(
             queue=bot.change_queue, server_config=bot.config_service.get_server_config,
+            teams=bot.team_service,
             now=lambda: bot.change_queue.now(), resubmission=True,
         )
     )
     bot.change_queue.register(
         submission_turn_change(
             queue=bot.change_queue, server_config=bot.config_service.get_server_config,
+            teams=bot.team_service,
             now=lambda: bot.change_queue.now(),
         )
     )
     bot.change_queue.register(
         submission_config_change(
             queue=bot.change_queue, server_config=bot.config_service.get_server_config,
+            teams=bot.team_service,
             now=lambda: bot.change_queue.now(),
         )
     )
@@ -416,18 +420,21 @@ def register_change_types(
     bot.change_queue.register(
         amend_turn_change(
             queue=bot.change_queue, server_config=bot.config_service.get_server_config,
+            teams=bot.team_service,
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
         )
     )
     bot.change_queue.register(
         amend_config_change(
             queue=bot.change_queue, server_config=bot.config_service.get_server_config,
+            teams=bot.team_service,
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
         )
     )
     bot.change_queue.register(
         amend_stage_one_change(
             queue=bot.change_queue, server_config=bot.config_service.get_server_config,
+            teams=bot.team_service,
             now=lambda: bot.change_queue.now(), arm_once=bot.scheduler_service.arm_once,
         )
     )

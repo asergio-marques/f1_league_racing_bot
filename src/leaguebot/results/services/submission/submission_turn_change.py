@@ -52,6 +52,7 @@ import discord
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import FollowOn, PlannedStep, StepKind, StepResult, Verdict
 from leaguebot.core.models.round import RoundFormat
+from leaguebot.core.services.drivers.team_service import TeamService
 from leaguebot.core.services.queue import typed_turns
 from leaguebot.core.services.queue.change_queue import (
     ChangeQueue,
@@ -240,6 +241,7 @@ def _refusal_of(named: str, payload: dict[str, Any], told: str) -> str:
 def turn_steps(
     queue: ChangeQueue,
     server_config: ServerConfig,
+    teams: TeamService,
     *,
     now: Callable[[], datetime],
     resubmission: bool = False,
@@ -323,7 +325,7 @@ def turn_steps(
             other = paste_reading.collected_team_assignments(drafted, expected)
         else:
             other = await paste_reading.other_active_team_assignments(ctx.db_path, round_id, expected)
-        data = await paste_reading._build_division_validation_data(int(row["division_id"]), ctx.bot)
+        data = await paste_reading._build_division_validation_data(int(row["division_id"]), teams)
         errors, parsed = paste_reading.split_validation(
             paste_reading.validate_submission_block(
                 lines, expected, data.division_driver_ids, data.team_of_role,
@@ -736,6 +738,7 @@ def submission_turn_change(
     *,
     queue: ChangeQueue,
     server_config: ServerConfig,
+    teams: TeamService,
     now: Callable[[], datetime],
     resubmission: bool = False,
 ) -> ChangeType:
@@ -743,7 +746,8 @@ def submission_turn_change(
     *resubmission*, `results.resubmission.turn`, a resubmission's paste held as a draft.
 
     *queue* is the change queue, which tells the review's stopped job; *server_config* reads the
-    server configuration the points-configuration picker checks its presser against; *now* is the
+    server configuration the points-configuration picker checks its presser against; *teams* is
+    the team service the paste's validation reads the division's teams from; *now* is the
     queue's clock, which dates the session saved. The payload
     is ``channel_id``, ``message_id``, ``author_id``, ``content``, ``attachments`` and
     ``typed_at`` of the pasted message.
@@ -756,7 +760,7 @@ def submission_turn_change(
     return ChangeType(
         kind=kind,
         opening=(PlannedStep(JUDGE),),
-        steps=turn_steps(queue, server_config, now=now, resubmission=resubmission),
+        steps=turn_steps(queue, server_config, teams, now=now, resubmission=resubmission),
         check=_checking(resubmission, turn=True),
         key=lambda payload: f"{kind}:{payload['message_id']}",
         doing=lambda _payload: (
@@ -774,6 +778,7 @@ def submission_config_change(
     *,
     queue: ChangeQueue,
     server_config: ServerConfig,
+    teams: TeamService,
     now: Callable[[], datetime],
     resubmission: bool = False,
 ) -> ChangeType:
@@ -813,7 +818,7 @@ def submission_config_change(
         kind=kind,
         opening=(),
         plan=plan,
-        steps=turn_steps(queue, server_config, now=now, resubmission=resubmission),
+        steps=turn_steps(queue, server_config, teams, now=now, resubmission=resubmission),
         check=_checking(resubmission),
         key=lambda payload: f"{kind}:{payload['channel_id']}:{payload['session_type']}",
         doing=lambda payload: (

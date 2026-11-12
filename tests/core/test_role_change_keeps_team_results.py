@@ -124,7 +124,7 @@ def _bot(db_path: str):
 async def _validate(
     db_path: str, lines: list[str], session_type=SessionType.FEATURE_RACE, *, other=None
 ):
-    data = await _build_division_validation_data(DIVISION_ID, _bot(db_path))
+    data = await _build_division_validation_data(DIVISION_ID, _bot(db_path).team_service)
     return validate_submission_block(
         lines,
         session_type,
