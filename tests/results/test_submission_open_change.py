@@ -483,16 +483,17 @@ async def test_a_round_whose_start_passed_is_not_opened_again_at_the_restart(
     assert len(league.created) == channels
 
 
-async def test_a_round_whose_amendment_is_in_hand_is_left_to_it_at_the_restart(
+async def test_a_round_whose_amendment_stopped_across_the_restart_moves_its_start_ahead_is_not_opened(
     tmp_path, monkeypatch,
 ):
     """A league manager amends round 3's moment to a day ahead, and the amendment waits on the
     league's lane behind a change stopped on a failure, across the restart. Round 3's old start
     has fallen two hours before the bot's clock by then. At the restart both results' catch-up and
-    the late `results` job find round 3 still not run, and ask no opening: the amendment is in
-    hand, and its own arming catches up a moment that passed while it waited (core specification,
-    "Amending and cancelling a round"). The amendment is the only change asked of round 3, which
-    stays not run, and no channel is made."""
+    the late `results` job find round 3 still not run and ask its opening, once, behind the
+    amendment. Once the stopped change is retried the amendment runs first and moves round 3's
+    start a day ahead, and the opening is dropped at its check, the start no longer passed: round 3
+    stays not run, no channel is made and the queue does not stop (core specification, "Amending
+    and cancelling a round")."""
     from datetime import timedelta
 
     league = await _league(tmp_path)
@@ -505,11 +506,40 @@ async def test_a_round_whose_amendment_is_in_hand_is_left_to_it_at_the_restart(
 
     await _catch_up(league)
     await _fire_job(league, monkeypatch)
-    await run_queue(league.bot)
+    league.holder["fail"] = False
+    await retry_job(league.bot)
 
-    assert await _opened_rounds(league) == []
+    assert await _opened_rounds(league) == [ROUND_3]
+    assert await stopped_job(league.db_path) is None
     assert await _status(league) == "NOT_RUN"
     assert league.created == []
+
+
+async def test_a_round_whose_start_passed_while_its_amendment_stood_stopped_opens_once_when_retried(
+    tmp_path, monkeypatch,
+):
+    """A league manager amends round 3's track, leaving its moment, and the amendment waits on the
+    league's lane behind a change stopped on a failure. Round 3's start falls two hours before the
+    bot's clock while it waits, outside test mode, and both results' catch-up and the late
+    `results` job ask its opening, once, behind the amendment. Once the stopped change is retried
+    the amendment runs, and the opening, whose start has passed and which is still to be run, opens
+    round 3's submission once: it awaits results and one channel is made."""
+    league = await _league(tmp_path)
+    league.holder = await block_queue(league)
+    await run_queue(league.bot)
+    assert await amend_round(league, "Pro", 3, track="Hungaroring") is not None
+    assert len(await amendment_changes(league)) == 1
+    await _start_passed(league, hours=2)
+
+    await _catch_up(league)
+    await _fire_job(league, monkeypatch)
+    league.holder["fail"] = False
+    await retry_job(league.bot)
+
+    assert await _opened_rounds(league) == [ROUND_3]
+    assert await stopped_job(league.db_path) is None
+    assert await _status(league) == "AWAITING_RESULTS"
+    assert len(league.created) == 1
 
 
 async def test_a_round_whose_start_is_ahead_by_the_bot_s_clock_is_not_opened_at_the_restart(

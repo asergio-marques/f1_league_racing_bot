@@ -11,6 +11,8 @@ read nor the rule.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 
 from leaguebot.core.db.database import get_connection
@@ -106,7 +108,9 @@ async def recover_orphaned_submission_channels(bot: LeagueBot, *, queue: ChangeQ
         raise RecoveryFailed(failures)
 
 
-async def recover_missed_round_starts(bot: LeagueBot, *, queue: ChangeQueue) -> None:
+async def recover_missed_round_starts(
+    bot: LeagueBot, *, queue: ChangeQueue, came_up_at: Callable[[], datetime],
+) -> None:
     """Open the results submission of every round whose start passed while the bot was down.
 
     The core specification's "When the bot stops" has a restart recover what a stop interrupted,
@@ -121,19 +125,18 @@ async def recover_missed_round_starts(bot: LeagueBot, *, queue: ChangeQueue) -> 
     cancelled or in hand on the queue. It runs after the two recoveries above, a round whose
     submission one of them cleared and asked open again being then in hand on the queue.
 
-    **Under test mode it asks nothing**, `/test-mode advance` opening each round in its turn: the
-    queue's moment taken here is handed to `ask_round_start` as the bot's coming up, which holds
-    back a late `results` job the same way.
+    **Under test mode it asks nothing** for a start before the bot came up, `/test-mode advance`
+    opening each round in its turn. *came_up_at* gives that moment, the one the wiring hands the
+    `results` job's handler too, so a late job and this step judge a start by one value.
 
     A round that cannot be asked for stops none of the others. Once every round has been gone
     through, a failure for any is raised as one `RecoveryFailed` naming each round and its error,
     which the start-up sweep reports to the log channel in one line.
     """
-    now = queue.now()
     failures: dict[int, BaseException] = {}
-    for rnd in await rounds_still_to_run_by(bot.db_path, now):
+    for rnd in await rounds_still_to_run_by(bot.db_path, queue.now()):
         try:
-            await ask_round_start(queue, bot.db_path, rnd.id, came_up_at=now)
+            await ask_round_start(queue, bot.db_path, rnd.id, came_up_at=came_up_at)
         except Exception as error:
             log.exception("Recovery: could not open round %s's results submission", rnd.id)
             failures[rnd.id] = error

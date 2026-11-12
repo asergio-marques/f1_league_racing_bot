@@ -1024,6 +1024,10 @@ async def test_the_builder_orders_the_start_up_steps(tmp_path, monkeypatch):
     }
     order = _CORE_STEPS + [step for steps in _MODULE_STEPS.values() for step in steps]
     assert sorted(expected) == sorted(order)
+    # The catch-up of the missed round starts is handed the moment the bot came up, as a callable,
+    # the one the `results` job's handler is handed.
+    [caught_up] = [kwargs for function, _args, kwargs in ran if function == "recover_missed_round_starts"]
+    assert caught_up.pop("came_up_at")() == bot.came_up_at
     assert ran == [expected[step] for step in order]
     assert lines == []
 

@@ -67,9 +67,9 @@ class LeagueBot(commands.Bot):
     #: The version and date of the copy of the bot this process loaded; see `core/utils/version.py`.
     running_version: str | None
     running_version_date: datetime | None
-    #: The queue's moment when the bot came up, taken by `build`. The wiring hands it to a module's
-    #: handler of a timed job, which tells one fired late at a restart from one fired on time while
-    #: the bot is up (`ask_round_start`).
+    #: The queue's moment when the bot came up, taken once by `build`. The wiring hands it, as a
+    #: callable, to a module's handler of a timed job and to its start-up catch-up, which tell a
+    #: start missed while the bot was down from one met while it is up (`ask_round_start`).
     came_up_at: datetime
 
     config_service: ConfigService

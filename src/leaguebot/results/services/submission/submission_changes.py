@@ -16,7 +16,11 @@ go in.
 
 **A round whose start falls while the queue is stopped** is asked for all the same and waits its
 turn: it stays NOT_RUN, and so cancellable, until the queue reaches the opening (Q17). A round
-cancelled before then is found no longer due and the opening is dropped.
+cancelled before then is found no longer due and the opening is dropped. So is a round whose start
+an amendment has meanwhile moved ahead, where the ask is the round's start's (`at_its_start`): the
+check judges again, as the opening comes up to run, that the start has passed by the queue's clock
+and the round is still to be run, which is what lets the late job and a restart's catch-up always
+ask, and an amendment or cancellation of the round in hand ahead of the opening decide it.
 
 **No results channel stops the queue**, the stop naming `/results channel results`: the creation
 job finds, as it runs, that the division's results channel is unset or gone from the server, and
@@ -180,6 +184,19 @@ def submission_open_change(*, now: Callable[[], datetime]) -> ChangeType:
             return Verdict.not_due("the round is gone")
         if row["status"] == RoundStatus.CANCELLED.value:
             return Verdict.not_due("the round was cancelled")
+        if ctx.payload.get("at_its_start"):
+            # Asked by the round's start, on time or caught up: the round is judged due again here,
+            # the change having waited its turn, behind an amendment or a cancellation of the round
+            # among them. An amendment that has since moved the start ahead, or a change that has
+            # since opened or ended the round, leaves nothing to open; one refused leaves the
+            # opening to run.
+            if row["status"] != RoundStatus.NOT_RUN.value:
+                return Verdict.not_due("the round is no longer to be run")
+            found = await season_service.round_in_division(
+                ctx.db_path, int(ctx.payload["round_id"])
+            )
+            if found is None or found.scheduled_at > now():
+                return Verdict.not_due("the round's start has not come")
         async with get_connection(ctx.db_path) as db:
             standing = await (
                 await db.execute(
@@ -372,8 +389,15 @@ def submission_open_change(*, now: Callable[[], datetime]) -> ChangeType:
     )
 
 
-async def ask_submission_open(queue: ChangeQueue, db_path: str, round_id: int) -> None:
+async def ask_submission_open(
+    queue: ChangeQueue, db_path: str, round_id: int, *, at_its_start: bool = False,
+) -> None:
     """Ask the queue, as the bot, to open *round_id*'s results submission.
+
+    With *at_its_start*, the ask is the round's start's, on time or caught up, and the change's
+    check judges when it comes up to run that the round is still due: its start has passed by the
+    queue's clock and it is still to be run. Without it, the ask is test mode's advance's, which
+    opens a round before its start and is judged on the round alone.
 
     The round's number is read here, on a connection of its own, to name the change.
     """
@@ -382,9 +406,11 @@ async def ask_submission_open(queue: ChangeQueue, db_path: str, round_id: int) -
             await db.execute("SELECT round_number FROM rounds WHERE id = ?", (round_id,))
         ).fetchone()
     number = "a round" if row is None else f"round {row['round_number']}"
+    payload: dict[str, Any] = {"round_id": round_id}
+    if at_its_start:
+        payload["at_its_start"] = True
     await queue.ask(
-        KIND, {"round_id": round_id}, what=f"opening {number}'s results submission",
-        origin=ChangeOrigin.BOT,
+        KIND, payload, what=f"opening {number}'s results submission", origin=ChangeOrigin.BOT,
     )
 
 

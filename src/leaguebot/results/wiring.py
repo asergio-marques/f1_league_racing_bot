@@ -497,7 +497,7 @@ def register_scheduler_callbacks(bot: "LeagueBot") -> None:
 
     async def _result_submission_cb(round_id: int) -> None:
         await ask_round_start(
-            bot.change_queue, bot.db_path, round_id, came_up_at=bot.came_up_at,
+            bot.change_queue, bot.db_path, round_id, came_up_at=lambda: bot.came_up_at,
         )
 
     scheduler.register_timer("results", _result_submission_cb)
@@ -539,7 +539,9 @@ def start_up_steps(bot: "LeagueBot") -> "tuple[StartUpStep, ...]":
         # Rounds whose start passed while the bot was down, opened late. **After both recoveries
         # above**: a round whose submission one of them cleared and asked open again is then in
         # hand on the queue, and is left to that opening rather than asked a second time.
-        ("missed round starts", lambda: recover_missed_round_starts(bot, queue=bot.change_queue)),
+        ("missed round starts", lambda: recover_missed_round_starts(
+            bot, queue=bot.change_queue, came_up_at=lambda: bot.came_up_at,
+        )),
     )
 
 
