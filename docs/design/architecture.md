@@ -296,21 +296,22 @@ the dependant.
 after a round's review (recording the round's attendance and its pardons, recalculating after an
 amendment, posting the sheet, finding the drivers over a threshold, saying which pardons an
 amendment's review may offer, checking, saving, changing the roles of and announcing one driver's
-sanction, redrawing a lineup) is a protocol results declares, `AttendanceAfterReview`, and
-attendance implements it on its own functions. The builder makes it once, attaches it to the bot and
-hands it to the review's change types, so results imports nothing of attendance and the
-`.importlinter` exception for it is gone. Of its methods, `enabled` reports attendance's switch,
-`sync_hint` only words the hint naming the "attendance sync" command and reads no switch,
-`change_sanction_roles` acts whatever the switch says, as the attendance specification's "Sanctions
-that do not apply" requires, and so do the methods that only read attendance's tables (an
-amendment's snapshot of the round's pardons, a driver's attendance row, a division's latest scored
-round, a round's recorded pardons), having no write to withhold. Every other method checks the
-switch itself, on the connection it is handed where it writes, and does nothing while the module is
-off. A change type never reads the
-switch itself; one whose job serves attendance alone asks `enabled`. The placement service, which a
-sanction moves seats through, the team-role service that gives and takes its roles and the lineup
-poster that posts the lineups it touches are handed to attendance's implementation by the builder
-and not looked up on the bot.
+sanction, redrawing a lineup, reading the check-in of a round ended as not held, naming what would
+stop a points amendment's recalculation) is a protocol results declares, `AttendanceAfterReview`,
+and attendance implements it on its own functions. The builder makes it once, attaches it to the bot
+and hands it to results, whose review's change types take it, so results imports nothing of
+attendance and the `.importlinter` exception for it is gone. Of its methods, `enabled` reports
+attendance's switch, `sync_hint` only words the hint naming the "attendance sync" command and reads
+no switch, `change_sanction_roles` acts whatever the switch says, as the attendance specification's
+"Sanctions that do not apply" requires, and so do the four reads that only read attendance's tables
+(`pardons_of_on`, an amendment's snapshot of the round's pardons; `attendance_row_of`, a driver's
+attendance row; `latest_scored_round`, a division's latest scored round; `recorded_pardons`, a
+round's recorded pardons), having no write to withhold. Every other method checks the switch
+itself, on the connection it is handed where it writes, and does nothing while the module is off. A
+change type never reads the switch itself; one whose job serves attendance alone asks `enabled`. The
+placement service, which a sanction moves seats through, the team-role service that gives and takes
+its roles and the lineup poster that posts the lineups it touches are handed to attendance's
+implementation by the builder and not looked up on the bot.
 
 *Rejected:* results calling attendance's functions directly and checking the switch itself, which
 is the dependency the table forbids and leaves each caller to remember the switch.

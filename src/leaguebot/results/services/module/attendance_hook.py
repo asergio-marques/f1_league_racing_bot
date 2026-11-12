@@ -1,20 +1,22 @@
 """What a round's review asks of attendance (#439, slice 2, plan 2.6).
 
-`AttendanceAfterReview` is the hook the builder hands the review's change types, so that results
-imports nothing of attendance: the change types call these methods and attendance implements them
-(`leaguebot.attendance.services.attendance_after_review`). It is attached to the bot as
-`bot.attendance_after_review` and declared on `LeagueBot`.
+`AttendanceAfterReview` is the protocol the builder hands to results, whose review's change types
+take it, so that results imports nothing of attendance: the change types call these methods and
+attendance implements them (`leaguebot.attendance.services.attendance_after_review`). It is
+attached to the bot as `bot.attendance_after_review` and declared on `LeagueBot`. Its duties are
+recording a round's attendance and pardons, recalculating after an amendment, posting the sheet,
+the sanctions, redrawing a lineup, reading a not-held round's check-in and naming what would stop a
+points amendment's recalculation.
 
 **Each method checks attendance's switch itself and does nothing while it is off**
 (architecture.md, "How modules and core fit together"), save these: `enabled` reports the switch,
 `sync_hint` reads none, `change_sanction_roles` acts whatever it says, a sanction already saved
 being owed its roles (the attendance specification's "Sanctions that do not apply"), and so do the
-reads that write nothing, which have no write to withhold (`pardons_of_on`, `attendance_row_of`,
-`latest_scored_round`, `recorded_pardons`). The writers
-read the switch on the connection they are handed. **The writers write on the save they are handed
-and commit nothing**, so the round's attendance lands with the penalties and points or not at all.
-**The posting methods raise** `StepFailedOnDiscord` where they could not post, for the queue to
-stop on and try again.
+four reads that write nothing, which have no write to withhold (`pardons_of_on`,
+`attendance_row_of`, `latest_scored_round`, `recorded_pardons`). The writers read the switch on the
+connection they are handed. **The writers write on the save they are handed and commit nothing**, so
+the round's attendance lands with the penalties and points or not at all. **The posting methods
+raise** `StepFailedOnDiscord` where they could not post, for the queue to stop on and try again.
 """
 from __future__ import annotations
 
