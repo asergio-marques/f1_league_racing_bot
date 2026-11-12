@@ -214,6 +214,51 @@ async def test_a_timer_missed_while_down_waits_until_the_scheduler_is_resumed(se
     assert handed == [4343]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#285: the last check-in notice's timer is still armed with the scheduler's default "
+    "lateness limit, so one missed while the bot was down is dropped at start",
+)
+async def test_a_last_notice_missed_while_the_bot_was_down_is_sent_when_it_is_back(services):
+    """Round 3 of division tier 1 in season 7 (id 21) starts 20 hours from now, its last notice
+    24 hours before the race and its deadline 2 hours before. Its check-in timers were armed six
+    days before the race, and the bot went down; its last notice fell due four hours ago while
+    it was down, the deadline still ahead. When the bot starts again and attendance registers
+    its timers, the last notice's timer fires, handed round 21, so its notice is asked for and
+    sent late rather than dropped."""
+    from types import SimpleNamespace
+
+    start = _now() + timedelta(hours=20)
+    before = services()
+    before._scheduler.start(paused=True)
+    before.schedule_attendance_round(
+        SimpleNamespace(id=21, division_id=11, round_number=3, scheduled_at=start),
+        season_number=7, division_tier=1, notice_days=5, last_notice_hours=24,
+        deadline_hours=2, now=start - timedelta(days=6),
+    )
+    _dispose(before)
+
+    after = services()
+    handed: list[tuple[str, Any]] = []
+    fired = asyncio.Event()
+
+    def _timer(kind: str) -> Any:
+        async def _fire(key: Any) -> None:
+            handed.append((kind, key))
+            if kind == "rsvp_last_notice":
+                fired.set()
+        return _fire
+
+    for kind in ("rsvp_notice", "rsvp_last_notice", "rsvp_deadline", "rsvp_cleanup"):
+        after.register_timer(kind, _timer(kind))
+    after.start()
+    await asyncio.wait_for(fired.wait(), 5)
+    await _settle()
+
+    assert handed.count(("rsvp_last_notice", 21)) == 1
+    assert ("rsvp_deadline", 21) not in handed
+
+
 async def test_a_backup_taken_during_start_up_leaves_the_scheduler_paused(services):
     """A correction's timer fell due while the bot was down, and start-up holds the scheduler
     paused while its steps run. A backup taken meanwhile pauses the scheduler around its copy
