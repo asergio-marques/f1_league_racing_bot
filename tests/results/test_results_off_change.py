@@ -324,10 +324,6 @@ async def _announce_verdicts(db_path: str) -> None:
         await db.commit()
 
 
-#: Why the switch-off does not yet take the opening classification down.
-OPENING_LEFT_STANDING = "#284: no id of the opening classification is recorded, so it is left standing"
-
-
 async def _post_opening_classification(db_path: str, division_id: int) -> None:
     """The division's opening classification, posted in the standings channel when its placements
     were confirmed: the drivers' table as message 4000 and the teams' as 4001, recorded as results
@@ -600,7 +596,6 @@ async def test_a_stop_part_way_through_the_take_down_finishes_it_on_restart_and_
     assert "verdicts removed: 2" in closing
 
 
-@pytest.mark.xfail(strict=True, reason=OPENING_LEFT_STANDING)
 async def test_every_message_is_taken_down_by_the_ids_saved_with_the_switch_off(tmp_path):
     """The rows naming the messages are gone with the switch-off; the steps keep their ids. The
     division's opening classification (messages 4000 and 4001 in the standings channel) goes with
@@ -702,7 +697,6 @@ async def test_a_removal_discord_refuses_stops_the_queue_and_once_discarded_is_l
     ) in reply
 
 
-@pytest.mark.xfail(strict=True, reason=OPENING_LEFT_STANDING)
 async def test_messages_left_standing_are_listed_in_the_reply_and_the_closing_line_with_their_links(  # noqa: E501
     tmp_path,
 ):

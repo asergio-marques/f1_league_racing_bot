@@ -351,7 +351,7 @@ def _tally(ctx: OutcomeContext) -> dict[str, Any]:
                 ids = item["message_ids"]
             left.extend(message_link(item["server_id"], item["channel_id"], m) for m in ids)
         elif result.get("removed") and not result.get("gone"):
-            if kind in ("results", "standings"):
+            if kind in ("results", "standings", "classification"):
                 messages += 1
             elif kind == "verdict":
                 verdicts += 1

@@ -26,6 +26,12 @@ in ``called_off_notes`` when it is posted and read here, before the rows go, as 
 season's own note is not recorded, and so not taken down: only the live season is read here, and a
 season called off is an archive the purge never reaches.
 
+So is the opening classification posted to each division's standings channel when placements are
+confirmed (decided 2026-11-13, #284): its ids are recorded in ``classification_posts``, read here
+before the rows go, and the tables are taken down as a round's standings are, counted with them.
+The final classification belongs to a completed season, which the purge never reads, so its ids are
+recorded but not taken down.
+
 **One case is left standing, knowingly** (accepted 2026-09-21). An amendment still open past its
 report stage has rewritten the amended sessions' verdict records without ids, and holds the
 originals' ids only in ``round_amend_channels.superseded_announcements`` until its final stage.
@@ -54,6 +60,7 @@ import discord
 
 from leaguebot.core.db.database import sole_row
 from leaguebot.core.models.change import GuildUnavailable, StepFailedOnDiscord
+from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.core.services.posting.notice_handler import delete_notice
 from leaguebot.core.services.posting.standing_post_handler import delete_standing
 from leaguebot.core.services.seasons.season_service import active_season_rounds_on
@@ -65,10 +72,12 @@ from leaguebot.core.utils.league_server import league_guild
 log = logging.getLogger(__name__)
 
 #: The kinds of take-down item that are messages, and the kinds that are channels.
-MESSAGE_KINDS = frozenset({"results", "standings", "verdict", "banner", "called_off"})
+MESSAGE_KINDS = frozenset(
+    {"results", "standings", "classification", "verdict", "banner", "called_off"}
+)
 CHANNEL_KINDS = frozenset({"submission", "amendment"})
 #: Of the message kinds, the tables, which are standing posts; the rest are notices.
-TABLE_KINDS = frozenset({"results", "standings"})
+TABLE_KINDS = frozenset({"results", "standings", "classification"})
 
 
 @dataclass(frozen=True)
@@ -252,6 +261,32 @@ async def erase_season_on(db: aiosqlite.Connection) -> SeasonErase:
         for opened in await cursor.fetchall():
             item("amendment", "amendment channel", opened["channel_id"], None, [], round_id)
 
+    # The opening classification of each division the live season's rounds name: the drivers' and
+    # the teams' tables, one item each, as a round's standings are. Only the opening is read: a
+    # final classification belongs to a completed season, which the purge never reaches.
+    for division_id in sorted({int(row["division_id"]) for row in rounds}):
+        standings_channel = channels[division_id]
+        if standings_channel is None or not standings_channel["standings_channel_id"]:
+            continue
+        for championship in (STANDINGS_DRIVERS, STANDINGS_CONSTRUCTORS):
+            anchor_column = _STANDINGS_ID_COLUMNS[championship]
+            list_column = _STANDINGS_IDS_COLUMNS[championship]
+            cursor = await db.execute(
+                f"""
+                SELECT {anchor_column} AS anchor, {list_column} AS message_ids
+                FROM classification_posts
+                WHERE division_id = ? AND occasion = ? AND {anchor_column} IS NOT NULL
+                """,  # noqa: S608 — columns come from constant maps
+                (division_id, ClassificationOccasion.SEASON_OPENING.value),
+            )
+            found = await cursor.fetchone()
+            if found is None or not found["anchor"]:
+                continue
+            anchor = int(found["anchor"])
+            item("classification", "opening classification",
+                 standings_channel["standings_channel_id"], anchor,
+                 _posting_ids(anchor, _parse_ids(found["message_ids"])), None)
+
     # A round's or a division's note of being called off: one item for each, the division's with
     # no round, read for the divisions the live season's rounds name. The rows go with the rest,
     # their messages carried by the items.
@@ -271,6 +306,11 @@ async def erase_season_on(db: aiosqlite.Connection) -> SeasonErase:
         divisions,
     )
 
+    await db.execute(
+        f"DELETE FROM classification_posts WHERE division_id IN ({named})",  # noqa: S608
+        divisions,
+    )
+
     round_ids = [row["round_id"] for row in rounds]
     # **Forgotten with the season** (#345): an amendment's snapshot names a `session_results` row
     # deleted below, which the sweep would then fail to revert and retry every five minutes for
@@ -287,7 +327,7 @@ async def erase_season_on(db: aiosqlite.Connection) -> SeasonErase:
         rounds=len(rounds),
         sessions=sessions,
         standings=standings,
-        messages=count("results", "standings"),
+        messages=count("results", "standings", "classification"),
         verdicts=count("verdict"),
         submission_channels=count("submission"),
         amend_channels=count("amendment"),
