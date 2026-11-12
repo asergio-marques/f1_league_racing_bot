@@ -698,11 +698,11 @@ async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
     are handed. With attendance off and Lewis over the autosack threshold: no driver is owed a
     sanction, the check of his sanction refuses nothing, saving it writes nothing and gives
     None, nothing is posted or written, an amendment's review is offered no pardon, a reverted
-    amendment has no pardon put back, a round
-    ended not held has no reading of its check-in planned, and an amendment's approval is told of
-    no fault in attendance's channels, though the server holds none of them. The one
-    method that acts whatever the switch, the change of a saved sanction's roles, is pinned by
-    its own test."""
+    amendment has no pardon put back (not even one its snapshot kept while attendance was on), a
+    round ended not held has no reading of its check-in planned, and an amendment's approval is
+    told of no fault in attendance's channels, though the server holds none of them. The methods
+    that act whatever the switch, the change of a saved sanction's roles and the reads that write
+    nothing, are pinned by their own tests."""
     db_path = await _db(tmp_path, attendance=False)
     await _totals(db_path, AMENDED_ROUND, {LEWIS: 25, MAX: 0})
     await _totals(db_path, LATEST_ROUND, {LEWIS: 25})
@@ -720,7 +720,9 @@ async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
     await hook.post_sheet(LATEST_ROUND, DIVISION_ID, sanctioned={LEWIS}, as_text=False)
     await hook.refresh_lineup(DIVISION_ID, as_text=False)
     async with get_connection(db_path) as db:
-        # A pardon of Lewis's, kept by an amendment's snapshot, then gone.
+        # A pardon of Lewis's, kept by an amendment's snapshot taken while attendance was on;
+        # then attendance is switched off and the pardon is gone.
+        await db.execute("UPDATE attendance_config SET module_enabled = 1")
         await db.execute(
             "INSERT INTO attendance_pardons (attendance_id, pardon_type, justification, "
             "granted_by, granted_at) SELECT id, 'ABSENT', 'earlier', 1, '2026-02-02T00:00:00' "
@@ -728,6 +730,7 @@ async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
             (AMENDED_ROUND, LEWIS),
         )
         saved = await hook.pardons_of_on(db, AMENDED_ROUND)
+        await db.execute("UPDATE attendance_config SET module_enabled = 0")
         await db.execute("DELETE FROM attendance_pardons")
         before = db.total_changes
         await hook.record_on(db, AMENDED_ROUND, DIVISION_ID, [], NOW)
@@ -742,6 +745,8 @@ async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
             "round_number": 3,
         })) == []
         assert db.total_changes == before
+        pardons = await (await db.execute("SELECT id FROM attendance_pardons")).fetchall()
+        assert pardons == [], "the pardon kept while attendance was on is not put back"
     assert await hook.pardons_to_review([object()]) == []
     no_channels = MagicMock()
     no_channels.get_channel = MagicMock(return_value=None)
