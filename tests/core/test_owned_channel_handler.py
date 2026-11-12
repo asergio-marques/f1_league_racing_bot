@@ -100,10 +100,6 @@ async def test_an_owned_channel_post_outside_a_job_is_refused_before_it_is_sent(
     channel.delete.assert_not_awaited()
 
 
-MESSAGE_HANDLING_NOT_BUILT = "#284: the handler does not yet edit or delete one message"
-
-
-@pytest.mark.xfail(strict=True, reason=MESSAGE_HANDLING_NOT_BUILT)
 async def test_a_message_in_an_owned_channel_is_edited_in_place_notifying_only_whom_it_names():
     """The approval message in a submission channel is edited to its new text and buttons once,
     notifying only whom the caller names; outside a job the edit is refused before it is sent."""
@@ -126,7 +122,6 @@ async def test_a_message_in_an_owned_channel_is_edited_in_place_notifying_only_w
     message.edit.assert_awaited_once_with(allowed_mentions=mentions, content="Approved", view=view)
 
 
-@pytest.mark.xfail(strict=True, reason=MESSAGE_HANDLING_NOT_BUILT)
 async def test_a_message_in_an_owned_channel_is_deleted():
     """A withdrawn approval message in a submission channel is deleted once, the channel left
     standing; outside a job the delete is refused before it is sent."""
@@ -146,7 +141,6 @@ async def test_a_message_in_an_owned_channel_is_deleted():
     channel.delete.assert_not_awaited()
 
 
-@pytest.mark.xfail(strict=True, reason=MESSAGE_HANDLING_NOT_BUILT)
 @pytest.mark.parametrize("error", [http_error(), http_error(discord.NotFound, status=404)],
                          ids=["refused", "gone"])
 async def test_an_owned_channel_message_edit_or_delete_raises_what_discord_raises(error):
