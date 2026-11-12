@@ -173,8 +173,10 @@ def _make_slug(name: str) -> str:
 def submission_open_change(*, now: Callable[[], datetime]) -> ChangeType:
     """The `results.submission.open` change type, for the builder to register.
 
-    *now* is the queue's clock, read when the channel's row is written. The payload is
-    ``{"round_id": int}``.
+    *now* is the queue's clock, read when the channel's row is written and, for an opening asked by
+    the round's start, by the check that judges the start has come. The payload is
+    ``{"round_id": int}``, with ``"at_its_start": True`` where the round's start asked it (its job on
+    time or late, or the restart's catch-up), so that the check judges the round still due.
     """
 
     async def check(ctx: CheckContext) -> Verdict:

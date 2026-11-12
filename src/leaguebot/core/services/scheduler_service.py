@@ -744,9 +744,9 @@ class SchedulerService:
         """Run *rnd*'s results submission at once, as its own job would have at its moment.
 
         For a round whose moment passed while its timed work stood removed, as an amendment
-        stopped on the change queue leaves it: the job armed again against that moment is past
-        the misfire grace and would be skipped, and it is the round's one way off Not run. It
-        replaces that job under the same id, armed with no trigger, which APScheduler runs at
+        stopped on the change queue leaves it: the job armed again against that moment lies in the
+        past, and it is the round's one way off Not run, so it is run now rather than left to the
+        scheduler's next wake. It replaces that job under the same id, armed with no trigger, which APScheduler runs at
         once, and with no lateness limit, so that a restart before it runs still runs it.
         """
         job_id = f"results{_round_job_suffix(rnd, season_number, division_tier)}"

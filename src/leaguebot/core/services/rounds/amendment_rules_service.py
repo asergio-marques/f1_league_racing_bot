@@ -21,10 +21,9 @@ would not, what was posted is withdrawn and the work armed again for its new mom
 rule covers the delay, the bring-forward and the change that moves no date at all.
 
 **A round is never moved into the past**, whatever the modules enabled. A round's result submission
-is armed against its own moment, and a job more than the scheduler's misfire grace behind is
-discarded rather than run — so a round moved backwards silently loses the one clock-driven
-transition it has, and the round's start (`results.submission.open`) being the only route to a
-submission channel, no command in production opens one afterwards. The check-in deadline rule below
+is armed against its own moment, so a round moved backwards would have it opened late, at once, and
+not at the round's moment, its start (`results.submission.open`) being the only route to a
+submission channel. The check-in deadline rule below
 refuses such a move where attendance is on; the refusal is stated in its own right so that the
 answer does not depend on which modules a league runs. Moving a round *forward* is untouched, and
 remains the remedy for a circuit or a format that must be corrected late.
