@@ -45,6 +45,7 @@ from tests.support.change_queue import (
     discard_job,
     http_error,
     member_interaction,
+    queued_log_lines,
     restart_queue,
     retry_job,
     run_queue,
@@ -86,6 +87,9 @@ _NOT_MOVED = (
     "#284: results' start-up recovery is not yet moved out of its wiring "
     "into its services"
 )
+
+#: Only the half-hour lapse's log line says this: the amendment's stages were not approved in time.
+LAPSED = "were not approved in time"
 
 REPORTS = "results.amendment.reports.approve"
 APPEALS = "results.amendment.appeals.approve"
@@ -469,6 +473,44 @@ async def test_a_discarded_stage_past_its_deadline_is_undone_at_the_next_sweep(t
     assert _amend_channel_deleted(league)
     assert "put back" in league.log()
 
+
+
+class _Killed(BaseException):
+    """The bot's process killed: no handler of the bot's sees it, nothing more is saved."""
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "#284: the amendment lapse's log line is posted by its step, not saved with the job's mark"
+))
+async def test_a_lapse_run_again_after_a_stop_tells_the_log_channel_once(tmp_path, monkeypatch):
+    """Alex's amendment of round 3 is past its half-hour, and the sweep asks for its lapse. The
+    round is put back, then the bot is killed as the queue comes to save the lapse's
+    `record_lapse` job: after the job has done its work, before its mark is saved. When the bot
+    starts again the queue runs that job again. The log channel is told once that the amendment
+    lapsed and the round was put back, counting the lines posted and those still waiting to be."""
+    from leaguebot.core.services.queue.change_queue import ChangeQueue
+
+    league = await _amend_league(tmp_path)
+    saving = ChangeQueue._save_result
+    killing = {"now": True}
+
+    async def _save_result(self: Any, db: Any, change: Any, row: Any, *args: Any) -> Any:
+        if row["name"] == "record_lapse" and killing["now"]:
+            killing["now"] = False
+            raise _Killed()
+        return await saving(self, db, change, row, *args)
+
+    monkeypatch.setattr(ChangeQueue, "_save_result", _save_result)
+
+    with pytest.raises(_Killed):
+        await _sweep(league, after=timedelta(hours=2))
+    assert not killing["now"], "the lapse never reached its record_lapse job"
+    await restart_queue(league.bot)
+    await run_queue(league.bot)
+
+    told = "\n".join([league.log(), *await queued_log_lines(league.db_path)])
+    assert told.count(LAPSED) == 1
+    assert _amend_channel_deleted(league)
 
 @pytest.mark.parametrize("stage", ["reports", "appeals"])
 @pytest.mark.parametrize("lapsed", [False, True], ids=["inside", "past"])
