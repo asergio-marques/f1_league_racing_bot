@@ -475,11 +475,13 @@ async def test_a_round_whose_start_passed_is_not_opened_again_at_the_restart(
 async def test_a_round_whose_start_is_ahead_by_the_bot_s_clock_is_not_opened_at_the_restart(
     tmp_path,
 ):
-    """Round 3's start is an hour after the bot's clock, though long past by the host's: the
-    league's clock is pinned months before today. At the restart results' catch-up asks nothing,
-    judging "passed" by the queue's clock: round 3 stays not run, and no channel is made."""
+    """Round 3's start is an hour before the host's clock but an hour after the bot's: the queue's
+    clock, pinned to the host's as the league is built, is put back two hours. At the restart
+    results' catch-up asks nothing, judging "passed" by the queue's clock and never the host's:
+    round 3 stays not run, and no channel is made."""
     league = await _league(tmp_path)
-    await _start_passed(league, hours=-1)
+    await _start_passed(league, hours=1)
+    league.clock.advance(hours=-2)
 
     await _catch_up(league)
     await run_queue(league.bot)
