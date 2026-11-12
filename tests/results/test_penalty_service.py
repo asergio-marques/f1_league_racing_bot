@@ -734,7 +734,7 @@ async def test_apply_penalties_on_stamps_with_the_handed_time_and_commits_nothin
     # The session carries no points configuration: it is not scored, so a scorer that would
     # fail is never reached. Given one, the scorer's failure comes out of the call.
     failing = AsyncMock(side_effect=RuntimeError("the points could not be calculated"))
-    target = "leaguebot.results.services.result_submission_service._apply_points_in_tx"
+    target = "leaguebot.results.services.scoring._apply_points_in_tx"
     with patch(target, new=failing):
         async with get_connection(db_path) as db:
             await _apply_staged_appeals_on(db, round_id, division_id, staged, 999, now=now)

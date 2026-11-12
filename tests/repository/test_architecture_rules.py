@@ -2672,7 +2672,7 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/report_approval_change.py", "_latest_round"): (2, PASS["results"]),
     ("results/services/report_approval_change.py", "report_approval_change.apply"):
         (2, PASS["results"]),
-    ("results/services/result_submission_service.py", "<module>"): (5, PASS["results"]),
+    ("results/services/result_submission_service.py", "<module>"): (2, PASS["results"]),
     ("results/services/result_submission_service.py", "_build_penalty_review_state"):
         (2, PASS["results"]),
     ("results/services/result_submission_service.py", "_restore_from_snapshot_on"):
@@ -2717,6 +2717,7 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/results_post_service.py", "results_sync_hint"): (2, PASS["results"]),
     ("results/services/results_post_service.py", "standings_display_names"): (1, PASS["results"]),
     ("results/services/results_post_service.py", "standings_repost_status"): (1, PASS["results"]),
+    ("results/services/scoring.py", "<module>"): (3, PASS["results"]),
     ("results/services/results_purge_service.py", "erase_season_on"): (4, PASS["results"]),
     ("results/services/review_changes.py", "division_job_in_hand"): (2, PASS["results"]),
     ("results/services/review_lock_change.py", "_in_review"): (1, PASS["results"]),

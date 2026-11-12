@@ -98,11 +98,11 @@ from leaguebot.results.services.result_submission_service import (
     _apply_staged_appeals_on,
     _clear_round_verdict_records_on,
     _recompute_former_drivers_after_amendment_on,
-    _recompute_session_points_on,
     _release_amendment_on,
     _remember_superseded_announcements_on,
     send_appeals_prompt,
 )
+from leaguebot.results.services.scoring import _recompute_session_points_on
 from leaguebot.results.services.results_post_service import _delete_posting, _parse_ids
 from leaguebot.results.services.review_posting import (
     DELETE_BATCH_NOTICE,

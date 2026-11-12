@@ -368,7 +368,7 @@ async def rescore_season(db: aiosqlite.Connection, season_id: int) -> None:
     same reason — a rescoring that logged a failed session and moved on would publish a
     championship scored under two tables.
 
-    **The scoring is `result_submission_service._apply_points_in_tx`**, reached through its
+    **The scoring is `scoring._apply_points_in_tx`**, reached through its
     module rather than bound by name, and every write is its own: this only chooses the
     sessions. The sanctions already committed survive because that function reads them from
     the stored rows — a disqualified or non-starting driver scores nothing, a non-finisher no
@@ -376,7 +376,7 @@ async def rescore_season(db: aiosqlite.Connection, season_id: int) -> None:
     waits on nothing but *db*: no Discord, no names, no connection of its own, so the caller's
     transaction is held for the scoring alone.
     """
-    from leaguebot.results.services import result_submission_service
+    from leaguebot.results.services import scoring
 
     cursor = await db.execute(
         "SELECT sr.id AS session_result_id, sr.config_name, sr.session_type "
@@ -389,7 +389,7 @@ async def rescore_season(db: aiosqlite.Connection, season_id: int) -> None:
     )
     sessions = await cursor.fetchall()
     for row in sessions:
-        await result_submission_service._apply_points_in_tx(
+        await scoring._apply_points_in_tx(
             db,
             row["session_result_id"],
             season_id,

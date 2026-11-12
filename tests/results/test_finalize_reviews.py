@@ -1758,7 +1758,7 @@ async def test_a_failed_amendment_report_stage_names_the_kind_of_fault(tmp_path)
 
     league = await amend_league(tmp_path)
     with patch(
-        "leaguebot.results.services.result_submission_service._apply_points_in_tx",
+        "leaguebot.results.services.scoring._apply_points_in_tx",
         new=AsyncMock(side_effect=sqlite3.OperationalError("database is locked")),
     ):
         interaction = await _amend_reports(league)

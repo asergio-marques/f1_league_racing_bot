@@ -742,7 +742,7 @@ async def changes_of(db_path: str, kind: str) -> list[dict[str, Any]]:
 def points_fail() -> Any:
     """Every session's points, recalculated, raise as a fault in the bot would."""
     return patch(
-        "leaguebot.results.services.result_submission_service._apply_points_in_tx",
+        "leaguebot.results.services.scoring._apply_points_in_tx",
         new=AsyncMock(side_effect=RuntimeError("the points could not be calculated")),
     )
 

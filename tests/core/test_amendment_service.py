@@ -2156,7 +2156,7 @@ async def test_a_rescore_that_fails_changes_nothing(db_path, monkeypatch):
     they stood. Nothing is reposted, and the log records no success."""
     import sqlite3
 
-    from leaguebot.results.services import result_submission_service
+    from leaguebot.results.services import scoring
 
     path, season_id = db_path
     await _seed_points_config(path, season_id)
@@ -2165,7 +2165,7 @@ async def test_a_rescore_that_fails_changes_nothing(db_path, monkeypatch):
     )
     await _staged_amendment(path, season_id)
 
-    real_scoring = result_submission_service._apply_points_in_tx
+    real_scoring = scoring._apply_points_in_tx
     calls: list[int] = []
 
     async def failing_on_the_second_session(db, session_result_id, *args, **kwargs):
@@ -2175,7 +2175,7 @@ async def test_a_rescore_that_fails_changes_nothing(db_path, monkeypatch):
         return await real_scoring(db, session_result_id, *args, **kwargs)
 
     monkeypatch.setattr(
-        result_submission_service, "_apply_points_in_tx", failing_on_the_second_session
+        scoring, "_apply_points_in_tx", failing_on_the_second_session
     )
 
     reposted: list[tuple] = []

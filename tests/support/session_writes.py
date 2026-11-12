@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from leaguebot.core.db.database import get_connection
 from leaguebot.results.models.points_config import SessionType
-from leaguebot.results.services import result_submission_service as service
+from leaguebot.results.services import result_submission_service as service, scoring
 
 
 async def save_session_result(
@@ -63,7 +63,7 @@ async def apply_points_from_config(
 ) -> None:
     """Score a saved session from the season's points configuration, committed."""
     async with get_connection(db_path) as db:
-        if await service._apply_points_from_config_on(
+        if await scoring._apply_points_from_config_on(
             db, session_result_id, season_id, config_name, session_type
         ):
             await db.commit()

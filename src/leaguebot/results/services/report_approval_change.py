@@ -87,10 +87,10 @@ from leaguebot.results.services.penalty_wizard import (
 )
 from leaguebot.results.services.review_confirm_change import approval_wait_refusal
 from leaguebot.results.services.result_submission_service import (
-    _recompute_session_points_on,
     _snapshot_staged_drivers_on,
     held_by_amendment,
 )
+from leaguebot.results.services.scoring import _recompute_session_points_on
 from leaguebot.results.services.review_posting import (
     NAMES,
     display_names,
