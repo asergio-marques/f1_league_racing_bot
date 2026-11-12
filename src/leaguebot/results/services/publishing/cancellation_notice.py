@@ -13,6 +13,11 @@ fault of the bot's own is raised as it is.
 save that calls it. The job itself reads its division from its own payload (`division_id`,
 `division_name`, `season_id`, and a round's `round_number`, `track_name`), through *seasons*, and
 drops itself, as it runs, where results is off.
+
+**The note is kept so that it can be taken down.** A round's or a division's note records its
+message with the job's mark (`record_note_on`, in `called_off_notes`, keyed by what was called off),
+and switching results off reads and deletes it (`results_purge_service`). A season's note is not
+recorded: the purge reads the live season alone, and a season called off is an archive.
 """
 from __future__ import annotations
 
@@ -22,10 +27,14 @@ import aiosqlite
 import discord
 
 from leaguebot.core.db.database import get_connection
-from leaguebot.core.models.cancellation import SCOPE_DIVISION, SCOPE_ROUND, CancellationNotices
+from leaguebot.core.models.cancellation import (
+    SCOPE_DIVISION,
+    SCOPE_ROUND,
+    CancellationNotices,
+)
 from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
 from leaguebot.core.services.cancellations.cancellation_notice_service import (
-    post_cancellation_notice,
+    post_cancellation_message,
     require_division,
     round_label,
 )
@@ -71,6 +80,29 @@ async def _results_channel(db_path: str, division_id: int) -> int | None:
 
 
 @posts_in_a_job
+async def post_note(
+    bot: LeagueBot,
+    guild,
+    division,
+    *,
+    scope: str,
+    round_number: int | None = None,
+    track_name: str | None = None,
+) -> discord.Message | str:
+    """Post results' note of *division*'s cancellation to its results channel, silently, as a job
+    on the change queue. Returns the message, or "no channel is set" where the division has none;
+    raises `StepFailedOnDiscord` (no cause) where the channel is set and gone, and `from`
+    Discord's refusal where it refuses the send; any other exception is a fault of the bot's own
+    and propagates unchanged.
+    """
+    channel_id = await _results_channel(bot.db_path, division.id)
+    content = results_note(scope, division.name, round_number=round_number, track_name=track_name)
+    return await post_cancellation_message(
+        guild, channel_id, content, mentions=discord.AllowedMentions.none(), silent=True,
+    )
+
+
+@posts_in_a_job
 async def post_notice(
     bot: LeagueBot,
     guild,
@@ -80,16 +112,42 @@ async def post_notice(
     round_number: int | None = None,
     track_name: str | None = None,
 ) -> str | None:
-    """Post results' note of *division*'s cancellation to its results channel, silently, as a job
-    on the change queue. Returns "no channel is set" where the division has none; raises
-    `StepFailedOnDiscord` (no cause) where the channel is set and gone, and `from` Discord's
-    refusal where it refuses the send; any other exception is a fault of the bot's own and
-    propagates unchanged.
-    """
-    channel_id = await _results_channel(bot.db_path, division.id)
-    content = results_note(scope, division.name, round_number=round_number, track_name=track_name)
-    return await post_cancellation_notice(
-        guild, channel_id, content, mentions=discord.AllowedMentions.none(), silent=True,
+    """:func:`post_note`, answering "no channel is set" where the division has none and nothing
+    else."""
+    posted = await post_note(
+        bot, guild, division, scope=scope, round_number=round_number, track_name=track_name
+    )
+    return posted if isinstance(posted, str) else None
+
+
+async def record_note_on(
+    db: aiosqlite.Connection, ctx: StepContext, result: StepResult
+) -> None:
+    """Keep the note *result* says was posted, on *db* and in the job's own save, keyed by what
+    was called off: the round (`round_id`) for a round, the division for a division. Whatever the
+    key held before is replaced, so a note posted again is the one standing. A season's note, and
+    a job that posted none, record nothing."""
+    posted = result.result or {}
+    payload = ctx.step_payload
+    scope = payload.get("scope", ctx.payload.get("scope", SCOPE_ROUND))
+    if "message_id" not in posted or scope not in (SCOPE_ROUND, SCOPE_DIVISION):
+        return
+    round_id = (
+        int(payload["round_id"] if "round_id" in payload else ctx.payload["round_id"])
+        if scope == SCOPE_ROUND else None
+    )
+    division_id = int(payload["division_id"])
+    if round_id is None:
+        await db.execute(
+            "DELETE FROM called_off_notes WHERE division_id = ? AND round_id IS NULL",
+            (division_id,),
+        )
+    else:
+        await db.execute("DELETE FROM called_off_notes WHERE round_id = ?", (round_id,))
+    await db.execute(
+        "INSERT INTO called_off_notes (division_id, round_id, channel_id, message_id) "
+        "VALUES (?, ?, ?, ?)",
+        (division_id, round_id, str(posted["channel_id"]), str(posted["message_id"])),
     )
 
 
@@ -123,13 +181,17 @@ def notify_results_steps(*, modules: "ModuleService", seasons: SeasonService) ->
         payload = ctx.step_payload
         guild = await require_guild(ctx.bot)
         division = await require_division(seasons, payload["season_id"], payload["division_id"])
-        problem = await post_notice(
+        posted = await post_note(
             ctx.bot, guild, division,
             scope=payload.get("scope", ctx.payload.get("scope", SCOPE_ROUND)),
             round_number=payload.get("round_number", ctx.payload.get("round_number")),
             track_name=payload.get("track_name", ctx.payload.get("track_name")),
         )
-        return StepResult(result={"unset": True} if problem else {"sent": True})
+        if isinstance(posted, str):
+            return StepResult(result={"unset": True})
+        return StepResult(result={
+            "sent": True, "message_id": posted.id, "channel_id": posted.channel.id,
+        })
 
     async def results_on(_ctx: StepContext) -> bool:
         return await modules.is_results_enabled()
@@ -140,6 +202,6 @@ def notify_results_steps(*, modules: "ModuleService", seasons: SeasonService) ->
     return {
         NOTIFY_RESULTS: Step(
             NOTIFY_RESULTS, StepKind.ACT, notify_results, still_due=results_on,
-            describe=describe,
+            describe=describe, record=record_note_on,
         ),
     }

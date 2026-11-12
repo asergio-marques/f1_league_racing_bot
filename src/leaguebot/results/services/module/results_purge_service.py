@@ -21,6 +21,11 @@ when it was posted. They were once left standing, and the league told so, only b
 recorded and nothing could find them — a limitation, never a rule. An attendance sanction card
 in the same channel stays: it is the attendance module's, and recorded nowhere.
 
+Results' note of a round or a division called off goes with them (#455): its message is recorded
+in ``called_off_notes`` when it is posted and read here, before the rows go, as a verdict's is. A
+season's own note is not recorded, and so not taken down: only the live season is read here, and a
+season called off is an archive the purge never reaches.
+
 **One case is left standing, knowingly** (accepted 2026-09-21). An amendment still open past its
 report stage has rewritten the amended sessions' verdict records without ids, and holds the
 originals' ids only in ``round_amend_channels.superseded_announcements`` until its final stage.
@@ -56,7 +61,7 @@ from leaguebot.core.utils.league_server import league_guild
 log = logging.getLogger(__name__)
 
 #: The kinds of take-down item that are messages, and the kinds that are channels.
-MESSAGE_KINDS = frozenset({"results", "standings", "verdict", "banner"})
+MESSAGE_KINDS = frozenset({"results", "standings", "verdict", "banner", "called_off"})
 CHANNEL_KINDS = frozenset({"submission", "amendment"})
 
 
@@ -159,7 +164,7 @@ async def erase_season_on(db: aiosqlite.Connection) -> SeasonErase:
     items: list[dict[str, Any]] = []
 
     def item(kind: str, label: str, channel_id: Any, anchor: int | None,
-             message_ids: list[int], round_id: int) -> None:
+             message_ids: list[int], round_id: int | None) -> None:
         items.append({
             "kind": kind, "label": label, "server_id": server_id, "channel_id": int(channel_id),
             "anchor": anchor, "message_ids": message_ids, "round_id": round_id,
@@ -239,6 +244,25 @@ async def erase_season_on(db: aiosqlite.Connection) -> SeasonErase:
         for opened in await cursor.fetchall():
             item("amendment", "amendment channel", opened["channel_id"], None, [], round_id)
 
+    # A round's or a division's note of being called off: one item for each, the division's with
+    # no round, read for the divisions the live season's rounds name. The rows go with the rest,
+    # their messages carried by the items.
+    divisions = sorted({int(row["division_id"]) for row in rounds})
+    named = ", ".join("?" for _ in divisions)
+    cursor = await db.execute(
+        "SELECT round_id, channel_id, message_id FROM called_off_notes "  # noqa: S608
+        f"WHERE division_id IN ({named}) ORDER BY id",
+        divisions,
+    )
+    for note in await cursor.fetchall():
+        anchor = int(note["message_id"])
+        item("called_off", "called-off note", note["channel_id"], anchor, [anchor],
+             None if note["round_id"] is None else int(note["round_id"]))
+    await db.execute(
+        f"DELETE FROM called_off_notes WHERE division_id IN ({named})",  # noqa: S608
+        divisions,
+    )
+
     round_ids = [row["round_id"] for row in rounds]
     # **Forgotten with the season** (#345): an amendment's snapshot names a `session_results` row
     # deleted below, which the sweep would then fail to revert and retry every five minutes for
@@ -314,7 +338,8 @@ async def take_down(bot: LeagueBot, item: dict[str, Any]) -> dict[str, Any]:
 async def rounds_deleted_on(db: aiosqlite.Connection, round_ids: list[int]) -> None:
     """Delete results' rows of *round_ids* on *db*, committing nothing: the classifications of the
     rounds' sessions with every verdict on them, the standings taken after each round, the
-    submission channels' records, an amendment's, a held resubmission's and the banners' records.
+    submission channels' records, an amendment's, a held resubmission's, the banners' records and
+    the round's called-off note.
 
     Core hands it the round ids as it deletes the rounds, in the delete's own save, so that the
     module's rows go with the round or not at all (architecture.md, "The database"). The messages
@@ -334,13 +359,20 @@ async def rounds_deleted_on(db: aiosqlite.Connection, round_ids: list[int]) -> N
     await db.execute(
         f"DELETE FROM verdict_banner_messages WHERE round_id IN ({marks})", round_ids  # noqa: S608
     )
+    await db.execute(
+        f"DELETE FROM called_off_notes WHERE round_id IN ({marks})", round_ids  # noqa: S608
+    )
     await _delete_rows(db, round_ids)
 
 
 async def divisions_deleted_on(db: aiosqlite.Connection, division_ids: list[int]) -> None:
-    """Delete results' settings of *division_ids* on *db*, committing nothing: each division's
-    results, standings and verdicts channels."""
+    """Delete results' rows of *division_ids* on *db*, committing nothing: each division's
+    results, standings and verdicts channels, and the note of the division called off."""
     marks = ",".join("?" * len(division_ids))
+    await db.execute(
+        f"DELETE FROM called_off_notes WHERE division_id IN ({marks})",  # noqa: S608
+        division_ids,
+    )
     await db.execute(
         f"DELETE FROM division_results_config WHERE division_id IN ({marks})",  # noqa: S608
         division_ids,

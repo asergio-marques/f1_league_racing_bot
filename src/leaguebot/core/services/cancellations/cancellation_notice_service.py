@@ -15,11 +15,13 @@ What stays core's own:
   notify is reported in, whichever module or job it came from;
 - `round_label` — the round's name in a notice, shared because attendance's, weather's and
   results' notices word a round the same way;
-- `post_cancellation_notice` and `require_division` — the one shape attendance's, weather's and
-  results' own notice jobs share: posting to a channel id read from the module's own table,
-  answered "no channel is set" where there is none, a channel gone from the server or a send
-  Discord refuses raising `StepFailedOnDiscord`; and finding the division a job's own payload
-  names, or `LookupError` where it is gone. Each module keeps only what is its own: the channel
+- `post_cancellation_message`, `post_cancellation_notice` and `require_division` — the one shape
+  attendance's, weather's and results' own notice jobs share: posting to a channel id read from
+  the module's own table, answered "no channel is set" where there is none, a channel gone from
+  the server or a send Discord refuses raising `StepFailedOnDiscord`, the message handed back by
+  the first for a module that keeps its id (results does, to take its note down) and dropped by
+  the second; and finding the division a job's own payload names, or `LookupError` where it is
+  gone. Each module keeps only what is its own: the channel
   read, the note's wording, and its mentions and silence. Posting itself is `send_notice`
   (`notice_handler`), which stays the one place that sends, edits and deletes a notice; this file
   is core's own part of a cancellation, not the handler, so the "no channel is set" answer and the
@@ -62,32 +64,42 @@ def round_label(round_number: int, track_name: str | None) -> str:
 
 
 @posts_in_a_job
-async def post_cancellation_notice(
+async def post_cancellation_message(
     guild, channel_id: int | None, text: str, *, mentions: discord.AllowedMentions, **parts,
-) -> str | None:
+) -> discord.Message | str:
     """Post a module's cancellation notice *text* to *channel_id* on *guild*, as a job on the
-    change queue, returning "no channel is set" where *channel_id* is None, raising
-    `StepFailedOnDiscord` (no cause) where the channel is set and gone, and `from` Discord's
-    refusal where it refuses the send. Any other exception is a fault of the bot's own and
-    propagates unchanged.
+    change queue, returning the message posted, or "no channel is set" where *channel_id* is
+    None, raising `StepFailedOnDiscord` (no cause) where the channel is set and gone, and `from`
+    Discord's refusal where it refuses the send. Any other exception is a fault of the bot's own
+    and propagates unchanged.
 
     The one shape attendance's, weather's and results' own cancellation notices share: each
     module reads its own channel id and builds its own wording, mentions and silence (*parts*),
-    and calls this to post it. Posting itself is `notice_handler.send_notice`; this merely answers
-    "no channel is set" and finds the channel before that send, which is why it lives here and not
-    in the handler that only sends, edits and deletes."""
+    and calls this to post it, keeping the message's id where it must later take the note down.
+    Posting itself is `notice_handler.send_notice`; this merely answers "no channel is set" and
+    finds the channel before that send, which is why it lives here and not in the handler that
+    only sends, edits and deletes."""
     if not channel_id:
         return "no channel is set"
     channel = guild.get_channel(int(channel_id)) if guild is not None else None
     if channel is None:
         raise StepFailedOnDiscord(f"the channel <#{channel_id}> is no longer on the server")
     try:
-        await send_notice(channel, text, mentions=mentions, **parts)
+        return await send_notice(channel, text, mentions=mentions, **parts)
     except discord.HTTPException as exc:
         raise StepFailedOnDiscord(
             f"the message could not be posted to <#{channel_id}>: {exc}"
         ) from exc
-    return None
+
+
+@posts_in_a_job
+async def post_cancellation_notice(
+    guild, channel_id: int | None, text: str, *, mentions: discord.AllowedMentions, **parts,
+) -> str | None:
+    """:func:`post_cancellation_message` for a module that keeps no id of its note: "no channel
+    is set" where *channel_id* is None, else nothing."""
+    posted = await post_cancellation_message(guild, channel_id, text, mentions=mentions, **parts)
+    return posted if isinstance(posted, str) else None
 
 
 async def require_division(seasons: SeasonService, season_id: int, division_id: int) -> Any:

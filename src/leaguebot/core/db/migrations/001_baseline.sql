@@ -247,6 +247,20 @@ CREATE TABLE round_standings_posts (
     constructor_standings_message_ids TEXT
 );
 
+-- called_off_notes: the note results posted of a round or a division called off, kept so that
+-- switching results off can take it down. One row for the posting, keyed by what was called off:
+-- a division's (round_id NULL) or a round's (both set). A season's note is not recorded, the
+-- purge reading the live season alone.
+CREATE TABLE called_off_notes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    division_id INTEGER NOT NULL
+                    REFERENCES divisions(id),
+    round_id    INTEGER
+                    REFERENCES rounds(id),
+    channel_id  TEXT    NOT NULL,
+    message_id  TEXT    NOT NULL
+);
+
 -- team_standings_snapshots
 CREATE TABLE team_standings_snapshots (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -48,8 +48,6 @@ from tests.support.season_league import (
 PRO_RESULTS = DIVISIONS[PRO][3].results
 ROUND_3 = round_id(PRO, 3)
 
-NOTE_NOT_KEPT = "#284: results' called-off note keeps no message id, so the switch-off leaves it up"
-
 
 @pytest.fixture(autouse=True)
 def _no_panel_to_refresh(monkeypatch):
@@ -121,7 +119,6 @@ async def _switch_results_off(league: SeasonLeague) -> Any:
         pytest.param(_round_ended_not_held, id="round ended not held"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason=NOTE_NOT_KEPT)
 async def test_turning_results_off_takes_down_the_called_off_note(tmp_path, call_off):
     """Round 3 (or Pro) is called off, and results posts its note in Pro's results channel. Then
     results is switched off: the queue runs to the end and the note is gone from the channel."""
@@ -137,7 +134,6 @@ async def test_turning_results_off_takes_down_the_called_off_note(tmp_path, call
     assert note not in league.channel(PRO_RESULTS).messages
 
 
-@pytest.mark.xfail(strict=True, reason=NOTE_NOT_KEPT)
 async def test_a_called_off_note_discord_refuses_to_delete_stops_the_switch_off_and_is_linked(
     tmp_path,
 ):
