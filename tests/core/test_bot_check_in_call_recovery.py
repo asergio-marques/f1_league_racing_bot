@@ -289,6 +289,39 @@ async def test_the_calls_owed_are_asked_in_the_order_their_rounds_race(tmp_path)
     assert asked == [ROUND_ID + 1, ROUND_ID]
 
 
+@pytest.mark.parametrize("queue_ran_first", [
+    # The timer asks while the restart's call is still waiting on the queue: the queue's key
+    # (`attendance.check_in.call:<round>`) makes the second a repeat of the first, not saved.
+    pytest.param(False, id="the timer asks before the queue runs"),
+    # The timer asks once the restart's call has been posted: the change's check finds a call
+    # standing for the round, so the second is no longer due and is not saved.
+    pytest.param(True, id="the timer asks after the queue has run"),
+])
+async def test_a_call_missed_by_minutes_asked_by_the_restart_and_its_timer_is_posted_once(
+    tmp_path, queue_ran_first,
+):
+    """Round 429's call fell due two minutes before the bot came back, inside its timer's
+    lateness, its deadline two days ahead. The restart asks for the call, and the timer, firing
+    as the scheduler is resumed, asks for it too. The division is sent one call, and the queue
+    holds one change for it, whichever of the two guards drops the second ask."""
+    db_path = await _make_db(tmp_path, until_round=timedelta(days=5) - timedelta(minutes=2))
+    bot = await _make_bot(db_path)
+    [timer] = [call.args[1] for call in bot.scheduler_service.register_timer.call_args_list
+               if call.args[0] == "rsvp_notice"]
+
+    from leaguebot.attendance.wiring import recover_missed_check_in_calls
+
+    await recover_missed_check_in_calls(bot, now=NOW)
+    if queue_ran_first:
+        await run_queue(bot)
+    await timer(ROUND_ID)
+    await run_queue(bot)
+
+    assert len(bot.check_in_channel.sent) == 1
+    assert await _asked(db_path) == 1
+    assert await _call_stands(db_path)
+
+
 # ---------------------------------------------------------------------------
 # A call whose deadline has passed as well is given up, and reported once
 # ---------------------------------------------------------------------------
