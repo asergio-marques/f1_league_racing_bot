@@ -456,17 +456,18 @@ async def _take_down_kept(channel: Any, ctx: StepContext) -> None:
 
 
 def appeals_prompt_step(
-    queue: ChangeQueue, server_config: ReadServerConfig, router: OutputRouter
+    queue: ChangeQueue, server_config: ReadServerConfig, router: OutputRouter,
+    attendance: AttendanceAfterReview,
 ) -> Step:
     """The `post_appeals_prompt` job on its own, for a change type whose whole business is the
     prompt (`results.appeals.open`) as well as for those that open the appeals stage after their
     verdicts. It is planned with a payload naming the ``round_id`` and ``division_id``. *queue* is the
     queue the prompt's buttons ask their changes of and *server_config* reads the configuration
-    their tier check reads, and *router* the output router the presses are logged through, which
-    the prompt's state carries."""
+    their tier check reads, *router* the output router the presses are logged through and
+    *attendance* attendance's share of the review, which the prompt's state carries."""
 
     async def post(ctx: StepContext) -> StepResult:
-        return await _post_appeals_prompt(ctx, queue, server_config, router)
+        return await _post_appeals_prompt(ctx, queue, server_config, router, attendance)
 
     async def record(db: Any, ctx: StepContext, result: StepResult) -> None:
         await db.execute(
@@ -499,7 +500,8 @@ async def _describe_appeals_prompt(ctx: StepContext) -> str:
 
 
 async def _post_appeals_prompt(
-    ctx: StepContext, queue: ChangeQueue, server_config: ReadServerConfig, router: OutputRouter
+    ctx: StepContext, queue: ChangeQueue, server_config: ReadServerConfig, router: OutputRouter,
+    attendance: AttendanceAfterReview,
 ) -> StepResult:
     """Open the appeals stage in the channel the report stage ran in. Raises where it cannot."""
     payload = ctx.step_payload
@@ -515,7 +517,7 @@ async def _post_appeals_prompt(
         await _delete_posting(channel, int(kept), [int(kept)], label="appeals review prompt",
                               failures=[])
     state = await _build_penalty_review_state(
-        ctx.bot, queue, server_config, router, round_id, division_id, channel.id
+        ctx.bot, queue, server_config, router, attendance, round_id, division_id, channel.id
     )
     message = await send_appeals_prompt(ctx.bot, channel, state)
     return StepResult(result={"message_id": message.id, "channel_id": channel.id})

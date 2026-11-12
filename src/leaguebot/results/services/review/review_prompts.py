@@ -17,6 +17,7 @@ from leaguebot.results.services.points.scoring import _recompute_session_points_
 if TYPE_CHECKING:
     from leaguebot.core.services.posting.output_router import OutputRouter
     from leaguebot.core.services.queue.change_queue import ChangeQueue
+    from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
     from leaguebot.results.services.review.review_state import PenaltyReviewState, ReadServerConfig
 
 
@@ -50,6 +51,7 @@ async def _build_penalty_review_state(
     queue: ChangeQueue,
     server_config: ReadServerConfig,
     router: OutputRouter,
+    attendance: AttendanceAfterReview,
     round_id: int,
     division_id: int,
     submission_channel_id: int,
@@ -101,6 +103,7 @@ async def _build_penalty_review_state(
         queue=queue,
         server_config=server_config,
         router=router,
+        attendance=attendance,
         round_number=round_number,
         division_name=division_name,
     )

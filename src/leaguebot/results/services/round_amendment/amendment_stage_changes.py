@@ -542,6 +542,7 @@ def amendment_stage_changes(
             queue=queue,
             server_config=server_config,
             router=router,
+            attendance=attendance,
             staged=reports,
             staged_appeals=corrections,
             staged_pardons=[StagedPardon.from_payload(p) for p in ctx.payload["pardons"]],

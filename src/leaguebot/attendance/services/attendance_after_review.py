@@ -152,6 +152,12 @@ class AttendanceAfterReview:
             return
         await _att.put_back_pardons_on(db, round_id, saved)
 
+    async def attendance_row_of(
+        self, round_id: int, division_id: int, profile_id: int
+    ) -> dict[str, Any] | None:
+        async with get_connection(self._db_path) as db:
+            return await _att.attendance_row_of(db, round_id, division_id, profile_id)
+
     async def recalculate_on(
         self, db: aiosqlite.Connection, round_id: int, division_id: int
     ) -> None:

@@ -1262,6 +1262,21 @@ async def _rewrite_round_pardons_on(
         )
 
 
+async def attendance_row_of(
+    db, round_id: int, division_id: int, profile_id: int
+) -> dict[str, Any] | None:
+    """The driver's attendance row of the round: its ``id`` and ``rsvp_status``; None where the
+    driver has none. What the review's pardon form stages a pardon against
+    (`AttendanceAfterReview.attendance_row_of`). Reads only."""
+    cursor = await db.execute(
+        "SELECT id, rsvp_status FROM driver_round_attendance "
+        "WHERE round_id = ? AND division_id = ? AND driver_profile_id = ?",
+        (round_id, division_id, profile_id),
+    )
+    row = await cursor.fetchone()
+    return None if row is None else {"id": row["id"], "rsvp_status": row["rsvp_status"]}
+
+
 async def pardons_of_on(db, round_id: int) -> list[dict[str, Any]]:
     """The round's pardons whole, ``id`` and ``granted_at`` included, oldest first, on *db*.
 

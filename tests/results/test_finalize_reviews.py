@@ -849,7 +849,6 @@ async def _appeals_in_hand(league: ReviewLeague, how: str) -> None:
         ("clear", "Yes, clear and proceed with no corrections"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_every_appeals_control_refuses_while_the_appeals_are_being_approved(
     tmp_path, kind, label, how
 ):
@@ -1694,7 +1693,6 @@ async def test_the_amendment_rewrites_the_rounds_pardons_at_its_last_stage(tmp_p
     "stage, kind",
     [("reports", AMEND_REPORTS), ("appeals", AMEND_APPEALS)],
 )
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_each_approve_control_of_an_amendment_asks_its_stage_of_the_queue(
     tmp_path, stage, kind
 ):

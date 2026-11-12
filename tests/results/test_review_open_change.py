@@ -708,8 +708,8 @@ async def test_the_change_names_its_round_and_division(tmp_path, caplog, route):
 
     await _recover(league)
 
-    kind, change_type = ((APPEALS_OPEN_KIND, appeals_open_change(queue=MagicMock(), server_config=AsyncMock(return_value=None), router=MagicMock())) if appeals
-                         else (KIND, review_open_change(queue=MagicMock(), server_config=AsyncMock(return_value=None), router=MagicMock())))
+    kind, change_type = ((APPEALS_OPEN_KIND, appeals_open_change(queue=MagicMock(), server_config=AsyncMock(return_value=None), router=MagicMock(), attendance=MagicMock())) if appeals
+                         else (KIND, review_open_change(queue=MagicMock(), server_config=AsyncMock(return_value=None), router=MagicMock(), attendance=MagicMock())))
     [change] = await changes_of(league.db_path, kind)
     saved = json.loads(change["payload"])
     assert (saved["round_number"], saved["division_name"]) == (3, "Pro")

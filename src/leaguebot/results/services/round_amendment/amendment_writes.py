@@ -822,6 +822,7 @@ async def run_amendment_review_stages(
         queue=queue,
         server_config=server_config,
         router=router,
+        attendance=attendance,
         staged=staged,
         staged_appeals=staged_appeals,
         staged_pardons=staged_pardons,

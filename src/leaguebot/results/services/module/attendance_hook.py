@@ -71,6 +71,13 @@ class AttendanceAfterReview(Protocol):
         writes, so the pardons of a league that turned attendance off meanwhile stay as they
         are."""
 
+    async def attendance_row_of(
+        self, round_id: int, division_id: int, profile_id: int
+    ) -> dict[str, Any] | None:
+        """The attendance row of the driver *profile_id* in the round, as the pardon form needs it:
+        its ``id``, which a pardon is staged against, and its ``rsvp_status``; None where the
+        driver has none. A read writing nothing, so it acts whatever attendance's switch says."""
+
     async def recalculate_on(
         self, db: aiosqlite.Connection, round_id: int, division_id: int
     ) -> None:

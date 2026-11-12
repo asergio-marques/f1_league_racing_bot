@@ -560,17 +560,6 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
             # the round through the profile, so the account it names changes nothing else.
             driver_user_id = int(await current_account_of(db, driver_user_id))
 
-            # --- Fetch DRA row ---
-            cursor = await db.execute(
-                """
-                SELECT id, rsvp_status
-                FROM driver_round_attendance
-                WHERE round_id = ? AND division_id = ? AND driver_profile_id = ?
-                """,
-                (self.state.round_id, self.state.division_id, profile_id),
-            )
-            dra_row = await cursor.fetchone()
-
             # --- Determine attendance from session results directly (FR-007).
             #     The pre-computed attended flag on the DRA row is not populated
             #     until the report approval's save, so we query results here instead.
@@ -597,6 +586,10 @@ class AddPardonModal(LeagueModal, title="Attendance Pardon"):
             )
             attended_in_results = (await cursor.fetchone()) is not None
 
+        # --- Fetch DRA row, from attendance, whose row it is ---
+        dra_row = await self.state.attendance.attendance_row_of(
+            self.state.round_id, self.state.division_id, profile_id
+        )
         if dra_row is None:
             await refuse(
                 interaction, f"❌ No attendance row found for <@{driver_user_id}> in this round. "

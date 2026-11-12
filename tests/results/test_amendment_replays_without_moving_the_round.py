@@ -276,7 +276,6 @@ def test_the_revert_publishes_nothing_either():
 # ── The flags themselves ──────────────────────────────────────────────────
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 def test_the_state_carries_the_flags_and_defaults_to_a_first_pass():
     """Defaulting to False is what keeps every existing caller a first pass. Whether an
     amendment's reports are approved is read from its row's `reports_approved_at` (#439)."""

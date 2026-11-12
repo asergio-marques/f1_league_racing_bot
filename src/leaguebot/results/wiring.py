@@ -456,13 +456,13 @@ def register_change_types(
     bot.change_queue.register(
         review_open_change(
             queue=bot.change_queue, server_config=bot.config_service.get_server_config,
-            router=bot.output_router,
+            router=bot.output_router, attendance=attendance,
         )
     )
     bot.change_queue.register(
         review_prompt_change(
             queue=bot.change_queue, server_config=bot.config_service.get_server_config,
-            router=bot.output_router,
+            router=bot.output_router, attendance=attendance,
         )
     )
     bot.change_queue.register(review_stage_change())
@@ -480,7 +480,7 @@ def register_change_types(
     bot.change_queue.register(
         appeals_open_change(
             queue=bot.change_queue, server_config=bot.config_service.get_server_config,
-            router=bot.output_router,
+            router=bot.output_router, attendance=attendance,
         )
     )
     bot.change_queue.register(close_stale_change())

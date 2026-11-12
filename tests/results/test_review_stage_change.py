@@ -140,7 +140,6 @@ async def _approval_row(db_path: str) -> Any:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_penalty_added_is_staged_and_the_prompt_redrawn_when_its_turn_comes(tmp_path):
     """Alex adds a five-second penalty for Lewis in round 3's review. He is answered at once that
     it is under way, and nothing is redrawn yet; the staging is a change on round 3's lane. When
@@ -166,7 +165,6 @@ async def test_a_penalty_added_is_staged_and_the_prompt_redrawn_when_its_turn_co
     assert "Staged Penalty" in updated_reply(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_staging_against_a_replaced_prompt_is_not_due(tmp_path):
     """Round 3's lane is stopped when Alex adds a penalty for Lewis, so his staging waits. Before
     it runs, the review's prompt is replaced (as a restart puts the review back with a fresh
@@ -189,7 +187,6 @@ async def test_a_staging_against_a_replaced_prompt_is_not_due(tmp_path):
     assert change["state"] in ("DONE", "REFUSED")
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_refused_redraw_stops_the_queue_with_the_item_staged(tmp_path):
     """Discord refuses the edit of round 3's prompt when Alex's penalty for Lewis is staged.
     Round 3's lane stops at the redraw; the league lane is not stopped. Retry redraws the prompt
@@ -213,7 +210,6 @@ async def test_a_refused_redraw_stops_the_queue_with_the_item_staged(tmp_path):
     assert "Remove #2" not in labels
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_staging_while_the_queue_is_stopped_is_kept_and_applied_when_it_clears(tmp_path):
     """Round 3's lane is stopped at another job when Alex adds a penalty for Lewis. He is
     answered that it is under way and the prompt is left as it is; once the stop clears, the
@@ -237,7 +233,6 @@ async def test_a_staging_while_the_queue_is_stopped_is_kept_and_applied_when_it_
     assert change["state"] == "DONE"
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_staging_is_shown_while_the_league_is_stopped(tmp_path):
     """The league lane is stopped at a job of its own when Alex adds a penalty for Lewis. The
     staging runs on round 3's lane all the same: the prompt is redrawn with the penalty while the
@@ -256,7 +251,6 @@ async def test_a_staging_is_shown_while_the_league_is_stopped(tmp_path):
     assert await stopped_job(league.db_path, LANE) is None
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_staging_withdraws_a_standing_approval_message_as_a_job(tmp_path):
     """Round 3's approval message 8901 stands when Alex adds a penalty for Lewis. Nothing is
     deleted at the press; when the staging runs, a job of its own withdraws the approval message,
@@ -280,7 +274,6 @@ async def test_staging_withdraws_a_standing_approval_message_as_a_job(tmp_path):
     assert "withdraw_approval" in names
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_pardon_and_an_appeal_correction_are_staged_alike(tmp_path):
     """Attendance is on and Max (102) gave no answer to round 3's check-in. Alex stages a NO_RSVP
     pardon for him: it is a staging change on round 3's lane, and the prompt is redrawn with its
@@ -325,7 +318,6 @@ async def test_a_pardon_and_an_appeal_correction_are_staged_alike(tmp_path):
     assert "Remove #1" in _labels(appeals, APPEALS_PROMPT)
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_remove_clear_and_make_changes_are_staged_and_redrawn_as_jobs(tmp_path):
     """Round 3's review holds penalties for Lewis and Max, its approval message 8901 standing.
     Alex presses Make Changes on the approval message, then Remove #2 on the prompt, then clears
@@ -377,7 +369,6 @@ async def test_remove_clear_and_make_changes_are_staged_and_redrawn_as_jobs(tmp_
     assert all(_lane(change) == LANE for change in await changes_of(league.db_path, KIND))
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_confirm_posts_the_approval_message_as_a_job_and_keeps_its_id(tmp_path):
     """Nothing is staged in round 3's review when Alex presses No Penalties / Confirm. He is
     answered at once and nothing is posted yet; the confirmation is a change on round 3's lane,
@@ -405,7 +396,6 @@ async def test_confirm_posts_the_approval_message_as_a_job_and_keeps_its_id(tmp_
     assert await _approval_row(league.db_path) == posted
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_refused_approval_message_stops_the_queue(tmp_path):
     """Discord refuses the approval message Alex's No Penalties / Confirm posts in round 3's
     submission channel. Round 3's lane stops at that post, the league lane running on, and no id
@@ -433,7 +423,6 @@ async def test_a_refused_approval_message_stops_the_queue(tmp_path):
     assert await _approval_row(league.db_path) is not None
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_the_approval_message_s_id_is_saved_on_the_submission_row_and_read_by_a_later_staging(
     tmp_path,
 ):

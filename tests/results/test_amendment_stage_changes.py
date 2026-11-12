@@ -1214,7 +1214,6 @@ async def test_the_sheet_and_the_sanctions_follow_the_running_totals_to_the_last
     assert owed.await_args.args[:2] == (LATER_ROUND_ID, DIVISION_ID)
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_stage_approval_is_refused_while_a_staging_is_in_hand(tmp_path):
     """Round 3 is under an amendment whose report stage is open in the amendment channel, and
     that channel's lane is stopped, so the report for Max Alex has just added there is still

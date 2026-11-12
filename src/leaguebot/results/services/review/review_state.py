@@ -17,6 +17,7 @@ from leaguebot.core.models.server_config import ServerConfig
 from leaguebot.core.services.posting.output_router import OutputRouter
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.results.models.points_config import SessionType
+from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
 from leaguebot.results.services.review.penalty_service import StagedPenalty
@@ -92,6 +93,9 @@ class PenaltyReviewState:
     #: The output router the review's presses write their log lines through, handed in with the
     #: queue, so that a view never looks it up on the interaction's client.
     router: OutputRouter
+    #: Attendance's share of the review, handed in with the router, which the pardon form reads
+    #: the driver's attendance row through, so that a view never looks it up on the bot.
+    attendance: AttendanceAfterReview
     staged: list[StagedPenalty] = field(default_factory=list)
     staged_appeals: list[StagedPenalty] = field(default_factory=list)
     staged_pardons: list[StagedPardon] = field(default_factory=list)

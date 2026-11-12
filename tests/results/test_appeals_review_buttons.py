@@ -286,7 +286,6 @@ MANAGER_ONLY = [
 
 
 @pytest.mark.parametrize("view_cls,button", MANAGER_ONLY)
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_only_a_league_manager_may_press(tmp_path, view_cls, button):
     """The review happens in the submission channel, which drivers can see. A driver
     confirming the appeals step would finalise a round over the stewards' heads."""
@@ -308,7 +307,6 @@ async def test_only_a_league_manager_may_press(tmp_path, view_cls, button):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_make_changes_returns_to_staging_with_the_list_intact(tmp_path):
     """A steward who reaches approval and realises they have missed a penalty must be able
     to go back — otherwise the safe thing to do at that screen is to approve."""
@@ -331,7 +329,6 @@ async def test_make_changes_returns_to_staging_with_the_list_intact(tmp_path):
     assert "staged list is intact" in _answered(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_approving_finalises_the_review(tmp_path):
     """Alex presses Approve on the approval message of round 3's review, one 5-second penalty
     for driver 101 staged. The press asks the queue for `results.reports.approve` of round 3,
@@ -356,7 +353,6 @@ async def test_approving_finalises_the_review(tmp_path):
     assert payload["staged"] == [_penalty().to_payload()]
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_an_archived_season_cannot_be_approved_into(tmp_path):
     """A COMPLETED season is the league's published record, and approving a review inside
     one would rewrite results already standing."""
@@ -373,7 +369,6 @@ async def test_an_archived_season_cannot_be_approved_into(tmp_path):
     assert _asked(interaction, view.state) == []
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_round_with_no_season_row_is_still_approvable(tmp_path):
     """The guard refuses an archived season, not an unresolvable one — a round whose chain
     cannot be read is a broken state, and refusing to finalise it would strand a review
@@ -402,7 +397,6 @@ async def test_a_round_with_no_season_row_is_still_approvable(tmp_path):
     [([101, 102], ["Remove #1", "Remove #2"]), ([], [])],
     ids=["two-staged", "nothing-staged"],
 )
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_remove_button_is_offered_for_each_staged_correction(tmp_path, drivers, expected):
     db_path = await _make_db(tmp_path, name="appeals_buttons")
     state = _state(db_path, appeals=[_penalty(driver) for driver in drivers])
@@ -412,7 +406,6 @@ async def test_a_remove_button_is_offered_for_each_staged_correction(tmp_path, d
     assert [i.label for i in view.children if str(i.label).startswith("Remove")] == expected
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_removing_a_correction_takes_it_off_the_list(tmp_path):
     db_path = await _make_db(tmp_path, name="appeals_remove")
     state = _state(db_path, appeals=[_penalty(101), _penalty(102)])
@@ -429,7 +422,6 @@ async def test_removing_a_correction_takes_it_off_the_list(tmp_path):
     refresh.assert_awaited_once()
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_removing_a_correction_says_which_one_went(tmp_path):
     """Two corrections against the same driver differ only in their penalty, and a steward
     who removed the wrong one needs to see it immediately."""
@@ -447,7 +439,6 @@ async def test_removing_a_correction_says_which_one_went(tmp_path):
     assert "101" in _answered(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_a_remove_button_past_the_end_is_answered(tmp_path):
     """The list shifts as entries are removed, so a stale button must not remove the wrong
     correction — which would be invisible, because both are removals."""
@@ -466,7 +457,6 @@ async def test_a_remove_button_past_the_end_is_answered(tmp_path):
     assert len(state.staged_appeals) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_adding_a_correction_asks_which_session(tmp_path):
     """A round has up to four and a correction applies to one of them; the appeals flow
     stages into its own list, not the penalty one."""
@@ -481,7 +471,6 @@ async def test_adding_a_correction_asks_which_session(tmp_path):
     assert _sent_view(interaction) is not None
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_confirming_with_nothing_staged_finalises_at_once(tmp_path):
     """There is nothing to lose, and a confirmation would be a click for its own sake.
 
@@ -512,7 +501,6 @@ async def test_confirming_with_nothing_staged_finalises_at_once(tmp_path):
     assert _all_lines(interaction, state) == ["the approval's own line"]
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_approving_the_appeals_asks_for_the_corrections_staged(tmp_path):
     """Alex presses ✅ Approve on round 3's appeals review with one 5-second correction for
     driver 101 staged. The press asks the queue for `results.appeals.approve` of round 3, handing
@@ -532,7 +520,6 @@ async def test_approving_the_appeals_asks_for_the_corrections_staged(tmp_path):
     assert payload["staged"] == [_penalty().to_payload()]
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_confirming_with_corrections_staged_asks_first(tmp_path):
     """The button means two different things depending on what is staged, and pressing it
     with a list built up would otherwise silently discard that work."""
@@ -548,7 +535,6 @@ async def test_confirming_with_corrections_staged_asks_first(tmp_path):
     assert "**2** staged correction(s)" in _replied(interaction)
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_the_confirmation_says_what_clearing_would_do(tmp_path):
     """"Confirm" alone reads as confirming the corrections, which is the opposite."""
     db_path = await _make_db(tmp_path, name="appeals_confirm_says")
@@ -568,7 +554,6 @@ async def test_the_confirmation_says_what_clearing_would_do(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_confirming_the_clear_discards_and_finalises(tmp_path):
     """Round 3's appeals review has one correction staged; Alex presses No Changes / Confirm and
     then confirms the clear. The list is emptied and the queue is asked for
@@ -588,7 +573,6 @@ async def test_confirming_the_clear_discards_and_finalises(tmp_path):
     assert payload["staged"] == []
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_going_back_keeps_the_corrections(tmp_path):
     """The whole purpose of the question: a steward who pressed Confirm by habit gets their
     work back.
@@ -637,8 +621,6 @@ def _appeals_refusal(case_id, kind, label, reply, *, restarted=False, manager=Tr
     return pytest.param(
         kind, label, reply, restarted, manager, staged, remaining,
         id=case_id,
-        # A press after a restart has no state to build; every other case builds one.
-        marks=() if restarted else pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review"),
     )
 
 
@@ -726,7 +708,6 @@ async def test_every_refused_press_of_the_appeals_review_is_recorded(
         ("clear", _APPEALS_CLEAR),
     ],
 )
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_every_appeals_control_refuses_once_the_appeals_are_approved(
     tmp_path, kind, label
 ):
@@ -789,7 +770,6 @@ def _all_lines(interaction, state) -> list[str]:
         pytest.param("clear", _APPEALS_CLEAR, id="clear"),
     ],
 )
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_every_press_of_the_appeals_review_writes_one_line(tmp_path, kind, label):
     """Round 3's appeals review (division Pro) has two +5s corrections staged, for drivers 101
     and 102. Alex, a league manager, presses Remove #1, or "Yes, clear and proceed with no
@@ -850,7 +830,6 @@ def _assert_appeals_clear_abandoned(line: str, ending: str) -> None:
     assert not detail[-1].strip().endswith(_APPEALS_CLEAR_KEPT), f"no next step: {line}"
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_an_appeals_clear_confirmation_left_to_lapse_is_recorded(tmp_path):
     """Round 3's appeals review (division Pro) has one correction staged. Alex presses No
     Changes / Confirm and is asked whether to clear it, then answers nothing until the question

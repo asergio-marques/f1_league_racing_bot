@@ -1722,7 +1722,6 @@ async def test_a_second_approval_while_the_first_is_stopped_is_refused(tmp_path)
     assert len(await changes_of(league.db_path, KIND)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_every_review_control_refuses_while_the_approval_is_in_hand(tmp_path):
     from leaguebot.results.services.review.review_state import (
         _BEING_APPROVED,
@@ -1948,7 +1947,6 @@ async def test_the_appeals_prompt_is_posted_on_the_round_s_lane(tmp_path):
 # Approve waits for the staging (#439, slice 6b, C56a; decision 26)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
 async def test_approve_is_refused_while_a_staging_is_in_hand(tmp_path):
     """Round 3's lane is stopped, so the penalty for Lewis Alex has just added is still waiting
     to be shown on the prompt. Alex presses Approve on the review: it is refused at the press,

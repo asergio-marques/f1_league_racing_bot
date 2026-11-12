@@ -82,7 +82,6 @@ class TestPenaltyReviewState:
             "division_name",
         ],
     )
-    @pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
     def test_each_field_has_its_default(self, field, default):
         state = self._make_state()
         if default is None:
@@ -90,14 +89,12 @@ class TestPenaltyReviewState:
         else:
             assert getattr(state, field) == default
 
-    @pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
     def test_staged_and_staged_appeals_are_independent(self):
         """Staged and staged_appeals must be separate list instances."""
         state = self._make_state()
         state.staged.append(object())
         assert len(state.staged_appeals) == 0
 
-    @pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
     def test_two_instances_have_independent_staged_lists(self):
         s1 = self._make_state()
         s2 = self._make_state()
@@ -129,20 +126,17 @@ class TestAddPenaltyModal:
     @pytest.mark.parametrize(
         "field", ["driver_input", "penalty_input", "description_input", "justification_input"]
     )
-    @pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
     async def test_each_input_is_a_text_input(self, field):
         modal = self._make_modal()
         assert hasattr(modal, field)
         assert isinstance(getattr(modal, field), discord.ui.TextInput)
 
     @pytest.mark.parametrize("field", ["description_input", "justification_input"])
-    @pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
     async def test_the_text_input_is_required(self, field):
         modal = self._make_modal()
         assert getattr(modal, field).required is True
 
     @pytest.mark.parametrize("field", ["description_input", "justification_input"])
-    @pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
     async def test_the_text_input_takes_at_most_200_characters(self, field):
         modal = self._make_modal()
         assert getattr(modal, field).max_length == 200
@@ -152,12 +146,10 @@ class TestAddPenaltyModal:
         [(False, "Add Penalty"), (True, "Add Correction")],
         ids=["penalty", "appeals"],
     )
-    @pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
     async def test_the_title_names_the_mode(self, use_appeals_staging, word):
         modal = self._make_modal(use_appeals_staging=use_appeals_staging)
         assert word in modal.title
 
-    @pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
     async def test_session_label_in_title(self):
         modal = self._make_modal()
         assert "Feature Race" in modal.title
@@ -225,7 +217,6 @@ class TestAppealsReviewView:
         ],
         ids=["nothing-staged", "a-correction-staged"],
     )
-    @pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
     async def test_approve_is_enabled_only_with_a_correction_staged(
         self, staged_appeals, disabled
     ):
@@ -246,7 +237,6 @@ class TestAppealsReviewView:
         )
         assert approve_btn.disabled is disabled
 
-    @pytest.mark.xfail(strict=True, reason="#284: the review's state does not yet take attendance's share of the review")
     async def test_dynamic_remove_buttons_added_per_entry(self):
         state = PenaltyReviewState(
             round_id=1,
