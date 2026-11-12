@@ -25,7 +25,7 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
 from leaguebot.results.services.publishing.results_post_service import get_standings_message_id
-from tests.support.change_queue import in_a_job
+from tests.support.change_queue import discard_job, in_a_job, retry_job, run_queue, stopped_job
 from tests.support.season_classification import (
     bot_on,
     classification_posts,
@@ -34,7 +34,16 @@ from tests.support.season_classification import (
     second_round_with_results,
     seed_season,
 )
-from tests.support.season_league import AM, DIVISIONS, PRO, season_league
+from tests.support.season_league import (
+    AM,
+    DIVISIONS,
+    PRO,
+    complete_season,
+    pending_completion_league,
+    press_approve,
+    reply,
+    season_league,
+)
 
 
 
@@ -381,3 +390,105 @@ async def test_a_final_standings_channel_never_set_posts_nothing(db_path):
         )
 
     standings.assert_not_awaited()
+
+
+# ── A done save that fails after the posting went out ─────────────────────────────────────
+#
+# A classification's ids are saved with the mark that its job is done. Where that save fails
+# the messages are already up and no id is recorded, so the job keeps what it sent and the
+# channel it sent it to: the next try takes that copy down before it posts again, and a discard
+# names it for removal by hand (architecture.md, "Every post keeps three things").
+
+_OCCASIONS = [
+    pytest.param(ClassificationOccasion.SEASON_OPENING, "opening_standings", "opening standings", id="opening"),
+    pytest.param(ClassificationOccasion.SEASON_FINAL, "final_standings", "final classification", id="final"),
+]
+
+
+async def _run_until_the_save_fails(tmp_path, monkeypatch, occasion):
+    """Pro's classification of *occasion* posted, the save recording it refused once (Am's is
+    left alone): the league, the interaction the change answers, and Pro's standings channel."""
+    from leaguebot.results.services.publishing import results_post_service
+
+    if occasion is ClassificationOccasion.SEASON_OPENING:
+        league = await season_league(tmp_path, monkeypatch=monkeypatch, results=True)
+        interaction = await press_approve(league)
+    else:
+        league = await pending_completion_league(tmp_path)
+        interaction = await complete_season(league)
+    assert not league.errors, league.errors
+    saving = results_post_service.set_classification_message_id_on
+    refused: list[int] = []
+
+    async def _refuses_pro_once(db, division_id, *args, **kwargs):
+        if division_id == PRO and not refused:
+            refused.append(division_id)
+            raise RuntimeError("the save marking the posting done was refused")
+        return await saving(db, division_id, *args, **kwargs)
+
+    monkeypatch.setattr(results_post_service, "set_classification_message_id_on", _refuses_pro_once)
+    await run_queue(league.bot)
+    assert refused, "the save was never made"
+    return league, interaction, league.channel(DIVISIONS[PRO][3].standings)
+
+
+def _names_for_deletion_by_hand(text: str, channel_id: int, ids: list[int]) -> bool:
+    return any(
+        "by hand" in line and f"<#{channel_id}>" in line and all(str(each) in line for each in ids)
+        for line in text.splitlines()
+    )
+
+
+@pytest.mark.parametrize("occasion, job, word", _OCCASIONS)
+async def test_a_classification_whose_done_save_fails_is_removed_by_the_next_try(
+    tmp_path, monkeypatch, occasion, job, word,  # noqa: ARG001 — word is the discard test's
+):
+    """Pro's classification goes out as one message in its standings channel, and the save
+    marking its job done is refused once: the queue stops at the job with the message standing
+    and no id recorded. Retried, the job removes that first copy and posts once more, so one
+    classification stands in the channel with its message id recorded against the division."""
+    league, _interaction, standings = await _run_until_the_save_fails(
+        tmp_path, monkeypatch, occasion
+    )
+    job_stopped_at = await stopped_job(league.db_path)
+    assert job_stopped_at is not None and job_stopped_at["name"] == job
+    first = sorted(standings.messages)
+    assert len(first) == 1, first
+    assert await league.rows(
+        "SELECT * FROM classification_posts WHERE division_id = ? AND occasion = ?",
+        PRO, occasion.value,
+    ) == []
+
+    await retry_job(league.bot)
+
+    assert first[0] not in standings.messages, "the first copy still stands"
+    [standing] = sorted(standings.messages)
+    [recorded] = await league.rows(
+        "SELECT * FROM classification_posts WHERE division_id = ? AND occasion = ?",
+        PRO, occasion.value,
+    )
+    assert recorded["standings_message_id"] == standing
+
+
+@pytest.mark.parametrize("occasion, job, word", _OCCASIONS)
+async def test_a_discarded_classification_whose_done_save_failed_is_named_for_removal_by_hand(
+    tmp_path, monkeypatch, occasion, job, word,
+):
+    """The same posting and refused save, and a league admin discards the job: the reply names
+    the message left standing in Pro's standings channel, with the channel, for removal by hand,
+    and no id is recorded for it."""
+    league, interaction, standings = await _run_until_the_save_fails(
+        tmp_path, monkeypatch, occasion
+    )
+    standing = sorted(standings.messages)
+
+    await discard_job(league.bot)
+
+    assert _names_for_deletion_by_hand(reply(interaction), DIVISIONS[PRO][3].standings, standing), \
+        reply(interaction)
+    assert f"a part of its {word} " in reply(interaction)
+    assert sorted(standings.messages) == standing
+    assert await league.rows(
+        "SELECT * FROM classification_posts WHERE division_id = ? AND occasion = ?",
+        PRO, occasion.value,
+    ) == []
