@@ -1732,8 +1732,8 @@ class ResultsCog(commands.Cog):
         asks `results.amend.close` to delete the channel. The league's cancel and the lapse
         are `results.amend.cancel` and `results.amend.lapse`, which resolve the names, revert
         and delete the channel. The closed row stays until the round's next amendment
-        replaces it, or until a restart deletes a channel whose deletion failed and forgets
-        the row.
+        replaces it, or until a restart forgets it, first deleting its channel where an
+        earlier deletion failed.
         """
         from leaguebot.core.models.change import VerdictKind
         from leaguebot.core.utils.season_gate import LIVE_STAGES, season_for_command
