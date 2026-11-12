@@ -1111,9 +1111,9 @@ async def sweep_expired_amendments(
     one lapse of an amendment at a time, so a lapse already asked is not asked again.
 
     *db_path* is the database the amendments are read from and *queue* the change queue, both
-    handed by whoever sweeps (a service does not look them up on the bot). *now* is the moment the deadlines are judged against, handed in by whoever sweeps (the
-    scheduler's callback reads it off the queue), so that a test can pin it alongside the deadline
-    it seeds.
+    handed by whoever sweeps (a service does not look them up on the bot). *now* is the moment the
+    deadlines are judged against, handed in by whoever sweeps (the scheduler's callback reads it off
+    the queue), so that a test can pin it alongside the deadline it seeds.
     """
     from leaguebot.results.services.round_amendment.amend_end_changes import SWEEP, ask_lapse
 

@@ -155,8 +155,8 @@ async def take_paste(
     manager's in a round's open first submission; then it is turned away where a turn waits in the
     channel (the refusal logged), else marked ⏳ and asked as a turn.
 
-    *config* is the server configuration, read by the cog, which holds the league managers' role; *router* is the
-    output router the turn-away refusal is logged through, handed by the cog.
+    *config* is the server configuration, read by the cog, which holds the league managers' role;
+    *router* is the output router the turn-away refusal is logged through, handed by the cog.
     """
     async with get_connection(bot.db_path) as db:
         row = await (await db.execute(_ROUND, (message.channel.id,))).fetchone()
