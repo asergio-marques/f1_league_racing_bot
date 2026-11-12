@@ -92,7 +92,12 @@ from leaguebot.results.services.review.penalty_service import (
     load_staged_from_records,
     reports_only,
 )
-from leaguebot.results.services.review.review_state import PenaltyReviewState, StagedPardon, _pen_label
+from leaguebot.results.services.review.review_state import (
+    PenaltyReviewState,
+    ReadServerConfig,
+    StagedPardon,
+    _pen_label,
+)
 from leaguebot.results.services.review.report_approval_change import _latest_round
 from leaguebot.results.services.review.review_prompts import _apply_staged_appeals_on, send_appeals_prompt
 from leaguebot.results.services.round_amendment.amendment_writes import (
@@ -265,12 +270,17 @@ def _doing(stage: str) -> Callable[[dict[str, Any]], str]:
 
 
 def amendment_stage_changes(
-    *, attendance: AttendanceAfterReview, now: Callable[[], datetime], queue: ChangeQueue
+    *,
+    attendance: AttendanceAfterReview,
+    now: Callable[[], datetime],
+    queue: ChangeQueue,
+    server_config: ReadServerConfig,
 ) -> tuple[ChangeType, ChangeType, ChangeType]:
     """The change types of an amendment's stages, the report stage's, the appeals stage's and the
     amendment's lane's prompt (`results.amend.prompt`); see the module. *attendance* is the hook
     the builder hands every change type of the review, *now* the queue's clock and *queue* the queue
-    the review's buttons ask their changes of."""
+    the review's buttons ask their changes of and *server_config* the reader of the configuration
+    their tier check reads."""
 
     async def _in_hand(ctx: CheckContext, kind: str, round_id: int) -> bool:
         others = await unfinished(ctx.db_path, [kind], excluding=ctx.change_id)
@@ -528,6 +538,7 @@ def amendment_stage_changes(
             db_path=ctx.db_path,
             bot=ctx.bot,
             queue=queue,
+            server_config=server_config,
             staged=reports,
             staged_appeals=corrections,
             staged_pardons=[StagedPardon.from_payload(p) for p in ctx.payload["pardons"]],
@@ -557,7 +568,7 @@ def amendment_stage_changes(
             )
         state = await run_amendment_review_stages(
             ctx.db_path, int(payload["round_id"]), int(payload["division_id"]), channel, ctx.bot,
-            queue,
+            queue, server_config,
             round_number=int(payload["round_number"]), division_name=str(payload["division_name"]),
             session_types=[SessionType(value) for value in payload["session_types"]],
             attendance=attendance,

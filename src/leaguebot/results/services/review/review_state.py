@@ -9,15 +9,21 @@ approved, or the round has left the stage the review is for.  Nothing here build
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from leaguebot.core.db.database import get_connection
+from leaguebot.core.models.server_config import ServerConfig
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.core.models.round import RoundStatus
 from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
 from leaguebot.results.services.review.penalty_service import StagedPenalty
 from leaguebot.core.utils.league_bot import LeagueBot
+
+#: What reads the league's server configuration, handed to a review's views so that none looks the
+#: service up on the bot.
+ReadServerConfig = Callable[[], Awaitable[ServerConfig | None]]
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +85,9 @@ class PenaltyReviewState:
     #: The change queue the review's buttons and forms ask their changes of, handed in by whoever
     #: builds the state, so that a view never looks it up on the bot.
     queue: ChangeQueue
+    #: Reads the league's server configuration, handed in with the queue, which the tier check of
+    #: every button reads the roles from, so that a view never looks the service up on the bot.
+    server_config: ReadServerConfig
     staged: list[StagedPenalty] = field(default_factory=list)
     staged_appeals: list[StagedPenalty] = field(default_factory=list)
     staged_pardons: list[StagedPardon] = field(default_factory=list)

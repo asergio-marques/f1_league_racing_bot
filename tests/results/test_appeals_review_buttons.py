@@ -140,7 +140,7 @@ def _state(db_path: str, *, appeals=None) -> PenaltyReviewState:
         session_types_present=[SessionType.FEATURE_RACE],
         db_path=db_path,
         bot=bot,
-        queue=bot.change_queue,
+        queue=bot.change_queue, server_config=bot.config_service.get_server_config,
         staged_appeals=list(appeals or []),
         approval_message_id=APPROVAL_MESSAGE_ID,
         round_number=3,

@@ -115,7 +115,7 @@ def _state(bot, db_path: str = ":memory:") -> PenaltyReviewState:
         session_types_present=[SessionType.FEATURE_RACE],
         db_path=db_path,
         bot=bot,
-        queue=bot.change_queue,
+        queue=bot.change_queue, server_config=bot.config_service.get_server_config,
     )
 
 
@@ -136,7 +136,7 @@ async def test_a_league_admin_may_drive_the_review(monkeypatch):
     monkeypatch.setattr(pw, "is_league_manager", lambda config, member: True)
     interaction = _interaction()
 
-    assert await _is_league_manager(interaction, ":memory:", _bot(MagicMock())) is True
+    assert await _is_league_manager(interaction, _bot(MagicMock()).config_service.get_server_config) is True
 
 
 async def test_an_ordinary_member_may_not(monkeypatch):
@@ -145,14 +145,14 @@ async def test_an_ordinary_member_may_not(monkeypatch):
     monkeypatch.setattr(pw, "is_league_manager", lambda config, member: False)
     interaction = _interaction()
 
-    assert await _is_league_manager(interaction, ":memory:", _bot(MagicMock())) is False
+    assert await _is_league_manager(interaction, _bot(MagicMock()).config_service.get_server_config) is False
 
 
 async def test_an_interaction_from_outside_a_server_is_refused():
     """Not a `Member`, so there are no roles to check at all."""
     interaction = _interaction(member=False)
 
-    assert await _is_league_manager(interaction, ":memory:", _bot(MagicMock())) is False
+    assert await _is_league_manager(interaction, _bot(MagicMock()).config_service.get_server_config) is False
 
 
 async def test_an_unconfigured_server_refuses_rather_than_assuming():
@@ -160,7 +160,7 @@ async def test_an_unconfigured_server_refuses_rather_than_assuming():
     anybody approve a round on a half-set-up server."""
     interaction = _interaction()
 
-    assert await _is_league_manager(interaction, ":memory:", _bot(None)) is False
+    assert await _is_league_manager(interaction, _bot(None).config_service.get_server_config) is False
 
 
 async def test_a_refused_actor_is_told_why(monkeypatch):

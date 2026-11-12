@@ -153,7 +153,7 @@ def _state(db_path: str, *, staged=(), appeals=()):
         session_types_present=[SessionType.FEATURE_RACE],
         db_path=db_path,
         bot=MagicMock(),
-        queue=MagicMock(),
+        queue=MagicMock(), server_config=AsyncMock(return_value=None),
     )
     state.round_number = 3
     state.division_name = "Division 1"

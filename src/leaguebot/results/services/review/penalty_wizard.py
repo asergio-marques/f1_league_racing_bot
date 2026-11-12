@@ -20,11 +20,11 @@ from leaguebot.core.utils.in_a_job import posts_in_a_job
 from leaguebot.core.services.queue.change_queue import ChangeQueue
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.utils.channel_guard import is_league_manager
-from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.utils.member_names import interaction_member
 from leaguebot.results.services.review.review_state import (
     PenaltyReviewState,
+    ReadServerConfig,
     _appeals_review_moved_on,
     _review_moved_on,
     hold_review,
@@ -55,8 +55,7 @@ _CID_AR_MAKE_CHANGES  = "ar_make_changes"
 
 async def _is_league_manager(
     interaction: discord.Interaction,
-    db_path: str,
-    bot: LeagueBot,
+    server_config: ReadServerConfig,
 ) -> bool:
     """Return True if the interacting member holds the league manager tier.
 
@@ -70,7 +69,7 @@ async def _is_league_manager(
     """
     if not isinstance(interaction.user, discord.Member):
         return False
-    config = await bot.config_service.get_server_config()
+    config = await server_config()
     if config is None:
         return False
     return is_league_manager(config, interaction.user)
@@ -143,7 +142,7 @@ async def _require_lm(
     name — the button or form that was pressed, with the review it belongs to (`_button`). The
     reply is the member's alone.
     """
-    if not await _is_league_manager(interaction, state.db_path, state.bot):
+    if not await _is_league_manager(interaction, state.server_config):
         await refuse(
             interaction,
             "⛔ Only league managers can interact with the penalty review.",

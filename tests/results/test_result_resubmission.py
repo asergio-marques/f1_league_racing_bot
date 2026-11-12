@@ -146,6 +146,7 @@ def _state(
     bot.get_channel = MagicMock(return_value=channel)
     return SimpleNamespace(
         bot=bot,
+        server_config=AsyncMock(return_value=None),
         round_id=ROUND_ID,
         division_id=DIVISION_ID,
         round_number=3,

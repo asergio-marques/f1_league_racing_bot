@@ -60,6 +60,7 @@ from leaguebot.core.services.seasons import season_service
 from leaguebot.results.services.submission import result_submission_service as submissions
 from leaguebot.results.services.review import review_open_change
 from leaguebot.results.services.review.review_posting import DELETE_MESSAGE, posting_steps
+from leaguebot.results.services.review.review_state import ReadServerConfig
 from leaguebot.results.services.submission.submission_changes import ALL_CANCELLED_KIND
 from leaguebot.results.services.submission.submission_turn_change import SWAP_KIND
 from leaguebot.results.services.submission.submission_steps import (
@@ -100,6 +101,7 @@ class ReviewRef:
     round_number: int
     division_name: str
     queue: ChangeQueue
+    server_config: ReadServerConfig
 
 
 def _lane(payload: dict[str, Any]) -> str:
@@ -172,9 +174,10 @@ def _started_line(named: str, payload: dict[str, Any]) -> str:
     )
 
 
-def resubmission_start_change(*, queue: ChangeQueue) -> ChangeType:
+def resubmission_start_change(*, queue: ChangeQueue, server_config: ReadServerConfig) -> ChangeType:
     """The `results.resubmission.start` change type, for the builder to register; *queue* is
-    handed to the Cancel button it posts, which asks the review back of it.
+    handed to the Cancel button it posts, which asks the review back of it, and *server_config*
+    reads the configuration its tier check reads.
 
     The payload is ``round_id``, ``division_id``, ``round_number``, ``division_name``,
     ``channel_id`` (the submission channel), ``started_by``, ``prompt_message_id`` and
@@ -228,7 +231,7 @@ def resubmission_start_change(*, queue: ChangeQueue) -> ChangeType:
         return submissions.ResubmissionCancelView(
             ReviewRef(
                 ctx.bot, ctx.db_path, int(payload["round_id"]), int(payload["round_number"]),
-                str(payload["division_name"]), queue,
+                str(payload["division_name"]), queue, server_config,
             )
         )
 

@@ -188,7 +188,7 @@ async def _is_lm(member, config):
 
     bot = MagicMock()
     bot.config_service.get_server_config = AsyncMock(return_value=config)
-    return await _is_league_manager(_interaction(member), ":memory:", bot)
+    return await _is_league_manager(_interaction(member), bot.config_service.get_server_config)
 
 
 @pytest.mark.parametrize("roles", [(MANAGER_ROLE,), (ADMIN_ROLE,)], ids=["manager", "admin"])

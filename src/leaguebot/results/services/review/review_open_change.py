@@ -122,6 +122,7 @@ from leaguebot.core.services.queue import typed_turns
 from leaguebot.core.utils.log_lines import abandoned_line
 from leaguebot.results.services.review import review_posting, review_verdicts
 from leaguebot.results.services.submission.result_submission_service import send_cancelled_line, take_down_cancel_message
+from leaguebot.results.services.review.review_state import ReadServerConfig
 from leaguebot.results.services.review.review_prompts import _build_penalty_review_state, send_review_prompt
 from leaguebot.results.services.round_amendment.amendment_writes import held_by_amendment
 from leaguebot.results.services.publishing.results_post_service import _delete_posting
@@ -237,7 +238,9 @@ async def _round_and_channel(db_path: str, round_id: int) -> aiosqlite.Row | Non
         ).fetchone()
 
 
-async def _post_review_prompt(ctx: StepContext, queue: ChangeQueue) -> StepResult:
+async def _post_review_prompt(
+    ctx: StepContext, queue: ChangeQueue, server_config: ReadServerConfig
+) -> StepResult:
     round_id = int(ctx.payload["round_id"])
     row = await _round_and_channel(ctx.db_path, round_id)
     if row is None or row["channel_id"] is None:
@@ -250,17 +253,20 @@ async def _post_review_prompt(ctx: StepContext, queue: ChangeQueue) -> StepResul
         await _delete_posting(channel, int(kept), [int(kept)], label="penalty review prompt",
                               failures=[])
     state = await _build_penalty_review_state(
-        ctx.bot, queue, round_id, int(row["division_id"]), channel.id
+        ctx.bot, queue, server_config, round_id, int(row["division_id"]), channel.id
     )
     message = await send_review_prompt(ctx.bot, channel, state)
     return StepResult(result={"message_id": message.id, "channel_id": channel.id})
 
 
-def _post_prompt_job(queue: ChangeQueue) -> Callable[[StepContext], Awaitable[StepResult]]:
-    """The `post_review_prompt` job, handed the queue its prompt's buttons ask their changes of."""
+def _post_prompt_job(
+    queue: ChangeQueue, server_config: ReadServerConfig
+) -> Callable[[StepContext], Awaitable[StepResult]]:
+    """The `post_review_prompt` job, handed the queue its prompt's buttons ask their changes of and
+    the reader of the configuration their tier check reads."""
 
     async def post(ctx: StepContext) -> StepResult:
-        return await _post_review_prompt(ctx, queue)
+        return await _post_review_prompt(ctx, queue, server_config)
 
     return post
 
@@ -500,9 +506,10 @@ def _marked_channel(payload: dict[str, Any]) -> int | None:
     return int(mark["channel_id"]) if mark else None
 
 
-def review_open_change(*, queue: ChangeQueue) -> ChangeType:
+def review_open_change(*, queue: ChangeQueue, server_config: ReadServerConfig) -> ChangeType:
     """The change that opens a round's penalty review; see the module. *queue* is the one its
-    prompt's buttons ask their changes of."""
+    prompt's buttons ask their changes of, *server_config* reads the configuration their tier check
+    reads the roles from."""
 
     async def check(ctx: CheckContext) -> Verdict:
         member = ctx.origin is ChangeOrigin.MEMBER
@@ -735,7 +742,7 @@ def review_open_change(*, queue: ChangeQueue) -> ChangeType:
             describe=describe_open,
         ),
         _POST_REVIEW_PROMPT: Step(
-            _POST_REVIEW_PROMPT, StepKind.ACT, _post_prompt_job(queue),
+            _POST_REVIEW_PROMPT, StepKind.ACT, _post_prompt_job(queue, server_config),
             describe=_describe_prompt, record=_record_prompt,
         ),
         _TAKE_DOWN_CANCEL: Step(
@@ -763,7 +770,7 @@ def review_open_change(*, queue: ChangeQueue) -> ChangeType:
     )
 
 
-def review_prompt_change(*, queue: ChangeQueue) -> ChangeType:
+def review_prompt_change(*, queue: ChangeQueue, server_config: ReadServerConfig) -> ChangeType:
     """The change that puts a round's penalty review prompt up, on the round's lane (C44a).
 
     Asked by `results.review.open` in its last save where a conversation handed the review over (a
@@ -922,9 +929,9 @@ def review_prompt_change(*, queue: ChangeQueue) -> ChangeType:
 
     steps: dict[str, Step] = {
         DELETE_MESSAGE: posting_steps()[DELETE_MESSAGE],
-        review_verdicts.POST_APPEALS_PROMPT: review_verdicts.appeals_prompt_step(queue),
+        review_verdicts.POST_APPEALS_PROMPT: review_verdicts.appeals_prompt_step(queue, server_config),
         _POST_REVIEW_PROMPT: Step(
-            _POST_REVIEW_PROMPT, StepKind.ACT, _post_prompt_job(queue),
+            _POST_REVIEW_PROMPT, StepKind.ACT, _post_prompt_job(queue, server_config),
             describe=_describe_prompt, record=_record_prompt,
         ),
         _TAKE_DOWN_CANCEL: Step(
@@ -985,7 +992,7 @@ def _refusal(ctx: CheckContext, reason: str) -> Verdict:
     return Verdict.not_due(reason)
 
 
-def appeals_open_change(*, queue: ChangeQueue) -> ChangeType:
+def appeals_open_change(*, queue: ChangeQueue, server_config: ReadServerConfig) -> ChangeType:
     """The change that posts a round's appeals prompt again, as the bot, after a restart or a
     Discard; see the module. Its payload is ``round_id``, ``division_id`` and ``old_prompt_id``,
     the prompt it replaces once the new one stands."""
@@ -1095,7 +1102,7 @@ def appeals_open_change(*, queue: ChangeQueue) -> ChangeType:
 
     steps: dict[str, Step] = {
         **posting_steps(),
-        review_verdicts.POST_APPEALS_PROMPT: review_verdicts.appeals_prompt_step(queue),
+        review_verdicts.POST_APPEALS_PROMPT: review_verdicts.appeals_prompt_step(queue, server_config),
         _OPEN: Step(
             _OPEN, StepKind.SAVE, plan, still_due=still_awaiting_appeals,
             describe=describe_plan, undiscardable=would_have_no_prompt,

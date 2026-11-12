@@ -22,7 +22,7 @@ what pip installs, not what a system-packaged interpreter imports.
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -60,7 +60,7 @@ class TestPenaltyReviewState:
             session_types_present=[],
             db_path=":memory:",
             bot=None,
-            queue=MagicMock(),
+            queue=MagicMock(), server_config=AsyncMock(return_value=None),
         )
 
     @pytest.mark.parametrize(
@@ -115,7 +115,7 @@ class TestAddPenaltyModal:
             session_types_present=[SessionType.FEATURE_RACE],
             db_path=":memory:",
             bot=None,
-            queue=MagicMock(),
+            queue=MagicMock(), server_config=AsyncMock(return_value=None),
         )
         return AddPenaltyModal(
             state=state,
@@ -227,7 +227,7 @@ class TestAppealsReviewView:
             session_types_present=[SessionType.FEATURE_RACE],
             db_path=":memory:",
             bot=None,
-            queue=MagicMock(),
+            queue=MagicMock(), server_config=AsyncMock(return_value=None),
         )
         state.staged_appeals.extend(staged_appeals)
         view = AppealsReviewView(state=state)
@@ -245,7 +245,7 @@ class TestAppealsReviewView:
             session_types_present=[SessionType.FEATURE_RACE],
             db_path=":memory:",
             bot=None,
-            queue=MagicMock(),
+            queue=MagicMock(), server_config=AsyncMock(return_value=None),
         )
         state.staged_appeals.append(
             StagedPenalty(driver_user_id=1, session_type=SessionType.FEATURE_RACE, penalty_type="TIME", penalty_seconds=5)

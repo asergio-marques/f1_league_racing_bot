@@ -31,7 +31,7 @@ import inspect
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -283,7 +283,8 @@ def test_the_state_carries_the_flags_and_defaults_to_a_first_pass():
 
     state = PenaltyReviewState(
         round_id=1, division_id=1, submission_channel_id=1,
-        session_types_present=[], db_path=":memory:", bot=None, queue=MagicMock(),
+        session_types_present=[], db_path=":memory:", bot=None,
+        queue=MagicMock(), server_config=AsyncMock(return_value=None),
     )
 
     assert state.is_amendment is False

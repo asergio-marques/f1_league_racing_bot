@@ -132,7 +132,7 @@ def _state(db_path: str, *, pardons: list[StagedPardon] | None = None) -> Penalt
         session_types_present=[SessionType.FEATURE_RACE],
         db_path=db_path,
         bot=bot,
-        queue=bot.change_queue,
+        queue=bot.change_queue, server_config=bot.config_service.get_server_config,
         staged_pardons=pardons or [],
         round_number=3,
         division_name="Pro",

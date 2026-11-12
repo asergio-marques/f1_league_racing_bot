@@ -106,7 +106,7 @@ def _state(*, appeals=(), prompt_id: int | None = PROMPT_ID, channel=...):
         session_types_present=[SessionType.FEATURE_RACE],
         db_path=":memory:",
         bot=bot,
-        queue=bot.change_queue,
+        queue=bot.change_queue, server_config=bot.config_service.get_server_config,
     )
     state.round_number = 3
     state.division_name = "Division 1"
