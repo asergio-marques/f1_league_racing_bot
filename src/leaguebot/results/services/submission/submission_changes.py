@@ -188,10 +188,7 @@ def submission_open_change(*, config: ConfigService, now: Callable[[], datetime]
             # opening to run.
             if row.status is not RoundStatus.NOT_RUN:
                 return Verdict.not_due("the round is no longer to be run")
-            found = await season_service.round_in_division(
-                ctx.db_path, int(ctx.payload["round_id"])
-            )
-            if found is None or found.scheduled_at > now():
+            if row.scheduled_at > now():
                 return Verdict.not_due("the round's start has not come")
         async with get_connection(ctx.db_path) as db:
             standing = await (

@@ -1446,19 +1446,13 @@ async def round_in_division(db_path: str, round_id: int) -> RoundInDivision | No
     and asks core what the round is.
     """
     async with get_connection(db_path) as db:
-        cursor = await db.execute(
-            "SELECT r.id, r.division_id, r.round_number, r.status, r.scheduled_at, "
-            "d.name AS division_name "
-            "FROM rounds r JOIN divisions d ON d.id = r.division_id WHERE r.id = ?",
-            (round_id,),
-        )
-        row = await cursor.fetchone()
-    if row is None:
+        facts = await round_facts_on(db, round_id)
+    if facts is None:
         return None
     return RoundInDivision(
-        round_id=int(row["id"]), division_id=int(row["division_id"]),
-        division_name=str(row["division_name"]), round_number=int(row["round_number"]),
-        status=str(row["status"]), scheduled_at=read_scheduled_at(row["scheduled_at"]),
+        round_id=facts.round_id, division_id=facts.division_id,
+        division_name=facts.division_name, round_number=facts.round_number,
+        status=facts.status.value, scheduled_at=facts.scheduled_at,
     )
 
 
