@@ -25,11 +25,12 @@ from leaguebot.results.services.points.points_settings import (
     CONFIG_ATTACH,
     CONFIG_DETACH,
     CONFIG_FASTEST_LAP,
-    CONFIG_IMPORT,
     CONFIG_POINTS,
     CONFIG_REMOVE,
     RESERVES,
     reserves_toggle_request,
+    run_xml_import,
+    xml_import_named,
 )
 from leaguebot.results.services.points.points_amendment_change import refuse_while_approval_in_hand
 from leaguebot.results.services.points.points_config_service import ConfigNotFoundError
@@ -281,74 +282,12 @@ class XmlImportModal(LeagueModal, title="XML Points Config Import"):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         await interaction.response.defer(ephemeral=True)
-        await _run_xml_import(interaction, self.xml_payload.value, self._config_name)
-
-
-def xml_import_named(config_name: str) -> str:
-    """`/results config xml-import` as its log lines name it: with the configuration it writes."""
-    return f"`/results config xml-import` into configuration {config_name}"
-
-
-async def _run_xml_import(
-    interaction: discord.Interaction,
-    xml_text: str,
-    config_name: str,
-) -> None:
-    """Shared logic for modal and file-attachment XML import paths.
-
-    Parses and validates the payload, then asks the import as a change. What cannot be read, or
-    is out of order, is refused here at once, in the standard refusal form with its detail as the
-    reason; the configuration and the module are judged by the change's check, at the ask and as
-    it starts. The change writes the values, records them and replies; a fault in its save is the
-    setting's, saves nothing and says to run the import again.
-    """
-    from leaguebot.results.utils.xml_import import XmlImportError, parse_xml_payload, validate_payload
-
-    what = xml_import_named(config_name)
-
-    # --- parse ------------------------------------------------------------
-    try:
-        payload, warnings = parse_xml_payload(xml_text)
-    except XmlImportError as exc:
-        error_text = "\n".join(f"  • {e}" for e in exc.errors)
-        await refuse(
+        await run_xml_import(
             interaction,
-            f"❌ XML parse/validation failed:\n{error_text}",
-            what=what,
-            reason=f"XML parse/validation failed: {'; '.join(exc.errors)}",
+            bot_of(interaction).change_queue,
+            self.xml_payload.value,
+            self._config_name,
         )
-        return
-
-    # --- semantic validation (monotonic ordering) -------------------------
-    mono_errors = validate_payload(payload)
-    if mono_errors:
-        error_text = "\n".join(f"  • {e}" for e in mono_errors)
-        await refuse(
-            interaction,
-            f"❌ Points ordering validation failed:\n{error_text}",
-            what=what,
-            reason=f"points ordering validation failed: {'; '.join(mono_errors)}",
-        )
-        return
-
-    # --- ask --------------------------------------------------------------
-    await bot_of(interaction).change_queue.ask(
-        CONFIG_IMPORT,
-        {
-            "config": config_name,
-            "positions": {
-                session.value: [[position, points] for position, points in pairs.items()]
-                for session, pairs in payload.positions.items()
-            },
-            "fastest_laps": {
-                session.value: [points, limit]
-                for session, (points, limit) in payload.fastest_laps.items()
-            },
-            "warnings": list(warnings),
-        },
-        interaction=interaction,
-        what=what,
-    )
 
 
 async def _take_down(posted: discord.Interaction | None) -> None:
@@ -1053,7 +992,7 @@ class ResultsCog(commands.Cog):
                 await refuse(interaction, "❌ File could not be decoded as UTF-8.", what=what)
                 return
 
-            await _run_xml_import(interaction, xml_text, name)
+            await run_xml_import(interaction, self.bot.change_queue, xml_text, name)
 
     # ------------------------------------------------------------------
     # /results amend group — T025

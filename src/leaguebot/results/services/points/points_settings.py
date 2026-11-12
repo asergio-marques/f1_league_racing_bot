@@ -33,6 +33,7 @@ from leaguebot.core.models.change import Verdict
 from leaguebot.core.services.queue.change_types import CheckContext
 from leaguebot.core.models.season import SeasonStatus
 from leaguebot.core.services.queue.setting_change import NOTHING_SAVED, SAVE, Saved, Setting
+from leaguebot.core.utils.log_lines import refuse
 from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.models.points_config import SessionType
 from leaguebot.results.services.publishing import results_post_service
@@ -42,10 +43,13 @@ from leaguebot.results.services.points.points_config_service import (
     STANDS_BLOCKS_APPROVAL,
     ordering_notice,
 )
+from leaguebot.results.utils.xml_import import XmlImportError, parse_xml_payload, validate_payload
 
 if TYPE_CHECKING:
     import aiosqlite
+    import discord
 
+    from leaguebot.core.services.queue.change_queue import ChangeQueue
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.services.seasons.season_service import SeasonService
 
@@ -633,8 +637,74 @@ def points_settings(*, modules: "ModuleService", seasons: "SeasonService") -> tu
     )
 
 
+def xml_import_named(config_name: str) -> str:
+    """`/results config xml-import` as its log lines name it: with the configuration it writes."""
+    return f"`/results config xml-import` into configuration {config_name}"
+
+
+async def run_xml_import(
+    interaction: discord.Interaction,
+    queue: ChangeQueue,
+    xml_text: str,
+    config_name: str,
+) -> None:
+    """Shared logic for modal and file-attachment XML import paths.
+
+    Parses and validates the payload, then asks the import as a change. What cannot be read, or
+    is out of order, is refused here at once, in the standard refusal form with its detail as the
+    reason; the configuration and the module are judged by the change's check, at the ask and as
+    it starts. The change writes the values, records them and replies; a fault in its save is the
+    setting's, saves nothing and says to run the import again.
+    """
+    what = xml_import_named(config_name)
+
+    # --- parse ------------------------------------------------------------
+    try:
+        payload, warnings = parse_xml_payload(xml_text)
+    except XmlImportError as exc:
+        error_text = "\n".join(f"  • {e}" for e in exc.errors)
+        await refuse(
+            interaction,
+            f"❌ XML parse/validation failed:\n{error_text}",
+            what=what,
+            reason=f"XML parse/validation failed: {'; '.join(exc.errors)}",
+        )
+        return
+
+    # --- semantic validation (monotonic ordering) -------------------------
+    mono_errors = validate_payload(payload)
+    if mono_errors:
+        error_text = "\n".join(f"  • {e}" for e in mono_errors)
+        await refuse(
+            interaction,
+            f"❌ Points ordering validation failed:\n{error_text}",
+            what=what,
+            reason=f"points ordering validation failed: {'; '.join(mono_errors)}",
+        )
+        return
+
+    # --- ask --------------------------------------------------------------
+    await queue.ask(
+        CONFIG_IMPORT,
+        {
+            "config": config_name,
+            "positions": {
+                session.value: [[position, points] for position, points in pairs.items()]
+                for session, pairs in payload.positions.items()
+            },
+            "fastest_laps": {
+                session.value: [points, limit]
+                for session, (points, limit) in payload.fastest_laps.items()
+            },
+            "warnings": list(warnings),
+        },
+        interaction=interaction,
+        what=what,
+    )
+
+
 __all__ = [
     "CONFIG_ADD", "CONFIG_ATTACH", "CONFIG_DETACH", "CONFIG_FASTEST_LAP", "CONFIG_IMPORT",
     "CONFIG_POINTS", "CONFIG_REMOVE", "MODULE_OFF", "RESERVES", "points_settings",
-    "reserves_toggle_request",
+    "reserves_toggle_request", "run_xml_import", "xml_import_named",
 ]

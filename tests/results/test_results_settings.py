@@ -906,7 +906,7 @@ async def test_a_fault_in_an_import_s_save_says_run_the_import_again_and_the_lan
     """An XML import of P1 30 and P2 20 whose audit write faults: nothing is saved, the member
     is told nothing from the import was saved and to run it again, one failure line names the
     configuration, and `/results config add Other` asked behind it is saved."""
-    from leaguebot.results.cogs.results_cog import xml_import_named
+    from leaguebot.results.services.points.points_settings import xml_import_named
 
     league = await _league(tmp_path)
 
@@ -1003,7 +1003,7 @@ async def test_a_reserves_toggle_found_already_switched_when_it_runs_changes_not
 async def test_an_xml_form_submitted_after_the_module_was_turned_off_is_refused(tmp_path):
     """The XML import form, shown while results was on, is submitted after the module was
     turned off: refused with the module refusal and its "⛔" line, nothing imported."""
-    from leaguebot.results.cogs.results_cog import xml_import_named
+    from leaguebot.results.services.points.points_settings import xml_import_named
 
     league = await _league(tmp_path)
     await switch(league.bot, ("results",), on=False)
