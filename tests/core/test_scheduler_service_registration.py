@@ -273,6 +273,28 @@ def test_the_check_in_cleanup_is_armed_a_day_after_the_round():
     ]
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="#285: the four check-in timers are still armed with APScheduler's default lateness "
+    "limit, so one missed while the bot was down is dropped",
+)
+def test_a_check_in_timer_is_armed_with_no_lateness_limit():
+    """A round on 1 March 2026 at 18:00, armed with `now` a month before it: its call, last
+    notice, deadline and clean-up are each armed with no lateness limit, so one due while the bot
+    was down still fires when it is back, and its handler judges what late means."""
+    service = _service()
+    start = datetime(2026, 3, 1, 18, tzinfo=timezone.utc)
+
+    jobs = _attendance_jobs(service, _round_starting(start), now=start - timedelta(days=30))
+
+    limits = {job_id: job.kwargs.get("misfire_grace_time", "default")
+              for job_id, job in jobs.items() if job_id.startswith("rsvp_")}
+    assert limits == {
+        "rsvp_cleanup_s7_d1_r3_id21": None, "rsvp_deadline_s7_d1_r3_id21": None,
+        "rsvp_last_notice_s7_d1_r3_id21": None, "rsvp_notice_s7_d1_r3_id21": None,
+    }
+
+
 def test_a_check_in_cleanup_already_due_is_not_armed():
     """The same rule as the attendance module's other three jobs: a moment gone by is skipped. A
     round on 1 March 2099 at 18:00, still to come by the wall clock, armed with `now` two days
