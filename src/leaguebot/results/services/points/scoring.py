@@ -4,19 +4,9 @@ from __future__ import annotations
 
 import aiosqlite
 
+from leaguebot.core.services.seasons.season_service import round_facts_on
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.results.models.session_result import DriverSessionResult, OutcomeModifier  # DriverSessionResult kept as DTO for compute_points_for_session
-
-
-_ACTIVE_SESSIONS_OF_ROUND_SQL = """
-    SELECT sr.id AS session_result_id, sr.config_name, sr.session_type,
-           s.id AS season_id
-    FROM session_results sr
-    JOIN rounds r ON r.id = sr.round_id
-    JOIN divisions d ON d.id = r.division_id
-    JOIN seasons s ON s.id = d.season_id
-    WHERE sr.round_id = ? AND sr.status = 'ACTIVE'
-"""
 
 
 async def _recompute_session_points_on(db: aiosqlite.Connection, round_id: int) -> None:
@@ -30,14 +20,21 @@ async def _recompute_session_points_on(db: aiosqlite.Connection, round_id: int) 
     A session with no points configuration is not a failure: it is skipped, its rows keeping
     the points they have.
     """
-    cursor = await db.execute(_ACTIVE_SESSIONS_OF_ROUND_SQL, (round_id,))
+    facts = await round_facts_on(db, round_id)
+    if facts is None:
+        return
+    cursor = await db.execute(
+        "SELECT id, config_name, session_type FROM session_results "
+        "WHERE round_id = ? AND status = 'ACTIVE'",
+        (round_id,),
+    )
     for row in await cursor.fetchall():
         if row["config_name"] is None:
             continue
         await _apply_points_in_tx(
             db,
-            row["session_result_id"],
-            row["season_id"],
+            row["id"],
+            facts.season_id,
             row["config_name"],
             SessionType(row["session_type"]),
         )
