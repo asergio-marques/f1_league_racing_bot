@@ -17,17 +17,21 @@ step, architecture.md, "A module reads core's tables only through core's service
 raises where it cannot post**, for the queue to stop on — except that it returns without posting
 where no standings channel is set, or where no driver is ranked, neither of which is a fault the
 queue should stop on. The standings channel is read from `division_results_config`, where
-`/results channel standings` keeps it. No message id is recorded (results specification:
-neither classification is kept), so a table already sent when a later one fails is named on the
-failure (`result`), and the job keeps it: the next try is handed it as *kept* and removes that
-copy before it posts both again.
+`/results channel standings` keeps it. **Each posting's message ids are recorded** against its
+division and occasion in `classification_posts`, with the job's done mark (`record_posted`), so
+that switching results off can take the opening classification down; the final classification's
+are recorded the same way, but its season is complete and the purge never reads one. A table
+already sent when a later one fails is not recorded: it is named on the failure (`result`), and
+the job keeps it: the next try is handed it as *kept* and removes that copy before it posts both
+again.
 """
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from leaguebot.core.models.change import PlannedStep, StepKind, StepResult
 from leaguebot.core.models.classification_occasion import ClassificationOccasion
@@ -40,6 +44,11 @@ from leaguebot.core.services.seasons.season_service import (
     round_by_id,
 )
 from leaguebot.core.utils.league_bot import LeagueBot
+
+if TYPE_CHECKING:
+    import aiosqlite
+
+    from leaguebot.results.services.publishing.results_post_service import PostedTable
 
 OPENING_STANDINGS = "opening_standings"
 FINAL_STANDINGS = "final_standings"
@@ -61,8 +70,8 @@ async def _opening_round(db_path: str, division_id: int):
 async def remove_earlier_try(guild, kept: dict[str, Any] | None) -> dict[str, Any] | None:
     """Take down the standings a try before this one left posted in part, or None where it left none.
 
-    No id of an opening or final standings is recorded, so a table already sent when a later one
-    failed is put on the failure for the job to keep (`kept`), and the next try removes it here,
+    The ids of an opening or final standings are recorded only once its posting is done, so a
+    table already sent when a later one failed is put on the failure for the job to keep (`kept`), and the next try removes it here,
     from the channel it was posted in, which the standings channel may since have left: a channel
     the guild no longer holds holds none of them. A message that will not delete raises, with
     what is still to remove. Once the copies are down, what is returned names none left, so that
@@ -112,16 +121,17 @@ async def keeping(removed: dict[str, Any] | None, what: str) -> AsyncIterator[No
         ) from failure
 
 
-async def produce_stranding(what: str, channel_id, posting) -> None:
-    """Await *posting*, results' ``produce_standings``, naming on its failure a table already sent.
+async def produce_stranding(what: str, channel_id, posting) -> "list[PostedTable]":
+    """Await *posting*, results' ``produce_standings``, and hand back the tables it put up, naming
+    on its failure a table already sent.
 
-    No id of the classification is recorded, so a table already sent when a later one failed is
-    put on the failure for the job to keep, and the next try removes it.
+    The ids are recorded only once the posting is done, so a table already sent when a later one
+    failed is put on the failure for the job to keep, and the next try removes it.
     """
     from leaguebot.core.models.change import StepFailedOnDiscord
 
     try:
-        await posting
+        return await posting
     except Exception as failure:
         stranded = [int(each) for each in getattr(failure, "left_standing", None) or []]
         if stranded:
@@ -140,15 +150,16 @@ async def post_opening_standings(
     *,
     as_text: bool = False,
     kept: dict[str, Any] | None = None,
-) -> None:
-    """Post one division's opening standings, both championships, raising where it cannot.
+) -> "list[PostedTable]":
+    """Post one division's opening standings, both championships, raising where it cannot, and
+    return the tables put up (none where nothing is posted).
 
     **The standings channel is read here, from `division_results_config`,** where results' own
     settings keep it, as the posting runs. **It returns without posting where no standings
     channel is set, or where no driver is ranked** (a division never given a channel, or one with
     nobody seated): a channel the guild no longer holds raises `StepFailedOnDiscord`, for the
-    change queue to stop on. No message id is recorded (results specification: the opening
-    classification is not kept), so a table already sent when a later one fails is named on the
+    change queue to stop on. The ids are recorded by the step with its done mark
+    (`record_posted`), not here, so a table already sent when a later one fails is named on the
     failure (`result`), and the job keeps it: the next try is handed it as *kept* and removes
     that copy, from the channel it was posted in, before it posts both again, failing again, with
     what it still has to remove, where a message will not delete. Once that copy is down, any
@@ -167,7 +178,7 @@ async def post_opening_standings(
 
     opener = await _opening_round(db_path, division_id)
     if opener is None:
-        return
+        return []
     removed = await remove_earlier_try(guild, kept)
     async with keeping(removed, "opening"):
         async with get_connection(db_path) as db:
@@ -180,7 +191,7 @@ async def post_opening_standings(
             ).fetchone()
         channel_id = config["standings_channel_id"] if config is not None else None
         if not channel_id:
-            return
+            return []
         channel = guild.get_channel(int(channel_id))
         if channel is None:
             raise StepFailedOnDiscord(
@@ -197,8 +208,8 @@ async def post_opening_standings(
         driver_snaps = await standings_service.opening_driver_standings(db_path, division_id, names)
         team_snaps = await standings_service.opening_team_standings(db_path, division_id)
         if not driver_snaps:
-            return
-        await produce_stranding(
+            return []
+        return await produce_stranding(
             "opening",
             channel_id,
             produce_standings(
@@ -291,14 +302,16 @@ async def post_final_standings(
     *,
     as_text: bool = False,
     kept: dict[str, Any] | None = None,
-) -> None:
-    """Post one division's final standings, both championships, raising where it cannot.
+) -> "list[PostedTable]":
+    """Post one division's final standings, both championships, raising where it cannot, and
+    return the tables put up (none where nothing is posted).
 
     Drawn against *round_id*, the division's last round that has results, whose classification
     the final standings *are*: the season's last word, restated under its own heading rather than
     recomputed into something the round's own posting would disagree with. **They are posted
     beside the round's own standings, replacing nothing** (results and image specifications): the
-    text is a new message, never an edit of the round's, and no id is recorded. The standings
+    text is a new message, never an edit of the round's, and its ids are recorded against the
+    division as its final classification (`record_posted`), not on the round's. The standings
     channel is read here, from `division_results_config`, as the posting runs. A division never
     given one posts nothing; one given a channel the guild no longer holds raises
     `StepFailedOnDiscord`, for the change queue to stop on. A division with no driver to rank
@@ -318,7 +331,7 @@ async def post_final_standings(
 
     last = await _final_round(db_path, division_id, round_id)
     if last is None:
-        return
+        return []
     removed = await remove_earlier_try(guild, kept)
     async with keeping(removed, "final"):
         async with get_connection(db_path) as db:
@@ -331,7 +344,7 @@ async def post_final_standings(
             ).fetchone()
         channel_id = config["standings_channel_id"] if config is not None else None
         if not channel_id:
-            return
+            return []
         channel = guild.get_channel(int(channel_id))
         if channel is None:
             raise StepFailedOnDiscord(
@@ -345,8 +358,8 @@ async def post_final_standings(
             db_path, division_id, round_id
         )
         if not driver_snaps:
-            return
-        await produce_stranding(
+            return []
+        return await produce_stranding(
             "final",
             channel_id,
             produce_standings(
@@ -365,6 +378,42 @@ async def post_final_standings(
                 occasion=ClassificationOccasion.SEASON_FINAL,
                 fresh=True,
             ),
+        )
+
+
+def posted_result(
+    division_id: int, occasion: ClassificationOccasion, tables: "Sequence[PostedTable]"
+) -> dict[str, Any]:
+    """What a classification step's job carries for `record_posted`: the division and occasion,
+    and for each table put up the championship it carries and the messages it went out as, the
+    anchor first."""
+    return {
+        "division_id": division_id,
+        "occasion": occasion.value,
+        "tables": [
+            {"championship": each.championship, "new": list(each.new)} for each in tables
+        ],
+    }
+
+
+async def record_posted(db: "aiosqlite.Connection", _ctx: StepContext, result: StepResult) -> None:
+    """Save a division's classification ids in the save that marks the posting done, committing
+    nothing, so that the ids and the mark stand or fall together (architecture.md, "Every post
+    keeps three things"). A table with no message is a championship a text table replaced: its id
+    is forgotten."""
+    from leaguebot.results.services.publishing.results_post_service import (
+        set_classification_message_id_on,
+    )
+
+    for table in result.result.get("tables", []):
+        if table["championship"] is None:
+            continue
+        new = table["new"]
+        await set_classification_message_id_on(
+            db, int(result.result["division_id"]),
+            ClassificationOccasion(result.result["occasion"]),
+            new[0] if new else None, table["championship"],
+            message_ids=json.dumps(new) if new else None,
         )
 
 
@@ -400,11 +449,11 @@ def opening_steps(modules: ModuleService) -> dict[str, Step]:
 
     async def run(ctx: StepContext) -> StepResult:
         guild = await require_guild(ctx.bot)
-        await post_opening_standings(
-            ctx.bot, guild, ctx.db_path, int(ctx.step_payload["division_id"]),
-            as_text=ctx.tries > 0, kept=ctx.kept,
+        division_id = int(ctx.step_payload["division_id"])
+        tables = await post_opening_standings(
+            ctx.bot, guild, ctx.db_path, division_id, as_text=ctx.tries > 0, kept=ctx.kept,
         )
-        return StepResult()
+        return StepResult(result=posted_result(division_id, ClassificationOccasion.SEASON_OPENING, tables))
 
     async def still_due(_ctx: StepContext) -> bool:
         return await modules.is_results_enabled()
@@ -435,7 +484,7 @@ def opening_steps(modules: ModuleService) -> dict[str, Step]:
     return {
         OPENING_STANDINGS: Step(
             OPENING_STANDINGS, StepKind.ACT, run, still_due=still_due, describe=describe,
-            not_done=not_done,
+            record=record_posted, not_done=not_done,
         ),
     }
 
@@ -450,11 +499,12 @@ def final_steps(modules: ModuleService) -> dict[str, Step]:
     async def run(ctx: StepContext) -> StepResult:
         guild = await require_guild(ctx.bot)
         each = ctx.step_payload
-        await post_final_standings(
-            ctx.bot, guild, ctx.db_path, int(each["division_id"]), int(each["round_id"]),
+        division_id = int(each["division_id"])
+        tables = await post_final_standings(
+            ctx.bot, guild, ctx.db_path, division_id, int(each["round_id"]),
             as_text=ctx.tries > 0, kept=ctx.kept,
         )
-        return StepResult()
+        return StepResult(result=posted_result(division_id, ClassificationOccasion.SEASON_FINAL, tables))
 
     async def still_due(_ctx: StepContext) -> bool:
         return await modules.is_results_enabled()
@@ -484,6 +534,6 @@ def final_steps(modules: ModuleService) -> dict[str, Step]:
     return {
         FINAL_STANDINGS: Step(
             FINAL_STANDINGS, StepKind.ACT, run, still_due=still_due, describe=describe,
-            not_done=not_done,
+            record=record_posted, not_done=not_done,
         ),
     }

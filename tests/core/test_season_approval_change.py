@@ -377,9 +377,6 @@ async def test_a_second_approval_from_another_review_is_refused_at_once_without_
     assert len(_confirmed_lines(league)) == 1
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#284: the opening classification's message ids are not recorded"
-)
 async def test_the_opening_standings_are_posted_in_each_division_s_standings_channel(
     tmp_path, monkeypatch,
 ):

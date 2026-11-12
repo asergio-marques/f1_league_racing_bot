@@ -1166,6 +1166,34 @@ async def set_standings_message_id_on(
     )
 
 
+async def set_classification_message_id_on(
+    db: aiosqlite.Connection,
+    division_id: int,
+    occasion: ClassificationOccasion,
+    message_id: int | None,
+    championship: str = STANDINGS_DRIVERS,
+    *,
+    message_ids: str | None = None,
+) -> None:
+    """Persist *message_id* for *championship* on the division's row of *occasion* in
+    ``classification_posts``, committing nothing: the opening or final classification the
+    division's standings channel was posted.
+
+    As :func:`set_standings_message_id_on`, but the row is the division's for the occasion, not a
+    round's, since neither classification has a round to key it by. Written on the connection it
+    is handed, so that the change queue saves the ids in the save that marks the post done.
+    """
+    column = _STANDINGS_ID_COLUMNS[championship]
+    list_column = _STANDINGS_IDS_COLUMNS[championship]
+    await db.execute(
+        f"INSERT INTO classification_posts (division_id, occasion, {column}, {list_column}) "  # noqa: S608
+        "VALUES (?, ?, ?, ?) "
+        f"ON CONFLICT(division_id, occasion) DO UPDATE SET {column} = excluded.{column}, "
+        f"{list_column} = excluded.{list_column}",
+        (division_id, occasion.value, message_id, message_ids),
+    )
+
+
 async def _get_reserve_user_ids(db_path: str, division_id: int) -> set[int]:
     """Return discord_user_ids of all drivers seated in a reserve team for this division."""
     async with get_connection(db_path) as db:

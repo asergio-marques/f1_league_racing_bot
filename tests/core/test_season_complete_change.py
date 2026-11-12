@@ -1211,9 +1211,6 @@ async def test_a_discarded_end_save_completes_nothing_and_says_to_run_it_again(t
     assert await driver_state(league, MAX) == "ASSIGNED"
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#284: the final classification's message ids are not recorded"
-)
 async def test_each_division_s_final_classification_is_drawn_against_its_last_round_with_results(
     tmp_path,
 ):

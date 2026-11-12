@@ -13,14 +13,13 @@ The word and the numeral are now one addressable ``classification_label`` field,
 here.
 
 **Standings postings need no slot bookkeeping, and this enum deliberately offers none.** A
-standings message id is keyed by round, on the round's row in ``round_standings_posts``
+round's standings message id is keyed by round, on the round's row in ``round_standings_posts``
 (``results_post_service.get_standings_message_id``), so a division's standings channel
 accumulates one message per round rather than keeping a single live one. Neither season-boundary
-occasion has a round, so neither collides with a slot, neither has anywhere to record an id, and
-neither needs to: nothing will ever repost them. ``/results standings sync`` walks the rounds
-that have session results and reaches neither. This is why the work introducing the two
-occasions required no migration, and it is the thing a later reader is most likely to assume the
-other way round.
+occasion has a round, so neither collides with a slot, and nothing will ever repost them:
+``/results standings sync`` walks the rounds that have session results and reaches neither. Each
+has a row of its own in ``classification_posts``, keyed by the division and the occasion, so that
+switching results off can find the opening one and take it down.
 """
 
 from __future__ import annotations
