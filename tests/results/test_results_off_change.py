@@ -604,7 +604,10 @@ async def test_a_stop_part_way_through_the_take_down_finishes_it_on_restart_and_
 async def test_every_message_is_taken_down_by_the_ids_saved_with_the_switch_off(tmp_path):
     """The rows naming the messages are gone with the switch-off; the steps keep their ids. The
     division's opening classification (messages 4000 and 4001 in the standings channel) goes with
-    the round's standings (results specification, the switch-off rule)."""
+    the round's standings (results specification, the switch-off rule), and is counted as they
+    are, one per championship's posting: five results and standings messages (1000, 2000, 3000,
+    4000, 4001) and two verdicts, the banner apart, in the Success line, the closing line and the
+    admin's reply."""
     seeded = await _seed(tmp_path)
     await _announce_verdicts(seeded.db_path)
     await _post_opening_classification(seeded.db_path, seeded.division_id)
@@ -616,7 +619,7 @@ async def test_every_message_is_taken_down_by_the_ids_saved_with_the_switch_off(
         )
         await db.commit()
     bot = _league(seeded.db_path)
-    await _confirm(bot)
+    interaction = await _confirm(bot)
 
     await run_queue(bot, steps=1)
     for table in ("session_results", "penalty_records", "appeal_records",
@@ -628,6 +631,17 @@ async def test_every_message_is_taken_down_by_the_ids_saved_with_the_switch_off(
     assert _deleted(bot, STANDINGS_CHANNEL_ID) == [2000, 3000, 4000, 4001]
     assert _deleted(bot, VERDICTS_CHANNEL_ID) == [5001, 6001, 7001]
     assert await _count(seeded.db_path, "verdict_banner_messages") == 0
+    switch_off = await _line_starting(bot, f"{NAMED} | /module disable results | Success")
+    assert "  messages to remove: 5 results and standings, 2 verdicts" in switch_off
+    closing = await _line_starting(bot, f"{NAMED} | /module disable results | Messages removed")
+    assert closing.startswith(
+        f"{NAMED} | /module disable results | Messages removed\n"
+        "  results and standings messages removed: 5\n"
+        "  verdicts removed: 2"
+    )
+    assert "5 results and standings message(s) and 2 verdict(s) removed" in updated_reply(
+        interaction
+    )
 
 
 async def test_turning_results_off_deletes_a_session_cancelled_line(tmp_path):
