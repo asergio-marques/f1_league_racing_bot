@@ -27,7 +27,7 @@ season's own note is not recorded, and so not taken down: only the live season i
 season called off is an archive the purge never reaches.
 
 So is the opening classification posted to each division's standings channel when placements are
-confirmed (decided 2026-11-13, #284): its ids are recorded in ``classification_posts``, read here
+confirmed (decided 2026-11-12, #284): its ids are recorded in ``classification_posts``, read here
 before the rows go, and the tables are taken down as a round's standings are, counted with them.
 The final classification belongs to a completed season, which the purge never reads, so its ids are
 recorded but not taken down.
