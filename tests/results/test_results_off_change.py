@@ -292,8 +292,12 @@ async def _seed_results(db, round_id: int, division_id: int, index: int) -> None
     )
     await db.execute(
         "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
-        "standing_position, total_points, standings_message_id, "
-        "constructor_standings_message_id) VALUES (?, ?, 42, 1, 25, ?, ?)",
+        "standing_position, total_points) VALUES (?, ?, 42, 1, 25)",
+        (round_id, division_id),
+    )
+    await db.execute(
+        "INSERT INTO round_standings_posts (round_id, division_id, standings_message_id, "
+        "constructor_standings_message_id) VALUES (?, ?, ?, ?)",
         (round_id, division_id, 2000 + index, 3000 + index),
     )
     await db.execute(

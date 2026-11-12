@@ -45,9 +45,6 @@ async def _columns(db_path: str, table: str) -> dict[str, dict]:
         return {row["name"]: dict(row) for row in await cursor.fetchall()}
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#284: a round's standings posting is not yet a row of its own"
-)
 async def test_the_new_columns_are_nullable(tmp_path):
     """The columns exist, on all four tables, after a plain migration; and a row written before
     this change has no list to offer, and must still be writable.

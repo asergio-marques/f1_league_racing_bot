@@ -1046,8 +1046,8 @@ async def remove_part_posted_messages(
     return left, failures
 
 
-#: Championship → the column naming the message that carries it. Both live on the row of the
-#: top-ranked driver, as the first of them always has.
+#: Championship → the column naming the message that carries it, on the round's row of
+#: ``round_standings_posts``.
 _STANDINGS_ID_COLUMNS = {
     STANDINGS_DRIVERS: "standings_message_id",
     STANDINGS_CONSTRUCTORS: "constructor_standings_message_id",
@@ -1066,28 +1066,22 @@ async def get_standings_message_id(
     round_id: int,
     championship: str = STANDINGS_DRIVERS,
 ) -> int | None:
-    """Return the message id carrying *championship* for the given round's snapshot.
+    """Return the message id carrying *championship* for the given round's standings posting.
 
     Defaults to the driver standings, which is the message the textual flow posts for both
     championships together — so every caller written before the image flow keeps its meaning
     unchanged.
 
-    **Read from whichever row holds it, not from the top-ranked one.** The id is *written* to
-    the row of the driver leading that round, but a recomputation reorders the snapshots without
-    moving the id — so the moment a penalty or an amendment changed a round's leader, a read of
-    the top row returned nothing, the posting became unreachable, and the next repost left it
-    standing beside its replacement for good (#345).
+    **Read from the round's own row**, which a recomputation of its snapshots leaves alone. The
+    ids once sat on the row of the driver leading the round, and a recomputation that changed
+    the leader reordered the rows without moving them: the posting became unreachable, and the
+    next repost left it standing beside its replacement for good (#345).
     """
     column = _STANDINGS_ID_COLUMNS[championship]
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            f"""
-            SELECT {column} AS message_id
-            FROM driver_standings_snapshots
-            WHERE division_id = ? AND round_id = ? AND {column} IS NOT NULL
-            ORDER BY standing_position ASC
-            LIMIT 1
-            """,
+            f"SELECT {column} AS message_id FROM round_standings_posts "  # noqa: S608
+            f"WHERE division_id = ? AND round_id = ? AND {column} IS NOT NULL",
             (division_id, round_id),
         )
         row = await cursor.fetchone()
@@ -1110,13 +1104,8 @@ async def get_standings_message_ids(
     anchor_column = _STANDINGS_ID_COLUMNS[championship]
     async with get_connection(db_path) as db:
         cursor = await db.execute(
-            f"""
-            SELECT {column} AS message_ids
-            FROM driver_standings_snapshots
-            WHERE division_id = ? AND round_id = ? AND {anchor_column} IS NOT NULL
-            ORDER BY standing_position ASC
-            LIMIT 1
-            """,  # noqa: S608 — columns come from the constant maps above
+            f"SELECT {column} AS message_ids FROM round_standings_posts "  # noqa: S608
+            f"WHERE division_id = ? AND round_id = ? AND {anchor_column} IS NOT NULL",
             (division_id, round_id),
         )
         row = await cursor.fetchone()
@@ -1132,7 +1121,7 @@ async def set_standings_message_id_on(
     *,
     message_ids: str | None = None,
 ) -> None:
-    """Persist *message_id* for *championship* on the top-ranked driver's row, committing nothing.
+    """Persist *message_id* for *championship* on the round's standings row, committing nothing.
 
     Written on every posting, textual or graphic, so the two flows never disagree about
     which message is which. The textual flow leaves the constructor column null.
@@ -1142,10 +1131,8 @@ async def set_standings_message_id_on(
     (#345). Clearing an id clears the list with it: a stale list outliving the message it
     described would send a delete at somebody else's posting.
 
-    **The round's other rows are cleared first**, so exactly one row of it names the posting. A
-    recomputation that changes the leader reorders the rows without moving the id, and one left
-    behind on a row that is no longer top would be read as the round's current posting by
-    :func:`get_standings_message_id` long after it had been replaced (#345).
+    The row is the round's: one for the round, found again whoever leads it and whatever a
+    recomputation does to the snapshots, and a new posting replaces the old in place (#345).
 
     It writes on the connection it is handed, so that the change queue saves a post's id in the
     save that marks the post done.
@@ -1153,22 +1140,11 @@ async def set_standings_message_id_on(
     column = _STANDINGS_ID_COLUMNS[championship]
     list_column = _STANDINGS_IDS_COLUMNS[championship]
     await db.execute(
-        f"UPDATE driver_standings_snapshots SET {column} = NULL, {list_column} = NULL "  # noqa: S608
-        "WHERE round_id = ? AND division_id = ?",
-        (round_id, division_id),
-    )
-    await db.execute(
-        f"""
-        UPDATE driver_standings_snapshots
-        SET {column} = ?, {list_column} = ?
-        WHERE round_id = ? AND division_id = ?
-          AND driver_user_id = (
-              SELECT driver_user_id FROM driver_standings_snapshots
-              WHERE round_id = ? AND division_id = ?
-              ORDER BY standing_position ASC LIMIT 1
-          )
-        """,
-        (message_id, message_ids, round_id, division_id, round_id, division_id),
+        f"INSERT INTO round_standings_posts (round_id, division_id, {column}, {list_column}) "  # noqa: S608
+        "VALUES (?, ?, ?, ?) "
+        f"ON CONFLICT(round_id) DO UPDATE SET {column} = excluded.{column}, "
+        f"{list_column} = excluded.{list_column}",
+        (round_id, division_id, message_id, message_ids),
     )
 
 

@@ -259,10 +259,10 @@ async def plan_posts(
             await db.execute(
                 "SELECT r.id, r.round_number, r.status FROM rounds r "
                 "WHERE r.division_id = ? AND r.round_number > ? AND r.status != 'CANCELLED' "
-                "  AND EXISTS (SELECT 1 FROM driver_standings_snapshots s "
-                "              WHERE s.round_id = r.id AND s.division_id = r.division_id "
-                "                AND (s.standings_message_id IS NOT NULL "
-                "                     OR s.constructor_standings_message_id IS NOT NULL)) "
+                "  AND EXISTS (SELECT 1 FROM round_standings_posts p "
+                "              WHERE p.round_id = r.id AND p.division_id = r.division_id "
+                "                AND (p.standings_message_id IS NOT NULL "
+                "                     OR p.constructor_standings_message_id IS NOT NULL)) "
                 "ORDER BY r.round_number",
                 (row["division_id"], row["round_number"]),
             )
@@ -377,8 +377,7 @@ async def withdraw_round_standings_on(
     stand for anything. Returns whether the round held any (a first submission holds none), the
     division's standings channel (None where it has none) and the id of every message that
     carried the round's standings, drivers' and constructors', for the caller to plan the
-    deletion of once the round's notes stand. The ids are read before the rows are deleted, as
-    they live on them.
+    deletion of once the round's notes stand. The ids are read before their row is deleted.
     """
     row = await (await db.execute(
         "SELECT r.division_id, c.standings_channel_id FROM rounds r "
@@ -396,20 +395,19 @@ async def withdraw_round_standings_on(
         held = held or bool(count and count["n"])
     if not held:
         return False, None, []
-    for championship, anchor_column in _STANDINGS_ID_COLUMNS.items():
-        found = await (await db.execute(
-            f"SELECT {anchor_column} AS anchor, {_STANDINGS_IDS_COLUMNS[championship]} AS chunks "  # noqa: S608
-            f"FROM driver_standings_snapshots WHERE round_id = ? AND {anchor_column} IS NOT NULL "
-            "ORDER BY standing_position LIMIT 1",
-            (round_id,),
-        )).fetchone()
-        if found is None or not found["anchor"]:
-            continue
-        anchor = int(found["anchor"])
-        posted = _parse_ids(found["chunks"]) or [anchor]
-        for message_id in (anchor, *posted):
-            if message_id not in ids:
-                ids.append(message_id)
+    posted_row = await (await db.execute(
+        "SELECT * FROM round_standings_posts WHERE round_id = ?", (round_id,)
+    )).fetchone()
+    if posted_row is not None:
+        for championship, anchor_column in _STANDINGS_ID_COLUMNS.items():
+            if not posted_row[anchor_column]:
+                continue
+            anchor = int(posted_row[anchor_column])
+            posted = _parse_ids(posted_row[_STANDINGS_IDS_COLUMNS[championship]]) or [anchor]
+            for message_id in (anchor, *posted):
+                if message_id not in ids:
+                    ids.append(message_id)
+    await db.execute("DELETE FROM round_standings_posts WHERE round_id = ?", (round_id,))
     await db.execute("DELETE FROM driver_standings_snapshots WHERE round_id = ?", (round_id,))
     await db.execute("DELETE FROM team_standings_snapshots WHERE round_id = ?", (round_id,))
     channel = row["standings_channel_id"]

@@ -125,14 +125,14 @@ async def second_round_with_results(path: str, division_id: int, *, message_id=N
         )
         await db.execute(
             "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
-            "standing_position, total_points, standings_message_id, standings_message_ids) "
-            "VALUES (?, ?, 500, 1, 25, ?, ?)",
-            (
-                round_id,
-                division_id,
-                message_id,
-                None if message_id is None else f"[{message_id}]",
-            ),
+            "standing_position, total_points) VALUES (?, ?, 500, 1, 25)",
+            (round_id, division_id),
         )
+        if message_id is not None:
+            await db.execute(
+                "INSERT INTO round_standings_posts (round_id, division_id, "
+                "standings_message_id, standings_message_ids) VALUES (?, ?, ?, ?)",
+                (round_id, division_id, message_id, f"[{message_id}]"),
+            )
         await db.commit()
     return round_id

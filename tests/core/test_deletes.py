@@ -329,8 +329,7 @@ _LET_GO = {
 @pytest.mark.parametrize("deleted", [
     pytest.param("season"),
     pytest.param("division"),
-    pytest.param("round", marks=pytest.mark.xfail(
-        strict=True, reason="#284: a round's standings posting is not yet a row of its own")),
+    pytest.param("round"),
     pytest.param(_DRIVER_KEEPING_HISTORY),
     pytest.param(_DRIVER_LOSING_HISTORY),
 ])

@@ -225,14 +225,27 @@ CREATE TABLE driver_standings_snapshots (
     total_points        INTEGER NOT NULL DEFAULT 0,
     finish_counts       TEXT    NOT NULL DEFAULT '{}',
     first_finish_rounds TEXT    NOT NULL DEFAULT '{}',
-    standings_message_id INTEGER, driver_profile_id INTEGER REFERENCES driver_profiles(id), constructor_standings_message_id INTEGER,
-    -- The chunk lists of the two standings postings, as session_results' above.
-    standings_message_ids TEXT,
-    constructor_standings_message_ids TEXT,
+    driver_profile_id   INTEGER REFERENCES driver_profiles(id),
     UNIQUE (round_id, division_id, driver_user_id)
 );
 CREATE INDEX idx_dss_driver_profile
     ON driver_standings_snapshots(division_id, driver_profile_id);
+
+-- round_standings_posts: the standings a round posted, one row for the posting whoever leads the
+-- round. The ids sit here, not on a snapshot row, because a recomputation reorders and drops
+-- those rows and the posting would be lost with them.
+CREATE TABLE round_standings_posts (
+    round_id    INTEGER PRIMARY KEY
+                    REFERENCES rounds(id),
+    division_id INTEGER NOT NULL
+                    REFERENCES divisions(id),
+    -- The message carrying each championship, and the chunk list of every message it occupies,
+    -- as session_results' above.
+    standings_message_id              INTEGER,
+    constructor_standings_message_id  INTEGER,
+    standings_message_ids             TEXT,
+    constructor_standings_message_ids TEXT
+);
 
 -- team_standings_snapshots
 CREATE TABLE team_standings_snapshots (

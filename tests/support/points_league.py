@@ -311,10 +311,17 @@ async def make_db(tmp_path: Any, *, attendance: bool, staged: dict[int, int],
                     await db.execute(
                         "INSERT INTO driver_standings_snapshots (round_id, division_id, "
                         "driver_user_id, standing_position, total_points, "
-                        "standings_message_id, driver_profile_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        "driver_profile_id) VALUES (?, ?, ?, ?, ?, ?)",
                         (round_id(division_id, number), division_id, driver, position,
-                         points * number, old_standings(division_id, number), profile),
+                         points * number, profile),
                     )
+                    if position == 1:
+                        await db.execute(
+                            "INSERT INTO round_standings_posts (round_id, division_id, "
+                            "standings_message_id) VALUES (?, ?, ?)",
+                            (round_id(division_id, number), division_id,
+                             old_standings(division_id, number)),
+                        )
         await db.commit()
     await enable_amendment_mode(db_path, SEASON_ID)
     if staged:

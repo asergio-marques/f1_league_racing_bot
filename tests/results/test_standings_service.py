@@ -1401,9 +1401,6 @@ async def test_a_recompute_leaves_no_row_under_the_past_account(db_path):
 
 
 @pytest.mark.asyncio
-@pytest.mark.xfail(
-    strict=True, reason="#284: a round's standings posting is not yet a row of its own"
-)
 async def test_a_recomputation_that_reorders_a_round_leaves_its_standings_posting_found(
     db_path,
 ):

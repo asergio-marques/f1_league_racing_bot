@@ -14,12 +14,6 @@ class DriverStandingsSnapshot:
     total_points: int
     finish_counts: dict[int, int]
     first_finish_rounds: dict[int, int]
-    standings_message_id: int | None = None
-    #: The message carrying the **constructor** standings, where the image flow posted two.
-    #: The textual flow posts one message for both championships and leaves this null; the
-    #: image flow needs the two nameable apart so either may be replaced, or fall back to
-    #: text, without disturbing the other (Constitution XIV.4, XIV.7 as amended at v4.5.0).
-    constructor_standings_message_id: int | None = None
     driver_profile_id: int | None = None
     # True when the driver has at least one session result in the division (even 0-point DNF).
     # Not persisted to DB; set during compute_driver_standings.

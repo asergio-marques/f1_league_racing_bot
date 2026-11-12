@@ -596,10 +596,15 @@ async def make_db(
         for round_id, message_id in ((ROUND_ID, OLD_STANDINGS), (LATER_ROUND_ID, None)):
             await db.execute(
                 "INSERT INTO driver_standings_snapshots (round_id, division_id, driver_user_id, "
-                "standing_position, total_points, standings_message_id) "
-                "VALUES (?, ?, ?, 1, 25, ?)",
-                (round_id, DIVISION_ID, LEWIS, message_id),
+                "standing_position, total_points) VALUES (?, ?, ?, 1, 25)",
+                (round_id, DIVISION_ID, LEWIS),
             )
+            if message_id is not None:
+                await db.execute(
+                    "INSERT INTO round_standings_posts (round_id, division_id, "
+                    "standings_message_id) VALUES (?, ?, ?)",
+                    (round_id, DIVISION_ID, message_id),
+                )
         await db.execute(
             "INSERT INTO round_submission_channels (round_id, channel_id, created_at, "
             "in_penalty_review, results_posted, prompt_message_id) "

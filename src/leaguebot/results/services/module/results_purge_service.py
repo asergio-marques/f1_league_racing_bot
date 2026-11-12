@@ -186,10 +186,8 @@ async def erase_season_on(db: aiosqlite.Connection) -> SeasonErase:
                 cursor = await db.execute(
                     f"""
                     SELECT {anchor_column} AS anchor, {list_column} AS message_ids
-                    FROM driver_standings_snapshots
+                    FROM round_standings_posts
                     WHERE division_id = ? AND round_id = ? AND {anchor_column} IS NOT NULL
-                    ORDER BY standing_position ASC
-                    LIMIT 1
                     """,  # noqa: S608 — columns come from constant maps
                     (row["division_id"], round_id),
                 )
@@ -503,6 +501,7 @@ async def _delete_rows(db: aiosqlite.Connection, round_ids: list[int]) -> tuple[
         )
     for table in (
         "session_results",
+        "round_standings_posts",
         "driver_standings_snapshots",
         "team_standings_snapshots",
         "round_submission_channels",
