@@ -168,7 +168,6 @@ the code is laid out"). The table names a service by its file, not its folder.
 | Module switches | `module_service` (`ModuleService`) | nothing: each switch is read through its module |
 | The image module | `image_drawing` (the `ImageDrawing` protocol) | nothing: it declares what core asks |
 | Amending a round | `amendment_rules_service`, `round_steps` | nothing: the first judges what an amendment may do and costs, pure; the second names a round in an amendment's step by the number it bears when read |
-| A points amendment | `amendment_service` | nothing: `approval_faults`, what stops a mid-season points amendment being published, which results calls |
 | Season reviews and confirmations | `approval_checks`, `approval_window_service` (`calendar_faults`, what is already behind a season on the day it is approved), `review_sections`, `confirmation_refusals`, `season_fingerprint_service`, `season_review_changes`, `season_review_views`, `season_review_workflows` | `season_review_prompts` |
 | The hub | `hub_service`, `about_service` | `server_configs.hub_message_id` |
 | Test mode | `test_mode_service`, `test_roster_service`, `backup_service` | `server_configs.test_mode_active` |
@@ -182,8 +181,7 @@ under "How a change is carried out".
 directly so that the signup window's forced close can call it with nothing but a path (its
 docstring). The same holds for the other services of plain functions: they are handed what they
 need by whoever calls them, as architecture.md's "Services stay attached to the bot" has it.
-`approval_faults` is handed core's module switches (`ModuleService`) by results' cog and change
-type. A cog's reads are asked of a core service, as architecture.md's "What each part may do" has
+A cog's reads are asked of a core service, as architecture.md's "What each part may do" has
 it: `pack_service.what_stops_a_pack`, `track_service.list_tracks` and `resolve_track`,
 `PlacementService.division_lineup`. `/season config-review` reads `bot.configuration_faults`, the
 reader the builder makes (`_make_configuration_faults`), which asks

@@ -153,5 +153,13 @@ class AttendanceAfterReview(Protocol):
         Only the plan is attendance's here: the job's step definition reaches the change through
         core's `cancellation_steps`, where attendance registers it."""
 
+    async def recalculation_faults(self, season_id: int, guild: discord.Guild | None) -> list[str]:
+        """What stands between the season and recalculating its attendance, as lines a league can
+        read: the channels each of its divisions' attendance posting needs, a cancelled
+        division's included, since an approved points amendment recalculates and reposts its
+        raced rounds as a live division's. Read-only, and an empty list while attendance is off,
+        where a league must not be refused for a channel it never configured. *guild* is the
+        league's server, None where it is not in the cache."""
+
     async def sync_hint(self, division_id: int, round_id: int) -> str:
         """The line telling a manager how to finish sanctions that did not all apply."""

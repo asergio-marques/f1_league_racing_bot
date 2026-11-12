@@ -4,7 +4,7 @@ A round of an active season may have its track, its moment or its format amended
 costs the round something — a forecast drawn for a circuit it is no longer run at, a check-in
 called for a date that has moved — and some of them cost so much that the amendment must not
 happen at all. This module decides which, and whether an amendment changes anything at all, and
-nothing else: it computes no consequence, writes nothing and posts nothing. `amendment_service`
+nothing else: it computes no consequence, writes nothing and posts nothing. `round_amend_change`
 carries the answer out.
 
 **Pure by design**: no database, no Discord, and ``now`` passed in rather than read from the wall

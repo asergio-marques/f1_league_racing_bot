@@ -3344,7 +3344,7 @@ CATCH_ALLS_ALLOWED = {
     ("core/services/scheduler_service.py", "SchedulerService._remove_job"):
         "a stated exception: every cancel is a clean-up, so a job that will not go is logged and "
         "left",
-    ("core/services/rounds/amendment_service.py", "approval_faults"):
+    ("results/services/points/points_amendment_faults.py", "approval_faults"):
         "a stated exception: an attendance switch that cannot be read never refuses an amendment",
     ("core/services/seasons/approval_checks.py", "channel_on_server"):
         "a stated exception: a channel check that cannot tell must not refuse a season",

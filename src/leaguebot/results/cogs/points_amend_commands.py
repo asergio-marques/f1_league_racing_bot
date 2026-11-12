@@ -363,7 +363,8 @@ class PointsAmendCommands(ResultsSubgroup):
             return
 
         diff = await review_panel(
-            self.bot.db_path, season, bot=self.bot, module_service=self.bot.module_service
+            self.bot.db_path, season, bot=self.bot, module_service=self.bot.module_service,
+            attendance=self.bot.attendance_after_review,
         )
         if diff is None:
             await refuse(

@@ -1,30 +1,29 @@
 """What stops a mid-season points amendment being published.
 
 A round amendment is a change on the queue (`round_amend_change`), not a method here. The
-amendment's own tables are results': its readers are in results' `amendment_mode_service`.
+amendment's own tables are results': its readers are in `amendment_mode_service`.
 """
 
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
-from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.modules.module_service import ModuleService, SwitchNotSignedUp
+from leaguebot.core.services.seasons.season_service import season_exists
 from leaguebot.core.utils.league_bot import LeagueBot
 from leaguebot.core.utils.league_server import league_guild
+from leaguebot.results.services.publishing import results_post_service
+
+if TYPE_CHECKING:
+    from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 
 log = logging.getLogger(__name__)
 
 
-async def _season_exists(db_path: str, season_id: int) -> bool:
-    """Whether the season can be read, checked before the approval writes anything."""
-    async with get_connection(db_path) as db:
-        cursor = await db.execute("SELECT 1 FROM seasons WHERE id = ?", (season_id,))
-        return await cursor.fetchone() is not None
-
-
 async def approval_faults(
-    db_path: str, season_id: int, bot: LeagueBot, *, module_service: ModuleService
+    db_path: str, season_id: int, bot: LeagueBot, *, module_service: ModuleService,
+    attendance: AttendanceAfterReview,
 ) -> list[str]:
     """Everything that would stop an approved amendment being published.
 
@@ -45,9 +44,10 @@ async def approval_faults(
     verdicts channels it configured are asked too, as the results specification's "every division's"
     requires.
 
-    **Each module answers for its own channels.** The results module knows what its repost
-    needs and the attendance module knows what its recalculation needs; this function only
-    composes them, and reaches into neither's configuration itself.
+    **Each module answers for its own channels.** Results knows what its repost needs, and
+    attendance, asked through *attendance* (`AttendanceAfterReview.recalculation_faults`), what
+    its recalculation needs; this function only composes them, and reaches into neither's
+    configuration itself, importing nothing of attendance's.
 
     A fault reading whether the attendance module is on stands aside, logged on the host and read as
     off: an attendance switch that cannot be read never refuses an amendment. A switch nobody signed
@@ -55,9 +55,8 @@ async def approval_faults(
     The switch is asked of *module_service*, which the caller hands in: a service asks the bot for
     no service of its own.
     """
-    from leaguebot.results.services.publishing import results_post_service
-
-    if not await _season_exists(db_path, season_id):
+    # Checked before the approval writes anything.
+    if not await season_exists(db_path, season_id):
         return ["The season could not be read, so nothing was changed."]
 
     guild = (await league_guild(bot)) if bot is not None else None
@@ -76,10 +75,6 @@ async def approval_faults(
     except Exception:  # noqa: BLE001 — never refuse an amendment on this reader
         log.exception("approval_faults: could not read the attendance module's state")
     if attendance_on:
-        from leaguebot.attendance.services import attendance_service
-
-        faults += await attendance_service.recalculation_faults(
-            db_path, season_id, guild, bot, cancelled_too=True
-        )
+        faults += await attendance.recalculation_faults(season_id, guild)
 
     return faults

@@ -93,9 +93,6 @@ ignore_imports =
     # type checker only (under TYPE_CHECKING). Services stay typed attributes on the bot
     # (architecture.md, "How the code is laid out").
     leaguebot.core.utils.league_bot -> leaguebot.*.services.**
-    # #284: the amendment's approval faults in the amendment service ask results and attendance.
-    leaguebot.core.services.rounds.amendment_service -> leaguebot.attendance.services.attendance_service
-    leaguebot.core.services.rounds.amendment_service -> leaguebot.results.services.publishing.results_post_service
 
 # The dependency table (architecture.md, "How modules and core fit together"): attendance needs
 # results, and every module may ask the image module to draw its posts. No other module uses

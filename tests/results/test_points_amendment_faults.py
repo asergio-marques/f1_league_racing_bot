@@ -15,9 +15,6 @@ import pytest
 from leaguebot.core.services.modules.module_service import SwitchNotSignedUp
 from tests.support.points_league import BETA_ATTENDANCE, SEASON_ID, points_league
 
-#: Why each test below fails until results holds the check.
-NOT_IN_RESULTS = "#284: approval_faults is still core's and asks attendance_service directly"
-
 
 def _switches(**answer: object) -> MagicMock:
     """The module switches the check is handed: attendance's reads as *answer* says."""
@@ -26,7 +23,6 @@ def _switches(**answer: object) -> MagicMock:
     return switches
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_IN_RESULTS)
 async def test_approval_faults_names_a_cancelled_division_s_deleted_attendance_channel(tmp_path):
     """A division cancelled mid-season, attendance on, whose attendance channel (722) has been
     deleted: the approval reposts and recalculates its raced rounds too, so the check names the
@@ -52,7 +48,6 @@ async def test_approval_faults_names_a_cancelled_division_s_deleted_attendance_c
     assert f"**Beta** — the attendance channel (id {BETA_ATTENDANCE})" in named[0]
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_IN_RESULTS)
 async def test_approval_faults_asks_attendance_s_faults_through_the_hook_it_is_handed(
     tmp_path, monkeypatch,
 ):
@@ -77,7 +72,6 @@ async def test_approval_faults_asks_attendance_s_faults_through_the_hook_it_is_h
     hook.recalculation_faults.assert_awaited_once_with(SEASON_ID, league.guild)
 
 
-@pytest.mark.xfail(strict=True, reason=NOT_IN_RESULTS)
 async def test_an_attendance_switch_nobody_signed_up_for_is_raised_not_read_as_off(tmp_path):
     """The attendance module's switch reader was never signed up (`SwitchNotSignedUp`): that is a
     fault in the bot's assembly, not a switch that cannot be read, so `approval_faults` raises it

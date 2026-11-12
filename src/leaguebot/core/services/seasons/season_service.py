@@ -1340,6 +1340,14 @@ async def live_season(db_path: str) -> Season | None:
     return _row_to_season(row)
 
 
+async def season_exists(db_path: str, season_id: int) -> bool:
+    """Whether the season *season_id* can be read from the league database at *db_path*, for a
+    reader that checks it before writing anything."""
+    async with get_connection(db_path) as db:
+        cursor = await db.execute("SELECT 1 FROM seasons WHERE id = ?", (season_id,))
+        return await cursor.fetchone() is not None
+
+
 async def division_first_round(db_path: str, division_id: int) -> Round | None:
     """*division_id*'s first round by round number, or None where it has none.
 

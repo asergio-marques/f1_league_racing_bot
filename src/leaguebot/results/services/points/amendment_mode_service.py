@@ -25,14 +25,15 @@ from leaguebot.core.db.database import get_connection
 from leaguebot.core.models.change import AuditRecord
 from leaguebot.core.models.season import Season
 from leaguebot.core.services.queue.setting_change import Saved
-from leaguebot.core.services.rounds.amendment_service import approval_faults
 from leaguebot.results.models.amendment_state import SeasonAmendmentState
+from leaguebot.results.services.points.points_amendment_faults import approval_faults
 from leaguebot.results.services.round_amendment.amendment_writes import open_amendment_in_season
 from leaguebot.results.utils.points_ordering import ordering_message, ordering_violations
 
 if TYPE_CHECKING:
     from leaguebot.core.services.modules.module_service import ModuleService
     from leaguebot.core.utils.league_bot import LeagueBot
+    from leaguebot.results.services.module.attendance_hook import AttendanceAfterReview
 
 
 async def get_amendment_state(db_path: str, season_id: int) -> SeasonAmendmentState | None:
@@ -163,14 +164,16 @@ async def get_modification_store_diff(db_path: str, season_id: int) -> str:
 
 
 async def review_panel(
-    db_path: str, season: Season, *, bot: LeagueBot, module_service: ModuleService
+    db_path: str, season: Season, *, bot: LeagueBot, module_service: ModuleService,
+    attendance: AttendanceAfterReview,
 ) -> str | None:
     """The text of the amend review panel, or None where the season is not in amendment mode.
 
     The staged changes' diff, then what would refuse an approval, each shown while a manager
     is deciding: the points out of order, the channels that could not publish, an amendment of
     a round still open. The same three are read again at the press, by the change that
-    approves.
+    approves. *attendance* is
+    attendance's share of a round's review, asked for its channels' faults.
     """
     state = await get_amendment_state(db_path, season.id)
     if state is None or not state.amendment_active:
@@ -197,7 +200,7 @@ async def review_panel(
     # half-made (#187), and a manager should meet that while deciding rather than
     # after pressing Approve.
     channel_faults = await approval_faults(
-        db_path, season.id, bot, module_service=module_service
+        db_path, season.id, bot, module_service=module_service, attendance=attendance
     )
     if channel_faults:
         bullet_list = "\n• ".join(channel_faults)

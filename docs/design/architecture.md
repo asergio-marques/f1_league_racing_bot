@@ -1350,7 +1350,7 @@ queue's own telling, of a change's outcome, of its stop or of a press on a stop 
 stated exception as well: each catch-all puts the error in the host's log and what the queue was
 doing stands, the change, its stop or the press alike, a stop notice not posted being posted again,
 because telling what happened must never undo it (their docstrings say so); the readers that stand
-aside (`amendment_service.approval_faults` and `approval_checks.channel_on_server`) are stated
+aside (results' `points_amendment_faults.approval_faults` and `approval_checks.channel_on_server`) are stated
 exceptions too: each puts the error in the host's log and reads an attendance switch as off (a
 switch nobody signed up for aside) or a channel as present, because a reader that cannot answer must
 not refuse an amendment or a season (their docstrings say so); a season's fingerprint that cannot be

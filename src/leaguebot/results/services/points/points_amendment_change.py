@@ -60,7 +60,6 @@ from leaguebot.core.models.change import (
     StepResult,
     Verdict,
 )
-from leaguebot.core.services.rounds.amendment_service import approval_faults
 from leaguebot.core.services.modules.module_service import ModuleService
 from leaguebot.core.services.queue.queue_records import (
     in_hand,
@@ -76,6 +75,7 @@ from leaguebot.core.services.seasons.season_service import live_season
 from leaguebot.core.utils.log_lines import refusal_line, refuse, reply_reason
 from leaguebot.core.utils.season_gate import stage_refusal
 from leaguebot.results.services.review import review_posting, review_verdicts
+from leaguebot.results.services.points.points_amendment_faults import approval_faults
 from leaguebot.results.services.points.amendment_mode_service import (
     get_amendment_state,
     validate_modification_ordering,
@@ -287,7 +287,7 @@ def points_amendment_change(
             )
 
         faults = await approval_faults(
-            db_path, season_id, ctx.bot, module_service=module_service
+            db_path, season_id, ctx.bot, module_service=module_service, attendance=attendance
         )
         if faults:
             bullets = "\n• ".join(faults)

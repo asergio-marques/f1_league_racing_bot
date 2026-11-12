@@ -158,6 +158,13 @@ class AttendanceAfterReview:
             return []
         return list(await check_in_record.read_check_in_on(db, target))
 
+    async def recalculation_faults(self, season_id: int, guild: discord.Guild | None) -> list[str]:
+        if not await self.enabled():
+            return []
+        return await _att.recalculation_faults(
+            self._db_path, season_id, guild, self._bot, cancelled_too=True
+        )
+
     async def post_sheet(
         self, round_id: int, division_id: int, *, sanctioned: set[int], as_text: bool
     ) -> dict[str, Any] | None:

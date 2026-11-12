@@ -2559,10 +2559,10 @@ async def recalculation_faults(
     Returns the faults as lines a league can read, and an empty list where every division's
     attendance posting could be made.
 
-    Called by `amendment_service.approval_faults` before an approved amendment writes
-    anything, because the approval recalculates attendance as part of its cascade and a
-    recalculation that cannot be posted used to be swallowed under the same false success
-    as the reposting.
+    Called, through `AttendanceAfterReview.recalculation_faults`, by results' `approval_faults`
+    before an approved amendment writes anything, because the approval recalculates attendance
+    as part of its cascade and a recalculation that cannot be posted used to be swallowed under
+    the same false success as the reposting.
 
     **The verdicts channel is asked for only where sanctions could actually fall.**
     ``enforce_attendance_sanctions`` returns immediately when both the autosack and
