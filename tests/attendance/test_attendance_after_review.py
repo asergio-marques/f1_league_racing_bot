@@ -753,6 +753,45 @@ async def test_every_method_does_nothing_while_attendance_is_off(tmp_path):
     channel.send.assert_not_awaited()
 
 
+@pytest.mark.parametrize("attendance", [True, False], ids=["on", "off"])
+async def test_the_read_methods_answer_from_attendance_s_own_tables(tmp_path, attendance):
+    """The reads that write nothing answer whatever attendance's switch says. Round 3 of Pro
+    carries Lewis's attendance row and a recorded NO_SHOW pardon of his; round 7 carries none yet,
+    and Am has no rounds. The hook gives Lewis's row of round 3 (and none of Max's, who has none),
+    the pardon with Lewis's profile and Discord account, and round 3 as Pro's latest scored
+    round, then round 7 once it carries a total, newest first; Am has none."""
+    db_path = await _db(tmp_path, attendance=attendance)
+    await _totals(db_path, AMENDED_ROUND, {LEWIS: 25})
+    async with get_connection(db_path) as db:
+        row = await (await db.execute(
+            "SELECT id FROM driver_round_attendance WHERE round_id = ?", (AMENDED_ROUND,)
+        )).fetchone()
+        await db.execute(
+            "INSERT INTO attendance_pardons (attendance_id, pardon_type, justification, "
+            "granted_by, granted_at) VALUES (?, 'NO_SHOW', 'power cut', 77, '2026-02-02T00:00:00')",
+            (row["id"],),
+        )
+        await db.commit()
+    hook = _hook(_bot(db_path, attendance=attendance), _placement())
+
+    assert await hook.attendance_row_of(AMENDED_ROUND, DIVISION_ID, LEWIS) == {
+        "id": row["id"], "rsvp_status": "ACCEPTED",
+    }
+    assert await hook.attendance_row_of(AMENDED_ROUND, DIVISION_ID, MAX) is None
+    assert await hook.recorded_pardons(AMENDED_ROUND) == [{
+        "attendance_id": row["id"], "pardon_type": "NO_SHOW", "justification": "power cut",
+        "granted_by": 77, "granted_at": "2026-02-02T00:00:00", "driver_profile_id": LEWIS,
+        "discord_user_id": str(LEWIS),
+    }]
+    assert await hook.recorded_pardons(LATEST_ROUND) == []
+    assert await hook.latest_scored_round(DIVISION_ID) == AMENDED_ROUND
+    assert await hook.latest_scored_round(OTHER_DIVISION_ID) is None
+
+    await _totals(db_path, LATEST_ROUND, {LEWIS: 50})
+
+    assert await hook.latest_scored_round(DIVISION_ID) == LATEST_ROUND
+
+
 async def test_an_amendment_s_review_is_offered_every_pardon_while_attendance_is_on(tmp_path):
     """Attendance is on. Handed the two pardons an amended round carries, the hook gives both
     back, in their order, for the amendment's review to offer."""
