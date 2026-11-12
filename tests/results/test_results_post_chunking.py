@@ -155,8 +155,8 @@ async def test_every_message_is_returned_with_the_anchor_first():
         sent = await _send_chunked(channel, text)
 
     assert len(sent) > 1
-    assert sent == channel._sent
-    assert sent[0] is channel._sent[0]
+    assert sent == [message.id for message in channel._sent]
+    assert sent[0] == channel._sent[0].id
     assert "line 0" in channel._sent[0].content
     assert "line 499" in channel._sent[-1].content
 
@@ -172,7 +172,7 @@ async def test_a_short_post_returns_the_one_message_it_sent():
     with in_a_job():
         sent = await _send_chunked(channel, "short")
 
-    assert sent == channel._sent
+    assert sent == [message.id for message in channel._sent]
     assert len(sent) == 1
 
 
@@ -497,10 +497,12 @@ async def test_a_posting_that_fails_part_way_takes_its_first_chunks_down():
     first.delete = AsyncMock()
     channel = MagicMock()
     channel.send = AsyncMock(side_effect=[first, discord.HTTPException(MagicMock(status=500), "x")])
+    channel.get_partial_message = MagicMock(return_value=first)
     text = "\n".join(f"line {i:04d} " + "x" * 60 for i in range(60))
 
     with pytest.raises(discord.HTTPException):
         with in_a_job():
             await _send_chunked(channel, text)
 
+    channel.get_partial_message.assert_called_once_with(1)
     first.delete.assert_awaited_once()

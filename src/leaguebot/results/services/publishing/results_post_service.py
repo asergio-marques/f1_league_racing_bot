@@ -10,6 +10,11 @@ import aiosqlite
 import discord
 
 from leaguebot.core.utils.in_a_job import posts_in_a_job
+from leaguebot.core.services.posting.standing_post_handler import (
+    delete_standing,
+    edit_standing,
+    post_standing,
+)
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.settings.channel_registry_service import as_text_channel
 from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
@@ -86,12 +91,11 @@ def _split_content(text: str) -> list[str]:
 
 
 @posts_in_a_job
-async def _send_chunked(
-    channel: discord.TextChannel, content: str
-) -> list[discord.Message]:
-    """Send *content* to *channel*, splitting into multiple messages if needed.
+async def _send_chunked(channel: discord.TextChannel, content: str) -> list[int]:
+    """Send *content* to *channel*, splitting into multiple messages if needed, through core's
+    standing-post handler, notifying nobody.
 
-    Returns **every** message sent, the anchor first, so that all of them can be recorded.
+    Returns **every** message's id, the anchor first, so that all of them can be recorded.
 
     It used to return the anchor alone, and only the anchor was persisted; the rest were found
     again by walking forward from it over bot-authored messages. That walk cannot tell this
@@ -101,22 +105,22 @@ async def _send_chunked(
     guess entirely.
     """
     chunks = _split_content(content)
-    sent: list[discord.Message] = []
+    sent: list[int] = []
     try:
         for chunk in chunks:
-            sent.append(await channel.send(chunk))
+            sent.append(await post_standing(channel, chunk, mentions=discord.AllowedMentions.none()))
     except Exception as failure:
         # **A posting is whole or absent** (#345). The chunks already sent are recorded nowhere
         # until the whole posting is, so leaving them would strand the start of a table in the
         # channel with no route by which the bot could ever take it down.
         stranded: list[int] = []
-        for message in sent:
+        for message_id in sent:
             try:
-                await message.delete()
+                await delete_standing(channel.get_partial_message(message_id))
             except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
-                log.warning("_send_chunked: could not take down chunk %s: %s", message.id, exc)
+                log.warning("_send_chunked: could not take down chunk %s: %s", message_id, exc)
                 if not isinstance(exc, discord.NotFound):
-                    stranded.append(message.id)
+                    stranded.append(message_id)
         if stranded:
             # What it could not take down, on the failure itself, for a caller that keeps the
             # ids and removes them before it posts again (the change queue's posting jobs).
@@ -212,7 +216,7 @@ async def _delete_posting(
                     failures.append(exc)
             continue
         try:
-            await message.delete()
+            await delete_standing(message)
         except discord.HTTPException as exc:  # NotFound and Forbidden both derive from it
             log.warning("_delete_posting: could not delete %s %s: %s", label, message_id, exc)
             if not isinstance(exc, discord.NotFound):
@@ -622,7 +626,7 @@ async def produce_session_results(
             log.error("results: image path failed for session %s: %s", session_result.id, exc, exc_info=True)
 
     sent = await _send_chunked(results_channel, f"{heading}\n{label}\n{table}")
-    return PostedTable([m.id for m in sent], previous)
+    return PostedTable(sent, previous)
 
 
 async def produce_cancelled_session_line(
@@ -658,7 +662,7 @@ async def produce_cancelled_session_line(
         f"🚫 **Round {round_number} — {session_label}** ({division_name}): "
         "This session was cancelled.",
     )
-    return PostedTable([m.id for m in sent], previous)
+    return PostedTable(sent, previous)
 
 
 # ---------------------------------------------------------------------------
@@ -897,7 +901,9 @@ async def produce_standings(
             # Only edit in-place when the content fits in a single message; otherwise
             # fall through to send afresh so we can chunk across multiple messages.
             if len(content) <= _MSG_MAX:
-                await existing_msg.edit(content=content)
+                await edit_standing(
+                    existing_msg, mentions=discord.AllowedMentions.none(), content=content
+                )
                 sent_msg = existing_msg
                 # **A shorter table leaves the chunks it no longer fills** (#345). Editing the
                 # anchor in place is the cheap path, but a posting that was three messages and
@@ -923,13 +929,14 @@ async def produce_standings(
                     )
                     or [existing_msg_id]
                 )
-        except (discord.NotFound, discord.HTTPException):
+        except discord.NotFound:
+            # Only a table already gone is posted afresh; a refusal reaches the job and stops its lane.
             sent_msg = None
             stale = []
 
     if sent_msg is None:
         sent = await _send_chunked(standings_channel, content)
-        tables = [PostedTable([m.id for m in sent], stale, championship=STANDINGS_DRIVERS)]
+        tables = [PostedTable(sent, stale, championship=STANDINGS_DRIVERS)]
         if constructors_old:
             # Nothing new carries the constructors now: the table forgets its id and loses its
             # messages with the drivers' (see `review_posting._record_standings_post`).
@@ -1013,7 +1020,7 @@ async def _produce_standings_sections(
             old = list(previous_ids or [previous_id])
             if previous_id not in old:
                 old.insert(0, previous_id)
-        posted.append(PostedTable([m.id for m in sent], old, championship=championship))
+        posted.append(PostedTable(sent, old, championship=championship))
     return posted
 
 

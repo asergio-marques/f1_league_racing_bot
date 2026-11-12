@@ -369,9 +369,6 @@ async def test_a_round_in_review_can_no_longer_be_cancelled(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#284: the results and standings tables do not yet say whom they may notify"
-)
 async def test_the_interim_results_and_standings_are_posted(tmp_path):
     """Round 3's review opens: its results table and its standings are each posted for the first
     time, notifying nobody."""

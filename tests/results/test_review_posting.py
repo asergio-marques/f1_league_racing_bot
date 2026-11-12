@@ -78,11 +78,6 @@ OLD_STANDINGS = 8801
 OLD_LATER_STANDINGS = 8802
 LABEL = "Final Results"
 KIND = "test.review_posting"
-#: Why a test of whom a results or standings table may notify fails until the tables go through
-#: core's standing-post handler.
-TABLE_MENTIONS_NOT_STATED = (
-    "#284: the results and standings tables do not yet say whom they may notify"
-)
 
 _ids = itertools.count(9000)
 
@@ -363,7 +358,6 @@ async def _stop_notice(league: _League) -> str:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=TABLE_MENTIONS_NOT_STATED)
 async def test_a_replacement_is_posted_before_the_old_message_is_deleted(tmp_path):
     """Round 3's results table is posted again: the new table goes out, notifying nobody,
     before the old one (8800) is deleted."""
@@ -867,7 +861,6 @@ async def test_an_old_message_already_gone_completes_its_delete(tmp_path):
     assert len(league.sent_to(RESULTS_CHANNEL)) == 1
 
 
-@pytest.mark.xfail(strict=True, reason=TABLE_MENTIONS_NOT_STATED)
 async def test_standings_that_still_fit_are_edited_in_place_and_nothing_is_deleted(tmp_path):
     """Round 3's standings (8801) still fit one message: they are edited in place, notifying
     nobody, and nothing is posted or deleted."""
@@ -885,7 +878,6 @@ async def test_standings_that_still_fit_are_edited_in_place_and_nothing_is_delet
     assert notified(edit.kwargs.get("allowed_mentions")) == NOBODY
 
 
-@pytest.mark.xfail(strict=True, reason="#284: a refused standings edit posts a second table")
 async def test_a_refused_standings_edit_stops_the_queue_and_posts_no_second_table(tmp_path):
     """Round 3's standings stand as 8801, short enough to be edited in place, and Discord refuses
     the edit (403). The queue stops at `post_standings`: no second table is sent, 8801 stands with
