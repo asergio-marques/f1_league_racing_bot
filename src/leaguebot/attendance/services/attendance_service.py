@@ -1277,6 +1277,24 @@ async def attendance_row_of(
     return None if row is None else {"id": row["id"], "rsvp_status": row["rsvp_status"]}
 
 
+async def latest_scored_round(db, division_id: int) -> int | None:
+    """The division's latest round with a recorded attendance total, which is where its current
+    sheet stands; None where it has none (`AttendanceAfterReview.latest_scored_round`). Reads
+    only. The division's rounds, newest first, are core's to give (`division_rounds_on`), and
+    the first of them carrying a total is attendance's to pick."""
+    from leaguebot.core.services.seasons.season_service import division_rounds_on
+
+    for round_id in await division_rounds_on(db, division_id):
+        cursor = await db.execute(
+            "SELECT 1 FROM driver_round_attendance "
+            "WHERE round_id = ? AND total_points_after IS NOT NULL LIMIT 1",
+            (round_id,),
+        )
+        if await cursor.fetchone() is not None:
+            return round_id
+    return None
+
+
 async def pardons_of_on(db, round_id: int) -> list[dict[str, Any]]:
     """The round's pardons whole, ``id`` and ``granted_at`` included, oldest first, on *db*.
 

@@ -78,6 +78,11 @@ class AttendanceAfterReview(Protocol):
         its ``id``, which a pardon is staged against, and its ``rsvp_status``; None where the
         driver has none. A read writing nothing, so it acts whatever attendance's switch says."""
 
+    async def latest_scored_round(self, division_id: int) -> int | None:
+        """The division's latest round with a recorded attendance total, which is where its
+        current attendance sheet stands; None where it has none, and so has no sheet to correct.
+        A read writing nothing, so it acts whatever attendance's switch says."""
+
     async def recalculate_on(
         self, db: aiosqlite.Connection, round_id: int, division_id: int
     ) -> None:

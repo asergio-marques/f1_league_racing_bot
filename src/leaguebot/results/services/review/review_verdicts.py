@@ -664,19 +664,6 @@ async def _division_name(db_path: str, division_id: int) -> str:
     return "the division" if row is None else str(row["name"])
 
 
-async def _latest_scored_round(db_path: str, division_id: int) -> int | None:
-    """The division's latest round with a recorded attendance total, which is where its current
-    sheet stands; `None` where it has none, and so has no sheet to correct."""
-    async with get_connection(db_path) as db:
-        row = await (await db.execute(
-            "SELECT r.id FROM rounds r JOIN driver_round_attendance dra ON dra.round_id = r.id "
-            "WHERE r.division_id = ? AND dra.total_points_after IS NOT NULL "
-            "ORDER BY r.round_number DESC LIMIT 1",
-            (division_id,),
-        )).fetchone()
-    return None if row is None else int(row["id"])
-
-
 async def _describe_plan(ctx: StepContext) -> str:
     return (
         f"working out which drivers of {ctx.step_payload.get('division', 'the division')} are "
@@ -722,7 +709,7 @@ async def _plan_sanctions(ctx: StepContext, hook: AttendanceAfterReview) -> Step
             # round the sack was decided at, whose number means nothing there; a division with
             # no scored round has posted no sheet yet, so there is none to correct.
             sheet_round = round_id if sheet_division == division_id else (
-                await _latest_scored_round(ctx.db_path, sheet_division)
+                await hook.latest_scored_round(sheet_division)
             )
             if sheet_round is None:
                 continue

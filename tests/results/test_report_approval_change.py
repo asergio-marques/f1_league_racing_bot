@@ -1454,9 +1454,6 @@ async def test_a_sacked_driver_s_other_division_sheet_is_posted_again_as_a_job(t
         assert divisions == [DIVISION_ID, DIVISION_ID]
 
 
-@pytest.mark.xfail(strict=True, reason="#284: the sanctions' planning reads attendance's own "
-                   "table for another division's latest scored round, not attendance's share "
-                   "of the review")
 async def test_another_division_s_sheet_round_is_asked_of_attendance(tmp_path):
     """Max, over the autosack threshold, also sat in division 12 (Am), whose round 5 is final but
     holds no recorded attendance total in the database. Attendance's share of the review answers

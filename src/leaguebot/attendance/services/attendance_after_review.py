@@ -158,6 +158,10 @@ class AttendanceAfterReview:
         async with get_connection(self._db_path) as db:
             return await _att.attendance_row_of(db, round_id, division_id, profile_id)
 
+    async def latest_scored_round(self, division_id: int) -> int | None:
+        async with get_connection(self._db_path) as db:
+            return await _att.latest_scored_round(db, division_id)
+
     async def recalculate_on(
         self, db: aiosqlite.Connection, round_id: int, division_id: int
     ) -> None:
