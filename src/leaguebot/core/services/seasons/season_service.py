@@ -1374,6 +1374,25 @@ async def division_rounds_on(db: aiosqlite.Connection, division_id: int) -> list
     return [int(row["id"]) for row in await cursor.fetchall()]
 
 
+async def active_season_rounds_on(db: aiosqlite.Connection) -> list[tuple[int, int]]:
+    """The ``(round_id, division_id)`` of every round of an ACTIVE season, in round id order,
+    read on *db*; empty where no season is active.
+
+    For a module reading core's tables only through core's code (architecture.md, "The
+    database"): what it erases or reads for the live season's rounds names them here, rather than
+    join `rounds`, `divisions` and `seasons` in a query of its own, on the connection of its own
+    save. It writes nothing and commits nothing.
+    """
+    cursor = await db.execute(
+        "SELECT r.id, r.division_id FROM rounds r "
+        "JOIN divisions d ON d.id = r.division_id "
+        "JOIN seasons s ON s.id = d.season_id "
+        "WHERE s.status = ? ORDER BY r.id",
+        (SeasonStatus.ACTIVE.value,),
+    )
+    return [(int(row["id"]), int(row["division_id"])) for row in await cursor.fetchall()]
+
+
 async def season_divisions_on(db: aiosqlite.Connection, season_id: int) -> list[Division]:
     """*season_id*'s divisions in tier order, read on *db*; empty for none.
 

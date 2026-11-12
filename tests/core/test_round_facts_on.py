@@ -13,6 +13,7 @@ from leaguebot.core.models.division import DivisionStatus
 from leaguebot.core.models.round import RoundFormat, RoundStatus
 from leaguebot.core.models.season import SeasonStage, SeasonStatus
 from leaguebot.core.services.seasons.season_service import (
+    active_season_rounds_on,
     RoundFacts,
     division_on,
     division_rounds_in_order_on,
@@ -196,3 +197,32 @@ async def test_a_seasons_divisions_are_read_in_tier_order(tmp_path):
         divisions = await season_divisions_on(db, 7)
         assert [(d.id, d.name, d.tier) for d in divisions] == [(5, "Rookie", 1), (4, "Pro", 2)]
         assert await season_divisions_on(db, 99) == []
+
+
+async def test_the_rounds_of_an_active_season_alone_are_read_with_their_divisions(tmp_path):
+    path = str(tmp_path / "league.db")
+    await run_migrations(path)
+    async with get_connection(path) as db:
+        assert await active_season_rounds_on(db) == []
+        # Season 1 is done and season 2 is live: only 2's rounds count.
+        for season_id, status in ((1, "COMPLETED"), (2, "ACTIVE")):
+            await db.execute(
+                "INSERT INTO seasons (id, start_date, status, season_number) "
+                "VALUES (?, '2026-01-01', ?, ?)",
+                (season_id, status, season_id),
+            )
+            await db.execute(
+                "INSERT INTO divisions (id, season_id, name, mention_role_id, tier) "
+                "VALUES (?, ?, 'Pro', 10, 1)",
+                (season_id * 10, season_id),
+            )
+        for round_id, division_id in ((1, 10), (5, 20), (3, 20)):
+            await db.execute(
+                "INSERT INTO rounds (id, division_id, round_number, format, track_name, "
+                "scheduled_at, status) VALUES (?, ?, ?, 'NORMAL', 'Monza', "
+                "'2026-02-01T18:00:00+00:00', 'NOT_RUN')",
+                (round_id, division_id, round_id),
+            )
+        await db.commit()
+        assert await active_season_rounds_on(db) == [(3, 20), (5, 20)]
+
