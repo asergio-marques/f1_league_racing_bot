@@ -14,6 +14,7 @@ import aiosqlite
 import discord
 
 from leaguebot.core.utils.in_a_job import posts_in_a_job
+from leaguebot.core.services.posting.notice_handler import send_notice
 from leaguebot.core.models.change import StepFailedOnDiscord
 from leaguebot.core.db.database import get_connection
 from leaguebot.core.services.drivers.driver_service import current_account_map_for_division
@@ -457,8 +458,8 @@ async def _send_verdict(
         # verdict belongs to, and leaking the raw template key was never intended.
         attachment = _discord.File(str(render.png), filename=Path(render.png).name)
         try:
-            return await target_channel.send(
-                f"<@{driver_discord_id}>", file=attachment, allowed_mentions=_VERDICT_MENTIONS
+            return await send_notice(
+                target_channel, f"<@{driver_discord_id}>", mentions=_VERDICT_MENTIONS, file=attachment
             )
         finally:
             image_verdict_post.discard(render, attachment)
@@ -474,7 +475,7 @@ async def _send_verdict(
         justification_text,
         driver_display_name=driver_display_name,
     )
-    return await target_channel.send(content, allowed_mentions=_VERDICT_MENTIONS)
+    return await send_notice(target_channel, content, mentions=_VERDICT_MENTIONS)
 
 
 async def announce_sanction(
