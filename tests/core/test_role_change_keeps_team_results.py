@@ -32,7 +32,7 @@ from leaguebot.results.services.submission.paste_reading import (
     other_active_team_assignments,
     validate_submission_block,
 )
-from leaguebot.results.services.standings_service import (
+from leaguebot.results.services.standings.standings_service import (
     compute_and_persist_round_on,
     compute_team_standings,
     previous_standing_positions,

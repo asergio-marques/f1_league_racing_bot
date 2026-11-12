@@ -69,7 +69,7 @@ async def _apply_points_in_tx(
     the same transaction, so a crash can never leave a round's new results in place with no
     points on them.
     """
-    from leaguebot.results.services.standings_service import compute_points_for_session  # lazy import
+    from leaguebot.results.services.standings.standings_service import compute_points_for_session  # lazy import
 
     # Load config entries for (season, config, session_type)
     entries_cursor = await db.execute(

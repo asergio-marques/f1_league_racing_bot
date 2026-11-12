@@ -26,7 +26,7 @@ from leaguebot.results.models.session_result import (
     SessionResult,
 )
 from leaguebot.results.models.standings_snapshot import DriverStandingsSnapshot, TeamStandingsSnapshot
-from leaguebot.results.services import standings_service
+from leaguebot.results.services.standings import standings_service
 from leaguebot.core.services.settings.channel_registry_service import (
     SETTING_LABELS,
     missing_channel_fault,

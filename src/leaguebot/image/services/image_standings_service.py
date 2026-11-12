@@ -6,7 +6,7 @@ share every field but the columns of their rows, and each is its own catalogue e
 
 **What this module does not do.** It performs no arithmetic over points or positions. The gap
 to the leader, the previous position and the position change are derived in
-``leaguebot.results.services.standings_service.derive_movement`` and arrive here finished — XIV.7 as amended at
+``leaguebot.results.services.standings.standings_service.derive_movement`` and arrive here finished — XIV.7 as amended at
 v4.5.0 admits them as a derived *presentation* on the condition that the derivation lives with
 the data, so the textual path can adopt the columns by calling it rather than growing a second
 implementation. A subtraction appearing in this file would break that contract silently.
@@ -40,7 +40,7 @@ from leaguebot.image.utils.svg_fill import FillSpec
 from leaguebot.image.utils.country_data import country_for_nationality
 
 if TYPE_CHECKING:
-    from leaguebot.results.services.standings_service import Movement
+    from leaguebot.results.services.standings.standings_service import Movement
 
 DRIVERS_TEMPLATE_KEY = "standings_drivers_template"
 CONSTRUCTORS_TEMPLATE_KEY = "standings_constructors_template"

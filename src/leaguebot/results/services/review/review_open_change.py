@@ -136,7 +136,7 @@ from leaguebot.results.services.review.review_posting import (
     plan_posts,
     posting_steps,
 )
-from leaguebot.results.services.standings_service import compute_and_persist_round_on
+from leaguebot.results.services.standings.standings_service import compute_and_persist_round_on
 from leaguebot.results.services.submission.submission_steps import post_step
 
 __all__ = [

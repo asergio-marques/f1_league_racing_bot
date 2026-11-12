@@ -240,7 +240,7 @@ async def _snapshot_staged_drivers_on(
     Read on the connection it is handed, so a change's one save can take the picture before and
     after what it writes (#439).
     """
-    from leaguebot.results.services.standings_service import compute_driver_standings_on
+    from leaguebot.results.services.standings.standings_service import compute_driver_standings_on
 
     if not staged:
         return []

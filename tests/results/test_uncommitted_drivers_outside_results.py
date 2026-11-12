@@ -50,7 +50,7 @@ async def test_the_submission_roster_does_not_admit_an_uncommitted_driver(db_pat
 
 
 async def test_the_opening_standings_leave_out_an_uncommitted_driver(db_path):
-    from leaguebot.results.services import standings_service
+    from leaguebot.results.services.standings import standings_service
 
     snapshots = await standings_service.opening_driver_standings(db_path, DIVISION_ID)
 

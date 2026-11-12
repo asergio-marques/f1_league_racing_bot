@@ -159,7 +159,7 @@ async def post_opening_standings(
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.models.change import StepFailedOnDiscord
     from leaguebot.image.services.image_results_post import _driver_names
-    from leaguebot.results.services import standings_service
+    from leaguebot.results.services.standings import standings_service
     from leaguebot.results.services.results_post_service import (
         produce_standings,
         reserves_in_standings,
@@ -309,7 +309,7 @@ async def post_final_standings(
     """
     from leaguebot.core.db.database import get_connection
     from leaguebot.core.models.change import StepFailedOnDiscord
-    from leaguebot.results.services import standings_service
+    from leaguebot.results.services.standings import standings_service
     from leaguebot.results.services.results_post_service import (
         driver_standings_for_display,
         produce_standings,

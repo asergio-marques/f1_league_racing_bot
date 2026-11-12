@@ -112,7 +112,7 @@ async def test_results_answers_a_driver_s_last_standing_and_the_winner_s_points(
     accounts A and B, results answers the driver's last standing, 2nd on 88, and the winner's 100
     points. A driver of Pro with no standing (C) is answered no standing and the winner's 100, and
     a division with no standings (Season 1 Am) neither."""
-    from leaguebot.results.services.season_standings_posts import season_standing_on
+    from leaguebot.results.services.standings.season_standings_posts import season_standing_on
 
     db_path = await _league(tmp_path)
     async with get_connection(db_path) as db:
@@ -146,7 +146,7 @@ async def test_the_builder_signs_results_up_for_a_driver_s_records(tmp_path, mon
         "leaguebot.results.services.results_purge_service.divisions_raced_on", raced
     )
     monkeypatch.setattr(
-        "leaguebot.results.services.season_standings_posts.season_standing_on", standing
+        "leaguebot.results.services.standings.season_standings_posts.season_standing_on", standing
     )
     db = object()
 

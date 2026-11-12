@@ -331,7 +331,7 @@ async def test_dsq_fastest_lap_not_redistributed(tmp_path):
     """AC7: DSQ on fastest-lap holder forfeits the bonus; no other driver gains it."""
     from leaguebot.core.db.database import get_connection, run_migrations
     from leaguebot.results.services.review.penalty_service import apply_penalties_on
-    from leaguebot.results.services.standings_service import compute_points_for_session
+    from leaguebot.results.services.standings.standings_service import compute_points_for_session
     from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap
     from leaguebot.results.models.session_result import DriverSessionResult, OutcomeModifier
 

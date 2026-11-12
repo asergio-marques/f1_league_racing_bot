@@ -344,7 +344,7 @@ async def build_drawings(
     behind the grid, the names — because the two graphics draw the same season and differ
     only in what a row stands for.
     """
-    from leaguebot.results.services import standings_service
+    from leaguebot.results.services.standings import standings_service
     from leaguebot.image.services.image_results_post import (
         _driver_names,
         _nationality_collected,

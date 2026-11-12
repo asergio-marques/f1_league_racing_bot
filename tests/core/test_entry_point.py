@@ -455,7 +455,7 @@ _TEST_MODE_PARTS = (
 #: and what the test calls it, in the order the builder signs them up. Each hands back the jobs it
 #: plans for one division, on the connection of the approval's save.
 _PLACEMENTS_PARTS = (
-    ("leaguebot.results.services.season_standings_posts", "placements_confirmed_on",
+    ("leaguebot.results.services.standings.season_standings_posts", "placements_confirmed_on",
      "results' opening standings"),
     ("leaguebot.attendance.services.sheet_posting", "placements_confirmed_on",
      "attendance's opening sheet"),
@@ -465,7 +465,7 @@ _PLACEMENTS_PARTS = (
 #: and what the test calls it, in the order the builder signs them up. Each hands back the jobs it
 #: plans for one division's final classification, on the connection of the completion's save.
 _SEASON_COMPLETED_PARTS = (
-    ("leaguebot.results.services.season_standings_posts", "season_completed_on",
+    ("leaguebot.results.services.standings.season_standings_posts", "season_completed_on",
      "results' final standings"),
     ("leaguebot.attendance.services.sheet_posting", "season_completed_on",
      "attendance's final sheet"),
@@ -475,7 +475,7 @@ _SEASON_COMPLETED_PARTS = (
 #: subscriber, and what the test calls it. Each hands back the round the division's final
 #: classification is drawn against, or None, on the connection of the completion's save.
 _FINAL_ROUND_PARTS = (
-    ("leaguebot.results.services.season_standings_posts", "final_round_on",
+    ("leaguebot.results.services.standings.season_standings_posts", "final_round_on",
      "results' last round with results"),
 )
 

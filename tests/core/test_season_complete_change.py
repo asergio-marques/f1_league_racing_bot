@@ -498,7 +498,7 @@ async def test_a_discarded_final_classification_is_named_as_never_posted_and_the
 #: Each module's final post: the job, the module that defines its step, the channel whose post
 #: Discord refuses, and the words core has always given it when it is discarded.
 _FINAL_POSTS = [
-    pytest.param("final_standings", "leaguebot.results.services.season_standings_posts",
+    pytest.param("final_standings", "leaguebot.results.services.standings.season_standings_posts",
                  PRO_CH.standings, PRO_NOT_POSTED, id="results' final standings"),
     pytest.param("final_sheet", "leaguebot.attendance.services.sheet_posting",
                  PRO_CH.attendance, PRO_SHEET_NOT_POSTED, id="attendance's final sheet"),

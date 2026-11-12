@@ -1598,7 +1598,7 @@ class ResultsCog(commands.Cog):
             return
 
         from leaguebot.results.services.results_post_service import standings_repost_status
-        from leaguebot.results.services.standings_sync_change import STANDINGS_SYNC
+        from leaguebot.results.services.standings.standings_sync_change import STANDINGS_SYNC
 
         # The channel and the rounds are read here to answer at once, as the command always has;
         # the repost itself is a change on the queue, which checks them again when it runs.

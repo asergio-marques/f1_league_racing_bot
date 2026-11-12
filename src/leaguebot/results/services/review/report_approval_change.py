@@ -95,7 +95,7 @@ from leaguebot.results.services.review.review_posting import (
     plan_posts,
     posting_steps,
 )
-from leaguebot.results.services.standings_service import cascade_recompute_from_round_on
+from leaguebot.results.services.standings.standings_service import cascade_recompute_from_round_on
 
 __all__ = ["KIND", "report_approval_change"]
 

@@ -25,7 +25,7 @@ from leaguebot.image.services.image_standings_service import (
     highlight_for,
     resolve_drawing,
 )
-from leaguebot.results.services.standings_service import MOVEMENT_GAINED, MOVEMENT_UNCHANGED, Movement
+from leaguebot.results.services.standings.standings_service import MOVEMENT_GAINED, MOVEMENT_UNCHANGED, Movement
 
 
 def _driver(user_id: int, position: int, points: int, *, participant: bool = True):

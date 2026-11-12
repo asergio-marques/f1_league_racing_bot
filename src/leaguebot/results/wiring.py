@@ -104,7 +104,7 @@ def sign_up_to_season_standing_read(bot: "LeagueBot") -> None:
     """Sign results' read of its own standings up to the hook a season's history is written
     through, handed the connection of the save that writes the history, the division and the
     driver's accounts."""
-    from leaguebot.results.services import season_standings_posts
+    from leaguebot.results.services.standings import season_standings_posts
 
     bot.season_standing_read.subscribe(season_standings_posts.season_standing_on)
 
@@ -112,7 +112,7 @@ def sign_up_to_season_standing_read(bot: "LeagueBot") -> None:
 def sign_up_to_final_round_read(bot: "LeagueBot") -> None:
     """Sign results' read of its own `session_results` up to the hook a division's final round is
     read through."""
-    from leaguebot.results.services import season_standings_posts
+    from leaguebot.results.services.standings import season_standings_posts
 
     bot.final_round_read.subscribe(season_standings_posts.final_round_on)
 
@@ -254,7 +254,7 @@ def sign_up_to_placements_confirmed(bot: "LeagueBot") -> None:
     """Sign results' opening posts up to the hooks placements confirmed (the season's approval)
     declares: the jobs it plans for a division and the step it defines for its own job. Results
     signs up first, so each division's jobs stay lineup, calendar, standings, sheet."""
-    from leaguebot.results.services import season_standings_posts
+    from leaguebot.results.services.standings import season_standings_posts
 
     bot.placements_confirmed.subscribe(season_standings_posts.placements_confirmed_on)
     bot.placements_confirmed_steps.subscribe(
@@ -265,7 +265,7 @@ def sign_up_to_placements_confirmed(bot: "LeagueBot") -> None:
 def sign_up_to_season_completed(bot: "LeagueBot") -> None:
     """Sign results' final post up to the hooks a season completed declares: its final standings,
     and the step it defines for them. Results signs up first."""
-    from leaguebot.results.services import season_standings_posts
+    from leaguebot.results.services.standings import season_standings_posts
 
     bot.season_completed.subscribe(season_standings_posts.season_completed_on)
     bot.season_completed_steps.subscribe(
@@ -336,7 +336,7 @@ def register_change_types(
     )
     from leaguebot.results.services.review.review_stage_change import review_stage_change
     from leaguebot.results.services.rounds_sync_change import rounds_sync_change
-    from leaguebot.results.services.standings_sync_change import standings_sync_change
+    from leaguebot.results.services.standings.standings_sync_change import standings_sync_change
     from leaguebot.results.services.submission.submission_changes import (
         submission_all_cancelled_change,
         submission_close_change,

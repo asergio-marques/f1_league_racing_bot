@@ -930,7 +930,7 @@ async def test_the_next_round_s_movement_is_measured_against_the_round_before(
     CANCELLED for both its sessions. When the queue runs, round 4's movement is measured against
     round 2 instead, round 3 holding no standings any more (owner, check 1)."""
     from leaguebot.core.db.database import get_connection
-    from leaguebot.results.services.standings_service import reference_round_id
+    from leaguebot.results.services.standings.standings_service import reference_round_id
     from tests.results.test_resubmission_changes import ROUND_ID as REVIEWED_ROUND, _type
     from tests.results.test_review_open_change import DIVISION_ID
     from tests.support.review_league import LEWIS

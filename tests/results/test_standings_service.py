@@ -6,7 +6,7 @@ import pytest
 from leaguebot.core.db.database import get_connection, run_migrations
 from leaguebot.results.models.points_config import PointsConfigEntry, PointsConfigFastestLap, SessionType
 from leaguebot.results.models.session_result import DriverSessionResult, OutcomeModifier
-from leaguebot.results.services.standings_service import (
+from leaguebot.results.services.standings.standings_service import (
     cascade_recompute_from_round_on,
     compute_and_persist_round_on,
     compute_driver_standings,
@@ -630,7 +630,7 @@ async def test_classified_driver_ranks_above_dnf_at_same_position(db_path):
 # pin the arithmetic and, above all, the two cases where the record is absent entirely.
 # ---------------------------------------------------------------------------
 
-from leaguebot.results.services.standings_service import (  # noqa: E402
+from leaguebot.results.services.standings.standings_service import (  # noqa: E402
     MOVEMENT_GAINED,
     MOVEMENT_LOST,
     MOVEMENT_UNCHANGED,
@@ -1480,7 +1480,7 @@ SPRINT = SessionType.SPRINT_RACE.value
 
 
 def _order(results, points, **overrides):
-    from leaguebot.results.services.standings_service import order_drivers, tally_feature_finishes
+    from leaguebot.results.services.standings.standings_service import order_drivers, tally_feature_finishes
 
     finish_counts, first_finish_rounds = tally_feature_finishes(results)
     return order_drivers(
@@ -1534,7 +1534,7 @@ def test_participation_then_the_final_tiebreak_settle_what_the_countback_cannot(
 
 
 def test_teams_are_ordered_by_the_same_countback():
-    from leaguebot.results.services.standings_service import order_teams, tally_feature_finishes
+    from leaguebot.results.services.standings.standings_service import order_teams, tally_feature_finishes
 
     finish_counts, first_finish_rounds = tally_feature_finishes(
         [(10, FEATURE, "CLASSIFIED", 4, 1), (20, FEATURE, "CLASSIFIED", 1, 2)]
@@ -1564,7 +1564,7 @@ async def test_the_on_forms_write_on_the_handed_connection(db_path):
     """A review's save recomputes the standings on its own connection: the writers read the points
     it has just rewritten, write what a rollback takes back, and commit nothing themselves.
     Persisting the same snapshots twice leaves one row per driver and team."""
-    from leaguebot.results.services.standings_service import (
+    from leaguebot.results.services.standings.standings_service import (
         cascade_recompute_from_round_on,
         compute_and_persist_round_on,
         compute_driver_standings_on,

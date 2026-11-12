@@ -143,7 +143,7 @@ async def _lapses(db_path) -> list[dict]:
 
 def _cascade():
     return patch(
-        "leaguebot.results.services.standings_service.cascade_recompute_from_round_on",
+        "leaguebot.results.services.standings.standings_service.cascade_recompute_from_round_on",
         new=AsyncMock(),
     )
 
@@ -190,7 +190,7 @@ async def test_the_classification_is_put_back(tmp_path):
     await _overwrite_the_classification(db_path)
     assert await _drivers(db_path) == [(102, 1)]
 
-    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round_on", new=AsyncMock()):
+    with patch("leaguebot.results.services.standings.standings_service.cascade_recompute_from_round_on", new=AsyncMock()):
         assert await revert_amendment(db_path, ROUND_ID) is True
 
     assert await _drivers(db_path) == [(101, 1), (102, 2)]
@@ -233,7 +233,7 @@ async def test_standings_names_that_cannot_be_had_still_leave_the_cascade_runnin
 def _cascade_in_the_save():
     """The standings cascade the revert runs inside its save, stood in for."""
     return patch(
-        "leaguebot.results.services.standings_service.cascade_recompute_from_round_on",
+        "leaguebot.results.services.standings.standings_service.cascade_recompute_from_round_on",
         new=AsyncMock(),
     )
 
@@ -286,7 +286,7 @@ async def test_the_rounds_pardons_come_back_as_they_were(tmp_path):
         )
         await db.commit()
 
-    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round_on", new=AsyncMock()):
+    with patch("leaguebot.results.services.standings.standings_service.cascade_recompute_from_round_on", new=AsyncMock()):
         await revert_amendment(db_path, ROUND_ID)
 
     assert await _pardons(db_path) == before
@@ -297,7 +297,7 @@ async def test_the_snapshot_is_cleared_once_it_has_been_used(tmp_path):
     db_path = await _db(tmp_path, "revert_clears")
     await snapshot_amendment(db_path, ROUND_ID, [SessionType.FEATURE_RACE])
 
-    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round_on", new=AsyncMock()):
+    with patch("leaguebot.results.services.standings.standings_service.cascade_recompute_from_round_on", new=AsyncMock()):
         await revert_amendment(db_path, ROUND_ID)
 
     assert (await _snapshot_row(db_path))["pre_amendment_state"] is None
@@ -516,7 +516,7 @@ async def test_the_verdict_records_come_back_whole(tmp_path):
         await db.commit()
     await _overwrite_the_classification(db_path)
 
-    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round_on", new=AsyncMock()):
+    with patch("leaguebot.results.services.standings.standings_service.cascade_recompute_from_round_on", new=AsyncMock()):
         await revert_amendment(db_path, ROUND_ID)
 
     async with get_connection(db_path) as db:
@@ -612,7 +612,7 @@ async def test_every_amended_session_is_snapshotted_and_put_back(tmp_path):
         await db.execute("UPDATE qualifying_session_results SET best_lap = '1:25.000'")
         await db.commit()
 
-    with patch("leaguebot.results.services.standings_service.cascade_recompute_from_round_on", new=AsyncMock()):
+    with patch("leaguebot.results.services.standings.standings_service.cascade_recompute_from_round_on", new=AsyncMock()):
         assert await revert_amendment(db_path, ROUND_ID) is True
 
     assert await _drivers(db_path) == [(101, 1), (102, 2)]

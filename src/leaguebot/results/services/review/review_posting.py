@@ -79,7 +79,7 @@ from leaguebot.results.models.standings_snapshot import (
     DriverStandingsSnapshot,
     TeamStandingsSnapshot,
 )
-from leaguebot.results.services import standings_service
+from leaguebot.results.services.standings import standings_service
 from leaguebot.results.services.results_post_service import (
     _delete_posting,
     _label_from_status,

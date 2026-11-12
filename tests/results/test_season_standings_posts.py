@@ -48,7 +48,7 @@ async def db_path(tmp_path):
 async def test_the_opening_standings_are_posted_for_every_division(db_path):
     """Div A and Div B, one round and one seated driver each: each division's opening standings
     are posted once, under the opening's heading."""
-    from leaguebot.results.services import season_standings_posts as service
+    from leaguebot.results.services.standings import season_standings_posts as service
 
     _season_id, division_ids = await seed_season(db_path, divisions=("Div A", "Div B"))
     standings = AsyncMock(return_value=[])
@@ -69,7 +69,7 @@ async def test_the_opening_standings_are_posted_for_every_division(db_path):
 
 async def test_the_opening_standings_are_drawn_against_the_division_s_first_round(db_path):
     """Not because they stand after it — the grid of rounds is read from the calendar."""
-    from leaguebot.results.services import season_standings_posts as service
+    from leaguebot.results.services.standings import season_standings_posts as service
 
     _season_id, division_ids = await seed_season(db_path)
     async with get_connection(db_path) as db:
@@ -93,7 +93,7 @@ async def test_the_opening_standings_are_drawn_against_the_division_s_first_roun
 
 async def test_a_division_with_no_rounds_posts_no_opening_standings(db_path):
     """Div A's only round deleted: its opening standings post nothing."""
-    from leaguebot.results.services import season_standings_posts as service
+    from leaguebot.results.services.standings import season_standings_posts as service
 
     _season_id, division_ids = await seed_season(db_path)
     async with get_connection(db_path) as db:
@@ -113,7 +113,7 @@ async def test_a_division_with_no_rounds_posts_no_opening_standings(db_path):
 async def test_the_opening_standings_post_reads_the_division_s_standings_channel(db_path):
     """Div A's standings channel (900) is set with `/division results-channel`, in the results
     module's own settings: the opening classification is posted there, both championships."""
-    from leaguebot.results.services import season_standings_posts as service
+    from leaguebot.results.services.standings import season_standings_posts as service
 
     _season_id, division_ids = await seed_season(db_path)
     guild = guild_double()
@@ -142,7 +142,7 @@ async def test_an_opening_standings_channel_set_and_gone_raises(db_path):
     """Div A's standings channel (900) has been deleted from the server: the job raises for
     the queue to stop on, rather than passing over the division in silence."""
     from leaguebot.core.models.change import StepFailedOnDiscord
-    from leaguebot.results.services import season_standings_posts as service
+    from leaguebot.results.services.standings import season_standings_posts as service
 
     _season_id, division_ids = await seed_season(db_path)
     guild = guild_double()
@@ -163,7 +163,7 @@ async def test_a_division_with_no_standings_channel_set_posts_no_opening_standin
 ):
     """Am's standings channel never set: its opening standings job posts nothing and raises
     nothing, while Pro's posts."""
-    from leaguebot.results.services import season_standings_posts
+    from leaguebot.results.services.standings import season_standings_posts
 
     league = await season_league(tmp_path, monkeypatch=monkeypatch, results=True)
     await league.write(
@@ -217,7 +217,7 @@ def _final_inputs(round_id: int, division_id: int):
             AsyncMock(return_value=[_lewis(round_id, division_id)]),
         ),
         patch(
-            "leaguebot.results.services.standings_service.compute_team_standings",
+            "leaguebot.results.services.standings.standings_service.compute_team_standings",
             AsyncMock(return_value=[]),
         ),
     )
@@ -227,7 +227,7 @@ async def test_the_final_standings_are_drawn_against_the_last_round_with_results
     """The final standings *are* that round's classification, restated under their own heading.
     Div A's round 2 is its last round with results, as the completion's first save finds it: its
     final standings are drawn against round 2, as the final classification."""
-    from leaguebot.results.services import season_standings_posts as service
+    from leaguebot.results.services.standings import season_standings_posts as service
 
     _season_id, division_ids = await seed_season(db_path)
     second = await second_round_with_results(db_path, division_ids[0])
@@ -249,7 +249,7 @@ async def test_the_final_standings_stand_beside_the_last_round_s_and_replace_not
     """Div A's round 2 has its standings posted as message 9100, recorded against it. The final
     standings are posted as text: a new message is sent beside it, and 9100 is neither edited
     nor deleted, its recorded id unchanged."""
-    from leaguebot.results.services import season_standings_posts as service
+    from leaguebot.results.services.standings import season_standings_posts as service
 
     _season_id, division_ids = await seed_season(db_path)
     division_id = division_ids[0]
@@ -282,7 +282,7 @@ async def test_final_standings_whose_channel_was_deleted_raise(db_path):
     """Div A's standings channel (900) has been deleted from the server: the job raises for the
     queue to stop on."""
     from leaguebot.core.models.change import StepFailedOnDiscord
-    from leaguebot.results.services import season_standings_posts as service
+    from leaguebot.results.services.standings import season_standings_posts as service
 
     _season_id, division_ids = await seed_season(db_path)
     round_id = await second_round_with_results(db_path, division_ids[0])
@@ -304,7 +304,7 @@ async def test_the_final_standings_record_no_message_id(db_path):
     """The final standings of Div A, drawn against its round 2, go out as message 9200 through
     results' posting that records nothing, asked to post afresh as the final classification:
     no id is recorded against round 2."""
-    from leaguebot.results.services import season_standings_posts as service
+    from leaguebot.results.services.standings import season_standings_posts as service
     from leaguebot.results.services.results_post_service import PostedTable
 
     _season_id, division_ids = await seed_season(db_path)
@@ -336,7 +336,7 @@ async def test_a_part_posted_final_standings_is_kept_and_removed_by_the_next_try
     refused. The job raises with 9201 to keep; the next try, handed it, removes 9201 from the
     standings channel before it posts both again."""
     from leaguebot.core.models.change import StepFailedOnDiscord
-    from leaguebot.results.services import season_standings_posts as service
+    from leaguebot.results.services.standings import season_standings_posts as service
 
     _season_id, division_ids = await seed_season(db_path)
     division_id = division_ids[0]
@@ -374,7 +374,7 @@ async def test_a_part_posted_final_standings_is_kept_and_removed_by_the_next_try
 async def test_a_final_standings_channel_never_set_posts_nothing(db_path):
     """Div A was never given a standings channel: its final standings post nothing and raise
     nothing."""
-    from leaguebot.results.services import season_standings_posts as service
+    from leaguebot.results.services.standings import season_standings_posts as service
 
     _season_id, division_ids = await seed_season(db_path)
     division_id = division_ids[0]

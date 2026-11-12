@@ -818,7 +818,7 @@ KNOWN_PRIVATE_NAMES_ACROSS_MODULES: dict[tuple[str, str], tuple[int, str]] = {
     ("attendance/services/attendance_service.py", "leaguebot.image.services.image_results_post._nationality_collected"): (1, PASS["image"]),
     ("results/services/results_post_service.py", "leaguebot.image.services.image_results_post._driver_names"): (2, PASS["image"]),
     ("results/services/review/verdict_announcement_service.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
-    ("results/services/season_standings_posts.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
+    ("results/services/standings/season_standings_posts.py", "leaguebot.image.services.image_results_post._driver_names"): (1, PASS["image"]),
 }
 
 
@@ -2529,7 +2529,7 @@ SPLICED_READS_READ_BY_HAND: dict[tuple[str, str], tuple[int, str]] = {
         (1, "results' own standings snapshots"),
     ("results/services/points/season_points_service.py", "_points_table"):
         (2, "results' own live and staged points tables, handed by its callers"),
-    ("results/services/standings_service.py", "previous_standing_positions"):
+    ("results/services/standings/standings_service.py", "previous_standing_positions"):
         (1, "results' own standings snapshots"),
     ("results/services/review/verdict_records.py", "select_verdicts"):
         (2, "`VERDICT_TABLES` and the session result tables, results' own"),
@@ -2737,13 +2737,13 @@ KNOWN_READS_OUTSIDE_THE_OWNER: dict[tuple[str, str], tuple[int, str]] = {
     ("results/services/review/review_verdicts.py", "_division_name"): (1, PASS["results"]),
     ("results/services/review/review_verdicts.py", "_latest_scored_round"): (2, PASS["results"]),
     ("results/services/review/review_verdicts.py", "_sanction_heading_on"): (1, PASS["results"]),
-    ("results/services/standings_service.py", "_rounds_from"): (2, PASS["results"]),
-    ("results/services/standings_service.py", "compute_driver_standings_on"): (7, PASS["results"]),
-    ("results/services/standings_service.py", "compute_team_standings_on"): (5, PASS["results"]),
-    ("results/services/standings_service.py", "opening_driver_standings"): (3, PASS["results"]),
-    ("results/services/standings_service.py", "opening_team_standings"): (1, PASS["results"]),
-    ("results/services/standings_service.py", "persist_snapshots_on"): (1, PASS["results"]),
-    ("results/services/standings_service.py", "reference_round_id"): (2, PASS["results"]),
+    ("results/services/standings/standings_service.py", "_rounds_from"): (2, PASS["results"]),
+    ("results/services/standings/standings_service.py", "compute_driver_standings_on"): (7, PASS["results"]),
+    ("results/services/standings/standings_service.py", "compute_team_standings_on"): (5, PASS["results"]),
+    ("results/services/standings/standings_service.py", "opening_driver_standings"): (3, PASS["results"]),
+    ("results/services/standings/standings_service.py", "opening_team_standings"): (1, PASS["results"]),
+    ("results/services/standings/standings_service.py", "persist_snapshots_on"): (1, PASS["results"]),
+    ("results/services/standings/standings_service.py", "reference_round_id"): (2, PASS["results"]),
     ("results/services/submission/submission_changes.py", "<module>"): (3, PASS["results"]),
     ("results/services/submission/submission_changes.py", "ask_submission_open"): (1, PASS["results"]),
     ("results/services/submission/submission_changes.py", "ask_submission_restart"): (1, PASS["results"]),

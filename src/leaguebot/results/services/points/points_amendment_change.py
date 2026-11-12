@@ -89,7 +89,7 @@ from leaguebot.results.services.points.season_points_service import (
     StagedPointsNotApprovable,
     install_staged_points_on,
 )
-from leaguebot.results.services.standings_service import cascade_recompute_from_round_on
+from leaguebot.results.services.standings.standings_service import cascade_recompute_from_round_on
 
 __all__ = ["KIND", "approval_in_hand", "held_text", "points_amendment_change", "staging_refusal"]
 

@@ -1623,7 +1623,7 @@ async def test_an_opening_post_stops_where_the_league_s_server_is_not_in_the_cac
 @pytest.mark.parametrize(
     ("job", "owner", "fail"),
     [
-        ("opening_standings", "leaguebot.results.services.season_standings_posts",
+        ("opening_standings", "leaguebot.results.services.standings.season_standings_posts",
          _fail_standings),
         ("opening_sheet", "leaguebot.attendance.services.sheet_posting", _fail_sheet),
     ],

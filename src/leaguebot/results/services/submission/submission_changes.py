@@ -113,7 +113,7 @@ from leaguebot.results.services.submission.result_submission_service import (
     get_sessions_for_format,
     is_submission_open,
 )
-from leaguebot.results.services.standings_service import cascade_recompute_from_round_on
+from leaguebot.results.services.standings.standings_service import cascade_recompute_from_round_on
 from leaguebot.results.services.submission.submission_steps import (
     CREATE_CHANNEL,
     POST,

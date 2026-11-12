@@ -817,7 +817,7 @@ async def test_the_stored_order_matches_the_order_that_is_drawn(tmp_path):
     The names are resolved first and the cascade handed them, as a points approval's `names`
     job and its save do (#439)."""
     from leaguebot.core.db.database import get_connection
-    from leaguebot.results.services import standings_service
+    from leaguebot.results.services.standings import standings_service
     from leaguebot.results.services.results_post_service import (
         driver_standings_for_display,
         standings_display_names,
@@ -853,7 +853,7 @@ async def test_the_cascade_falls_back_to_the_id_with_no_guild(tmp_path):
     """The one path that genuinely holds no guild still recomputes, ordered by id: no names
     are resolved, and the cascade is handed none."""
     from leaguebot.core.db.database import get_connection
-    from leaguebot.results.services import standings_service
+    from leaguebot.results.services.standings import standings_service
     from leaguebot.results.services.results_post_service import standings_display_names
 
     db_path, division_id, round_id = await _seed_two_tied_drivers(tmp_path, server_id=303)

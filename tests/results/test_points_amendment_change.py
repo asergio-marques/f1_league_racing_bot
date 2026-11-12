@@ -172,7 +172,7 @@ def _names_fail_once() -> Any:
 def _standings_fail() -> Any:
     """Every team standings computed raises, as a fault in the bot would."""
     return patch(
-        "leaguebot.results.services.standings_service.compute_team_standings_on",
+        "leaguebot.results.services.standings.standings_service.compute_team_standings_on",
         new=AsyncMock(side_effect=RuntimeError("the standings could not be computed")),
     )
 

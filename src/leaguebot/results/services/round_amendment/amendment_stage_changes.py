@@ -114,7 +114,7 @@ from leaguebot.results.services.review.review_posting import (
     posting_steps,
 )
 from leaguebot.results.services.review.review_confirm_change import STAGING_IN_HAND, staging_in_hand
-from leaguebot.results.services.standings_service import cascade_recompute_from_round_on
+from leaguebot.results.services.standings.standings_service import cascade_recompute_from_round_on
 from leaguebot.results.services.review.verdict_announcement_service import (
     _banners_heading_sanctions_on,
     _banners_of_on,

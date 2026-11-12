@@ -494,7 +494,7 @@ async def revert_abandoned_amendment_on(
     """
     if not await _restore_from_snapshot_on(db, round_id):
         return False
-    from leaguebot.results.services import standings_service
+    from leaguebot.results.services.standings import standings_service
 
     cursor = await db.execute("SELECT division_id FROM rounds WHERE id = ?", (round_id,))
     division = await cursor.fetchone()
@@ -958,7 +958,7 @@ async def amend_round_results_on(
     # just re-pointed onto the new classification. The posting also *added* a message rather than
     # replacing one, so the original Final Results posting was orphaned above it. And an
     # amendment reverted before it completed left that provisional posting standing.
-    from leaguebot.results.services import standings_service  # lazy import
+    from leaguebot.results.services.standings import standings_service  # lazy import
 
     await standings_service.cascade_recompute_from_round_on(
         db, division_id, round_id, display_names

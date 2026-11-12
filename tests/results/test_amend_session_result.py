@@ -180,7 +180,7 @@ async def _amend(
                 new=apply_points, create=True,
             ))
         stack.enter_context(patch(
-            "leaguebot.results.services.standings_service.cascade_recompute_from_round_on",
+            "leaguebot.results.services.standings.standings_service.cascade_recompute_from_round_on",
             new=cascade,
         ))
         repost = stack.enter_context(patch(
@@ -210,7 +210,7 @@ def _standings_cascade_stubbed():
     and the cancel run in their save."""
     stack = ExitStack()
     stack.enter_context(patch(
-        "leaguebot.results.services.standings_service.cascade_recompute_from_round_on",
+        "leaguebot.results.services.standings.standings_service.cascade_recompute_from_round_on",
         new=AsyncMock(),
     ))
     return stack

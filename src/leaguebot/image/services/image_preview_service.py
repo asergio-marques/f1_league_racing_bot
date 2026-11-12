@@ -995,7 +995,7 @@ async def build_standings_preview(bot: LeagueBot, context: PreviewContext):
     """
     from types import SimpleNamespace
 
-    from leaguebot.results.services import standings_service
+    from leaguebot.results.services.standings import standings_service
     from leaguebot.image.services.image_preview_data import (
         fabricate_standings_previous_positions,
         fabricate_standings_round_results,
